@@ -49,6 +49,17 @@ export const updated_at = registerFunction({
     END;`,
 });
 
+export const media_health_updated_at = registerFunction({
+  name: 'media_health_updated_at',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      new."updatedAt" = clock_timestamp();
+      return new;
+    END;`,
+});
+
 export const f_concat_ws = registerFunction({
   name: 'f_concat_ws',
   arguments: ['text', 'text[]'],
