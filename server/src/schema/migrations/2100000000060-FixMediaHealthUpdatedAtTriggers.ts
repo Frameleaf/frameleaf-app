@@ -1,8 +1,7 @@
 import { Kysely, sql } from 'kysely';
 
+/** Repairs health-table timestamp triggers without adding updateId columns or rewriting rows. */
 export async function up(db: Kysely<any>): Promise<void> {
-  // Health tables have updatedAt but no sync updateId. Replacing their triggers
-  // repairs existing installations without adding columns or rewriting rows.
   await sql`CREATE OR REPLACE FUNCTION public.media_health_updated_at()
     RETURNS TRIGGER LANGUAGE PLPGSQL AS $$
     BEGIN
@@ -19,6 +18,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   }
 }
 
+/** Restores the previous shared triggers and overrides, then removes the health-only function. */
 export async function down(db: Kysely<any>): Promise<void> {
   for (const table of ['asset_health', 'asset_health_candidate']) {
     await sql`CREATE OR REPLACE TRIGGER ${sql.id(`${table}_updatedAt`)}
