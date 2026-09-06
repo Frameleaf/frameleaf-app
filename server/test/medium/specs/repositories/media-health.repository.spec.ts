@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { AssetStatus, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum';
 import { LoggingRepository } from 'src/repositories/logging.repository';
 import { MediaHealthRepository, UpsertMediaHealthFinding } from 'src/repositories/media-health.repository';
@@ -145,6 +145,44 @@ describe(MediaHealthRepository.name, () => {
   });
 
   describe('finding state transitions', () => {
+    it.each(['legacy', 'active'])('filters findings by health status in the %s schema phase', async (phase) => {
+      await sql`UPDATE immich_fork.state SET phase = ${phase} WHERE id = 1`.execute(defaultDatabase);
+      try {
+        const { ctx, sut } = setup();
+        const [{ user }, { user: otherUser }] = await Promise.all([ctx.newUser(), ctx.newUser()]);
+        const cases = [
+          { category: MediaHealthCategory.Missing, status: MediaHealthStatus.Missing },
+          { category: MediaHealthCategory.Missing, status: MediaHealthStatus.Found },
+          { category: MediaHealthCategory.Corrupt, status: MediaHealthStatus.CorruptConfirmed },
+        ];
+
+        for (const { category, status } of cases) {
+          const [{ asset }, { asset: otherAsset }] = await Promise.all([
+            ctx.newAsset({ ownerId: user.id, is_nsfw: false }),
+            ctx.newAsset({ ownerId: otherUser.id, is_nsfw: false }),
+          ]);
+          const finding = await sut.upsertFinding({
+            ...findingDto(asset.id, asset.originalPath, null),
+            category,
+            status,
+          });
+          await sut.upsertFinding({
+            ...findingDto(otherAsset.id, otherAsset.originalPath, null),
+            category,
+            status,
+          });
+
+          const options = { ownerId: user.id, category, privacy: { excludeNsfw: true }, size: 200 };
+          await expect(sut.list({ ...options, status })).resolves.toEqual([
+            expect.objectContaining({ id: finding.id, category, status }),
+          ]);
+          await expect(sut.list({ ...options, status: MediaHealthStatus.Dismissed })).resolves.toEqual([]);
+        }
+      } finally {
+        await sql`UPDATE immich_fork.state SET phase = 'active' WHERE id = 1`.execute(defaultDatabase);
+      }
+    });
+
     it('scopes finding reads and dismissals to one owner', async () => {
       const { ctx, sut } = setup();
       const [{ user: firstUser }, { user: secondUser }] = await Promise.all([ctx.newUser(), ctx.newUser()]);
