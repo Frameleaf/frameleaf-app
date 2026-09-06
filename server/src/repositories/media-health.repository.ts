@@ -220,9 +220,9 @@ export class MediaHealthRepository {
       .selectAll('asset_health')
       .$if(!!options.ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(options.ownerId!)))
       .$call((qb) => withHiddenContentFilter(qb, options.privacy))
-      .$if(!!options.category, (qb) => qb.where('category', '=', options.category!))
-      .$if(!!options.status, (qb) => qb.where('status', '=', options.status!))
-      .orderBy('checkedAt', 'desc')
+      .$if(!!options.category, (qb) => qb.where('asset_health.category', '=', options.category!))
+      .$if(!!options.status, (qb) => qb.where('asset_health.status', '=', options.status!))
+      .orderBy('asset_health.checkedAt', 'desc')
       .limit(options.size)
       .execute() as Promise<MediaHealthFinding[]>;
   }
