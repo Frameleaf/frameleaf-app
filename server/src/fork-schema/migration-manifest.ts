@@ -47,6 +47,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000030-AddSha256ChecksumAlgorithm',
   '2100000000040-ReconcileSmartAlbumDrift',
   '2100000000050-AddMediaHealthRunOwner',
+  '2100000000060-FixMediaHealthUpdatedAtTriggers',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(

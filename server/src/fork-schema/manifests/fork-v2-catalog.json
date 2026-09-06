@@ -4874,6 +4874,10 @@
       "identity": "public.longitude(earth)"
     },
     {
+      "definition": "CREATE OR REPLACE FUNCTION public.media_health_updated_at()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      new.\"updatedAt\" = clock_timestamp();\n      return new;\n    END;$function$",
+      "identity": "public.media_health_updated_at()"
+    },
+    {
       "definition": "CREATE OR REPLACE FUNCTION public.memory_asset_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      INSERT INTO memory_asset_audit (\"memoryId\", \"assetId\")\n      SELECT \"memoriesId\", \"assetId\" FROM OLD\n      WHERE \"memoriesId\" IN (SELECT \"id\" FROM memory WHERE \"id\" IN (SELECT \"memoriesId\" FROM OLD));\n      RETURN NULL;\n    END\n  $function$",
       "identity": "public.memory_asset_delete_audit()"
     },
@@ -7280,11 +7284,11 @@
       "identity": "public.asset_file.asset_file_updatedAt"
     },
     {
-      "definition": "CREATE TRIGGER \"asset_health_candidate_updatedAt\" BEFORE UPDATE ON asset_health_candidate FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "definition": "CREATE TRIGGER \"asset_health_candidate_updatedAt\" BEFORE UPDATE ON asset_health_candidate FOR EACH ROW EXECUTE FUNCTION media_health_updated_at()",
       "identity": "public.asset_health_candidate.asset_health_candidate_updatedAt"
     },
     {
-      "definition": "CREATE TRIGGER \"asset_health_updatedAt\" BEFORE UPDATE ON asset_health FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "definition": "CREATE TRIGGER \"asset_health_updatedAt\" BEFORE UPDATE ON asset_health FOR EACH ROW EXECUTE FUNCTION media_health_updated_at()",
       "identity": "public.asset_health.asset_health_updatedAt"
     },
     {

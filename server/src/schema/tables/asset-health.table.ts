@@ -1,4 +1,5 @@
 import {
+  BeforeUpdateTrigger,
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
@@ -10,8 +11,8 @@ import {
   Unique,
   UpdateDateColumn,
 } from '@immich/sql-tools';
-import { UpdatedAtTrigger } from 'src/decorators';
 import { MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum';
+import { media_health_updated_at } from 'src/schema/functions';
 import { AssetTable } from 'src/schema/tables/asset.table';
 import { UserTable } from 'src/schema/tables/user.table';
 
@@ -52,7 +53,7 @@ export class AssetHealthRunTable {
 @Index({ columns: ['category', 'status'] })
 @Index({ columns: ['checkedAt'] })
 @Unique({ columns: ['assetId', 'category'] })
-@UpdatedAtTrigger('asset_health_updatedAt')
+@BeforeUpdateTrigger({ name: 'asset_health_updatedAt', scope: 'row', function: media_health_updated_at })
 @Table('asset_health')
 export class AssetHealthTable {
   @PrimaryGeneratedColumn()
@@ -103,7 +104,7 @@ export class AssetHealthTable {
 
 @Index({ columns: ['healthId'] })
 @Unique({ columns: ['healthId', 'candidatePath'] })
-@UpdatedAtTrigger('asset_health_candidate_updatedAt')
+@BeforeUpdateTrigger({ name: 'asset_health_candidate_updatedAt', scope: 'row', function: media_health_updated_at })
 @Table('asset_health_candidate')
 export class AssetHealthCandidateTable {
   @PrimaryGeneratedColumn()
