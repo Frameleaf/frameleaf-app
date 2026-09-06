@@ -1,8 +1,14 @@
 import { Kysely, sql } from 'kysely';
 import { AssetStatus, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum';
+import { getCatalogEvidence } from 'src/fork-schema/catalog';
+import forkCatalog from 'src/fork-schema/manifests/fork-v2-catalog.json';
 import { LoggingRepository } from 'src/repositories/logging.repository';
 import { MediaHealthRepository, UpsertMediaHealthFinding } from 'src/repositories/media-health.repository';
 import { DB } from 'src/schema';
+import {
+  up as repairHealthTriggers,
+  down as revertHealthTriggers,
+} from 'src/schema/migrations/2100000000060-FixMediaHealthUpdatedAtTriggers';
 import { BaseService } from 'src/services/base.service';
 import { newMediumService } from 'test/medium.factory';
 import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils';
@@ -145,6 +151,110 @@ describe(MediaHealthRepository.name, () => {
   });
 
   describe('finding state transitions', () => {
+    it('upgrades populated legacy health tables without rewriting rows or changing asset sync triggers', async () => {
+      await sql`UPDATE immich_fork.state SET phase = 'legacy' WHERE id = 1`.execute(defaultDatabase);
+      try {
+        await revertHealthTriggers(defaultDatabase);
+        const { asset, finding, candidate, sut } = await arrangeManagedRelink();
+        const before = await sql`SELECT oid, relfilenode FROM pg_class
+          WHERE oid IN ('public.asset_health'::regclass, 'public.asset_health_candidate'::regclass) ORDER BY oid`.execute(
+          defaultDatabase,
+        );
+        await repairHealthTriggers(defaultDatabase);
+        await repairHealthTriggers(defaultDatabase);
+
+        expect(await sut.getByIds([finding.id])).toEqual([finding]);
+        expect(await sut.getCandidatesByHealthIds([finding.id])).toEqual([candidate]);
+        const after = await sql`SELECT oid, relfilenode FROM pg_class
+          WHERE oid IN ('public.asset_health'::regclass, 'public.asset_health_candidate'::regclass) ORDER BY oid`.execute(
+          defaultDatabase,
+        );
+        expect(after.rows).toEqual(before.rows);
+        await sut.markDismissed([finding.id]);
+        expect(await sut.getByIds([finding.id])).toEqual([
+          expect.objectContaining({ status: MediaHealthStatus.Dismissed }),
+        ]);
+        const originalAsset = await defaultDatabase
+          .withSchema('public')
+          .selectFrom('asset')
+          .select(['updateId', 'updatedAt'])
+          .where('id', '=', asset.id)
+          .executeTakeFirstOrThrow();
+        const updatedAsset = await defaultDatabase
+          .withSchema('public')
+          .updateTable('asset')
+          .set({ originalFileName: 'updated.jpg' })
+          .where('id', '=', asset.id)
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        expect(updatedAsset.updateId).not.toBe(originalAsset.updateId);
+        expect(new Date(updatedAsset.updatedAt).getTime()).toBeGreaterThan(new Date(originalAsset.updatedAt).getTime());
+
+        const catalog = await getCatalogEvidence(defaultDatabase);
+        expect(catalog.functions.find(({ identity }) => identity === 'public.media_health_updated_at()')).toEqual(
+          forkCatalog.functions.find(({ identity }) => identity === 'public.media_health_updated_at()'),
+        );
+        for (const table of ['asset_health', 'asset_health_candidate']) {
+          const identity = `public.${table}.${table}_updatedAt`;
+          expect(catalog.triggers.find((trigger) => trigger.identity === identity)).toEqual(
+            forkCatalog.triggers.find((trigger) => trigger.identity === identity),
+          );
+          const override = await sql<{ definition: string }>`SELECT value->>'sql' AS definition
+            FROM public.migration_overrides WHERE name = ${`trigger_${table}_updatedAt`}`.execute(defaultDatabase);
+          expect(override.rows[0].definition).toContain('EXECUTE FUNCTION media_health_updated_at();');
+        }
+      } finally {
+        await repairHealthTriggers(defaultDatabase);
+        await sql`UPDATE immich_fork.state SET phase = 'active' WHERE id = 1`.execute(defaultDatabase);
+      }
+    });
+
+    it.each(['legacy', 'dual-write', 'active'])('rescans an existing finding in the %s phase', async (phase) => {
+      await sql`UPDATE immich_fork.state SET phase = ${phase} WHERE id = 1`.execute(defaultDatabase);
+      try {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        const dto = { ...findingDto(asset.id, asset.originalPath, null), category: MediaHealthCategory.Corrupt };
+        const first = await sut.upsertFinding(dto);
+        const second = await sut.upsertFinding({ ...dto, status: MediaHealthStatus.CorruptConfirmed });
+
+        expect(second).toMatchObject({ id: first.id, status: MediaHealthStatus.CorruptConfirmed });
+        if (phase !== 'active') {
+          expect(new Date(second.updatedAt).getTime()).toBeGreaterThan(new Date(first.updatedAt).getTime());
+        }
+        if (phase === 'dual-write') {
+          const sidecar = await defaultDatabase
+            .withSchema('immich_fork')
+            .selectFrom('asset_health')
+            .selectAll()
+            .where('id', '=', first.id)
+            .executeTakeFirstOrThrow();
+          expect(sidecar).toEqual(second);
+        }
+      } finally {
+        await sql`UPDATE immich_fork.state SET phase = 'active' WHERE id = 1`.execute(defaultDatabase);
+      }
+    });
+
+    it('updates an existing legacy candidate without requiring an updateId column', async () => {
+      await sql`UPDATE immich_fork.state SET phase = 'legacy' WHERE id = 1`.execute(defaultDatabase);
+      try {
+        const { candidate } = await arrangeManagedRelink();
+        const updated = await defaultDatabase
+          .withSchema('public')
+          .updateTable('asset_health_candidate')
+          .set({ status: MediaHealthStatus.Dismissed })
+          .where('id', '=', candidate.id)
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        expect(updated.status).toBe(MediaHealthStatus.Dismissed);
+        expect(new Date(updated.updatedAt).getTime()).toBeGreaterThan(new Date(candidate.updatedAt).getTime());
+      } finally {
+        await sql`UPDATE immich_fork.state SET phase = 'active' WHERE id = 1`.execute(defaultDatabase);
+      }
+    });
+
     it.each(['legacy', 'active'])('filters findings by health status in the %s schema phase', async (phase) => {
       await sql`UPDATE immich_fork.state SET phase = ${phase} WHERE id = 1`.execute(defaultDatabase);
       try {
