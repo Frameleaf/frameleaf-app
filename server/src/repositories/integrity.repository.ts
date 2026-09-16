@@ -3,6 +3,7 @@ import { type Insertable, type Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, IntegrityReport } from 'src/enum.js';
+import { getForkSchemaPhase, readsForkSidecar } from 'src/repositories/fork-derived-results.js';
 import { DB } from 'src/schema/index.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 
@@ -86,8 +87,14 @@ export class IntegrityRepository {
   }
 
   @GenerateSql({ params: [DummyValue.STRING] })
-  getVideoDuplicateFramePathsByPaths(paths: string[]) {
-    return this.db.selectFrom('asset_video_duplicate_frame').select('path').where('path', 'in', paths).execute();
+  async getVideoDuplicateFramePathsByPaths(paths: string[]) {
+    const phase = await getForkSchemaPhase(this.db);
+    return this.db
+      .withSchema(readsForkSidecar(phase) ? 'immich_fork' : 'public')
+      .selectFrom('asset_video_duplicate_frame')
+      .select('path')
+      .where('path', 'in', paths)
+      .execute();
   }
 
   @GenerateSql({ params: [DummyValue.STRING] })
@@ -100,8 +107,8 @@ export class IntegrityRepository {
   }
 
   @GenerateSql({ params: [DummyValue.STRING] })
-  getTrackedPaths(paths: string[]) {
-    return this.db
+  async getTrackedPaths(paths: string[]) {
+    const tracked = await this.db
       .selectFrom('asset')
       .select('asset.originalPath as path')
       .where('asset.originalPath', 'in', paths)
@@ -115,6 +122,7 @@ export class IntegrityRepository {
           .where('person.thumbnailPath', 'in', paths),
       )
       .execute();
+    return [...tracked, ...(await this.getVideoDuplicateFramePathsByPaths(paths))];
   }
 
   @GenerateSql({ params: [] })

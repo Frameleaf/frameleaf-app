@@ -169,7 +169,10 @@ Future<List<CloudIdMapping>> fetchMapping(Drift db, String userId, int limit, St
         db.localAssetEntity.id.isInQuery(
           db.localAssetEntity.selectOnly()
             ..addColumns([db.localAssetEntity.id.min()])
-            ..where(db.localAssetEntity.checksum.equalsExp(db.remoteAssetEntity.checksum)),
+            ..where(
+              db.localAssetEntity.checksum.equalsExp(db.remoteAssetEntity.checksum) &
+                  db.localAssetEntity.iCloudId.isNotNull(),
+            ),
         ),
         useColumns: false,
       ),

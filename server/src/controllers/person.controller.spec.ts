@@ -160,4 +160,16 @@ describe(PersonController.name, () => {
       expect(service.delete).toHaveBeenCalled();
     });
   });
+  it('should expose ordered and legacy merge routes', async () => {
+    const ids = [factory.uuid(), factory.uuid()];
+    service.mergePeople.mockResolvedValue([{ id: ids[1], success: true }]);
+    const ordered = await request(ctx.getHttpServer()).post('/people/merge').send({ ids });
+    expect(ordered.status).toBe(200);
+    expect(service.mergePeople).toHaveBeenLastCalledWith(undefined, { ids });
+    const legacy = await request(ctx.getHttpServer())
+      .post(`/people/${ids[0]}/merge`)
+      .send({ ids: [ids[1]] });
+    expect(legacy.status).toBe(200);
+    expect(service.mergePeople).toHaveBeenLastCalledWith(undefined, { ids });
+  });
 });

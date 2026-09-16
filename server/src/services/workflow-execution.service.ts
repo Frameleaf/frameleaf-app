@@ -96,23 +96,49 @@ export class WorkflowExecutionService extends BaseService {
         },
       ]
     >(async (authDto, context, args) => {
-      const hostname = new URL(args[0]).hostname;
+      const allowedHosts = context.allowedHosts.map(
+        (pattern) =>
+          new RegExp(
+            `^${pattern
+              .split('*')
+              .map((part) => part.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`))
+              .join('.*')}$`,
+            'i',
+          ),
+      );
+      let url = new URL(args[0]);
+      const headers = new Headers(args[1]?.headers);
+      const options: RequestInit = { ...args[1], headers, redirect: 'manual' };
 
-      for (const pattern of context.allowedHosts) {
-        const regex = new RegExp(pattern.replaceAll('.', String.raw`\.`).replaceAll('*', '.*'));
-        if (regex.test(hostname)) {
-          // eslint-disable-next-line unicorn/no-invalid-argument-count
-          const res = await fetch(...args);
-
-          return {
-            ok: res.ok,
-            status: res.status,
-            body: await res.text(),
-          };
+      for (let redirects = 0; redirects <= 20; redirects++) {
+        if (allowedHosts.every((pattern) => !pattern.test(url.hostname))) {
+          throw new Error('Hostname did not match any listed in methods[].allowedHosts in the plugin manifest');
         }
+        const res = await fetch(url.href, options);
+        const location = res.headers.get('location');
+        if (![301, 302, 303, 307, 308].includes(res.status) || !location) {
+          return { ok: res.ok, status: res.status, body: await res.text() };
+        }
+        await res.body?.cancel();
+        const next = new URL(location, url);
+        if (next.origin !== url.origin) {
+          headers.delete('authorization');
+          headers.delete('proxy-authorization');
+          headers.delete('cookie');
+        }
+        const method = (options.method ?? 'GET').toUpperCase();
+        if (
+          (res.status === 303 && method !== 'GET' && method !== 'HEAD') ||
+          ((res.status === 301 || res.status === 302) && method === 'POST')
+        ) {
+          options.method = 'GET';
+          options.body = undefined;
+          headers.delete('content-type');
+          headers.delete('content-length');
+        }
+        url = next;
       }
-
-      throw new Error('Hostname did not match any listed in methods[].allowedHosts in the plugin manifest');
+      throw new Error('Too many plugin HTTP redirects');
     });
     const bulkTagAssets = this.wrap<[dto: TagBulkAssetsDto]>((authDto, ctx, args) =>
       tagService.bulkTagAssets(authDto, ...args),
@@ -231,16 +257,6 @@ export class WorkflowExecutionService extends BaseService {
       const manifestPath = join(folder, 'manifest.json');
       const bytes = await this.storageRepository.readFile(manifestPath);
       const contents = bytes.toString('utf8');
-      const sha256hash = this.cryptoRepository.hashSha256(contents) as Buffer;
-
-      if (!options?.force) {
-        const match = await this.pluginRepository.getByHash(sha256hash);
-        if (match) {
-          this.logger.log(`Plugin up to date (name=${match.name}@${match.version}, hash=${sha256hash.toString('hex')}`);
-          return;
-        }
-      }
-
       const dto = JSON.parse(contents);
       const result = PluginManifestDto.schema.safeParse(dto);
       if (!result.success) {
@@ -253,6 +269,16 @@ export class WorkflowExecutionService extends BaseService {
       const existing = await this.pluginRepository.getByName(manifest.name);
       const wasmPath = `${folder}/${manifest.wasmPath}`;
       const wasmBytes = await this.storageRepository.readFile(wasmPath);
+      // Keep the bundled API version compatible while detecting changes to its implementation.
+      const sha256hash = this.cryptoRepository.hashSha256(`${contents}\0${wasmBytes.toString('base64')}`) as Buffer;
+
+      if (!options?.force) {
+        const match = await this.pluginRepository.getByHash(sha256hash);
+        if (match) {
+          this.logger.log(`Plugin up to date (name=${match.name}@${match.version}, hash=${sha256hash.toString('hex')}`);
+          return;
+        }
+      }
 
       const plugin = await this.pluginRepository.upsert(
         {

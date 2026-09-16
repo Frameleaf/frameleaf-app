@@ -47,6 +47,9 @@ overrides:
   bullmq>uuid: ^11.1.1
   mermaid>uuid: ^11.1.1
 packageExtensions:
+  '@koddsson/eslint-plugin-tscompat':
+    peerDependencies:
+      typescript: '*'
   nestjs-kysely:
     dependencies:
       tslib: '*'

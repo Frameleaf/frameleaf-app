@@ -39,6 +39,8 @@ final Map<String, Map<String, Object?>> openApiPatches = {
   },
   'UserResponseDto': {'profileChangedAt': _now},
   'AssetResponseDto': {'visibility': 'timeline', 'createdAt': _now, 'isEdited': false},
+  'SearchAssetResponseDto': {'nextCursor': null},
+  'TimeBucketAssetResponseDto': {'createdAt': <String>[]},
   'UserAdminResponseDto': {'profileChangedAt': _now, 'clusterGroupId': ''},
   'LoginResponseDto': {'isOnboarded': false},
   'ApiKeyCreateResponseDto': {'createdAt': _now, 'id': '', 'name': '', 'permissions': <String>[], 'updatedAt': _now},

@@ -1,8 +1,10 @@
-import { AssetTypeEnum, updateAsset } from '@immich/sdk';
+import { AssetTypeEnum, getAssetInfo, updateAsset } from '@immich/sdk';
 import { fireEvent, waitFor } from '@testing-library/svelte';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
+import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { editManager } from '$lib/managers/edit/edit-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { renderWithTooltips } from '$tests/helpers';
@@ -10,6 +12,11 @@ import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import AssetViewer from './AssetViewer.svelte';
+
+vi.mock('$lib/components/asset-viewer/editor/EditorPanel.svelte', async () => {
+  const { default: MockViewerControls } = await import('@test-data/components/MockViewerControls.svelte');
+  return { default: MockViewerControls };
+});
 
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: {
@@ -33,6 +40,7 @@ vi.mock('@immich/sdk', async () => {
   return {
     ...sdk,
     updateAsset: vi.fn(),
+    getAssetInfo: vi.fn(),
   };
 });
 
@@ -54,7 +62,7 @@ describe('AssetViewer', () => {
 
   it('notifies the parent when the current asset changes through an event', async () => {
     const user = userAdminFactory.build();
-    const asset = assetFactory.build({ ownerId: user.id });
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
     const onAssetUpdate = vi.fn();
     authManager.setUser(user);
     authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
@@ -65,6 +73,29 @@ describe('AssetViewer', () => {
     onAssetUpdate.mockClear();
     eventManager.emit('AssetUpdate', { ...updated, id: 'another-asset' });
     expect(onAssetUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the asset when the video editor explicitly requests it', async () => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+    const updated = { ...asset, isEdited: true, thumbhash: 'new-thumbhash' };
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    editManager.hasAppliedEdits = false;
+    assetViewerManager.isShowEditor = true;
+    vi.mocked(getAssetInfo).mockResolvedValue(updated);
+    const onAssetChange = vi.fn();
+    const { getByRole } = renderWithTooltips(AssetViewer, {
+      cursor: { current: asset },
+      showNavigation: false,
+      onAssetChange,
+    });
+
+    await fireEvent.click(getByRole('button', { name: 'Save video edits' }));
+
+    await waitFor(() => expect(onAssetChange).toHaveBeenCalledWith(updated));
+    expect(assetViewerManager.asset).toEqual(updated);
+    expect(assetViewerManager.isShowEditor).toBe(false);
   });
 
   it.skip('updates the top bar favorite action after pressing favorite', async () => {

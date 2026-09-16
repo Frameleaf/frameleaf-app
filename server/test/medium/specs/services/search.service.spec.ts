@@ -1,7 +1,15 @@
 import { Kysely } from 'kysely';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { SearchSuggestionType } from 'src/dtos/search.dto.js';
-import { AlbumUserRole, AssetMetadataKey, AssetType, AssetVisibility, ImageEnrichmentFilter } from 'src/enum.js';
+import {
+  AlbumUserRole,
+  AssetMetadataKey,
+  AssetOrder,
+  AssetType,
+  AssetVisibility,
+  ImageEnrichmentFilter,
+  SearchOrderField,
+} from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -78,6 +86,38 @@ describe(SearchService.name, () => {
       expect.objectContaining({ id: assets[0].id }),
       expect.objectContaining({ id: assets[1].id }),
     ]);
+  });
+
+  it('paginates structured search and applies fork privacy and enrichment to every structured query', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { user: stranger } = await ctx.newUser();
+    const { asset: first } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Image });
+    const { asset: second } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Image });
+    const { asset: hidden } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Image });
+    await ctx.newAsset({ ownerId: user.id, type: AssetType.Video });
+    await ctx.newAsset({ ownerId: user.id, type: AssetType.Image, visibility: AssetVisibility.Locked });
+    await ctx.newAsset({ ownerId: stranger.id, type: AssetType.Image });
+    await ctx.newExif({ assetId: first.id, fileSizeInByte: 1 });
+    await ctx.newExif({ assetId: second.id, fileSizeInByte: 2 });
+    await ctx.newMetadata({ assetId: hidden.id, key: AssetMetadataKey.MlEnrichment, value: nsfwMetadata(true) });
+    const auth = { ...factory.auth({ user }), hideNsfwAssets: true };
+    const filter = { type: { eq: AssetType.Image } };
+    const orderBy = { field: SearchOrderField.FileSizeInBytes, direction: AssetOrder.Asc };
+    const page1 = await sut.searchMetadata(auth, { filter, orderBy, size: 1 });
+    expect(page1.assets.items.map(({ id }) => id)).toEqual([first.id]);
+    expect(page1.assets.nextCursor).toEqual(expect.any(String));
+    const page2 = await sut.searchMetadata(auth, { filter, orderBy, size: 1, cursor: page1.assets.nextCursor! });
+    expect(page2.assets.items.map(({ id }) => id)).toEqual([second.id]);
+    expect(page2.assets.nextCursor).toBeNull();
+    await expect(sut.searchStatistics(auth, { filter })).resolves.toEqual({ total: 2 });
+    const random = await sut.searchRandom(auth, { filter });
+    expect(random.map(({ id }) => id).sort()).toEqual([first.id, second.id].sort());
+    const enriched = await sut.searchMetadata(factory.auth({ user }), {
+      filter,
+      imageEnrichment: ImageEnrichmentFilter.Nsfw,
+    });
+    expect(enriched.assets.items.map(({ id }) => id)).toEqual([hidden.id]);
   });
 
   describe('searchStatistics', () => {
@@ -291,16 +331,20 @@ describe(SearchService.name, () => {
         suppressedContent,
       };
 
-      const hiddenResponse = await sut.searchMetadata(hiddenAuth, {});
-      expect(hiddenResponse.assets.items.map(({ id }) => id)).toEqual([visible.id]);
+      for (const shape of [{}, { filter: {} }]) {
+        const hiddenResponse = await sut.searchMetadata(hiddenAuth, shape);
+        expect(hiddenResponse.assets.items.map(({ id }) => id)).toEqual([visible.id]);
 
-      const suppressedResponse = await sut.searchMetadata(elevatedAuth, { suppressedOnly: true });
-      expect(suppressedResponse.assets.items.map(({ id }) => id)).toEqual(
-        expect.arrayContaining([tagSuppressed.id, faceSuppressed.id, nsfwSuppressed.id]),
-      );
-      expect(suppressedResponse.assets.items.map(({ id }) => id)).not.toEqual(expect.arrayContaining([visible.id]));
+        const suppressedResponse = await sut.searchMetadata(elevatedAuth, { ...shape, suppressedOnly: true });
+        expect(suppressedResponse.assets.items.map(({ id }) => id)).toEqual(
+          expect.arrayContaining([tagSuppressed.id, faceSuppressed.id, nsfwSuppressed.id]),
+        );
+        expect(suppressedResponse.assets.items.map(({ id }) => id)).not.toEqual(expect.arrayContaining([visible.id]));
 
-      await expect(sut.searchStatistics(elevatedAuth, { suppressedOnly: true })).resolves.toEqual({ total: 3 });
+        await expect(sut.searchStatistics(elevatedAuth, { ...shape, suppressedOnly: true })).resolves.toEqual({
+          total: 3,
+        });
+      }
     });
   });
 

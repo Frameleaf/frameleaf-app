@@ -149,10 +149,12 @@
   };
 
   const onAssetUpdate = (updatedAsset: AssetResponseDto) => {
-    if (asset.id === updatedAsset.id) {
-      cursor = { ...cursor, current: updatedAsset };
-      notifyAssetUpdate?.(updatedAsset);
+    if (asset.id !== updatedAsset.id) {
+      return;
     }
+
+    cursor = { ...cursor, current: updatedAsset };
+    notifyAssetUpdate?.(updatedAsset);
   };
 
   const onAssetsUndoArchive = async (assets: TimelineAsset[]) => {
@@ -202,8 +204,8 @@
     onClose?.(asset.id);
   };
 
-  const closeEditor = async () => {
-    if (editManager.hasAppliedEdits) {
+  const closeEditor = async (refreshAsset = editManager.hasAppliedEdits) => {
+    if (refreshAsset) {
       const refreshedAsset = await getAssetInfo({ id: asset.id });
       onAssetChange?.(refreshedAsset);
       assetViewerManager.setAsset(refreshedAsset);

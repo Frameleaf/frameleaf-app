@@ -339,6 +339,25 @@ describe(PersonService.name, () => {
   });
 
   describe('mergePeople', () => {
+    it('merges differently named own people in request order and keeps the first name', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { person: first } = await ctx.newPerson({ ownerId: user.id, name: 'Alice' });
+      const { person: second } = await ctx.newPerson({ ownerId: user.id, name: 'Alicia' });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newAssetFace({ assetId: asset.id, personGroupId: second.personGroupId });
+      ctx.getMock(StorageRepository).unlink.mockResolvedValue();
+      await expect(
+        sut.mergePeople(factory.auth({ user }), { ids: [first.personGroupId, second.personGroupId] }),
+      ).resolves.toEqual([{ id: second.personGroupId, success: true }]);
+      await expect(
+        ctx.get(PersonRepository).getByGroupId({ ownerId: user.id, personGroupId: first.personGroupId }),
+      ).resolves.toMatchObject({ name: 'Alice' });
+      await expect(ctx.get(PersonRepository).getFaces(asset.id, { viewingUserId: user.id })).resolves.toEqual([
+        expect.objectContaining({ personGroupId: first.personGroupId }),
+      ]);
+    });
+
     it('should merge people of multiple users', async () => {
       const { sut, ctx } = setup();
       const storageMock = ctx.getMock(StorageRepository);

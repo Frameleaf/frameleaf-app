@@ -820,6 +820,8 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       .selectFrom('asset')
       // postgres eliminates the left join when no exif column is referenced, so unused joins are free
       .leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
       .$if(!!options.withExif, (qb) => qb.select(selectExifInfo))
       .$if(scopeGlobally, (qb) => qb.where(ownershipPredicate))
       .where((eb) =>
