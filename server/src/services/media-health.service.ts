@@ -100,14 +100,18 @@ export class MediaHealthService {
   async list(auth: AuthDto, dto: MediaHealthListQueryDto): Promise<MediaHealthListResponseDto> {
     const size = dto.size ?? MEDIA_HEALTH_PAGE_SIZE;
     const privacy = getHiddenContentQueryOptions(auth);
-    const [findings, run, user] = await Promise.all([
+    const listOptions = {
+      category: dto.category,
+      ownerId: auth.user.id,
+      privacy,
+      status: dto.status,
+    };
+    const [findings, total, run, user] = await Promise.all([
       this.mediaHealthRepository.list({
-        category: dto.category,
-        ownerId: auth.user.id,
-        privacy,
-        status: dto.status,
+        ...listOptions,
         size,
       }),
+      this.mediaHealthRepository.count(listOptions),
       this.mediaHealthRepository.getLatestRun(dto.category, auth.user.id),
       this.userRepository.get(auth.user.id, {}),
     ]);
@@ -160,7 +164,7 @@ export class MediaHealthService {
       buckets.set(timeBucket, bucket);
     }
 
-    return { buckets: buckets.values().toArray(), total: findings.length, run: run ? this.mapRun(run) : null };
+    return { buckets: buckets.values().toArray(), total, run: run ? this.mapRun(run) : null };
   }
 
   async startMissingScan(auth: AuthDto, force?: boolean): Promise<MediaHealthScanResponseDto> {
@@ -414,26 +418,9 @@ export class MediaHealthService {
       let checkedAssets = 0;
       let foundAssets = 0;
 
-      // Walk each library exactly once and build a basename→paths index covering
-      // every missing asset in that library. Per-finding `locateCandidates` then
-      // does an O(1) Map lookup instead of re-traversing the import paths.
-      const libraryIndexes = new Map<string, Map<string, string[]>>();
-      const basenamesByLibrary = new Map<string, Set<string>>();
-      for (const finding of findings) {
-        if (finding.category !== MediaHealthCategory.Missing) {
-          continue;
-        }
-        const asset = assetsById.get(finding.assetId);
-        if (!asset?.isExternal || !asset.libraryId || continuation) {
-          continue;
-        }
-        const set = basenamesByLibrary.get(asset.libraryId) ?? new Set<string>();
-        set.add(asset.originalFileName);
-        basenamesByLibrary.set(asset.libraryId, set);
-      }
-      for (const [libraryId, basenames] of basenamesByLibrary) {
-        libraryIndexes.set(libraryId, await this.buildLibraryCandidateIndex(libraryId, basenames));
-      }
+      const externalCandidates = continuation
+        ? new Map<string, CandidateValidation[]>()
+        : await this.locateExternalCandidates(assets.filter(({ isExternal }) => isExternal));
 
       for (const finding of findings) {
         if (finding.category !== MediaHealthCategory.Missing) {
@@ -447,7 +434,7 @@ export class MediaHealthService {
         checkedAssets++;
 
         const candidates = asset.isExternal
-          ? await this.locateCandidates(asset, asset.libraryId ? libraryIndexes.get(asset.libraryId) : undefined)
+          ? (externalCandidates.get(asset.id) ?? [])
           : (managedCandidates.get(asset.id) ?? []);
         if (candidates.some(({ status }) => status === MediaHealthStatus.Found)) {
           foundAssets++;
@@ -1023,26 +1010,159 @@ export class MediaHealthService {
     });
   }
 
-  private async locateCandidates(
-    asset: MediaHealthAsset,
-    libraryIndex?: Map<string, string[]>,
-  ): Promise<CandidateValidation[]> {
-    if (!asset.isExternal || !asset.libraryId) {
-      return [];
+  private async locateExternalCandidates(assets: MediaHealthAsset[]): Promise<Map<string, CandidateValidation[]>> {
+    const result = new Map<string, CandidateValidation[]>();
+    if (assets.length === 0) {
+      return result;
     }
 
-    const candidatePaths = libraryIndex
-      ? (libraryIndex.get(asset.originalFileName) ?? [])
-      : await this.collectCandidatePathsForAsset(asset);
+    const stored = await this.mediaHealthRepository.getAssetChecksums(assets.map(({ id }) => id));
+    const storedByAsset = new Map(stored.map((checksum) => [checksum.assetId, checksum]));
+    const targetByAsset = new Map<string, { asset: MediaHealthAsset; sha1: Buffer[]; sha256: Buffer[] }>();
+    const sha1Targets = new Map<string, string[]>();
+    const sha256Targets = new Map<string, string[]>();
 
-    const results: CandidateValidation[] = [];
-    for (const candidatePath of candidatePaths) {
-      if (candidatePath === asset.originalPath) {
+    const addTarget = (index: Map<string, string[]>, digest: Buffer | undefined, assetId: string) => {
+      if (!digest) {
+        return;
+      }
+      const key = digest.toString('hex');
+      index.set(key, [...(index.get(key) ?? []), assetId]);
+    };
+
+    for (const asset of assets) {
+      if (!asset.libraryId) {
         continue;
       }
-      results.push(await this.validateMissingCandidate(asset, candidatePath));
+      const sidecar = storedByAsset.get(asset.id);
+      const target = {
+        asset,
+        sha1: [sidecar?.sha1, asset.checksum?.length === 20 ? asset.checksum : undefined].filter(
+          (digest): digest is Buffer => !!digest,
+        ),
+        sha256: [sidecar?.sha256, asset.checksum?.length === 32 ? asset.checksum : undefined].filter(
+          (digest): digest is Buffer => !!digest,
+        ),
+      };
+      targetByAsset.set(asset.id, target);
+      for (const digest of target.sha1) {
+        addTarget(sha1Targets, digest, asset.id);
+      }
+      for (const digest of target.sha256) {
+        addTarget(sha256Targets, digest, asset.id);
+      }
     }
-    return results;
+
+    const assetsByLibrary = Map.groupBy(
+      targetByAsset.values().map(({ asset }) => asset),
+      ({ libraryId }) => libraryId!,
+    );
+    for (const [libraryId, libraryAssets] of assetsByLibrary) {
+      const library = await this.libraryRepository.get(libraryId);
+      if (!library) {
+        continue;
+      }
+      const sizes = new Set(
+        libraryAssets
+          .map(({ id }) => storedByAsset.get(id)?.sizeInBytes)
+          .filter((size): size is number => size !== undefined),
+      );
+      const basenames = new Set(libraryAssets.map(({ originalFileName }) => originalFileName));
+      const originalPaths = new Set(libraryAssets.map(({ originalPath }) => originalPath));
+      const fallbackIndex = new Map<string, string[]>();
+      for await (const batch of this.storageRepository.walk({
+        pathsToCrawl: library.importPaths,
+        exclusionPatterns: library.exclusionPatterns,
+        includeHidden: false,
+        take: 500,
+      })) {
+        for (const candidatePath of batch) {
+          if (!mimeTypes.isAsset(candidatePath) || originalPaths.has(candidatePath)) {
+            continue;
+          }
+          const base = path.basename(candidatePath);
+          if (basenames.has(base)) {
+            fallbackIndex.set(base, [...(fallbackIndex.get(base) ?? []), candidatePath]);
+          }
+          if (sizes.size === 0) {
+            continue;
+          }
+          let size: number;
+          try {
+            ({ size } = await this.storageRepository.stat(candidatePath));
+          } catch (error) {
+            this.logger.debug(`Could not stat external media candidate ${candidatePath}: ${getErrorMessage(error)}`);
+            continue;
+          }
+          if (!sizes.has(size)) {
+            continue;
+          }
+          let digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>;
+          try {
+            digests = await this.cryptoRepository.hashFileDigests(candidatePath);
+          } catch (error) {
+            this.logger.debug(`Could not hash external media candidate ${candidatePath}: ${getErrorMessage(error)}`);
+            continue;
+          }
+          const matched = [
+            ...(sha1Targets.get(digests.sha1.toString('hex')) ?? []).map((assetId) => ({
+              assetId,
+              algorithm: 'sha1' as const,
+            })),
+            ...(sha256Targets.get(digests.sha256.toString('hex')) ?? []).map((assetId) => ({
+              assetId,
+              algorithm: 'sha256' as const,
+            })),
+          ];
+          for (const { assetId, algorithm } of matched) {
+            const target = targetByAsset.get(assetId);
+            if (
+              !target ||
+              target.asset.libraryId !== libraryId ||
+              mimeTypes.assetType(candidatePath) !== target.asset.type
+            ) {
+              continue;
+            }
+            const candidates = result.get(assetId) ?? [];
+            const previous = candidates.find((candidate) => candidate.evidence.path === candidatePath);
+            if (previous) {
+              previous.evidence.algorithms = [
+                ...new Set([...((previous.evidence.algorithms as string[] | undefined) ?? []), algorithm]),
+              ];
+              continue;
+            }
+            const existing = await this.assetRepository.getByLibraryIdAndOriginalPath(libraryId, candidatePath);
+            const importedAssetId = existing && existing.id !== assetId ? existing.id : undefined;
+            candidates.push({
+              status: importedAssetId ? MediaHealthStatus.Candidate : MediaHealthStatus.Found,
+              score: 1,
+              evidence: {
+                path: candidatePath,
+                reason: importedAssetId ? 'candidate_already_imported' : 'checksum_match',
+                algorithms: [algorithm],
+                ...(importedAssetId && { assetId: importedAssetId }),
+              },
+              resolution: { autoRelinkable: !importedAssetId },
+            });
+            result.set(assetId, candidates);
+          }
+        }
+      }
+
+      for (const asset of libraryAssets) {
+        if (result.has(asset.id)) {
+          continue;
+        }
+        const candidates = await Promise.all(
+          (fallbackIndex.get(asset.originalFileName) ?? []).map((candidatePath) =>
+            this.validateMissingCandidate(asset, candidatePath),
+          ),
+        );
+        result.set(asset.id, candidates);
+      }
+    }
+
+    return result;
   }
 
   private async locateManagedCandidates(
@@ -1222,62 +1342,6 @@ export class MediaHealthService {
           }
         : undefined,
     };
-  }
-
-  /** Walk the asset's library importPaths once and return matching basenames. Used when we
-   *  don't have a precomputed index (e.g., single-finding path).
-   */
-  private async collectCandidatePathsForAsset(asset: MediaHealthAsset): Promise<string[]> {
-    if (!asset.libraryId) {
-      return [];
-    }
-    const library = await this.libraryRepository.get(asset.libraryId);
-    if (!library) {
-      return [];
-    }
-    const out: string[] = [];
-    for await (const batch of this.storageRepository.walk({
-      pathsToCrawl: library.importPaths,
-      exclusionPatterns: library.exclusionPatterns,
-      includeHidden: false,
-      take: 500,
-    })) {
-      for (const p of batch) {
-        if (path.basename(p) === asset.originalFileName) {
-          out.push(p);
-        }
-      }
-    }
-    return out;
-  }
-
-  /** Walk a library once and build a basename→paths index for all findings in that library. */
-  private async buildLibraryCandidateIndex(libraryId: string, basenames: Set<string>): Promise<Map<string, string[]>> {
-    const index = new Map<string, string[]>();
-    const library = await this.libraryRepository.get(libraryId);
-    if (!library) {
-      return index;
-    }
-    for await (const batch of this.storageRepository.walk({
-      pathsToCrawl: library.importPaths,
-      exclusionPatterns: library.exclusionPatterns,
-      includeHidden: false,
-      take: 500,
-    })) {
-      for (const p of batch) {
-        const base = path.basename(p);
-        if (!basenames.has(base)) {
-          continue;
-        }
-        const existing = index.get(base);
-        if (existing) {
-          existing.push(p);
-        } else {
-          index.set(base, [p]);
-        }
-      }
-    }
-    return index;
   }
 
   private async validateMissingCandidate(asset: MediaHealthAsset, candidatePath: string): Promise<CandidateValidation> {

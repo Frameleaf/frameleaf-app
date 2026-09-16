@@ -56,13 +56,19 @@ describe(IntegrityService.name, () => {
       });
     });
 
-    it('should not record digests for a sha1 asset', async () => {
-      // Already matches what clients send; nothing to translate.
+    it('should backfill a sha256 for a verified sha1 asset', async () => {
       streamAsset(sha1, ChecksumAlgorithm.sha1File);
 
       await sut.handleChecksumFiles({});
 
-      expect(mocks.forkSchema.recordAssetChecksums).not.toHaveBeenCalled();
+      expect(mocks.forkSchema.recordAssetChecksums).toHaveBeenCalledWith({
+        assetId: 'asset-1',
+        sha1,
+        sha256,
+        sizeInBytes: contents.length,
+        path: '/data/library/asset-1.jpg',
+        source: 'integrity',
+      });
     });
 
     it('should not record digests when the file fails verification', async () => {
