@@ -1,15 +1,7 @@
-import {
-  Column,
-  CreateDateColumn,
-  ForeignKeyColumn,
-  Generated,
-  Index,
-  Table,
-  Timestamp,
-  UpdateDateColumn,
-} from '@immich/sql-tools';
-import { AssetTable } from 'src/schema/tables/asset.table';
-import { UserTable } from 'src/schema/tables/user.table';
+import { Column, CreateDateColumn, ForeignKeyColumn, Index, Table, UpdateDateColumn } from '@immich/sql-tools';
+import type { Generated, Timestamp } from '@immich/sql-tools';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
 
 @Index({ columns: ['ownerId', 'score'] })
 @Index({ columns: ['scoreVersion', 'computedAt'] })

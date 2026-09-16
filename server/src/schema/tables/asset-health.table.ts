@@ -3,18 +3,17 @@ import {
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
-  Generated,
   Index,
   PrimaryGeneratedColumn,
   Table,
-  Timestamp,
   Unique,
   UpdateDateColumn,
 } from '@immich/sql-tools';
-import { MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum';
-import { media_health_updated_at } from 'src/schema/functions';
-import { AssetTable } from 'src/schema/tables/asset.table';
-import { UserTable } from 'src/schema/tables/user.table';
+import type { Generated, Timestamp } from '@immich/sql-tools';
+import { MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum.js';
+import { media_health_updated_at } from 'src/schema/functions.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
 
 @Index({ columns: ['ownerId', 'startedAt'] })
 @Table('asset_health_run')

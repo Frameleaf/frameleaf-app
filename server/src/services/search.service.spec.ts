@@ -1,15 +1,16 @@
-import { BadRequestException } from '@nestjs/common';
-import { mapAsset } from 'src/dtos/asset-response.dto';
-import { SearchSuggestionType } from 'src/dtos/search.dto';
-import { Permission } from 'src/enum';
-import { SearchService } from 'src/services/search.service';
-import { AssetFactory } from 'test/factories/asset.factory';
-import { AuthFactory } from 'test/factories/auth.factory';
-import { PersonFactory } from 'test/factories/person.factory';
-import { authStub } from 'test/fixtures/auth.stub';
-import { getForAsset } from 'test/mappers';
-import { newTestService, ServiceMocks } from 'test/utils';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { beforeEach, vitest } from 'vitest';
+import { mapAsset } from 'src/dtos/asset-response.dto.js';
+import { SearchSuggestionType } from 'src/dtos/search.dto.js';
+import { AssetVisibility, Permission } from 'src/enum.js';
+import { SearchService } from 'src/services/search.service.js';
+import { AssetFactory } from 'test/factories/asset.factory.js';
+import { AuthFactory } from 'test/factories/auth.factory.js';
+import { PersonFactory } from 'test/factories/person.factory.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
+import { getForAsset } from 'test/mappers.js';
+import { newUuid } from 'test/small.factory.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 vitest.useFakeTimers();
 
@@ -247,6 +248,99 @@ describe(SearchService.name, () => {
         sut.getSearchSuggestions(authStub.user1, { includeNull: true, type: SearchSuggestionType.CAMERA_LENS_MODEL }),
       ).resolves.toEqual(['10-24mm', null]);
       expect(mocks.search.getCameraLensModels).toHaveBeenCalledWith([authStub.user1.user.id], expect.anything());
+    });
+  });
+
+  describe('new shape routing', () => {
+    it('should route a filter request to the V3 search and a flat request to the legacy search', async () => {
+      const auth = AuthFactory.create();
+
+      mocks.search.searchMetadataV3.mockResolvedValue({ hasNextPage: false, items: [] });
+      await sut.searchMetadata(auth, { size: 250, filter: {} });
+      expect(mocks.search.searchMetadataV3).toHaveBeenCalled();
+      expect(mocks.search.searchMetadata).not.toHaveBeenCalled();
+
+      mocks.search.searchMetadata.mockResolvedValue({ hasNextPage: false, items: [] });
+      await sut.searchMetadata(auth, { size: 250, city: 'Oslo' });
+      expect(mocks.search.searchMetadata).toHaveBeenCalled();
+    });
+
+    it('should route statistics, random, and smart filter requests to their V3 search', async () => {
+      const auth = AuthFactory.create();
+
+      mocks.search.searchStatisticsV3.mockResolvedValue({ total: 0 });
+      await expect(sut.searchStatistics(auth, { filter: {} })).resolves.toEqual({ total: 0 });
+
+      mocks.search.searchRandomV3.mockResolvedValue([]);
+      await expect(sut.searchRandom(auth, { size: 250, filter: {} })).resolves.toEqual([]);
+
+      mocks.search.searchSmartV3.mockResolvedValue({ hasNextPage: false, items: [] });
+      mocks.machineLearning.encodeText.mockResolvedValue('[1, 2, 3]');
+      await sut.searchSmart(auth, { size: 100, filter: {}, query: 'test' });
+      expect(mocks.search.searchSmartV3).toHaveBeenCalledWith(
+        { take: 100 },
+        expect.objectContaining({ embedding: '[1, 2, 3]' }),
+        expect.objectContaining({ lockedOwnerId: expect.any(String) }),
+      );
+    });
+
+    it('passes suppression to smart search and rejects suppressed-only requests without elevation', async () => {
+      const auth = { ...AuthFactory.create(), hideNsfwAssets: true };
+      mocks.search.searchSmartV3.mockResolvedValue({ hasNextPage: false, items: [] });
+      mocks.machineLearning.encodeText.mockResolvedValue('[1, 2, 3]');
+      await sut.searchSmart(auth, { filter: {}, query: 'private photo' });
+      expect(mocks.search.searchSmartV3).toHaveBeenCalledWith(
+        { take: 100 },
+        expect.objectContaining({ excludeNsfw: true, query: 'private photo' }),
+        expect.anything(),
+      );
+      await expect(sut.searchMetadata(auth, { filter: {}, suppressedOnly: true })).rejects.toThrow(
+        'suppressedOnly requires an elevated session',
+      );
+    });
+
+    it('should reject an invalid cursor', async () => {
+      await expect(sut.searchMetadata(AuthFactory.create(), { size: 250, cursor: '???' })).rejects.toThrowError(
+        new BadRequestException('Invalid cursor'),
+      );
+    });
+
+    it('should reject an unelevated session whose filter could match locked assets', async () => {
+      const filter = { visibility: { in: [AssetVisibility.Locked, AssetVisibility.Timeline] } };
+      await expect(sut.searchMetadata(AuthFactory.create(), { size: 250, filter })).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
+
+    it('should reject a shared link whose filter is not confined to albums everywhere', async () => {
+      const auth = AuthFactory.from().sharedLink().build();
+      const albumId = newUuid();
+
+      await expect(sut.searchMetadata(auth, { size: 250, filter: {} })).rejects.toThrowError(
+        new BadRequestException('Shared link access is only allowed in combination with an albumIds filter'),
+      );
+
+      await expect(
+        sut.searchMetadata(auth, {
+          size: 250,
+          filter: { or: [{ albumIds: { any: [albumId] } }, { city: { eq: 'Oslo' } }] },
+        }),
+      ).rejects.toThrowError(
+        new BadRequestException('Shared link access is only allowed in combination with an albumIds filter'),
+      );
+    });
+
+    it('should allow a shared link when every branch is confined to a covered album', async () => {
+      const auth = AuthFactory.from().sharedLink().build();
+      const albumId = newUuid();
+
+      mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set([albumId]));
+      mocks.search.searchMetadataV3.mockResolvedValue({ hasNextPage: false, items: [] });
+
+      await expect(
+        sut.searchMetadata(auth, { size: 250, filter: { or: [{ albumIds: { any: [albumId] } }] } }),
+      ).resolves.toBeDefined();
+      expect(mocks.search.searchMetadataV3).toHaveBeenCalled();
     });
   });
 

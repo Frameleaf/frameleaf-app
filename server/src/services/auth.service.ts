@@ -2,8 +2,8 @@ import { BadRequestException, ForbiddenException, Injectable, UnauthorizedExcept
 import { parse } from 'cookie';
 import { DateTime } from 'luxon';
 import { IncomingHttpHeaders } from 'node:http';
-import { LOGIN_DUMMY_HASH, LOGIN_URL, MOBILE_REDIRECT, SALT_ROUNDS } from 'src/constants';
-import { AuthSharedLink, AuthUser, UserAdmin } from 'src/database';
+import { LOGIN_DUMMY_HASH, LOGIN_URL, MOBILE_REDIRECT, SALT_ROUNDS } from 'src/constants.js';
+import { AuthSharedLink, AuthUser, UserAdmin } from 'src/database.js';
 import {
   AuthDto,
   AuthStatusResponseDto,
@@ -19,18 +19,19 @@ import {
   SessionUnlockDto,
   SignUpDto,
   mapLoginResponse,
-} from 'src/dtos/auth.dto';
-import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto';
-import { AuthType, ImmichCookie, ImmichHeader, ImmichQuery, JobName, Permission } from 'src/enum';
-import { OAuthProfile } from 'src/repositories/oauth.repository';
-import { BaseService } from 'src/services/base.service';
-import { isGranted } from 'src/utils/access';
-import { HumanReadableSize } from 'src/utils/bytes';
-import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content';
-import { isNsfwHidingEnabled } from 'src/utils/misc';
-import { getPreferences } from 'src/utils/preferences';
-import { generateProfileImage } from 'src/utils/profile-image';
-import { getUserAgentDetails } from 'src/utils/request';
+} from 'src/dtos/auth.dto.js';
+import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
+import { AuthType, ImmichCookie, ImmichHeader, ImmichQuery, JobName, Permission } from 'src/enum.js';
+import { OAuthProfile } from 'src/repositories/oauth.repository.js';
+import { BaseService } from 'src/services/base.service.js';
+import { isGranted } from 'src/utils/access.js';
+import { HumanReadableSize } from 'src/utils/bytes.js';
+import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
+import { isNsfwHidingEnabled } from 'src/utils/misc.js';
+import { getPreferences } from 'src/utils/preferences.js';
+import { generateProfileImage } from 'src/utils/profile-image.js';
+import { getUserAgentDetails } from 'src/utils/request.js';
+
 export interface LoginDetails {
   isSecure: boolean;
   clientIp: string;
@@ -131,7 +132,7 @@ export class AuthService extends BaseService {
     let claims;
     try {
       claims = await this.oauthRepository.validateLogoutToken(oauth, dto.logout_token);
-    } catch (error: any) {
+    } catch (error: Error | any) {
       this.logger.error(`Error backchannel logout: ${error.message}`);
       this.logger.error(error);
 
@@ -166,7 +167,10 @@ export class AuthService extends BaseService {
 
     const hashedPassword = await this.cryptoRepository.hashBcrypt(newPassword, SALT_ROUNDS);
 
-    const updatedUser = await this.userRepository.update(user.id, { password: hashedPassword });
+    const updatedUser = await this.userRepository.update(user.id, {
+      password: hashedPassword,
+      shouldChangePassword: false,
+    });
 
     await this.eventRepository.emit('AuthChangePassword', {
       userId: user.id,
@@ -449,7 +453,7 @@ export class AuthService extends BaseService {
       if (oldPath) {
         await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [oldPath] } });
       }
-    } catch (error: any) {
+    } catch (error: Error | any) {
       this.logger.warn(`Unable to sync oauth profile picture: ${error}\n${error?.stack}`);
     }
   }
@@ -493,7 +497,7 @@ export class AuthService extends BaseService {
       await this.sessionRepository.update(auth.session.id, { oauthSid: null, oauthBearerToken: null });
     }
 
-    const user = await this.userRepository.update(auth.user.id, { oauthId: '' });
+    const user = await this.userRepository.update(auth.user.id, { oauthId: null });
     return mapUserAdmin(user);
   }
 

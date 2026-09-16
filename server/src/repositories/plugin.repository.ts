@@ -1,17 +1,17 @@
 import { CallContext, Plugin as ExtismPlugin, newPlugin } from '@extism/extism';
 import { Injectable } from '@nestjs/common';
-import { createPool, Pool } from 'generic-pool';
-import { Insertable, Kysely, sql } from 'kysely';
+import { Pool, createPool } from 'generic-pool';
+import { type Insertable, type Kysely, sql } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
-import { columns } from 'src/database';
-import { DummyValue, GenerateSql } from 'src/decorators';
-import { PluginMethodSearchDto, PluginSearchDto } from 'src/dtos/plugin.dto';
-import { LogLevel, WorkflowType } from 'src/enum';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { DB } from 'src/schema';
-import { PluginMethodTable } from 'src/schema/tables/plugin-method.table';
-import { PluginTable } from 'src/schema/tables/plugin.table';
+import { columns } from 'src/database.js';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { PluginMethodSearchDto, PluginSearchDto } from 'src/dtos/plugin.dto.js';
+import { LogLevel, WorkflowType } from 'src/enum.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { DB } from 'src/schema/index.js';
+import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
+import { PluginTable } from 'src/schema/tables/plugin.table.js';
 
 type PluginMethod = { pluginKey: string; methodName: string };
 type PluginLoad = { key: string; label: string; wasmBytes: Buffer };
@@ -175,12 +175,24 @@ export class PluginRepository {
           return legacyMethod;
         });
     return this.db.transaction().execute(async (tx) => {
+      // Certified/legacy schemas also enforce name-only uniqueness. Upgrading
+      // there must retain plugin and method IDs used by existing workflows.
+      const uniqueName = await sql<{ exists: boolean }>`
+        SELECT EXISTS (
+          SELECT 1 FROM pg_constraint constraint_row
+          JOIN pg_attribute attribute ON attribute.attrelid = constraint_row.conrelid
+            AND attribute.attname = 'name'
+          WHERE constraint_row.conrelid = 'public.plugin'::regclass
+            AND constraint_row.contype = 'u'
+            AND constraint_row.conkey = ARRAY[attribute.attnum]
+        ) AS "exists"
+      `.execute(tx);
       // Upsert the plugin
       const plugin = await tx
         .insertInto('plugin')
         .values(dto)
         .onConflict((oc) =>
-          oc.columns(['name', 'version']).doUpdateSet((eb) => ({
+          oc.columns(uniqueName.rows[0]?.exists ? ['name'] : ['name', 'version']).doUpdateSet((eb) => ({
             title: eb.ref('excluded.title'),
             description: eb.ref('excluded.description'),
             author: eb.ref('excluded.author'),

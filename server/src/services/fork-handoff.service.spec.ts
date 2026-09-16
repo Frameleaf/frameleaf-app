@@ -1,7 +1,7 @@
-import { DatabaseLock } from 'src/enum';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { ForkHandoffService } from 'src/services/fork-handoff.service';
-import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service';
+import { DatabaseLock } from 'src/enum.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { ForkHandoffService } from 'src/services/fork-handoff.service.js';
+import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service.js';
 
 const checkpoint = {
   completedAt: '2026-07-16T12:00:00.000Z',

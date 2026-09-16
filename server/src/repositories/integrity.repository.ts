@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, sql } from 'kysely';
+import { type Insertable, type Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { DummyValue, GenerateSql } from 'src/decorators';
-import { AssetFileType, IntegrityReport } from 'src/enum';
-import { DB } from 'src/schema';
-import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { AssetFileType, IntegrityReport } from 'src/enum.js';
+import { getForkSchemaPhase, readsForkSidecar } from 'src/repositories/fork-derived-results.js';
+import { DB } from 'src/schema/index.js';
+import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 
 export type ReportPaginationOptions = {
   cursor?: string;
@@ -86,8 +87,14 @@ export class IntegrityRepository {
   }
 
   @GenerateSql({ params: [DummyValue.STRING] })
-  getVideoDuplicateFramePathsByPaths(paths: string[]) {
-    return this.db.selectFrom('asset_video_duplicate_frame').select('path').where('path', 'in', paths).execute();
+  async getVideoDuplicateFramePathsByPaths(paths: string[]) {
+    const phase = await getForkSchemaPhase(this.db);
+    return this.db
+      .withSchema(readsForkSidecar(phase) ? 'immich_fork' : 'public')
+      .selectFrom('asset_video_duplicate_frame')
+      .select('path')
+      .where('path', 'in', paths)
+      .execute();
   }
 
   @GenerateSql({ params: [DummyValue.STRING] })
@@ -97,6 +104,25 @@ export class IntegrityRepository {
       .select('person.thumbnailPath')
       .where('person.thumbnailPath', 'in', paths)
       .execute();
+  }
+
+  @GenerateSql({ params: [DummyValue.STRING] })
+  async getTrackedPaths(paths: string[]) {
+    const tracked = await this.db
+      .selectFrom('asset')
+      .select('asset.originalPath as path')
+      .where('asset.originalPath', 'in', paths)
+      .union((eb) =>
+        eb.selectFrom('asset_file').select('asset_file.path as path').where('asset_file.path', 'in', paths),
+      )
+      .union((eb) =>
+        eb
+          .selectFrom('person')
+          .select((eb) => eb.ref('person.thumbnailPath').$castTo<string>().as('path'))
+          .where('person.thumbnailPath', 'in', paths),
+      )
+      .execute();
+    return [...tracked, ...(await this.getVideoDuplicateFramePathsByPaths(paths))];
   }
 
   @GenerateSql({ params: [] })

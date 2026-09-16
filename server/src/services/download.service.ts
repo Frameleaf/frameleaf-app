@@ -1,15 +1,20 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { parse } from 'node:path';
 import sanitize from 'sanitize-filename';
-import { StorageCore } from 'src/cores/storage.core';
-import { AuthDto } from 'src/dtos/auth.dto';
-import { DownloadArchiveDto, DownloadArchiveInfo, DownloadInfoDto, DownloadResponseDto } from 'src/dtos/download.dto';
-import { Permission } from 'src/enum';
-import { ImmichReadStream } from 'src/repositories/storage.repository';
-import { BaseService } from 'src/services/base.service';
-import { HumanReadableSize } from 'src/utils/bytes';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content';
-import { getPreferences } from 'src/utils/preferences';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import {
+  DownloadArchiveDto,
+  DownloadArchiveInfo,
+  DownloadInfoDto,
+  DownloadResponseDto,
+} from 'src/dtos/download.dto.js';
+import { Permission } from 'src/enum.js';
+import { ImmichReadStream } from 'src/repositories/storage.repository.js';
+import { BaseService } from 'src/services/base.service.js';
+import { HumanReadableSize } from 'src/utils/bytes.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getPreferences } from 'src/utils/preferences.js';
 
 @Injectable()
 export class DownloadService extends BaseService {

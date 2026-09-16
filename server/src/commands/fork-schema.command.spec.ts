@@ -1,6 +1,6 @@
 import { InquirerService } from 'nest-commander';
-import { ForkSchemaResumeCommand, ForkSchemaStartCommand } from 'src/commands/fork-schema.command';
-import { ForkSchemaMigrationService, ForkSchemaMigrationStatus } from 'src/services/fork-schema-migration.service';
+import { ForkSchemaResumeCommand, ForkSchemaStartCommand } from 'src/commands/fork-schema.command.js';
+import { ForkSchemaMigrationService, ForkSchemaMigrationStatus } from 'src/services/fork-schema-migration.service.js';
 
 const status = {
   active: false,

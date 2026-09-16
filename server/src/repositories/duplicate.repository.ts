@@ -2,27 +2,27 @@ import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, NotNull, Selectable, ShallowDehydrateObject, sql } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
-import { columns } from 'src/database';
-import { Chunked, DummyValue, GenerateSql } from 'src/decorators';
-import { MapAsset } from 'src/dtos/asset-response.dto';
-import { AssetType, VectorIndex } from 'src/enum';
-import { probes } from 'src/repositories/database.repository';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { columns } from 'src/database.js';
+import { Chunked, DummyValue, GenerateSql } from 'src/decorators.js';
+import { MapAsset } from 'src/dtos/asset-response.dto.js';
+import { AssetType, VectorIndex } from 'src/enum.js';
+import { probes } from 'src/repositories/database.repository.js';
 import {
-  combineVerifications,
   DerivedBackfillResult,
+  TableVerification,
+  combineVerifications,
   getForkSchemaPhase,
   lockForkAssetParent,
   readsForkSidecar,
-  TableVerification,
   verifyRows,
   writesForkSidecar,
   writesLegacy,
-} from 'src/repositories/fork-derived-results';
-import { DB } from 'src/schema';
-import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
-import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table';
-import { anyUuid, asUuid, withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content';
+} from 'src/repositories/fork-derived-results.js';
+import { DB } from 'src/schema/index.js';
+import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
+import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
+import { anyUuid, asUuid, withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 
 // Maximum number of candidate duplicates to return from vector search
 const DUPLICATE_SEARCH_LIMIT = 64;

@@ -1,4 +1,4 @@
-import { createPostgres, DatabaseConnectionParams } from '@immich/sql-tools';
+import { DatabaseConnectionParams, createPostgres } from '@immich/sql-tools';
 import {
   AliasedRawBuilder,
   DeduplicateJoinsPlugin,
@@ -9,18 +9,20 @@ import {
   NotNull,
   OperandValueExpression,
   ReferenceExpression,
-  Selectable,
   SelectQueryBuilder,
+  Selectable,
   ShallowDehydrateObject,
-  sql,
   SqlBool,
+  sql,
 } from 'kysely';
-import { PostgresJSDialect } from 'kysely-postgres-js';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
+import { PostgresJSDialect } from 'kysely-postgres-js';
 import { Notice, PostgresError } from 'postgres';
-import { columns, lockableProperties, LockableProperty, Person } from 'src/database';
-import { DummyValue, GenerateSqlQueries } from 'src/decorators';
-import { AssetEditActionItem } from 'src/dtos/editing.dto';
+import type { AudioStreamInfo, VectorExtension, VideoFormat, VideoPacketInfo, VideoStreamInfo } from 'src/types.js';
+import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { LockableProperty, Person, columns, lockableProperties } from 'src/database.js';
+import { DummyValue, GenerateSqlQueries } from 'src/decorators.js';
+import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import {
   DEFAULT_SEARCH_ORDER,
   IdsFilter,
@@ -28,7 +30,8 @@ import {
   SearchOrder,
   StringFilter,
   StringPatternFilter,
-} from 'src/dtos/search.dto';
+  isAlbumConfined,
+} from 'src/dtos/search.dto.js';
 import {
   AssetFileType,
   AssetMetadataKey,
@@ -40,13 +43,15 @@ import {
   ExifOrientation,
   ImageEnrichmentFilter,
   SearchOrderField,
-} from 'src/enum';
-import { AssetSearchBuilderOptions, AssetSearchBuilderV3Options } from 'src/repositories/search.repository';
-import { DB } from 'src/schema';
-import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
-import { AudioStreamInfo, VectorExtension, VideoFormat, VideoPacketInfo, VideoStreamInfo } from 'src/types';
-import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content';
-import { fromChecksum } from 'src/utils/request';
+} from 'src/enum.js';
+import {
+  AssetSearchBuilderOptions,
+  AssetSearchBuilderV3Options,
+  AssetSearchScope,
+} from 'src/repositories/search.repository.js';
+import { DB } from 'src/schema/index.js';
+import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
+import { fromChecksum } from 'src/utils/request.js';
 
 export const getKyselyConfig = (connection: DatabaseConnectionParams): KyselyConfig => {
   return {
@@ -98,34 +103,6 @@ export const removeUndefinedKeys = <T extends object>(update: T, template: unkno
 };
 
 export const ASSET_CHECKSUM_CONSTRAINT = 'UQ_assets_owner_checksum';
-/**
- * Description-emitted tag values that count as a strong NSFW signal even
- * without the dedicated classifier. The check requires the `safety.is_nsfw_likely`
- * flag PLUS confidence='high' PLUS at least one of these normalized tags in
- * `safety.indicators`, OR a regex match against the description text. Owned
- * here for use by both the migration backfill and ImageEnrichmentService
- * (which sets `asset.is_nsfw` on metadata writes).
- */
-export const STRONG_DESCRIPTION_NSFW_TAGS = [
-  'adult-nudity',
-  'bare-buttocks',
-  'bondage',
-  'explicit',
-  'exposed-genitals',
-  'genital',
-  'genitals',
-  'naked',
-  'nude',
-  'nudity',
-  'pornography',
-  'restrained',
-  'restraint',
-  'sex-toy',
-  'sexual-activity',
-];
-
-export const DESCRIPTION_NSFW_TEXT_REGEX =
-  /\b(naked|nude|nudity|genitals?|penis|vagina|buttocks?|sexual activity|sex toy|bondage|restrained|restraint)\b/i;
 export const VIDEO_STREAM_SESSION_PK_CONSTRAINT = 'video_stream_session_pkey';
 
 export const isAssetChecksumConstraint = (error: unknown) =>
@@ -138,235 +115,6 @@ export function withDefaultVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>)
   return qb.where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)]);
 }
 
-/**
- * Phase-aware NSFW predicate. Legacy, dual-write, and ready phases read the
- * denormalized `asset.is_nsfw` value. Active reads use the fork-owned privacy
- * sidecar exclusively and fail closed when it is missing. Inactive and failed
- * expose no fork privacy filtering.
- *
- * The `STRONG_DESCRIPTION_NSFW_TAGS` constant is kept exported because
- * ImageEnrichmentService uses the same derivation rules when computing the
- * boolean.
- */
-export const nsfwAssetIdExists = (assetId: Expression<unknown>) => sql<boolean>`case
-      when ${assetId} is null then false
-      when coalesce((select phase from immich_fork.state where id = 1), 'inactive') in ('legacy', 'dual-write', 'ready') then exists (
-        select 1
-        from asset as nsfw_asset
-        where nsfw_asset.id = ${assetId}
-          and nsfw_asset.is_nsfw = true
-      )
-      when (select phase from immich_fork.state where id = 1) = 'active' then not exists (
-        select 1
-        from immich_fork.asset_privacy as privacy_asset
-        where privacy_asset."assetId" = ${assetId}
-          and privacy_asset."isNsfw" = false
-      )
-      else false
-    end`;
-
-// The shared expression explicitly treats a NULL asset ID as visible. This
-// preserves LEFT JOIN callers such as album-only activity comments while still
-// treating a real asset with a missing authoritative sidecar as hidden.
-const nsfwAssetExists = (assetAlias = 'asset') => nsfwAssetIdExists(sql.ref(`${assetAlias}.id`));
-
-export function withNsfwAssets<O>(qb: SelectQueryBuilder<DB, any, O>, assetAlias = 'asset') {
-  return qb.where(nsfwAssetExists(assetAlias));
-}
-
-export function withoutNsfwAssets<O>(qb: SelectQueryBuilder<DB, any, O>, assetAlias = 'asset') {
-  return qb.where(sql<boolean>`not ${nsfwAssetExists(assetAlias)}`);
-}
-
-const nsfwOnlyFilter: HiddenContentFilter = {
-  userId: '',
-  includeNsfw: true,
-  tagIds: [],
-  personIds: [],
-  scope: 'visible',
-};
-
-export const getHiddenContentFilter = (options?: HiddenContentQueryOptions): HiddenContentFilter | undefined => {
-  return options?.onlyHiddenContent ?? options?.hiddenContent ?? (options?.excludeNsfw ? nsfwOnlyFilter : undefined);
-};
-
-const scopedToOwner = (filter: HiddenContentFilter, assetAlias: string) =>
-  filter.scope === 'owned' ? sql<boolean>`${sql.ref(`${assetAlias}.ownerId`)} = ${asUuid(filter.userId)}` : sql`true`;
-
-const hiddenContentAssetExists = (filter: HiddenContentFilter, assetAlias = 'asset') => {
-  const predicates: ReturnType<typeof sql>[] = [];
-
-  if (filter.includeNsfw) {
-    predicates.push(nsfwAssetExists(assetAlias));
-  }
-
-  if (filter.tagIds.length > 0) {
-    predicates.push(sql<boolean>`(${scopedToOwner(filter, assetAlias)} and exists (
-      select 1
-      from tag_asset
-      inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
-      where tag_asset."assetId" = ${sql.ref(`${assetAlias}.id`)}
-        and tag_closure.id_ancestor = ${anyUuid(filter.tagIds)}
-    ))`);
-  }
-
-  if (filter.personIds.length > 0) {
-    predicates.push(sql<boolean>`(${scopedToOwner(filter, assetAlias)} and exists (
-      select 1
-      from asset_face
-      where asset_face."assetId" = ${sql.ref(`${assetAlias}.id`)}
-        and asset_face."personGroupId" = ${anyUuid(filter.personIds)}
-        and asset_face."deletedAt" is null
-        and asset_face."isVisible" is true
-    ))`);
-  }
-
-  return predicates.length === 0 ? sql<boolean>`false` : sql<boolean>`(${sql.join(predicates, sql` or `)})`;
-};
-
-export const hiddenContentAssetIdExists = (assetId: Expression<unknown>, filter: HiddenContentFilter) =>
-  sql<boolean>`exists (
-    select 1
-    from asset as hidden_content_asset
-    where hidden_content_asset.id = ${assetId}
-      and ${hiddenContentAssetExists(filter, 'hidden_content_asset')}
-  )`;
-
-export function withHiddenContentOnly<QDB, TB extends keyof QDB, O>(
-  qb: SelectQueryBuilder<QDB, TB, O>,
-  filter: HiddenContentFilter,
-  assetAlias = 'asset',
-) {
-  return qb.where(hiddenContentAssetExists(filter, assetAlias));
-}
-
-export function withoutHiddenContent<QDB, TB extends keyof QDB, O>(
-  qb: SelectQueryBuilder<QDB, TB, O>,
-  filter: HiddenContentFilter,
-  assetAlias = 'asset',
-) {
-  return qb.where(sql<boolean>`not ${hiddenContentAssetExists(filter, assetAlias)}`);
-}
-
-export function withHiddenContentFilter<QDB, TB extends keyof QDB, O>(
-  qb: SelectQueryBuilder<QDB, TB, O>,
-  options?: HiddenContentQueryOptions,
-  assetAlias = 'asset',
-) {
-  const filter = getHiddenContentFilter(options);
-  if (!filter) {
-    return qb;
-  }
-
-  return options?.onlyHiddenContent
-    ? withHiddenContentOnly(qb, filter, assetAlias)
-    : withoutHiddenContent(qb, filter, assetAlias);
-}
-
-const taggedAssetExists = (tagId: Expression<unknown>) => sql<boolean>`exists (
-      select 1
-      from tag_closure
-      inner join tag_asset on tag_asset."tagId" = tag_closure.id_descendant
-      where tag_closure.id_ancestor = ${tagId}
-    )`;
-
-const nonHiddenTaggedAssetExists = (tagId: Expression<unknown>, filter = nsfwOnlyFilter) => sql<boolean>`exists (
-      select 1
-      from tag_closure
-      inner join tag_asset on tag_asset."tagId" = tag_closure.id_descendant
-      where tag_closure.id_ancestor = ${tagId}
-        and not ${hiddenContentAssetIdExists(sql.ref('tag_asset.assetId'), filter)}
-    )`;
-
-export const tagHasVisibleAssetOrNoAssets = (tagId: Expression<unknown>, filter?: HiddenContentFilter) =>
-  sql<boolean>`(not ${taggedAssetExists(tagId)} or ${nonHiddenTaggedAssetExists(tagId, filter)})`;
-
-const enrichmentExists = (assetAlias: string, predicate: ReturnType<typeof sql>) => sql<boolean>`exists (
-      select 1
-      from asset_metadata
-      where asset_metadata."assetId" = ${sql.ref(`${assetAlias}.id`)}
-        and asset_metadata.key = ${AssetMetadataKey.MlEnrichment}
-        and ${predicate}
-    )`;
-
-const tagExists = (assetAlias: string, tag: string) => sql<boolean>`exists (
-      select 1
-      from tag_asset
-      inner join tag on tag.id = tag_asset."tagId"
-      where tag_asset."assetId" = ${sql.ref(`${assetAlias}.id`)}
-        and tag.value = ${tag}
-    )`;
-
-export function withImageEnrichmentFilter<O>(
-  qb: SelectQueryBuilder<DB, any, O>,
-  filter: ImageEnrichmentFilter,
-  assetAlias = 'asset',
-) {
-  const imageOnly = qb.where(sql.ref(`${assetAlias}.type`), '=', AssetType.Image);
-
-  switch (filter) {
-    case ImageEnrichmentFilter.Nsfw: {
-      return imageOnly.where(nsfwAssetExists(assetAlias));
-    }
-
-    case ImageEnrichmentFilter.NsfwReview: {
-      return imageOnly.where((eb) =>
-        eb.or([
-          sql<boolean>`${nsfwAssetExists(assetAlias)} and ${enrichmentExists(
-            assetAlias,
-            sql`asset_metadata.value #> '{nsfwDetection,review}' is null`,
-          )}`,
-          tagExists(assetAlias, 'nsfw_review'),
-        ]),
-      );
-    }
-
-    case ImageEnrichmentFilter.NsfwReviewed: {
-      return imageOnly.where(
-        enrichmentExists(assetAlias, sql`asset_metadata.value #> '{nsfwDetection,review}' is not null`),
-      );
-    }
-
-    case ImageEnrichmentFilter.NsfwOverridden: {
-      return imageOnly.where(
-        enrichmentExists(
-          assetAlias,
-          sql`asset_metadata.value #>> '{nsfwDetection,review,action}' in ('marked-safe', 'marked-nsfw')`,
-        ),
-      );
-    }
-
-    case ImageEnrichmentFilter.ImageDescriptionFailed: {
-      return imageOnly.where(
-        enrichmentExists(assetAlias, sql`asset_metadata.value #>> '{description,status}' = 'failed'`),
-      );
-    }
-
-    case ImageEnrichmentFilter.NsfwDetectionFailed: {
-      return imageOnly.where(
-        enrichmentExists(assetAlias, sql`asset_metadata.value #>> '{nsfwDetection,status}' = 'failed'`),
-      );
-    }
-
-    case ImageEnrichmentFilter.MissingImageDescription: {
-      return imageOnly.where(
-        sql<boolean>`not ${enrichmentExists(
-          assetAlias,
-          sql`asset_metadata.value #>> '{description,status}' = 'success'`,
-        )}`,
-      );
-    }
-
-    case ImageEnrichmentFilter.MissingNsfwDetection: {
-      return imageOnly.where(
-        sql<boolean>`not ${enrichmentExists(
-          assetAlias,
-          sql`asset_metadata.value #>> '{nsfwDetection,status}' = 'success'`,
-        )}`,
-      );
-    }
-  }
-}
 const selectExifInfo = (eb: AssetExpressionBuilder) =>
   eb.fn
     .toJson(eb.table('asset_exif'))
@@ -493,9 +241,7 @@ export function withFilePath(eb: ExpressionBuilder<DB, 'asset'>, type: AssetFile
     .select('asset_file.path')
     .whereRef('asset_file.assetId', '=', 'asset.id')
     .where('asset_file.type', '=', sql.lit(type))
-    .where('asset_file.isEdited', '=', sql.lit(isEdited))
-    .orderBy('asset_file.createdAt', 'desc')
-    .limit(1);
+    .where('asset_file.isEdited', '=', sql.lit(isEdited));
 }
 
 export type WithFacesAndPeopleOptions = {
@@ -742,10 +488,10 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
         .where('asset_exif.rating', options.rating === null ? 'is' : '=', options.rating!),
     )
     .$if(!!options.checksum, (qb) => qb.where('asset.checksum', '=', options.checksum!))
+    .$call((qb) => withHiddenContentFilter(qb, options))
     .$if(!!options.id, (qb) => qb.where('asset.id', '=', asUuid(options.id!)))
     .$if(!!options.libraryId, (qb) => qb.where('asset.libraryId', '=', asUuid(options.libraryId!)))
     .$if(!!options.userIds, (qb) => qb.where('asset.ownerId', '=', anyUuid(options.userIds!)))
-    .$call((qb) => withHiddenContentFilter(qb, options))
     .$if(!!options.encodedVideoPath, (qb) =>
       qb
         .innerJoin('asset_file', (join) =>
@@ -769,17 +515,14 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
     .$if(!!options.description, (qb) =>
       qb
         .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-        .where(
-          () =>
-            sql`f_unaccent(asset_exif.description) %>> f_unaccent(${tokenizeForSearch(options.description!).join(' ')})`,
-        ),
+        .where(sql`f_unaccent(asset_exif.description)`, 'ilike', sql`'%' || f_unaccent(${options.description}) || '%'`),
     )
-    .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
     .$if(!!options.ocr, (qb) =>
       qb
         .innerJoin('ocr_search', 'asset.id', 'ocr_search.assetId')
         .where(() => sql`f_unaccent(ocr_search.text) %>> f_unaccent(${tokenizeForSearch(options.ocr!).join(' ')})`),
     )
+    .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
     .$if(!!options.type, (qb) => qb.where('asset.type', '=', options.type!))
     .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
     .$if(options.isOffline !== undefined, (qb) => qb.where('asset.isOffline', '=', options.isOffline!))
@@ -1055,8 +798,21 @@ function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch
 
 // ordering is deliberately left to the caller so aggregate-only consumers (counts, stats)
 // can compose the same filters without stripping an order by
-export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuilderV3Options) {
+export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuilderV3Options, scope?: AssetSearchScope) {
+  scope ??= {
+    userIds: options.userIds ?? [],
+    lockedOwnerId: options.userIds?.[0] ?? '',
+    viewingUserId: options.viewingUserId,
+  };
   const filter = options.filter ?? {};
+  const branches = filter.or ?? [];
+  const ownershipPredicate = (eb: AssetExpressionBuilder) => eb('asset.ownerId', '=', anyUuid(scope.userIds));
+  // search universe: own+partner assets unless album-confined, which searches the albums instead;
+  // ownership lands nowhere (top level confined), per unconfined branch, or hoisted globally
+  const topConfined = isAlbumConfined(filter);
+  const anyBranchConfined = branches.some((branch) => isAlbumConfined(branch));
+  const scopePerBranch = !topConfined && anyBranchConfined;
+  const scopeGlobally = !topConfined && !anyBranchConfined;
 
   return (
     kysely
@@ -1064,18 +820,30 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       .selectFrom('asset')
       // postgres eliminates the left join when no exif column is referenced, so unused joins are free
       .leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
       .$if(!!options.withExif, (qb) => qb.select(selectExifInfo))
-      .$if(!!options.userIds && options.userIds.length > 0, (qb) =>
-        qb.where('asset.ownerId', '=', anyUuid(options.userIds!)),
+      .$if(scopeGlobally, (qb) => qb.where(ownershipPredicate))
+      .where((eb) =>
+        eb.or([eb('asset.visibility', '!=', AssetVisibility.Locked), eb('asset.ownerId', '=', scope.lockedOwnerId)]),
       )
       .$if(!!(options.withFaces || options.withPeople), (qb) =>
-        qb.select(withFacesAndPeople({ viewingUserId: options.viewingUserId! })),
+        qb.select(withFacesAndPeople({ viewingUserId: scope.viewingUserId! })),
       )
       .$if(options.withStacked === false, (qb) => qb.where('asset.stackId', 'is', null))
       .where((eb) => {
         const predicates = branchPredicates(eb, filter);
-        if (filter.or && filter.or.length > 0) {
-          predicates.push(eb.or(filter.or.map((branch) => eb.and(branchPredicates(eb, branch)))));
+        if (branches.length > 0) {
+          predicates.push(
+            eb.or(
+              branches.map((branch) =>
+                eb.and([
+                  ...branchPredicates(eb, branch),
+                  ...(scopePerBranch && !isAlbumConfined(branch) ? [ownershipPredicate(eb)] : []),
+                ]),
+              ),
+            ),
+          );
         }
         return predicates.length > 0 ? eb.and(predicates) : eb.lit(true);
       })
@@ -1104,160 +872,238 @@ export function withSearchOrder(qb: ReturnType<typeof searchAssetBuilder>, order
   );
 }
 
+const scopeExample: AssetSearchScope = { userIds: [DummyValue.UUID], lockedOwnerId: DummyValue.UUID };
+
 export const searchMetadataV3Examples: GenerateSqlQueries[] = [
-  { name: 'baseline', params: [{ size: 100 }, { userIds: [DummyValue.UUID] }] },
-  { name: 'empty', params: [{ size: 100 }, {}] },
+  { name: 'baseline', params: [{ take: 100 }, {}, scopeExample] },
+  {
+    name: 'or-mixed-scope',
+    params: [
+      { take: 100 },
+      {
+        filter: { or: [{ albumIds: { any: [DummyValue.UUID] } }, { city: { eq: DummyValue.STRING } }] },
+      },
+      scopeExample,
+    ],
+  },
   {
     name: 'or-exif-only',
-    params: [{ size: 100 }, { userIds: [DummyValue.UUID], filter: { or: [{ city: { eq: DummyValue.STRING } }] } }],
+    params: [
+      { take: 100 },
+      {
+        filter: { or: [{ city: { eq: DummyValue.STRING } }] },
+      },
+      scopeExample,
+    ],
   },
   {
     name: 'string-eq-null',
-    params: [{ size: 100 }, { userIds: [DummyValue.UUID], filter: { city: { eq: null } } }],
+    params: [{ take: 100 }, { filter: { city: { eq: null } } }, scopeExample],
   },
   {
     name: 'string-pattern-like',
-    params: [{ size: 100 }, { userIds: [DummyValue.UUID], filter: { description: { like: DummyValue.STRING } } }],
+    params: [
+      { take: 100 },
+      {
+        filter: { description: { like: DummyValue.STRING } },
+      },
+      scopeExample,
+    ],
   },
   {
     name: 'string-pattern-notLike',
-    params: [{ size: 100 }, { userIds: [DummyValue.UUID], filter: { description: { notLike: DummyValue.STRING } } }],
+    params: [
+      { take: 100 },
+      {
+        filter: { description: { notLike: DummyValue.STRING } },
+      },
+      scopeExample,
+    ],
   },
   {
     name: 'string-pattern-startsWith',
     params: [
-      { size: 100 },
-      { userIds: [DummyValue.UUID], filter: { originalFileName: { startsWith: DummyValue.STRING } } },
+      { take: 100 },
+      {
+        filter: { originalFileName: { startsWith: DummyValue.STRING } },
+      },
+      scopeExample,
     ],
   },
   {
     name: 'string-similarity-ocr',
-    params: [{ size: 100 }, { userIds: [DummyValue.UUID], filter: { ocr: { matches: DummyValue.STRING } } }],
+    params: [{ take: 100 }, { filter: { ocr: { matches: DummyValue.STRING } } }, scopeExample],
   },
   {
     name: 'ids-any',
-    params: [{ size: 100 }, { userIds: [DummyValue.UUID], filter: { albumIds: { any: [DummyValue.UUID] } } }],
+    params: [{ take: 100 }, { filter: { albumIds: { any: [DummyValue.UUID] } } }, scopeExample],
   },
   {
     name: 'ids-all',
     params: [
-      { size: 100 },
-      { userIds: [DummyValue.UUID], filter: { personIds: { all: [DummyValue.UUID, DummyValue.UUID_1] } } },
+      { take: 100 },
+      {
+        filter: { personIds: { all: [DummyValue.UUID, DummyValue.UUID_1] } },
+      },
+      scopeExample,
     ],
   },
   {
     name: 'ids-all-single',
-    params: [{ size: 100 }, { userIds: [DummyValue.UUID], filter: { albumIds: { all: [DummyValue.UUID] } } }],
+    params: [{ take: 100 }, { filter: { albumIds: { all: [DummyValue.UUID] } } }, scopeExample],
   },
   {
     name: 'ids-none',
-    params: [{ size: 100 }, { userIds: [DummyValue.UUID], filter: { tagIds: { none: [DummyValue.UUID] } } }],
+    params: [{ take: 100 }, { filter: { tagIds: { none: [DummyValue.UUID] } } }, scopeExample],
   },
   {
     name: 'ids-tags-all',
     params: [
-      { size: 100 },
-      { userIds: [DummyValue.UUID], filter: { tagIds: { all: [DummyValue.UUID, DummyValue.UUID_1] } } },
+      { take: 100 },
+      {
+        filter: { tagIds: { all: [DummyValue.UUID, DummyValue.UUID_1] } },
+      },
+      scopeExample,
     ],
   },
   {
     name: 'has-albums-false',
-    params: [{ size: 100 }, { userIds: [DummyValue.UUID], filter: { hasAlbums: { eq: false } } }],
+    params: [{ take: 100 }, { filter: { hasAlbums: { eq: false } } }, scopeExample],
   },
   {
     name: 'is-encoded',
-    params: [{ size: 100 }, { userIds: [DummyValue.UUID], filter: { isEncoded: { eq: true } } }],
+    params: [{ take: 100 }, { filter: { isEncoded: { eq: true } } }, scopeExample],
   },
   {
     name: 'number-range',
-    params: [{ size: 100 }, { userIds: [DummyValue.UUID], filter: { fileSizeInBytes: { gte: 100, lte: 1000 } } }],
+    params: [
+      { take: 100 },
+      {
+        filter: { fileSizeInBytes: { gte: 100, lte: 1000 } },
+      },
+      scopeExample,
+    ],
   },
   {
     name: 'date-eq',
-    params: [{ size: 100 }, { userIds: [DummyValue.UUID], filter: { takenAt: { eq: DummyValue.DATE } } }],
+    params: [{ take: 100 }, { filter: { takenAt: { eq: DummyValue.DATE } } }, scopeExample],
   },
   {
     name: 'date-range',
     params: [
-      { size: 100 },
+      { take: 100 },
       {
-        userIds: [DummyValue.UUID],
         filter: { takenAt: { gte: DummyValue.DATE, lt: DummyValue.DATE } },
       },
+      scopeExample,
     ],
   },
   {
     name: 'order-fileSize-noExif',
     params: [
-      { size: 100 },
+      { take: 100 },
       {
-        userIds: [DummyValue.UUID],
         order: { field: SearchOrderField.FileSizeInBytes, direction: AssetOrder.Desc },
         withExif: false,
       },
+      scopeExample,
     ],
   },
   {
     name: 'order-rating-withExif',
     params: [
-      { size: 100 },
+      { take: 100 },
       {
-        userIds: [DummyValue.UUID],
         order: { field: SearchOrderField.Rating, direction: AssetOrder.Asc },
         withExif: true,
       },
+      scopeExample,
     ],
   },
   {
     name: 'or-branches',
     params: [
-      { size: 100 },
+      { take: 100 },
       {
-        userIds: [DummyValue.UUID],
         filter: {
           or: [{ isFavorite: { eq: true } }, { personIds: { any: [DummyValue.UUID] } }],
         },
       },
+      scopeExample,
     ],
   },
   {
     name: 'or-with-top-level',
     params: [
-      { size: 100 },
+      { take: 100 },
       {
-        userIds: [DummyValue.UUID],
         filter: {
           takenAt: { gte: DummyValue.DATE, lt: DummyValue.DATE },
           or: [{ isFavorite: { eq: true } }, { albumIds: { any: [DummyValue.UUID] } }],
         },
       },
+      scopeExample,
     ],
+  },
+  {
+    name: 'cursor-offset',
+    params: [{ take: 100, skip: 100 }, { filter: { isFavorite: { eq: true } } }, scopeExample],
+  },
+];
+
+export const searchRandomV3Examples: GenerateSqlQueries[] = [
+  { name: 'baseline', params: [100, {}, scopeExample] },
+  {
+    name: 'with-filter',
+    params: [100, { filter: { isFavorite: { eq: true } } }, scopeExample],
+  },
+];
+
+export const searchSmartV3Examples: GenerateSqlQueries[] = [
+  {
+    name: 'baseline',
+    params: [{ take: 100 }, { embedding: DummyValue.VECTOR }, scopeExample],
+  },
+  {
+    name: 'with-filter',
+    params: [
+      { take: 100 },
+      {
+        embedding: DummyValue.VECTOR,
+        filter: { takenAt: { gte: DummyValue.DATE, lt: DummyValue.DATE } },
+      },
+      scopeExample,
+    ],
+  },
+  {
+    name: 'cursor-offset',
+    params: [{ take: 100, skip: 100 }, { embedding: DummyValue.VECTOR }, scopeExample],
   },
 ];
 
 export const searchStatisticsV3Examples: GenerateSqlQueries[] = [
-  { name: 'baseline', params: [{ userIds: [DummyValue.UUID] }] },
+  { name: 'baseline', params: [{}, scopeExample] },
   {
     name: 'with-filter',
     params: [
       {
-        userIds: [DummyValue.UUID],
         filter: {
           takenAt: { gte: DummyValue.DATE, lt: DummyValue.DATE },
           fileSizeInBytes: { gte: 100 },
         },
       },
+      scopeExample,
     ],
   },
   {
     name: 'with-or',
     params: [
       {
-        userIds: [DummyValue.UUID],
         filter: {
           or: [{ isFavorite: { eq: true } }, { hasAlbums: { eq: false } }],
         },
       },
+      scopeExample,
     ],
   },
 ];
@@ -1297,3 +1143,220 @@ export const updateLockedColumns = <T extends Record<string, unknown> & { locked
   exif.lockedProperties = lockableProperties.filter((property) => Object.hasOwn(exif, property));
   return exif;
 };
+
+export const nsfwAssetIdExists = (assetId: Expression<unknown>) => sql<boolean>`case
+      when ${assetId} is null then false
+      when coalesce((select phase from immich_fork.state where id = 1), 'inactive') in ('legacy', 'dual-write', 'ready') then exists (
+        select 1
+        from asset as nsfw_asset
+        where nsfw_asset.id = ${assetId}
+          and nsfw_asset.is_nsfw = true
+      )
+      when (select phase from immich_fork.state where id = 1) = 'active' then not exists (
+        select 1
+        from immich_fork.asset_privacy as privacy_asset
+        where privacy_asset."assetId" = ${assetId}
+          and privacy_asset."isNsfw" = false
+      )
+      else false
+    end`;
+
+const nsfwAssetExists = (assetAlias = 'asset') => nsfwAssetIdExists(sql.ref(`${assetAlias}.id`));
+
+export function withNsfwAssets<O>(qb: SelectQueryBuilder<DB, any, O>, assetAlias = 'asset') {
+  return qb.where(nsfwAssetExists(assetAlias));
+}
+
+export function withoutNsfwAssets<O>(qb: SelectQueryBuilder<DB, any, O>, assetAlias = 'asset') {
+  return qb.where(sql<boolean>`not ${nsfwAssetExists(assetAlias)}`);
+}
+
+const nsfwOnlyFilter: HiddenContentFilter = {
+  userId: '',
+  includeNsfw: true,
+  tagIds: [],
+  personIds: [],
+  scope: 'visible',
+};
+
+export const getHiddenContentFilter = (options?: HiddenContentQueryOptions): HiddenContentFilter | undefined => {
+  return options?.onlyHiddenContent ?? options?.hiddenContent ?? (options?.excludeNsfw ? nsfwOnlyFilter : undefined);
+};
+
+const scopedToOwner = (filter: HiddenContentFilter, assetAlias: string) =>
+  filter.scope === 'owned' ? sql<boolean>`${sql.ref(`${assetAlias}.ownerId`)} = ${asUuid(filter.userId)}` : sql`true`;
+
+const hiddenContentAssetExists = (filter: HiddenContentFilter, assetAlias = 'asset') => {
+  const predicates: ReturnType<typeof sql>[] = [];
+
+  if (filter.includeNsfw) {
+    predicates.push(nsfwAssetExists(assetAlias));
+  }
+
+  if (filter.tagIds.length > 0) {
+    predicates.push(sql<boolean>`(${scopedToOwner(filter, assetAlias)} and exists (
+      select 1
+      from tag_asset
+      inner join tag_closure on tag_closure.id_descendant = tag_asset."tagId"
+      where tag_asset."assetId" = ${sql.ref(`${assetAlias}.id`)}
+        and tag_closure.id_ancestor = ${anyUuid(filter.tagIds)}
+    ))`);
+  }
+
+  if (filter.personIds.length > 0) {
+    predicates.push(sql<boolean>`(${scopedToOwner(filter, assetAlias)} and exists (
+      select 1
+      from asset_face
+      where asset_face."assetId" = ${sql.ref(`${assetAlias}.id`)}
+        and asset_face."personGroupId" = ${anyUuid(filter.personIds)}
+        and asset_face."deletedAt" is null
+        and asset_face."isVisible" is true
+    ))`);
+  }
+
+  return predicates.length === 0 ? sql<boolean>`false` : sql<boolean>`(${sql.join(predicates, sql` or `)})`;
+};
+
+export const hiddenContentAssetIdExists = (assetId: Expression<unknown>, filter: HiddenContentFilter) =>
+  sql<boolean>`exists (
+    select 1
+    from asset as hidden_content_asset
+    where hidden_content_asset.id = ${assetId}
+      and ${hiddenContentAssetExists(filter, 'hidden_content_asset')}
+  )`;
+
+export function withHiddenContentOnly<QDB, TB extends keyof QDB, O>(
+  qb: SelectQueryBuilder<QDB, TB, O>,
+  filter: HiddenContentFilter,
+  assetAlias = 'asset',
+) {
+  return qb.where(hiddenContentAssetExists(filter, assetAlias));
+}
+
+export function withoutHiddenContent<QDB, TB extends keyof QDB, O>(
+  qb: SelectQueryBuilder<QDB, TB, O>,
+  filter: HiddenContentFilter,
+  assetAlias = 'asset',
+) {
+  return qb.where(sql<boolean>`not ${hiddenContentAssetExists(filter, assetAlias)}`);
+}
+
+export function withHiddenContentFilter<QDB, TB extends keyof QDB, O>(
+  qb: SelectQueryBuilder<QDB, TB, O>,
+  options?: HiddenContentQueryOptions,
+  assetAlias = 'asset',
+) {
+  const filter = getHiddenContentFilter(options);
+  if (!filter) {
+    return qb;
+  }
+
+  return options?.onlyHiddenContent
+    ? withHiddenContentOnly(qb, filter, assetAlias)
+    : withoutHiddenContent(qb, filter, assetAlias);
+}
+
+const taggedAssetExists = (tagId: Expression<unknown>) => sql<boolean>`exists (
+      select 1
+      from tag_closure
+      inner join tag_asset on tag_asset."tagId" = tag_closure.id_descendant
+      where tag_closure.id_ancestor = ${tagId}
+    )`;
+
+const nonHiddenTaggedAssetExists = (tagId: Expression<unknown>, filter = nsfwOnlyFilter) => sql<boolean>`exists (
+      select 1
+      from tag_closure
+      inner join tag_asset on tag_asset."tagId" = tag_closure.id_descendant
+      where tag_closure.id_ancestor = ${tagId}
+        and not ${hiddenContentAssetIdExists(sql.ref('tag_asset.assetId'), filter)}
+    )`;
+
+export const tagHasVisibleAssetOrNoAssets = (tagId: Expression<unknown>, filter?: HiddenContentFilter) =>
+  sql<boolean>`(not ${taggedAssetExists(tagId)} or ${nonHiddenTaggedAssetExists(tagId, filter)})`;
+
+const enrichmentExists = (assetAlias: string, predicate: ReturnType<typeof sql>) => sql<boolean>`exists (
+      select 1
+      from asset_metadata
+      where asset_metadata."assetId" = ${sql.ref(`${assetAlias}.id`)}
+        and asset_metadata.key = ${AssetMetadataKey.MlEnrichment}
+        and ${predicate}
+    )`;
+
+const tagExists = (assetAlias: string, tag: string) => sql<boolean>`exists (
+      select 1
+      from tag_asset
+      inner join tag on tag.id = tag_asset."tagId"
+      where tag_asset."assetId" = ${sql.ref(`${assetAlias}.id`)}
+        and tag.value = ${tag}
+    )`;
+
+export function withImageEnrichmentFilter<O>(
+  qb: SelectQueryBuilder<DB, any, O>,
+  filter: ImageEnrichmentFilter,
+  assetAlias = 'asset',
+) {
+  const imageOnly = qb.where(sql.ref(`${assetAlias}.type`), '=', AssetType.Image);
+
+  switch (filter) {
+    case ImageEnrichmentFilter.Nsfw: {
+      return imageOnly.where(nsfwAssetExists(assetAlias));
+    }
+
+    case ImageEnrichmentFilter.NsfwReview: {
+      return imageOnly.where((eb) =>
+        eb.or([
+          sql<boolean>`${nsfwAssetExists(assetAlias)} and ${enrichmentExists(
+            assetAlias,
+            sql`asset_metadata.value #> '{nsfwDetection,review}' is null`,
+          )}`,
+          tagExists(assetAlias, 'nsfw_review'),
+        ]),
+      );
+    }
+
+    case ImageEnrichmentFilter.NsfwReviewed: {
+      return imageOnly.where(
+        enrichmentExists(assetAlias, sql`asset_metadata.value #> '{nsfwDetection,review}' is not null`),
+      );
+    }
+
+    case ImageEnrichmentFilter.NsfwOverridden: {
+      return imageOnly.where(
+        enrichmentExists(
+          assetAlias,
+          sql`asset_metadata.value #>> '{nsfwDetection,review,action}' in ('marked-safe', 'marked-nsfw')`,
+        ),
+      );
+    }
+
+    case ImageEnrichmentFilter.ImageDescriptionFailed: {
+      return imageOnly.where(
+        enrichmentExists(assetAlias, sql`asset_metadata.value #>> '{description,status}' = 'failed'`),
+      );
+    }
+
+    case ImageEnrichmentFilter.NsfwDetectionFailed: {
+      return imageOnly.where(
+        enrichmentExists(assetAlias, sql`asset_metadata.value #>> '{nsfwDetection,status}' = 'failed'`),
+      );
+    }
+
+    case ImageEnrichmentFilter.MissingImageDescription: {
+      return imageOnly.where(
+        sql<boolean>`not ${enrichmentExists(
+          assetAlias,
+          sql`asset_metadata.value #>> '{description,status}' = 'success'`,
+        )}`,
+      );
+    }
+
+    case ImageEnrichmentFilter.MissingNsfwDetection: {
+      return imageOnly.where(
+        sql<boolean>`not ${enrichmentExists(
+          assetAlias,
+          sql`asset_metadata.value #>> '{nsfwDetection,status}' = 'success'`,
+        )}`,
+      );
+    }
+  }
+}

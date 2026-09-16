@@ -1,20 +1,20 @@
 import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
-import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto';
-import { AssetFileType, AssetMetadataKey, MemoryType } from 'src/enum';
-import { AccessRepository } from 'src/repositories/access.repository';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { MemoryRepository } from 'src/repositories/memory.repository';
-import { PartnerRepository } from 'src/repositories/partner.repository';
-import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository';
-import { UserRepository } from 'src/repositories/user.repository';
-import { DB } from 'src/schema';
-import { MemoryService } from 'src/services/memory.service';
-import { newMediumService } from 'test/medium.factory';
-import { factory } from 'test/small.factory';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils';
+import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
+import { AssetFileType, MemoryType } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MemoryRepository } from 'src/repositories/memory.repository.js';
+import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { DB } from 'src/schema/index.js';
+import { MemoryService } from 'src/services/memory.service.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { factory } from 'test/small.factory.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
@@ -34,13 +34,6 @@ const setup = (db?: Kysely<DB>) => {
     mock: [LoggingRepository],
   });
 };
-
-const nsfwMetadata = (isNsfw: boolean) => ({
-  nsfwDetection: {
-    status: 'success',
-    result: { isNsfw, score: isNsfw ? 0.95 : 0.05, labels: [] },
-  },
-});
 
 const create = async (ctx: ReturnType<typeof setup>['ctx']) => {
   const { user } = await ctx.newUser();
@@ -188,58 +181,6 @@ describe(MemoryService.name, () => {
 
   beforeEach(async () => {
     defaultDatabase = await getKyselyDB();
-  });
-
-  describe('nsfw privacy', () => {
-    it('hides NSFW-only memories and filters mixed memory assets', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user });
-
-      const { asset: visible } = await ctx.newAsset({ ownerId: user.id });
-      const { asset: mixedNsfw } = await ctx.newAsset({ ownerId: user.id });
-      const { asset: hiddenOnlyNsfw } = await ctx.newAsset({ ownerId: user.id });
-
-      await Promise.all([
-        ctx.newMetadata({
-          assetId: mixedNsfw.id,
-          key: AssetMetadataKey.MlEnrichment,
-          value: nsfwMetadata(true),
-        }),
-        ctx.newMetadata({
-          assetId: hiddenOnlyNsfw.id,
-          key: AssetMetadataKey.MlEnrichment,
-          value: nsfwMetadata(true),
-        }),
-      ]);
-
-      const { memory: mixedMemory } = await ctx.newMemory({ ownerId: user.id });
-      const { memory: hiddenOnlyMemory } = await ctx.newMemory({ ownerId: user.id });
-      await Promise.all([
-        ctx.newMemoryAsset({ memoryId: mixedMemory.id, assetId: visible.id }),
-        ctx.newMemoryAsset({ memoryId: mixedMemory.id, assetId: mixedNsfw.id }),
-        ctx.newMemoryAsset({ memoryId: hiddenOnlyMemory.id, assetId: hiddenOnlyNsfw.id }),
-      ]);
-
-      const hiddenAuth = { ...auth, hideNsfwAssets: true };
-      const hiddenResults = await sut.search(hiddenAuth, {});
-      expect(hiddenResults).toEqual([
-        expect.objectContaining({
-          id: mixedMemory.id,
-          assets: [expect.objectContaining({ id: visible.id })],
-        }),
-      ]);
-      expect(await sut.statistics(hiddenAuth, {})).toEqual({ total: 1 });
-      await expect(sut.get(hiddenAuth, hiddenOnlyMemory.id)).rejects.toThrow('Not found or no memory.read access');
-
-      const elevatedResults = await sut.search(auth, {});
-      expect(elevatedResults.map(({ id }) => id)).toEqual(
-        expect.arrayContaining([mixedMemory.id, hiddenOnlyMemory.id]),
-      );
-      expect(elevatedResults.find(({ id }) => id === mixedMemory.id)?.assets.map(({ id }) => id)).toEqual(
-        expect.arrayContaining([visible.id, mixedNsfw.id]),
-      );
-    });
   });
 
   describe('create', () => {

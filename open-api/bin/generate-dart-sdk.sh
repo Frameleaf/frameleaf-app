@@ -16,17 +16,12 @@ rm -rf ../mobile/generated/openapi
 openapi-generator-cli generate -g dart -i ./immich-openapi-specs.json -o ../mobile/generated/openapi -t "$TEMPLATE_DIR" --additional-properties=useOptional=true
 
 # Post generate patches
+node ./bin/patch-dart-enum-defaults.mjs ../mobile/generated/openapi/lib/model
 patch --no-backup-if-mismatch -u ../mobile/generated/openapi/lib/api_client.dart <./patch/api_client.dart.patch
 patch --no-backup-if-mismatch -u ../mobile/generated/openapi/lib/api.dart <./patch/api.dart.patch
 patch --no-backup-if-mismatch -u ../mobile/generated/openapi/pubspec.yaml <./patch/pubspec_immich_mobile.yaml.patch
 patch --no-backup-if-mismatch -u ../mobile/generated/openapi/lib/model/asset_edit_action_item_dto.dart <./patch/asset_edit_action_item_dto.dart.patch
-# Fix openapi-generator dart bug (still present in 7.24 with useOptional):
-# enum-typed properties with defaults emit invalid `const SomeEnum._('value')`
-# constructor defaults. Rewrite them to the named enum constants. Drop these
-# patches when the upstream template is fixed.
-patch --no-backup-if-mismatch -u ../mobile/generated/openapi/lib/model/admin_config_advanced_prompt_dto.dart <./patch/admin_config_advanced_prompt_dto.dart.patch
-patch --no-backup-if-mismatch -u ../mobile/generated/openapi/lib/model/admin_config_image_description_prompt_dto.dart <./patch/admin_config_image_description_prompt_dto.dart.patch
-patch --no-backup-if-mismatch -u ../mobile/generated/openapi/lib/model/admin_config_run_pod_dto.dart <./patch/admin_config_run_pod_dto.dart.patch
+patch --no-backup-if-mismatch -u ../mobile/generated/openapi/lib/model/asset_edit_action_item_response_dto.dart <./patch/asset_edit_action_item_response_dto.dart.patch
 # Don't include analysis_options.yaml for the generated openapi files
 # so that language servers can properly exclude the mobile/generated/openapi directory
 rm ../mobile/generated/openapi/analysis_options.yaml

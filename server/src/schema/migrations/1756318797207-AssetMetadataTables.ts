@@ -43,9 +43,15 @@ export async function up(db: Kysely<any>): Promise<void> {
   BEFORE UPDATE ON "asset_metadata"
   FOR EACH ROW
   EXECUTE FUNCTION updated_at();`.execute(db);
-  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('function_asset_metadata_audit', '{"type":"function","name":"asset_metadata_audit","sql":"CREATE OR REPLACE FUNCTION asset_metadata_audit()\\n  RETURNS TRIGGER\\n  LANGUAGE PLPGSQL\\n  AS $$\\n    BEGIN\\n      INSERT INTO asset_metadata_audit (\\"assetId\\", \\"key\\")\\n      SELECT \\"assetId\\", \\"key\\"\\n      FROM OLD;\\n      RETURN NULL;\\n    END\\n  $$;"}'::jsonb);`.execute(db);
-  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_asset_metadata_audit', '{"type":"trigger","name":"asset_metadata_audit","sql":"CREATE OR REPLACE TRIGGER \\"asset_metadata_audit\\"\\n  AFTER DELETE ON \\"asset_metadata\\"\\n  REFERENCING OLD TABLE AS \\"old\\"\\n  FOR EACH STATEMENT\\n  WHEN (pg_trigger_depth() = 0)\\n  EXECUTE FUNCTION asset_metadata_audit();"}'::jsonb);`.execute(db);
-  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_asset_metadata_updated_at', '{"type":"trigger","name":"asset_metadata_updated_at","sql":"CREATE OR REPLACE TRIGGER \\"asset_metadata_updated_at\\"\\n  BEFORE UPDATE ON \\"asset_metadata\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(db);
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('function_asset_metadata_audit', '{"type":"function","name":"asset_metadata_audit","sql":"CREATE OR REPLACE FUNCTION asset_metadata_audit()\\n  RETURNS TRIGGER\\n  LANGUAGE PLPGSQL\\n  AS $$\\n    BEGIN\\n      INSERT INTO asset_metadata_audit (\\"assetId\\", \\"key\\")\\n      SELECT \\"assetId\\", \\"key\\"\\n      FROM OLD;\\n      RETURN NULL;\\n    END\\n  $$;"}'::jsonb);`.execute(
+    db,
+  );
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_asset_metadata_audit', '{"type":"trigger","name":"asset_metadata_audit","sql":"CREATE OR REPLACE TRIGGER \\"asset_metadata_audit\\"\\n  AFTER DELETE ON \\"asset_metadata\\"\\n  REFERENCING OLD TABLE AS \\"old\\"\\n  FOR EACH STATEMENT\\n  WHEN (pg_trigger_depth() = 0)\\n  EXECUTE FUNCTION asset_metadata_audit();"}'::jsonb);`.execute(
+    db,
+  );
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_asset_metadata_updated_at', '{"type":"trigger","name":"asset_metadata_updated_at","sql":"CREATE OR REPLACE TRIGGER \\"asset_metadata_updated_at\\"\\n  BEFORE UPDATE ON \\"asset_metadata\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(
+    db,
+  );
 }
 
 export async function down(db: Kysely<any>): Promise<void> {

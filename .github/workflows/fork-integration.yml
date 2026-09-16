@@ -1,0 +1,180 @@
+name: Fork integration
+
+on:
+  pull_request:
+    branches: ['fork/main']
+  push:
+    branches: ['fork/main']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    if: github.repository == 'adamtaylor152/immich'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install plugin WASM and API generation tools
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          docker create --name fork-integration-mise ghcr.io/jdx/mise:2026.9.9@sha256:a88f300ef4365494b88f8eefd271bb92ba467d4a41835739a714426207215730 /bin/true
+          docker cp fork-integration-mise:/usr/local/bin/mise "$RUNNER_TEMP/mise"
+          docker rm fork-integration-mise
+          "$RUNNER_TEMP/mise" trust mise.toml
+          "$RUNNER_TEMP/mise" install --locked node github:extism/js-pdk github:webassembly/binaryen npm:oazapfts
+          {
+            "$RUNNER_TEMP/mise" where github:extism/js-pdk
+            echo "$("$RUNNER_TEMP/mise" where github:webassembly/binaryen)/bin"
+            "$RUNNER_TEMP/mise" bin-paths npm:oazapfts
+          } >> "$GITHUB_PATH"
+      - name: Build SDK and core plugin WASM
+        run: |
+          pnpm --filter @immich/sdk build
+          pnpm --filter @immich/plugin-sdk build
+          pnpm --filter @immich/plugin-core build
+      - name: Verify OpenAPI and TypeScript client freshness
+        run: |
+          pnpm --filter immich build
+          pnpm --filter immich exec node dist/bin/sync-open-api.js
+          git diff --exit-code -- open-api/immich-openapi-specs.json
+          oazapfts --optimistic --argumentStyle=object --useEnumType --allSchemas open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
+          git diff --exit-code -- packages/sdk/src/fetch-client.ts
+          pnpm --filter @immich/sdk build
+      - name: Check server types and lint
+        run: |
+          pnpm --filter immich check
+          pnpm --filter immich lint
+      - name: Run server unit tests
+        run: pnpm --filter immich test --run
+      - name: Run server medium tests with local PostgreSQL containers
+        run: pnpm --filter immich test:medium --run
+      - name: Check web types and Svelte components
+        run: |
+          pnpm --filter immich-web exec svelte-kit sync
+          pnpm --filter immich-web check:typescript
+          pnpm --filter immich-web check:svelte
+      - name: Check CLI and migration command
+        run: |
+          pnpm --filter @immich/cli check
+          pnpm --filter @immich/cli lint
+          pnpm --filter @immich/cli test --run
+          pnpm --filter @immich/cli build
+          node packages/cli/bin/immich migrate --help
+      - name: Check end-to-end fixtures against generated clients
+        run: pnpm --filter immich-e2e check
+      - name: Run web unit tests
+        run: pnpm --filter immich-web test --run
+
+  machine-learning:
+    if: github.repository == 'adamtaylor152/immich'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: machine-learning
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.8.15'
+          python-version: '3.11'
+      - name: Install locked CPU test dependencies
+        run: uv sync --frozen --extra cpu --group test --no-default-groups
+      - name: Run ML unit tests without model downloads
+        env:
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+          MACHINE_LEARNING_TEST_FULL: 'false'
+        run: .venv/bin/python -m pytest -q
+
+  mobile:
+    if: github.repository == 'adamtaylor152/immich'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: '.nvmrc'
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: 'zulu'
+          java-version: '21.0.2'
+      - name: Install pinned Flutter and API generator
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          docker create --name fork-mobile-mise ghcr.io/jdx/mise:2026.9.9@sha256:a88f300ef4365494b88f8eefd271bb92ba467d4a41835739a714426207215730 /bin/true
+          docker cp fork-mobile-mise:/usr/local/bin/mise "$RUNNER_TEMP/mise"
+          docker rm fork-mobile-mise
+          "$RUNNER_TEMP/mise" trust ../mise.toml
+          "$RUNNER_TEMP/mise" trust mise.toml
+          "$RUNNER_TEMP/mise" install --locked aqua:flutter/flutter
+          (cd .. && "$RUNNER_TEMP/mise" install --locked node npm:@openapitools/openapi-generator-cli)
+          {
+            echo "$("$RUNNER_TEMP/mise" where aqua:flutter/flutter)/flutter/bin"
+            (cd .. && "$RUNNER_TEMP/mise" bin-paths npm:@openapitools/openapi-generator-cli)
+          } >> "$GITHUB_PATH"
+      - name: Generate Dart API client
+        working-directory: open-api
+        run: |
+          node --test bin/patch-dart-enum-defaults.test.mjs
+          bash bin/generate-dart-sdk.sh
+      - name: Install locked mobile dependencies
+        run: flutter pub get --enforce-lockfile
+      - name: Generate mobile code
+        run: |
+          dart run drift_dev make-migrations
+          dart run drift_dev schema generate --data-classes --companions drift_schemas/main/ test/drift/main/generated/
+          for pigeon_file in pigeon/*.dart; do dart run pigeon --input "$pigeon_file"; done
+          dart format lib/platform/
+          dart run easy_localization:generate -S ../i18n
+          dart format lib/generated/codegen_loader.g.dart
+          dart run bin/generate_keys.dart
+          dart format lib/generated/translations.g.dart
+          dart run build_runner build
+          dart format lib/routing/router.gr.dart
+      - name: Verify backward-compatible API response defaults
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          OPENAPI_BASE_SPEC: /tmp/base-spec.json
+          OPENAPI_REVISION_SPEC: ../open-api/immich-openapi-specs.json
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/${{ github.repository }}/${BASE_SHA}/open-api/immich-openapi-specs.json" -o "$OPENAPI_BASE_SPEC"
+          flutter test test/openapi_patches_coverage.dart
+      - name: Analyze mobile and run tests
+        run: |
+          dart analyze --fatal-infos
+          flutter test
+      - name: Analyze UI package and run tests
+        working-directory: mobile/packages/ui
+        run: |
+          flutter pub get --enforce-lockfile
+          dart analyze --fatal-infos
+          flutter test

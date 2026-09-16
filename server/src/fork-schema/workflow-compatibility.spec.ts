@@ -1,15 +1,15 @@
-import supportedVersions from 'src/fork-schema/supported-versions.json';
+import supportedVersions from 'src/fork-schema/supported-versions.json' with { type: 'json' };
 import {
   ADD_PLUGIN_METHOD_ALLOWED_HOSTS_MIGRATION,
   ADD_PLUGIN_TEMPLATES_MIGRATION,
-  classifyWorkflowCompatibility,
   LEGACY_WORKFLOW_MIGRATION,
-  normalizeWorkflowMigrationForOfficialOrder,
   OFFICIAL_WORKFLOW_MIGRATION,
-  validateOfficialMigrationLedgerOrder,
   WORKFLOW_SCHEMA_DIGESTS,
   WorkflowCompatibilityEvidence,
-} from 'src/fork-schema/workflow-compatibility';
+  classifyWorkflowCompatibility,
+  normalizeWorkflowMigrationForOfficialOrder,
+  validateOfficialMigrationLedgerOrder,
+} from 'src/fork-schema/workflow-compatibility.js';
 
 const timestamp = '2026-07-15T00:00:00.000Z';
 

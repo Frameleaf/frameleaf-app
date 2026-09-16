@@ -1,5 +1,5 @@
 import { Command, CommandRunner, InquirerService, Option, Question, QuestionSet, SubCommand } from 'nest-commander';
-import { ForkSchemaMigrationService, ForkSchemaMigrationStatus } from 'src/services/fork-schema-migration.service';
+import { ForkSchemaMigrationService, ForkSchemaMigrationStatus } from 'src/services/fork-schema-migration.service.js';
 
 type BatchOptions = { batchSize?: number };
 const DEFAULT_BATCH_SIZE = 250;

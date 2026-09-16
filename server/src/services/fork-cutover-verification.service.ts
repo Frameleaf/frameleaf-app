@@ -4,14 +4,15 @@ import { constants } from 'node:fs';
 import { lstat, open, realpath } from 'node:fs/promises';
 import { isAbsolute, relative } from 'node:path';
 import {
-  canonicalStorageVerificationDigest,
   ForkCutoverVerificationRepository,
   StorageVerificationBusyError,
   StorageVerificationCandidate,
   StorageVerificationEvidence,
   StorageVerificationRun,
-} from 'src/repositories/fork-cutover-verification.repository';
-export { canonicalStorageVerificationDigest } from 'src/repositories/fork-cutover-verification.repository';
+  canonicalStorageVerificationDigest,
+} from 'src/repositories/fork-cutover-verification.repository.js';
+
+export { canonicalStorageVerificationDigest } from 'src/repositories/fork-cutover-verification.repository.js';
 
 const required = (value: string, label: string): string => {
   const normalized = value.trim();

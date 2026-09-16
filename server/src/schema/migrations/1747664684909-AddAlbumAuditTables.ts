@@ -40,12 +40,20 @@ export async function up(db: Kysely<any>): Promise<void> {
       RETURN NULL;
     END
   $$;`.execute(db);
-  await sql`CREATE TABLE "albums_audit" ("id" uuid NOT NULL DEFAULT immich_uuid_v7(), "albumId" uuid NOT NULL, "userId" uuid NOT NULL, "deletedAt" timestamp with time zone NOT NULL DEFAULT clock_timestamp());`.execute(db);
-  await sql`CREATE TABLE "album_users_audit" ("id" uuid NOT NULL DEFAULT immich_uuid_v7(), "albumId" uuid NOT NULL, "userId" uuid NOT NULL, "deletedAt" timestamp with time zone NOT NULL DEFAULT clock_timestamp());`.execute(db);
+  await sql`CREATE TABLE "albums_audit" ("id" uuid NOT NULL DEFAULT immich_uuid_v7(), "albumId" uuid NOT NULL, "userId" uuid NOT NULL, "deletedAt" timestamp with time zone NOT NULL DEFAULT clock_timestamp());`.execute(
+    db,
+  );
+  await sql`CREATE TABLE "album_users_audit" ("id" uuid NOT NULL DEFAULT immich_uuid_v7(), "albumId" uuid NOT NULL, "userId" uuid NOT NULL, "deletedAt" timestamp with time zone NOT NULL DEFAULT clock_timestamp());`.execute(
+    db,
+  );
   await sql`ALTER TABLE "albums_audit" ADD CONSTRAINT "PK_c75efea8d4dce316ad29b851a8b" PRIMARY KEY ("id");`.execute(db);
-  await sql`ALTER TABLE "album_users_audit" ADD CONSTRAINT "PK_f479a2e575b7ebc9698362c1688" PRIMARY KEY ("id");`.execute(db);
+  await sql`ALTER TABLE "album_users_audit" ADD CONSTRAINT "PK_f479a2e575b7ebc9698362c1688" PRIMARY KEY ("id");`.execute(
+    db,
+  );
   await sql`ALTER TABLE "albums_shared_users_users" ADD "updateId" uuid NOT NULL DEFAULT immich_uuid_v7();`.execute(db);
-  await sql`ALTER TABLE "albums_shared_users_users" ADD "updatedAt" timestamp with time zone NOT NULL DEFAULT now();`.execute(db);
+  await sql`ALTER TABLE "albums_shared_users_users" ADD "updatedAt" timestamp with time zone NOT NULL DEFAULT now();`.execute(
+    db,
+  );
   await sql`CREATE INDEX "IDX_album_users_update_id" ON "albums_shared_users_users" ("updateId")`.execute(db);
   await sql`CREATE INDEX "IDX_albums_audit_album_id" ON "albums_audit" ("albumId")`.execute(db);
   await sql`CREATE INDEX "IDX_albums_audit_user_id" ON "albums_audit" ("userId")`.execute(db);

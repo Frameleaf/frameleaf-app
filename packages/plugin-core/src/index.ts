@@ -52,7 +52,7 @@ const methods = wrapper<Manifest>({
         return {};
       }
 
-      const [existing] = functions.searchAlbums({ name: config.albumName });
+      const existing = functions.searchAlbums({ isOwned: true }).find((album) => album.albumName === config.albumName);
       if (!existing) {
         const created = functions.createAlbum({ albumName: config.albumName, assetIds: [assetId] });
         config.albumIds.push(created.id);
@@ -187,7 +187,7 @@ const methods = wrapper<Manifest>({
     for (const tag of config.tags) {
       if (assetTags.includes(tag)) {
         if (config.matching === 'any') {
-          break;
+          return { workflow: { continue: true } };
         } else if (config.matching === 'none') {
           return { workflow: { continue: false } };
         }
@@ -196,7 +196,7 @@ const methods = wrapper<Manifest>({
       }
     }
 
-    return { workflow: { continue: true } };
+    return { workflow: { continue: config.matching !== 'any' } };
   },
 
   assetTypeFilter: ({ config, data }) => {

@@ -1,6 +1,6 @@
-import { IdentityPostValidator } from 'src/services/identity-post-validator.service';
-import type { KnownPerson } from 'src/services/prompt-assembler.service';
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { KnownPerson } from 'src/services/prompt-assembler.service.js';
+import { IdentityPostValidator } from 'src/services/identity-post-validator.service.js';
 
 const person = (name: string): KnownPerson => ({ name, faceConfidence: 1, boxCenter: [0.5, 0.5] });
 

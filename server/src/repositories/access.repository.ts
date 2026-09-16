@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, NotNull, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { ChunkedSet, DummyValue, GenerateSql } from 'src/decorators';
-import { AlbumUserRole, AssetVisibility } from 'src/enum';
-import { DB } from 'src/schema';
+import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
+import { AlbumUserRole, AssetVisibility } from 'src/enum.js';
+import { DB } from 'src/schema/index.js';
 import {
   asUuid,
   getHiddenContentFilter,
@@ -11,8 +12,7 @@ import {
   tagHasVisibleAssetOrNoAssets,
   withDefaultVisibility,
   withHiddenContentFilter,
-} from 'src/utils/database';
-import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content';
+} from 'src/utils/database.js';
 
 type AccessPrivacy = boolean | HiddenContentFilter | undefined;
 

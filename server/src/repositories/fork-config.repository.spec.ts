@@ -1,6 +1,6 @@
-import { defaults } from 'src/dtos/config.dto';
-import { SystemConfigSchema } from 'src/dtos/system-config.dto';
-import { canonicalize, digest } from 'src/repositories/fork-config.repository';
+import { defaults } from 'src/dtos/config.dto.js';
+import { SystemConfigSchema } from 'src/dtos/system-config.dto.js';
+import { canonicalize, digest } from 'src/repositories/fork-config.repository.js';
 
 describe('fork-config canonicalization', () => {
   it('sorts object keys recursively while preserving array order', () => {

@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely } from 'kysely';
-import { DatabaseLock } from 'src/enum';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { OfficialHandoffCheckpoint, ReconciliationReport } from 'src/repositories/fork-handoff.repository';
-import { DB } from 'src/schema';
-import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service';
+import { DatabaseLock } from 'src/enum.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { OfficialHandoffCheckpoint, ReconciliationReport } from 'src/repositories/fork-handoff.repository.js';
+import { DB } from 'src/schema/index.js';
+import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service.js';
 
 export type ForkHandoffHooks = {
   beforeActivate?: (transaction: Kysely<DB>) => Promise<void> | void;

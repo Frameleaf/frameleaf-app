@@ -1,4 +1,4 @@
-import { canonicalize, digestRows, PrivacySidecar } from 'src/repositories/fork-privacy.repository';
+import { PrivacySidecar, canonicalize, digestRows } from 'src/repositories/fork-privacy.repository.js';
 
 const row = (overrides: Partial<PrivacySidecar> = {}): PrivacySidecar => ({
   assetId: '00000000-0000-4000-a000-000000000001',

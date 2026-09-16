@@ -1,28 +1,30 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, OrderByDirection, Selectable, ShallowDehydrateObject, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { columns } from 'src/database';
-import { DummyValue, GenerateSql } from 'src/decorators';
-import { MapAsset } from 'src/dtos/asset-response.dto';
-import { SearchFilter, SearchOrder } from 'src/dtos/search.dto';
-import { AssetStatus, AssetType, AssetVisibility, ImageEnrichmentFilter, VectorIndex } from 'src/enum';
-import { probes } from 'src/repositories/database.repository';
-import { DB } from 'src/schema';
-import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
+import z from 'zod';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { columns } from 'src/database.js';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { MapAsset } from 'src/dtos/asset-response.dto.js';
+import { SearchFilter, SearchOrder } from 'src/dtos/search.dto.js';
+import { AssetStatus, AssetType, AssetVisibility, ImageEnrichmentFilter, VectorIndex } from 'src/enum.js';
+import { probes } from 'src/repositories/database.repository.js';
+import { DB } from 'src/schema/index.js';
+import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import {
   anyUuid,
   searchAssetBuilder,
   searchAssetBuilderLegacy,
   searchMetadataV3Examples,
+  searchRandomV3Examples,
+  searchSmartV3Examples,
   searchStatisticsV3Examples,
   tokenizeForSearch,
   withExifInner,
   withHiddenContentFilter,
   withSearchOrder,
-} from 'src/utils/database';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content';
-import { paginationHelper } from 'src/utils/pagination';
-import z from 'zod';
+} from 'src/utils/database.js';
+import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
 
 export interface SearchAssetIdOptions {
   checksum?: Buffer;
@@ -149,7 +151,7 @@ export type AssetSearchOptions = Omit<BaseAssetSearchOptions, 'visibility'> &
 
 export type AssetSearchBuilderOptions = Omit<AssetSearchOptions, 'orderDirection'>;
 
-export interface AssetSearchBuilderV3Options {
+export interface AssetSearchBuilderV3Options extends HiddenContentQueryOptions, SearchImageEnrichmentOptions {
   filter?: SearchFilter;
   /** Server-derived ownership scope. Never client-controlled. */
   userIds?: string[];
@@ -162,9 +164,11 @@ export interface AssetSearchBuilderV3Options {
   order?: SearchOrder;
 }
 
-export interface AssetSearchPaginationV3Options {
-  size: number;
-}
+export type AssetSearchScope = {
+  userIds: string[];
+  lockedOwnerId: string;
+  viewingUserId?: string;
+};
 
 export type SmartSearchOptions = SearchDateOptions &
   SearchEmbeddingOptions &
@@ -347,44 +351,10 @@ export class SearchRepository {
 
     return this.db.transaction().execute(async (trx) => {
       await sql`set local vchordrq.probes = ${sql.lit(probes[VectorIndex.Clip])}`.execute(trx);
-      const text = options.query?.trim();
-      const fusionText = text ? tokenizeForSearch(text).join(' ') : null;
-      // CLIP cosine distance is the primary signal. When a raw text query is
-      // available, subtract bounded trigram-similarity bonuses from text
-      // sidecars (OCR + description) so text-aware matches surface alongside
-      // visual matches. Scalar subqueries are used instead of joins to avoid
-      // clashing with conditional joins inside searchAssetBuilder.
-      // <=> returns [0, 2]; (1 - <->>>) returns [0, 1] when the sidecar row
-      // exists, NULL otherwise.
-      const visualDistance = sql`(smart_search.embedding <=> ${options.embedding})`;
-      // Visual distance vs. (description-text embedding distance scaled toward
-      // visual). Take the smaller, so a strong description match can rescue
-      // a weak visual one, but never penalizes the rank. NULL distance (no
-      // description embedding yet) drops out of the LEAST.
-      const blendedClipDistance = sql`least(
-        ${visualDistance},
-        coalesce(
-          ${DESCRIPTION_EMBEDDING_WEIGHT} * (select embedding <=> ${options.embedding} from smart_search_description where "assetId" = asset.id),
-          ${visualDistance}
-        )
-      )`;
-      const orderExpr = fusionText
-        ? sql`
-            ${blendedClipDistance}
-            - ${OCR_FUSION_WEIGHT} * coalesce(
-                1 - (f_unaccent((select text from ocr_search where "assetId" = asset.id)) <->>> f_unaccent(${fusionText})),
-                0
-              )
-            - ${DESCRIPTION_FUSION_WEIGHT} * coalesce(
-                1 - (f_unaccent((select description from asset_exif where "assetId" = asset.id)) <->>> f_unaccent(${fusionText})),
-                0
-              )
-          `
-        : blendedClipDistance;
       const items = await searchAssetBuilderLegacy(trx, options)
         .selectAll('asset')
         .innerJoin('smart_search', 'asset.id', 'smart_search.assetId')
-        .orderBy(orderExpr)
+        .orderBy(this.smartSearchOrder(options))
         .orderBy('asset.id', 'asc')
         .limit(pagination.size + 1)
         .offset((pagination.page - 1) * pagination.size)
@@ -626,21 +596,94 @@ export class SearchRepository {
   }
 
   @GenerateSql(...searchMetadataV3Examples)
-  searchMetadataV3(
-    pagination: AssetSearchPaginationV3Options,
-    options: AssetSearchBuilderV3Options,
-  ): Promise<MapAsset[]> {
-    return withSearchOrder(searchAssetBuilder(this.db, options), options.order)
+  async searchMetadataV3(pagination: PaginationOptions, options: AssetSearchBuilderV3Options, scope: AssetSearchScope) {
+    const items = await withSearchOrder(searchAssetBuilder(this.db, options, scope), options.order)
       .select(columns.searchAsset)
-      .limit(pagination.size)
+      .limit(pagination.take + 1)
+      .offset(pagination.skip ?? 0)
+      .execute();
+    return paginationHelper(items, pagination.take);
+  }
+
+  // TODO(v4): drop the V3 suffix once the legacy methods are removed
+  @GenerateSql(...searchRandomV3Examples)
+  searchRandomV3(
+    size: number,
+    options: Omit<AssetSearchBuilderV3Options, 'order'>,
+    scope: AssetSearchScope,
+  ): Promise<MapAsset[]> {
+    return searchAssetBuilder(this.db, options, scope)
+      .select(columns.searchAsset)
+      .orderBy(sql`random()`)
+      .limit(size)
       .execute();
   }
 
+  // TODO(v4): drop the V3 suffix once the legacy methods are removed
+  @GenerateSql(...searchSmartV3Examples)
+  searchSmartV3(
+    pagination: PaginationOptions,
+    options: Omit<AssetSearchBuilderV3Options, 'order'> & { embedding: string; query?: string },
+    scope: AssetSearchScope,
+  ) {
+    return this.db.transaction().execute(async (trx) => {
+      await sql`set local vchordrq.probes = ${sql.lit(probes[VectorIndex.Clip])}`.execute(trx);
+      const items = await searchAssetBuilder(trx, options, scope)
+        .select(columns.searchAsset)
+        .innerJoin('smart_search', 'asset.id', 'smart_search.assetId')
+        .orderBy(this.smartSearchOrder(options))
+        .orderBy('asset.id', 'asc')
+        .limit(pagination.take + 1)
+        .offset(pagination.skip ?? 0)
+        .execute();
+      return paginationHelper(items, pagination.take);
+    });
+  }
+
+  // TODO(v4): drop the V3 suffix once the legacy methods are removed
   @GenerateSql(...searchStatisticsV3Examples)
-  searchStatisticsV3(options: AssetSearchBuilderV3Options) {
-    return searchAssetBuilder(this.db, options)
+  searchStatisticsV3(options: AssetSearchBuilderV3Options, scope: AssetSearchScope) {
+    return searchAssetBuilder(this.db, options, scope)
       .select((qb) => qb.fn.countAll<number>().as('total'))
       .executeTakeFirstOrThrow();
+  }
+
+  private smartSearchOrder(options: { embedding: string; query?: string }) {
+    const text = options.query?.trim();
+    const fusionText = text ? tokenizeForSearch(text).join(' ') : null;
+    // CLIP cosine distance is the primary signal. When a raw text query is
+    // available, subtract bounded trigram-similarity bonuses from text
+    // sidecars (OCR + description) so text-aware matches surface alongside
+    // visual matches. Scalar subqueries are used instead of joins to avoid
+    // clashing with conditional joins inside searchAssetBuilder.
+    // <=> returns [0, 2]; (1 - <->>>) returns [0, 1] when the sidecar row
+    // exists, NULL otherwise.
+    const visualDistance = sql`(smart_search.embedding <=> ${options.embedding})`;
+    // Visual distance vs. (description-text embedding distance scaled toward
+    // visual). Take the smaller, so a strong description match can rescue
+    // a weak visual one, but never penalizes the rank. NULL distance (no
+    // description embedding yet) drops out of the LEAST.
+    const blendedClipDistance = sql`least(
+      ${visualDistance},
+      coalesce(
+        ${DESCRIPTION_EMBEDDING_WEIGHT} * (select embedding <=> ${options.embedding} from smart_search_description where "assetId" = asset.id),
+        ${visualDistance}
+      )
+    )`;
+    const orderExpr = fusionText
+      ? sql`
+        ${blendedClipDistance}
+        - ${OCR_FUSION_WEIGHT} * coalesce(
+            1 - (f_unaccent((select text from ocr_search where "assetId" = asset.id)) <->>> f_unaccent(${fusionText})),
+            0
+          )
+        - ${DESCRIPTION_FUSION_WEIGHT} * coalesce(
+            1 - (f_unaccent((select description from asset_exif where "assetId" = asset.id)) <->>> f_unaccent(${fusionText})),
+            0
+          )
+        `
+      : blendedClipDistance;
+    return orderExpr;
   }
 
   private getExifField(

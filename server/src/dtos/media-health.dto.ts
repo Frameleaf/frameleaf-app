@@ -1,12 +1,12 @@
 import { createZodDto } from 'nestjs-zod';
-import { AssetResponseSchema } from 'src/dtos/asset-response.dto';
+import z from 'zod';
+import { AssetResponseSchema } from 'src/dtos/asset-response.dto.js';
 import {
   MediaHealthCategorySchema,
   MediaHealthSeveritySchema,
   MediaHealthStatus,
   MediaHealthStatusSchema,
-} from 'src/enum';
-import z from 'zod';
+} from 'src/enum.js';
 
 const JsonObjectSchema = z.record(z.string(), z.unknown());
 
@@ -16,7 +16,7 @@ const MediaHealthCandidateSchema = z
     healthId: z.uuidv4().describe('Media health finding ID'),
     candidatePath: z.string().describe('Candidate file path'),
     status: MediaHealthStatusSchema,
-    visualMatchScore: z.number().nullable().describe('Visual match score from 0 to 1'),
+    visualMatchScore: z.number().meta({ format: 'double' }).nullable().describe('Visual match score from 0 to 1'),
     evidence: JsonObjectSchema,
     resolution: JsonObjectSchema,
     checkedAt: z.string().meta({ format: 'date-time' }),

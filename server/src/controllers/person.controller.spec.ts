@@ -1,10 +1,10 @@
-import { PersonController } from 'src/controllers/person.controller';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { PersonService } from 'src/services/person.service';
 import request from 'supertest';
-import { errorDto } from 'test/medium/responses';
-import { factory } from 'test/small.factory';
-import { automock, ControllerContext, controllerSetup, mockBaseService } from 'test/utils';
+import { PersonController } from 'src/controllers/person.controller.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PersonService } from 'src/services/person.service.js';
+import { errorDto } from 'test/medium/responses.js';
+import { factory } from 'test/small.factory.js';
+import { ControllerContext, automock, controllerSetup, mockBaseService } from 'test/utils.js';
 
 describe(PersonController.name, () => {
   let ctx: ControllerContext;
@@ -159,5 +159,17 @@ describe(PersonController.name, () => {
       expect(status).toBe(204);
       expect(service.delete).toHaveBeenCalled();
     });
+  });
+  it('should expose ordered and legacy merge routes', async () => {
+    const ids = [factory.uuid(), factory.uuid()];
+    service.mergePeople.mockResolvedValue([{ id: ids[1], success: true }]);
+    const ordered = await request(ctx.getHttpServer()).post('/people/merge').send({ ids });
+    expect(ordered.status).toBe(200);
+    expect(service.mergePeople).toHaveBeenLastCalledWith(undefined, { ids });
+    const legacy = await request(ctx.getHttpServer())
+      .post(`/people/${ids[0]}/merge`)
+      .send({ ids: [ids[1]] });
+    expect(legacy.status).toBe(200);
+    expect(service.mergePeople).toHaveBeenLastCalledWith(undefined, { ids });
   });
 });

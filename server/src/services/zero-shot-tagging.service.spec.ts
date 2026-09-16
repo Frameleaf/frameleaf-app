@@ -1,7 +1,7 @@
-import { CLIP_ZERO_SHOT_LABELS } from 'src/constants/clip-zero-shot-labels';
-import { ZERO_SHOT_TAG_NAMESPACE } from 'src/constants/zero-shot-tag';
-import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service';
-import { newTestService, ServiceMocks } from 'test/utils';
+import { CLIP_ZERO_SHOT_LABELS } from 'src/constants/clip-zero-shot-labels.js';
+import { ZERO_SHOT_TAG_NAMESPACE } from 'src/constants/zero-shot-tag.js';
+import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const ASSET_ID = 'asset-1';
 const OWNER_ID = 'owner-1';

@@ -1,5 +1,5 @@
-import { ForkHandoffPrepareForkCommand, ForkHandoffPrepareOfficialCommand } from 'src/commands/fork-handoff.command';
-import { ForkHandoffService } from 'src/services/fork-handoff.service';
+import { ForkHandoffPrepareForkCommand, ForkHandoffPrepareOfficialCommand } from 'src/commands/fork-handoff.command.js';
+import { ForkHandoffService } from 'src/services/fork-handoff.service.js';
 
 describe('fork handoff CLI', () => {
   afterEach(() => vi.restoreAllMocks());

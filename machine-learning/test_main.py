@@ -506,9 +506,7 @@ class TestImageDescriptionModel:
                     two_threads_have_failed_on_gpu.set()
                 raise RuntimeError("Accessing out-of-range dimension")
 
-        cpu_result = SimpleNamespace(
-            texts=[json.dumps({"description": "A room.", "tags": ["room"]})]
-        )
+        cpu_result = SimpleNamespace(texts=[json.dumps({"description": "A room.", "tags": ["room"]})])
 
         class CpuSession:
             def __init__(self) -> None:
@@ -536,9 +534,7 @@ class TestImageDescriptionModel:
         monkeypatch.setattr(ImageDescriptionModel, "_generation_config", lambda self: None)
         monkeypatch.setattr(ImageDescriptionModel, "_is_openvino_dimension_error", gated_dim_check)
 
-        model = ImageDescriptionModel(
-            "Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino", session=gpu_session
-        )
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino", session=gpu_session)
         image = Image.new("RGB", (3, 2), (1, 2, 3))
 
         with ThreadPoolExecutor(max_workers=8) as executor:
@@ -554,9 +550,7 @@ class TestImageDescriptionModel:
             def __init__(self, data: np.ndarray) -> None:
                 self.data = data
 
-        result_text = SimpleNamespace(
-            texts=[json.dumps({"description": "A room.", "tags": ["room"]})]
-        )
+        result_text = SimpleNamespace(texts=[json.dumps({"description": "A room.", "tags": ["room"]})])
 
         in_flight = 0
         max_in_flight = 0
@@ -576,9 +570,7 @@ class TestImageDescriptionModel:
         monkeypatch.setitem(sys.modules, "openvino", SimpleNamespace(Tensor=Tensor))
         monkeypatch.setattr(ImageDescriptionModel, "_generation_config", lambda self: None)
 
-        model = ImageDescriptionModel(
-            "Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino", session=session
-        )
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="openvino", session=session)
         image = Image.new("RGB", (3, 2), (1, 2, 3))
 
         with ThreadPoolExecutor(max_workers=4) as executor:
@@ -624,9 +616,7 @@ class TestImageDescriptionModel:
         # if the directory was non-empty. The new check requires config.json
         # so a half-finished snapshot_download (or operator file dropped in
         # by accident) does NOT skip re-download.
-        model = ImageDescriptionModel(
-            "Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda", cache_dir=tmp_path
-        )
+        model = ImageDescriptionModel("Qwen/Qwen2.5-VL-3B-Instruct", acceleration="cuda", cache_dir=tmp_path)
         # Empty directory: not cached
         assert model.cached is False
         # Non-empty directory missing config.json: not cached
@@ -1243,12 +1233,44 @@ class TestRknnSession:
 
         session.run(None, input_feed)
 
-        rknn_session.return_value.put.assert_called_once_with([input1, input2])
+        rknn_session.return_value.run.assert_called_once_with([input1, input2])
         assert np_spy.call_count == 2
         np_spy.assert_has_calls([mock.call(input1), mock.call(input2)])
 
 
 class TestCLIP:
+    def test_reads_model_configs_as_utf8(self, mocker: MockerFixture, tmp_path: Path) -> None:
+        original_open = Path.open
+
+        def locale_default_is_ascii(self: Path, mode: str = "r", *args: Any, **kwargs: Any) -> Any:
+            if "b" not in mode and kwargs.get("encoding") is None:
+                kwargs["encoding"] = "ascii"
+            return original_open(self, mode, *args, **kwargs)
+
+        mocker.patch.object(OpenClipTextualEncoder, "download")
+        mocker.patch.object(OpenClipVisualEncoder, "download")
+
+        textual = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir=tmp_path)
+        visual = OpenClipVisualEncoder("ViT-B-32__openai", cache_dir=tmp_path)
+        paths = [
+            textual.model_cfg_path,
+            textual.tokenizer_file_path,
+            textual.tokenizer_cfg_path,
+            visual.model_cfg_path,
+            visual.preprocess_cfg_path,
+        ]
+        for path in paths:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(orjson.dumps({"eos_token": "<|café|>"}).decode(), encoding="utf-8")
+
+        mocker.patch.object(Path, "open", locale_default_is_ascii)
+
+        assert textual.model_cfg["eos_token"] == "<|café|>"
+        assert textual.tokenizer_file["eos_token"] == "<|café|>"
+        assert textual.tokenizer_cfg["eos_token"] == "<|café|>"
+        assert visual.model_cfg["eos_token"] == "<|café|>"
+        assert visual.preprocess_cfg["eos_token"] == "<|café|>"
+
     embedding = np.random.rand(512).astype(np.float32)
     cache_dir = Path("test_cache")
 
@@ -2225,9 +2247,7 @@ def test_bearer_auth_open_when_no_token() -> None:
     async def ping_endpoint(_req: Any) -> Any:
         return _PR("pong")
 
-    app = Starlette(
-        routes=[Route("/ping", ping_endpoint), Route("/predict", home, methods=["POST"])]
-    )
+    app = Starlette(routes=[Route("/ping", ping_endpoint), Route("/predict", home, methods=["POST"])])
     app.add_middleware(BearerAuthMiddleware, expected_token=None)
     client = TestClient(app)
     # Health endpoint serves.
@@ -2338,9 +2358,10 @@ def test_options_validation_accepts_ocr_max_resolution() -> None:
 
     # 736 is the server default (config.ts); a larger override must also pass.
     assert validate_options(ModelTask.OCR, ModelType.DETECTION, {"maxResolution": 736}) == {"maxResolution": 736}
-    assert validate_options(
-        ModelTask.OCR, ModelType.DETECTION, {"minScore": 0.5, "maxResolution": 1500}
-    ) == {"minScore": 0.5, "maxResolution": 1500}
+    assert validate_options(ModelTask.OCR, ModelType.DETECTION, {"minScore": 0.5, "maxResolution": 1500}) == {
+        "minScore": 0.5,
+        "maxResolution": 1500,
+    }
     # An omitted maxResolution still yields a valid option set (exclude_none=True).
     assert validate_options(ModelTask.OCR, ModelType.DETECTION, {}) == {}
     # Bound mirrors the server DTO (model-config.dto.ts: z.int().min(1)).

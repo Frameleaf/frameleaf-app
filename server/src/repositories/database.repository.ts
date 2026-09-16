@@ -1,72 +1,72 @@
 import { schemaDiff, schemaFromCode, schemaFromDatabase } from '@immich/sql-tools';
-/* eslint-disable unicorn/prefer-module -- migration providers resolve paths relative to the compiled CommonJS module */
 import { Injectable } from '@nestjs/common';
 import AsyncLock from 'async-lock';
-import { Kysely, Migration, MigrationProvider, Migrator, sql } from 'kysely';
+import { Kysely, sql } from 'kysely';
+import { type Migration, type MigrationProvider, Migrator } from 'kysely/migration';
 import { InjectKysely } from 'nestjs-kysely';
 import { join } from 'node:path';
-import semver from 'semver';
+import * as semver from 'semver';
+import z from 'zod';
+import type { DB } from 'src/schema/index.js';
 import {
   EXTENSION_NAMES,
   POSTGRES_VERSION_RANGE,
-  serverVersion,
+  VECTORCHORD_LIST_SLACK_FACTOR,
+  VECTORCHORD_VERSION_RANGE,
   VECTOR_EXTENSIONS,
   VECTOR_INDEX_TABLES,
   VECTOR_VERSION_RANGE,
-  VECTORCHORD_LIST_SLACK_FACTOR,
-  VECTORCHORD_VERSION_RANGE,
-} from 'src/constants';
-import { StorageCore } from 'src/cores/storage.core';
-import { GenerateSql } from 'src/decorators';
-import { DatabaseExtension, DatabaseLock, VectorIndex } from 'src/enum';
+  serverVersion,
+} from 'src/constants.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { GenerateSql } from 'src/decorators.js';
+import { DatabaseExtension, DatabaseLock, VectorIndex } from 'src/enum.js';
 import {
   CatalogDiff,
   CatalogManifest,
   compareCatalogs,
   getCatalogEvidence,
   getCatalogTableLocks,
-} from 'src/fork-schema/catalog';
-import forkCatalogManifest from 'src/fork-schema/manifests/fork-v2-catalog.json';
-import officialCatalogManifest from 'src/fork-schema/manifests/v3.1.0-public-catalog.json';
+} from 'src/fork-schema/catalog.js';
+import forkCatalogManifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
+import officialCatalogManifest from 'src/fork-schema/manifests/v3.1.0-public-catalog.json' with { type: 'json' };
 import {
   CERTIFIED_TAG_MIGRATIONS,
-  classifyMigration,
   GENERIC_LEGACY_FORK_MIGRATIONS,
   POST_CERTIFIED_UPSTREAM_MIGRATIONS,
-} from 'src/fork-schema/migration-manifest';
+  classifyMigration,
+} from 'src/fork-schema/migration-manifest.js';
 import {
   createCertifiedLedgerMigrationProvider,
   createForkMigrationProvider,
   createLegacyMigrationProvider,
   createOfficialMigrationProvider,
-} from 'src/fork-schema/migration-provider';
+} from 'src/fork-schema/migration-provider.js';
 import {
-  irreversiblePostCertifiedMigrations,
   REVERSIBLE_POST_CERTIFIED_MIGRATIONS,
-} from 'src/fork-schema/post-certified-residue';
+  irreversiblePostCertifiedMigrations,
+} from 'src/fork-schema/post-certified-residue.js';
 import {
+  LEGACY_WORKFLOW_MIGRATION,
+  WorkflowCompatibility,
   aliasLegacyWorkflowMigration,
   classifyWorkflowCompatibility,
   getWorkflowCompatibilityEvidence,
-  LEGACY_WORKFLOW_MIGRATION,
   normalizeWorkflowMigrationForOfficialOrder,
   validateOfficialMigrationLedgerOrder,
-  WorkflowCompatibility,
-} from 'src/fork-schema/workflow-compatibility';
-import { ConfigRepository } from 'src/repositories/config.repository';
+} from 'src/fork-schema/workflow-compatibility.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import {
-  canonicalStorageVerificationDigest,
   StorageVerificationEvidence,
-} from 'src/repositories/fork-cutover-verification.repository';
-import { ForkHandoffRepository } from 'src/repositories/fork-handoff.repository';
-import { BACKFILL_KINDS } from 'src/repositories/fork-schema.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import 'src/schema'; // make sure all schema definitions are imported for schemaFromCode
-import { DB } from 'src/schema';
-import { immich_uuid_v7 } from 'src/schema/functions';
-import { ExtensionVersion, VectorExtension } from 'src/types';
-import { vectorIndexQuery } from 'src/utils/database';
-import z from 'zod';
+  canonicalStorageVerificationDigest,
+} from 'src/repositories/fork-cutover-verification.repository.js';
+import { ForkHandoffRepository } from 'src/repositories/fork-handoff.repository.js';
+import { BACKFILL_KINDS } from 'src/repositories/fork-schema.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import 'src/schema/index.js'; // make sure all schema definitions are imported for schemaFromCode
+import { immich_uuid_v7 } from 'src/schema/functions.js';
+import { ExtensionVersion, VectorExtension } from 'src/types.js';
+import { vectorIndexQuery } from 'src/utils/database.js';
 
 export let cachedVectorExtension: VectorExtension | undefined;
 
@@ -572,6 +572,19 @@ export class DatabaseRepository extends ForkHandoffRepository {
     );
   }
 
+  async vacuum({ analyze = false, table }: { analyze?: boolean; table?: keyof DB } = {}): Promise<void> {
+    try {
+      await sql`VACUUM ${sql.raw(analyze ? 'ANALYZE' : '')} ${sql.raw(table ?? '')}`.execute(this.db);
+    } catch (error) {
+      this.logger.warn(`Failed to vacuum ${table || 'database'}: ${error}`);
+      this.logger.warn('If using Docker, consider increasing shm_size for the database.');
+    }
+  }
+
+  reindex(table: keyof DB, { concurrently = false } = {}): Promise<unknown> {
+    return sql`REINDEX TABLE ${sql.raw(concurrently ? 'CONCURRENTLY' : '')} ${sql.raw(table)}`.execute(this.db);
+  }
+
   private targetListCount(count: number) {
     if (count < 128_000) {
       return 1;
@@ -602,7 +615,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
       ? await sql<{ name: string }>`SELECT name FROM public.kysely_migrations`.execute(this.db)
       : { rows: [] };
     const provider = createCertifiedLedgerMigrationProvider(
-      createLegacyMigrationProvider(join(__dirname, '..', 'schema/migrations')),
+      createLegacyMigrationProvider(join(import.meta.dirname, '..', 'schema/migrations')),
       ledger.rows.map(({ name }) => name),
     );
     const migrator = this.createMigrator(provider);
@@ -648,7 +661,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
         `.execute(this.db)
       : { rows: [] };
     const appliedNames = ledger.rows.map(({ name }) => name);
-    const officialProvider = createOfficialMigrationProvider(join(__dirname, '..', 'schema/migrations'));
+    const officialProvider = createOfficialMigrationProvider(join(import.meta.dirname, '..', 'schema/migrations'));
     const bundledNames = Object.keys(await officialProvider.getMigrations());
     if (!validateOfficialMigrationLedgerOrder(appliedNames, bundledNames).valid) {
       throw new Error('Official migration ledger is not an exact ordered prefix of the bundled provider');
@@ -669,7 +682,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
   protected async loadOfficialMigrations(): Promise<Record<string, Migration>> {
     // Keep cutover on the same filtered provider used by normal startup. This
     // provider refuses unknown files and cannot expose fork migrations.
-    return createOfficialMigrationProvider(join(__dirname, '..', 'schema/migrations')).getMigrations();
+    return createOfficialMigrationProvider(join(import.meta.dirname, '..', 'schema/migrations')).getMigrations();
   }
 
   async getForkSchemaCutoverEvidence(
@@ -1144,7 +1157,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
       migrationTableSchema: 'immich_fork',
       migrationTableName: 'migrations',
       migrationLockTableName: 'migrations_lock',
-      provider: createForkMigrationProvider(join(__dirname, '..', 'fork-schema/migrations')),
+      provider: createForkMigrationProvider(join(import.meta.dirname, '..', 'fork-schema/migrations')),
     });
 
     await this.runMigrationSet(migrator, 'fork');
@@ -1354,7 +1367,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
    * Kysely's ordered mode refuses those as "corrupted migrations".
    */
   private createMigrator(
-    provider: MigrationProvider = createLegacyMigrationProvider(join(__dirname, '..', 'schema/migrations')),
+    provider: MigrationProvider = createLegacyMigrationProvider(join(import.meta.dirname, '..', 'schema/migrations')),
   ): Migrator {
     return new Migrator({
       db: this.db,

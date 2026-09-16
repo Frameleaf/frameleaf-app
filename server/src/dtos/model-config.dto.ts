@@ -9,4 +9,4 @@ export {
   ImageDescriptionConfigSchema,
   ImageDescriptionPromptSchema,
   NsfwDetectionConfigSchema,
-} from 'src/dtos/config.dto';
+} from 'src/dtos/config.dto.js';

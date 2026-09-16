@@ -1,6 +1,6 @@
 import { Command, CommandRunner, Option, SubCommand } from 'nest-commander';
-import { ForkHandoffService } from 'src/services/fork-handoff.service';
-import { canonicalCutoverJson } from 'src/services/fork-schema-cutover.service';
+import { ForkHandoffService } from 'src/services/fork-handoff.service.js';
+import { canonicalCutoverJson } from 'src/services/fork-schema-cutover.service.js';
 
 type PrepareForkOptions = { batchSize?: number };
 

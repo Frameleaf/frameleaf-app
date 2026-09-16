@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { columns } from 'src/database';
-import { DummyValue, GenerateSql } from 'src/decorators';
-import { AssetMetadataKey, AssetVisibility } from 'src/enum';
-import { DB } from 'src/schema';
-import { SyncAck } from 'src/types';
-import { getHiddenContentFilter, hiddenContentAssetIdExists, withHiddenContentFilter } from 'src/utils/database';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content';
+import type { SyncAck } from 'src/types.js';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { columns } from 'src/database.js';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { AssetMetadataKey, AssetVisibility } from 'src/enum.js';
+import { DB } from 'src/schema/index.js';
+import { getHiddenContentFilter, hiddenContentAssetIdExists, withHiddenContentFilter } from 'src/utils/database.js';
 
 export type SyncBackfillOptions = HiddenContentQueryOptions & {
   nowId: string;

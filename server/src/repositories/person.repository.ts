@@ -1,15 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import { ExpressionBuilder, Insertable, Kysely, sql, Updateable } from 'kysely';
+import { type ExpressionBuilder, type Insertable, type Kysely, type Updateable, sql } from 'kysely';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
-import { AssetFace } from 'src/database';
-import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators';
-import { AssetFileType, AssetVisibility, SourceType, UserMetadataKey } from 'src/enum';
-import { DB } from 'src/schema';
-import { AssetFaceTable } from 'src/schema/tables/asset-face.table';
-import { FaceSearchTable } from 'src/schema/tables/face-search.table';
-import { PersonGroupTable } from 'src/schema/tables/person-group.table';
-import { PersonTable } from 'src/schema/tables/person.table';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { AssetFace } from 'src/database.js';
+import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
+import { AssetFileType, AssetVisibility, SourceType, UserMetadataKey } from 'src/enum.js';
+import { DB } from 'src/schema/index.js';
+import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
+import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
+import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
+import { PersonTable } from 'src/schema/tables/person.table.js';
 import {
   asUuid,
   dummy,
@@ -18,9 +19,8 @@ import {
   removeUndefinedKeys,
   withFilePath,
   withHiddenContentFilter,
-} from 'src/utils/database';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content';
-import { paginationHelper, PaginationOptions } from 'src/utils/pagination';
+} from 'src/utils/database.js';
+import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
 
 export interface PersonSearchOptions extends HiddenContentQueryOptions {
   withHidden: boolean;
@@ -67,9 +67,10 @@ export interface GetAllFacesOptions {
   personGroupId?: string | null;
   assetId?: string;
   sourceType?: SourceType;
+  clusterGroupId?: string;
 }
 
-export type UnassignFacesOptions = DeleteFacesOptions;
+export type UnassignFacesOptions = DeleteFacesOptions & { clusterGroupId?: string };
 
 export type GetFacesOptions = WithPersonOptions & { isVisible?: boolean };
 
@@ -108,24 +109,28 @@ export class PersonRepository {
   async reassignFaces({ oldPersonGroupId, faceIds, ownerId, newPersonGroupId }: UpdateFacesData): Promise<number> {
     const result = await this.db
       .updateTable('asset_face')
+      .from('asset')
+      .whereRef('asset_face.assetId', '=', 'asset.id')
       .set({ personGroupId: newPersonGroupId })
       .$if(!!oldPersonGroupId, (qb) => qb.where('asset_face.personGroupId', '=', oldPersonGroupId!))
       .$if(!!faceIds, (qb) => qb.where('asset_face.id', 'in', faceIds!))
-      .$if(!!ownerId, (qb) =>
-        qb.where('asset_face.personGroupId', 'in', (eb) =>
-          eb.selectFrom('person').select('person.personGroupId').where('person.ownerId', '=', ownerId!),
-        ),
-      )
+      .$if(!!ownerId, (qb) => qb.where('asset.ownerId', '=', ownerId!))
       .executeTakeFirst();
 
-    return Number(result.numChangedRows ?? 0);
+    return Number(result.numUpdatedRows ?? 0);
   }
 
-  async unassignFaces({ sourceType }: UnassignFacesOptions): Promise<void> {
+  @GenerateSql({ params: [{ sourceType: SourceType.MachineLearning, clusterGroupId: DummyValue.UUID }] })
+  async unassignFaces({ sourceType, clusterGroupId }: UnassignFacesOptions): Promise<void> {
     await this.db
       .updateTable('asset_face')
       .set({ personGroupId: null })
+      .from('asset')
+      .whereRef('asset_face.assetId', '=', 'asset.id')
       .where('asset_face.sourceType', '=', sourceType)
+      .$if(!!clusterGroupId, (qb) =>
+        qb.innerJoin('user', 'user.id', 'asset.ownerId').where('user.clusterGroupId', '=', clusterGroupId!),
+      )
       .execute();
   }
 
@@ -188,6 +193,10 @@ export class PersonRepository {
     await this.db.deleteFrom('asset_face').where('asset_face.sourceType', '=', sourceType).execute();
   }
 
+  @GenerateSql({
+    params: [{ personGroupId: null, sourceType: SourceType.MachineLearning, clusterGroupId: DummyValue.UUID }],
+    stream: true,
+  })
   getAllFaces(options: GetAllFacesOptions = {}) {
     return this.db
       .selectFrom('asset_face')
@@ -196,6 +205,12 @@ export class PersonRepository {
       .$if(!!options.personGroupId, (qb) => qb.where('asset_face.personGroupId', '=', options.personGroupId!))
       .$if(!!options.sourceType, (qb) => qb.where('asset_face.sourceType', '=', options.sourceType!))
       .$if(!!options.assetId, (qb) => qb.where('asset_face.assetId', '=', options.assetId!))
+      .$if(!!options.clusterGroupId, (qb) =>
+        qb
+          .innerJoin('asset', 'asset.id', 'asset_face.assetId')
+          .innerJoin('user', 'user.id', 'asset.ownerId')
+          .where('user.clusterGroupId', '=', options.clusterGroupId!),
+      )
       .where('asset_face.deletedAt', 'is', null)
       .where('asset_face.isVisible', 'is', true)
       .stream();
@@ -223,9 +238,7 @@ export class PersonRepository {
       .execute();
   }
 
-  @GenerateSql({
-    params: [{ take: 1, skip: 0 }, DummyValue.UUID, { withHidden: false, excludeNsfw: true }],
-  })
+  @GenerateSql({ params: [{ take: 1, skip: 0 }, DummyValue.UUID] })
   async getAllForUser(pagination: PaginationOptions, userId: string, options?: PersonSearchOptions) {
     const items = await this.db
       .selectFrom('person')
@@ -238,10 +251,10 @@ export class PersonRepository {
           .on('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
           .on('asset.deletedAt', 'is', null),
       )
+      .$call((qb) => withHiddenContentFilter(qb, options))
       .where('person.ownerId', '=', userId)
       .where('asset_face.deletedAt', 'is', null)
       .where('asset_face.isVisible', 'is', true)
-      .$call((qb) => withHiddenContentFilter(qb, options))
       .orderBy('person.isHidden', 'asc')
       .orderBy('person.isFavorite', 'desc')
       .having((eb) =>
@@ -300,7 +313,7 @@ export class PersonRepository {
       .selectAll('person')
       .leftJoin('asset_face', 'asset_face.personGroupId', 'person.personGroupId')
       .where('asset_face.deletedAt', 'is', null)
-      .where('asset_face.isVisible', 'is', true)
+      .where((eb) => eb.or([eb('asset_face.isVisible', 'is', null), eb('asset_face.isVisible', '=', true)]))
       .having((eb) => eb.fn.count('asset_face.assetId'), '=', 0)
       .groupBy(['person.ownerId', 'person.personGroupId'])
       .execute();
@@ -400,7 +413,7 @@ export class PersonRepository {
       .executeTakeFirst();
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING, { withHidden: true, excludeNsfw: true }] })
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING, { withHidden: true }] })
   getByName(userId: string, personName: string, options: PersonNameSearchOptions) {
     return this.db
       .with('similarity_threshold', (db) =>
@@ -443,7 +456,7 @@ export class PersonRepository {
       .execute();
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, { excludeNsfw: true }] })
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
   async getStatistics(
     personGroupId: string,
     userId: string,
@@ -459,10 +472,10 @@ export class PersonRepository {
           .on((eb) => eb.or([eb('asset.ownerId', '=', asUuid(userId)), inSharedAlbum(eb, userId)])),
       )
       .select((eb) => eb.fn.count(eb.fn('distinct', ['asset.id'])).as('count'))
+      .$call((qb) => withHiddenContentFilter(qb, options))
       .where('asset_face.deletedAt', 'is', null)
       .where('asset_face.isVisible', 'is', true)
       .where('asset_face.personGroupId', '=', personGroupId)
-      .$call((qb) => withHiddenContentFilter(qb, options))
       .executeTakeFirst();
 
     return {
@@ -470,7 +483,7 @@ export class PersonRepository {
     };
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })
+  @GenerateSql({ params: [DummyValue.UUID] })
   getNumberOfPeople(userId: string, options: HiddenContentQueryOptions = {}) {
     const zero = sql.lit(0);
     return this.db
@@ -799,6 +812,7 @@ export class PersonRepository {
       .select('asset_face.id')
       .where('asset_face.assetId', '=', assetId)
       .where('asset_face.personGroupId', '=', personGroupId)
+      .where('asset_face.deletedAt', 'is', null)
       .innerJoin('asset', (join) => join.onRef('asset.id', '=', 'asset_face.assetId').on('asset.isOffline', '=', false))
       .executeTakeFirst();
   }

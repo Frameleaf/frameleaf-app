@@ -41,7 +41,9 @@ const CropParametersSchema = z
 const RotateParametersSchema = z
   .object({
     angle: z
-      .number()
+      .int()
+      .min(0)
+      .max(270)
       .refine((v) => [0, 90, 180, 270].includes(v), {
         error: 'Angle must be one of the following values: 0, 90, 180, 270',
       })
@@ -67,11 +69,11 @@ const TrimParametersSchema = z
 
 const StraightenParametersSchema = z
   .object({
-    angle: z.number().min(-45).max(45).describe('Straighten angle in degrees'),
+    angle: z.number().meta({ format: 'double' }).min(-45).max(45).describe('Straighten angle in degrees'),
   })
   .meta({ id: 'StraightenParameters' });
 
-const AdjustmentValueSchema = z.number().min(-100).max(100);
+const AdjustmentValueSchema = z.number().meta({ format: 'double' }).min(-100).max(100);
 
 const AdjustParametersSchema = z
   .object({
@@ -94,7 +96,13 @@ const AdjustParametersSchema = z
 const LookParametersSchema = z
   .object({
     name: z.string().min(1).max(64).describe('Filter or effect name'),
-    intensity: z.number().min(0).max(100).default(100).describe('Filter or effect intensity'),
+    intensity: z
+      .number()
+      .meta({ format: 'double' })
+      .min(0)
+      .max(100)
+      .default(100)
+      .describe('Filter or effect intensity'),
   })
   .meta({ id: 'LookParameters' });
 
@@ -107,11 +115,27 @@ const ToggleParametersSchema = z
 const TextOverlayParametersSchema = z
   .object({
     text: z.string().min(1).max(200),
-    x: z.number().min(0).max(1).describe('Horizontal position as a percentage of video width'),
-    y: z.number().min(0).max(1).describe('Vertical position as a percentage of video height'),
+    x: z
+      .number()
+      .meta({ format: 'double' })
+      .min(0)
+      .max(1)
+      .describe('Horizontal position as a percentage of video width'),
+    y: z
+      .number()
+      .meta({ format: 'double' })
+      .min(0)
+      .max(1)
+      .describe('Vertical position as a percentage of video height'),
     startMs: z.int().min(0).optional().describe('Overlay start time in milliseconds'),
     endMs: z.int().min(1).optional().describe('Overlay end time in milliseconds'),
-    size: z.number().min(0.02).max(0.2).default(0.06).describe('Font size as a percentage of video height'),
+    size: z
+      .number()
+      .meta({ format: 'double' })
+      .min(0.02)
+      .max(0.2)
+      .default(0.06)
+      .describe('Font size as a percentage of video height'),
     color: z
       .string()
       .regex(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/)
@@ -130,13 +154,13 @@ const TextOverlayParametersSchema = z
 const AudioParametersSchema = z
   .object({
     muted: z.boolean().optional(),
-    volume: z.number().min(0).max(2).optional().describe('Audio volume multiplier'),
+    volume: z.number().meta({ format: 'double' }).min(0).max(2).optional().describe('Audio volume multiplier'),
   })
   .meta({ id: 'AudioParameters' });
 
 const SpeedParametersSchema = z
   .object({
-    rate: z.number().min(0.25).max(4).describe('Playback speed multiplier'),
+    rate: z.number().meta({ format: 'double' }).min(0.25).max(4).describe('Playback speed multiplier'),
     startMs: z.int().min(0).optional().describe('Speed segment start time in milliseconds'),
     endMs: z.int().min(1).optional().describe('Speed segment end time in milliseconds'),
   })

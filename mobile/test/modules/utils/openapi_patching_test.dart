@@ -6,6 +6,20 @@ import 'package:openapi/api.dart';
 
 void main() {
   group('Test OpenApi Patching', () {
+    test('defaults new search and time bucket fields without replacing server values', () {
+      final legacySearch = <String, dynamic>{'count': 0, 'items': [], 'nextPage': null, 'total': 0};
+      final legacyBucket = <String, dynamic>{};
+      expect(SearchAssetResponseDto.fromJson(legacySearch)!.nextCursor, isNull);
+      expect(legacySearch.containsKey('nextCursor'), isTrue);
+      expect(TimeBucketAssetResponseDto.fromJson(legacyBucket)!.createdAt, isEmpty);
+      expect(legacyBucket.containsKey('createdAt'), isTrue);
+
+      legacySearch['nextCursor'] = 'cursor';
+      legacyBucket['createdAt'] = ['2026-09-16T00:00:00Z'];
+      expect(SearchAssetResponseDto.fromJson(legacySearch)!.nextCursor, 'cursor');
+      expect(TimeBucketAssetResponseDto.fromJson(legacyBucket)!.createdAt, ['2026-09-16T00:00:00Z']);
+    });
+
     test('upgradeDto', () {
       dynamic value;
       String targetType;

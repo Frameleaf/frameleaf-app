@@ -48,7 +48,9 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`INSERT INTO "cluster_group" ("id") SELECT "clusterGroupId" FROM "user";`.execute(db);
   await sql`ALTER TABLE "user" ALTER COLUMN "clusterGroupId" SET NOT NULL;`.execute(db);
   await sql`CREATE INDEX "user_clusterGroupId_idx" ON "user" ("clusterGroupId");`.execute(db);
-  await sql`ALTER TABLE "user" ADD CONSTRAINT "user_clusterGroupId_fkey" FOREIGN KEY ("clusterGroupId") REFERENCES "cluster_group" ("id") ON UPDATE CASCADE ON DELETE NO ACTION;`.execute(db);
+  await sql`ALTER TABLE "user" ADD CONSTRAINT "user_clusterGroupId_fkey" FOREIGN KEY ("clusterGroupId") REFERENCES "cluster_group" ("id") ON UPDATE CASCADE ON DELETE NO ACTION;`.execute(
+    db,
+  );
 
   await sql`CREATE TABLE "cluster_group_request" (
   "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
@@ -96,7 +98,9 @@ export async function up(db: Kysely<any>): Promise<void> {
   CONSTRAINT "person_group_audit_pkey" PRIMARY KEY ("id")
 );`.execute(db);
   await sql`CREATE INDEX "person_group_audit_personGroupId_idx" ON "person_group_audit" ("personGroupId");`.execute(db);
-  await sql`CREATE INDEX "person_group_audit_clusterGroupId_idx" ON "person_group_audit" ("clusterGroupId");`.execute(db);
+  await sql`CREATE INDEX "person_group_audit_clusterGroupId_idx" ON "person_group_audit" ("clusterGroupId");`.execute(
+    db,
+  );
   await sql`CREATE INDEX "person_group_audit_deletedAt_idx" ON "person_group_audit" ("deletedAt");`.execute(db);
 
   await sql`ALTER TABLE "person" ADD "personGroupId" uuid;`.execute(db);
@@ -143,14 +147,30 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`ALTER TABLE "person" DROP COLUMN "id";`.execute(db);
   await sql`ALTER TABLE "person" ADD CONSTRAINT "person_pkey" PRIMARY KEY ("ownerId", "personGroupId");`.execute(db);
   await sql`DROP INDEX "person_ownerId_idx";`.execute(db);
-  await sql`UPDATE "migration_overrides" SET "value" = '{"type":"function","name":"person_delete_audit","sql":"CREATE OR REPLACE FUNCTION person_delete_audit()\\n  RETURNS TRIGGER\\n  LANGUAGE PLPGSQL\\n  AS $$\\n    BEGIN\\n      INSERT INTO person_audit (\\"personGroupId\\", \\"ownerId\\")\\n      SELECT \\"personGroupId\\", \\"ownerId\\"\\n      FROM OLD;\\n      RETURN NULL;\\n    END\\n  $$;"}'::jsonb WHERE "name" = 'function_person_delete_audit';`.execute(db);
-  await sql`UPDATE "migration_overrides" SET "value" = '{"type":"trigger","name":"person_delete_audit","sql":"CREATE OR REPLACE TRIGGER \\"person_delete_audit\\"\\n  AFTER DELETE ON \\"person\\"\\n  REFERENCING OLD TABLE AS \\"old\\"\\n  FOR EACH STATEMENT\\n  WHEN (pg_trigger_depth() <= 1)\\n  EXECUTE FUNCTION person_delete_audit();"}'::jsonb WHERE "name" = 'trigger_person_delete_audit';`.execute(db);
-  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('function_person_group_delete_audit', '{"type":"function","name":"person_group_delete_audit","sql":"CREATE OR REPLACE FUNCTION person_group_delete_audit()\\n  RETURNS TRIGGER\\n  LANGUAGE PLPGSQL\\n  AS $$\\n    BEGIN\\n      INSERT INTO person_group_audit (\\"personGroupId\\", \\"clusterGroupId\\")\\n      SELECT \\"id\\", \\"clusterGroupId\\"\\n      FROM OLD;\\n      RETURN NULL;\\n    END\\n  $$;"}'::jsonb);`.execute(db);
-  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_cluster_group_updatedAt', '{"type":"trigger","name":"cluster_group_updatedAt","sql":"CREATE OR REPLACE TRIGGER \\"cluster_group_updatedAt\\"\\n  BEFORE UPDATE ON \\"cluster_group\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(db);
-  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_person_group_delete_audit', '{"type":"trigger","name":"person_group_delete_audit","sql":"CREATE OR REPLACE TRIGGER \\"person_group_delete_audit\\"\\n  AFTER DELETE ON \\"person_group\\"\\n  REFERENCING OLD TABLE AS \\"old\\"\\n  FOR EACH STATEMENT\\n  WHEN (pg_trigger_depth() = 0)\\n  EXECUTE FUNCTION person_group_delete_audit();"}'::jsonb);`.execute(db);
-  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_person_group_updatedAt', '{"type":"trigger","name":"person_group_updatedAt","sql":"CREATE OR REPLACE TRIGGER \\"person_group_updatedAt\\"\\n  BEFORE UPDATE ON \\"person_group\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(db);
-  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('index_asset_face_personGroupId_assetId_notDeleted_isVisible_idx', '{"type":"index","name":"asset_face_personGroupId_assetId_notDeleted_isVisible_idx","sql":"CREATE INDEX \\"asset_face_personGroupId_assetId_notDeleted_isVisible_idx\\" ON \\"asset_face\\" (\\"personGroupId\\", \\"assetId\\") WHERE (\\"deletedAt\\" IS NULL AND \\"isVisible\\" IS TRUE);"}'::jsonb);`.execute(db);
-  await sql`DELETE FROM "migration_overrides" WHERE "name" = 'index_asset_face_personId_assetId_notDeleted_isVisible_idx';`.execute(db);
+  await sql`UPDATE "migration_overrides" SET "value" = '{"type":"function","name":"person_delete_audit","sql":"CREATE OR REPLACE FUNCTION person_delete_audit()\\n  RETURNS TRIGGER\\n  LANGUAGE PLPGSQL\\n  AS $$\\n    BEGIN\\n      INSERT INTO person_audit (\\"personGroupId\\", \\"ownerId\\")\\n      SELECT \\"personGroupId\\", \\"ownerId\\"\\n      FROM OLD;\\n      RETURN NULL;\\n    END\\n  $$;"}'::jsonb WHERE "name" = 'function_person_delete_audit';`.execute(
+    db,
+  );
+  await sql`UPDATE "migration_overrides" SET "value" = '{"type":"trigger","name":"person_delete_audit","sql":"CREATE OR REPLACE TRIGGER \\"person_delete_audit\\"\\n  AFTER DELETE ON \\"person\\"\\n  REFERENCING OLD TABLE AS \\"old\\"\\n  FOR EACH STATEMENT\\n  WHEN (pg_trigger_depth() <= 1)\\n  EXECUTE FUNCTION person_delete_audit();"}'::jsonb WHERE "name" = 'trigger_person_delete_audit';`.execute(
+    db,
+  );
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('function_person_group_delete_audit', '{"type":"function","name":"person_group_delete_audit","sql":"CREATE OR REPLACE FUNCTION person_group_delete_audit()\\n  RETURNS TRIGGER\\n  LANGUAGE PLPGSQL\\n  AS $$\\n    BEGIN\\n      INSERT INTO person_group_audit (\\"personGroupId\\", \\"clusterGroupId\\")\\n      SELECT \\"id\\", \\"clusterGroupId\\"\\n      FROM OLD;\\n      RETURN NULL;\\n    END\\n  $$;"}'::jsonb);`.execute(
+    db,
+  );
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_cluster_group_updatedAt', '{"type":"trigger","name":"cluster_group_updatedAt","sql":"CREATE OR REPLACE TRIGGER \\"cluster_group_updatedAt\\"\\n  BEFORE UPDATE ON \\"cluster_group\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(
+    db,
+  );
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_person_group_delete_audit', '{"type":"trigger","name":"person_group_delete_audit","sql":"CREATE OR REPLACE TRIGGER \\"person_group_delete_audit\\"\\n  AFTER DELETE ON \\"person_group\\"\\n  REFERENCING OLD TABLE AS \\"old\\"\\n  FOR EACH STATEMENT\\n  WHEN (pg_trigger_depth() = 0)\\n  EXECUTE FUNCTION person_group_delete_audit();"}'::jsonb);`.execute(
+    db,
+  );
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_person_group_updatedAt', '{"type":"trigger","name":"person_group_updatedAt","sql":"CREATE OR REPLACE TRIGGER \\"person_group_updatedAt\\"\\n  BEFORE UPDATE ON \\"person_group\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(
+    db,
+  );
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('index_asset_face_personGroupId_assetId_notDeleted_isVisible_idx', '{"type":"index","name":"asset_face_personGroupId_assetId_notDeleted_isVisible_idx","sql":"CREATE INDEX \\"asset_face_personGroupId_assetId_notDeleted_isVisible_idx\\" ON \\"asset_face\\" (\\"personGroupId\\", \\"assetId\\") WHERE (\\"deletedAt\\" IS NULL AND \\"isVisible\\" IS TRUE);"}'::jsonb);`.execute(
+    db,
+  );
+  await sql`DELETE FROM "migration_overrides" WHERE "name" = 'index_asset_face_personId_assetId_notDeleted_isVisible_idx';`.execute(
+    db,
+  );
 }
 
 export async function down(db: Kysely<any>): Promise<void> {

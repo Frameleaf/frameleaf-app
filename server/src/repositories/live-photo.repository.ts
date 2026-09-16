@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { Kysely, type SqlBool, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AssetType, AssetVisibility } from 'src/enum';
-import { DB } from 'src/schema';
-import { asUuid } from 'src/utils/database';
+import { AssetType, AssetVisibility } from 'src/enum.js';
+import { DB } from 'src/schema/index.js';
+import { asUuid } from 'src/utils/database.js';
 
 export type LivePhotoCandidateRow = {
   photoId: string;
@@ -65,9 +65,9 @@ export class LivePhotoRepository {
       .innerJoin('asset as video', (join) =>
         join
           .onRef('video.ownerId', '=', 'photo.ownerId')
-          .on(sql`${filenameStem('photo.originalFileName')} = ${filenameStem('video.originalFileName')}`)
+          .on(sql<SqlBool>`${filenameStem('photo.originalFileName')} = ${filenameStem('video.originalFileName')}`)
           .on(
-            sql`abs(extract(epoch from (${sql.ref('photo.fileCreatedAt')} - ${sql.ref('video.fileCreatedAt')}))) <= ${windowSeconds}`,
+            sql<SqlBool>`abs(extract(epoch from (${sql.ref('photo.fileCreatedAt')} - ${sql.ref('video.fileCreatedAt')}))) <= ${windowSeconds}`,
           ),
       )
       .select(['photo.id as photoId', 'video.id as videoId'])

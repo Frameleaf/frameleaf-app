@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { DB } from 'src/schema';
+import { DB } from 'src/schema/index.js';
 
 export type CatalogEntry = {
   definition: string;

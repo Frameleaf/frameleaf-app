@@ -3,14 +3,13 @@ import {
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
-  Generated,
   Table,
-  Timestamp,
   UpdateDateColumn,
 } from '@immich/sql-tools';
-import { CreateIdColumn, UpdatedAtTrigger, UpdateIdColumn } from 'src/decorators';
-import { partner_delete_audit } from 'src/schema/functions';
-import { UserTable } from 'src/schema/tables/user.table';
+import type { Generated, Timestamp } from '@immich/sql-tools';
+import { CreateIdColumn, UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { partner_delete_audit } from 'src/schema/functions.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
 
 @Table('partner')
 @UpdatedAtTrigger('partner_updatedAt')

@@ -1,11 +1,11 @@
-import { AssetController } from 'src/controllers/asset.controller';
-import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto';
-import { AssetMetadataKey, Permission } from 'src/enum';
-import { AssetService } from 'src/services/asset.service';
-import { ImageEnrichmentService } from 'src/services/image-enrichment.service';
 import request from 'supertest';
-import { factory } from 'test/small.factory';
-import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils';
+import { AssetController } from 'src/controllers/asset.controller.js';
+import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto.js';
+import { AssetMetadataKey, Permission } from 'src/enum.js';
+import { AssetService } from 'src/services/asset.service.js';
+import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
+import { factory } from 'test/small.factory.js';
+import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
 
 describe(AssetController.name, () => {
   let ctx: ControllerContext;

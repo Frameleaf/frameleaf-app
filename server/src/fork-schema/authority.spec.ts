@@ -1,4 +1,4 @@
-import { isForkAuthoritative, isForkWriteEnabled, isLegacyAuthoritative } from 'src/fork-schema/authority';
+import { isForkAuthoritative, isForkWriteEnabled, isLegacyAuthoritative } from 'src/fork-schema/authority.js';
 
 describe('fork schema authority policy', () => {
   it.each(['legacy', 'dual-write', 'ready'] as const)('keeps legacy reads authoritative in %s', (phase) => {
