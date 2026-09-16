@@ -1,13 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { LRUMap } from 'mnemonist';
-import { AssetMapOptions, AssetResponseDto, MapAsset, mapAsset } from 'src/dtos/asset-response.dto';
-import { AuthDto } from 'src/dtos/auth.dto';
-import { mapPerson, PersonResponseDto } from 'src/dtos/person.dto';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { AssetMapOptions, AssetResponseDto, MapAsset, mapAsset } from 'src/dtos/asset-response.dto.js';
+import { PersonResponseDto, mapPerson } from 'src/dtos/person.dto.js';
 import {
   AskSearchDto,
   AskSearchResponseDto,
   LargeAssetSearchDto,
-  mapPlaces,
   MetadataSearchDto,
   PlacesResponseDto,
   RandomSearchDto,
@@ -19,14 +18,15 @@ import {
   SearchSuggestionType,
   SmartSearchDto,
   StatisticsSearchDto,
-} from 'src/dtos/search.dto';
-import { AssetOrder, AssetType, AssetVisibility, Permission } from 'src/enum';
-import { BaseService } from 'src/services/base.service';
-import { isGranted, requireElevatedPermission } from 'src/utils/access';
-import { getMyPartnerIds } from 'src/utils/asset.util';
-import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content';
-import { isSmartSearchEnabled } from 'src/utils/misc';
-import { fromChecksum } from 'src/utils/request';
+  mapPlaces,
+} from 'src/dtos/search.dto.js';
+import { AssetOrder, AssetType, AssetVisibility, Permission } from 'src/enum.js';
+import { BaseService } from 'src/services/base.service.js';
+import { isGranted, requireElevatedPermission } from 'src/utils/access.js';
+import { getMyPartnerIds } from 'src/utils/asset.util.js';
+import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
+import { isSmartSearchEnabled } from 'src/utils/misc.js';
+import { fromChecksum } from 'src/utils/request.js';
 
 @Injectable()
 export class SearchService extends BaseService {

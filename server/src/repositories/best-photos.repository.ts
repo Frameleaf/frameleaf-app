@@ -1,25 +1,25 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { DummyValue, GenerateSql } from 'src/decorators';
-import { AssetStatus, AssetType, AssetVisibility } from 'src/enum';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
 import {
-  combineVerifications,
   DerivedBackfillResult,
+  TableVerification,
+  combineVerifications,
   getForkSchemaPhase,
   lockForkAssetParent,
   readsForkSidecar,
-  TableVerification,
   verifyRows,
   writesForkSidecar,
   writesLegacy,
-} from 'src/repositories/fork-derived-results';
-import { DB } from 'src/schema';
-import { AssetBestPhotoScoreTable } from 'src/schema/tables/asset-best-photo-score.table';
-import { AssetTable } from 'src/schema/tables/asset.table';
-import { anyUuid, asUuid, withHiddenContentFilter } from 'src/utils/database';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content';
-import { paginationHelper } from 'src/utils/pagination';
+} from 'src/repositories/fork-derived-results.js';
+import { DB } from 'src/schema/index.js';
+import { AssetBestPhotoScoreTable } from 'src/schema/tables/asset-best-photo-score.table.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { anyUuid, asUuid, withHiddenContentFilter } from 'src/utils/database.js';
+import { paginationHelper } from 'src/utils/pagination.js';
 
 export type BestPhotoScore = Selectable<AssetBestPhotoScoreTable>;
 

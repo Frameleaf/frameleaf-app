@@ -66,6 +66,7 @@ export const toResponseDto = (...timelineAsset: TimelineAsset[]) => {
     isTrashed: [],
     livePhotoVideoId: [],
     fileCreatedAt: [],
+    createdAt: [],
     localOffsetHours: [],
     ownerId: [],
     projectionType: [],
@@ -85,6 +86,7 @@ export const toResponseDto = (...timelineAsset: TimelineAsset[]) => {
     bucketAssets.isTrashed.push(asset.isTrashed);
     bucketAssets.livePhotoVideoId.push(asset.livePhotoVideoId!);
     bucketAssets.fileCreatedAt.push(fileCreatedAt);
+    bucketAssets.createdAt.push(fromTimelinePlainDateTime(asset.createdAt).toISO());
     bucketAssets.ownerId.push(asset.ownerId);
     bucketAssets.projectionType.push(asset.projectionType!);
     bucketAssets.ratio.push(asset.ratio);

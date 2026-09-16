@@ -4,9 +4,9 @@ import {
   compareCatalogs,
   getCatalogTableLocks,
   serializeCatalogManifest,
-} from 'src/fork-schema/catalog';
-import forkCatalogManifest from 'src/fork-schema/manifests/fork-v2-catalog.json';
-import officialCatalogManifest from 'src/fork-schema/manifests/v3.1.0-public-catalog.json';
+} from 'src/fork-schema/catalog.js';
+import forkCatalogManifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
+import officialCatalogManifest from 'src/fork-schema/manifests/v3.1.0-public-catalog.json' with { type: 'json' };
 
 const entry = (identity: string, definition = identity): CatalogEntry => ({ definition, identity });
 

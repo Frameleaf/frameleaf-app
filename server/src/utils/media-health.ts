@@ -1,4 +1,4 @@
-import { MediaHealthStatus } from 'src/enum';
+import { MediaHealthStatus } from 'src/enum.js';
 
 const rawUnsupportedMessages = [
   'Input file has corrupt header',

@@ -2889,7 +2889,7 @@
       "identity": "public.user.name"
     },
     {
-      "definition": "character varying|not null|''::character varying||",
+      "definition": "character varying|nullable|||",
       "identity": "public.user.oauthId"
     },
     {

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { LoggingRepository } from 'src/repositories/logging.repository';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
 const RUNPOD_API_BASE = 'https://rest.runpod.io/v1';
 // The REST API does not currently expose GPU types; that endpoint is only

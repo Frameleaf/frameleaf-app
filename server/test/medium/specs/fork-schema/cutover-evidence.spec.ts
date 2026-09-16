@@ -1,25 +1,25 @@
-import { createPostgres, DatabaseConnectionParams } from '@immich/sql-tools';
+import { DatabaseConnectionParams, createPostgres } from '@immich/sql-tools';
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { ChecksumAlgorithm } from 'src/enum';
-import { getCatalogEvidence } from 'src/fork-schema/catalog';
-import { LEGACY_FORK_MIGRATIONS } from 'src/fork-schema/migration-manifest';
+import { ChecksumAlgorithm } from 'src/enum.js';
+import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
+import { LEGACY_FORK_MIGRATIONS } from 'src/fork-schema/migration-manifest.js';
 import {
-  up as createCutoverVerification,
   down as rollbackCutoverVerification,
-} from 'src/fork-schema/migrations/0000000000050-CutoverVerification';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { BACKFILL_KINDS } from 'src/repositories/fork-schema.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { DB } from 'src/schema';
-import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service';
-import { mediumFactory } from 'test/medium.factory';
-import { alignCertifiedGeodataCatalog } from 'test/medium/specs/fork-schema/certified-geodata-fixture';
-import { getKyselyDB, newTestService } from 'test/utils';
+  up as createCutoverVerification,
+} from 'src/fork-schema/migrations/0000000000050-CutoverVerification.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { BACKFILL_KINDS } from 'src/repositories/fork-schema.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { DB } from 'src/schema/index.js';
+import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service.js';
+import { alignCertifiedGeodataCatalog } from 'test/medium/specs/fork-schema/certified-geodata-fixture.js';
+import { mediumFactory } from 'test/medium.factory.js';
+import { getKyselyDB, newTestService } from 'test/utils.js';
 
 const SHA256 = 'a'.repeat(64);
 const EMPTY_STORAGE_DIGEST = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';

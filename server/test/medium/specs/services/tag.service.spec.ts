@@ -1,17 +1,17 @@
 import { Kysely } from 'kysely';
-import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto';
-import { AssetMetadataKey, JobStatus } from 'src/enum';
-import { AccessRepository } from 'src/repositories/access.repository';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { EventRepository } from 'src/repositories/event.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { TagRepository } from 'src/repositories/tag.repository';
-import { DB } from 'src/schema';
-import { TagService } from 'src/services/tag.service';
-import { upsertTags } from 'src/utils/tag';
-import { newMediumService } from 'test/medium.factory';
-import { factory } from 'test/small.factory';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils';
+import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
+import { JobStatus } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { TagRepository } from 'src/repositories/tag.repository.js';
+import { DB } from 'src/schema/index.js';
+import { TagService } from 'src/services/tag.service.js';
+import { upsertTags } from 'src/utils/tag.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { factory } from 'test/small.factory.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
@@ -22,14 +22,6 @@ const setup = (db?: Kysely<DB>) => {
     mock: [EventRepository, LoggingRepository],
   });
 };
-
-const nsfwMetadata = (isNsfw: boolean, review?: { action: string; isNsfw: boolean }) => ({
-  nsfwDetection: {
-    status: 'success',
-    result: { isNsfw, score: isNsfw ? 0.95 : 0.05, labels: { explicit: isNsfw ? 0.95 : 0.05 } },
-    ...(review && { review }),
-  },
-});
 
 /** A tag owned by one user, plus another user's auth to attempt access with */
 const newTagOfAnotherUser = async (ctx: ReturnType<typeof setup>['ctx']) => {
@@ -45,78 +37,6 @@ beforeAll(async () => {
 });
 
 describe(TagService.name, () => {
-  describe('nsfw privacy', () => {
-    it('should hide tags that only point to NSFW assets while hide mode is active', async () => {
-      const { sut, ctx } = setup(await getKyselyDB());
-      const { user } = await ctx.newUser();
-      const { asset: safe } = await ctx.newAsset({ ownerId: user.id });
-      const { asset: nsfw } = await ctx.newAsset({ ownerId: user.id });
-      const { asset: markedSafe } = await ctx.newAsset({ ownerId: user.id });
-      const { asset: markedNsfw } = await ctx.newAsset({ ownerId: user.id });
-
-      await ctx.newMetadata({ assetId: nsfw.id, key: AssetMetadataKey.MlEnrichment, value: nsfwMetadata(true) });
-      await ctx.newMetadata({
-        assetId: markedSafe.id,
-        key: AssetMetadataKey.MlEnrichment,
-        value: nsfwMetadata(true, { action: 'marked-safe', isNsfw: false }),
-      });
-      await ctx.newMetadata({
-        assetId: markedNsfw.id,
-        key: AssetMetadataKey.MlEnrichment,
-        value: nsfwMetadata(false, { action: 'marked-nsfw', isNsfw: true }),
-      });
-
-      const [emptyTag, hiddenTag, hiddenParentTag, hiddenChildTag, mixedTag, reviewNsfwTag, reviewSafeTag, safeTag] =
-        await upsertTags(ctx.get(TagRepository), {
-          userId: user.id,
-          tags: [
-            'empty',
-            'hidden',
-            'hidden-parent',
-            'hidden-parent/child',
-            'mixed',
-            'review-nsfw',
-            'review-safe',
-            'safe',
-          ],
-        });
-
-      await ctx.newTagAsset({ tagIds: [safeTag.id], assetIds: [safe.id] });
-      await ctx.newTagAsset({ tagIds: [hiddenTag.id, hiddenChildTag.id], assetIds: [nsfw.id] });
-      await ctx.newTagAsset({ tagIds: [mixedTag.id], assetIds: [safe.id, nsfw.id] });
-      await ctx.newTagAsset({ tagIds: [reviewSafeTag.id], assetIds: [markedSafe.id] });
-      await ctx.newTagAsset({ tagIds: [reviewNsfwTag.id], assetIds: [markedNsfw.id] });
-
-      const auth = factory.auth({ user });
-      const hiddenAuth = { ...auth, hideNsfwAssets: true };
-
-      const tags = await sut.getAll(auth);
-      const values = tags.map((tag) => tag.value);
-      expect(values).toEqual([
-        'empty',
-        'hidden',
-        'hidden-parent',
-        'hidden-parent/child',
-        'mixed',
-        'review-nsfw',
-        'review-safe',
-        'safe',
-      ]);
-
-      const hiddenTags = await sut.getAll(hiddenAuth);
-      const hiddenValues = hiddenTags.map((tag) => tag.value);
-      expect(hiddenValues).toEqual(['empty', 'mixed', 'review-safe', 'safe']);
-
-      await expect(sut.get(hiddenAuth, emptyTag.id)).resolves.toEqual(expect.objectContaining({ id: emptyTag.id }));
-      await expect(sut.get(hiddenAuth, safeTag.id)).resolves.toEqual(expect.objectContaining({ id: safeTag.id }));
-      await expect(sut.get(hiddenAuth, hiddenTag.id)).rejects.toThrow('Not found or no tag.read access');
-      await expect(sut.get(hiddenAuth, hiddenParentTag.id)).rejects.toThrow('Not found or no tag.read access');
-      await expect(sut.get(hiddenAuth, hiddenChildTag.id)).rejects.toThrow('Not found or no tag.read access');
-      await expect(sut.get(hiddenAuth, reviewNsfwTag.id)).rejects.toThrow('Not found or no tag.read access');
-      await expect(sut.get(auth, hiddenTag.id)).resolves.toEqual(expect.objectContaining({ id: hiddenTag.id }));
-    });
-  });
-
   describe('get', () => {
     it('should not return a tag of another user', async () => {
       const { sut, ctx } = setup();

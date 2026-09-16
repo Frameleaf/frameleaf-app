@@ -1,5 +1,5 @@
-import { AssetResponseDto } from 'src/dtos/asset-response.dto';
-import { mimeTypes } from 'src/utils/mime-types';
+import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 
 export type SuggestDuplicateOptions = {
   /**

@@ -1,15 +1,15 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Endpoint, HistoryBuilder } from 'src/decorators';
-import { AuthDto } from 'src/dtos/auth.dto';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   LivePhotoCandidatesResponseDto,
   LivePhotoRelinkDto,
   LivePhotoRelinkResponseDto,
-} from 'src/dtos/live-photo.dto';
-import { ApiTag } from 'src/enum';
-import { Auth, Authenticated } from 'src/middleware/auth.guard';
-import { LivePhotoService } from 'src/services/live-photo.service';
+} from 'src/dtos/live-photo.dto.js';
+import { ApiTag } from 'src/enum.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { LivePhotoService } from 'src/services/live-photo.service.js';
 
 @ApiTags(ApiTag.LivePhoto)
 @Controller('live-photo')

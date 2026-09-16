@@ -1,16 +1,19 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Insertable, Kysely } from 'kysely';
+import { Kysely } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
-import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants';
-import { StorageCore } from 'src/cores/storage.core';
-import { OnJob } from 'src/decorators';
+import type { Insertable } from 'kysely';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ImageDescriptionResult, NsfwDetectionResult } from 'src/repositories/machine-learning.repository.js';
+import type { JobItem, JobOf } from 'src/types.js';
+import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { OnJob } from 'src/decorators.js';
 import {
   AssetImageEnrichmentAction,
   AssetImageEnrichmentActionRequestDto,
   AssetImageEnrichmentResponseDto,
-} from 'src/dtos/asset.dto';
-import { AuthDto } from 'src/dtos/auth.dto';
+} from 'src/dtos/asset.dto.js';
 import {
   AssetMetadataKey,
   AssetStatus,
@@ -21,20 +24,18 @@ import {
   Permission,
   QueueName,
   StorageFolder,
-} from 'src/enum';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository';
-import { ForkPrivacyRepository, PrivacySidecar } from 'src/repositories/fork-privacy.repository';
-import { ImageDescriptionResult, NsfwDetectionResult } from 'src/repositories/machine-learning.repository';
-import { DB } from 'src/schema';
-import { TagAssetTable } from 'src/schema/tables/tag-asset.table';
-import { BaseService } from 'src/services/base.service';
-import { IdentityPostValidator } from 'src/services/identity-post-validator.service';
-import { ImageDescriptionPromptAssembler, KnownPerson, VideoContext } from 'src/services/prompt-assembler.service';
-import { SmartAlbumService } from 'src/services/smart-album.service';
-import { JobItem, JobOf } from 'src/types';
-import { updateLockedColumns } from 'src/utils/database';
-import { isImageDescriptionEnabled, isNsfwDetectionEnabled, isSmartSearchEnabled } from 'src/utils/misc';
-import { upsertTags } from 'src/utils/tag';
+} from 'src/enum.js';
+import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
+import { ForkPrivacyRepository, PrivacySidecar } from 'src/repositories/fork-privacy.repository.js';
+import { DB } from 'src/schema/index.js';
+import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
+import { BaseService } from 'src/services/base.service.js';
+import { IdentityPostValidator } from 'src/services/identity-post-validator.service.js';
+import { ImageDescriptionPromptAssembler, KnownPerson, VideoContext } from 'src/services/prompt-assembler.service.js';
+import { SmartAlbumService } from 'src/services/smart-album.service.js';
+import { updateLockedColumns } from 'src/utils/database.js';
+import { isImageDescriptionEnabled, isNsfwDetectionEnabled, isSmartSearchEnabled } from 'src/utils/misc.js';
+import { upsertTags } from 'src/utils/tag.js';
 
 type EnrichmentReview = {
   action: 'accepted' | 'marked-safe' | 'marked-nsfw';

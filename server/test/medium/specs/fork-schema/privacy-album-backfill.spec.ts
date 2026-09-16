@@ -1,18 +1,18 @@
 import { Kysely, sql } from 'kysely';
 import { createHash } from 'node:crypto';
-import { AlbumRepository } from 'src/repositories/album.repository';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository';
-import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { DB } from 'src/schema';
-import { ImageEnrichmentService } from 'src/services/image-enrichment.service';
-import { withNsfwAssets, withoutNsfwAssets } from 'src/utils/database';
-import { authStub } from 'test/fixtures/auth.stub';
-import { mediumFactory } from 'test/medium.factory';
-import { newUuid } from 'test/small.factory';
-import { getKyselyDB, newTestService } from 'test/utils';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository.js';
+import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { DB } from 'src/schema/index.js';
+import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
+import { withNsfwAssets, withoutNsfwAssets } from 'src/utils/database.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
+import { mediumFactory } from 'test/medium.factory.js';
+import { newUuid } from 'test/small.factory.js';
+import { getKyselyDB, newTestService } from 'test/utils.js';
 
 describe('privacy and album fork sidecars', () => {
   let db: Kysely<DB>;

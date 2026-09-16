@@ -1,4 +1,4 @@
-import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw';
+import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 
 describe('deriveIsNsfwFromMetadata', () => {
   it('returns undefined for unstructured input', () => {

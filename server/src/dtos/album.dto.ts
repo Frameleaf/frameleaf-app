@@ -1,16 +1,16 @@
 import { ShallowDehydrateObject } from 'kysely';
 import { createZodDto } from 'nestjs-zod';
-import { ALBUM_ICON_KEYS } from 'src/constants/album-icons';
-import { AlbumUser, AuthSharedLink } from 'src/database';
-import { HistoryBuilder } from 'src/decorators';
-import { BulkIdErrorReasonSchema } from 'src/dtos/asset-ids.response.dto';
-import { MapAsset } from 'src/dtos/asset-response.dto';
-import { UserResponseSchema, mapUser } from 'src/dtos/user.dto';
-import { AlbumUserRole, AlbumUserRoleSchema, AssetOrder, AssetOrderSchema } from 'src/enum';
-import { MaybeDehydrated } from 'src/types';
-import { asDateTimeString } from 'src/utils/date';
-import { stringToBool } from 'src/validation';
 import z from 'zod';
+import { ALBUM_ICON_KEYS } from 'src/constants/album-icons.js';
+import { AlbumUser, AuthSharedLink } from 'src/database.js';
+import { HistoryBuilder } from 'src/decorators.js';
+import { BulkIdErrorReasonSchema } from 'src/dtos/asset-ids.response.dto.js';
+import { MapAsset } from 'src/dtos/asset-response.dto.js';
+import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
+import { AlbumUserRole, AlbumUserRoleSchema, AssetOrder, AssetOrderSchema } from 'src/enum.js';
+import { MaybeDehydrated } from 'src/types.js';
+import { asDateTimeString } from 'src/utils/date.js';
+import { stringToBool } from 'src/validation.js';
 
 // Constrain icon to the finite catalog of valid keys (kept in sync with
 // web/src/lib/utils/album-icons.ts). Unknown values are rejected at the API
@@ -115,6 +115,7 @@ const UpdateAlbumSchema = z
     icon: AlbumIconKeySchema.nullable().optional().describe('Icon key (null = clear / use default folder icon)'),
     sortOrder: z
       .number()
+      .meta({ format: 'double' })
       .optional()
       .describe('Sibling display position. Lower values appear first. Computed by the client as a midpoint.'),
   })
@@ -217,7 +218,11 @@ export const AlbumResponseSchema = z
     // (or written directly to the DB) must not break album reads. Writes are
     // constrained via AlbumIconKeySchema on create/update.
     icon: z.string().nullable().describe('Icon key (null = default folder icon)'),
-    sortOrder: z.number().nullable().describe('Sibling display position. Lower values appear first.'),
+    sortOrder: z
+      .number()
+      .meta({ format: 'double' })
+      .nullable()
+      .describe('Sibling display position. Lower values appear first.'),
   })
   .meta({ id: 'AlbumResponseDto' });
 

@@ -1,6 +1,6 @@
 import { Queue, Worker } from 'bullmq';
-import { getForkSchemaBackfillJobOptions } from 'src/repositories/job.repository';
 import { GenericContainer, StartedTestContainer } from 'testcontainers';
+import { getForkSchemaBackfillJobOptions } from 'src/repositories/job.repository.js';
 
 const waitFor = async (condition: () => boolean, timeout = 5000): Promise<void> => {
   const deadline = Date.now() + timeout;

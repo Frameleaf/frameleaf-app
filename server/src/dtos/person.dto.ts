@@ -1,39 +1,26 @@
 import { Selectable } from 'kysely';
 import { createZodDto } from 'nestjs-zod';
-import { AssetFace, Person } from 'src/database';
-import { HistoryBuilder } from 'src/decorators';
-import { AuthDto } from 'src/dtos/auth.dto';
-import { AssetEditActionItem } from 'src/dtos/editing.dto';
-import { SourceTypeSchema } from 'src/enum';
-import { AssetFaceTable } from 'src/schema/tables/asset-face.table';
-import { ImageDimensions, MaybeDehydrated } from 'src/types';
-import { asDateString, asDateTimeString } from 'src/utils/date';
-import { transformFaceBoundingBox } from 'src/utils/transform';
-import { emptyStringToNull, hexColor, stringToBool } from 'src/validation';
 import z from 'zod';
-
-// Person names flow into VLM prompts shipped to RunPod (see
-// prompt-assembler.service.ts identityHint). Cap length and reject control
-// characters / newlines so a malicious user cannot inject a multi-thousand-char
-// prompt-injection payload via `Person.name`. Also closes a log-noise vector.
-// eslint-disable-next-line no-control-regex
-const PERSON_NAME_CONTROL_PATTERN = /[\u{0000}-\u{001F}]/u;
-const personNameSchema = z
-  .string()
-  .max(256, { error: 'Person name must be 256 characters or fewer' })
-  .refine((value) => !PERSON_NAME_CONTROL_PATTERN.test(value), {
-    error: 'Person name cannot contain control characters or newlines',
-  });
+import type { ImageDimensions, MaybeDehydrated } from 'src/types.js';
+import { AssetFace, Person } from 'src/database.js';
+import { HistoryBuilder } from 'src/decorators.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
+import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
+import { SourceTypeSchema } from 'src/enum.js';
+import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
+import { asDateString, asDateTimeString } from 'src/utils/date.js';
+import { transformFaceBoundingBox } from 'src/utils/transform.js';
+import { hexColor, stringToBool } from 'src/validation.js';
 
 const PersonCreateSchema = z
   .object({
-    name: personNameSchema.optional().describe('Person name'),
-    // Note: the mobile app cannot currently set the birth date to null.
-    birthDate: emptyStringToNull(z.string().meta({ format: 'date' }).nullable())
+    name: z.string().optional().describe('Person name'),
+    birthDate: z
+      .string()
+      .meta({ format: 'date' })
+      .nullable()
       .optional()
-      .refine((val: string | null | undefined) => (val ? new Date(val) <= new Date() : true), {
-        error: 'Birth date cannot be in the future',
-      })
+      .refine((val) => (val ? new Date(val) <= new Date() : true), { error: 'Birth date cannot be in the future' })
       .describe('Person date of birth'),
     isHidden: z.boolean().optional().describe('Person visibility (hidden)'),
     isFavorite: z.boolean().optional().describe('Mark as favorite'),

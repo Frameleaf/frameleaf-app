@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { SystemConfig } from 'src/config';
-import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants';
-import { StorageCore } from 'src/cores/storage.core';
-import { OnJob } from 'src/decorators';
-import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto';
-import { MapAsset, mapAsset } from 'src/dtos/asset-response.dto';
-import { AuthDto } from 'src/dtos/auth.dto';
-import { DuplicateResolveDto, DuplicateResolveGroupDto, DuplicateResponseDto } from 'src/dtos/duplicate.dto';
+import type { SystemConfig } from 'src/config.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { JobItem, JobOf } from 'src/types.js';
+import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { OnJob } from 'src/decorators.js';
+import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
+import { MapAsset, mapAsset } from 'src/dtos/asset-response.dto.js';
+import { DuplicateResolveDto, DuplicateResolveGroupDto, DuplicateResponseDto } from 'src/dtos/duplicate.dto.js';
 import {
   AssetStatus,
   AssetType,
@@ -17,14 +18,13 @@ import {
   QueueName,
   StorageFolder,
   TranscodeTarget,
-} from 'src/enum';
-import { AssetDuplicateResult } from 'src/repositories/search.repository';
-import { BaseService } from 'src/services/base.service';
-import { JobItem, JobOf } from 'src/types';
-import { suggestDuplicateKeepAssetIds } from 'src/utils/duplicate';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content';
-import { ThumbnailConfig } from 'src/utils/media';
-import { batched, isDuplicateDetectionEnabled } from 'src/utils/misc';
+} from 'src/enum.js';
+import { AssetDuplicateResult } from 'src/repositories/search.repository.js';
+import { BaseService } from 'src/services/base.service.js';
+import { suggestDuplicateKeepAssetIds } from 'src/utils/duplicate.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { ThumbnailConfig } from 'src/utils/media.js';
+import { batched, isDuplicateDetectionEnabled } from 'src/utils/misc.js';
 
 type ResolveRequest = {
   assetUpdate: {

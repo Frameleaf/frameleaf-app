@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
-import { OnJob } from 'src/decorators';
-import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto';
-import { AuthDto } from 'src/dtos/auth.dto';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { OnJob } from 'src/decorators.js';
+import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import {
   TagBulkAssetsDto,
   TagBulkAssetsResponseDto,
@@ -11,15 +11,15 @@ import {
   TagUpdateDto,
   TagUpsertDto,
   mapTag,
-} from 'src/dtos/tag.dto';
-import { JobName, JobStatus, Permission, QueueName } from 'src/enum';
-import { TagAssetTable } from 'src/schema/tables/tag-asset.table';
-import { BaseService } from 'src/services/base.service';
-import { addAssets, removeAssets } from 'src/utils/asset.util';
-import { updateLockedColumns } from 'src/utils/database';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content';
-import { findOrFail } from 'src/utils/misc';
-import { upsertTags } from 'src/utils/tag';
+} from 'src/dtos/tag.dto.js';
+import { JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
+import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
+import { BaseService } from 'src/services/base.service.js';
+import { addAssets, removeAssets } from 'src/utils/asset.util.js';
+import { updateLockedColumns } from 'src/utils/database.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { findOrFail } from 'src/utils/misc.js';
+import { upsertTags } from 'src/utils/tag.js';
 
 @Injectable()
 export class TagService extends BaseService {

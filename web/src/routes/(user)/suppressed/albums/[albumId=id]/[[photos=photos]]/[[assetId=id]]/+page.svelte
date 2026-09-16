@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { goto, invalidate } from '$app/navigation';
+  import ActionMenuItem from '$lib/components/ActionMenuItem.svelte';
+  import { goto } from '$app/navigation';
   import AlbumSummary from '$lib/components/album-page/AlbumSummary.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
@@ -9,7 +10,7 @@
   import ChangeLocation from '$lib/components/timeline/actions/ChangeLocationAction.svelte';
   import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
   import MarkNsfwAction from '$lib/components/timeline/actions/MarkNsfwAction.svelte';
-  import RemoveFromAlbum from '$lib/components/timeline/actions/RemoveFromAlbumAction.svelte';
+  import { getAssetBulkActions } from '$lib/services/asset.service';
   import SelectAllAssets from '$lib/components/timeline/actions/SelectAllAction.svelte';
   import TagAction from '$lib/components/timeline/actions/TagAction.svelte';
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
@@ -51,15 +52,7 @@
     await goto(Route.suppressed({ tab: 'albums' }));
   };
 
-  const refreshAlbum = async () => {
-    await invalidate('suppressed-album:data');
-  };
-
-  const handleRemoveAssets = async (assetIds: string[]) => {
-    timelineManager.removeAssets(assetIds);
-    assetMultiSelectManager.clear();
-    await refreshAlbum();
-  };
+  const actions = $derived(getAssetBulkActions($t, album));
 </script>
 
 <UserPageLayout title={data.meta.title} hideNavbar={assetMultiSelectManager.selectionActive} scrollbar={false}>
@@ -120,7 +113,7 @@
         <MarkNsfwAction menuItem markSafe />
       {/if}
       {#if isEditor || assetMultiSelectManager.isAllUserOwned}
-        <RemoveFromAlbum menuItem bind:album onRemove={handleRemoveAssets} />
+        <ActionMenuItem action={actions.RemoveFromAlbum} />
       {/if}
     </ButtonContextMenu>
   </AssetSelectControlBar>

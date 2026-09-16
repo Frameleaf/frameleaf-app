@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
-import _ from 'lodash';
+import { cloneDeep, mergeWith } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
-import { SystemConfig } from 'src/config';
-import { SystemConfigSchema } from 'src/dtos/system-config.dto';
-import { isForkAuthoritative, isForkWriteEnabled } from 'src/fork-schema/authority';
-import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository';
-import { DB } from 'src/schema';
+import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
+import { SystemConfig } from 'src/config.js';
+import { SystemConfigSchema } from 'src/dtos/system-config.dto.js';
+import { isForkAuthoritative, isForkWriteEnabled } from 'src/fork-schema/authority.js';
+import { DB } from 'src/schema/index.js';
 
 export const canonicalize = (value: unknown): unknown =>
   Array.isArray(value)
@@ -33,14 +33,14 @@ export class ForkConfigRepository {
     source: 'database' | 'file',
   ): Promise<{ count: number; digest: string }> {
     return this.db.transaction().execute(async (trx) => {
-      let config: SystemConfig = _.cloneDeep(effectiveConfig);
+      let config: SystemConfig = cloneDeep(effectiveConfig);
       if (source === 'database') {
         const legacy = await sql<{
           value: Record<string, any> | null;
         }>`SELECT value FROM system_metadata WHERE key = 'system-config' FOR UPDATE`.execute(trx);
         const snapshot = legacy.rows[0]?.value ?? {};
-        config = _.mergeWith(config, snapshot, (_target, source) =>
-          Array.isArray(source) ? _.cloneDeep(source) : undefined,
+        config = mergeWith(config, snapshot, (_target: unknown, source: unknown) =>
+          Array.isArray(source) ? cloneDeep(source) : undefined,
         );
       }
       const validated = SystemConfigSchema.safeParse(config);

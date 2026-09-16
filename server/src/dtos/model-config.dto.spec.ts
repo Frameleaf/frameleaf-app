@@ -1,5 +1,5 @@
-import { ImageDescriptionConfigSchema } from 'src/dtos/model-config.dto';
 import { describe, expect, it } from 'vitest';
+import { ImageDescriptionConfigSchema } from 'src/dtos/model-config.dto.js';
 
 describe('ImageDescriptionConfigSchema', () => {
   it('parses default config with prompt block', () => {

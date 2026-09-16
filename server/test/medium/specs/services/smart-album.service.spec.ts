@@ -1,16 +1,16 @@
 import { Kysely, sql } from 'kysely';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { MachineLearningRepository } from 'src/repositories/machine-learning.repository';
-import { SearchRepository } from 'src/repositories/search.repository';
-import { SmartAlbumRepository } from 'src/repositories/smart-album.repository';
-import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository';
-import { UserRepository } from 'src/repositories/user.repository';
-import { DB } from 'src/schema';
-import { SmartAlbumService } from 'src/services/smart-album.service';
-import { clearConfigCache } from 'src/utils/config';
-import { MediumTestContext, newMediumService } from 'test/medium.factory';
-import { getKyselyDB } from 'test/utils';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
+import { SearchRepository } from 'src/repositories/search.repository.js';
+import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { DB } from 'src/schema/index.js';
+import { SmartAlbumService } from 'src/services/smart-album.service.js';
+import { clearConfigCache } from 'src/utils/config.js';
+import { MediumTestContext, newMediumService } from 'test/medium.factory.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 

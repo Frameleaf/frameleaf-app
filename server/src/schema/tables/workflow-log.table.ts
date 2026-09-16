@@ -1,15 +1,8 @@
-import {
-  Column,
-  CreateDateColumn,
-  ForeignKeyColumn,
-  Generated,
-  PrimaryGeneratedColumn,
-  Table,
-  Timestamp,
-} from '@immich/sql-tools';
-import { WorkflowResult } from 'src/enum';
-import { WorkflowStepTable } from 'src/schema/tables/workflow-step.table';
-import { WorkflowTable } from 'src/schema/tables/workflow.table';
+import { Column, CreateDateColumn, ForeignKeyColumn, PrimaryGeneratedColumn, Table } from '@immich/sql-tools';
+import type { Generated, Timestamp } from '@immich/sql-tools';
+import { WorkflowResult } from 'src/enum.js';
+import { WorkflowStepTable } from 'src/schema/tables/workflow-step.table.js';
+import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 
 @Table('workflow_log')
 export class WorkflowLogTable {

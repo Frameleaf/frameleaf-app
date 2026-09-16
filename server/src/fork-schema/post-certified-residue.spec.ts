@@ -1,9 +1,9 @@
-import { CERTIFIED_TAG_MIGRATIONS, POST_CERTIFIED_UPSTREAM_MIGRATIONS } from 'src/fork-schema/migration-manifest';
+import { CERTIFIED_TAG_MIGRATIONS, POST_CERTIFIED_UPSTREAM_MIGRATIONS } from 'src/fork-schema/migration-manifest.js';
 import {
-  irreversiblePostCertifiedMigrations,
   REVERSIBLE_POST_CERTIFIED_MIGRATIONS,
-} from 'src/fork-schema/post-certified-residue';
-import supportedVersions from 'src/fork-schema/supported-versions.json';
+  irreversiblePostCertifiedMigrations,
+} from 'src/fork-schema/post-certified-residue.js';
+import supportedVersions from 'src/fork-schema/supported-versions.json' with { type: 'json' };
 
 describe('post-certified upstream residue', () => {
   it('registers an exact reversal for every post-certified migration', () => {

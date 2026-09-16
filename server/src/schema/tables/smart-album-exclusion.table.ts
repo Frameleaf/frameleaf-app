@@ -1,6 +1,6 @@
 import { ForeignKeyColumn, Table } from '@immich/sql-tools';
-import { AssetTable } from 'src/schema/tables/asset.table';
-import { SmartAlbumTable } from 'src/schema/tables/smart-album.table';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { SmartAlbumTable } from 'src/schema/tables/smart-album.table.js';
 
 @Table({ name: 'smart_album_exclusion' })
 export class SmartAlbumExclusionTable {

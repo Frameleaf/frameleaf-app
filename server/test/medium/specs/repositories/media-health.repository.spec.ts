@@ -1,17 +1,17 @@
 import { Kysely, sql } from 'kysely';
-import { AssetStatus, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum';
-import { getCatalogEvidence } from 'src/fork-schema/catalog';
-import forkCatalog from 'src/fork-schema/manifests/fork-v2-catalog.json';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { MediaHealthRepository, UpsertMediaHealthFinding } from 'src/repositories/media-health.repository';
-import { DB } from 'src/schema';
+import { AssetStatus, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum.js';
+import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
+import forkCatalog from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaHealthRepository, UpsertMediaHealthFinding } from 'src/repositories/media-health.repository.js';
+import { DB } from 'src/schema/index.js';
 import {
-  up as repairHealthTriggers,
   down as revertHealthTriggers,
-} from 'src/schema/migrations/2100000000060-FixMediaHealthUpdatedAtTriggers';
-import { BaseService } from 'src/services/base.service';
-import { newMediumService } from 'test/medium.factory';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils';
+  up as repairHealthTriggers,
+} from 'src/schema/migrations/2100000000060-FixMediaHealthUpdatedAtTriggers.js';
+import { BaseService } from 'src/services/base.service.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 

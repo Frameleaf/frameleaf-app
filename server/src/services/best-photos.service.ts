@@ -2,29 +2,29 @@ import { Injectable } from '@nestjs/common';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants';
-import { OnJob } from 'src/decorators';
-import { mapAsset } from 'src/dtos/asset-response.dto';
-import { AuthDto } from 'src/dtos/auth.dto';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { JobItem, JobOf } from 'src/types.js';
+import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants.js';
+import { OnJob } from 'src/decorators.js';
+import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
   BEST_PHOTO_SCORE_VERSION,
   BestPhotoAssetResponseDto,
   BestPhotosQueryDto,
   BestPhotosResponseDto,
-} from 'src/dtos/best-photos.dto';
-import { AssetStatus, AssetType, AssetVisibility, JobName, JobStatus, QueueName, TranscodeTarget } from 'src/enum';
-import { AssetJobRepository } from 'src/repositories/asset-job.repository';
-import { BestPhotoScoreUpsert, BestPhotosRepository } from 'src/repositories/best-photos.repository';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { JobRepository } from 'src/repositories/job.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { MediaRepository } from 'src/repositories/media.repository';
-import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository';
-import { JobItem, JobOf } from 'src/types';
-import { getConfig } from 'src/utils/config';
-import { asDateTimeString } from 'src/utils/date';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content';
-import { ThumbnailConfig } from 'src/utils/media';
+} from 'src/dtos/best-photos.dto.js';
+import { AssetStatus, AssetType, AssetVisibility, JobName, JobStatus, QueueName, TranscodeTarget } from 'src/enum.js';
+import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { BestPhotoScoreUpsert, BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaRepository } from 'src/repositories/media.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { getConfig } from 'src/utils/config.js';
+import { asDateTimeString } from 'src/utils/date.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { ThumbnailConfig } from 'src/utils/media.js';
 
 type BestPhotoScoringAsset = NonNullable<Awaited<ReturnType<AssetJobRepository['getForBestPhotoScoring']>>>;
 

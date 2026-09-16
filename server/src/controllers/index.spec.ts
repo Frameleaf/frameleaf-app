@@ -1,8 +1,16 @@
 import { RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
-import { controllers } from 'src/controllers';
-import { AuthenticatedOptions, getAuthenticatedOptions } from 'src/middleware/auth.guard';
+import { controllers } from 'src/controllers/index.js';
+import { LivePhotoController } from 'src/controllers/live-photo.controller.js';
+import { MediaHealthController } from 'src/controllers/media-health.controller.js';
+import { LivePhotoRelinkDto } from 'src/dtos/live-photo.dto.js';
+import {
+  MediaHealthBulkActionDto,
+  MediaHealthDeleteCorruptDto,
+  MediaHealthListQueryDto,
+} from 'src/dtos/media-health.dto.js';
+import { AuthenticatedOptions, getAuthenticatedOptions } from 'src/middleware/auth.guard.js';
 
 const UNAUTHENTICATED_ADMIN_ROUTES = new Set([
   'GET admin/maintenance/status',
@@ -150,5 +158,20 @@ describe('controllers', () => {
       .map((route) => route.label);
 
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('request DTO runtime metadata', () => {
+  it.each([
+    [MediaHealthController, 'list', MediaHealthListQueryDto],
+    [MediaHealthController, 'locateMissing', MediaHealthBulkActionDto],
+    [MediaHealthController, 'relinkMissing', MediaHealthBulkActionDto],
+    [MediaHealthController, 'dismiss', MediaHealthBulkActionDto],
+    [MediaHealthController, 'deleteCorrupt', MediaHealthDeleteCorruptDto],
+    [LivePhotoController, 'relinkLivePhotos', LivePhotoRelinkDto],
+  ] as const)('should retain %s.%s request validation and OpenAPI schema', (controller, method, dto) => {
+    // Nest's reflect-metadata extension stores the runtime parameter constructors.
+    // eslint-disable-next-line unicorn/no-nonstandard-builtin-properties
+    expect(Reflect.getMetadata('design:paramtypes', controller.prototype, method)[1]).toBe(dto);
   });
 });

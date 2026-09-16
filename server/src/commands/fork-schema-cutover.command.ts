@@ -1,8 +1,8 @@
 import { Command, CommandRunner, Option, SubCommand } from 'nest-commander';
-import { ForkCutoverVerificationCommand } from 'src/commands/fork-cutover-verification.command';
-import { formatForkSchemaStatus } from 'src/commands/fork-schema.command';
-import { canonicalCutoverJson, ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service';
-import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service';
+import { ForkCutoverVerificationCommand } from 'src/commands/fork-cutover-verification.command.js';
+import { formatForkSchemaStatus } from 'src/commands/fork-schema.command.js';
+import { ForkSchemaCutoverService, canonicalCutoverJson } from 'src/services/fork-schema-cutover.service.js';
+import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service.js';
 
 type CheckpointOptions = { databaseBackupId?: string; mediaSnapshotId?: string };
 type ApplyOptions = CheckpointOptions & { reportDigest?: string };

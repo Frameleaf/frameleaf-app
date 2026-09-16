@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Endpoint, HistoryBuilder } from 'src/decorators';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   RunPodBackfillResultDto,
   RunPodConnectionResultDto,
@@ -8,10 +8,10 @@ import {
   RunPodGpuTypeDto,
   RunPodProvisionDto,
   RunPodStateDto,
-} from 'src/dtos/runpod.dto';
-import { ApiTag, Permission } from 'src/enum';
-import { Authenticated } from 'src/middleware/auth.guard';
-import { RunPodService } from 'src/services/runpod.service';
+} from 'src/dtos/runpod.dto.js';
+import { ApiTag, Permission } from 'src/enum.js';
+import { Authenticated } from 'src/middleware/auth.guard.js';
+import { RunPodService } from 'src/services/runpod.service.js';
 
 @ApiTags(ApiTag.RunPod)
 @Controller('runpod')

@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Selectable, sql, Updateable } from 'kysely';
+import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import {
   AssetFileType,
   AssetStatus,
@@ -11,23 +12,26 @@ import {
   MediaHealthSeverity,
   MediaHealthStatus,
   PhysicalFileType,
-} from 'src/enum';
+} from 'src/enum.js';
 import {
-  combineVerifications,
   DerivedBackfillResult,
+  TableVerification,
+  combineVerifications,
   getForkSchemaPhase,
   lockForkAssetParent,
   readsForkSidecar,
-  TableVerification,
   verifyRows,
   writesForkSidecar,
   writesLegacy,
-} from 'src/repositories/fork-derived-results';
-import { DB } from 'src/schema';
-import { AssetHealthCandidateTable, AssetHealthRunTable, AssetHealthTable } from 'src/schema/tables/asset-health.table';
-import { AssetTable } from 'src/schema/tables/asset.table';
-import { anyUuid, asUuid, withHiddenContentFilter } from 'src/utils/database';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content';
+} from 'src/repositories/fork-derived-results.js';
+import { DB } from 'src/schema/index.js';
+import {
+  AssetHealthCandidateTable,
+  AssetHealthRunTable,
+  AssetHealthTable,
+} from 'src/schema/tables/asset-health.table.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { anyUuid, asUuid, withHiddenContentFilter } from 'src/utils/database.js';
 
 export type MediaHealthRun = Selectable<AssetHealthRunTable>;
 export type MediaHealthFinding = Selectable<AssetHealthTable>;

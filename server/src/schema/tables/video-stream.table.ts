@@ -2,16 +2,15 @@ import {
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
-  Generated,
   Index,
   PrimaryColumn,
   PrimaryGeneratedColumn,
   Table,
-  Timestamp,
 } from '@immich/sql-tools';
-import { VideoSegmentCodec } from 'src/enum';
-import { video_stream_variant_codec_enum } from 'src/schema/enums';
-import { AssetTable } from 'src/schema/tables/asset.table';
+import type { Generated, Timestamp } from '@immich/sql-tools';
+import type { VideoSegmentCodec } from 'src/enum.js';
+import { video_stream_variant_codec_enum } from 'src/schema/enums.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
 
 @Table('video_stream_session')
 export class VideoStreamSessionTable {

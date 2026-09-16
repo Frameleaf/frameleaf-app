@@ -24,6 +24,10 @@ on:
         description: 'Path to Dockerfile'
         type: string
         required: true
+      tags:
+        description: 'Docker metadata tag rules supplied by the caller'
+        type: string
+        required: true
       suffixes:
         description: 'Comma-separated list of suffixes to append to the image tag'
         type: string
@@ -276,14 +280,7 @@ jobs:
           images: |
             name=${{ env.GHCR_IMAGE }}
             name=${{ env.DOCKERHUB_IMAGE }},enable=${{ inputs.dockerhub-push }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha,format=long,prefix=commit-
-            type=semver,pattern=v{{version}},enabled=${{ inputs.release-tag-type == 'semver' }}
-            type=semver,pattern=v{{major}},enabled=${{ inputs.release-tag-type == 'semver' }}
-            type=ref,event=tag,enabled=${{ inputs.release-tag-type == 'git-tag' }}
-            type=raw,value=release,enable=${{ github.event_name == 'release' }}
+          tags: ${{ inputs.tags }}
 
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests

@@ -1,14 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, NotNull, sql } from 'kysely';
+import { type Insertable, type Kysely, type NotNull, sql } from 'kysely';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
-import { columns } from 'src/database';
-import { DummyValue, GenerateSql } from 'src/decorators';
-import { AssetVisibility } from 'src/enum';
-import { DB } from 'src/schema';
-import { ActivityTable } from 'src/schema/tables/activity.table';
-import { asUuid, dummy, withHiddenContentFilter } from 'src/utils/database';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { columns } from 'src/database.js';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { AssetVisibility } from 'src/enum.js';
+import { DB } from 'src/schema/index.js';
+import { ActivityTable } from 'src/schema/tables/activity.table.js';
+import { asUuid, dummy, withHiddenContentFilter } from 'src/utils/database.js';
 
 export interface ActivitySearch extends HiddenContentQueryOptions {
   albumId?: string;

@@ -1,13 +1,15 @@
 import { Kysely, sql } from 'kysely';
 
 export async function up(db: Kysely<any>): Promise<void> {
-  await sql`CREATE TABLE "stacks_audit" ("id" uuid NOT NULL DEFAULT immich_uuid_v7(), "stackId" uuid NOT NULL, "userId" uuid NOT NULL, "deletedAt" timestamp with time zone NOT NULL DEFAULT clock_timestamp());`.execute(db);
+  await sql`CREATE TABLE "stacks_audit" ("id" uuid NOT NULL DEFAULT immich_uuid_v7(), "stackId" uuid NOT NULL, "userId" uuid NOT NULL, "deletedAt" timestamp with time zone NOT NULL DEFAULT clock_timestamp());`.execute(
+    db,
+  );
   await sql`ALTER TABLE "asset_stack" ADD "createdAt" timestamp with time zone NOT NULL DEFAULT now();`.execute(db);
   await sql`ALTER TABLE "asset_stack" ADD "updatedAt" timestamp with time zone NOT NULL DEFAULT now();`.execute(db);
   await sql`ALTER TABLE "asset_stack" ADD "updateId" uuid NOT NULL DEFAULT immich_uuid_v7();`.execute(db);
   await sql`ALTER TABLE "stacks_audit" ADD CONSTRAINT "PK_dbe4ec648fa032e8973297de07e" PRIMARY KEY ("id");`.execute(db);
   await sql`CREATE INDEX "IDX_stacks_audit_deleted_at" ON "stacks_audit" ("deletedAt")`.execute(db);
-    await sql`CREATE OR REPLACE FUNCTION stacks_delete_audit()
+  await sql`CREATE OR REPLACE FUNCTION stacks_delete_audit()
   RETURNS TRIGGER
   LANGUAGE PLPGSQL
   AS $$

@@ -1,6 +1,6 @@
-import { JobStatus, SystemMetadataKey } from 'src/enum';
-import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service';
-import { newTestService } from 'test/utils';
+import { JobStatus, SystemMetadataKey } from 'src/enum.js';
+import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
+import { newTestService } from 'test/utils.js';
 
 type Handler = 'handleDryRun' | 'handleApply';
 

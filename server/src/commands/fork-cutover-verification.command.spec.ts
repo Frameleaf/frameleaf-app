@@ -3,14 +3,14 @@ import {
   ForkCutoverVerificationResumeCommand,
   ForkCutoverVerificationStartCommand,
   ForkCutoverVerificationStatusCommand,
-} from 'src/commands/fork-cutover-verification.command';
+} from 'src/commands/fork-cutover-verification.command.js';
 import {
   ForkSchemaCutoverApplyCommand,
-  forkSchemaCutoverCommands,
   ForkSchemaCutoverPreflightCommand,
-} from 'src/commands/fork-schema-cutover.command';
-import { ForkCutoverVerificationService } from 'src/services/fork-cutover-verification.service';
-import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service';
+  forkSchemaCutoverCommands,
+} from 'src/commands/fork-schema-cutover.command.js';
+import { ForkCutoverVerificationService } from 'src/services/fork-cutover-verification.service.js';
+import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service.js';
 
 const options = { databaseBackupId: 'backup-1', mediaSnapshotId: 'snapshot-1' };
 const response = { id: 'run-1', ...options, status: 'running' };

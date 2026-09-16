@@ -38,7 +38,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   // libraries. Each batch covers ~10k rows; the WHERE-clause uses the existing
   // JSONB-derived predicate from utils/database.ts so initial state is correct.
   let updated = 0;
-   
+
   // Predicate alignment note:
   //   The description-side branch tries to track the runtime `isDescriptionNsfwLikely`
   //   (server/src/services/image-enrichment.service.ts:1045-1058) which requires:
@@ -135,7 +135,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   );
 
   // Log how many rows we backfilled — useful for ops debugging.
-   
+
   console.log(`[migration 2100000000010] backfilled is_nsfw=true on ${updated} asset rows`);
 }
 

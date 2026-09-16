@@ -6342,6 +6342,7 @@
             "schema": {
               "minimum": 0,
               "maximum": 1,
+              "format": "double",
               "type": "number"
             }
           },
@@ -6575,6 +6576,51 @@
           }
         ],
         "x-immich-permission": "clusterGroup.leave"
+      }
+    },
+    "/cluster-groups/{id}/regenerate-people": {
+      "post": {
+        "description": "Forcefully re-run facial recognition for all faces of users in this group.",
+        "operationId": "clusterGroupRegeneratePeople",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Regenerate people of users in cluster group",
+        "tags": [
+          "Cluster groups"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "clusterGroup.read"
       }
     },
     "/cluster-groups/{id}/requests": {
@@ -17036,9 +17082,9 @@
             "name": "timeBucket",
             "required": true,
             "in": "query",
-            "description": "Time bucket identifier in YYYY-MM-DD format",
+            "description": "Time bucket identifier in YYYY-MM-DDT00:00:00.000Z format",
             "schema": {
-              "example": "2024-01-01",
+              "example": "2024-01-01T00:00:00.000Z",
               "type": "string"
             }
           },
@@ -19003,7 +19049,7 @@
   "info": {
     "title": "Immich",
     "description": "Immich API",
-    "version": "3.1.0",
+    "version": "3.2.0",
     "contact": {}
   },
   "tags": [
@@ -19329,66 +19375,79 @@
       "AdjustParameters": {
         "properties": {
           "blackPoint": {
+            "format": "double",
             "maximum": 100,
             "minimum": -100,
             "type": "number"
           },
           "blueTone": {
+            "format": "double",
             "maximum": 100,
             "minimum": -100,
             "type": "number"
           },
           "brightness": {
+            "format": "double",
             "maximum": 100,
             "minimum": -100,
             "type": "number"
           },
           "contrast": {
+            "format": "double",
             "maximum": 100,
             "minimum": -100,
             "type": "number"
           },
           "hdr": {
+            "format": "double",
             "maximum": 100,
             "minimum": -100,
             "type": "number"
           },
           "highlights": {
+            "format": "double",
             "maximum": 100,
             "minimum": -100,
             "type": "number"
           },
           "saturation": {
+            "format": "double",
             "maximum": 100,
             "minimum": -100,
             "type": "number"
           },
           "shadows": {
+            "format": "double",
             "maximum": 100,
             "minimum": -100,
             "type": "number"
           },
           "skinTone": {
+            "format": "double",
             "maximum": 100,
             "minimum": -100,
             "type": "number"
           },
           "tint": {
+            "format": "double",
             "maximum": 100,
             "minimum": -100,
             "type": "number"
           },
           "vignette": {
+            "format": "double",
             "maximum": 100,
             "minimum": -100,
             "type": "number"
           },
           "warmth": {
+            "format": "double",
             "maximum": 100,
             "minimum": -100,
             "type": "number"
           },
           "whitePoint": {
+            "format": "double",
             "maximum": 100,
             "minimum": -100,
             "type": "number"
@@ -21610,6 +21669,7 @@
           },
           "sortOrder": {
             "description": "Sibling display position. Lower values appear first.",
+            "format": "double",
             "nullable": true,
             "type": "number"
           },
@@ -22336,12 +22396,14 @@
           },
           "latitude": {
             "description": "Latitude coordinate",
+            "format": "double",
             "maximum": 90,
             "minimum": -90,
             "type": "number"
           },
           "longitude": {
             "description": "Longitude coordinate",
+            "format": "double",
             "maximum": 180,
             "minimum": -180,
             "type": "number"
@@ -23732,6 +23794,7 @@
           },
           "volume": {
             "description": "Audio volume multiplier",
+            "format": "double",
             "maximum": 2,
             "minimum": 0,
             "type": "number"
@@ -24004,6 +24067,7 @@
       "BestPhotoScoreDto": {
         "properties": {
           "aestheticScore": {
+            "format": "double",
             "maximum": 1,
             "minimum": 0,
             "nullable": true,
@@ -24020,6 +24084,7 @@
             "type": "string"
           },
           "diversityScore": {
+            "format": "double",
             "maximum": 1,
             "minimum": 0,
             "nullable": true,
@@ -24031,6 +24096,7 @@
             "type": "object"
           },
           "frameScore": {
+            "format": "double",
             "maximum": 1,
             "minimum": 0,
             "nullable": true,
@@ -24042,6 +24108,7 @@
             "type": "object"
           },
           "score": {
+            "format": "double",
             "maximum": 1,
             "minimum": 0,
             "type": "number"
@@ -24052,12 +24119,14 @@
             "type": "integer"
           },
           "subjectScore": {
+            "format": "double",
             "maximum": 1,
             "minimum": 0,
             "nullable": true,
             "type": "number"
           },
           "technicalScore": {
+            "format": "double",
             "maximum": 1,
             "minimum": 0,
             "nullable": true,
@@ -24893,6 +24962,7 @@
           "fNumber": {
             "default": null,
             "description": "F-number (aperture)",
+            "format": "double",
             "nullable": true,
             "type": "number"
           },
@@ -24907,6 +24977,7 @@
           "focalLength": {
             "default": null,
             "description": "Focal length in mm",
+            "format": "double",
             "nullable": true,
             "type": "number"
           },
@@ -24921,6 +24992,7 @@
           "latitude": {
             "default": null,
             "description": "GPS latitude",
+            "format": "double",
             "nullable": true,
             "type": "number"
           },
@@ -24933,6 +25005,7 @@
           "longitude": {
             "default": null,
             "description": "GPS longitude",
+            "format": "double",
             "nullable": true,
             "type": "number"
           },
@@ -25788,6 +25861,7 @@
           "intensity": {
             "default": 100,
             "description": "Filter or effect intensity",
+            "format": "double",
             "maximum": 100,
             "minimum": 0,
             "type": "number"
@@ -26162,6 +26236,7 @@
           },
           "visualMatchScore": {
             "description": "Visual match score from 0 to 1",
+            "format": "double",
             "nullable": true,
             "type": "number"
           }
@@ -27181,6 +27256,7 @@
             "$ref": "#/components/schemas/ImageEnrichmentReview"
           },
           "score": {
+            "format": "double",
             "type": "number"
           },
           "status": {
@@ -27530,7 +27606,6 @@
           },
           "name": {
             "description": "Person name",
-            "maxLength": 256,
             "type": "string"
           }
         },
@@ -27737,7 +27812,6 @@
           },
           "name": {
             "description": "Person name",
-            "maxLength": 256,
             "type": "string"
           }
         },
@@ -27869,7 +27943,6 @@
           },
           "name": {
             "description": "Person name",
-            "maxLength": 256,
             "type": "string"
           }
         },
@@ -27941,10 +28014,12 @@
           },
           "latitude": {
             "description": "Latitude coordinate",
+            "format": "double",
             "type": "number"
           },
           "longitude": {
             "description": "Longitude coordinate",
+            "format": "double",
             "type": "number"
           },
           "name": {
@@ -28940,7 +29015,9 @@
         "properties": {
           "angle": {
             "description": "Rotation angle in degrees",
-            "type": "number"
+            "maximum": 270,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -29005,9 +29082,11 @@
             "type": "string"
           },
           "memoryInGb": {
+            "format": "double",
             "type": "number"
           },
           "pricePerHour": {
+            "format": "double",
             "nullable": true,
             "type": "number"
           },
@@ -29070,6 +29149,7 @@
             "type": "string"
           },
           "estimatedCostUsd": {
+            "format": "double",
             "type": "number"
           },
           "gpuTypeId": {
@@ -29077,6 +29157,7 @@
           },
           "idleTimeoutSeconds": {
             "description": "Serverless idle timeout; may be null when not yet provisioned.",
+            "format": "double",
             "nullable": true,
             "type": "number"
           },
@@ -29090,6 +29171,7 @@
             "type": "string"
           },
           "maxRuntimeHours": {
+            "format": "double",
             "type": "number"
           },
           "mlUrl": {
@@ -29102,6 +29184,7 @@
             "type": "string"
           },
           "pricePerHour": {
+            "format": "double",
             "type": "number"
           },
           "runningSince": {
@@ -29135,11 +29218,13 @@
           },
           "workersMax": {
             "description": "Serverless workersMax; may be null when not yet provisioned.",
+            "format": "double",
             "nullable": true,
             "type": "number"
           },
           "workersMin": {
             "description": "Serverless workersMin; may be null when not yet provisioned.",
+            "format": "double",
             "nullable": true,
             "type": "number"
           }
@@ -30610,6 +30695,7 @@
           },
           "rate": {
             "description": "Playback speed multiplier",
+            "format": "double",
             "maximum": 4,
             "minimum": 0.25,
             "type": "number"
@@ -30895,6 +30981,7 @@
         "properties": {
           "angle": {
             "description": "Straighten angle in degrees",
+            "format": "double",
             "maximum": 45,
             "minimum": -45,
             "type": "number"
@@ -32188,6 +32275,98 @@
         ],
         "type": "object"
       },
+      "SyncAuthUserV2": {
+        "properties": {
+          "avatarColor": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserAvatarColor"
+              }
+            ],
+            "nullable": true
+          },
+          "deletedAt": {
+            "description": "User deleted at",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "email": {
+            "description": "User email",
+            "type": "string"
+          },
+          "hasProfileImage": {
+            "description": "User has profile image",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "User ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isAdmin": {
+            "description": "User is admin",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "User name",
+            "type": "string"
+          },
+          "oauthId": {
+            "description": "User OAuth ID",
+            "nullable": true,
+            "type": "string"
+          },
+          "pinCode": {
+            "description": "User pin code",
+            "nullable": true,
+            "type": "string"
+          },
+          "profileChangedAt": {
+            "description": "User profile changed at",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "quotaSizeInBytes": {
+            "description": "Quota size in bytes",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "quotaUsageInBytes": {
+            "description": "Quota usage in bytes",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "storageLabel": {
+            "description": "User storage label",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "deletedAt",
+          "email",
+          "hasProfileImage",
+          "id",
+          "isAdmin",
+          "name",
+          "oauthId",
+          "pinCode",
+          "profileChangedAt",
+          "quotaSizeInBytes",
+          "quotaUsageInBytes",
+          "storageLabel"
+        ],
+        "type": "object"
+      },
       "SyncCompleteV1": {
         "properties": {},
         "type": "object"
@@ -32196,6 +32375,7 @@
         "description": "Sync entity type",
         "enum": [
           "AuthUserV1",
+          "AuthUserV2",
           "UserV1",
           "UserDeleteV1",
           "AssetV1",
@@ -32560,6 +32740,7 @@
           "AssetMetadataV1",
           "AssetOcrV1",
           "AuthUsersV1",
+          "AuthUsersV2",
           "MemoriesV1",
           "MemoryToAssetsV1",
           "PartnersV1",
@@ -33068,6 +33249,7 @@
           "size": {
             "default": 0.06,
             "description": "Font size as a percentage of video height",
+            "format": "double",
             "maximum": 0.2,
             "minimum": 0.02,
             "type": "number"
@@ -33085,12 +33267,14 @@
           },
           "x": {
             "description": "Horizontal position as a percentage of video width",
+            "format": "double",
             "maximum": 1,
             "minimum": 0,
             "type": "number"
           },
           "y": {
             "description": "Vertical position as a percentage of video height",
+            "format": "double",
             "maximum": 1,
             "minimum": 0,
             "type": "number"
@@ -33117,6 +33301,13 @@
             "description": "Array of country names extracted from EXIF GPS data",
             "items": {
               "nullable": true,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "description": "Array of UTC timestamps when each asset was originally uploaded to Immich",
+            "items": {
               "type": "string"
             },
             "type": "array"
@@ -33169,6 +33360,7 @@
           "latitude": {
             "description": "Array of latitude coordinates extracted from EXIF GPS data",
             "items": {
+              "format": "double",
               "nullable": true,
               "type": "number"
             },
@@ -33185,6 +33377,7 @@
           "localOffsetHours": {
             "description": "Array of UTC offset hours at the time each photo was taken. Positive values are east of UTC, negative values are west of UTC. Values may be fractional (e.g., 5.5 for +05:30, -9.75 for -09:45). Applying this offset to 'fileCreatedAt' will give you the time the photo was taken from the photographer's perspective.",
             "items": {
+              "format": "double",
               "type": "number"
             },
             "type": "array"
@@ -33192,6 +33385,7 @@
           "longitude": {
             "description": "Array of longitude coordinates extracted from EXIF GPS data",
             "items": {
+              "format": "double",
               "nullable": true,
               "type": "number"
             },
@@ -33215,6 +33409,7 @@
           "ratio": {
             "description": "Array of aspect ratios (width/height) for each asset",
             "items": {
+              "format": "double",
               "type": "number"
             },
             "type": "array"
@@ -33249,6 +33444,7 @@
           }
         },
         "required": [
+          "createdAt",
           "duration",
           "fileCreatedAt",
           "id",
@@ -33419,6 +33615,7 @@
           },
           "sortOrder": {
             "description": "Sibling display position. Lower values appear first. Computed by the client as a midpoint.",
+            "format": "double",
             "type": "number"
           }
         },
@@ -33451,6 +33648,7 @@
           },
           "latitude": {
             "description": "Latitude coordinate",
+            "format": "double",
             "maximum": 90,
             "minimum": -90,
             "type": "number"
@@ -33464,6 +33662,7 @@
           },
           "longitude": {
             "description": "Longitude coordinate",
+            "format": "double",
             "maximum": 180,
             "minimum": -180,
             "type": "number"

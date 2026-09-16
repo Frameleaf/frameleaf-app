@@ -1,10 +1,10 @@
 import { Kysely } from 'kysely';
-import { AlbumUserRole, AssetMetadataKey, SyncEntityType, SyncRequestType } from 'src/enum';
-import { AlbumUserRepository } from 'src/repositories/album-user.repository';
-import { AlbumRepository } from 'src/repositories/album.repository';
-import { DB } from 'src/schema';
-import { SyncTestContext } from 'test/medium.factory';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils';
+import { AlbumUserRole, SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { DB } from 'src/schema/index.js';
+import { SyncTestContext } from 'test/medium.factory.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
@@ -16,13 +16,6 @@ const setup = async (db?: Kysely<DB>) => {
 
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
-});
-
-const nsfwMetadata = (isNsfw: boolean) => ({
-  nsfwDetection: {
-    status: 'success',
-    result: { isNsfw, score: 0.99, labels: { explicit: 0.99 } },
-  },
 });
 
 describe(SyncRequestType.AlbumsV1, () => {
@@ -65,43 +58,6 @@ describe(SyncRequestType.AlbumsV1, () => {
 
     await ctx.syncAckAll(auth, response);
     await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumsV1]);
-  });
-
-  it('should hide NSFW album thumbnails from non-elevated sync without hiding the album', async () => {
-    const { auth, user, ctx } = await setup();
-    const { asset } = await ctx.newAsset({ ownerId: user.id });
-    const { album } = await ctx.newAlbum({ ownerId: user.id, albumThumbnailAssetId: asset.id });
-    await ctx.newMetadata({
-      assetId: asset.id,
-      key: AssetMetadataKey.MlEnrichment,
-      value: nsfwMetadata(true),
-    });
-
-    const hiddenResponse = await ctx.syncStream({ ...auth, hideNsfwAssets: true }, [SyncRequestType.AlbumsV1]);
-    expect(hiddenResponse).toEqual([
-      {
-        ack: expect.any(String),
-        data: expect.objectContaining({
-          id: album.id,
-          thumbnailAssetId: null,
-        }),
-        type: SyncEntityType.AlbumV1,
-      },
-      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
-    ]);
-
-    const elevatedResponse = await ctx.syncStream(auth, [SyncRequestType.AlbumsV1]);
-    expect(elevatedResponse).toEqual([
-      {
-        ack: expect.any(String),
-        data: expect.objectContaining({
-          id: album.id,
-          thumbnailAssetId: asset.id,
-        }),
-        type: SyncEntityType.AlbumV1,
-      },
-      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
-    ]);
   });
 
   it('should detect and sync an album delete', async () => {

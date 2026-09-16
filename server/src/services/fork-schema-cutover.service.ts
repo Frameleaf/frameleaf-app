@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { DatabaseLock } from 'src/enum';
-import { assertSupportedUpstream } from 'src/fork-schema/migration-manifest';
-import { irreversiblePostCertifiedMigrations } from 'src/fork-schema/post-certified-residue';
-import { ForkSchemaCutoverEvidence } from 'src/repositories/database.repository';
-import { BaseService } from 'src/services/base.service';
+import { DatabaseLock } from 'src/enum.js';
+import { assertSupportedUpstream } from 'src/fork-schema/migration-manifest.js';
+import { irreversiblePostCertifiedMigrations } from 'src/fork-schema/post-certified-residue.js';
+import { ForkSchemaCutoverEvidence } from 'src/repositories/database.repository.js';
+import { BaseService } from 'src/services/base.service.js';
 
 export type CutoverReport = ForkSchemaCutoverEvidence & {
   blockers: string[];

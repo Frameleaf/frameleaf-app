@@ -1,21 +1,21 @@
 import { Kysely } from 'kysely';
-import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto';
-import { AssetMetadataKey } from 'src/enum';
-import { AccessRepository } from 'src/repositories/access.repository';
-import { AlbumRepository } from 'src/repositories/album.repository';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { EventRepository } from 'src/repositories/event.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { MapRepository } from 'src/repositories/map.repository';
-import { TagRepository } from 'src/repositories/tag.repository';
-import { UserRepository } from 'src/repositories/user.repository';
-import { DB } from 'src/schema';
-import { AlbumService } from 'src/services/album.service';
-import type { HiddenContentFilter } from 'src/utils/hidden-content';
-import { upsertTags } from 'src/utils/tag';
-import { newMediumService } from 'test/medium.factory';
-import { factory } from 'test/small.factory';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils';
+import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
+import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
+import { AssetMetadataKey } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MapRepository } from 'src/repositories/map.repository.js';
+import { TagRepository } from 'src/repositories/tag.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { DB } from 'src/schema/index.js';
+import { AlbumService } from 'src/services/album.service.js';
+import { upsertTags } from 'src/utils/tag.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { factory } from 'test/small.factory.js';
+import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 

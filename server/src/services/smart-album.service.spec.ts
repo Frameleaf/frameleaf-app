@@ -1,9 +1,9 @@
-import { defaults } from 'src/config';
-import { JobStatus } from 'src/enum';
-import { SmartAlbumService } from 'src/services/smart-album.service';
-import { newUuid } from 'test/small.factory';
-import { newTestService, ServiceMocks } from 'test/utils';
 import { vi } from 'vitest';
+import { defaults } from 'src/config.js';
+import { JobStatus } from 'src/enum.js';
+import { SmartAlbumService } from 'src/services/smart-album.service.js';
+import { newUuid } from 'test/small.factory.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 // Build an albumIdByKind map for the given kinds.
 const albumMap = (entries: Record<string, string>) => new Map(Object.entries(entries));

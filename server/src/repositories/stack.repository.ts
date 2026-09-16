@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { ExpressionBuilder, Insertable, Kysely, Updateable } from 'kysely';
+import { type ExpressionBuilder, type Insertable, type Kysely, type Updateable } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
-import { columns } from 'src/database';
-import { DummyValue, GenerateSql } from 'src/decorators';
-import { DB } from 'src/schema';
-import { StackTable } from 'src/schema/tables/stack.table';
-import { asUuid, getHiddenContentFilter, withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { columns } from 'src/database.js';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { DB } from 'src/schema/index.js';
+import { StackTable } from 'src/schema/tables/stack.table.js';
+import { asUuid, getHiddenContentFilter, withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 
 export interface StackSearch extends HiddenContentQueryOptions {
   ownerId: string;

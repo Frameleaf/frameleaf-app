@@ -3,11 +3,12 @@ import { execFile as execFileCallback } from 'node:child_process';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { SystemConfig } from 'src/config';
-import { StorageCore } from 'src/cores/storage.core';
-import { OnJob } from 'src/decorators';
-import { mapAsset } from 'src/dtos/asset-response.dto';
-import { AuthDto } from 'src/dtos/auth.dto';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { JobOf } from 'src/types.js';
+import { SystemConfig } from 'src/config.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { OnJob } from 'src/decorators.js';
+import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
   CORRUPT_DELETE_STATUSES,
   CORRUPT_MEDIA_DELETE_CONFIRM_TEXT,
@@ -19,7 +20,7 @@ import {
   MediaHealthListResponseDto,
   MediaHealthRunResponseDto,
   MediaHealthScanResponseDto,
-} from 'src/dtos/media-health.dto';
+} from 'src/dtos/media-health.dto.js';
 import {
   AssetStatus,
   AssetType,
@@ -33,34 +34,33 @@ import {
   MediaHealthStatus,
   QueueName,
   StorageFolder,
-} from 'src/enum';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { CryptoRepository } from 'src/repositories/crypto.repository';
-import { EventRepository } from 'src/repositories/event.repository';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository';
-import { JobRepository } from 'src/repositories/job.repository';
-import { LibraryRepository } from 'src/repositories/library.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
+} from 'src/enum.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
+import { LibraryRepository } from 'src/repositories/library.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   MediaHealthAsset,
   MediaHealthCandidate,
   MediaHealthRepository,
   MediaHealthRun,
-} from 'src/repositories/media-health.repository';
-import { MediaRepository } from 'src/repositories/media.repository';
-import { PhysicalFileRepository } from 'src/repositories/physical-file.repository';
-import { StorageRepository } from 'src/repositories/storage.repository';
-import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository';
-import { UserRepository } from 'src/repositories/user.repository';
-import { JobOf } from 'src/types';
-import { getConfig } from 'src/utils/config';
-import { isAssetChecksumConstraint } from 'src/utils/database';
-import { asDateTimeString } from 'src/utils/date';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content';
-import { classifyImageDecodeFailure, getErrorMessage } from 'src/utils/media-health';
-import { mimeTypes } from 'src/utils/mime-types';
-import { renderRawWithLibRaw } from 'src/utils/raw-renderer';
+} from 'src/repositories/media-health.repository.js';
+import { MediaRepository } from 'src/repositories/media.repository.js';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { getConfig } from 'src/utils/config.js';
+import { isAssetChecksumConstraint } from 'src/utils/database.js';
+import { asDateTimeString } from 'src/utils/date.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { classifyImageDecodeFailure, getErrorMessage } from 'src/utils/media-health.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
+import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 
 const execFile = promisify(execFileCallback);
 const MEDIA_HEALTH_PAGE_SIZE = 100;

@@ -1,17 +1,25 @@
 import { Injectable } from '@nestjs/common';
-import { ExpressionBuilder, Insertable, Kysely, Selectable, ShallowDehydrateObject, sql, Updateable } from 'kysely';
+import {
+  type ExpressionBuilder,
+  type Insertable,
+  type Kysely,
+  type Selectable,
+  type ShallowDehydrateObject,
+  type Updateable,
+  sql,
+} from 'kysely';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
-import _ from 'lodash';
+import { omit } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
-import { Album, columns } from 'src/database';
-import { ChunkedArray, DummyValue, GenerateSql } from 'src/decorators';
-import { AlbumUserRole, SharedLinkType } from 'src/enum';
-import { DB } from 'src/schema';
-import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
-import { AssetTable } from 'src/schema/tables/asset.table';
-import { SharedLinkTable } from 'src/schema/tables/shared-link.table';
-import { withHiddenContentFilter } from 'src/utils/database';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { Album, columns } from 'src/database.js';
+import { ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
+import { AlbumUserRole, SharedLinkType } from 'src/enum.js';
+import { DB } from 'src/schema/index.js';
+import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
+import { withHiddenContentFilter } from 'src/utils/database.js';
 
 export type SharedLinkSearchOptions = HiddenContentQueryOptions & {
   userId: string;
@@ -182,7 +190,7 @@ export class SharedLinkRepository {
   async create(entity: Insertable<SharedLinkTable> & { assetIds?: string[] }) {
     const { id } = await this.db
       .insertInto('shared_link')
-      .values(_.omit(entity, 'assetIds'))
+      .values(omit(entity, 'assetIds'))
       .returningAll()
       .executeTakeFirstOrThrow();
 
@@ -199,7 +207,7 @@ export class SharedLinkRepository {
   async update(entity: Updateable<SharedLinkTable> & { id: string; assetIds?: string[] }) {
     const { id } = await this.db
       .updateTable('shared_link')
-      .set(_.omit(entity, 'assets', 'album', 'assetIds'))
+      .set(omit(entity, 'assets', 'album', 'assetIds'))
       .where('shared_link.id', '=', entity.id)
       .returningAll()
       .executeTakeFirstOrThrow();

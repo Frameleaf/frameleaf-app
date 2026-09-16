@@ -1,11 +1,11 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { PluginRepository } from 'src/repositories/plugin.repository';
-import { DB } from 'src/schema';
-import { BaseService } from 'src/services/base.service';
-import { newMediumService } from 'test/medium.factory';
-import { getKyselyDB } from 'test/utils';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PluginRepository } from 'src/repositories/plugin.repository.js';
+import { DB } from 'src/schema/index.js';
+import { BaseService } from 'src/services/base.service.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { getKyselyDB } from 'test/utils.js';
 
 const setup = (database: Kysely<DB>) => {
   const { ctx } = newMediumService(BaseService, {

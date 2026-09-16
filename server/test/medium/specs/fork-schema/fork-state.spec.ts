@@ -1,16 +1,16 @@
 import { Kysely, sql } from 'kysely';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { DatabaseRepository } from 'src/repositories/database.repository';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import {
   BACKFILL_KINDS,
-  ForkSchemaRepository,
   type BackfillKind,
   type ForkSchemaPhase,
-} from 'src/repositories/fork-schema.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { DB } from 'src/schema';
-import { mediumFactory } from 'test/medium.factory';
-import { getKyselyDB } from 'test/utils';
+  ForkSchemaRepository,
+} from 'src/repositories/fork-schema.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { DB } from 'src/schema/index.js';
+import { mediumFactory } from 'test/medium.factory.js';
+import { getKyselyDB } from 'test/utils.js';
 
 describe(ForkSchemaRepository.name, () => {
   const digest = 'a'.repeat(64);

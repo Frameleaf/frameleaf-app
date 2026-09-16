@@ -1,15 +1,15 @@
 import { BadRequestException } from '@nestjs/common';
-import { mapAsset } from 'src/dtos/asset-response.dto';
-import { SearchSuggestionType } from 'src/dtos/search.dto';
-import { Permission } from 'src/enum';
-import { SearchService } from 'src/services/search.service';
-import { AssetFactory } from 'test/factories/asset.factory';
-import { AuthFactory } from 'test/factories/auth.factory';
-import { PersonFactory } from 'test/factories/person.factory';
-import { authStub } from 'test/fixtures/auth.stub';
-import { getForAsset } from 'test/mappers';
-import { newTestService, ServiceMocks } from 'test/utils';
 import { beforeEach, vitest } from 'vitest';
+import { mapAsset } from 'src/dtos/asset-response.dto.js';
+import { SearchSuggestionType } from 'src/dtos/search.dto.js';
+import { Permission } from 'src/enum.js';
+import { SearchService } from 'src/services/search.service.js';
+import { AssetFactory } from 'test/factories/asset.factory.js';
+import { AuthFactory } from 'test/factories/auth.factory.js';
+import { PersonFactory } from 'test/factories/person.factory.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
+import { getForAsset } from 'test/mappers.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 vitest.useFakeTimers();
 

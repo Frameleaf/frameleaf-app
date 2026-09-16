@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Endpoint, HistoryBuilder } from 'src/decorators';
-import { AuthDto } from 'src/dtos/auth.dto';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   MediaHealthBulkActionDto,
   MediaHealthBulkResponseDto,
@@ -9,10 +9,10 @@ import {
   MediaHealthListQueryDto,
   MediaHealthListResponseDto,
   MediaHealthScanResponseDto,
-} from 'src/dtos/media-health.dto';
-import { ApiTag } from 'src/enum';
-import { Auth, Authenticated } from 'src/middleware/auth.guard';
-import { MediaHealthService } from 'src/services/media-health.service';
+} from 'src/dtos/media-health.dto.js';
+import { ApiTag } from 'src/enum.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { MediaHealthService } from 'src/services/media-health.service.js';
 
 @ApiTags(ApiTag.MediaHealth)
 @Controller('media-health')

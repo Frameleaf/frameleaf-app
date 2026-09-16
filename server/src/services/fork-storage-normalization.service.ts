@@ -3,9 +3,9 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { copyFile, link, lstat, open, realpath, rm } from 'node:fs/promises';
 import { dirname, isAbsolute, join, parse, relative } from 'node:path';
-import { StorageCore } from 'src/cores/storage.core';
-import { ChecksumAlgorithm } from 'src/enum';
-import { CryptoRepository } from 'src/repositories/crypto.repository';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { ChecksumAlgorithm } from 'src/enum.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import {
   PhysicalFileRepository,
   PhysicalNormalizationAsset,
@@ -13,8 +13,8 @@ import {
   PhysicalNormalizationCompleted,
   PhysicalNormalizationReservation,
   ReturnNormalizationClaim,
-} from 'src/repositories/physical-file.repository';
-import { DB } from 'src/schema';
+} from 'src/repositories/physical-file.repository.js';
+import { DB } from 'src/schema/index.js';
 
 export type NormalizationResult = {
   assetId: string;

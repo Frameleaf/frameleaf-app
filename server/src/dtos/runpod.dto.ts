@@ -30,8 +30,8 @@ const RunPodGpuTypeSchema = z
   .object({
     id: z.string(),
     displayName: z.string(),
-    memoryInGb: z.number(),
-    pricePerHour: z.number().nullable().optional(),
+    memoryInGb: z.number().meta({ format: 'double' }),
+    pricePerHour: z.number().meta({ format: 'double' }).nullable().optional(),
     secureCloud: z.boolean().optional(),
     communityCloud: z.boolean().optional(),
   })
@@ -67,9 +67,9 @@ const RunPodStateSchema = z
     // (oasdiff catches it). The Dart parse path has been latently buggy
     // since PR #37; the right fix is a Dart-side post-generate patch in a
     // follow-up — not a wire-format break.
-    maxRuntimeHours: z.number().optional(),
-    estimatedCostUsd: z.number().optional(),
-    pricePerHour: z.number().optional(),
+    maxRuntimeHours: z.number().meta({ format: 'double' }).optional(),
+    estimatedCostUsd: z.number().meta({ format: 'double' }).optional(),
+    pricePerHour: z.number().meta({ format: 'double' }).optional(),
     instanceTag: z.string().optional(),
     errorMessage: z.string().optional(),
     unhealthySince: z.string().optional(),
@@ -84,9 +84,21 @@ const RunPodStateSchema = z
     // .nullish() (rather than .optional()) so the generated Dart parse path
     // accepts a literal JSON `null` from the server when the endpoint hasn't
     // been created yet (e.g. response shape during `serverless-provisioning`).
-    workersMin: z.number().nullish().describe('Serverless workersMin; may be null when not yet provisioned.'),
-    workersMax: z.number().nullish().describe('Serverless workersMax; may be null when not yet provisioned.'),
-    idleTimeoutSeconds: z.number().nullish().describe('Serverless idle timeout; may be null when not yet provisioned.'),
+    workersMin: z
+      .number()
+      .meta({ format: 'double' })
+      .nullish()
+      .describe('Serverless workersMin; may be null when not yet provisioned.'),
+    workersMax: z
+      .number()
+      .meta({ format: 'double' })
+      .nullish()
+      .describe('Serverless workersMax; may be null when not yet provisioned.'),
+    idleTimeoutSeconds: z
+      .number()
+      .meta({ format: 'double' })
+      .nullish()
+      .describe('Serverless idle timeout; may be null when not yet provisioned.'),
     // True when the RunPod endpoint exists AND the worker behind it is
     // currently responding to /ping. Distinct from `status === 'serverless-ready'`,
     // which only means the endpoint+template are provisioned on RunPod's

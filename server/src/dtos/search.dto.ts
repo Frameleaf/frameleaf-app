@@ -1,8 +1,9 @@
 import { createZodDto } from 'nestjs-zod';
-import { Place } from 'src/database';
-import { HistoryBuilder } from 'src/decorators';
-import { AlbumResponseSchema } from 'src/dtos/album.dto';
-import { AssetResponseSchema } from 'src/dtos/asset-response.dto';
+import z from 'zod';
+import { Place } from 'src/database.js';
+import { HistoryBuilder } from 'src/decorators.js';
+import { AlbumResponseSchema } from 'src/dtos/album.dto.js';
+import { AssetResponseSchema } from 'src/dtos/asset-response.dto.js';
 import {
   AssetOrder,
   AssetOrderSchema,
@@ -11,9 +12,8 @@ import {
   ImageEnrichmentFilterSchema,
   SearchOrderField,
   SearchOrderFieldSchema,
-} from 'src/enum';
-import { isoDatetimeToDate, nonEmptyPartial, stringToBool } from 'src/validation';
-import z from 'zod';
+} from 'src/enum.js';
+import { isoDatetimeToDate, nonEmptyPartial, stringToBool } from 'src/validation.js';
 
 const BaseSearchSchema = z.object({
   libraryId: z.uuidv4().nullish().describe('Library ID to filter by'),
@@ -133,8 +133,8 @@ const SearchPeopleSchema = z
 const PlacesResponseSchema = z
   .object({
     name: z.string().describe('Place name'),
-    latitude: z.number().describe('Latitude coordinate'),
-    longitude: z.number().describe('Longitude coordinate'),
+    latitude: z.number().meta({ format: 'double' }).describe('Latitude coordinate'),
+    longitude: z.number().meta({ format: 'double' }).describe('Longitude coordinate'),
     admin1name: z.string().optional().describe('Administrative level 1 name (state/province)'),
     admin2name: z.string().optional().describe('Administrative level 2 name (county/district)'),
   })
@@ -338,6 +338,14 @@ export type DateFilterNullable = z.infer<typeof DateFilterNullableSchema>;
 export type SearchOrder = z.infer<typeof SearchOrderSchema>;
 export type SearchFilter = z.infer<typeof SearchFilterSchema>;
 export type SearchFilterBranch = z.infer<typeof SearchFilterBranchSchema>;
+
+export const isAlbumConfined = (filter: SearchFilterBranch) =>
+  !!filter.albumIds &&
+  !filter.albumIds.none &&
+  ((filter.albumIds.any?.length ?? 0) > 0 || (filter.albumIds.all?.length ?? 0) > 0);
+
+export const isFullyAlbumConfined = (filter: SearchFilter) =>
+  isAlbumConfined(filter) || (!!filter.or?.length && filter.or.every((branch) => isAlbumConfined(branch)));
 
 export class RandomSearchDto extends createZodDto(RandomSearchSchema) {}
 export class LargeAssetSearchDto extends createZodDto(LargeAssetSearchSchema) {}

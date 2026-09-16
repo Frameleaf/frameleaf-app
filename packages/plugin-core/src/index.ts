@@ -52,7 +52,7 @@ const methods = wrapper<Manifest>({
         return {};
       }
 
-      const [existing] = functions.searchAlbums({ name: config.albumName });
+      const existing = functions.searchAlbums({ isOwned: true }).find((album) => album.albumName === config.albumName);
       if (!existing) {
         const created = functions.createAlbum({ albumName: config.albumName, assetIds: [assetId] });
         config.albumIds.push(created.id);

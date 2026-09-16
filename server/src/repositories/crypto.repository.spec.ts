@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CryptoRepository } from 'src/repositories/crypto.repository';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 
 describe(CryptoRepository.name, () => {
   let sut: CryptoRepository;

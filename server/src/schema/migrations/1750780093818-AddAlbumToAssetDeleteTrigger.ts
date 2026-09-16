@@ -12,7 +12,9 @@ export async function up(db: Kysely<any>): Promise<void> {
       RETURN NULL;
     END
   $$;`.execute(db);
-  await sql`ALTER TABLE "album_assets_audit" ADD CONSTRAINT "FK_8047b44b812619a3c75a2839b0d" FOREIGN KEY ("albumId") REFERENCES "albums" ("id") ON UPDATE CASCADE ON DELETE CASCADE;`.execute(db);
+  await sql`ALTER TABLE "album_assets_audit" ADD CONSTRAINT "FK_8047b44b812619a3c75a2839b0d" FOREIGN KEY ("albumId") REFERENCES "albums" ("id") ON UPDATE CASCADE ON DELETE CASCADE;`.execute(
+    db,
+  );
   await sql`CREATE OR REPLACE TRIGGER "album_assets_delete_audit"
   AFTER DELETE ON "albums_assets_assets"
   REFERENCING OLD TABLE AS "old"

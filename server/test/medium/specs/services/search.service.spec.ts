@@ -1,21 +1,21 @@
 import { Kysely } from 'kysely';
-import { SearchSuggestionType } from 'src/dtos/search.dto';
-import { AlbumUserRole, AssetMetadataKey, AssetType, AssetVisibility, ImageEnrichmentFilter } from 'src/enum';
-import { AccessRepository } from 'src/repositories/access.repository';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { PartnerRepository } from 'src/repositories/partner.repository';
-import { PersonRepository } from 'src/repositories/person.repository';
-import { SearchRepository } from 'src/repositories/search.repository';
-import { TagRepository } from 'src/repositories/tag.repository';
-import { DB } from 'src/schema';
-import { SearchService } from 'src/services/search.service';
-import type { HiddenContentFilter } from 'src/utils/hidden-content';
-import { upsertTags } from 'src/utils/tag';
-import { newMediumService } from 'test/medium.factory';
-import { factory } from 'test/small.factory';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils';
+import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
+import { SearchSuggestionType } from 'src/dtos/search.dto.js';
+import { AlbumUserRole, AssetMetadataKey, AssetType, AssetVisibility, ImageEnrichmentFilter } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
+import { SearchRepository } from 'src/repositories/search.repository.js';
+import { TagRepository } from 'src/repositories/tag.repository.js';
+import { DB } from 'src/schema/index.js';
+import { SearchService } from 'src/services/search.service.js';
+import { upsertTags } from 'src/utils/tag.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { factory } from 'test/small.factory.js';
+import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 

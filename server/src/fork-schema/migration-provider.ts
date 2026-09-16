@@ -1,11 +1,11 @@
-import { FileMigrationProvider, Migration, MigrationProvider } from 'kysely';
+import { FileMigrationProvider, type Migration, type MigrationProvider } from 'kysely/migration';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-  classifyMigration,
   POST_CERTIFIED_UPSTREAM_MIGRATIONS,
   SUPPORTED_UPSTREAM_MIGRATIONS,
-} from 'src/fork-schema/migration-manifest';
+  classifyMigration,
+} from 'src/fork-schema/migration-manifest.js';
 
 const fileProvider = (migrationFolder: string) =>
   new FileMigrationProvider({

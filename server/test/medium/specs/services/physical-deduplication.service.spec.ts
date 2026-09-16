@@ -1,22 +1,22 @@
 import { sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Stats } from 'node:fs';
-import { defaults } from 'src/dtos/config.dto';
-import { AssetFileType, JobName, JobStatus, SystemMetadataKey } from 'src/enum';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { CryptoRepository } from 'src/repositories/crypto.repository';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository';
-import { JobRepository } from 'src/repositories/job.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { PhysicalFileRepository } from 'src/repositories/physical-file.repository';
-import { StorageRepository } from 'src/repositories/storage.repository';
-import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository';
-import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service';
-import { clearConfigCache } from 'src/utils/config';
-import { newMediumService } from 'test/medium.factory';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils';
+import { defaults } from 'src/dtos/config.dto.js';
+import { AssetFileType, JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
+import { clearConfigCache } from 'src/utils/config.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
 
 const dryRunSummary = (masterUserId: string) => ({
   mode: 'dry-run' as const,

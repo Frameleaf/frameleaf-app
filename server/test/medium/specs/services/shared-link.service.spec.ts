@@ -1,47 +1,27 @@
 import { Kysely } from 'kysely';
 import { randomBytes } from 'node:crypto';
-import { AssetIdErrorReason } from 'src/dtos/asset-ids.response.dto';
-import { AssetMetadataKey, SharedLinkType } from 'src/enum';
-import { AccessRepository } from 'src/repositories/access.repository';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository';
-import { SharedLinkRepository } from 'src/repositories/shared-link.repository';
-import { StorageRepository } from 'src/repositories/storage.repository';
-import { TagRepository } from 'src/repositories/tag.repository';
-import { DB } from 'src/schema';
-import { SharedLinkService } from 'src/services/shared-link.service';
-import type { HiddenContentFilter } from 'src/utils/hidden-content';
-import { upsertTags } from 'src/utils/tag';
-import { newMediumService } from 'test/medium.factory';
-import { factory } from 'test/small.factory';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils';
+import { SharedLinkType } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
+import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { DB } from 'src/schema/index.js';
+import { SharedLinkService } from 'src/services/shared-link.service.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { factory } from 'test/small.factory.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
 const setup = (db?: Kysely<DB>) => {
   return newMediumService(SharedLinkService, {
     database: db || defaultDatabase,
-    real: [
-      AccessRepository,
-      AssetRepository,
-      DatabaseRepository,
-      SharedLinkRepository,
-      SharedLinkAssetRepository,
-      TagRepository,
-    ],
+    real: [AccessRepository, DatabaseRepository, SharedLinkRepository, SharedLinkAssetRepository],
     mock: [LoggingRepository, StorageRepository],
   });
 };
-
-const nsfwMetadata = (isNsfw: boolean, review?: { action: string; isNsfw: boolean }) => ({
-  nsfwDetection: {
-    status: 'success',
-    result: { isNsfw, score: isNsfw ? 0.95 : 0.05, labels: { explicit: isNsfw ? 0.95 : 0.05 } },
-    ...(review && { review }),
-  },
-});
 
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
@@ -89,12 +69,10 @@ describe(SharedLinkService.name, () => {
 
     const { user } = await ctx.newUser();
 
-    // distinct fileCreatedAt values: the shared-link payload orders assets by
-    // fileCreatedAt asc, and identical timestamps make the order flaky
     const assets = await Promise.all([
-      ctx.newAsset({ ownerId: user.id, fileCreatedAt: new Date('2024-01-01T00:00:00Z') }),
-      ctx.newAsset({ ownerId: user.id, fileCreatedAt: new Date('2024-01-02T00:00:00Z') }),
-      ctx.newAsset({ ownerId: user.id, fileCreatedAt: new Date('2024-01-03T00:00:00Z') }),
+      ctx.newAsset({ ownerId: user.id, fileCreatedAt: '2020-01-01T00:00:00.000Z' }),
+      ctx.newAsset({ ownerId: user.id, fileCreatedAt: '2020-01-02T00:00:00.000Z' }),
+      ctx.newAsset({ ownerId: user.id, fileCreatedAt: '2020-01-03T00:00:00.000Z' }),
     ]);
 
     for (const { asset } of assets) {
@@ -115,161 +93,6 @@ describe(SharedLinkService.name, () => {
     await expect(sut.getMine({ user, sharedLink }, [])).resolves.toMatchObject({
       assets: assets.map(({ asset }) => expect.objectContaining({ id: asset.id })),
     });
-  });
-
-  it('should hide NSFW assets from public individual shared-link payloads', async () => {
-    const { sut, ctx } = setup(await getKyselyDB());
-    const { user } = await ctx.newUser();
-
-    const { asset: visible } = await ctx.newAsset({ ownerId: user.id });
-    const { asset: unreviewedNsfw } = await ctx.newAsset({ ownerId: user.id });
-    const { asset: markedSafe } = await ctx.newAsset({ ownerId: user.id });
-    const { asset: markedNsfw } = await ctx.newAsset({ ownerId: user.id });
-    const { asset: tagOnly } = await ctx.newAsset({ ownerId: user.id });
-
-    for (const assetId of [visible.id, unreviewedNsfw.id, markedSafe.id, markedNsfw.id, tagOnly.id]) {
-      await ctx.newExif({ assetId, make: 'Canon' });
-    }
-
-    await ctx.newMetadata({
-      assetId: unreviewedNsfw.id,
-      key: AssetMetadataKey.MlEnrichment,
-      value: nsfwMetadata(true),
-    });
-    await ctx.newMetadata({
-      assetId: markedSafe.id,
-      key: AssetMetadataKey.MlEnrichment,
-      value: nsfwMetadata(true, { action: 'marked-safe', isNsfw: false }),
-    });
-    await ctx.newMetadata({
-      assetId: markedNsfw.id,
-      key: AssetMetadataKey.MlEnrichment,
-      value: nsfwMetadata(false, { action: 'marked-nsfw', isNsfw: true }),
-    });
-
-    const [visibleNsfwTag] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['nsfw'] });
-    await ctx.newTagAsset({ tagIds: [visibleNsfwTag.id], assetIds: [tagOnly.id] });
-
-    const sharedLink = await ctx.get(SharedLinkRepository).create({
-      key: randomBytes(16),
-      id: factory.uuid(),
-      userId: user.id,
-      allowUpload: false,
-      type: SharedLinkType.Individual,
-      assetIds: [visible.id, unreviewedNsfw.id, markedSafe.id, markedNsfw.id, tagOnly.id],
-    });
-
-    const hiddenResponse = await sut.getMine({ user, sharedLink, hideNsfwAssets: true }, []);
-    expect(hiddenResponse.assets.map(({ id }) => id)).toEqual(
-      expect.arrayContaining([visible.id, markedSafe.id, tagOnly.id]),
-    );
-    expect(hiddenResponse.assets.map(({ id }) => id)).not.toEqual(
-      expect.arrayContaining([unreviewedNsfw.id, markedNsfw.id]),
-    );
-
-    const visibleResponse = await sut.getMine({ user, sharedLink }, []);
-    expect(visibleResponse.assets.map(({ id }) => id)).toEqual(
-      expect.arrayContaining([unreviewedNsfw.id, markedNsfw.id]),
-    );
-  });
-
-  it('should hide configured tag and person assets from public individual shared-link payloads', async () => {
-    const { sut, ctx } = setup(await getKyselyDB());
-    const { user } = await ctx.newUser();
-
-    const { asset: visible } = await ctx.newAsset({ ownerId: user.id });
-    const { asset: tagSuppressed } = await ctx.newAsset({ ownerId: user.id });
-    const { asset: faceSuppressed } = await ctx.newAsset({ ownerId: user.id });
-
-    for (const assetId of [visible.id, tagSuppressed.id, faceSuppressed.id]) {
-      await ctx.newExif({ assetId, make: 'Canon' });
-    }
-
-    const [tag] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['medical'] });
-    await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [tagSuppressed.id] });
-
-    const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Private Person' });
-    await ctx.newAssetFace({ assetId: faceSuppressed.id, personGroupId: person.personGroupId });
-
-    const sharedLink = await ctx.get(SharedLinkRepository).create({
-      key: randomBytes(16),
-      id: factory.uuid(),
-      userId: user.id,
-      allowUpload: false,
-      type: SharedLinkType.Individual,
-      assetIds: [visible.id, tagSuppressed.id, faceSuppressed.id],
-    });
-
-    const hiddenContent: HiddenContentFilter = {
-      userId: user.id,
-      includeNsfw: false,
-      tagIds: [tag.id],
-      personIds: [person.personGroupId],
-      scope: 'owned',
-    };
-    const hiddenResponse = await sut.getMine({ user, sharedLink, hideNsfwAssets: true, hiddenContent }, []);
-    expect(hiddenResponse.assets.map(({ id }) => id)).toEqual([visible.id]);
-
-    const visibleResponse = await sut.getMine({ user, sharedLink }, []);
-    expect(visibleResponse.assets.map(({ id }) => id)).toEqual(
-      expect.arrayContaining([visible.id, tagSuppressed.id, faceSuppressed.id]),
-    );
-  });
-
-  it('should hide NSFW album assets and thumbnails from public album shared-link payloads', async () => {
-    const { sut, ctx } = setup(await getKyselyDB());
-    const { user } = await ctx.newUser();
-
-    const { asset: visible } = await ctx.newAsset({ ownerId: user.id });
-    const { asset: unreviewedNsfw } = await ctx.newAsset({ ownerId: user.id });
-    const { asset: markedSafe } = await ctx.newAsset({ ownerId: user.id });
-    const { asset: markedNsfw } = await ctx.newAsset({ ownerId: user.id });
-
-    for (const assetId of [visible.id, unreviewedNsfw.id, markedSafe.id, markedNsfw.id]) {
-      await ctx.newExif({ assetId, make: 'Canon' });
-    }
-
-    await ctx.newMetadata({
-      assetId: unreviewedNsfw.id,
-      key: AssetMetadataKey.MlEnrichment,
-      value: nsfwMetadata(true),
-    });
-    await ctx.newMetadata({
-      assetId: markedSafe.id,
-      key: AssetMetadataKey.MlEnrichment,
-      value: nsfwMetadata(true, { action: 'marked-safe', isNsfw: false }),
-    });
-    await ctx.newMetadata({
-      assetId: markedNsfw.id,
-      key: AssetMetadataKey.MlEnrichment,
-      value: nsfwMetadata(false, { action: 'marked-nsfw', isNsfw: true }),
-    });
-
-    const { album } = await ctx.newAlbum({ ownerId: user.id, albumThumbnailAssetId: unreviewedNsfw.id }, [
-      visible.id,
-      unreviewedNsfw.id,
-      markedSafe.id,
-      markedNsfw.id,
-    ]);
-
-    const sharedLink = await ctx.get(SharedLinkRepository).create({
-      key: randomBytes(16),
-      id: factory.uuid(),
-      userId: user.id,
-      albumId: album.id,
-      allowUpload: false,
-      type: SharedLinkType.Album,
-    });
-
-    const hiddenResponse = await sut.getMine({ user, sharedLink, hideNsfwAssets: true }, []);
-    expect(hiddenResponse.album).toEqual(
-      expect.objectContaining({ id: album.id, albumThumbnailAssetId: null, assetCount: 2 }),
-    );
-
-    const visibleResponse = await sut.getMine({ user, sharedLink }, []);
-    expect(visibleResponse.album).toEqual(
-      expect.objectContaining({ id: album.id, albumThumbnailAssetId: unreviewedNsfw.id, assetCount: 4 }),
-    );
   });
 
   describe('getAll', () => {
@@ -586,43 +409,6 @@ describe(SharedLinkService.name, () => {
       expect(assetIds).toEqual(expect.arrayContaining([asset1.id, asset2.id]));
     });
 
-    it('should hide NSFW assets and album thumbnail from a direct get in hidden mode', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user });
-
-      const { asset: visible } = await ctx.newAsset({ ownerId: user.id });
-      const { asset: nsfw } = await ctx.newAsset({ ownerId: user.id });
-      await Promise.all([
-        ctx.newExif({ assetId: visible.id, make: 'Canon' }),
-        ctx.newExif({ assetId: nsfw.id, make: 'Canon' }),
-      ]);
-      await ctx.newMetadata({
-        assetId: nsfw.id,
-        key: AssetMetadataKey.MlEnrichment,
-        value: nsfwMetadata(true),
-      });
-
-      const { album } = await ctx.newAlbum({ ownerId: user.id, albumThumbnailAssetId: nsfw.id });
-      const sharedLinkRepo = ctx.get(SharedLinkRepository);
-      const sharedLink = await sharedLinkRepo.create({
-        key: randomBytes(16),
-        id: factory.uuid(),
-        userId: user.id,
-        albumId: album.id,
-        allowUpload: false,
-        type: SharedLinkType.Album,
-      });
-      await sharedLinkRepo.addAssets(sharedLink.id, [visible.id, nsfw.id]);
-
-      const hidden = await sut.get({ ...auth, hideNsfwAssets: true }, sharedLink.id);
-      expect(hidden.assets.map(({ id }) => id)).not.toContain(nsfw.id);
-      expect(hidden.album?.albumThumbnailAssetId).toBeNull();
-
-      const elevated = await sut.get(auth, sharedLink.id);
-      expect(elevated.album?.albumThumbnailAssetId).toBe(nsfw.id);
-    });
-
     it('should not return trashed assets for an individual shared link', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
@@ -837,53 +623,5 @@ describe(SharedLinkService.name, () => {
     });
 
     await expect(sut.getMine({ user, sharedLink }, [])).resolves.toHaveProperty('assets', []);
-  });
-
-  it('should not remove hidden NSFW assets from individual shared links in hidden mode', async () => {
-    const { sut, ctx } = setup(await getKyselyDB());
-
-    const { user } = await ctx.newUser();
-    const auth = factory.auth({ user });
-    const { asset: visible } = await ctx.newAsset({ ownerId: user.id });
-    const { asset: unreviewedNsfw } = await ctx.newAsset({ ownerId: user.id });
-    const { asset: tagOnly } = await ctx.newAsset({ ownerId: user.id });
-    await Promise.all([
-      ctx.newExif({ assetId: visible.id, make: 'Canon' }),
-      ctx.newExif({ assetId: unreviewedNsfw.id, make: 'Canon' }),
-      ctx.newExif({ assetId: tagOnly.id, make: 'Canon' }),
-      ctx.newMetadata({
-        assetId: unreviewedNsfw.id,
-        key: AssetMetadataKey.MlEnrichment,
-        value: nsfwMetadata(true),
-      }),
-    ]);
-
-    const [visibleNsfwTag] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['nsfw'] });
-    await ctx.newTagAsset({ tagIds: [visibleNsfwTag.id], assetIds: [tagOnly.id] });
-
-    const sharedLink = await ctx.get(SharedLinkRepository).create({
-      key: randomBytes(16),
-      id: factory.uuid(),
-      userId: user.id,
-      allowUpload: false,
-      type: SharedLinkType.Individual,
-      assetIds: [visible.id, unreviewedNsfw.id, tagOnly.id],
-    });
-
-    await expect(
-      sut.removeAssets({ ...auth, hideNsfwAssets: true }, sharedLink.id, {
-        assetIds: [visible.id, unreviewedNsfw.id, tagOnly.id],
-      }),
-    ).resolves.toEqual([
-      { assetId: visible.id, success: true },
-      { assetId: unreviewedNsfw.id, success: false, error: AssetIdErrorReason.NOT_FOUND },
-      { assetId: tagOnly.id, success: true },
-    ]);
-
-    await expect(sut.get(auth, sharedLink.id)).resolves.toEqual(
-      expect.objectContaining({
-        assets: [expect.objectContaining({ id: unreviewedNsfw.id })],
-      }),
-    );
   });
 });

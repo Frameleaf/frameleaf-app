@@ -1,11 +1,11 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Endpoint, HistoryBuilder } from 'src/decorators';
-import { AuthDto } from 'src/dtos/auth.dto';
-import { BestPhotosQueryDto, BestPhotosResponseDto } from 'src/dtos/best-photos.dto';
-import { ApiTag, Permission } from 'src/enum';
-import { Auth, Authenticated } from 'src/middleware/auth.guard';
-import { BestPhotosService } from 'src/services/best-photos.service';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { BestPhotosQueryDto, BestPhotosResponseDto } from 'src/dtos/best-photos.dto.js';
+import { ApiTag, Permission } from 'src/enum.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { BestPhotosService } from 'src/services/best-photos.service.js';
 
 @ApiTags(ApiTag.Views)
 @Controller('best-photos')

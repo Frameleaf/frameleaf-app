@@ -1,4 +1,4 @@
-import { CORRUPT_MEDIA_DELETE_CONFIRM_TEXT } from 'src/dtos/media-health.dto';
+import { CORRUPT_MEDIA_DELETE_CONFIRM_TEXT } from 'src/dtos/media-health.dto.js';
 import {
   AssetStatus,
   AssetType,
@@ -7,13 +7,13 @@ import {
   MediaHealthCategory,
   MediaHealthSeverity,
   MediaHealthStatus,
-} from 'src/enum';
-import { MediaHealthRepository } from 'src/repositories/media-health.repository';
-import { MediaHealthService } from 'src/services/media-health.service';
-import { classifyImageDecodeFailure } from 'src/utils/media-health';
-import { AssetFactory } from 'test/factories/asset.factory';
-import { authStub } from 'test/fixtures/auth.stub';
-import { getMocks, ServiceMocks } from 'test/utils';
+} from 'src/enum.js';
+import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
+import { MediaHealthService } from 'src/services/media-health.service.js';
+import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
+import { AssetFactory } from 'test/factories/asset.factory.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
+import { ServiceMocks, getMocks } from 'test/utils.js';
 
 describe(MediaHealthService.name, () => {
   let sut: MediaHealthService;
@@ -164,7 +164,7 @@ describe(MediaHealthService.name, () => {
 
   it('redacts candidates found in another user directory', () => {
     const mapped = (
-      sut as never as { mapCandidateForRoots: (candidate: unknown, roots: string[]) => unknown }
+      sut as any as { mapCandidateForRoots: (candidate: unknown, roots: string[]) => unknown }
     ).mapCandidateForRoots(
       {
         id: 'candidate-1',
@@ -199,7 +199,7 @@ describe(MediaHealthService.name, () => {
     };
 
     const mapped = (
-      sut as never as {
+      sut as any as {
         mapCandidateForRoots: (candidate: unknown, roots: string[] | null) => { candidatePath: string };
       }
     ).mapCandidateForRoots(candidate, null);
@@ -266,7 +266,7 @@ describe(MediaHealthService.name, () => {
           type: AssetType.Image,
         },
       ] as never);
-      vi.spyOn(sut as never, 'validateAssetIntegrity').mockResolvedValue({
+      vi.spyOn(sut as any, 'validateAssetIntegrity').mockResolvedValue({
         status: MediaHealthStatus.CorruptConfirmed,
         score: null,
         evidence: {},
@@ -648,7 +648,7 @@ describe(MediaHealthService.name, () => {
         })() as never,
       );
       vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
-      vi.spyOn(sut as never, 'validateReadableAssetIntegrity').mockResolvedValue({
+      vi.spyOn(sut as any, 'validateReadableAssetIntegrity').mockResolvedValue({
         status,
         score: null,
         evidence: {},
@@ -677,7 +677,7 @@ describe(MediaHealthService.name, () => {
         })() as never,
       );
       vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
-      vi.spyOn(sut as never, 'validateReadableAssetIntegrity').mockResolvedValue(null);
+      vi.spyOn(sut as any, 'validateReadableAssetIntegrity').mockResolvedValue(null);
 
       await expect(sut.handleMissingScan({ missingRunId: 'm', corruptRunId: 'c' })).resolves.toBe(JobStatus.Success);
 
@@ -723,7 +723,7 @@ describe(MediaHealthService.name, () => {
         })() as never,
       );
       vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
-      const validateSpy = vi.spyOn(sut as never, 'validateReadableAssetIntegrity');
+      const validateSpy = vi.spyOn(sut as any, 'validateReadableAssetIntegrity');
 
       await expect(sut.handleMissingScan({ runId: 'legacy-run' })).resolves.toBe(JobStatus.Success);
 
@@ -765,7 +765,7 @@ describe(MediaHealthService.name, () => {
         })() as never,
       );
       vi.mocked(mocks.storage.checkFileExists).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-      vi.spyOn(sut as never, 'validateReadableAssetIntegrity').mockResolvedValue({
+      vi.spyOn(sut as any, 'validateReadableAssetIntegrity').mockResolvedValue({
         status: MediaHealthStatus.CorruptConfirmed,
         score: null,
         evidence: { reason: 'image_decode_failed' },
@@ -1274,7 +1274,7 @@ describe(MediaHealthService.name, () => {
           libraryId: 'library-1',
         },
       ] as never);
-      vi.spyOn(sut as never, 'locateExternalCandidates').mockResolvedValue(
+      vi.spyOn(sut as any, 'locateExternalCandidates').mockResolvedValue(
         new Map([
           [
             'asset-1',
@@ -1340,7 +1340,7 @@ describe(MediaHealthService.name, () => {
           type: AssetType.Image,
         },
       ] as never);
-      vi.spyOn(sut as never, 'validateAssetIntegrity').mockResolvedValue({
+      vi.spyOn(sut as any, 'validateAssetIntegrity').mockResolvedValue({
         status: MediaHealthStatus.CorruptConfirmed,
         score: null,
         evidence: {},
@@ -1385,7 +1385,7 @@ describe(MediaHealthService.name, () => {
         },
       ] as never);
 
-      vi.spyOn(sut as never, 'locateExternalCandidates').mockResolvedValue(
+      vi.spyOn(sut as any, 'locateExternalCandidates').mockResolvedValue(
         new Map([
           [
             'asset-1',
@@ -1400,7 +1400,7 @@ describe(MediaHealthService.name, () => {
           ],
         ]),
       );
-      const relinkSpy = vi.spyOn(sut as never, 'relinkAsset').mockImplementation(() => Promise.resolve());
+      const relinkSpy = vi.spyOn(sut as any, 'relinkAsset').mockResolvedValue(undefined);
 
       await expect(sut.handleLocateMissing({ ids: ['health-1'] })).resolves.toBe(JobStatus.Success);
 

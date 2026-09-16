@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { ImageDescriptionPromptSchema } from 'src/dtos/model-config.dto';
 import { z } from 'zod';
+import { ImageDescriptionPromptSchema } from 'src/dtos/model-config.dto.js';
 
 export type ImageDescriptionPromptConfig = z.infer<typeof ImageDescriptionPromptSchema>;
 

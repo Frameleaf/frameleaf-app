@@ -57,6 +57,30 @@
       "uiHints": ["SmartAlbum"]
     },
     {
+      "name": "screenshots-collection-smart-album",
+      "title": "Screenshots smart album",
+      "description": "Automatically add screenshots to a Screenshots album without changing their visibility",
+      "trigger": "AssetCreate",
+      "steps": [
+        {
+          "method": "immich-plugin-core#assetFileFilter",
+          "config": {
+            "pattern": "screenshot",
+            "matchType": "contains",
+            "caseSensitive": false
+          }
+        },
+        {
+          "method": "immich-plugin-core#assetAddToAlbums",
+          "config": {
+            "albumName": "Screenshots",
+            "albumIds": []
+          }
+        }
+      ],
+      "uiHints": ["SmartAlbum"]
+    },
+    {
       "name": "location-smart-album",
       "title": "Location-based album",
       "description": "Automatically add assets taken in a specific location to an album",

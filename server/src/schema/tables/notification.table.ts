@@ -3,15 +3,14 @@ import {
   CreateDateColumn,
   DeleteDateColumn,
   ForeignKeyColumn,
-  Generated,
   PrimaryGeneratedColumn,
   Table,
-  Timestamp,
   UpdateDateColumn,
 } from '@immich/sql-tools';
-import { UpdatedAtTrigger, UpdateIdColumn } from 'src/decorators';
-import { NotificationLevel, NotificationType } from 'src/enum';
-import { UserTable } from 'src/schema/tables/user.table';
+import type { Generated, Timestamp } from '@immich/sql-tools';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { NotificationLevel, NotificationType } from 'src/enum.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
 
 @Table('notification')
 @UpdatedAtTrigger('notification_updatedAt')

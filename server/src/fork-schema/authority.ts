@@ -1,4 +1,4 @@
-import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository';
+import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
 
 export const isLegacyAuthoritative = (phase: ForkSchemaPhase): boolean =>
   ['legacy', 'dual-write', 'ready'].includes(phase);

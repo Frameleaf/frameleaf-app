@@ -1,8 +1,11 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { SystemConfig } from 'src/config';
-import { OnEvent } from 'src/decorators';
-import { RunPodBackfillResultDto, RunPodGpuTypeDto, RunPodProvisionDto, RunPodStateDto } from 'src/dtos/runpod.dto';
+import type { SystemConfig } from 'src/config.js';
+import type { ArgOf, ArgsOf } from 'src/repositories/event.repository.js';
+import type { RunPodEndpointSummary, RunPodPodSummary } from 'src/repositories/runpod.repository.js';
+import type { RunPodPersistedState } from 'src/types.js';
+import { OnEvent } from 'src/decorators.js';
+import { RunPodBackfillResultDto, RunPodGpuTypeDto, RunPodProvisionDto, RunPodStateDto } from 'src/dtos/runpod.dto.js';
 import {
   BootstrapEventPriority,
   DatabaseLock,
@@ -11,11 +14,9 @@ import {
   NotificationLevel,
   NotificationType,
   SystemMetadataKey,
-} from 'src/enum';
-import { ArgOf, ArgsOf } from 'src/repositories/event.repository';
-import { RunPodEndpointSummary, RunPodNotFoundError, RunPodPodSummary } from 'src/repositories/runpod.repository';
-import { BaseService } from 'src/services/base.service';
-import { RunPodPersistedState } from 'src/types';
+} from 'src/enum.js';
+import { RunPodNotFoundError } from 'src/repositories/runpod.repository.js';
+import { BaseService } from 'src/services/base.service.js';
 
 type RunPodMode = 'disabled' | 'pod' | 'serverless';
 
