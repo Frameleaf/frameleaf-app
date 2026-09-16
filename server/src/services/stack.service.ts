@@ -1,12 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto';
-import { AuthDto } from 'src/dtos/auth.dto';
-import { StackCreateDto, StackResponseDto, StackSearchDto, StackUpdateDto, mapStack } from 'src/dtos/stack.dto';
-import { Permission } from 'src/enum';
-import { BaseService } from 'src/services/base.service';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content';
-import { UUIDAssetIDParamDto } from 'src/validation';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
+import { StackCreateDto, StackResponseDto, StackSearchDto, StackUpdateDto, mapStack } from 'src/dtos/stack.dto.js';
+import { Permission } from 'src/enum.js';
+import { BaseService } from 'src/services/base.service.js';
+import { type HiddenContentQueryOptions, getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { findOrFail } from 'src/utils/misc.js';
+import { UUIDAssetIDParamDto } from 'src/validation.js';
 
 @Injectable()
 export class StackService extends BaseService {
@@ -86,13 +86,11 @@ export class StackService extends BaseService {
     await this.eventRepository.emit('StackUpdate', { stackId, userId: auth.user.id });
   }
 
-  private async findOrFail(id: string, options?: HiddenContentQueryOptions) {
-    const stack = options ? await this.stackRepository.getById(id, options) : await this.stackRepository.getById(id);
-    if (!stack) {
-      throw new BadRequestException('Asset stack not found');
-    }
-
-    return stack;
+  private findOrFail(id: string, options?: HiddenContentQueryOptions) {
+    return findOrFail(
+      () => (options ? this.stackRepository.getById(id, options) : this.stackRepository.getById(id)),
+      'Asset stack',
+    );
   }
 
   private nsfwOptions(auth: AuthDto) {

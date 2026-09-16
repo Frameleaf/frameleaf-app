@@ -69,20 +69,12 @@
     album?: AlbumResponseDto;
     person?: PersonResponseDto;
     onAssetChange?: (asset: AssetResponseDto) => void;
-    // Bubbled up so the owner of the cursor `$state` (parent caller) can
-    // refresh its own state when the open asset changes (e.g. NSFW review,
-    // refresh-people, stack navigation, rating). Reassigning `cursor` or
-    // mutating `cursor.current` locally only works when the parent's cursor
-    // is a proxied $state — callers that pass an inline literal (e.g.
-    // IndividualSharedViewer, map/+page.svelte) need this callback to see
-    // any update from inside the viewer.
     onAssetUpdate?: (asset: AssetResponseDto) => void;
+    onAssetSuppressed?: (asset: AssetResponseDto) => void | Promise<void>;
     preAction?: PreAction;
     onAction?: OnAction;
     onUndoDelete?: OnUndoDelete;
     onClose?: (assetId: string) => void;
-    onRemoveFromAlbum?: (assetIds: string[]) => void;
-    onAssetSuppressed?: (asset: AssetResponseDto) => void | Promise<void>;
     onRandom?: () => Promise<{ id: string } | undefined>;
   }
 
@@ -94,13 +86,12 @@
     album,
     person,
     onAssetChange,
-    onAssetUpdate,
+    onAssetUpdate: notifyAssetUpdate,
+    onAssetSuppressed,
     preAction,
     onAction,
     onUndoDelete,
     onClose,
-    onRemoveFromAlbum,
-    onAssetSuppressed,
     onRandom,
   }: Props = $props();
 
@@ -110,6 +101,7 @@
     slideshowNavigation,
     slideshowState,
     slideshowRepeat,
+    slideshowAutoplay,
   } = slideshowStore;
   const stackThumbnailSize = 60;
   const stackSelectedThumbnailSize = 65;
@@ -156,13 +148,13 @@
     }
   };
 
-  // Forward the updated asset to the parent (which owns the cursor `$state`)
-  // and only emit when the open asset matches — otherwise a delayed refresh
-  // from a stale view would clobber the freshly-navigated cursor.
-  const handleAssetUpdate = (updatedAsset: AssetResponseDto) => {
-    if (asset.id === updatedAsset.id) {
-      onAssetUpdate?.(updatedAsset);
+  const onAssetUpdate = (updatedAsset: AssetResponseDto) => {
+    if (asset.id !== updatedAsset.id) {
+      return;
     }
+
+    cursor = { ...cursor, current: updatedAsset };
+    notifyAssetUpdate?.(updatedAsset);
   };
 
   const onAssetsUndoArchive = async (assets: TimelineAsset[]) => {
@@ -289,12 +281,8 @@
     if (nextIndex < 0 || nextIndex >= assets.length) {
       return;
     }
-    // Route through onAssetUpdate so callers that pass a non-`$state` cursor
-    // (inline literal in IndividualSharedViewer, map +page.svelte) still see
-    // the navigation. Mutating cursor.current directly only works when the
-    // parent owns a proxied $state cursor.
-    cursor.current = assets[nextIndex];
-    onAssetUpdate?.(assets[nextIndex]);
+    cursor = { ...cursor, current: assets[nextIndex] };
+    notifyAssetUpdate?.(cursor.current);
   };
 
   /**
@@ -315,6 +303,9 @@
 
   const handlePlaySlideshow = async () => {
     slideshowStartAssetId = asset.id;
+    if (!$slideshowAutoplay) {
+      $slideshowState = SlideshowState.PauseSlideshow;
+    }
     try {
       await assetViewerHtmlElement?.requestFullscreen?.();
     } catch (error) {
@@ -354,8 +345,8 @@
       case AssetAction.REMOVE_ASSET_FROM_STACK: {
         stack = action.stack;
         if (stack) {
-          cursor.current = stack.assets[0];
-          onAssetUpdate?.(stack.assets[0]);
+          cursor = { ...cursor, current: stack.assets[0] };
+          notifyAssetUpdate?.(cursor.current);
         }
         break;
       }
@@ -366,22 +357,19 @@
       }
       case AssetAction.SET_PERSON_FEATURED_PHOTO: {
         const assetInfo = await getAssetInfo({ id: asset.id });
-        const updatedAsset = { ...asset, people: assetInfo.people };
-        cursor.current = updatedAsset;
-        onAssetUpdate?.(updatedAsset);
-        eventManager.emit('AssetUpdate', updatedAsset);
+        cursor.current = { ...asset, people: assetInfo.people };
+        eventManager.emit('AssetUpdate', cursor.current);
         break;
       }
       case AssetAction.RATING: {
-        const updatedAsset = {
+        cursor.current = {
           ...asset,
           exifInfo: {
             ...asset.exifInfo,
             rating: action.rating,
           },
         };
-        cursor.current = updatedAsset;
-        onAssetUpdate?.(updatedAsset);
+        notifyAssetUpdate?.(cursor.current);
         break;
       }
       case AssetAction.UNSTACK: {
@@ -510,7 +498,7 @@
 </script>
 
 <CommandPaletteDefaultProvider name={$t('assets')} actions={[Tag, TagPeople]} />
-<OnEvents onAssetUpdate={handleAssetUpdate} {onAssetsUndoArchive} />
+<OnEvents {onAssetUpdate} {onAssetsUndoArchive} />
 
 <svelte:document
   bind:fullscreenElement
@@ -538,7 +526,6 @@
         onAction={handleAction}
         {onUndoDelete}
         onClose={onClose ? () => onClose(stack?.primaryAssetId ?? asset.id) : undefined}
-        {onRemoveFromAlbum}
         {isPlayingOriginalVideo}
         {setPlayOriginalVideo}
       />
@@ -653,7 +640,7 @@
       translate="yes"
     >
       {#if showDetailPanel}
-        <DetailPanel {asset} currentAlbum={album} {onAssetSuppressed} onAssetUpdate={handleAssetUpdate} />
+        <DetailPanel {asset} currentAlbum={album} {onAssetUpdate} {onAssetSuppressed} />
       {:else if assetViewerManager.isShowEditor}
         <EditorPanel {asset} onClose={closeEditor} />
       {/if}
@@ -670,13 +657,12 @@
             style:bottom={stackedAsset.id === asset.id ? '0' : '-10px'}
           >
             <Thumbnail
-              imageClass={{ 'border-2 border-white': stackedAsset.id === asset.id }}
+              imageClass={stackedAsset.id === asset.id ? 'border-2 border-white' : 'brightness-70'}
               brokenAssetClass="text-xs"
-              dimmed={stackedAsset.id !== asset.id}
               asset={toTimelineAsset(stackedAsset)}
               onClick={() => {
-                cursor.current = stackedAsset;
-                onAssetUpdate?.(stackedAsset);
+                cursor = { ...cursor, current: stackedAsset };
+                notifyAssetUpdate?.(stackedAsset);
                 previewStackedAsset = undefined;
               }}
               onMouseEvent={({ isMouseOver }) => handleStackedAssetMouseEvent(isMouseOver, stackedAsset)}

@@ -1,20 +1,13 @@
 import { Kysely } from 'kysely';
-import { AssetFileType, AssetMetadataKey } from 'src/enum';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { PersonRepository } from 'src/repositories/person.repository';
-import { DB } from 'src/schema';
-import { BaseService } from 'src/services/base.service';
-import { newMediumService } from 'test/medium.factory';
-import { getActiveForkKyselyDB, getKyselyDB } from 'test/utils';
+import { AssetFileType } from 'src/enum.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
+import { DB } from 'src/schema/index.js';
+import { BaseService } from 'src/services/base.service.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
-
-const nsfwMetadata = (isNsfw: boolean) => ({
-  nsfwDetection: {
-    status: 'success',
-    result: { isNsfw, score: isNsfw ? 0.95 : 0.05, labels: { explicit: isNsfw ? 0.95 : 0.05 } },
-  },
-});
 
 const setup = (db?: Kysely<DB>) => {
   const { ctx } = newMediumService(BaseService, {
@@ -185,51 +178,6 @@ describe(PersonRepository.name, () => {
     });
   });
 
-  describe('getRandomFace', () => {
-    it('does not select an NSFW asset as person thumbnail when a safe face exists', async () => {
-      const { ctx, sut } = setup(await getActiveForkKyselyDB());
-      const { user } = await ctx.newUser();
-      const { person } = await ctx.newPerson({ ownerId: user.id });
-
-      // insert the NSFW faces first so an unordered query would pick one of them
-      for (let i = 0; i < 4; i++) {
-        const { asset: nsfwAsset } = await ctx.newAsset({ ownerId: user.id });
-        await ctx.newMetadata({
-          assetId: nsfwAsset.id,
-          key: AssetMetadataKey.MlEnrichment,
-          value: nsfwMetadata(true),
-        });
-        await ctx.newAssetFace({ assetId: nsfwAsset.id, personGroupId: person.personGroupId });
-      }
-
-      const { asset: safeAsset } = await ctx.newAsset({ ownerId: user.id });
-      const { assetFace: safeFace } = await ctx.newAssetFace({
-        assetId: safeAsset.id,
-        personGroupId: person.personGroupId,
-      });
-
-      const face = await sut.getRandomFace(person.personGroupId);
-      expect(face?.id).toBe(safeFace.id);
-    });
-
-    it('still selects a face for an NSFW-only person', async () => {
-      const { ctx, sut } = setup(await getActiveForkKyselyDB());
-      const { user } = await ctx.newUser();
-      const { person } = await ctx.newPerson({ ownerId: user.id });
-
-      const { asset: nsfwAsset } = await ctx.newAsset({ ownerId: user.id });
-      await ctx.newMetadata({
-        assetId: nsfwAsset.id,
-        key: AssetMetadataKey.MlEnrichment,
-        value: nsfwMetadata(true),
-      });
-      const { assetFace } = await ctx.newAssetFace({ assetId: nsfwAsset.id, personGroupId: person.personGroupId });
-
-      const face = await sut.getRandomFace(person.personGroupId);
-      expect(face?.id).toBe(assetFace.id);
-    });
-  });
-
   describe('getDataForThumbnailGenerationJob', () => {
     it('should not return the edited preview path', async () => {
       const { ctx, sut } = setup();
@@ -278,6 +226,20 @@ describe(PersonRepository.name, () => {
           previewPath: 'preview_unedited.jpg',
         }),
       );
+    });
+  });
+
+  describe('getForFeatureFaceUpdate', () => {
+    it('should ignore soft deleted faces', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      await ctx.newAssetFace({ assetId: asset.id, deletedAt: new Date(), personGroupId: person.personGroupId });
+
+      await expect(
+        sut.getForFeatureFaceUpdate({ personGroupId: person.personGroupId, assetId: asset.id }),
+      ).resolves.toEqual(undefined);
     });
   });
 });

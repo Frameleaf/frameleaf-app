@@ -1,12 +1,12 @@
 import { Insertable, Kysely } from 'kysely';
-import { AssetType, AssetVisibility } from 'src/enum';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { LivePhotoRepository } from 'src/repositories/live-photo.repository';
-import { UserRepository } from 'src/repositories/user.repository';
-import { DB } from 'src/schema';
-import { AssetTable } from 'src/schema/tables/asset.table';
-import { mediumFactory } from 'test/medium.factory';
-import { getKyselyDB } from 'test/utils';
+import { AssetType, AssetVisibility } from 'src/enum.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { DB } from 'src/schema/index.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { mediumFactory } from 'test/medium.factory.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 

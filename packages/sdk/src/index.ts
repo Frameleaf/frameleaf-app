@@ -2,6 +2,7 @@ import { defaults } from './fetch-client.js';
 import { MalformedResponseError } from './fetch-errors.js';
 
 export * from './fetch-client.js';
+export { mergePersonLegacy as mergePerson } from './fetch-client.js';
 export * from './fetch-errors.js';
 
 export interface InitOptions {

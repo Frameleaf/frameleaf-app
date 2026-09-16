@@ -1,9 +1,9 @@
-import { BEST_PHOTO_SCORE_VERSION } from 'src/dtos/best-photos.dto';
-import { AssetStatus, AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum';
-import { BestPhotosService } from 'src/services/best-photos.service';
-import { probeStub } from 'test/fixtures/media.stub';
-import { factory } from 'test/small.factory';
 import { vitest } from 'vitest';
+import { BEST_PHOTO_SCORE_VERSION } from 'src/dtos/best-photos.dto.js';
+import { AssetStatus, AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum.js';
+import { BestPhotosService } from 'src/services/best-photos.service.js';
+import { probeStub } from 'test/fixtures/media.stub.js';
+import { factory } from 'test/small.factory.js';
 
 describe(BestPhotosService.name, () => {
   const logger = { setContext: vitest.fn(), warn: vitest.fn(), debug: vitest.fn(), error: vitest.fn() };

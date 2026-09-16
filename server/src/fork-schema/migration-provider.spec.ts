@@ -1,10 +1,10 @@
-import { Migration, MigrationProvider } from 'kysely';
-import { createCertifiedLedgerMigrationProvider } from 'src/fork-schema/migration-provider';
+import type { Migration, MigrationProvider } from 'kysely/migration';
+import { createCertifiedLedgerMigrationProvider } from 'src/fork-schema/migration-provider.js';
 import {
   ADD_PLUGIN_METHOD_ALLOWED_HOSTS_MIGRATION,
   ADD_PLUGIN_TEMPLATES_MIGRATION,
   OFFICIAL_WORKFLOW_MIGRATION,
-} from 'src/fork-schema/workflow-compatibility';
+} from 'src/fork-schema/workflow-compatibility.js';
 
 const migration = (): Migration => ({
   down: vi.fn(),

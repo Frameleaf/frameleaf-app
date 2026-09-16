@@ -34,10 +34,18 @@ export async function up(db: Kysely<any>): Promise<void> {
   AFTER INSERT ON "asset_edit"
   FOR EACH ROW
   EXECUTE FUNCTION asset_edit_insert();`.execute(db);
-  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('function_asset_edit_insert', '{"type":"function","name":"asset_edit_insert","sql":"CREATE OR REPLACE FUNCTION asset_edit_insert()\\n  RETURNS TRIGGER\\n  LANGUAGE PLPGSQL\\n  AS $$\\n    BEGIN\\n      UPDATE asset\\n      SET \\"editCount\\" = \\"editCount\\" + 1\\n      WHERE \\"id\\" = NEW.\\"assetId\\";\\n      RETURN NULL;\\n    END\\n  $$;"}'::jsonb);`.execute(db);
-  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('function_asset_edit_delete', '{"type":"function","name":"asset_edit_delete","sql":"CREATE OR REPLACE FUNCTION asset_edit_delete()\\n  RETURNS TRIGGER\\n  LANGUAGE PLPGSQL\\n  AS $$\\n    BEGIN\\n      UPDATE asset\\n      SET \\"editCount\\" = \\"editCount\\" - 1\\n      WHERE \\"id\\" = OLD.\\"assetId\\";\\n      RETURN NULL;\\n    END\\n  $$;"}'::jsonb);`.execute(db);
-  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_asset_edit_delete', '{"type":"trigger","name":"asset_edit_delete","sql":"CREATE OR REPLACE TRIGGER \\"asset_edit_delete\\"\\n  AFTER DELETE ON \\"asset_edit\\"\\n  REFERENCING OLD TABLE AS \\"old\\"\\n  FOR EACH ROW\\n  WHEN (pg_trigger_depth() = 0)\\n  EXECUTE FUNCTION asset_edit_delete();"}'::jsonb);`.execute(db);
-  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_asset_edit_insert', '{"type":"trigger","name":"asset_edit_insert","sql":"CREATE OR REPLACE TRIGGER \\"asset_edit_insert\\"\\n  AFTER INSERT ON \\"asset_edit\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION asset_edit_insert();"}'::jsonb);`.execute(db);
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('function_asset_edit_insert', '{"type":"function","name":"asset_edit_insert","sql":"CREATE OR REPLACE FUNCTION asset_edit_insert()\\n  RETURNS TRIGGER\\n  LANGUAGE PLPGSQL\\n  AS $$\\n    BEGIN\\n      UPDATE asset\\n      SET \\"editCount\\" = \\"editCount\\" + 1\\n      WHERE \\"id\\" = NEW.\\"assetId\\";\\n      RETURN NULL;\\n    END\\n  $$;"}'::jsonb);`.execute(
+    db,
+  );
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('function_asset_edit_delete', '{"type":"function","name":"asset_edit_delete","sql":"CREATE OR REPLACE FUNCTION asset_edit_delete()\\n  RETURNS TRIGGER\\n  LANGUAGE PLPGSQL\\n  AS $$\\n    BEGIN\\n      UPDATE asset\\n      SET \\"editCount\\" = \\"editCount\\" - 1\\n      WHERE \\"id\\" = OLD.\\"assetId\\";\\n      RETURN NULL;\\n    END\\n  $$;"}'::jsonb);`.execute(
+    db,
+  );
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_asset_edit_delete', '{"type":"trigger","name":"asset_edit_delete","sql":"CREATE OR REPLACE TRIGGER \\"asset_edit_delete\\"\\n  AFTER DELETE ON \\"asset_edit\\"\\n  REFERENCING OLD TABLE AS \\"old\\"\\n  FOR EACH ROW\\n  WHEN (pg_trigger_depth() = 0)\\n  EXECUTE FUNCTION asset_edit_delete();"}'::jsonb);`.execute(
+    db,
+  );
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_asset_edit_insert', '{"type":"trigger","name":"asset_edit_insert","sql":"CREATE OR REPLACE TRIGGER \\"asset_edit_insert\\"\\n  AFTER INSERT ON \\"asset_edit\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION asset_edit_insert();"}'::jsonb);`.execute(
+    db,
+  );
 }
 
 export async function down(db: Kysely<any>): Promise<void> {

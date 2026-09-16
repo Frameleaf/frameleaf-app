@@ -4,19 +4,20 @@ import {
   Insertable,
   Kysely,
   NotNull,
-  Selectable,
   SelectQueryBuilder,
+  Selectable,
   ShallowDehydrateObject,
-  sql,
-  Updateable,
   UpdateResult,
+  sql,
 } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
-import { isEmpty, isUndefined, omitBy } from 'lodash';
+import { isEmpty, isUndefined, omitBy } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
-import { LockableProperty, Stack } from 'src/database';
-import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators';
-import { AuthDto } from 'src/dtos/auth.dto';
+import type { Updateable } from 'kysely';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { LockableProperty, Stack } from 'src/database.js';
+import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
 import {
   AssetFileType,
   AssetMetadataKey,
@@ -27,19 +28,19 @@ import {
   AssetVisibility,
   CalendarHeatmapType,
   TimeBucketDateType,
-} from 'src/enum';
-import { isForkWriteEnabled } from 'src/fork-schema/authority';
-import { getForkSchemaPhase } from 'src/repositories/fork-derived-results';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository';
-import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository';
-import { SmartAlbumRepository } from 'src/repositories/smart-album.repository';
-import { DB } from 'src/schema';
-import { AssetAudioTable, AssetKeyframeTable, AssetVideoTable } from 'src/schema/tables/asset-av.table';
-import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
-import { AssetFileTable } from 'src/schema/tables/asset-file.table';
-import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table';
-import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table';
-import { AssetTable } from 'src/schema/tables/asset.table';
+} from 'src/enum.js';
+import { isForkWriteEnabled } from 'src/fork-schema/authority.js';
+import { getForkSchemaPhase } from 'src/repositories/fork-derived-results.js';
+import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
+import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
+import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { DB } from 'src/schema/index.js';
+import { AssetAudioTable, AssetKeyframeTable, AssetVideoTable } from 'src/schema/tables/asset-av.table.js';
+import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
+import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
+import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
+import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
 import {
   anyUuid,
   asUuid,
@@ -65,10 +66,9 @@ import {
   withSmartSearch,
   withTagId,
   withTags,
-} from 'src/utils/database';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content';
-import { globToPostgresRegex } from 'src/utils/misc';
-import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw';
+} from 'src/utils/database.js';
+import { globToPostgresRegex } from 'src/utils/misc.js';
+import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 
 export type AssetStats = Record<AssetType, number>;
 
@@ -1071,6 +1071,7 @@ export class AssetRepository {
             'asset.ownerId',
             'asset.status',
             timelineDate.as('fileCreatedAt'),
+            sql`asset."createdAt" at time zone 'utc'`.as('createdAt'),
             eb.fn('encode', ['asset.thumbhash', sql.lit('base64')]).as('thumbhash'),
             'asset_exif.projectionType',
             eb.fn
@@ -1158,7 +1159,8 @@ export class AssetRepository {
           .$if(!!options.isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
           .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!))
           .orderBy(orderDate, order)
-          .orderBy(orderTimestamp, order),
+          .orderBy(orderTimestamp, order)
+          .orderBy('asset.originalFileName', order),
       )
       .with('agg', (qb) =>
         qb
@@ -1173,6 +1175,7 @@ export class AssetRepository {
             eb.fn.coalesce(eb.fn('array_agg', ['isTrashed']), sql.lit('{}')).as('isTrashed'),
             eb.fn.coalesce(eb.fn('array_agg', ['livePhotoVideoId']), sql.lit('{}')).as('livePhotoVideoId'),
             eb.fn.coalesce(eb.fn('array_agg', ['fileCreatedAt']), sql.lit('{}')).as('fileCreatedAt'),
+            eb.fn.coalesce(eb.fn('array_agg', ['createdAt']), sql.lit('{}')).as('createdAt'),
             eb.fn.coalesce(eb.fn('array_agg', ['localOffsetHours']), sql.lit('{}')).as('localOffsetHours'),
             eb.fn.coalesce(eb.fn('array_agg', ['ownerId']), sql.lit('{}')).as('ownerId'),
             eb.fn.coalesce(eb.fn('array_agg', ['projectionType']), sql.lit('{}')).as('projectionType'),

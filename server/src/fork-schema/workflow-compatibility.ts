@@ -1,7 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import { createHash } from 'node:crypto';
-import supportedVersions from 'src/fork-schema/supported-versions.json';
-import { DB } from 'src/schema';
+import supportedVersions from 'src/fork-schema/supported-versions.json' with { type: 'json' };
+import { DB } from 'src/schema/index.js';
 
 export const LEGACY_WORKFLOW_MIGRATION = '1779400000000-UpdateWorkflowTables';
 export const OFFICIAL_WORKFLOW_MIGRATION = '1778614946174-UpdateWorkflowTables';

@@ -22,7 +22,9 @@ export async function up(db: Kysely<any>): Promise<void> {
   CONSTRAINT "video_stream_variant_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "video_stream_session" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "video_stream_variant_pkey" PRIMARY KEY ("id")
 );`.execute(db);
-  await sql`CREATE UNIQUE INDEX "video_stream_variant_sessionId_bitrate_resolution_codec_idx" ON "video_stream_variant" ("sessionId", "bitrate", "resolution", "codec");`.execute(db);
+  await sql`CREATE UNIQUE INDEX "video_stream_variant_sessionId_bitrate_resolution_codec_idx" ON "video_stream_variant" ("sessionId", "bitrate", "resolution", "codec");`.execute(
+    db,
+  );
   await sql`CREATE TABLE "video_stream_segment" (
   "variantId" uuid NOT NULL,
   "index" integer NOT NULL,

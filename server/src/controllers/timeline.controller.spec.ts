@@ -1,8 +1,8 @@
-import { TimelineController } from 'src/controllers/timeline.controller';
-import { TimelineService } from 'src/services/timeline.service';
 import request from 'supertest';
-import { errorDto } from 'test/medium/responses';
-import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils';
+import { TimelineController } from 'src/controllers/timeline.controller.js';
+import { TimelineService } from 'src/services/timeline.service.js';
+import { errorDto } from 'test/medium/responses.js';
+import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
 
 describe(TimelineController.name, () => {
   let ctx: ControllerContext;
@@ -76,11 +76,22 @@ describe(TimelineController.name, () => {
   });
 
   describe('GET /timeline/bucket', () => {
-    // TODO enable date string validation while still accepting 5 digit years
-    it.fails('should fail if time bucket is invalid', async () => {
-      const { status, body } = await request(ctx.getHttpServer()).get('/timeline/bucket').query({ timeBucket: 'foo' });
+    it.each([
+      '1970-02-01',
+      '12345-01-01',
+      '012345-01-01',
+      '-000001-01-01',
+      '2026-01-01T00:00:00Z',
+      '2026-01-01T00:00:00+05:30',
+    ])('should accept valid time bucket %s', async (timeBucket) => {
+      const { status } = await request(ctx.getHttpServer()).get('/timeline/bucket').query({ timeBucket });
+      expect(status).toBe(200);
+    });
+
+    it.each(['foo', '2026', '2026-02-30', '2026-13-01'])('should reject invalid time bucket %s', async (timeBucket) => {
+      const { status, body } = await request(ctx.getHttpServer()).get('/timeline/bucket').query({ timeBucket });
       expect(status).toBe(400);
-      expect(body).toEqual(errorDto.badRequest('Invalid time bucket format'));
+      expect(body).toEqual(errorDto.validationError([{ path: ['timeBucket'], message: 'Invalid time bucket format' }]));
     });
   });
 });

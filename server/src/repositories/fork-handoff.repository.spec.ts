@@ -1,5 +1,5 @@
-import supportedVersions from 'src/fork-schema/supported-versions.json';
-import { assertExactCertifiedReturnLedger } from 'src/repositories/fork-handoff.repository';
+import supportedVersions from 'src/fork-schema/supported-versions.json' with { type: 'json' };
+import { assertExactCertifiedReturnLedger } from 'src/repositories/fork-handoff.repository.js';
 
 const ledger = ['1000-First', '2000-Second', '3000-Third'];
 const residue = supportedVersions.postCertifiedUpstreamMigrations;

@@ -1,5 +1,5 @@
-import { AppRepository } from 'src/repositories/app.repository';
 import { beforeEach, describe, expect, it, vitest } from 'vitest';
+import { AppRepository } from 'src/repositories/app.repository.js';
 
 const mocks = vitest.hoisted(() => {
   const pubClient = {
@@ -21,10 +21,20 @@ const mocks = vitest.hoisted(() => {
 });
 
 vitest.mock('@socket.io/redis-adapter', () => ({ createAdapter: vitest.fn(() => 'redis-adapter') }));
-vitest.mock('ioredis', () => ({ default: vitest.fn(() => mocks.pubClient) }));
-vitest.mock('socket.io', () => ({ Server: vitest.fn(() => mocks.server) }));
-vitest.mock('src/repositories/config.repository', () => ({
-  ConfigRepository: vitest.fn(() => ({ getEnv: () => ({ redis: {} }) })),
+vitest.mock('ioredis', () => ({
+  Redis: vitest.fn(function () {
+    return mocks.pubClient;
+  }),
+}));
+vitest.mock('socket.io', () => ({
+  Server: vitest.fn(function () {
+    return mocks.server;
+  }),
+}));
+vitest.mock('src/repositories/config.repository.js', () => ({
+  ConfigRepository: vitest.fn(function () {
+    return { getEnv: () => ({ redis: {} }) };
+  }),
 }));
 
 describe(AppRepository.name, () => {

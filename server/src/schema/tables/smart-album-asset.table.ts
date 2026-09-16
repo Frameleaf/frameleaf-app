@@ -1,6 +1,7 @@
-import { Check, Column, CreateDateColumn, ForeignKeyColumn, Generated, Table, Timestamp } from '@immich/sql-tools';
-import { AssetTable } from 'src/schema/tables/asset.table';
-import { SmartAlbumTable } from 'src/schema/tables/smart-album.table';
+import { Check, Column, CreateDateColumn, ForeignKeyColumn, Table } from '@immich/sql-tools';
+import type { Generated, Timestamp } from '@immich/sql-tools';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { SmartAlbumTable } from 'src/schema/tables/smart-album.table.js';
 
 @Table({ name: 'smart_album_asset' })
 // Mirrors the CHECK created in migration 1779600000000. The constraint comparer

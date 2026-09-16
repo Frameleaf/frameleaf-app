@@ -1,30 +1,30 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import _ from 'lodash';
-import { OnEvent } from 'src/decorators';
+import { isEqual, omit } from 'lodash-es';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import { OnEvent } from 'src/decorators.js';
 import {
   AdminConfigDto,
+  PublicConfigDto,
+  SystemConfig,
+  UserConfigDto,
   defaults,
   mapAdminConfig,
   mapPublicConfig,
   mapUserConfig,
-  PublicConfigDto,
-  SystemConfig,
-  UserConfigDto,
-} from 'src/dtos/config.dto';
+} from 'src/dtos/config.dto.js';
 import {
   ImageDescriptionRequeueEstimateDto,
   ImageDescriptionRequeueResponseDto,
   SmartAlbumReevaluateEstimateDto,
   SmartAlbumReevaluateRequestDto,
   SmartAlbumReevaluateResponseDto,
-} from 'src/dtos/system-config.dto';
-import { BootstrapEventPriority, JobName, QueueName, SystemMetadataKey } from 'src/enum';
-import { ArgOf } from 'src/repositories/event.repository';
-import { MachineLearningHardwareResponse } from 'src/repositories/machine-learning.repository';
-import { BaseService } from 'src/services/base.service';
-import { clearConfigCache } from 'src/utils/config';
-import { isImageDescriptionEnabled } from 'src/utils/misc';
-import { toPlainObject } from 'src/utils/object';
+} from 'src/dtos/system-config.dto.js';
+import { BootstrapEventPriority, JobName, QueueName, SystemMetadataKey } from 'src/enum.js';
+import { MachineLearningHardwareResponse } from 'src/repositories/machine-learning.repository.js';
+import { BaseService } from 'src/services/base.service.js';
+import { clearConfigCache } from 'src/utils/config.js';
+import { isImageDescriptionEnabled } from 'src/utils/misc.js';
+import { toPlainObject } from 'src/utils/object.js';
 
 /** Default per-asset estimate when no telemetry data is available. */
 const DEFAULT_SECONDS_PER_ASSET = 1.5;
@@ -103,7 +103,7 @@ export class SystemConfigService extends BaseService {
   @OnEvent({ name: 'ConfigValidate' })
   async onConfigValidate({ newConfig, oldConfig }: ArgOf<'ConfigValidate'>) {
     const { logLevel } = this.configRepository.getEnv();
-    if (logLevel && !_.isEqual(toPlainObject(newConfig.logging), oldConfig.logging)) {
+    if (logLevel && !isEqual(toPlainObject(newConfig.logging), oldConfig.logging)) {
       throw new Error('Logging cannot be changed while the environment variable IMMICH_LOG_LEVEL is set.');
     }
 
@@ -195,17 +195,14 @@ export class SystemConfigService extends BaseService {
     // the timestamp on every save). The bump happens BEFORE updateConfig() so
     // the new timestamp is persisted along with the rest of the config in a
     // single round-trip.
-    const oldDescription = _.omit(oldConfig.machineLearning.imageDescription, [
-      'pendingRequeueAt',
-      'lastConfigChangeAt',
-    ]);
-    const newDescription = _.omit(dto.machineLearning?.imageDescription ?? {}, [
+    const oldDescription = omit(oldConfig.machineLearning.imageDescription, ['pendingRequeueAt', 'lastConfigChangeAt']);
+    const newDescription = omit(dto.machineLearning?.imageDescription ?? {}, [
       'pendingRequeueAt',
       'lastConfigChangeAt',
     ]);
     if (
       dto.machineLearning?.imageDescription &&
-      !_.isEqual(toPlainObject(oldDescription), toPlainObject(newDescription))
+      !isEqual(toPlainObject(oldDescription), toPlainObject(newDescription))
     ) {
       dto.machineLearning.imageDescription.lastConfigChangeAt = new Date().toISOString();
     }

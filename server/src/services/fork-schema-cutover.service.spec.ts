@@ -1,11 +1,11 @@
-import { DatabaseLock } from 'src/enum';
-import forkCatalogManifest from 'src/fork-schema/manifests/fork-v2-catalog.json';
-import { GENERIC_LEGACY_FORK_MIGRATIONS, SUPPORTED_UPSTREAM_MIGRATIONS } from 'src/fork-schema/migration-manifest';
-import { LEGACY_WORKFLOW_MIGRATION, OFFICIAL_WORKFLOW_MIGRATION } from 'src/fork-schema/workflow-compatibility';
-import { ForkSchemaCutoverEvidence } from 'src/repositories/database.repository';
-import { BACKFILL_KINDS } from 'src/repositories/fork-schema.repository';
-import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service';
-import { newTestService } from 'test/utils';
+import { DatabaseLock } from 'src/enum.js';
+import forkCatalogManifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
+import { GENERIC_LEGACY_FORK_MIGRATIONS, SUPPORTED_UPSTREAM_MIGRATIONS } from 'src/fork-schema/migration-manifest.js';
+import { LEGACY_WORKFLOW_MIGRATION, OFFICIAL_WORKFLOW_MIGRATION } from 'src/fork-schema/workflow-compatibility.js';
+import { ForkSchemaCutoverEvidence } from 'src/repositories/database.repository.js';
+import { BACKFILL_KINDS } from 'src/repositories/fork-schema.repository.js';
+import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service.js';
+import { newTestService } from 'test/utils.js';
 
 const SHA256_A = 'a'.repeat(64);
 const SHA256_B = 'b'.repeat(64);

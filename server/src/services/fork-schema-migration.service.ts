@@ -1,15 +1,16 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { OnJob } from 'src/decorators';
-import { JobName, JobStatus, QueueName } from 'src/enum';
-import { BestPhotosRepository } from 'src/repositories/best-photos.repository';
-import { DuplicateRepository } from 'src/repositories/duplicate.repository';
-import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository';
-import { ForkConfigRepository } from 'src/repositories/fork-config.repository';
-import { digestValue } from 'src/repositories/fork-derived-results';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository';
-import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository';
+import type { JobOf } from 'src/types.js';
+import { OnJob } from 'src/decorators.js';
+import { JobName, JobStatus, QueueName } from 'src/enum.js';
+import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
+import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
+import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository.js';
+import { ForkConfigRepository } from 'src/repositories/fork-config.repository.js';
+import { digestValue } from 'src/repositories/fork-derived-results.js';
+import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
+import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import {
   BACKFILL_KINDS,
   BackfillClaim,
@@ -17,14 +18,13 @@ import {
   BackfillProgress,
   ForkState,
   ReturnConfigReconciliation,
-} from 'src/repositories/fork-schema.repository';
-import { MediaHealthRepository } from 'src/repositories/media-health.repository';
-import { ReturnNormalizationClaim } from 'src/repositories/physical-file.repository';
-import { SmartAlbumRepository } from 'src/repositories/smart-album.repository';
-import { DB } from 'src/schema';
-import { BaseService } from 'src/services/base.service';
-import { ForkStorageNormalizationService } from 'src/services/fork-storage-normalization.service';
-import { JobOf } from 'src/types';
+} from 'src/repositories/fork-schema.repository.js';
+import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
+import { ReturnNormalizationClaim } from 'src/repositories/physical-file.repository.js';
+import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { DB } from 'src/schema/index.js';
+import { BaseService } from 'src/services/base.service.js';
+import { ForkStorageNormalizationService } from 'src/services/fork-storage-normalization.service.js';
 
 const DEFAULT_BATCH_SIZE = 100;
 

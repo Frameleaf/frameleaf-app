@@ -1,5 +1,5 @@
 import { CommandRunner, Option, SubCommand } from 'nest-commander';
-import { ForkCutoverVerificationService } from 'src/services/fork-cutover-verification.service';
+import { ForkCutoverVerificationService } from 'src/services/fork-cutover-verification.service.js';
 
 type CheckpointOptions = { databaseBackupId?: string; mediaSnapshotId?: string };
 type ResumeOptions = CheckpointOptions & { batchSize?: number };

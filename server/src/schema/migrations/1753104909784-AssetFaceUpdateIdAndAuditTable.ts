@@ -34,9 +34,15 @@ export async function up(db: Kysely<any>): Promise<void> {
   BEFORE UPDATE ON "asset_face"
   FOR EACH ROW
   EXECUTE FUNCTION updated_at();`.execute(db);
-  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('function_asset_face_audit', '{"type":"function","name":"asset_face_audit","sql":"CREATE OR REPLACE FUNCTION asset_face_audit()\\n  RETURNS TRIGGER\\n  LANGUAGE PLPGSQL\\n  AS $$\\n    BEGIN\\n      INSERT INTO asset_face_audit (\\"assetFaceId\\", \\"assetId\\")\\n      SELECT \\"id\\", \\"assetId\\"\\n      FROM OLD;\\n      RETURN NULL;\\n    END\\n  $$;"}'::jsonb);`.execute(db);
-  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_asset_face_audit', '{"type":"trigger","name":"asset_face_audit","sql":"CREATE OR REPLACE TRIGGER \\"asset_face_audit\\"\\n  AFTER DELETE ON \\"asset_face\\"\\n  REFERENCING OLD TABLE AS \\"old\\"\\n  FOR EACH STATEMENT\\n  WHEN (pg_trigger_depth() = 0)\\n  EXECUTE FUNCTION asset_face_audit();"}'::jsonb);`.execute(db);
-  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_asset_face_updatedAt', '{"type":"trigger","name":"asset_face_updatedAt","sql":"CREATE OR REPLACE TRIGGER \\"asset_face_updatedAt\\"\\n  BEFORE UPDATE ON \\"asset_face\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(db);
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('function_asset_face_audit', '{"type":"function","name":"asset_face_audit","sql":"CREATE OR REPLACE FUNCTION asset_face_audit()\\n  RETURNS TRIGGER\\n  LANGUAGE PLPGSQL\\n  AS $$\\n    BEGIN\\n      INSERT INTO asset_face_audit (\\"assetFaceId\\", \\"assetId\\")\\n      SELECT \\"id\\", \\"assetId\\"\\n      FROM OLD;\\n      RETURN NULL;\\n    END\\n  $$;"}'::jsonb);`.execute(
+    db,
+  );
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_asset_face_audit', '{"type":"trigger","name":"asset_face_audit","sql":"CREATE OR REPLACE TRIGGER \\"asset_face_audit\\"\\n  AFTER DELETE ON \\"asset_face\\"\\n  REFERENCING OLD TABLE AS \\"old\\"\\n  FOR EACH STATEMENT\\n  WHEN (pg_trigger_depth() = 0)\\n  EXECUTE FUNCTION asset_face_audit();"}'::jsonb);`.execute(
+    db,
+  );
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_asset_face_updatedAt', '{"type":"trigger","name":"asset_face_updatedAt","sql":"CREATE OR REPLACE TRIGGER \\"asset_face_updatedAt\\"\\n  BEFORE UPDATE ON \\"asset_face\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(
+    db,
+  );
 }
 
 export async function down(db: Kysely<any>): Promise<void> {

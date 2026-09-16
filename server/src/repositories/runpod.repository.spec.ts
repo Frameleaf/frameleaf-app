@@ -1,6 +1,6 @@
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { RunPodApiError, RunPodNotFoundError, RunPodRepository } from 'src/repositories/runpod.repository';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { RunPodApiError, RunPodNotFoundError, RunPodRepository } from 'src/repositories/runpod.repository.js';
 
 describe(RunPodRepository.name, () => {
   let sut: RunPodRepository;

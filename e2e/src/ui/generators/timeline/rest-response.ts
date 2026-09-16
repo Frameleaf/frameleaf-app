@@ -15,8 +15,8 @@ import {
   type UserResponseDto,
 } from '@immich/sdk';
 import { DateTime } from 'luxon';
-import { signupDto } from 'src/fixtures';
-import { parseTimeBucketKey } from 'src/ui/generators/timeline/utils';
+import { signupDto } from 'src/fixtures.js';
+import { parseTimeBucketKey } from 'src/ui/generators/timeline/utils.js';
 import type { MockTimelineAsset, MockTimelineData } from './timeline-config';
 
 /**
@@ -29,6 +29,7 @@ export function toColumnarFormat(assets: MockTimelineAsset[]): TimeBucketAssetRe
     ratio: [],
     thumbhash: [],
     fileCreatedAt: [],
+    createdAt: [],
     localOffsetHours: [],
     isFavorite: [],
     isTrashed: [],
@@ -47,6 +48,7 @@ export function toColumnarFormat(assets: MockTimelineAsset[]): TimeBucketAssetRe
     result.ratio.push(asset.ratio);
     result.thumbhash.push(asset.thumbhash);
     result.fileCreatedAt.push(asset.fileCreatedAt);
+    result.createdAt.push(asset.fileCreatedAt);
     result.localOffsetHours.push(0); // Assuming UTC for mocks
     result.isFavorite.push(asset.isFavorite);
     result.isTrashed.push(asset.isTrashed);

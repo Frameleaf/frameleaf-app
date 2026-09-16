@@ -1,4 +1,5 @@
-import { Column, CreateDateColumn, Generated, PrimaryGeneratedColumn, Table, Timestamp } from '@immich/sql-tools';
+import { Column, CreateDateColumn, PrimaryGeneratedColumn, Table } from '@immich/sql-tools';
+import type { Generated, Timestamp } from '@immich/sql-tools';
 
 @Table('version_history')
 export class VersionHistoryTable {

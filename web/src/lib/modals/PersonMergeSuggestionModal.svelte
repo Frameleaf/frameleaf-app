@@ -35,10 +35,7 @@
 
   const onSubmit = async () => {
     try {
-      await mergePerson({
-        id: personToBeMergedInto.id,
-        mergePersonDto: { ids: [personToMerge.id] },
-      });
+      await mergePerson({ id: personToBeMergedInto.id, mergePersonDto: { ids: [personToMerge.id] } });
       toastManager.primary($t('merge_people_successfully'));
       onClose([personToMerge, personToBeMergedInto]);
     } catch (error) {

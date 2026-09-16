@@ -1,17 +1,19 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { OnEvent, OnJob } from 'src/decorators';
-import { MapAlbumDto } from 'src/dtos/album.dto';
-import { mapAsset } from 'src/dtos/asset-response.dto';
-import { AuthDto } from 'src/dtos/auth.dto';
-import { SystemConfigSmtpDto } from 'src/dtos/config.dto';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { EmailImageAttachment, JobOf, UserMetadataItem } from 'src/types.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
+import { MapAlbumDto } from 'src/dtos/album.dto.js';
+import { mapAsset } from 'src/dtos/asset-response.dto.js';
+import { SystemConfigSmtpDto } from 'src/dtos/config.dto.js';
 import {
-  mapNotification,
   NotificationDeleteAllDto,
   NotificationDto,
   NotificationSearchDto,
   NotificationUpdateAllDto,
   NotificationUpdateDto,
-} from 'src/dtos/notification.dto';
+  mapNotification,
+} from 'src/dtos/notification.dto.js';
 import {
   AssetFileType,
   JobName,
@@ -20,16 +22,14 @@ import {
   NotificationType,
   Permission,
   QueueName,
-} from 'src/enum';
-import { EmailTemplate } from 'src/repositories/email.repository';
-import { ArgOf } from 'src/repositories/event.repository';
-import { BaseService } from 'src/services/base.service';
-import { EmailImageAttachment, JobOf, UserMetadataItem } from 'src/types';
-import { getFilenameExtension } from 'src/utils/file';
-import { hasHiddenContentFilter, HiddenContentFilter } from 'src/utils/hidden-content';
-import { getExternalDomain, isNsfwHidingEnabled } from 'src/utils/misc';
-import { isEqualObject } from 'src/utils/object';
-import { getPreferences } from 'src/utils/preferences';
+} from 'src/enum.js';
+import { EmailTemplate } from 'src/repositories/email.repository.js';
+import { BaseService } from 'src/services/base.service.js';
+import { getFilenameExtension } from 'src/utils/file.js';
+import { type HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
+import { getExternalDomain, isNsfwHidingEnabled } from 'src/utils/misc.js';
+import { isEqualObject } from 'src/utils/object.js';
+import { getPreferences } from 'src/utils/preferences.js';
 
 @Injectable()
 export class NotificationService extends BaseService {
@@ -133,7 +133,7 @@ export class NotificationService extends BaseService {
       ) {
         await this.emailRepository.verifySmtp(newConfig.notifications.smtp.transport);
       }
-    } catch (error: any) {
+    } catch (error: Error | any) {
       this.logger.error(`Failed to validate SMTP configuration: ${error}`, error?.stack);
       throw new Error('Invalid SMTP configuration', { cause: error });
     }
@@ -337,8 +337,7 @@ export class NotificationService extends BaseService {
 
     await this.sendAlbumLocalNotification(album, recipientId, NotificationType.AlbumInvite, senderName);
 
-    const preferences = getPreferences(recipient.metadata);
-    const { emailNotifications } = preferences;
+    const { emailNotifications } = getPreferences(recipient.metadata);
 
     if (!emailNotifications.enabled || !emailNotifications.albumInvite) {
       return JobStatus.Skipped;

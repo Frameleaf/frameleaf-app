@@ -1,6 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
-import { AssetResponseSchema } from 'src/dtos/asset-response.dto';
 import z from 'zod';
+import { AssetResponseSchema } from 'src/dtos/asset-response.dto.js';
 
 const LivePhotoMatchConfidenceSchema = z.enum(['high', 'low']).meta({ id: 'LivePhotoMatchConfidence' });
 

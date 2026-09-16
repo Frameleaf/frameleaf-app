@@ -1,20 +1,20 @@
 import { Injectable } from '@nestjs/common';
-import { Activity } from 'src/database';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Activity } from 'src/database.js';
 import {
   ActivityCreateDto,
   ActivityDto,
   ActivityResponseDto,
   ActivitySearchDto,
   ActivityStatisticsResponseDto,
-  mapActivity,
   MaybeDuplicate,
   ReactionLevel,
   ReactionType,
-} from 'src/dtos/activity.dto';
-import { AuthDto } from 'src/dtos/auth.dto';
-import { Permission } from 'src/enum';
-import { BaseService } from 'src/services/base.service';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content';
+  mapActivity,
+} from 'src/dtos/activity.dto.js';
+import { Permission } from 'src/enum.js';
+import { BaseService } from 'src/services/base.service.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 
 @Injectable()
 export class ActivityService extends BaseService {

@@ -1,5 +1,5 @@
 import { Column, ForeignKeyColumn, Index, Table } from '@immich/sql-tools';
-import { AssetTable } from 'src/schema/tables/asset.table';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
 
 // Sibling of smart_search that stores a CLIP-text embedding of an asset's
 // description (manual or VLM-generated). Lets smart search retrieve via

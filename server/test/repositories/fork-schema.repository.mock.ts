@@ -1,6 +1,6 @@
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository';
-import { RepositoryInterface } from 'src/types';
 import { Mocked, vitest } from 'vitest';
+import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { RepositoryInterface } from 'src/types.js';
 
 export const newForkSchemaRepositoryMock = (): Mocked<RepositoryInterface<ForkSchemaRepository>> => ({
   activateAfterReturnReconciliation: vitest.fn(),

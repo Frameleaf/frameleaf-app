@@ -3,16 +3,16 @@ import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { StorageCore } from 'src/cores/storage.core';
-import { ChecksumAlgorithm } from 'src/enum';
-import { CryptoRepository } from 'src/repositories/crypto.repository';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { ChecksumAlgorithm } from 'src/enum.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import {
   PhysicalFileRepository,
   PhysicalNormalizationAsset,
   PhysicalNormalizationReservation,
-} from 'src/repositories/physical-file.repository';
-import { DB } from 'src/schema';
-import { ForkStorageNormalizationService } from 'src/services/fork-storage-normalization.service';
+} from 'src/repositories/physical-file.repository.js';
+import { DB } from 'src/schema/index.js';
+import { ForkStorageNormalizationService } from 'src/services/fork-storage-normalization.service.js';
 
 describe(ForkStorageNormalizationService.name, () => {
   it('returns a deterministic count and digest independent of input ordering', async () => {

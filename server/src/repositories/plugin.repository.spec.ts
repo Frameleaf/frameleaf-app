@@ -1,5 +1,5 @@
-import { PluginRepository } from 'src/repositories/plugin.repository';
 import { vitest } from 'vitest';
+import { PluginRepository } from 'src/repositories/plugin.repository.js';
 
 describe(PluginRepository.name, () => {
   it.each(['plugin-id', 'plugin-id/worker'])(

@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { Kysely } from 'kysely';
+import { type Kysely } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AssetVisibility } from 'src/enum';
-import { DB } from 'src/schema';
-import { anyUuid, withHiddenContentFilter } from 'src/utils/database';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { AssetVisibility } from 'src/enum.js';
+import { DB } from 'src/schema/index.js';
+import { anyUuid, withHiddenContentFilter } from 'src/utils/database.js';
 
 type DownloadPrivacyOptions = HiddenContentQueryOptions;
 

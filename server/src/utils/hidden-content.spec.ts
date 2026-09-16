@@ -1,6 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
-import type { AuthDto } from 'src/dtos/auth.dto';
+import { describe, expect, it } from 'vitest';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
+  type HiddenContentFilter,
   emptyHiddenContentFilter,
   emptySuppressionPreferences,
   getHiddenContentQueryOptions,
@@ -9,9 +11,7 @@ import {
   hasHiddenContentFilter,
   hasSuppressionPreferences,
   requireSuppressedOnlyAccess,
-  type HiddenContentFilter,
-} from 'src/utils/hidden-content';
-import { describe, expect, it } from 'vitest';
+} from 'src/utils/hidden-content.js';
 
 describe('hidden content utils', () => {
   const user = { id: 'user-1' } as AuthDto['user'];

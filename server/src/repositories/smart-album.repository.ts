@@ -2,10 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { AlbumUserRole } from 'src/enum';
-import { isForkAuthoritative, isForkWriteEnabled, isLegacyAuthoritative } from 'src/fork-schema/authority';
-import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository';
-import { DB } from 'src/schema';
+import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
+import { AlbumUserRole } from 'src/enum.js';
+import { isForkAuthoritative, isForkWriteEnabled, isLegacyAuthoritative } from 'src/fork-schema/authority.js';
+import { DB } from 'src/schema/index.js';
 
 @Injectable()
 export class SmartAlbumRepository {

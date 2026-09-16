@@ -1,12 +1,12 @@
 import { Kysely, sql } from 'kysely';
-import { LEGACY_FORK_MIGRATIONS } from 'src/fork-schema/migration-manifest';
-import supportedVersions from 'src/fork-schema/supported-versions.json';
-import { WORKFLOW_COMPATIBILITY_MIGRATIONS } from 'src/fork-schema/workflow-compatibility';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { DB } from 'src/schema';
-import { getKyselyDB } from 'test/utils';
+import { LEGACY_FORK_MIGRATIONS } from 'src/fork-schema/migration-manifest.js';
+import supportedVersions from 'src/fork-schema/supported-versions.json' with { type: 'json' };
+import { WORKFLOW_COMPATIBILITY_MIGRATIONS } from 'src/fork-schema/workflow-compatibility.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { DB } from 'src/schema/index.js';
+import { getKyselyDB } from 'test/utils.js';
 
 describe('fork schema migration ledgers', () => {
   let db: Kysely<DB>;

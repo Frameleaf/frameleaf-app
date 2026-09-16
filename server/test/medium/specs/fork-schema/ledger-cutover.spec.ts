@@ -3,31 +3,31 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { StorageCore } from 'src/cores/storage.core';
-import { ChecksumAlgorithm } from 'src/enum';
-import { LEGACY_FORK_MIGRATIONS, POST_CERTIFIED_UPSTREAM_MIGRATIONS } from 'src/fork-schema/migration-manifest';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { ChecksumAlgorithm } from 'src/enum.js';
+import { LEGACY_FORK_MIGRATIONS, POST_CERTIFIED_UPSTREAM_MIGRATIONS } from 'src/fork-schema/migration-manifest.js';
 import {
-  up as createCutoverVerification,
   down as rollbackCutoverVerification,
-} from 'src/fork-schema/migrations/0000000000050-CutoverVerification';
-import { REVERSIBLE_POST_CERTIFIED_MIGRATIONS } from 'src/fork-schema/post-certified-residue';
+  up as createCutoverVerification,
+} from 'src/fork-schema/migrations/0000000000050-CutoverVerification.js';
+import { REVERSIBLE_POST_CERTIFIED_MIGRATIONS } from 'src/fork-schema/post-certified-residue.js';
 import {
-  getWorkflowCompatibilityEvidence,
   LEGACY_WORKFLOW_MIGRATION,
   OFFICIAL_WORKFLOW_MIGRATION,
-} from 'src/fork-schema/workflow-compatibility';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { ForkCutoverVerificationRepository } from 'src/repositories/fork-cutover-verification.repository';
-import { BACKFILL_KINDS } from 'src/repositories/fork-schema.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { DB } from 'src/schema';
-import { ForkCutoverVerificationService } from 'src/services/fork-cutover-verification.service';
-import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service';
-import { getKyselyConfig } from 'src/utils/database';
-import { mediumFactory } from 'test/medium.factory';
-import { alignCertifiedGeodataCatalog } from 'test/medium/specs/fork-schema/certified-geodata-fixture';
-import { getKyselyDB, newTestService } from 'test/utils';
+  getWorkflowCompatibilityEvidence,
+} from 'src/fork-schema/workflow-compatibility.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { ForkCutoverVerificationRepository } from 'src/repositories/fork-cutover-verification.repository.js';
+import { BACKFILL_KINDS } from 'src/repositories/fork-schema.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { DB } from 'src/schema/index.js';
+import { ForkCutoverVerificationService } from 'src/services/fork-cutover-verification.service.js';
+import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service.js';
+import { getKyselyConfig } from 'src/utils/database.js';
+import { alignCertifiedGeodataCatalog } from 'test/medium/specs/fork-schema/certified-geodata-fixture.js';
+import { mediumFactory } from 'test/medium.factory.js';
+import { getKyselyDB, newTestService } from 'test/utils.js';
 
 const EMPTY_STORAGE_DIGEST = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 const LEGACY_OVERRIDE_NAMES = [
@@ -602,6 +602,39 @@ describe('fork schema ledger cutover', () => {
     ).rejects.toThrow('Fork schema cutover preflight changed');
   });
 
+  it('roundtrips OAuth identifiers through the certified representation without losing linked accounts', async () => {
+    const users = await Promise.all([mediumFactory.userWithClusterGroup(db), mediumFactory.userWithClusterGroup(db)]);
+    await db
+      .insertInto('user')
+      .values([
+        { ...users[0]!, oauthId: null },
+        { ...users[1]!, oauthId: 'provider|linked-user' },
+      ])
+      .execute();
+    const migration = REVERSIBLE_POST_CERTIFIED_MIGRATIONS.get('1789419229196-ConvertUserOAuthIdEmptyStringToNull')!;
+    const readIds = async () => {
+      const result = await sql<{ id: string; oauthId: string | null }>`
+        SELECT id, "oauthId" FROM public.user WHERE id = ANY(${users.map(({ id }) => id)}::uuid[])
+      `.execute(db);
+      return new Map(result.rows.map(({ id, oauthId }) => [id, oauthId]));
+    };
+
+    await migration.revert(db);
+    expect(await readIds()).toEqual(
+      new Map([
+        [users[0]!.id, ''],
+        [users[1]!.id, 'provider|linked-user'],
+      ]),
+    );
+    await migration.apply(db);
+    expect(await readIds()).toEqual(
+      new Map([
+        [users[0]!.id, null],
+        [users[1]!.id, 'provider|linked-user'],
+      ]),
+    );
+  });
+
   it('audits and removes only allowlisted legacy rows at a successful cutover', async () => {
     const legacyName = [...LEGACY_FORK_MIGRATIONS][0];
     const legacyTimestamp = new Date('2026-01-02T03:04:05.000Z').toISOString();
@@ -664,12 +697,13 @@ describe('fork schema ledger cutover', () => {
       JOIN pg_catalog.pg_namespace namespace ON namespace.oid = class.relnamespace
       WHERE namespace.nspname = 'public'
         AND ((class.relname = 'album' AND attribute.attname = 'description')
-          OR (class.relname = 'user' AND attribute.attname = 'password'))
+          OR (class.relname = 'user' AND attribute.attname IN ('password', 'oauthId')))
     `.execute(db);
     expect(revertedColumns.rows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ attname: 'description', attnotnull: true }),
         expect.objectContaining({ attname: 'password', attnotnull: true }),
+        expect.objectContaining({ attname: 'oauthId', attnotnull: true }),
       ]),
     );
   });

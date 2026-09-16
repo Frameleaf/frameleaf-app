@@ -1,26 +1,21 @@
-import { forkHandoffCommands } from 'src/commands/fork-handoff.command';
-import { forkSchemaCutoverCommands } from 'src/commands/fork-schema-cutover.command';
-import { ConfirmForkSchemaStartQuestion, forkSchemaCommands } from 'src/commands/fork-schema.command';
-import { GrantAdminCommand, PromptEmailQuestion, RevokeAdminCommand } from 'src/commands/grant-admin';
-import { ListUsersCommand } from 'src/commands/list-users.command';
-import { DisableMaintenanceModeCommand, EnableMaintenanceModeCommand } from 'src/commands/maintenance-mode';
+import { forkHandoffCommands } from 'src/commands/fork-handoff.command.js';
+import { forkSchemaCutoverCommands } from 'src/commands/fork-schema-cutover.command.js';
+import { ConfirmForkSchemaStartQuestion, forkSchemaCommands } from 'src/commands/fork-schema.command.js';
+import { GrantAdminCommand, PromptEmailQuestion, RevokeAdminCommand } from 'src/commands/grant-admin.js';
+import { ListUsersCommand } from 'src/commands/list-users.command.js';
+import { DisableMaintenanceModeCommand, EnableMaintenanceModeCommand } from 'src/commands/maintenance-mode.js';
 import {
   ChangeMediaLocationCommand,
   PromptConfirmMoveQuestions,
   PromptMediaLocationQuestions,
-} from 'src/commands/media-location.command';
-import { DisableOAuthLogin, EnableOAuthLogin } from 'src/commands/oauth-login';
-import { DisablePasswordLoginCommand, EnablePasswordLoginCommand } from 'src/commands/password-login';
-import { PromptPasswordResetQuestions, ResetAdminPasswordCommand } from 'src/commands/reset-admin-password.command';
-import { SchemaCheck } from 'src/commands/schema-check';
-import { VersionCommand } from 'src/commands/version.command';
+} from 'src/commands/media-location.command.js';
+import { DisableOAuthLogin, EnableOAuthLogin } from 'src/commands/oauth-login.js';
+import { DisablePasswordLoginCommand, EnablePasswordLoginCommand } from 'src/commands/password-login.js';
+import { PromptPasswordResetQuestions, ResetAdminPasswordCommand } from 'src/commands/reset-admin-password.command.js';
+import { SchemaCheck } from 'src/commands/schema-check.js';
+import { VersionCommand } from 'src/commands/version.command.js';
 
-// NOTE: `schema-revert-to-upstream` was REMOVED in this fork. The CLI command
-// was broken — several fork migrations had empty `down()` stubs that silently
-// reported success while leaving fork tables intact, so the downstream upstream
-// image would crash on missing tables. Users wishing to downgrade should now
-// restore from a `pg_dump` backup taken before installing the fork.
-
+// Compatibility handoff commands replace the unsafe historical schema-revert command.
 export const commandsAndQuestions = [
   ...forkHandoffCommands,
   ...forkSchemaCutoverCommands,

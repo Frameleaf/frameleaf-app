@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
-import { defaults } from 'src/config';
-import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto';
-import { AssetMetadataKey, AssetStatus, AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum';
-import { ImageEnrichmentService } from 'src/services/image-enrichment.service';
-import { authStub } from 'test/fixtures/auth.stub';
-import { newUuid } from 'test/small.factory';
-import { makeStream, newTestService, ServiceMocks } from 'test/utils';
+import { defaults } from 'src/config.js';
+import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto.js';
+import { AssetMetadataKey, AssetStatus, AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum.js';
+import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
+import { newUuid } from 'test/small.factory.js';
+import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
 
 describe(ImageEnrichmentService.name, () => {
   let sut: ImageEnrichmentService;

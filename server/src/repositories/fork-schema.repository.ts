@@ -2,10 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { SystemConfig } from 'src/config';
-import { isForkAuthoritative, isForkWriteEnabled } from 'src/fork-schema/authority';
-import { DB } from 'src/schema';
-import { DeepPartial } from 'src/types';
+import { SystemConfig } from 'src/config.js';
+import { isForkAuthoritative, isForkWriteEnabled } from 'src/fork-schema/authority.js';
+import { DB } from 'src/schema/index.js';
+import { DeepPartial } from 'src/types.js';
 
 export type ForkSchemaPhase = 'legacy' | 'dual-write' | 'ready' | 'inactive' | 'active' | 'failed';
 export type BackfillKind = 'privacy' | 'albums' | 'enrichment' | 'automation' | 'health' | 'storage' | 'checksum';

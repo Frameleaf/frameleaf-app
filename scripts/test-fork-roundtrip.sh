@@ -296,7 +296,7 @@ done
 grep -q 'Verified: yes' <<<"${status:-}" || { echo 'Backfill did not verify' >&2; exit 1; }
 # Steady-state backfills preserve physical deduplication; convert storage to
 # the destructive official form the cutover evidence requires.
-prepare_output="$(admin fork-schema-cutover prepare --batch-size 32 2>&1)"
+prepare_output="$(admin fork-schema-cutover prepare --batch-size 32)"
 echo "$prepare_output"
 grep -q '^Error:' <<<"$prepare_output" && exit 1
 grep -q 'Verified: yes' <<<"$prepare_output" || { echo 'Official handoff preparation did not verify' >&2; exit 1; }
@@ -311,16 +311,16 @@ for _ in {1..600}; do
 done
 jq -e '.status == "completed" and .verifiedCount == .applicableAssetCount' <<<"$storage_status" >/dev/null || exit 1
 
-maintenance_output="$(admin enable-maintenance-mode 2>&1)"
+maintenance_output="$(admin enable-maintenance-mode)"
 echo "$maintenance_output"
 grep -q '^Error:' <<<"$maintenance_output" && exit 1
 report_digest="$(admin fork-schema-cutover preflight --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID" --format digest)"
 [[ "$report_digest" =~ ^[0-9a-f]{64}$ ]] || { echo 'Cutover preflight did not return a digest' >&2; exit 1; }
-cutover_output="$(admin fork-schema-cutover apply --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID" --report-digest "$report_digest" 2>&1)"
+cutover_output="$(admin fork-schema-cutover apply --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID" --report-digest "$report_digest")"
 echo "$cutover_output"
 grep -q '^Error:' <<<"$cutover_output" && exit 1
 phase current-fork-cutover src/specs/server/fork-schema-current-fork-cutover.e2e-spec.ts
-handoff_output="$(admin fork-handoff prepare-official 2>&1)"
+handoff_output="$(admin fork-handoff prepare-official)"
 echo "$handoff_output"
 grep -q '^Error:' <<<"$handoff_output" && exit 1
 jq -e --arg backup "$BACKUP_ID" --arg snapshot "$SNAPSHOT_ID" '
@@ -371,7 +371,7 @@ export FORK_IMMICH_ENV=production FORK_DB_SKIP_MIGRATIONS=false FORK_WORKERS_INC
 # Startup validates the exact official ledger before any provider runs.
 start_fork
 set +e
-fork_return_output="$(admin fork-handoff prepare-fork --batch-size 1 2>&1)"
+fork_return_output="$(admin fork-handoff prepare-fork --batch-size 1)"
 fork_return_code=$?
 set -e
 echo "$fork_return_output"

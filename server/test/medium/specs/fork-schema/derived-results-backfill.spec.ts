@@ -1,17 +1,17 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { JobStatus, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { BestPhotosRepository } from 'src/repositories/best-photos.repository';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { DuplicateRepository } from 'src/repositories/duplicate.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { MediaHealthRepository } from 'src/repositories/media-health.repository';
-import { DB } from 'src/schema';
-import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service';
-import { mediumFactory } from 'test/medium.factory';
-import { getKyselyDB, newTestService } from 'test/utils';
+import { JobStatus, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
+import { DB } from 'src/schema/index.js';
+import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service.js';
+import { mediumFactory } from 'test/medium.factory.js';
+import { getKyselyDB, newTestService } from 'test/utils.js';
 
 const vector = `[${Array.from({ length: 512 }, (_, index) => (index === 0 ? 1 : 0)).join(',')}]`;
 const expectVerification = (value: { count: number; digest: string }, count: number) => {

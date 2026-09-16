@@ -1,8 +1,8 @@
-import { ForkCutoverVerificationRepository } from 'src/repositories/fork-cutover-verification.repository';
+import { ForkCutoverVerificationRepository } from 'src/repositories/fork-cutover-verification.repository.js';
 import {
-  canonicalStorageVerificationDigest,
   ForkCutoverVerificationService,
-} from 'src/services/fork-cutover-verification.service';
+  canonicalStorageVerificationDigest,
+} from 'src/services/fork-cutover-verification.service.js';
 
 const run = {
   id: '00000000-0000-4000-8000-000000000001',

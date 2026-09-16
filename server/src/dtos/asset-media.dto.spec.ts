@@ -1,5 +1,5 @@
-import { AssetMediaCreateDto } from 'src/dtos/asset-media.dto';
 import { describe, expect, it } from 'vitest';
+import { AssetMediaCreateDto } from 'src/dtos/asset-media.dto.js';
 
 // Direct-validation harness: AssetMediaCreateDto is a class created from a zod
 // schema via createZodDto. The schema is exposed on the class.

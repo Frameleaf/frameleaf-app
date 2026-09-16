@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { StorageCore } from 'src/cores/storage.core';
-import { DB } from 'src/schema';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { DB } from 'src/schema/index.js';
 
 export type StorageVerificationStatus = 'running' | 'completed' | 'failed';
 

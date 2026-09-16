@@ -1,12 +1,12 @@
 import { Kysely } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { AssetFileType, PhysicalFileType } from 'src/enum';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { PhysicalFileRepository } from 'src/repositories/physical-file.repository';
-import { DB } from 'src/schema';
-import { BaseService } from 'src/services/base.service';
-import { MediumTestContext, newMediumService } from 'test/medium.factory';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils';
+import { AssetFileType, PhysicalFileType } from 'src/enum.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { DB } from 'src/schema/index.js';
+import { BaseService } from 'src/services/base.service.js';
+import { MediumTestContext, newMediumService } from 'test/medium.factory.js';
+import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 

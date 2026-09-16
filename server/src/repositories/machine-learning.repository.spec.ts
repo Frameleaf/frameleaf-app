@@ -2,11 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defaults } from 'src/config';
-import { MachineLearningHardwareAcceleration } from 'src/enum';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { MachineLearningRepository, ModelTask, ModelType } from 'src/repositories/machine-learning.repository';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { defaults } from 'src/config.js';
+import { MachineLearningHardwareAcceleration } from 'src/enum.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MachineLearningRepository, ModelTask, ModelType } from 'src/repositories/machine-learning.repository.js';
 
 const qwenModelName = 'Qwen/Qwen2.5-VL-3B-Instruct';
 const florenceModelName = 'microsoft/Florence-2-base-ft';

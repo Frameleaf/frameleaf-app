@@ -1,11 +1,11 @@
 import { Kysely } from 'kysely';
-import { AssetFileType, AssetStatus, AssetType, AssetVisibility } from 'src/enum';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { BestPhotosRepository } from 'src/repositories/best-photos.repository';
-import { UserRepository } from 'src/repositories/user.repository';
-import { DB } from 'src/schema';
-import { mediumFactory } from 'test/medium.factory';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils';
+import { AssetFileType, AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { DB } from 'src/schema/index.js';
+import { mediumFactory } from 'test/medium.factory.js';
+import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 

@@ -6,7 +6,9 @@ export async function up(db: Kysely<any>): Promise<void> {
   BEFORE UPDATE ON "asset_ocr"
   FOR EACH ROW
   EXECUTE FUNCTION updated_at();`.execute(db);
-  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_asset_ocr_updatedAt', '{"type":"trigger","name":"asset_ocr_updatedAt","sql":"CREATE OR REPLACE TRIGGER \\"asset_ocr_updatedAt\\"\\n  BEFORE UPDATE ON \\"asset_ocr\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(db);
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_asset_ocr_updatedAt', '{"type":"trigger","name":"asset_ocr_updatedAt","sql":"CREATE OR REPLACE TRIGGER \\"asset_ocr_updatedAt\\"\\n  BEFORE UPDATE ON \\"asset_ocr\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(
+    db,
+  );
 }
 
 export async function down(db: Kysely<any>): Promise<void> {

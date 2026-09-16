@@ -8,7 +8,7 @@ on:
         type: string
       environment:
         description: 'Target environment'
-        required: false
+        required: true
         default: 'development'
         type: string
     secrets:
@@ -38,7 +38,7 @@ on:
         required: true
   pull_request:
   push:
-    branches: [main]
+    branches: [main, 'release/*']
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -46,69 +46,66 @@ concurrency:
 
 permissions: {}
 
+env:
+  DEPLOY: ${{ inputs.environment == 'production' || github.ref == 'refs/heads/main' }}
+
 jobs:
   pre-job:
-    if: >-
-      ${{ github.repository == 'adamtaylor152/immich' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) }}
-    runs-on: ubuntu-24.04
+    if: github.repository == 'immich-app/immich'
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
     steps:
+      - id: token
+        uses: immich-app/devtools/actions/create-workflow-token@df46d635b905e618b88fc4c95baa920aeb30b309 # create-workflow-token-action-v3.0.1
+        with:
+          client-id: ${{ secrets.PUSH_O_MATIC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PUSH_O_MATIC_APP_KEY }}
+          permission-contents: read
+
       - name: Check what should run
         id: check
-        uses: immich-app/devtools/actions/pre-job@03514eceb4a27cd714976a866b350df5ce175720 # pre-job-action-v2.1.0
+        uses: immich-app/devtools/actions/pre-job@75493d49052d536863fc96100086782c5279b145 # pre-job-action-v2.1.1
         with:
-          github-token: ${{ github.token }}
+          github-token: ${{ steps.token.outputs.token }}
           filters: |
             mobile:
               - 'mobile/**'
+              - 'open-api/**'
           force-filters: |
             - '.github/workflows/build-mobile.yml'
           force-events: 'workflow_call,workflow_dispatch'
 
-  # The fork has no signing keys or certificates; gate the signing jobs on
-  # secret presence so they skip cleanly instead of hanging or failing. If
-  # signing secrets are ever added to the repository, the jobs run again.
-  check-signing-secrets:
-    if: >-
-      ${{ github.repository == 'adamtaylor152/immich' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) }}
-    runs-on: ubuntu-24.04
-    outputs:
-      has-android: ${{ steps.check.outputs.android }}
-      has-ios: ${{ steps.check.outputs.ios }}
-    steps:
-      - name: Check signing secrets
-        id: check
-        env:
-          KEY_JKS: ${{ secrets.KEY_JKS }}
-          IOS_CERTIFICATE_P12: ${{ secrets.IOS_CERTIFICATE_P12 }}
-        run: |
-          echo "android=${KEY_JKS:+true}" >> "$GITHUB_OUTPUT"
-          echo "ios=${IOS_CERTIFICATE_P12:+true}" >> "$GITHUB_OUTPUT"
-
   build-sign-android:
     name: Build and sign Android
-    needs: [pre-job, check-signing-secrets]
+    needs: pre-job
     permissions:
       contents: read
       pull-requests: write
-    if: >-
-      ${{ github.repository == 'adamtaylor152/immich' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (github.actor != 'dependabot[bot]' && fromJSON(needs.pre-job.outputs.should_run).mobile == true && needs.check-signing-secrets.outputs.has-android == 'true') }}
-    runs-on: ubuntu-24.04
+    if: ${{ github.actor != 'dependabot[bot]' && fromJSON(needs.pre-job.outputs.should_run).mobile == true }}
+    runs-on: mich
 
     steps:
+      - id: token
+        uses: immich-app/devtools/actions/create-workflow-token@df46d635b905e618b88fc4c95baa920aeb30b309 # create-workflow-token-action-v3.0.1
+        with:
+          client-id: ${{ secrets.PUSH_O_MATIC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PUSH_O_MATIC_APP_KEY }}
+          permission-contents: read
+          permission-pull-requests: write
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
-          token: ${{ github.token }}
+          token: ${{ steps.token.outputs.token }}
 
       - name: Setup Mise
         uses: immich-app/devtools/actions/use-mise@06a9ef925332c91be647d6256642b86b398592c8 # use-mise-action-v3.2.1
         with:
-          github_token: ${{ github.token }}
+          github_token: ${{ steps.token.outputs.token }}
           working_directory: ./mobile
 
       - name: Create the Keystore
@@ -143,9 +140,7 @@ jobs:
         run: mise //mobile:install:ci
 
       - name: Perform codegen
-        run: |
-          mise //mobile:codegen
-          mise run --force //mobile:codegen:dart
+        run: mise //mobile:codegen
 
       - name: Build Android App Bundle
         working-directory: ./mobile
@@ -153,10 +148,9 @@ jobs:
           ALIAS: ${{ secrets.ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
-          IS_MAIN: ${{ github.ref == 'refs/heads/main' }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          if [[ $IS_MAIN == 'true' ]]; then
+          if [[ $DEPLOY == 'true' ]]; then
             flutter build apk --release
             flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64,android-x64
           else
@@ -178,7 +172,7 @@ jobs:
           APK_URL: ${{ steps.upload-apk.outputs.artifact-url }}
         with:
           id: mobile-android-apk
-          token: ${{ github.token }}
+          token: ${{ steps.token.outputs.token }}
           body: |
             📱 **Android release APK (universal)** — `${{ env.HEAD_SHA }}`
 
@@ -205,15 +199,21 @@ jobs:
 
   build-sign-ios:
     name: Build and sign iOS
-    needs: [pre-job, check-signing-secrets]
+    needs: pre-job
     permissions:
       contents: read
     # Run on main branch or workflow_dispatch, or on PRs/other branches (build only, no upload)
-    if: >-
-      ${{ github.repository == 'adamtaylor152/immich' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(needs['pre-job'].outputs.should_run).mobile == true && needs['check-signing-secrets'].outputs['has-ios'] == 'true' }}
+    if: ${{ !github.event.pull_request.head.repo.fork && fromJSON(needs.pre-job.outputs.should_run).mobile == true }}
     runs-on: macos-26
 
     steps:
+      - id: token
+        uses: immich-app/devtools/actions/create-workflow-token@df46d635b905e618b88fc4c95baa920aeb30b309 # create-workflow-token-action-v3.0.1
+        with:
+          client-id: ${{ secrets.PUSH_O_MATIC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PUSH_O_MATIC_APP_KEY }}
+          permission-contents: read
+
       - name: Select Xcode 26
         run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
 
@@ -226,23 +226,21 @@ jobs:
       - name: Setup Mise
         uses: immich-app/devtools/actions/use-mise@06a9ef925332c91be647d6256642b86b398592c8 # use-mise-action-v3.2.1
         with:
-          github_token: ${{ github.token }}
+          github_token: ${{ steps.token.outputs.token }}
           working_directory: ./mobile
 
       - name: Setup Ruby
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
           ruby-version: '3.3'
-          bundler-cache: true
+          bundler-cache: true # zizmor: ignore[cache-poisoning] release branches cannot read caches written by pull requests
           working-directory: ./mobile/ios
 
       - name: Install dependencies
         run: mise //mobile:install:ci
 
       - name: Perform codegen
-        run: |
-          mise //mobile:codegen
-          mise run --force //mobile:codegen:dart
+        run: mise //mobile:codegen
 
       - name: Resolve iOS Swift Packages
         working-directory: ./mobile
@@ -294,21 +292,16 @@ jobs:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
           ENVIRONMENT: ${{ inputs.environment || 'development' }}
-          GITHUB_REF: ${{ github.ref }}
           FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: 120
           FASTLANE_XCODEBUILD_SETTINGS_RETRIES: 6
         working-directory: ./mobile/ios
         run: |
-          # Only upload to TestFlight on main branch
-          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
-            if [[ "$ENVIRONMENT" == "development" ]]; then
-              bundle exec fastlane gha_testflight_dev
-            else
-              bundle exec fastlane gha_release_prod
-            fi
-          else
-            # Build only, no TestFlight upload for non-main branches
+          if [[ "$DEPLOY" != 'true' ]]; then
             bundle exec fastlane gha_build_only
+          elif [[ "$ENVIRONMENT" == "development" ]]; then
+            bundle exec fastlane gha_testflight_dev
+          else
+            bundle exec fastlane gha_release_prod
           fi
 
       - name: Clean up keychain

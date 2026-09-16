@@ -2,11 +2,11 @@ import {
   ForkSchemaStartCommand,
   ForkSchemaVerifyCommand,
   formatForkSchemaStatus,
-} from 'src/commands/fork-schema.command';
-import { JobName, JobStatus } from 'src/enum';
-import { BACKFILL_KINDS, BackfillKind, BackfillProgress } from 'src/repositories/fork-schema.repository';
-import { BackfillBatchHandler, ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service';
-import { newTestService, ServiceMocks } from 'test/utils';
+} from 'src/commands/fork-schema.command.js';
+import { JobName, JobStatus } from 'src/enum.js';
+import { BACKFILL_KINDS, BackfillKind, BackfillProgress } from 'src/repositories/fork-schema.repository.js';
+import { BackfillBatchHandler, ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const state = (phase: 'legacy' | 'dual-write' | 'ready' | 'inactive' = 'legacy') => ({
   active: false,

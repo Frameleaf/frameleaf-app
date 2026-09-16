@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import coreManifest from '../../../../packages/plugin-core/manifest.json';
 import {
   api,
   authHeaders,
@@ -233,15 +234,19 @@ describe.runIf(phase === 'current-fork-quiescent')(`${lane}: writer quiescence`,
     // values from the same image.
     // The import runs asynchronously on the microservices boot, so queue
     // drain alone doesn't guarantee it has landed — poll until the manifest's
-    // 14 methods are present.
+    // bundled methods are present.
     let converged = await workflowEvidence();
-    for (let attempt = 0; attempt < 300 && converged.rows.plugin_method.length < 14; attempt++) {
+    for (
+      let attempt = 0;
+      attempt < 300 && converged.rows.plugin_method.length < coreManifest.methods.length;
+      attempt++
+    ) {
       await new Promise((resolve) => setTimeout(resolve, 200));
       converged = await workflowEvidence();
     }
     expect(converged.rows.plugin).toHaveLength(1);
-    expect(converged.rows.plugin[0]).toMatchObject({ name: 'immich-plugin-core', version: '2.0.1' });
-    expect(converged.rows.plugin_method).toHaveLength(14);
+    expect(converged.rows.plugin[0]).toMatchObject({ name: coreManifest.name, version: coreManifest.version });
+    expect(converged.rows.plugin_method).toHaveLength(coreManifest.methods.length);
     const fullState = await loadState<Record<string, unknown>>(lane);
     await saveState(lane, { ...fullState, evidence: converged });
   }, 120_000);

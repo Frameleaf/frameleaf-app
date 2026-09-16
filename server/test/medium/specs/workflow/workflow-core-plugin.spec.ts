@@ -1,27 +1,28 @@
 import { WorkflowStepConfig, WorkflowTrigger } from '@immich/plugin-sdk';
 import { Kysely } from 'kysely';
-import { existsSync, readFileSync } from 'node:fs';
-import { PluginManifestDto } from 'src/dtos/plugin-manifest.dto';
-import { AssetMetadataKey, AssetType, AssetVisibility, JobStatus, LogLevel } from 'src/enum';
-import { AccessRepository } from 'src/repositories/access.repository';
-import { AlbumRepository } from 'src/repositories/album.repository';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { CryptoRepository } from 'src/repositories/crypto.repository';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { EventRepository } from 'src/repositories/event.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { PluginRepository } from 'src/repositories/plugin.repository';
-import { StorageRepository } from 'src/repositories/storage.repository';
-import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository';
-import { UserRepository } from 'src/repositories/user.repository';
-import { WorkflowRepository } from 'src/repositories/workflow.repository';
-import { DB } from 'src/schema';
-import { WorkflowExecutionService } from 'src/services/workflow-execution.service';
-import { resolveMethod } from 'src/utils/workflow';
-import { MediumTestContext } from 'test/medium.factory';
-import { mockEnvData } from 'test/repositories/config.repository.mock';
-import { getKyselyDB } from 'test/utils';
+import { readFileSync } from 'node:fs';
+import { PluginManifestDto } from 'src/dtos/plugin-manifest.dto.js';
+import { AssetType, AssetVisibility, JobStatus, LogLevel } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PluginRepository } from 'src/repositories/plugin.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
+import { DB } from 'src/schema/index.js';
+import { WorkflowExecutionService } from 'src/services/workflow-execution.service.js';
+import { clearConfigCache } from 'src/utils/config.js';
+import { resolveMethod } from 'src/utils/workflow.js';
+import { MediumTestContext } from 'test/medium.factory.js';
+import { mockEnvData } from 'test/repositories/config.repository.mock.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let isInitialized = false;
 
@@ -54,13 +55,13 @@ class WorkflowTestContext extends MediumTestContext<typeof WorkflowExecutionServ
     mockData.resourcePaths.corePlugin = '../packages/plugin-core';
     mockData.plugins.external.allow = false;
     this.getMock(ConfigRepository).getEnv.mockReturnValue(mockData);
-    // `BaseService.getConfig` calls `SystemMetadataRepository.get(SystemConfig)`
-    // and merges over defaults. Returning null makes the merge a no-op so the
-    // workflow handler sees the default machineLearning config.
-    this.getMock(SystemMetadataRepository).get.mockResolvedValue(null);
+    this.getMock(SystemMetadataRepository).get.mockResolvedValue({
+      machineLearning: { imageDescription: { enabled: false }, nsfwDetection: { enabled: false } },
+    });
     this.getMock(EventRepository).emit.mockResolvedValue();
     this.get(LoggingRepository).setLogLevel(LogLevel.Verbose);
 
+    clearConfigCache();
     await this.sut.onPluginSync();
     await this.sut.onPluginLoad();
 
@@ -111,46 +112,11 @@ const createWorkflow = async (template: WorkflowTemplate) => {
 
 let ctx: WorkflowTestContext;
 
-// The fork's workflow eligibility gate (`isWorkflowEligible`) requires an asset
-// to be enrichment-complete before plugins may observe it whenever NSFW
-// detection OR image description is enabled — and `imageDescription.enabled`
-// defaults to true (see `defaults` in src/config.ts), so the gate is active
-// under the medium context's default ML config. In production this is never a
-// problem because workflows trigger on `AssetMetadataExtracted`, which only
-// fires after enrichment lands. These execution tests call `handleAssetTrigger`
-// directly, so they must reproduce that realistic post-extraction state by
-// attaching a (non-NSFW) ml-enrichment metadata row. `newMetadata` also keeps
-// `asset.is_nsfw` in sync via `syncIsNsfwForItems`, so a `result.isNsfw=false`
-// row leaves the asset both enriched and not-NSFW → eligible.
-const newEligibleAsset = async (dto: Parameters<WorkflowTestContext['newAsset']>[0] = {}) => {
-  const { asset } = await ctx.newAsset(dto);
-  await ctx.newMetadata({
-    assetId: asset.id,
-    key: AssetMetadataKey.MlEnrichment,
-    value: { nsfwDetection: { status: 'success', result: { isNsfw: false } } },
-  });
-  return { asset };
-};
-
-// `dist/plugin.wasm` is produced by `pnpm --filter @immich/plugin-core build:wasm`,
-// which shells out to the `extism-js` Rust CLI. The binary is not part of any
-// npm install; environments without it (CI without the install step, local
-// machines without an extism-js install) cannot load the core plugin. Skip
-// the suite cleanly so the failure is informative rather than a long
-// "Plugin method not found" cascade for every step type.
-const corePluginWasmPath = '../packages/plugin-core/dist/plugin.wasm';
-const corePluginAvailable = existsSync(corePluginWasmPath);
-
 beforeAll(async () => {
-  if (!corePluginAvailable) {
-    return;
-  }
   const db = await getKyselyDB();
   ctx = new WorkflowTestContext(db);
   await ctx.init();
-}, 120_000);
-
-const describeIfPluginBuilt = corePluginAvailable ? describe : describe.skip;
+}, 30_000);
 
 describe('core plugin', () => {
   describe('validation', () => {
@@ -167,13 +133,24 @@ describe('core plugin', () => {
       }
 
       expect(result.success).toBe(true);
+
+      const manifest = result.data!;
+      const methods = new Set(manifest.methods.map((method) => `${manifest.name}#${method.name}`));
+      expect(new Set(manifest.templates.map((template) => template.name)).size).toBe(manifest.templates.length);
+      for (const template of manifest.templates) {
+        if (!template.uiHints.includes('SmartAlbum')) {
+          continue;
+        }
+        expect(template.steps.length).toBeGreaterThan(0);
+        expect(template.steps.every((step) => methods.has(step.method))).toBe(true);
+      }
     });
   });
 
-  describeIfPluginBuilt('assetArchive', () => {
+  describe('assetArchive', () => {
     it('should archive an asset', async () => {
       const { user } = await ctx.newUser();
-      const { asset } = await newEligibleAsset({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
 
       const workflow = await createWorkflow({
         ownerId: user.id,
@@ -190,7 +167,7 @@ describe('core plugin', () => {
 
     it('should unarchive an asset', async () => {
       const { user } = await ctx.newUser();
-      const { asset } = await newEligibleAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
 
       const workflow = await createWorkflow({
         ownerId: user.id,
@@ -206,10 +183,10 @@ describe('core plugin', () => {
     });
   });
 
-  describeIfPluginBuilt('assetLock', () => {
+  describe('assetLock', () => {
     it('should lock an asset', async () => {
       const { user } = await ctx.newUser();
-      const { asset } = await newEligibleAsset({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
 
       const workflow = await createWorkflow({
         ownerId: user.id,
@@ -224,12 +201,7 @@ describe('core plugin', () => {
       });
     });
 
-    it('should refuse to unlock a Locked asset (fork privacy gate)', async () => {
-      // Fork policy: the workflow eligibility gate (isWorkflowEligible) filters
-      // out Locked assets so plugins can never observe them. Upstream's
-      // assetLock(inverse: true) method therefore has no asset to transition
-      // and the job exits as Skipped without modifying the row. This is a
-      // deliberate divergence from upstream's behavior — see FORK_FOLLOWUPS.md.
+    it('should not expose or unlock a locked asset through an automatic workflow', async () => {
       const { user } = await ctx.newUser();
       const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
 
@@ -249,10 +221,10 @@ describe('core plugin', () => {
     });
   });
 
-  describeIfPluginBuilt('assetFavorite', () => {
+  describe('assetFavorite', () => {
     it('should favorite an asset', async () => {
       const { user } = await ctx.newUser();
-      const { asset } = await newEligibleAsset({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
 
       const workflow = await createWorkflow({
         ownerId: user.id,
@@ -267,7 +239,7 @@ describe('core plugin', () => {
 
     it('should unfavorite an asset', async () => {
       const { user } = await ctx.newUser();
-      const { asset } = await newEligibleAsset({ ownerId: user.id, isFavorite: true });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, isFavorite: true });
 
       const workflow = await createWorkflow({
         ownerId: user.id,
@@ -281,10 +253,38 @@ describe('core plugin', () => {
     });
   });
 
-  describeIfPluginBuilt('assetAddToAlbums', () => {
+  describe('screenshots collection template', () => {
+    it('collects matching uploads, reuses the owned album, and preserves visibility', async () => {
+      const manifest = PluginManifestDto.schema.parse(
+        JSON.parse(readFileSync('../packages/plugin-core/manifest.json', 'utf8')),
+      );
+      const template = manifest.templates.find(({ name }) => name === 'screenshots-collection-smart-album')!;
+      const { user } = await ctx.newUser();
+      const { album } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Screenshots' });
+      const workflow = await createWorkflow({
+        ownerId: user.id,
+        trigger: template.trigger,
+        steps: template.steps.map((step) => ({ ...step, config: (step.config ?? {}) as WorkflowStepConfig })),
+      });
+      const { asset: screenshot } = await ctx.newAsset({ ownerId: user.id, originalFileName: 'SCREENSHOT-1.png' });
+      const { asset: photo } = await ctx.newAsset({ ownerId: user.id, originalFileName: 'holiday.jpg' });
+      for (const asset of [screenshot, photo]) {
+        await ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id });
+        await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({
+          visibility: AssetVisibility.Timeline,
+        });
+      }
+      await expect(ctx.get(AlbumRepository).getAll(user.id)).resolves.toHaveLength(1);
+      await expect(ctx.get(AlbumRepository).getAssetIds(album.id, [screenshot.id, photo.id])).resolves.toEqual(
+        new Set([screenshot.id]),
+      );
+    });
+  });
+
+  describe('assetAddToAlbums', () => {
     it('should create an album by name', async () => {
       const { user } = await ctx.newUser();
-      const { asset } = await newEligibleAsset({ ownerId: user.id, isFavorite: true });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, isFavorite: true });
 
       const workflow = await createWorkflow({
         ownerId: user.id,
@@ -308,7 +308,7 @@ describe('core plugin', () => {
 
     it('should not use the name when there is an albumId', async () => {
       const { user } = await ctx.newUser();
-      const { asset } = await newEligibleAsset({ ownerId: user.id, isFavorite: true });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, isFavorite: true });
       const { album } = await ctx.newAlbum({ ownerId: user.id });
 
       const workflow = await createWorkflow({
@@ -330,7 +330,7 @@ describe('core plugin', () => {
 
     it('should add an asset to an album', async () => {
       const { user } = await ctx.newUser();
-      const { asset } = await newEligibleAsset({ ownerId: user.id, isFavorite: true });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, isFavorite: true });
       const { album } = await ctx.newAlbum({ ownerId: user.id });
 
       const workflow = await createWorkflow({
@@ -347,7 +347,7 @@ describe('core plugin', () => {
     it('should add an asset to multiple albums', async () => {
       const { user } = await ctx.newUser();
       const [{ asset }, { album: album1 }, { album: album2 }] = await Promise.all([
-        newEligibleAsset({ ownerId: user.id, isFavorite: true }),
+        ctx.newAsset({ ownerId: user.id, isFavorite: true }),
         ctx.newAlbum({ ownerId: user.id }),
         ctx.newAlbum({ ownerId: user.id }),
       ]);
@@ -367,7 +367,7 @@ describe('core plugin', () => {
     it('should require album access', async () => {
       const { user: user1 } = await ctx.newUser();
       const { user: user2 } = await ctx.newUser();
-      const { asset } = await newEligibleAsset({ ownerId: user1.id, isFavorite: true });
+      const { asset } = await ctx.newAsset({ ownerId: user1.id, isFavorite: true });
       const { album } = await ctx.newAlbum({ ownerId: user2.id });
 
       const workflow = await createWorkflow({
@@ -382,10 +382,10 @@ describe('core plugin', () => {
     });
   });
 
-  describeIfPluginBuilt('assetLocationFilter', () => {
+  describe('assetLocationFilter', () => {
     it('should favorite an asset within a given radius', async () => {
       const { user } = await ctx.newUser();
-      const { asset } = await newEligibleAsset({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
       await ctx.newExif({ assetId: asset.id, latitude: 49.27335322114536, longitude: -123.10387144078764 });
 
       const workflow = await createWorkflow({
@@ -408,7 +408,7 @@ describe('core plugin', () => {
 
     it('should not favorite asset outside a given radius', async () => {
       const { user } = await ctx.newUser();
-      const { asset } = await newEligibleAsset({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
       await ctx.newExif({ assetId: asset.id, latitude: 49.26126605257035, longitude: -123.24895939078196 });
 
       const workflow = await createWorkflow({
@@ -431,7 +431,7 @@ describe('core plugin', () => {
 
     it('should favorite asset by location name', async () => {
       const { user } = await ctx.newUser();
-      const { asset } = await newEligibleAsset({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
       await ctx.newExif({ assetId: asset.id, city: 'Vancouver' });
 
       const workflow = await createWorkflow({
@@ -453,12 +453,12 @@ describe('core plugin', () => {
     });
   });
 
-  describeIfPluginBuilt('assetFileFilter', () => {
+  describe('assetFileFilter', () => {
     it('should match assets case-insensitively', async () => {
       const { user } = await ctx.newUser();
       const [{ asset: asset1 }, { asset: asset2 }] = await Promise.all([
-        newEligibleAsset({ ownerId: user.id, originalFileName: 'exampleFile.png' }),
-        newEligibleAsset({ ownerId: user.id, originalFileName: 'anotherfile.jpg' }),
+        ctx.newAsset({ ownerId: user.id, originalFileName: 'exampleFile.png' }),
+        ctx.newAsset({ ownerId: user.id, originalFileName: 'anotherfile.jpg' }),
       ]);
 
       const workflow = await createWorkflow({
@@ -488,8 +488,8 @@ describe('core plugin', () => {
     it('should match assets by regex', async () => {
       const { user } = await ctx.newUser();
       const [{ asset: asset1 }, { asset: asset2 }] = await Promise.all([
-        newEligibleAsset({ ownerId: user.id, originalFileName: 'exampleFile.png' }),
-        newEligibleAsset({ ownerId: user.id, originalFileName: 'anotherfile.jpg' }),
+        ctx.newAsset({ ownerId: user.id, originalFileName: 'exampleFile.png' }),
+        ctx.newAsset({ ownerId: user.id, originalFileName: 'anotherfile.jpg' }),
       ]);
 
       const workflow = await createWorkflow({
@@ -519,8 +519,8 @@ describe('core plugin', () => {
     it('should filter assets by path if specified', async () => {
       const { user } = await ctx.newUser();
       const [{ asset: asset1 }, { asset: asset2 }] = await Promise.all([
-        newEligibleAsset({ ownerId: user.id, originalPath: '/library/folder/file1.png' }),
-        newEligibleAsset({ ownerId: user.id, originalPath: '/library/file2.png' }),
+        ctx.newAsset({ ownerId: user.id, originalPath: '/library/folder/file1.png' }),
+        ctx.newAsset({ ownerId: user.id, originalPath: '/library/file2.png' }),
       ]);
 
       const workflow = await createWorkflow({
@@ -548,10 +548,10 @@ describe('core plugin', () => {
     });
   });
 
-  describeIfPluginBuilt('assetTypeFilter', () => {
+  describe('assetTypeFilter', () => {
     it('should favorite asset if it is a video', async () => {
       const { user } = await ctx.newUser();
-      const { asset } = await newEligibleAsset({ ownerId: user.id, type: AssetType.Video });
+      const { asset } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video });
 
       const workflow = await createWorkflow({
         ownerId: user.id,
@@ -572,13 +572,36 @@ describe('core plugin', () => {
     });
   });
 
-  describeIfPluginBuilt('assetDateFilter', () => {
+  describe('assetTagFilter', () => {
+    it.each([
+      { matching: 'any', tags: ['00000000-0000-4000-8000-000000000001'], expected: false },
+      { matching: 'all', tags: ['00000000-0000-4000-8000-000000000001'], expected: false },
+      { matching: 'none', tags: ['00000000-0000-4000-8000-000000000001'], expected: true },
+      { matching: 'any', tags: [], expected: false },
+    ])('does not match absent tags with $matching', async ({ matching, tags, expected }) => {
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const workflow = await createWorkflow({
+        ownerId: user.id,
+        trigger: WorkflowTrigger.AssetCreate,
+        steps: [
+          { method: 'immich-plugin-core#assetTagFilter', config: { matching, tags } },
+          { method: 'immich-plugin-core#assetFavorite' },
+        ],
+      });
+
+      await ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id });
+      await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({ isFavorite: expected });
+    });
+  });
+
+  describe('assetDateFilter', () => {
     it('should favorite assets created during the first 7 days of a specific year and month', async () => {
       const { user } = await ctx.newUser();
       const [{ asset: asset1 }, { asset: asset2 }, { asset: asset3 }] = await Promise.all([
-        newEligibleAsset({ ownerId: user.id, localDateTime: new Date('2000-04-01') }),
-        newEligibleAsset({ ownerId: user.id, localDateTime: new Date('2000-04-07T23:59:59Z') }),
-        newEligibleAsset({ ownerId: user.id, localDateTime: new Date('2000-04-08T00:00:00Z') }),
+        ctx.newAsset({ ownerId: user.id, localDateTime: new Date('2000-04-01') }),
+        ctx.newAsset({ ownerId: user.id, localDateTime: new Date('2000-04-07T23:59:59Z') }),
+        ctx.newAsset({ ownerId: user.id, localDateTime: new Date('2000-04-08T00:00:00Z') }),
       ]);
 
       const workflow = await createWorkflow({
@@ -612,9 +635,9 @@ describe('core plugin', () => {
     it('should match recurring dates regardless of the year', async () => {
       const { user } = await ctx.newUser();
       const [{ asset: asset1 }, { asset: asset2 }, { asset: asset3 }] = await Promise.all([
-        newEligibleAsset({ ownerId: user.id, localDateTime: new Date('2026-03-01') }),
-        newEligibleAsset({ ownerId: user.id, localDateTime: new Date('1998-12-21') }),
-        newEligibleAsset({ ownerId: user.id, localDateTime: new Date('2000-04-08T00:00:00Z') }),
+        ctx.newAsset({ ownerId: user.id, localDateTime: new Date('2026-03-01') }),
+        ctx.newAsset({ ownerId: user.id, localDateTime: new Date('1998-12-21') }),
+        ctx.newAsset({ ownerId: user.id, localDateTime: new Date('2000-04-08T00:00:00Z') }),
       ]);
       await ctx.newAsset({ ownerId: user.id, localDateTime: new Date('2010-06-15') });
 
@@ -647,12 +670,12 @@ describe('core plugin', () => {
     });
   });
 
-  describeIfPluginBuilt('webhook', () => {
+  describe('webhook', () => {
     it('should trigger a webhook on asset upload', async () => {
       const { user } = await ctx.newUser();
-      const { asset } = await newEligibleAsset({ ownerId: user.id });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
 
-      const fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('') }));
+      const fetchMock = vi.fn(() => Promise.resolve(new Response('')));
       vi.stubGlobal('fetch', fetchMock);
 
       const workflow = await createWorkflow({

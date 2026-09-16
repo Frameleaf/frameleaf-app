@@ -1,10 +1,10 @@
 import mockfs from 'mock-fs';
 import { Dirent } from 'node:fs';
 import fs from 'node:fs/promises';
-import { CrawlOptionsDto } from 'src/dtos/library.dto';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { StorageRepository } from 'src/repositories/storage.repository';
-import { automock } from 'test/utils';
+import { CrawlOptionsDto } from 'src/dtos/library.dto.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { automock } from 'test/utils.js';
 
 interface Test {
   test: string;
@@ -190,6 +190,7 @@ describe(StorageRepository.name, () => {
   });
 
   afterEach(() => {
+    // eslint-disable-next-line import-x/no-named-as-default-member
     mockfs.restore();
   });
 
@@ -215,6 +216,7 @@ describe(StorageRepository.name, () => {
       '/first/b/3.jpg': '',
       '/first/.hidden/secret.jpg': '',
       '/last/4.jpg': '',
+      // eslint-disable-next-line import-x/no-named-as-default-member
       '/first/link': mockfs.symlink({ path: '/last' }),
     });
     let cursor: Array<{ path: string; after?: string }> = [{ path: '/last' }, { path: '/first' }];

@@ -3,18 +3,17 @@ import {
   CreateDateColumn,
   DeleteDateColumn,
   ForeignKeyColumn,
-  Generated,
   Index,
   PrimaryGeneratedColumn,
   Table,
-  Timestamp,
   Trigger,
   UpdateDateColumn,
 } from '@immich/sql-tools';
-import { UpdatedAtTrigger, UpdateIdColumn } from 'src/decorators';
-import { AssetOrder } from 'src/enum';
-import { album_parent_cycle_check } from 'src/schema/functions';
-import { AssetTable } from 'src/schema/tables/asset.table';
+import type { Generated, Timestamp } from '@immich/sql-tools';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { AssetOrder } from 'src/enum.js';
+import { album_parent_cycle_check } from 'src/schema/functions.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
 
 @Table({ name: 'album' })
 @UpdatedAtTrigger('album_updatedAt')

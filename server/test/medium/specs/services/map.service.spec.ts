@@ -1,17 +1,17 @@
 import { Kysely } from 'kysely';
-import { AssetMetadataKey } from 'src/enum';
-import { AlbumRepository } from 'src/repositories/album.repository';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { MapRepository } from 'src/repositories/map.repository';
-import { PartnerRepository } from 'src/repositories/partner.repository';
-import { TagRepository } from 'src/repositories/tag.repository';
-import { DB } from 'src/schema';
-import { MapService } from 'src/services/map.service';
-import { upsertTags } from 'src/utils/tag';
-import { newMediumService } from 'test/medium.factory';
-import { factory } from 'test/small.factory';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils';
+import { AssetMetadataKey } from 'src/enum.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MapRepository } from 'src/repositories/map.repository.js';
+import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { TagRepository } from 'src/repositories/tag.repository.js';
+import { DB } from 'src/schema/index.js';
+import { MapService } from 'src/services/map.service.js';
+import { upsertTags } from 'src/utils/tag.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { factory } from 'test/small.factory.js';
+import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 

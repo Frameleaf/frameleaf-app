@@ -1,20 +1,20 @@
 import { Kysely, sql } from 'kysely';
-import { LEGACY_FORK_MIGRATIONS } from 'src/fork-schema/migration-manifest';
+import { LEGACY_FORK_MIGRATIONS } from 'src/fork-schema/migration-manifest.js';
 import {
-  up as createCutoverVerification,
   down as rollbackCutoverVerification,
-} from 'src/fork-schema/migrations/0000000000050-CutoverVerification';
-import { REVERSIBLE_POST_CERTIFIED_MIGRATIONS } from 'src/fork-schema/post-certified-residue';
-import { LEGACY_WORKFLOW_MIGRATION, OFFICIAL_WORKFLOW_MIGRATION } from 'src/fork-schema/workflow-compatibility';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { BACKFILL_KINDS } from 'src/repositories/fork-schema.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { DB } from 'src/schema';
-import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service';
-import { getKyselyConfig } from 'src/utils/database';
-import { alignCertifiedGeodataCatalog } from 'test/medium/specs/fork-schema/certified-geodata-fixture';
-import { getKyselyDB, newTestService } from 'test/utils';
+  up as createCutoverVerification,
+} from 'src/fork-schema/migrations/0000000000050-CutoverVerification.js';
+import { REVERSIBLE_POST_CERTIFIED_MIGRATIONS } from 'src/fork-schema/post-certified-residue.js';
+import { LEGACY_WORKFLOW_MIGRATION, OFFICIAL_WORKFLOW_MIGRATION } from 'src/fork-schema/workflow-compatibility.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { BACKFILL_KINDS } from 'src/repositories/fork-schema.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { DB } from 'src/schema/index.js';
+import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service.js';
+import { getKyselyConfig } from 'src/utils/database.js';
+import { alignCertifiedGeodataCatalog } from 'test/medium/specs/fork-schema/certified-geodata-fixture.js';
+import { getKyselyDB, newTestService } from 'test/utils.js';
 
 const EMPTY_STORAGE_DIGEST = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 const options = { databaseBackupId: 'backup-concurrency', mediaSnapshotId: 'snapshot-concurrency' };

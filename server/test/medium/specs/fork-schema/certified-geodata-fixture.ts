@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { DB } from 'src/schema';
+import { DB } from 'src/schema/index.js';
 
 /** Reproduce the catalog shape created by the normal Immich geodata import. */
 export const alignCertifiedGeodataCatalog = async (db: Kysely<DB>): Promise<void> => {

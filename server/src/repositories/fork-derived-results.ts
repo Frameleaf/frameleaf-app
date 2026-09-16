@@ -1,9 +1,9 @@
 import { Kysely, sql } from 'kysely';
 import { createHash } from 'node:crypto';
-import { isForkAuthoritative, isForkWriteEnabled, isLegacyAuthoritative } from 'src/fork-schema/authority';
-import { ForkSchemaPhase } from 'src/repositories/fork-schema.repository';
-import { DB } from 'src/schema';
-import { asUuid } from 'src/utils/database';
+import { isForkAuthoritative, isForkWriteEnabled, isLegacyAuthoritative } from 'src/fork-schema/authority.js';
+import { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
+import { DB } from 'src/schema/index.js';
+import { asUuid } from 'src/utils/database.js';
 
 export type TableVerification = { count: number; digest: string };
 export type DerivedBackfillResult<Tables extends Record<string, TableVerification>> = TableVerification & {

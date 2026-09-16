@@ -1,10 +1,10 @@
-import { AssetType, AssetVisibility } from 'src/enum';
-import { LivePhotoRepository } from 'src/repositories/live-photo.repository';
-import { LivePhotoService } from 'src/services/live-photo.service';
-import { AssetFactory } from 'test/factories/asset.factory';
-import { AuthFactory } from 'test/factories/auth.factory';
-import { getMocks, ServiceMocks } from 'test/utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { AssetType, AssetVisibility } from 'src/enum.js';
+import { LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
+import { LivePhotoService } from 'src/services/live-photo.service.js';
+import { AssetFactory } from 'test/factories/asset.factory.js';
+import { AuthFactory } from 'test/factories/auth.factory.js';
+import { ServiceMocks, getMocks } from 'test/utils.js';
 
 describe(LivePhotoService.name, () => {
   let sut: LivePhotoService;
