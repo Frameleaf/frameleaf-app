@@ -533,12 +533,15 @@ export class PhysicalFileRepository {
   }
 
   private async commitNormalization(
-    db: Kysely<DB> | Transaction<DB>,
+    db: Transaction<DB>,
     input: PhysicalNormalizationCommit,
     claim?: ReturnNormalizationClaim,
   ): Promise<void> {
     const { asset, evidence, linkCount, sha1, sha256, sizeInBytes, upstreamPath, verifiedPaths } = input;
     if (asset.physicalFileId && asset.physicalPath && asset.physicalChecksum && asset.physicalType) {
+      // Different assets can insert the same physical row concurrently. Serialize
+      // that upsert so the secondary unique path index cannot race the primary key.
+      await this.lockPath(db, `fork-normalization:${asset.physicalFileId}`);
       await sql`
           INSERT INTO immich_fork.physical_file
             (id, "canonicalAssetId", type, checksum, "sizeInBytes", "canonicalPath", "createdAt", "updatedAt")

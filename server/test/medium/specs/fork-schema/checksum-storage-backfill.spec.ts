@@ -193,7 +193,7 @@ describe('checksum and physical-storage normalization', () => {
     expect(foreignKeys.rows[0]?.count).toBe(0);
   });
 
-  it('preserves SHA-256, the shared deduplicated path, and physical links during steady-state normalization', async () => {
+  it.each(Array.from({ length: 20 }, (_, i) => i))('normalizes shared files concurrently (%i)', async () => {
     const bytes = Buffer.from('isolated test media bytes');
     const canonicalPath = join(temporaryRoot, `${randomUUID()}.jpg`);
     await writeFile(canonicalPath, bytes);
