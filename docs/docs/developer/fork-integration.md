@@ -42,6 +42,8 @@ pnpm --filter immich-e2e check
 
 The plugin build must produce current `packages/plugin-core/dist/plugin.wasm` before running the medium tests. Those tests exercise actual plugin behavior and local PostgreSQL migrations; stale WASM can give misleading results. The workflow installs only the two WASM build tools and oazapfts in addition to Node and pnpm. It generates OpenAPI from the built server in Nest preview mode, then regenerates the TypeScript client and fails if either tracked file changes. This catches missing runtime DTO imports that type checking alone can miss. The mobile job generates the Dart client before compilation; regenerate it locally after API changes through `mise run //:open-api`.
 
+The mobile job also checks newly required API response fields against the PR base specification, retaining the explicit backward-compatibility patch gate.
+
 The separate mobile job installs the locked Flutter SDK, installs dependencies with the lockfile enforced, regenerates Drift/Pigeon/localization/build-runner output, and runs Dart analysis and Flutter tests for the app and UI package. Dart SDK generation also repairs native enum defaults emitted by the pinned OpenAPI generator; keep that shared generation step rather than editing generated models by hand.
 
 The CLI gate checks both checksum formats and builds the executable before verifying `migrate --help`. The ML job installs frozen CPU test dependencies and runs the mocked suite offline; the three full-model prediction tests remain a separate hardware/model acceptance check. Run it locally from `machine-learning/`:
@@ -56,3 +58,5 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 MACHINE_LEARNING_TEST_FULL=false .venv/b
 - Require a successful **Fork integration** run for the exact candidate commit. Local results are useful evidence but do not establish that the GitHub runner passed.
 - Keep **Fork schema official-container certification** (`.github/workflows/fork-roundtrip.yml`) as the separate gate for real official-container handoff and return. Unit and medium tests do not replace its three certification lanes.
 - Record deployment and runtime acceptance independently. A passing integration or certification run does not establish that production was deployed or verified.
+
+The migration-order workflow validates the complete sorted migration inventory and append-only history separately for upstream and fork migrations. This allows new upstream timestamps to precede the fork’s reserved timestamps without renumbering released migrations. CLI publishing and signed mobile release workflows remain upstream-only; fork CLI and mobile validation run in **Fork integration**. Documentation builds and migration checks use the ordinary repository token.

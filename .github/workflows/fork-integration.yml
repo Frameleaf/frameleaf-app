@@ -39,7 +39,7 @@ jobs:
           docker cp fork-integration-mise:/usr/local/bin/mise "$RUNNER_TEMP/mise"
           docker rm fork-integration-mise
           "$RUNNER_TEMP/mise" trust mise.toml
-          "$RUNNER_TEMP/mise" install --locked github:extism/js-pdk github:webassembly/binaryen npm:oazapfts
+          "$RUNNER_TEMP/mise" install --locked node github:extism/js-pdk github:webassembly/binaryen npm:oazapfts
           {
             "$RUNNER_TEMP/mise" where github:extism/js-pdk
             echo "$("$RUNNER_TEMP/mise" where github:webassembly/binaryen)/bin"
@@ -135,7 +135,7 @@ jobs:
           "$RUNNER_TEMP/mise" trust ../mise.toml
           "$RUNNER_TEMP/mise" trust mise.toml
           "$RUNNER_TEMP/mise" install --locked aqua:flutter/flutter
-          (cd .. && "$RUNNER_TEMP/mise" install --locked npm:@openapitools/openapi-generator-cli)
+          (cd .. && "$RUNNER_TEMP/mise" install --locked node npm:@openapitools/openapi-generator-cli)
           {
             echo "$("$RUNNER_TEMP/mise" where aqua:flutter/flutter)/flutter/bin"
             echo "$(cd .. && "$RUNNER_TEMP/mise" where npm:@openapitools/openapi-generator-cli)/bin"
@@ -159,6 +159,15 @@ jobs:
           dart format lib/generated/translations.g.dart
           dart run build_runner build
           dart format lib/routing/router.gr.dart
+      - name: Verify backward-compatible API response defaults
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          OPENAPI_BASE_SPEC: /tmp/base-spec.json
+          OPENAPI_REVISION_SPEC: ../open-api/immich-openapi-specs.json
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/${{ github.repository }}/${BASE_SHA}/open-api/immich-openapi-specs.json" -o "$OPENAPI_BASE_SPEC"
+          flutter test test/openapi_patches_coverage.dart
       - name: Analyze mobile and run tests
         run: |
           dart analyze --fatal-infos
