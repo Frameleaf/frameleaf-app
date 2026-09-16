@@ -1021,7 +1021,6 @@ export class MediaHealthService {
     const targetByAsset = new Map<string, { asset: MediaHealthAsset; sha1: Buffer[]; sha256: Buffer[] }>();
     const sha1Targets = new Map<string, string[]>();
     const sha256Targets = new Map<string, string[]>();
-    const sizes = new Set(stored.map(({ sizeInBytes }) => sizeInBytes));
 
     const addTarget = (index: Map<string, string[]>, digest: Buffer | undefined, assetId: string) => {
       if (!digest) {
@@ -1063,6 +1062,11 @@ export class MediaHealthService {
       if (!library) {
         continue;
       }
+      const sizes = new Set(
+        libraryAssets
+          .map(({ id }) => storedByAsset.get(id)?.sizeInBytes)
+          .filter((size): size is number => size !== undefined),
+      );
       const basenames = new Set(libraryAssets.map(({ originalFileName }) => originalFileName));
       const originalPaths = new Set(libraryAssets.map(({ originalPath }) => originalPath));
       const fallbackIndex = new Map<string, string[]>();

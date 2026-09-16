@@ -1056,6 +1056,74 @@ describe(MediaHealthService.name, () => {
       );
     });
 
+    it('uses each external library own sidecar sizes before hashing candidates', async () => {
+      const sha1A = Buffer.alloc(20, 1);
+      const sha256A = Buffer.alloc(32, 2);
+      const sha1B = Buffer.alloc(20, 3);
+      const sha256B = Buffer.alloc(32, 4);
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
+        { id: 'health-a', assetId: 'asset-a', category: MediaHealthCategory.Missing },
+        { id: 'health-b', assetId: 'asset-b', category: MediaHealthCategory.Missing },
+      ] as never);
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([
+        {
+          id: 'asset-a',
+          ownerId: 'user-1',
+          checksum: sha1A,
+          originalPath: '/external/a/missing-a.jpg',
+          originalFileName: 'missing-a.jpg',
+          type: AssetType.Image,
+          isExternal: true,
+          libraryId: 'library-a',
+        },
+        {
+          id: 'asset-b',
+          ownerId: 'user-1',
+          checksum: sha1B,
+          originalPath: '/external/b/missing-b.jpg',
+          originalFileName: 'missing-b.jpg',
+          type: AssetType.Image,
+          isExternal: true,
+          libraryId: 'library-b',
+        },
+      ] as never);
+      vi.mocked(mediaHealthRepository.getAssetChecksums).mockResolvedValue([
+        { assetId: 'asset-a', sha1: sha1A, sha256: sha256A, sizeInBytes: 10 },
+        { assetId: 'asset-b', sha1: sha1B, sha256: sha256B, sizeInBytes: 20 },
+      ]);
+      vi.mocked(mocks.library.get)
+        .mockResolvedValueOnce({ id: 'library-a', importPaths: ['/external/a'], exclusionPatterns: [] } as never)
+        .mockResolvedValueOnce({ id: 'library-b', importPaths: ['/external/b'], exclusionPatterns: [] } as never);
+      vi.mocked(mocks.storage.walk)
+        .mockReturnValueOnce(
+          (async function* () {
+            await Promise.resolve();
+            yield ['/external/a/wrong-library-size.jpg'];
+          })() as never,
+        )
+        .mockReturnValueOnce(
+          (async function* () {
+            await Promise.resolve();
+            yield ['/external/b/found.jpg'];
+          })() as never,
+        );
+      vi.mocked(mocks.storage.stat).mockResolvedValue({ size: 20 } as never);
+      vi.mocked(mocks.crypto.hashFileDigests).mockResolvedValue({ sha1: sha1B, sha256: sha256B, sizeInBytes: 20 });
+      vi.mocked(mocks.asset.getByLibraryIdAndOriginalPath).mockResolvedValue(undefined);
+
+      await sut.handleLocateMissing({ runId: 'run-1', ids: ['health-a', 'health-b'], userId: 'user-1' });
+
+      expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(1);
+      expect(mocks.crypto.hashFileDigests).toHaveBeenCalledWith('/external/b/found.jpg');
+      expect(mediaHealthRepository.replaceCandidates).toHaveBeenCalledWith('health-a', []);
+      expect(mediaHealthRepository.replaceCandidates).toHaveBeenCalledWith(
+        'health-b',
+        expect.arrayContaining([
+          expect.objectContaining({ candidatePath: '/external/b/found.jpg', status: MediaHealthStatus.Found }),
+        ]),
+      );
+    });
+
     it('finds managed files by either SHA-1 or SHA-256 and skips metadata files', async () => {
       const sha1 = Buffer.alloc(20, 1);
       const sha256 = Buffer.alloc(32, 2);
