@@ -1,8 +1,8 @@
 import { DateTime } from 'luxon';
-import { CalendarHeatmapDto } from 'src/dtos/calendar-heatmap.dto';
-import { CalendarHeatmapType } from 'src/enum';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { asDateTimeString } from 'src/utils/date';
+import { CalendarHeatmapDto } from 'src/dtos/calendar-heatmap.dto.js';
+import { CalendarHeatmapType } from 'src/enum.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { asDateString } from 'src/utils/date.js';
 
 export const getCalendarHeatmap = async (
   userId: string,
@@ -19,7 +19,7 @@ export const getCalendarHeatmap = async (
     to: toDate.plus({ days: 1 }).toJSDate(),
     type: dto.type ?? CalendarHeatmapType.Upload,
   });
-  const countsMap = new Map(counts.map((item) => [asDateTimeString(item.date)!, item.count]));
+  const countsMap = new Map(counts.map((item) => [asDateString(item.date)!, item.count]));
 
   const series: Array<{ date: string; count: number }> = [];
   for (let date = fromDate; date <= toDate; date = date.plus({ days: 1 })) {

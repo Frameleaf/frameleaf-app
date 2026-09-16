@@ -4,16 +4,15 @@ import {
   CreateDateColumn,
   DeleteDateColumn,
   ForeignKeyColumn,
-  Generated,
   PrimaryGeneratedColumn,
   Table,
-  Timestamp,
   UpdateDateColumn,
 } from '@immich/sql-tools';
-import { UpdatedAtTrigger, UpdateIdColumn } from 'src/decorators';
-import { MemoryType } from 'src/enum';
-import { memory_delete_audit } from 'src/schema/functions';
-import { UserTable } from 'src/schema/tables/user.table';
+import type { Generated, Timestamp } from '@immich/sql-tools';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { MemoryType } from 'src/enum.js';
+import { memory_delete_audit } from 'src/schema/functions.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
 
 @Table('memory')
 @UpdatedAtTrigger('memory_updatedAt')

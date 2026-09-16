@@ -1,16 +1,16 @@
 import { Kysely, sql } from 'kysely';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository';
-import { ForkConfigRepository } from 'src/repositories/fork-config.repository';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository';
-import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository';
-import { BACKFILL_KINDS, ForkSchemaRepository } from 'src/repositories/fork-schema.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { SmartAlbumRepository } from 'src/repositories/smart-album.repository';
-import { DB } from 'src/schema';
-import { mediumFactory } from 'test/medium.factory';
-import { getKyselyDB } from 'test/utils';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository.js';
+import { ForkConfigRepository } from 'src/repositories/fork-config.repository.js';
+import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
+import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
+import { BACKFILL_KINDS, ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { DB } from 'src/schema/index.js';
+import { mediumFactory } from 'test/medium.factory.js';
+import { getKyselyDB } from 'test/utils.js';
 
 describe('fork schema authority cutover', () => {
   let db: Kysely<DB>;

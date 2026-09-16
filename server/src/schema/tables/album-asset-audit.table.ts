@@ -1,6 +1,7 @@
-import { Column, CreateDateColumn, ForeignKeyColumn, Generated, Table, Timestamp } from '@immich/sql-tools';
-import { PrimaryGeneratedUuidV7Column } from 'src/decorators';
-import { AlbumTable } from 'src/schema/tables/album.table';
+import { Column, CreateDateColumn, ForeignKeyColumn, Table } from '@immich/sql-tools';
+import type { Generated, Timestamp } from '@immich/sql-tools';
+import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
+import { AlbumTable } from 'src/schema/tables/album.table.js';
 
 @Table('album_asset_audit')
 export class AlbumAssetAuditTable {

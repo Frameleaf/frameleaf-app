@@ -1,17 +1,21 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Insertable, Selectable, Updateable } from 'kysely';
-import { Person } from 'src/database';
-import { Chunked, OnJob } from 'src/decorators';
-import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto';
-import { AuthDto } from 'src/dtos/auth.dto';
+import type { Insertable, Selectable, Updateable } from 'kysely';
+import type { Person } from 'src/database.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { BoundingBox } from 'src/repositories/machine-learning.repository.js';
+import type { PersonId, UpdateFacesData } from 'src/repositories/person.repository.js';
+import type { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
+import type { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
+import type { PersonTable } from 'src/schema/tables/person.table.js';
+import type { JobItem, JobOf } from 'src/types.js';
+import { Chunked, OnJob } from 'src/decorators.js';
+import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import {
   AssetFaceCreateDto,
   AssetFaceDeleteDto,
   AssetFaceResponseDto,
   AssetFaceUpdateDto,
   FaceDto,
-  mapFaces,
-  mapPerson,
   MergePersonDto,
   PeopleResponseDto,
   PeopleUpdateDto,
@@ -20,7 +24,9 @@ import {
   PersonSearchDto,
   PersonStatisticsResponseDto,
   PersonUpdateDto,
-} from 'src/dtos/person.dto';
+  mapFaces,
+  mapPerson,
+} from 'src/dtos/person.dto.js';
 import {
   AssetVisibility,
   CacheControl,
@@ -32,20 +38,14 @@ import {
   SourceType,
   SystemMetadataKey,
   VectorIndex,
-} from 'src/enum';
-import { BoundingBox } from 'src/repositories/machine-learning.repository';
-import { PersonId, UpdateFacesData } from 'src/repositories/person.repository';
-import { AssetFaceTable } from 'src/schema/tables/asset-face.table';
-import { FaceSearchTable } from 'src/schema/tables/face-search.table';
-import { PersonTable } from 'src/schema/tables/person.table';
-import { BaseService } from 'src/services/base.service';
-import { JobItem, JobOf } from 'src/types';
-import { getDimensions } from 'src/utils/asset.util';
-import { ImmichFileResponse } from 'src/utils/file';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content';
-import { mimeTypes } from 'src/utils/mime-types';
-import { batched, findOrFail, isFacialRecognitionEnabled } from 'src/utils/misc';
-import { Point, transformPoints } from 'src/utils/transform';
+} from 'src/enum.js';
+import { BaseService } from 'src/services/base.service.js';
+import { getDimensions } from 'src/utils/asset.util.js';
+import { ImmichFileResponse } from 'src/utils/file.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
+import { batched, findOrFail, isFacialRecognitionEnabled } from 'src/utils/misc.js';
+import { Point, transformPoints } from 'src/utils/transform.js';
 
 const personKey = ({ ownerId, personGroupId }: PersonId) => `${ownerId}/${personGroupId}`;
 
@@ -334,8 +334,8 @@ export class PersonService extends BaseService {
     }
 
     const asset = await this.assetJobRepository.getForDetectFacesJob(id);
-    const previewFile = asset?.files[0];
-    if (!asset || asset.files.length !== 1 || !previewFile) {
+    const previewFile = asset?.files.find((file) => file.isEdited) ?? asset?.files[0];
+    if (!asset || !previewFile) {
       return JobStatus.Failed;
     }
 
@@ -428,7 +428,11 @@ export class PersonService extends BaseService {
   }
 
   @OnJob({ name: JobName.FacialRecognitionQueueAll, queue: QueueName.FacialRecognition })
-  async handleQueueRecognizeFaces({ force, nightly }: JobOf<JobName.FacialRecognitionQueueAll>): Promise<JobStatus> {
+  async handleQueueRecognizeFaces({
+    force,
+    nightly,
+    clusterGroupId,
+  }: JobOf<JobName.FacialRecognitionQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isFacialRecognitionEnabled(machineLearning)) {
       return JobStatus.Skipped;
@@ -451,7 +455,7 @@ export class PersonService extends BaseService {
     const { waiting } = await this.jobRepository.getJobCounts(QueueName.FacialRecognition);
 
     if (force) {
-      await this.personRepository.unassignFaces({ sourceType: SourceType.MachineLearning });
+      await this.personRepository.unassignFaces({ clusterGroupId, sourceType: SourceType.MachineLearning });
       await this.handlePersonCleanup();
       await this.personRepository.vacuum({ reindexVectors: false });
     } else if (waiting) {
@@ -466,7 +470,9 @@ export class PersonService extends BaseService {
     const lastRun = new Date().toISOString();
 
     const faces = this.personRepository.getAllFaces(
-      force ? undefined : { personGroupId: null, sourceType: SourceType.MachineLearning },
+      force
+        ? { clusterGroupId, sourceType: clusterGroupId ? SourceType.MachineLearning : undefined }
+        : { personGroupId: null, clusterGroupId, sourceType: SourceType.MachineLearning },
     );
     for await (const batch of batched(faces)) {
       await this.jobRepository.queueAll(
@@ -628,8 +634,8 @@ export class PersonService extends BaseService {
       }
 
       if (
-        (mergePerson.name && mergePerson.name !== primaryPerson.name) ||
-        (mergePerson.birthDate && mergePerson.birthDate !== primaryPerson.birthDate)
+        (mergePerson.name && primaryPerson.name && mergePerson.name !== primaryPerson.name) ||
+        (mergePerson.birthDate && primaryPerson.birthDate && mergePerson.birthDate !== primaryPerson.birthDate)
       ) {
         continue;
       }
@@ -662,6 +668,21 @@ export class PersonService extends BaseService {
       }
     }
     return results;
+  }
+
+  async mergePeople(auth: AuthDto, dto: MergePersonDto): Promise<BulkIdResponseDto[]>;
+  async mergePeople(auth: AuthDto, personGroupId: string, dto: MergePersonDto): Promise<BulkIdResponseDto[]>;
+  async mergePeople(
+    auth: AuthDto,
+    personGroupIdOrDto: string | MergePersonDto,
+    dto?: MergePersonDto,
+  ): Promise<BulkIdResponseDto[]> {
+    if (typeof personGroupIdOrDto === 'string') {
+      return this.mergePerson(auth, personGroupIdOrDto, dto!);
+    }
+
+    const [personGroupId, ...ids] = personGroupIdOrDto.ids;
+    return personGroupId ? this.mergePerson(auth, personGroupId, { ids }) : [];
   }
 
   private findOrFail(auth: AuthDto, personGroupId: string) {

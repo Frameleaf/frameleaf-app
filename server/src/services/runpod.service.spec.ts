@@ -1,11 +1,12 @@
 import { BadRequestException } from '@nestjs/common';
-import { defaults, SystemConfig } from 'src/config';
-import { ImmichWorker, JobName, SystemMetadataKey } from 'src/enum';
-import { RunPodNotFoundError, RunPodPodSummary } from 'src/repositories/runpod.repository';
-import { RunPodService } from 'src/services/runpod.service';
-import { RunPodPersistedState } from 'src/types';
-import { newTestService, ServiceMocks } from 'test/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Mock } from 'vitest';
+import { SystemConfig, defaults } from 'src/config.js';
+import { ImmichWorker, JobName, SystemMetadataKey } from 'src/enum.js';
+import { RunPodNotFoundError, RunPodPodSummary } from 'src/repositories/runpod.repository.js';
+import { RunPodService } from 'src/services/runpod.service.js';
+import { RunPodPersistedState } from 'src/types.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const _systemConfigWithRunPod = (overrides: Partial<SystemConfig['machineLearning']['runpod']> = {}): SystemConfig => ({
   ...defaults,
@@ -31,8 +32,8 @@ describe(RunPodService.name, () => {
   const PROXY_URL = 'https://pod_abc-3003.proxy.runpod.net/';
 
   const setState = (state: RunPodPersistedState) => {
-    (mocks.systemMetadata.get as ReturnType<typeof vi.fn>).mockImplementation((key: SystemMetadataKey) =>
-      Promise.resolve(key === SystemMetadataKey.RunPodState ? state : null),
+    (mocks.systemMetadata.get as Mock<(...args: any[]) => Promise<unknown>>).mockImplementation(
+      (key: SystemMetadataKey) => Promise.resolve(key === SystemMetadataKey.RunPodState ? state : null),
     );
   };
 
@@ -60,7 +61,7 @@ describe(RunPodService.name, () => {
 
   describe('testConnection', () => {
     it('returns ok=true when the key works', async () => {
-      (mocks.runPod.testApiKey as ReturnType<typeof vi.fn>).mockImplementation(() => Promise.resolve());
+      (mocks.runPod.testApiKey as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
       await expect(sut.testConnection('rp_override')).resolves.toEqual({ ok: true });
       expect(mocks.runPod.testApiKey).toHaveBeenCalledWith('rp_override');
     });
@@ -152,7 +153,7 @@ describe(RunPodService.name, () => {
         },
         { id: 'pod_other_user', name: 'something-else', desiredStatus: 'RUNNING', imageName: 'x', gpuTypeIds: ['x'] },
       ]);
-      (mocks.runPod.terminatePod as ReturnType<typeof vi.fn>).mockImplementation(() => Promise.resolve());
+      (mocks.runPod.terminatePod as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
       (mocks.runPod.createPod as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'pod_new',
         name: 'immich-aaaa1111-1748000123',
@@ -289,10 +290,10 @@ describe(RunPodService.name, () => {
       };
       // get returns the running state initially, then whatever was last `set` (so syncManagedUrl sees the new state).
       let current: RunPodPersistedState = initial;
-      (mocks.systemMetadata.get as ReturnType<typeof vi.fn>).mockImplementation((key: SystemMetadataKey) =>
-        Promise.resolve(key === SystemMetadataKey.RunPodState ? current : null),
+      (mocks.systemMetadata.get as Mock<(...args: any[]) => Promise<unknown>>).mockImplementation(
+        (key: SystemMetadataKey) => Promise.resolve(key === SystemMetadataKey.RunPodState ? current : null),
       );
-      (mocks.systemMetadata.set as ReturnType<typeof vi.fn>).mockImplementation(
+      (mocks.systemMetadata.set as Mock<(...args: any[]) => Promise<unknown>>).mockImplementation(
         (key: SystemMetadataKey, value: RunPodPersistedState) => {
           if (key === SystemMetadataKey.RunPodState) {
             current = value;
@@ -301,7 +302,7 @@ describe(RunPodService.name, () => {
         },
       );
       (mocks.machineLearning.getManagedUrl as ReturnType<typeof vi.fn>).mockReturnValue(PROXY_URL);
-      (mocks.runPod.stopPod as ReturnType<typeof vi.fn>).mockImplementation(() => Promise.resolve());
+      (mocks.runPod.stopPod as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
       const result = await sut.stop();
       expect(result.status).toBe('stopping');
@@ -329,7 +330,7 @@ describe(RunPodService.name, () => {
         stoppedAt: new Date().toISOString(),
         instanceTag: 'tag-1',
       });
-      (mocks.runPod.startPod as ReturnType<typeof vi.fn>).mockImplementation(() => Promise.resolve());
+      (mocks.runPod.startPod as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
       const result = await sut.start();
       expect(result.status).toBe('starting');
@@ -418,10 +419,10 @@ describe(RunPodService.name, () => {
       // Make the get/set mocks behave like a real key/value store so that the
       // post-write syncManagedUrl() observes the freshly written state.
       let currentState: RunPodPersistedState = { status: 'idle' };
-      (mocks.systemMetadata.get as ReturnType<typeof vi.fn>).mockImplementation((key: SystemMetadataKey) =>
-        Promise.resolve(key === SystemMetadataKey.RunPodState ? currentState : null),
+      (mocks.systemMetadata.get as Mock<(...args: any[]) => Promise<unknown>>).mockImplementation(
+        (key: SystemMetadataKey) => Promise.resolve(key === SystemMetadataKey.RunPodState ? currentState : null),
       );
-      (mocks.systemMetadata.set as ReturnType<typeof vi.fn>).mockImplementation(
+      (mocks.systemMetadata.set as Mock<(...args: any[]) => Promise<unknown>>).mockImplementation(
         (_key: SystemMetadataKey, value: RunPodPersistedState) => {
           currentState = value;
           return Promise.resolve();

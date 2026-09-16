@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { SystemConfig } from 'src/config';
-import { OnEvent, OnJob } from 'src/decorators';
-import { BootstrapEventPriority, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum';
-import { ArgOf } from 'src/repositories/event.repository';
-import { BaseService } from 'src/services/base.service';
-import { JobOf } from 'src/types';
-import { dot, l2Normalize, parseEmbedding } from 'src/utils/embedding';
-import { isSmartSearchEnabled } from 'src/utils/misc';
+import type { SystemConfig } from 'src/config.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { JobOf } from 'src/types.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
+import { BootstrapEventPriority, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { BaseService } from 'src/services/base.service.js';
+import { dot, l2Normalize, parseEmbedding } from 'src/utils/embedding.js';
+import { isSmartSearchEnabled } from 'src/utils/misc.js';
 
 type BuiltInKind = keyof SystemConfig['smartAlbums']['builtIn'];
 

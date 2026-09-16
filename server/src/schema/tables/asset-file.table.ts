@@ -2,17 +2,16 @@ import {
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
-  Generated,
   PrimaryGeneratedColumn,
   Table,
-  Timestamp,
   Unique,
   UpdateDateColumn,
 } from '@immich/sql-tools';
-import { UpdatedAtTrigger, UpdateIdColumn } from 'src/decorators';
-import { AssetFileType } from 'src/enum';
-import { AssetTable } from 'src/schema/tables/asset.table';
-import { PhysicalFileTable } from 'src/schema/tables/physical-file.table';
+import type { Generated, Timestamp } from '@immich/sql-tools';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { AssetFileType } from 'src/enum.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 
 @Table('asset_file')
 @Unique({ columns: ['assetId', 'type', 'isEdited'] })

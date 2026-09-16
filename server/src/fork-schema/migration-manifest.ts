@@ -1,5 +1,5 @@
-import semver from 'semver';
-import supportedVersions from 'src/fork-schema/supported-versions.json';
+import * as semver from 'semver';
+import supportedVersions from 'src/fork-schema/supported-versions.json' with { type: 'json' };
 
 type ReleaseManifest = {
   ranges: readonly string[];

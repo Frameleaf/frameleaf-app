@@ -28,10 +28,11 @@ allowBuilds:
   '@tailwindcss/oxide': true
   core-js-pure: false
   postman-code-generators: false
+  unrs-resolver: false
 overrides:
   canvas: 3.2.3
   sharp: ^0.35.3
-  brace-expansion: ^1.1.13
+  brace-expansion@<2: ^1.1.13
   dompurify: ^3.4.2
   follow-redirects: ^1.16.0
   ip-address: ^10.2.0
@@ -81,5 +82,6 @@ injectWorkspacePackages: true
 shamefullyHoist: false
 verifyDepsBeforeRun: install
 minimumReleaseAgeExclude:
-  - '@immich/ui@0.83.0'
+  - '@immich/ui@0.86.0'
   - '@immich/sql-tools@0.6.3'
+  - '@nestjs/cli@12.0.1'

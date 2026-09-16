@@ -1,12 +1,60 @@
 import { Kysely, sql } from 'kysely';
-import { ErrorMessages } from 'src/constants';
-import { getVectorExtension } from 'src/repositories/database.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { vectorIndexQuery } from 'src/utils/database';
 
 const lastMigrationSql = sql<{ name: string }>`SELECT "name" FROM "migrations" ORDER BY "timestamp" DESC LIMIT 1;`;
 const tableExists = sql<{ result: string | null }>`select to_regclass('migrations') as "result"`;
-const logger = LoggingRepository.create();
+function vectorIndexQuery({
+  vectorExtension,
+  table,
+  indexName,
+}: {
+  vectorExtension: string;
+  table: string;
+  indexName: string;
+}): string {
+  switch (vectorExtension) {
+    case 'vchord': {
+      return `
+        CREATE INDEX IF NOT EXISTS ${indexName} ON ${table} USING vchordrq (embedding vector_cosine_ops) WITH (options = $$
+        residual_quantization = false
+        [build.internal]
+        lists = [1]
+        spherical_centroids = true
+        build_threads = 4
+        sampling_factor = 1024
+        $$)`;
+    }
+    case 'vector': {
+      return `
+        CREATE INDEX IF NOT EXISTS ${indexName} ON ${table}
+        USING hnsw (embedding vector_cosine_ops)
+        WITH (ef_construction = 300, m = 16)`;
+    }
+    default: {
+      throw new Error(`Unsupported vector extension: '${vectorExtension}'`);
+    }
+  }
+}
+
+const getVectorExtension = async (db: Kysely<any>) => {
+  const configured = process.env.DB_VECTOR_EXTENSION;
+  if (configured === 'pgvector') {
+    return 'vector';
+  }
+  if (configured === 'vectorchord') {
+    return 'vchord';
+  }
+
+  const extensions = ['vchord', 'vector'];
+  const { rows } = await sql<{ name: string }>`
+    SELECT name FROM pg_available_extensions WHERE name IN ('vchord', 'vector')
+  `.execute(db);
+  const available = new Set(rows.map(({ name }) => name));
+  const extension = extensions.find((name) => available.has(name));
+  if (!extension) {
+    throw new Error(`No vector extension found. Available extensions: ${extensions.join(', ')}`);
+  }
+  return extension;
+};
 
 export async function up(db: Kysely<any>): Promise<void> {
   const { rows } = await tableExists.execute(db);
@@ -16,9 +64,9 @@ export async function up(db: Kysely<any>): Promise<void> {
       rows: [lastMigration],
     } = await lastMigrationSql.execute(db);
     if (lastMigration?.name !== 'AddMissingIndex1744910873956') {
-      throw new Error(ErrorMessages.TypeOrmUpgrade);
+      throw new Error('The database cannot be upgraded because TypeORM migrations are not up to date.');
     }
-    logger.log('Database has up to date TypeORM migrations, skipping initial Kysely migration');
+    console.log('Database has up to date TypeORM migrations, skipping initial Kysely migration');
     return;
   }
 

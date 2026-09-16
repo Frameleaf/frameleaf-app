@@ -3,6 +3,7 @@ import { fireEvent, waitFor } from '@testing-library/svelte';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
@@ -49,6 +50,21 @@ describe('AssetViewer', () => {
 
   afterAll(() => {
     vi.restoreAllMocks();
+  });
+
+  it('notifies the parent when the current asset changes through an event', async () => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({ ownerId: user.id });
+    const onAssetUpdate = vi.fn();
+    authManager.setUser(user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false, onAssetUpdate });
+    const updated = { ...asset, isFavorite: !asset.isFavorite };
+    eventManager.emit('AssetUpdate', updated);
+    await waitFor(() => expect(onAssetUpdate).toHaveBeenCalledWith(updated));
+    onAssetUpdate.mockClear();
+    eventManager.emit('AssetUpdate', { ...updated, id: 'another-asset' });
+    expect(onAssetUpdate).not.toHaveBeenCalled();
   });
 
   it.skip('updates the top bar favorite action after pressing favorite', async () => {

@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { join, parse } from 'node:path';
-import { StorageCore } from 'src/cores/storage.core';
-import { OnJob } from 'src/decorators';
+import type { JobOf, PhysicalDeduplicationMigrationState } from 'src/types.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { OnJob } from 'src/decorators.js';
 import {
   AssetFileType,
   DatabaseLock,
@@ -11,9 +12,8 @@ import {
   QueueName,
   StorageFolder,
   SystemMetadataKey,
-} from 'src/enum';
-import { BaseService } from 'src/services/base.service';
-import { JobOf, PhysicalDeduplicationMigrationState } from 'src/types';
+} from 'src/enum.js';
+import { BaseService } from 'src/services/base.service.js';
 
 type MigrationSummary = PhysicalDeduplicationMigrationState;
 

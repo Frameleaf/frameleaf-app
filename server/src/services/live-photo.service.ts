@@ -1,18 +1,18 @@
 import { Injectable } from '@nestjs/common';
-import { mapAsset } from 'src/dtos/asset-response.dto';
-import { AuthDto } from 'src/dtos/auth.dto';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
   LivePhotoCandidatesResponseDto,
   LivePhotoRelinkDto,
   LivePhotoRelinkResponseDto,
-} from 'src/dtos/live-photo.dto';
-import { AssetType, AssetVisibility } from 'src/enum';
-import { AlbumRepository } from 'src/repositories/album.repository';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { EventRepository } from 'src/repositories/event.repository';
-import { LivePhotoCandidateRow, LivePhotoRepository } from 'src/repositories/live-photo.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { linkLivePhotoAssets } from 'src/utils/asset.util';
+} from 'src/dtos/live-photo.dto.js';
+import { AssetType, AssetVisibility } from 'src/enum.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { LivePhotoCandidateRow, LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { linkLivePhotoAssets } from 'src/utils/asset.util.js';
 
 // A live photo's still and motion video are written within the same capture
 // instant, so a tight window keeps the filename fallback conservative.

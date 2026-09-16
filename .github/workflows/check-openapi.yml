@@ -32,7 +32,7 @@ jobs:
           persist-credentials: false
 
       - name: Check for breaking API changes
-        uses: oasdiff/oasdiff-action/breaking@2649ebe137aeb72a95707671204e829f86e091fc # v0.1.13
+        uses: oasdiff/oasdiff-action/breaking@9c0494cfee8b8fcc9fb383ed2d5d3fbdae169b93 # v0.1.15
         with:
           base: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.base_ref || 'fork/main' }}/open-api/immich-openapi-specs.json
           revision: open-api/immich-openapi-specs.json
@@ -60,10 +60,12 @@ jobs:
       - name: Install dependencies
         run: mise //mobile:install:ci
 
-      - name: Fetch base spec from main
+      - name: Fetch base spec from the target branch
+        env:
+          BASE_REF: ${{ github.base_ref || 'fork/main' }}
         run: |
           curl -fsSL \
-            "https://raw.githubusercontent.com/${{ github.repository }}/main/open-api/immich-openapi-specs.json" \
+            "https://raw.githubusercontent.com/${{ github.repository }}/${BASE_REF}/open-api/immich-openapi-specs.json" \
             -o /tmp/base-spec.json
 
       - name: Check newly-required fields have a backward-compat patch

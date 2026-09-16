@@ -1,8 +1,8 @@
 import { ShallowDehydrateObject } from 'kysely';
 import { OutputInfo } from 'sharp';
-import { Exif } from 'src/database';
-import { defaults, type SystemConfig } from 'src/dtos/config.dto';
-import { AssetEditAction } from 'src/dtos/editing.dto';
+import { Exif } from 'src/database.js';
+import { type SystemConfig, defaults } from 'src/dtos/config.dto.js';
+import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
   AssetPathType,
@@ -19,19 +19,19 @@ import {
   TranscodeHardwareAcceleration,
   TranscodePolicy,
   VideoCodec,
-} from 'src/enum';
-import { MediaService } from 'src/services/media.service';
-import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types';
-import { renderRawWithLibRaw } from 'src/utils/raw-renderer';
-import { AssetFaceFactory } from 'test/factories/asset-face.factory';
-import { AssetFactory } from 'test/factories/asset.factory';
-import { PersonFactory } from 'test/factories/person.factory';
-import { probeStub, videoInfoStub } from 'test/fixtures/media.stub';
-import { personThumbnailStub } from 'test/fixtures/person.stub';
-import { systemConfigStub } from 'test/fixtures/system-config.stub';
-import { getForGenerateThumbnail } from 'test/mappers';
-import { factory, newUuid } from 'test/small.factory';
-import { makeStream, newTestService, ServiceMocks } from 'test/utils';
+} from 'src/enum.js';
+import { MediaService } from 'src/services/media.service.js';
+import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
+import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
+import { AssetFactory } from 'test/factories/asset.factory.js';
+import { PersonFactory } from 'test/factories/person.factory.js';
+import { probeStub, videoInfoStub } from 'test/fixtures/media.stub.js';
+import { personThumbnailStub } from 'test/fixtures/person.stub.js';
+import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
+import { getForGenerateThumbnail } from 'test/mappers.js';
+import { factory, newUuid } from 'test/small.factory.js';
+import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
 
 const fullsizeBuffer = Buffer.from('embedded image data');
 const rawBuffer = Buffer.from('raw image data');
@@ -39,7 +39,7 @@ const extractedBuffer = Buffer.from('embedded image file');
 const renderedRawBuffer = Buffer.from('rendered raw image');
 const getFilterOption = (outputOptions: string[], option = '-vf') => outputOptions[outputOptions.indexOf(option) + 1];
 
-vi.mock('src/utils/raw-renderer', () => ({
+vi.mock('src/utils/raw-renderer.js', () => ({
   renderRawWithLibRaw: vi.fn(),
 }));
 
@@ -2364,6 +2364,68 @@ describe(MediaService.name, () => {
           data: { id: asset.id },
         },
       ]);
+    });
+  });
+
+  describe('handleQueueVideoConversion', () => {
+    it('should queue hidden assets when force is not set', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Video, visibility: AssetVisibility.Hidden });
+      mocks.assetJob.streamForVideoConversion.mockReturnValue(makeStream([asset]));
+
+      await sut.handleQueueVideoConversion({});
+      expect(mocks.assetJob.streamForVideoConversion).toHaveBeenCalledWith(void 0);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        {
+          name: JobName.AssetEncodeVideo,
+          data: { id: asset.id },
+        },
+      ]);
+    });
+  });
+
+  describe('generated physical files', () => {
+    it('links a generated preview to its canonical file and deletes only the redundant output', async () => {
+      const file = {
+        assetId: 'asset-id',
+        type: AssetFileType.Preview,
+        path: '/generated/preview.jpg',
+        isEdited: false,
+        isProgressive: false,
+        isTransparent: false,
+      };
+      const canonical = { id: 'physical-id', path: '/canonical/preview.jpg' };
+      mocks.systemMetadata.get.mockResolvedValue({ physicalDeduplication: { enabled: true } });
+      mocks.physicalFile.getCanonicalGeneratedFile.mockResolvedValue(canonical as never);
+      mocks.asset.upsertFiles.mockResolvedValue();
+      mocks.job.queue.mockResolvedValue();
+
+      await (sut as any).syncFiles([], [file]);
+
+      expect(mocks.asset.upsertFiles).toHaveBeenCalledWith([
+        { ...file, path: canonical.path, physicalFileId: canonical.id },
+      ]);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: [file.path] },
+      });
+    });
+
+    it('keeps edited outputs independent from shared generated files', async () => {
+      const file = {
+        assetId: 'asset-id',
+        type: AssetFileType.Preview,
+        path: '/edited/preview.jpg',
+        isEdited: true,
+        isProgressive: false,
+        isTransparent: false,
+      };
+      mocks.asset.upsertFiles.mockResolvedValue();
+
+      await (sut as any).syncFiles([], [file]);
+
+      expect(mocks.asset.upsertFiles).toHaveBeenCalledWith([file]);
+      expect(mocks.physicalFile.getCanonicalGeneratedFile).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
 

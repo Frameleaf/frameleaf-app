@@ -1,5 +1,5 @@
 import { ForeignKeyColumn, Table } from '@immich/sql-tools';
-import { AlbumTable } from 'src/schema/tables/album.table';
+import { AlbumTable } from 'src/schema/tables/album.table.js';
 
 @Table('album_closure')
 export class AlbumClosureTable {

@@ -2,14 +2,13 @@ import {
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
-  Generated,
   PrimaryGeneratedColumn,
   Table,
-  Timestamp,
   UpdateDateColumn,
 } from '@immich/sql-tools';
-import { UpdatedAtTrigger, UpdateIdColumn } from 'src/decorators';
-import { UserTable } from 'src/schema/tables/user.table';
+import type { Generated, Timestamp } from '@immich/sql-tools';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
 
 @Table({ name: 'session' })
 @UpdatedAtTrigger('session_updatedAt')

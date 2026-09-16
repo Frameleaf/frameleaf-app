@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, 'release/*']
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -13,22 +13,30 @@ permissions: {}
 
 jobs:
   pre-job:
-    if: >-
-      ${{ github.repository == 'adamtaylor152/immich' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) }}
-    runs-on: ubuntu-24.04
+    # This upstream workflow requires its GitHub App; forks use Fork Integration.
+    if: github.repository == 'immich-app/immich'
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
     steps:
+      - id: token
+        uses: immich-app/devtools/actions/create-workflow-token@df46d635b905e618b88fc4c95baa920aeb30b309 # create-workflow-token-action-v3.0.1
+        with:
+          client-id: ${{ secrets.PUSH_O_MATIC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PUSH_O_MATIC_APP_KEY }}
+          permission-contents: read
+
       - name: Check what should run
         id: check
-        uses: immich-app/devtools/actions/pre-job@03514eceb4a27cd714976a866b350df5ce175720 # pre-job-action-v2.1.0
+        uses: immich-app/devtools/actions/pre-job@75493d49052d536863fc96100086782c5279b145 # pre-job-action-v2.1.1
         with:
-          github-token: ${{ github.token }}
+          github-token: ${{ steps.token.outputs.token }}
           filters: |
             mobile:
               - 'mobile/**'
+              - 'open-api/**'
               - 'i18n/en.json'
           force-filters: |
             - '.github/workflows/static_analysis.yml'
@@ -37,25 +45,31 @@ jobs:
   mobile-dart-analyze:
     name: Run Dart Code Analysis
     needs: pre-job
-    if: >-
-      ${{ github.repository == 'adamtaylor152/immich' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (fromJSON(needs.pre-job.outputs.should_run).mobile == true) }}
-    runs-on: ubuntu-24.04
+    if: ${{ fromJSON(needs.pre-job.outputs.should_run).mobile == true }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     defaults:
       run:
         working-directory: ./mobile
     steps:
+      - id: token
+        uses: immich-app/devtools/actions/create-workflow-token@df46d635b905e618b88fc4c95baa920aeb30b309 # create-workflow-token-action-v3.0.1
+        with:
+          client-id: ${{ secrets.PUSH_O_MATIC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PUSH_O_MATIC_APP_KEY }}
+          permission-contents: read
+
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          token: ${{ github.token }}
+          token: ${{ steps.token.outputs.token }}
 
       - name: Setup Mise
         uses: immich-app/devtools/actions/use-mise@06a9ef925332c91be647d6256642b86b398592c8 # use-mise-action-v3.2.1
         with:
-          github_token: ${{ github.token }}
+          github_token: ${{ steps.token.outputs.token }}
           working_directory: ./mobile
 
       - name: Install dependencies
@@ -66,34 +80,10 @@ jobs:
         working-directory: ./mobile/packages/ui
 
       - name: Perform codegen
-        run: |
-          mise //mobile:codegen
-          mise run --force //mobile:codegen:dart
+        run: mise //mobile:codegen
 
       - name: Run analyze
-        env:
-          DCM_CI_KEY: ${{ secrets.DCM_CI_KEY }}
-          REPO: ${{ github.repository }}
-        run: |
-          if [ -n "${DCM_CI_KEY:-}" ]; then
-            mise //mobile:analyze
-          elif [ "${REPO}" = "immich-app/immich" ]; then
-            # Upstream repo requires DCM. If the secret is missing here we are
-            # almost certainly looking at a rotated/expired key — fail loudly so
-            # an operator sees it instead of silently downgrading lint coverage.
-            echo "::error::DCM_CI_KEY is missing on upstream repository ${REPO}."
-            echo "::error::Rotate the secret and re-run; refusing to fall back to dart-analyzer-only lint."
-            exit 1
-          else
-            # Fork environment: no DCM license. Run only the bundled dart analyzer;
-            # dcm is a commercial linter for style enforcement, not correctness.
-            # We use `::warning::` (not `::notice::`) so the skip appears in the
-            # PR annotation list and on the workflow run summary, making it
-            # obvious if the secret silently disappears in a fork that previously
-            # had it configured.
-            echo "::warning title=DCM skipped::DCM_CI_KEY secret not configured for ${REPO}; running dart-analyzer only. This skips dcm style enforcement."
-            mise //mobile:analyze:dart
-          fi
+        run: mise //mobile:analyze
 
       - name: Run format
         run: mise //mobile:format

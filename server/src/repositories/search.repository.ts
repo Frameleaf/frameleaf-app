@@ -1,14 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, OrderByDirection, Selectable, ShallowDehydrateObject, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { columns } from 'src/database';
-import { DummyValue, GenerateSql } from 'src/decorators';
-import { MapAsset } from 'src/dtos/asset-response.dto';
-import { SearchFilter, SearchOrder } from 'src/dtos/search.dto';
-import { AssetStatus, AssetType, AssetVisibility, ImageEnrichmentFilter, VectorIndex } from 'src/enum';
-import { probes } from 'src/repositories/database.repository';
-import { DB } from 'src/schema';
-import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
+import z from 'zod';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { columns } from 'src/database.js';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { MapAsset } from 'src/dtos/asset-response.dto.js';
+import { SearchFilter, SearchOrder } from 'src/dtos/search.dto.js';
+import { AssetStatus, AssetType, AssetVisibility, ImageEnrichmentFilter, VectorIndex } from 'src/enum.js';
+import { probes } from 'src/repositories/database.repository.js';
+import { DB } from 'src/schema/index.js';
+import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import {
   anyUuid,
   searchAssetBuilder,
@@ -19,10 +21,8 @@ import {
   withExifInner,
   withHiddenContentFilter,
   withSearchOrder,
-} from 'src/utils/database';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content';
-import { paginationHelper } from 'src/utils/pagination';
-import z from 'zod';
+} from 'src/utils/database.js';
+import { paginationHelper } from 'src/utils/pagination.js';
 
 export interface SearchAssetIdOptions {
   checksum?: Buffer;
@@ -161,6 +161,12 @@ export interface AssetSearchBuilderV3Options {
   withStacked?: boolean;
   order?: SearchOrder;
 }
+
+export type AssetSearchScope = {
+  userIds: string[];
+  lockedOwnerId: string;
+  viewingUserId?: string;
+};
 
 export interface AssetSearchPaginationV3Options {
   size: number;

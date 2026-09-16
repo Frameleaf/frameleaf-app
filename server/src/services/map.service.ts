@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { AuthDto } from 'src/dtos/auth.dto';
-import { MapMarkerDto, MapMarkerResponseDto, MapReverseGeocodeDto } from 'src/dtos/map.dto';
-import { BaseService } from 'src/services/base.service';
-import { getMyPartnerIds } from 'src/utils/asset.util';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { MapMarkerDto, MapMarkerResponseDto, MapReverseGeocodeDto } from 'src/dtos/map.dto.js';
+import { BaseService } from 'src/services/base.service.js';
+import { getMyPartnerIds } from 'src/utils/asset.util.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 
 @Injectable()
 export class MapService extends BaseService {

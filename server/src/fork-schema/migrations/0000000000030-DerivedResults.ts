@@ -89,15 +89,25 @@ export async function up(db: Kysely<any>): Promise<void> {
       PRIMARY KEY ("assetId", "frameIndex")
     )
   `.execute(db);
-  await sql`ALTER TABLE immich_fork.asset_video_duplicate_frame ALTER COLUMN embedding SET STORAGE EXTERNAL`.execute(db);
+  await sql`ALTER TABLE immich_fork.asset_video_duplicate_frame ALTER COLUMN embedding SET STORAGE EXTERNAL`.execute(
+    db,
+  );
   await sql`CREATE INDEX asset_health_category_status_idx ON immich_fork.asset_health (category, status)`.execute(db);
   await sql`CREATE INDEX asset_health_checked_at_idx ON immich_fork.asset_health ("checkedAt")`.execute(db);
   await sql`CREATE INDEX asset_health_asset_idx ON immich_fork.asset_health ("assetId")`.execute(db);
   await sql`CREATE INDEX asset_health_run_idx ON immich_fork.asset_health ("runId")`.execute(db);
-  await sql`CREATE INDEX asset_health_candidate_health_idx ON immich_fork.asset_health_candidate ("healthId")`.execute(db);
-  await sql`CREATE INDEX asset_best_photo_owner_score_idx ON immich_fork.asset_best_photo_score ("ownerId", score DESC)`.execute(db);
-  await sql`CREATE INDEX asset_best_photo_version_computed_idx ON immich_fork.asset_best_photo_score ("scoreVersion", "computedAt")`.execute(db);
-  await sql`CREATE INDEX asset_video_duplicate_frame_asset_idx ON immich_fork.asset_video_duplicate_frame ("assetId")`.execute(db);
+  await sql`CREATE INDEX asset_health_candidate_health_idx ON immich_fork.asset_health_candidate ("healthId")`.execute(
+    db,
+  );
+  await sql`CREATE INDEX asset_best_photo_owner_score_idx ON immich_fork.asset_best_photo_score ("ownerId", score DESC)`.execute(
+    db,
+  );
+  await sql`CREATE INDEX asset_best_photo_version_computed_idx ON immich_fork.asset_best_photo_score ("scoreVersion", "computedAt")`.execute(
+    db,
+  );
+  await sql`CREATE INDEX asset_video_duplicate_frame_asset_idx ON immich_fork.asset_video_duplicate_frame ("assetId")`.execute(
+    db,
+  );
 }
 
 export async function down(db: Kysely<any>): Promise<void> {

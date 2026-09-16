@@ -1,11 +1,11 @@
 import { Kysely, sql } from 'kysely';
-import { AssetType } from 'src/enum';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { SmartAlbumRepository } from 'src/repositories/smart-album.repository';
-import { UserRepository } from 'src/repositories/user.repository';
-import { DB } from 'src/schema';
-import { mediumFactory } from 'test/medium.factory';
-import { getKyselyDB } from 'test/utils';
+import { AssetType } from 'src/enum.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { DB } from 'src/schema/index.js';
+import { mediumFactory } from 'test/medium.factory.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 

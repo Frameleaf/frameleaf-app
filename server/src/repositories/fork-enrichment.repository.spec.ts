@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
-import { canonicalize, digest, ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository';
-import { DB } from 'src/schema';
+import { ForkEnrichmentRepository, canonicalize, digest } from 'src/repositories/fork-enrichment.repository.js';
+import { DB } from 'src/schema/index.js';
 
 type Boundary = { start: number; end: number };
 const sut = new ForkEnrichmentRepository(undefined as unknown as Kysely<DB>) as unknown as {

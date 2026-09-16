@@ -1,14 +1,16 @@
 import { ModuleRef } from '@nestjs/core';
 import { JobsOptions } from 'bullmq';
-import { JobName, QueueName } from 'src/enum';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { EventRepository } from 'src/repositories/event.repository';
-import { getForkSchemaBackfillJobOptions, JobRepository } from 'src/repositories/job.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { JobItem } from 'src/types';
+import { JobName, QueueName } from 'src/enum.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { JobRepository, getForkSchemaBackfillJobOptions } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { JobItem } from 'src/types.js';
 
 const mocks = vi.hoisted(() => ({
-  worker: vi.fn(() => ({ on: vi.fn() })),
+  worker: vi.fn(function () {
+    return { on: vi.fn() };
+  }),
 }));
 
 vi.mock('bullmq', async (importOriginal) => ({

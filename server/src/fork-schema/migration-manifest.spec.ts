@@ -2,12 +2,17 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { assertReleaseManifest, assertSupportedUpstream, classifyMigration } from 'src/fork-schema/migration-manifest';
+import {
+  assertReleaseManifest,
+  assertSupportedUpstream,
+  classifyMigration,
+} from 'src/fork-schema/migration-manifest.js';
 import {
   createCertifiedLedgerMigrationProvider,
   createOfficialMigrationProvider,
-} from 'src/fork-schema/migration-provider';
-import supportedVersions from 'src/fork-schema/supported-versions.json';
+} from 'src/fork-schema/migration-provider.js';
+import supportedVersions from 'src/fork-schema/supported-versions.json' with { type: 'json' };
+
 const serverPackage = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as { version: string };
 
 describe(classifyMigration, () => {

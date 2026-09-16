@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import type { AuthDto } from 'src/dtos/auth.dto';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 
 export type SuppressionScope = 'owned' | 'visible';
 

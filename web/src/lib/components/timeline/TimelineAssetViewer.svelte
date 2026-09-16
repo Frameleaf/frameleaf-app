@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Action } from '$lib/components/asset-viewer/actions/action';
   import type { AssetCursor } from '$lib/components/asset-viewer/AssetViewer.svelte';
+  import OnEvents from '$lib/components/OnEvents.svelte';
   import { AssetAction } from '$lib/constants';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
@@ -106,7 +107,11 @@
     });
   };
 
-  const handleRemoveFromAlbum = async (assetIds: string[]) => {
+  const onAlbumRemoveAssets = async ({ assetIds, albumIds }: { assetIds: string[]; albumIds: string[] }) => {
+    if (!album || !albumIds.includes(album.id)) {
+      return;
+    }
+
     timelineManager.removeAssets(assetIds);
 
     if (!assetIds.includes(assetCursor.current.id)) {
@@ -118,19 +123,6 @@
     (await navigateToAsset(assetCursor?.nextAsset)) ||
       (await navigateToAsset(assetCursor?.previousAsset)) ||
       (await handleClose(assetCursor.current.id));
-  };
-
-  const handleAssetSuppressed = async (asset: AssetResponseDto) => {
-    timelineManager.removeAssets([asset.id]);
-
-    if (asset.id !== assetCursor.current.id) {
-      return;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-    (await navigateToAsset(assetCursor?.nextAsset)) ||
-      (await navigateToAsset(assetCursor?.previousAsset)) ||
-      (await handleClose(asset.id));
   };
 
   const handlePreAction = async (action: Action) => {
@@ -247,6 +239,8 @@
   });
 </script>
 
+<OnEvents {onAlbumRemoveAssets} />
+
 {#await import('$lib/components/asset-viewer/AssetViewer.svelte') then { default: AssetViewer }}
   <AssetViewer
     {withStacked}
@@ -257,15 +251,6 @@
     onAssetChange={(asset) => {
       timelineManager?.upsertAssets([toTimelineAsset(asset)]);
     }}
-    onAssetUpdate={(updatedAsset) => {
-      // Refresh the cursor's `current` from the parent that owns the `$state`.
-      // Reassigning `cursor` inside AssetViewer would only mutate the local
-      // prop — production builds drop the ownership warning, so the parent
-      // would silently never see the update.
-      if (assetCursor.current.id === updatedAsset.id) {
-        assetCursor = { ...assetCursor, current: updatedAsset };
-      }
-    }}
     preAction={handlePreAction}
     onAction={(action) => {
       handleAction(action);
@@ -273,8 +258,6 @@
     }}
     onUndoDelete={handleUndoDelete}
     onRandom={handleRandom}
-    onRemoveFromAlbum={handleRemoveFromAlbum}
-    onAssetSuppressed={handleAssetSuppressed}
     onClose={handleClose}
   />
 {/await}

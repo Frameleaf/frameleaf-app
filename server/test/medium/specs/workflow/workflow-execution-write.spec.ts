@@ -1,26 +1,26 @@
 import { WorkflowTrigger } from '@immich/plugin-sdk';
 import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { AssetMetadataKey, AssetVisibility, JobStatus, WorkflowType } from 'src/enum';
-import { AccessRepository } from 'src/repositories/access.repository';
-import { AlbumRepository } from 'src/repositories/album.repository';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { CryptoRepository } from 'src/repositories/crypto.repository';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { EventRepository } from 'src/repositories/event.repository';
-import { JobRepository } from 'src/repositories/job.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { PluginRepository } from 'src/repositories/plugin.repository';
-import { StorageRepository } from 'src/repositories/storage.repository';
-import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository';
-import { UserRepository } from 'src/repositories/user.repository';
-import { WorkflowRepository } from 'src/repositories/workflow.repository';
-import { DB } from 'src/schema';
-import { WorkflowExecutionService } from 'src/services/workflow-execution.service';
-import { MediumTestContext } from 'test/medium.factory';
-import { mockEnvData } from 'test/repositories/config.repository.mock';
-import { getKyselyDB } from 'test/utils';
+import { AssetMetadataKey, AssetVisibility, JobStatus, WorkflowType } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PluginRepository } from 'src/repositories/plugin.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
+import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
+import { DB } from 'src/schema/index.js';
+import { WorkflowExecutionService } from 'src/services/workflow-execution.service.js';
+import { MediumTestContext } from 'test/medium.factory.js';
+import { mockEnvData } from 'test/repositories/config.repository.mock.js';
+import { getKyselyDB } from 'test/utils.js';
 
 /**
  * Exercises the asset-write restriction of the workflow execution pipeline

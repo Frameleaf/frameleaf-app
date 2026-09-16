@@ -1,21 +1,21 @@
 import { Kysely, sql } from 'kysely';
-import { REVERSIBLE_POST_CERTIFIED_MIGRATIONS } from 'src/fork-schema/post-certified-residue';
+import { REVERSIBLE_POST_CERTIFIED_MIGRATIONS } from 'src/fork-schema/post-certified-residue.js';
 import {
   ADD_PLUGIN_METHOD_ALLOWED_HOSTS_MIGRATION,
   ADD_PLUGIN_TEMPLATES_MIGRATION,
-  aliasLegacyWorkflowMigration,
-  classifyWorkflowCompatibility,
-  getWorkflowCompatibilityEvidence,
   LEGACY_WORKFLOW_MIGRATION,
   OFFICIAL_WORKFLOW_MIGRATION,
   WORKFLOW_SCHEMA_DIGESTS,
-} from 'src/fork-schema/workflow-compatibility';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { DB } from 'src/schema';
-import { mediumFactory } from 'test/medium.factory';
-import { getKyselyDB } from 'test/utils';
+  aliasLegacyWorkflowMigration,
+  classifyWorkflowCompatibility,
+  getWorkflowCompatibilityEvidence,
+} from 'src/fork-schema/workflow-compatibility.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { DB } from 'src/schema/index.js';
+import { mediumFactory } from 'test/medium.factory.js';
+import { getKyselyDB } from 'test/utils.js';
 
 const markerTimestamp = '2026-07-15T00:00:00.000Z';
 const reportDigest = 'a'.repeat(64);

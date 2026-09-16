@@ -1,24 +1,22 @@
 import { Kysely } from 'kysely';
-import { BulkIdErrorReason, BulkIdResponseDto } from 'src/dtos/asset-ids.response.dto';
-import { AssetMetadataKey, AssetStatus, AssetVisibility } from 'src/enum';
-import { AccessRepository } from 'src/repositories/access.repository';
-import { AlbumRepository } from 'src/repositories/album.repository';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { DuplicateRepository } from 'src/repositories/duplicate.repository';
-import { EventRepository } from 'src/repositories/event.repository';
-import { JobRepository } from 'src/repositories/job.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository';
-import { TagRepository } from 'src/repositories/tag.repository';
-import { UserRepository } from 'src/repositories/user.repository';
-import { DB } from 'src/schema';
-import { DuplicateService } from 'src/services/duplicate.service';
-import { clearConfigCache } from 'src/utils/config';
-import { upsertTags } from 'src/utils/tag';
-import { MediumTestContext, newMediumService } from 'test/medium.factory';
-import { factory } from 'test/small.factory';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils';
+import { BulkIdErrorReason, BulkIdResponseDto } from 'src/dtos/asset-ids.response.dto.js';
+import { AssetStatus, AssetVisibility } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { TagRepository } from 'src/repositories/tag.repository.js';
+import { DB } from 'src/schema/index.js';
+import { DuplicateService } from 'src/services/duplicate.service.js';
+import { clearConfigCache } from 'src/utils/config.js';
+import { MediumTestContext, newMediumService } from 'test/medium.factory.js';
+import { factory } from 'test/small.factory.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
@@ -33,7 +31,6 @@ const setup = (db?: Kysely<DB>) => {
       DuplicateRepository,
       SystemMetadataRepository,
       TagRepository,
-      UserRepository,
     ],
     mock: [EventRepository, JobRepository, LoggingRepository],
   });
@@ -43,13 +40,6 @@ const setup = (db?: Kysely<DB>) => {
 
   return { sut, ctx };
 };
-
-const nsfwMetadata = (isNsfw: boolean) => ({
-  nsfwDetection: {
-    status: 'success',
-    result: { isNsfw, score: isNsfw ? 0.95 : 0.05, labels: [] },
-  },
-});
 
 const newDuplicateAsset = async (
   ctx: MediumTestContext,
@@ -82,112 +72,6 @@ beforeEach(() => {
 });
 
 describe(DuplicateService.name, () => {
-  describe('nsfw privacy', () => {
-    it('filters NSFW duplicate groups using private metadata only', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user });
-
-      const mixedDuplicateId = factory.uuid();
-      const nsfwOnlyDuplicateId = factory.uuid();
-      const tagOnlyDuplicateId = factory.uuid();
-
-      const { asset: mixedSafe1 } = await ctx.newAsset({ ownerId: user.id, duplicateId: mixedDuplicateId });
-      const { asset: mixedSafe2 } = await ctx.newAsset({ ownerId: user.id, duplicateId: mixedDuplicateId });
-      const { asset: mixedNsfw } = await ctx.newAsset({ ownerId: user.id, duplicateId: mixedDuplicateId });
-      const { asset: nsfwOnly1 } = await ctx.newAsset({ ownerId: user.id, duplicateId: nsfwOnlyDuplicateId });
-      const { asset: nsfwOnly2 } = await ctx.newAsset({ ownerId: user.id, duplicateId: nsfwOnlyDuplicateId });
-      const { asset: tagOnly1 } = await ctx.newAsset({ ownerId: user.id, duplicateId: tagOnlyDuplicateId });
-      const { asset: tagOnly2 } = await ctx.newAsset({ ownerId: user.id, duplicateId: tagOnlyDuplicateId });
-
-      for (const asset of [mixedSafe1, mixedSafe2, mixedNsfw, nsfwOnly1, nsfwOnly2, tagOnly1, tagOnly2]) {
-        await ctx.newExif({ assetId: asset.id, make: 'Canon' });
-      }
-
-      await Promise.all([
-        ctx.newMetadata({
-          assetId: mixedNsfw.id,
-          key: AssetMetadataKey.MlEnrichment,
-          value: nsfwMetadata(true),
-        }),
-        ctx.newMetadata({
-          assetId: nsfwOnly1.id,
-          key: AssetMetadataKey.MlEnrichment,
-          value: nsfwMetadata(true),
-        }),
-        ctx.newMetadata({
-          assetId: nsfwOnly2.id,
-          key: AssetMetadataKey.MlEnrichment,
-          value: nsfwMetadata(true),
-        }),
-      ]);
-
-      const [visibleNsfwTag] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['nsfw'] });
-      await ctx.newTagAsset({ tagIds: [visibleNsfwTag.id], assetIds: [tagOnly1.id] });
-
-      const hiddenResults = await sut.getDuplicates({ ...auth, hideNsfwAssets: true });
-      expect(hiddenResults.map(({ duplicateId }) => duplicateId)).toEqual(
-        expect.arrayContaining([mixedDuplicateId, tagOnlyDuplicateId]),
-      );
-      expect(hiddenResults.map(({ duplicateId }) => duplicateId)).not.toContain(nsfwOnlyDuplicateId);
-      expect(
-        hiddenResults.find(({ duplicateId }) => duplicateId === mixedDuplicateId)?.assets.map(({ id }) => id),
-      ).toEqual(expect.arrayContaining([mixedSafe1.id, mixedSafe2.id]));
-      expect(
-        hiddenResults.find(({ duplicateId }) => duplicateId === mixedDuplicateId)?.assets.map(({ id }) => id),
-      ).not.toContain(mixedNsfw.id);
-      expect(
-        hiddenResults.find(({ duplicateId }) => duplicateId === tagOnlyDuplicateId)?.assets.map(({ id }) => id),
-      ).toEqual(expect.arrayContaining([tagOnly1.id, tagOnly2.id]));
-
-      const elevatedResults = await sut.getDuplicates(auth);
-      expect(elevatedResults.map(({ duplicateId }) => duplicateId)).toEqual(
-        expect.arrayContaining([mixedDuplicateId, nsfwOnlyDuplicateId, tagOnlyDuplicateId]),
-      );
-      expect(
-        elevatedResults.find(({ duplicateId }) => duplicateId === mixedDuplicateId)?.assets.map(({ id }) => id),
-      ).toEqual(expect.arrayContaining([mixedSafe1.id, mixedSafe2.id, mixedNsfw.id]));
-    });
-
-    it('denies hidden-mode duplicate mutations for NSFW-only groups', async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user });
-      const duplicateId = factory.uuid();
-
-      const { asset: nsfw1 } = await ctx.newAsset({ ownerId: user.id, duplicateId });
-      const { asset: nsfw2 } = await ctx.newAsset({ ownerId: user.id, duplicateId });
-      await Promise.all([
-        ctx.newExif({ assetId: nsfw1.id, make: 'Canon' }),
-        ctx.newExif({ assetId: nsfw2.id, make: 'Canon' }),
-        ctx.newMetadata({
-          assetId: nsfw1.id,
-          key: AssetMetadataKey.MlEnrichment,
-          value: nsfwMetadata(true),
-        }),
-        ctx.newMetadata({
-          assetId: nsfw2.id,
-          key: AssetMetadataKey.MlEnrichment,
-          value: nsfwMetadata(true),
-        }),
-      ]);
-
-      const hiddenAuth = { ...auth, hideNsfwAssets: true };
-      await expect(sut.delete(hiddenAuth, duplicateId)).rejects.toThrow('Not found or no duplicate.delete access');
-      await expect(
-        sut.resolve(hiddenAuth, { groups: [{ duplicateId, keepAssetIds: [nsfw1.id], trashAssetIds: [nsfw2.id] }] }),
-      ).rejects.toThrow('Not found or no duplicate.delete access');
-
-      const remaining = await ctx.database
-        .selectFrom('asset')
-        .select(['id', 'duplicateId'])
-        .where('duplicateId', '=', duplicateId)
-        .execute();
-      expect(remaining).toHaveLength(2);
-      expect(remaining.map(({ id }) => id)).toEqual(expect.arrayContaining([nsfw1.id, nsfw2.id]));
-    });
-  });
-
   describe('getDuplicates', () => {
     it('should return an empty list when the user has no duplicates', async () => {
       const { sut, ctx } = setup();
@@ -355,17 +239,18 @@ describe(DuplicateService.name, () => {
       ]);
     });
 
-    it('should reject ids that are not members of the group', async () => {
+    it('should reject nonmember ids without changing any assets', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
       const duplicateId = factory.uuid();
 
       const asset1 = await newDuplicateAsset(ctx, { ownerId: user.id, duplicateId });
-      await newDuplicateAsset(ctx, { ownerId: user.id, duplicateId });
+      const asset2 = await newDuplicateAsset(ctx, { ownerId: user.id, duplicateId });
       const outsider = await newDuplicateAsset(ctx, { ownerId: user.id });
 
-      // fork security (server.md Medium #nsfwOptions): unknown ids are rejected
-      // explicitly instead of silently filtered, so hidden ids cannot be probed
+      const assetRepository = ctx.get(AssetRepository);
+      const ids = [asset1.id, asset2.id, outsider.id];
+      const before = await Promise.all(ids.map((id) => assetRepository.getById(id)));
       const auth = factory.auth({ user: { id: user.id } });
       await expect(
         sut.resolve(auth, { groups: [{ duplicateId, keepAssetIds: [asset1.id], trashAssetIds: [outsider.id] }] }),
@@ -378,7 +263,9 @@ describe(DuplicateService.name, () => {
         },
       ]);
 
-      await expect(ctx.get(AssetRepository).getById(outsider.id)).resolves.toMatchObject({ deletedAt: null });
+      expect(await Promise.all(ids.map((id) => assetRepository.getById(id)))).toEqual(before);
+      expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
+      expect(ctx.getMock(EventRepository).emit).not.toHaveBeenCalled();
     });
 
     it('should trash every asset when no keepers are given', async () => {

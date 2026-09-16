@@ -1,7 +1,7 @@
 import { CallHandler, ExecutionContext } from '@nestjs/common';
 import { firstValueFrom, of } from 'rxjs';
-import { ImmichGoCompatInterceptor } from 'src/middleware/immich-go-compat.interceptor';
 import { describe, expect, it } from 'vitest';
+import { ImmichGoCompatInterceptor } from 'src/middleware/immich-go-compat.interceptor.js';
 
 const makeContext = (userAgent?: string, optInHeader?: string): ExecutionContext =>
   ({

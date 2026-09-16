@@ -4,20 +4,20 @@ import { constants } from 'node:fs';
 import { chmod, copyFile, link, mkdir, mkdtemp, rm, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { StorageCore } from 'src/cores/storage.core';
-import { ChecksumAlgorithm } from 'src/enum';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { ChecksumAlgorithm } from 'src/enum.js';
 import {
-  up as createCutoverVerification,
   down as rollbackCutoverVerification,
-} from 'src/fork-schema/migrations/0000000000050-CutoverVerification';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { DatabaseRepository } from 'src/repositories/database.repository';
-import { ForkCutoverVerificationRepository } from 'src/repositories/fork-cutover-verification.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { DB } from 'src/schema';
-import { ForkCutoverVerificationService } from 'src/services/fork-cutover-verification.service';
-import { mediumFactory } from 'test/medium.factory';
-import { getKyselyDB } from 'test/utils';
+  up as createCutoverVerification,
+} from 'src/fork-schema/migrations/0000000000050-CutoverVerification.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { ForkCutoverVerificationRepository } from 'src/repositories/fork-cutover-verification.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { DB } from 'src/schema/index.js';
+import { ForkCutoverVerificationService } from 'src/services/fork-cutover-verification.service.js';
+import { mediumFactory } from 'test/medium.factory.js';
+import { getKyselyDB } from 'test/utils.js';
 
 const digest = (algorithm: 'sha1' | 'sha256', bytes: Buffer) => createHash(algorithm).update(bytes).digest();
 const resetCutoverVerification = async (db: Kysely<DB>) => {

@@ -1,7 +1,7 @@
 import { Kysely, sql } from 'kysely';
 
 export async function up(db: Kysely<any>): Promise<void> {
-    // Delete cross-owner memory assets
+  // Delete cross-owner memory assets
   await sql`
     DELETE FROM memory_asset
     USING memory, asset

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { fromChecksum, getAppVersionFromUA } from 'src/utils/request';
+import { fromChecksum, getAppVersionFromUA } from 'src/utils/request.js';
 
 describe(fromChecksum.name, () => {
   const sha1Buffer = createHash('sha1').update('hello').digest();

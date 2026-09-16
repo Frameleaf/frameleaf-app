@@ -1,27 +1,19 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import {
-  ExpressionBuilder,
-  Insertable,
-  Kysely,
-  NotNull,
-  Selectable,
-  ShallowDehydrateObject,
-  sql,
-  Updateable,
-} from 'kysely';
+import { ExpressionBuilder, Kysely, NotNull, Selectable, ShallowDehydrateObject, Updateable, sql } from 'kysely';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
-import { columns } from 'src/database';
-import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators';
-import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto';
-import { AlbumUserRole } from 'src/enum';
-import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository';
-import { SmartAlbumRepository } from 'src/repositories/smart-album.repository';
-import { DB } from 'src/schema';
-import { AlbumTable } from 'src/schema/tables/album.table';
-import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
-import { asUuid, dummy, withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content';
+import type { Insertable } from 'kysely';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { columns } from 'src/database.js';
+import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
+import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
+import { AlbumUserRole } from 'src/enum.js';
+import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository.js';
+import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { DB } from 'src/schema/index.js';
+import { AlbumTable } from 'src/schema/tables/album.table.js';
+import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
+import { asUuid, dummy, withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 
 export interface AlbumAssetCount {
   albumId: string;

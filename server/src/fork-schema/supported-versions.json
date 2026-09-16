@@ -1,11 +1,7 @@
 {
   "reversionSupported": true,
-  "ranges": [
-    ">=3.0.0 <4.0.0"
-  ],
-  "certifiedTags": [
-    "v3.1.0"
-  ],
+  "ranges": [">=3.0.0 <4.0.0"],
+  "certifiedTags": ["v3.1.0"],
   "certification": {
     "officialImage": "ghcr.io/immich-app/immich-server:v3.1.0",
     "officialDigest": "sha256:b434cb9287eea1471c9974845914d4dd328c9c2d652e446ed4930f99944f0ceb",
@@ -24,7 +20,8 @@
     "1786972746371-AssetOcrUpdatedAtTrigger",
     "1786972746372-AssetOcrSyncReset",
     "1787148183729-ClusterGroups",
-    "1787148183730-DeleteMismatchedMemoryAssets"
+    "1787148183730-DeleteMismatchedMemoryAssets",
+    "1789419229196-ConvertUserOAuthIdEmptyStringToNull"
   ],
   "upstreamMigrations": [
     "1744910873969-InitialMigration",
@@ -122,6 +119,7 @@
     "1786972746371-AssetOcrUpdatedAtTrigger",
     "1786972746372-AssetOcrSyncReset",
     "1787148183729-ClusterGroups",
-    "1787148183730-DeleteMismatchedMemoryAssets"
+    "1787148183730-DeleteMismatchedMemoryAssets",
+    "1789419229196-ConvertUserOAuthIdEmptyStringToNull"
   ]
 }

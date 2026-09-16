@@ -78,6 +78,7 @@
 
   let videoPlayer: HTMLVideoElement | undefined = $state();
   let isLoading = $state(true);
+  let hasLoadedMetadata = $state(false);
   let assetFileUrl = $derived.by(() => {
     if (featureFlagsManager.value.realtimeTranscoding) {
       return getAssetHlsUrl(assetId);
@@ -246,6 +247,7 @@
 
   $effect(() => {
     // reactive on `assetFileUrl` changes
+    hasLoadedMetadata = false;
     if (videoPlayer && assetFileUrl) {
       hasFocused = false;
       rebuildCount = 0;
@@ -395,6 +397,7 @@
             {...useSwipe(onSwipe)}
             class="h-full object-contain"
             oncanplay={(e: Event) => handleCanPlay(e.currentTarget as HTMLVideoElement)}
+            onloadedmetadata={() => (hasLoadedMetadata = true)}
             onended={onVideoEnded}
             onseeking={onSeeking}
             onplaying={(e: Event) => {
@@ -420,6 +423,7 @@
             {...useSwipe(onSwipe)}
             class="h-full object-contain"
             oncanplay={(e) => handleCanPlay(e.currentTarget)}
+            onloadedmetadata={() => (hasLoadedMetadata = true)}
             onended={onVideoEnded}
             onseeking={onSeeking}
             onplaying={(e) => {
@@ -510,7 +514,7 @@
         </div>
       {/if}
 
-      {#if assetViewerManager.isFaceEditMode && videoPlayer}
+      {#if assetViewerManager.isFaceEditMode && videoPlayer && hasLoadedMetadata}
         <FaceEditor htmlElement={videoPlayer} {containerWidth} {containerHeight} {assetId} />
       {/if}
     {/if}

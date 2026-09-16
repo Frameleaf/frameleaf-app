@@ -2,9 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
-import { isForkAuthoritative, isForkWriteEnabled } from 'src/fork-schema/authority';
-import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository';
-import { DB } from 'src/schema';
+import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
+import { isForkAuthoritative, isForkWriteEnabled } from 'src/fork-schema/authority.js';
+import { DB } from 'src/schema/index.js';
 
 export type EnrichmentSidecar = {
   assetId: string;

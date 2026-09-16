@@ -1,31 +1,35 @@
 import { Kysely, sql } from 'kysely';
-import { POST_CERTIFIED_UPSTREAM_MIGRATIONS } from 'src/fork-schema/migration-manifest';
+import { POST_CERTIFIED_UPSTREAM_MIGRATIONS } from 'src/fork-schema/migration-manifest.js';
 import {
-  up as applyConvertUserPasswordEmptyStringToNull,
   down as revertConvertUserPasswordEmptyStringToNull,
-} from 'src/schema/migrations/1784986754473-ConvertUserPasswordEmptyStringToNull';
+  up as applyConvertUserPasswordEmptyStringToNull,
+} from 'src/schema/migrations/1784986754473-ConvertUserPasswordEmptyStringToNull.js';
 import {
-  up as applyAlbumDescriptionNullable,
   down as revertAlbumDescriptionNullable,
-} from 'src/schema/migrations/1784986754474-AlbumDescriptionNullable';
+  up as applyAlbumDescriptionNullable,
+} from 'src/schema/migrations/1784986754474-AlbumDescriptionNullable.js';
 import {
-  up as applyAlbumOwnerDeleteTrigger,
   down as revertAlbumOwnerDeleteTrigger,
-} from 'src/schema/migrations/1786385711807-AlbumOwnerDeleteTrigger';
+  up as applyAlbumOwnerDeleteTrigger,
+} from 'src/schema/migrations/1786385711807-AlbumOwnerDeleteTrigger.js';
 import {
-  up as applyAddWorkflowLogsTable,
   down as revertAddWorkflowLogsTable,
-} from 'src/schema/migrations/1786741078327-AddWorkflowLogsTable';
+  up as applyAddWorkflowLogsTable,
+} from 'src/schema/migrations/1786741078327-AddWorkflowLogsTable.js';
 import {
-  up as applyAssetOcrUpdatedAtTrigger,
   down as revertAssetOcrUpdatedAtTrigger,
-} from 'src/schema/migrations/1786972746371-AssetOcrUpdatedAtTrigger';
-import { up as applyAssetOcrSyncReset } from 'src/schema/migrations/1786972746372-AssetOcrSyncReset';
+  up as applyAssetOcrUpdatedAtTrigger,
+} from 'src/schema/migrations/1786972746371-AssetOcrUpdatedAtTrigger.js';
+import { up as applyAssetOcrSyncReset } from 'src/schema/migrations/1786972746372-AssetOcrSyncReset.js';
 import {
-  up as applyClusterGroups,
   down as revertClusterGroups,
-} from 'src/schema/migrations/1787148183729-ClusterGroups';
-import { up as applyDeleteMismatchedMemoryAssets } from 'src/schema/migrations/1787148183730-DeleteMismatchedMemoryAssets';
+  up as applyClusterGroups,
+} from 'src/schema/migrations/1787148183729-ClusterGroups.js';
+import { up as applyDeleteMismatchedMemoryAssets } from 'src/schema/migrations/1787148183730-DeleteMismatchedMemoryAssets.js';
+import {
+  down as revertConvertUserOAuthIdEmptyStringToNull,
+  up as applyConvertUserOAuthIdEmptyStringToNull,
+} from 'src/schema/migrations/1789419229196-ConvertUserOAuthIdEmptyStringToNull.js';
 
 /**
  * Post-certified upstream migrations whose effects the certified official tag
@@ -133,6 +137,10 @@ export const REVERSIBLE_POST_CERTIFIED_MIGRATIONS: ReadonlyMap<
     // up() deletes cross-owner memory_asset rows — invalid data the certified
     // reader must never see restored; the exact reversal is a no-op.
     { apply: applyDeleteMismatchedMemoryAssets, revert: () => Promise.resolve() },
+  ],
+  [
+    '1789419229196-ConvertUserOAuthIdEmptyStringToNull',
+    { apply: applyConvertUserOAuthIdEmptyStringToNull, revert: revertConvertUserOAuthIdEmptyStringToNull },
   ],
 ]);
 

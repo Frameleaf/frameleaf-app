@@ -1,11 +1,11 @@
 import { CurrentPlugin } from '@extism/extism';
 import { WorkflowTrigger } from '@immich/plugin-sdk';
-import { WorkflowType } from 'src/enum';
-import { AlbumService } from 'src/services/album.service';
-import { WorkflowExecutionService } from 'src/services/workflow-execution.service';
-import { newUuid } from 'test/small.factory';
-import { newTestService, ServiceMocks } from 'test/utils';
 import { Mocked, vitest } from 'vitest';
+import { WorkflowType } from 'src/enum.js';
+import { AlbumService } from 'src/services/album.service.js';
+import { WorkflowExecutionService } from 'src/services/workflow-execution.service.js';
+import { newUuid } from 'test/small.factory.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(WorkflowExecutionService.name, () => {
   let sut: WorkflowExecutionService;

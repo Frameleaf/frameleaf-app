@@ -1,26 +1,25 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
 import { DateTime, Duration } from 'luxon';
-import { once } from 'node:events';
 import { Writable } from 'node:stream';
-import { OnJob } from 'src/decorators';
-import { AuthDto } from 'src/dtos/auth.dto';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { SyncAck } from 'src/types.js';
+import { OnJob } from 'src/decorators.js';
 import {
   SyncAckDeleteDto,
   SyncAckSetDto,
-  syncAlbumV2ToV1,
   SyncAssetV2,
   SyncItem,
   SyncStreamDto,
-} from 'src/dtos/sync.dto';
-import { JobName, QueueName, SyncEntityType, SyncRequestType } from 'src/enum';
-import { SyncQueryOptions } from 'src/repositories/sync.repository';
-import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table';
-import { BaseService } from 'src/services/base.service';
-import { SyncAck } from 'src/types';
-import { hexOrBufferToBase64 } from 'src/utils/bytes';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content';
-import { fromAck, serialize, SerializeOptions, toAck } from 'src/utils/sync';
+  syncAlbumV2ToV1,
+} from 'src/dtos/sync.dto.js';
+import { JobName, QueueName, SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { SyncQueryOptions } from 'src/repositories/sync.repository.js';
+import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table.js';
+import { BaseService } from 'src/services/base.service.js';
+import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
+import { ClientDisconnectedError, waitForDrain } from 'src/utils/response.js';
+import { SerializeOptions, fromAck, serialize, toAck } from 'src/utils/sync.js';
 
 type CheckpointMap = Partial<Record<SyncEntityType, SyncAck>>;
 type AssetLike = Omit<SyncAssetV2, 'checksum' | 'thumbhash'> & {
@@ -48,8 +47,13 @@ export const send = async <T extends keyof SyncItem, D extends SyncItem[T]>(
   response: Writable,
   item: SerializeOptions<T, D>,
 ) => {
+  if (response.destroyed || response.writableEnded) {
+    throw new ClientDisconnectedError();
+  }
+
+  // indicates back pressure, so we wait for 'drain' event
   if (!response.write(serialize(item))) {
-    await once(response, 'drain');
+    await waitForDrain(response);
   }
 };
 
@@ -59,6 +63,7 @@ const sendEntityBackfillCompleteAck = async (response: Writable, ackType: SyncEn
 
 export const SYNC_TYPES_ORDER = [
   SyncRequestType.AuthUsersV1,
+  SyncRequestType.AuthUsersV2,
   SyncRequestType.UsersV1,
   SyncRequestType.PartnersV1,
   SyncRequestType.AssetsV1,
@@ -137,6 +142,19 @@ export class SyncService extends BaseService {
   }
 
   async stream(auth: AuthDto, response: Writable, dto: SyncStreamDto) {
+    try {
+      await this.streamInternal(auth, response, dto);
+    } catch (error) {
+      if (error instanceof ClientDisconnectedError) {
+        this.logger.debug('Client closed the connection');
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  private async streamInternal(auth: AuthDto, response: Writable, dto: SyncStreamDto) {
     const session = auth.session;
     if (!session) {
       return throwSessionRequired();
@@ -163,7 +181,7 @@ export class SyncService extends BaseService {
     }
 
     const { nowId } = await this.syncCheckpointRepository.getNow();
-    const options: SyncQueryOptions = { nowId, userId: auth.user.id, ...getHiddenContentQueryOptions(auth) };
+    const options: SyncQueryOptions = { nowId, userId: auth.user.id };
 
     const handlers: Record<SyncRequestType, () => Promise<void>> = {
       // deprecated handlers
@@ -173,6 +191,7 @@ export class SyncService extends BaseService {
       [SyncRequestType.AlbumAssetsV1]: () => this.syncAlbumAssetsV1(),
 
       [SyncRequestType.AuthUsersV1]: () => this.syncAuthUsersV1(options, response, checkpointMap),
+      [SyncRequestType.AuthUsersV2]: () => this.syncAuthUsersV2(options, response, checkpointMap),
       [SyncRequestType.UsersV1]: () => this.syncUsersV1(options, response, checkpointMap),
       [SyncRequestType.PartnersV1]: () => this.syncPartnersV1(options, response, checkpointMap),
       [SyncRequestType.AssetsV2]: () => this.syncAssetsV2(options, response, checkpointMap),
@@ -253,6 +272,18 @@ export class SyncService extends BaseService {
       await send(response, {
         type: upsertType,
         ids: [updateId],
+        data: { ...data, oauthId: data.oauthId ?? '', hasProfileImage: !!profileImagePath },
+      });
+    }
+  }
+
+  private async syncAuthUsersV2(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
+    const upsertType = SyncEntityType.AuthUserV2;
+    const upserts = this.syncRepository.authUser.getUpserts({ ...options, ack: checkpointMap[upsertType] });
+    for await (const { updateId, profileImagePath, ...data } of upserts) {
+      await send(response, {
+        type: upsertType,
+        ids: [updateId],
         data: { ...data, hasProfileImage: !!profileImagePath },
       });
     }
@@ -298,11 +329,6 @@ export class SyncService extends BaseService {
     const deleteType = SyncEntityType.AssetDeleteV1;
     const deletes = this.syncRepository.asset.getDeletes({ ...options, ack: checkpointMap[deleteType] });
     for await (const { id, ...data } of deletes) {
-      await send(response, { type: deleteType, ids: [id], data });
-    }
-
-    const hiddenDeletes = this.syncRepository.asset.getHiddenDeletes({ ...options, ack: checkpointMap[deleteType] });
-    for await (const { id, ...data } of hiddenDeletes) {
       await send(response, { type: deleteType, ids: [id], data });
     }
 

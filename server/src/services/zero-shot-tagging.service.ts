@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
-import { SystemConfig } from 'src/config';
-import { CLIP_ZERO_SHOT_LABELS, CLIP_ZERO_SHOT_PROMPT } from 'src/constants/clip-zero-shot-labels';
-import { ZERO_SHOT_TAG_NAMESPACE } from 'src/constants/zero-shot-tag';
-import { TagAssetTable } from 'src/schema/tables/tag-asset.table';
-import { BaseService } from 'src/services/base.service';
-import { dot, l2Normalize, parseEmbedding } from 'src/utils/embedding';
-import { isSmartSearchEnabled } from 'src/utils/misc';
-import { upsertTags } from 'src/utils/tag';
+import { SystemConfig } from 'src/config.js';
+import { CLIP_ZERO_SHOT_LABELS, CLIP_ZERO_SHOT_PROMPT } from 'src/constants/clip-zero-shot-labels.js';
+import { ZERO_SHOT_TAG_NAMESPACE } from 'src/constants/zero-shot-tag.js';
+import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
+import { BaseService } from 'src/services/base.service.js';
+import { dot, l2Normalize, parseEmbedding } from 'src/utils/embedding.js';
+import { isSmartSearchEnabled } from 'src/utils/misc.js';
+import { upsertTags } from 'src/utils/tag.js';
 
 type LabelEmbedding = { label: string; embedding: Float32Array };
 

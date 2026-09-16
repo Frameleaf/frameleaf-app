@@ -2,26 +2,26 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
-import { StorageCore } from 'src/cores/storage.core';
-import forkCatalogManifest from 'src/fork-schema/manifests/fork-v2-catalog.json';
-import { CERTIFIED_TAG_MIGRATIONS, POST_CERTIFIED_UPSTREAM_MIGRATIONS } from 'src/fork-schema/migration-manifest';
-import { REVERSIBLE_POST_CERTIFIED_MIGRATIONS } from 'src/fork-schema/post-certified-residue';
-import supportedVersions from 'src/fork-schema/supported-versions.json';
-import { getWorkflowCompatibilityEvidence, WorkflowRowDigest } from 'src/fork-schema/workflow-compatibility';
+import { StorageCore } from 'src/cores/storage.core.js';
+import forkCatalogManifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
+import { CERTIFIED_TAG_MIGRATIONS, POST_CERTIFIED_UPSTREAM_MIGRATIONS } from 'src/fork-schema/migration-manifest.js';
+import { REVERSIBLE_POST_CERTIFIED_MIGRATIONS } from 'src/fork-schema/post-certified-residue.js';
+import supportedVersions from 'src/fork-schema/supported-versions.json' with { type: 'json' };
+import { WorkflowRowDigest, getWorkflowCompatibilityEvidence } from 'src/fork-schema/workflow-compatibility.js';
 import {
-  canonicalStorageVerificationDigest,
   StorageVerificationEvidence,
-} from 'src/repositories/fork-cutover-verification.repository';
+  canonicalStorageVerificationDigest,
+} from 'src/repositories/fork-cutover-verification.repository.js';
 import {
   BACKFILL_KINDS,
   BackfillKind,
   BackfillProgress,
-  canonicalReturnBackfillDigest,
   ForkSchemaPhase,
   ReturnBackfillBatchEvidence,
   ReturnBackfillEvidence,
-} from 'src/repositories/fork-schema.repository';
-import { DB } from 'src/schema';
+  canonicalReturnBackfillDigest,
+} from 'src/repositories/fork-schema.repository.js';
+import { DB } from 'src/schema/index.js';
 
 export type ForkReturnEvidence = {
   active: boolean;

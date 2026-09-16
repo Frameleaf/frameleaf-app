@@ -1,4 +1,4 @@
-import type { KnownPerson } from 'src/services/prompt-assembler.service';
+import type { KnownPerson } from 'src/services/prompt-assembler.service.js';
 
 export interface IdentityValidationResult {
   description: string;

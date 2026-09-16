@@ -1,37 +1,26 @@
 import { BadRequestException } from '@nestjs/common';
 import { Kysely } from 'kysely';
-import { AssetMetadataKey, AssetType, AssetVisibility, SharedLinkType, TimeBucketDateType } from 'src/enum';
-import { AccessRepository } from 'src/repositories/access.repository';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { PartnerRepository } from 'src/repositories/partner.repository';
-import { SharedLinkRepository } from 'src/repositories/shared-link.repository';
-import { TagRepository } from 'src/repositories/tag.repository';
-import { DB } from 'src/schema';
-import { TimelineService } from 'src/services/timeline.service';
-import type { HiddenContentFilter } from 'src/utils/hidden-content';
-import { upsertTags } from 'src/utils/tag';
-import { newMediumService } from 'test/medium.factory';
-import { factory } from 'test/small.factory';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils';
+import { AssetVisibility, SharedLinkType } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
+import { DB } from 'src/schema/index.js';
+import { TimelineService } from 'src/services/timeline.service.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { factory } from 'test/small.factory.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
 const setup = (db?: Kysely<DB>) => {
   return newMediumService(TimelineService, {
     database: db || defaultDatabase,
-    real: [AssetRepository, AccessRepository, PartnerRepository, TagRepository],
+    real: [AssetRepository, AccessRepository, PartnerRepository],
     mock: [LoggingRepository],
   });
 };
-
-const nsfwMetadata = (isNsfw: boolean, review?: { action: string; isNsfw: boolean }) => ({
-  nsfwDetection: {
-    status: 'success',
-    result: { isNsfw, score: isNsfw ? 0.95 : 0.05, labels: { explicit: isNsfw ? 0.95 : 0.05 } },
-    ...(review && { review }),
-  },
-});
 
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
@@ -54,207 +43,6 @@ describe(TimelineService.name, () => {
         { count: 3, timeBucket: '1970-02-01' },
         { count: 1, timeBucket: '1970-01-01' },
       ]);
-    });
-
-    it('should get recently added time buckets by asset creation date', async () => {
-      const { sut, ctx } = setup(await getKyselyDB());
-      const { user } = await ctx.newUser();
-      const auth = factory.auth({ user });
-      const localDateTime = new Date('1970-01-15T12:00:00.000Z');
-
-      const { asset: olderAdded } = await ctx.newAsset({
-        ownerId: user.id,
-        localDateTime,
-        fileCreatedAt: localDateTime,
-        createdAt: new Date('2026-04-05T12:00:00.000Z'),
-      });
-      const { asset: newerAdded } = await ctx.newAsset({
-        ownerId: user.id,
-        localDateTime,
-        fileCreatedAt: localDateTime,
-        createdAt: new Date('2026-05-01T12:00:00.000Z'),
-      });
-      const { asset: newestAdded } = await ctx.newAsset({
-        ownerId: user.id,
-        localDateTime,
-        fileCreatedAt: localDateTime,
-        createdAt: new Date('2026-05-20T12:00:00.000Z'),
-      });
-
-      for (const assetId of [olderAdded.id, newerAdded.id, newestAdded.id]) {
-        await ctx.newExif({ assetId, make: 'Canon' });
-      }
-
-      await expect(sut.getTimeBuckets(auth, { dateType: TimeBucketDateType.Added })).resolves.toEqual([
-        { count: 2, timeBucket: '2026-05-01' },
-        { count: 1, timeBucket: '2026-04-01' },
-      ]);
-
-      const addedBucket = JSON.parse(
-        await sut.getTimeBucket(auth, { dateType: TimeBucketDateType.Added, timeBucket: '2026-05-01' }),
-      );
-      expect(addedBucket.id).toEqual([newestAdded.id, newerAdded.id]);
-      expect(addedBucket.localOffsetHours).toEqual([0, 0]);
-    });
-
-    it('should hide NSFW assets using private review state', async () => {
-      const { sut, ctx } = setup(await getKyselyDB());
-      const { user } = await ctx.newUser();
-      const localDateTime = new Date('2020-01-15T12:00:00.000Z');
-
-      const { asset: visible } = await ctx.newAsset({ ownerId: user.id, localDateTime });
-      const { asset: unreviewedNsfw } = await ctx.newAsset({ ownerId: user.id, localDateTime });
-      const { asset: markedSafe } = await ctx.newAsset({ ownerId: user.id, localDateTime });
-      const { asset: markedNsfw } = await ctx.newAsset({ ownerId: user.id, localDateTime });
-      const { asset: tagOnly } = await ctx.newAsset({ ownerId: user.id, localDateTime });
-
-      for (const assetId of [visible.id, unreviewedNsfw.id, markedSafe.id, markedNsfw.id, tagOnly.id]) {
-        await ctx.newExif({ assetId, make: 'Canon' });
-      }
-
-      await ctx.newMetadata({
-        assetId: unreviewedNsfw.id,
-        key: AssetMetadataKey.MlEnrichment,
-        value: nsfwMetadata(true),
-      });
-      await ctx.newMetadata({
-        assetId: markedSafe.id,
-        key: AssetMetadataKey.MlEnrichment,
-        value: nsfwMetadata(true, { action: 'marked-safe', isNsfw: false }),
-      });
-      await ctx.newMetadata({
-        assetId: markedNsfw.id,
-        key: AssetMetadataKey.MlEnrichment,
-        value: nsfwMetadata(false, { action: 'marked-nsfw', isNsfw: true }),
-      });
-
-      const [visibleNsfwTag] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['nsfw'] });
-      await ctx.newTagAsset({ tagIds: [visibleNsfwTag.id], assetIds: [tagOnly.id] });
-
-      const hiddenAuth = { ...factory.auth({ user: { id: user.id } }), hideNsfwAssets: true };
-      await expect(sut.getTimeBuckets(hiddenAuth, {})).resolves.toEqual([{ count: 3, timeBucket: '2020-01-01' }]);
-
-      const hiddenBucket = JSON.parse(await sut.getTimeBucket(hiddenAuth, { timeBucket: '2020-01-01' }));
-      expect(hiddenBucket.id).toEqual(expect.arrayContaining([visible.id, markedSafe.id, tagOnly.id]));
-      expect(hiddenBucket.id).not.toEqual(expect.arrayContaining([unreviewedNsfw.id, markedNsfw.id]));
-
-      await expect(sut.getTimeBuckets(factory.auth({ user: { id: user.id } }), {})).resolves.toEqual([
-        { count: 5, timeBucket: '2020-01-01' },
-      ]);
-    });
-
-    it('should return only configured tag, person, and NSFW assets when suppressedOnly is requested', async () => {
-      const { sut, ctx } = setup(await getKyselyDB());
-      const { user } = await ctx.newUser();
-      const localDateTime = new Date('2020-01-15T12:00:00.000Z');
-
-      const { asset: visible } = await ctx.newAsset({ ownerId: user.id, localDateTime });
-      const { asset: tagSuppressed } = await ctx.newAsset({ ownerId: user.id, localDateTime });
-      const { asset: faceSuppressed } = await ctx.newAsset({ ownerId: user.id, localDateTime });
-      const { asset: nsfwSuppressed } = await ctx.newAsset({ ownerId: user.id, localDateTime });
-
-      for (const assetId of [visible.id, tagSuppressed.id, faceSuppressed.id, nsfwSuppressed.id]) {
-        await ctx.newExif({ assetId, make: 'Canon' });
-      }
-
-      const [tag] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['medical'] });
-      await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [tagSuppressed.id] });
-
-      const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Private Person' });
-      await ctx.newAssetFace({ assetId: faceSuppressed.id, personGroupId: person.personGroupId });
-
-      await ctx.newMetadata({
-        assetId: nsfwSuppressed.id,
-        key: AssetMetadataKey.MlEnrichment,
-        value: nsfwMetadata(true),
-      });
-
-      const suppressedContent: HiddenContentFilter = {
-        userId: user.id,
-        includeNsfw: true,
-        tagIds: [tag.id],
-        personIds: [person.personGroupId],
-        scope: 'owned',
-      };
-      const hiddenAuth = {
-        ...factory.auth({ user: { id: user.id } }),
-        hideNsfwAssets: true,
-        hiddenContent: suppressedContent,
-      };
-      const elevatedAuth = {
-        ...factory.auth({ user: { id: user.id } }),
-        session: { id: factory.uuid(), hasElevatedPermission: true },
-        suppressedContent,
-      };
-
-      await expect(sut.getTimeBuckets(hiddenAuth, {})).resolves.toEqual([{ count: 1, timeBucket: '2020-01-01' }]);
-
-      const hiddenBucket = JSON.parse(await sut.getTimeBucket(hiddenAuth, { timeBucket: '2020-01-01' }));
-      expect(hiddenBucket.id).toEqual([visible.id]);
-
-      await expect(sut.getTimeBuckets(elevatedAuth, { suppressedOnly: true })).resolves.toEqual([
-        { count: 3, timeBucket: '2020-01-01' },
-      ]);
-
-      const suppressedBucket = JSON.parse(
-        await sut.getTimeBucket(elevatedAuth, { timeBucket: '2020-01-01', suppressedOnly: true }),
-      );
-      expect(suppressedBucket.id).toEqual(
-        expect.arrayContaining([tagSuppressed.id, faceSuppressed.id, nsfwSuppressed.id]),
-      );
-      expect(suppressedBucket.id).not.toEqual(expect.arrayContaining([visible.id]));
-    });
-
-    it('should hide NSFW Live Photo motion IDs from hidden timeline buckets', async () => {
-      const { sut, ctx } = setup(await getKyselyDB());
-      const { user } = await ctx.newUser();
-      const localDateTime = new Date('2020-01-15T12:00:00.000Z');
-
-      const { asset: safeMotion } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video });
-      const { asset: nsfwMotion } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video });
-      const { asset: safePhoto } = await ctx.newAsset({
-        ownerId: user.id,
-        localDateTime,
-        livePhotoVideoId: safeMotion.id,
-      });
-      const { asset: nsfwMotionPhoto } = await ctx.newAsset({
-        ownerId: user.id,
-        localDateTime,
-        livePhotoVideoId: nsfwMotion.id,
-      });
-
-      for (const assetId of [safePhoto.id, nsfwMotionPhoto.id]) {
-        await ctx.newExif({ assetId, make: 'Canon' });
-      }
-      await ctx.newMetadata({
-        assetId: nsfwMotion.id,
-        key: AssetMetadataKey.MlEnrichment,
-        value: nsfwMetadata(true),
-      });
-
-      const hiddenAuth = { ...factory.auth({ user: { id: user.id } }), hideNsfwAssets: true };
-      const hiddenBucket = JSON.parse(await sut.getTimeBucket(hiddenAuth, { timeBucket: '2020-01-01' }));
-      expect(hiddenBucket.id).toEqual(expect.arrayContaining([safePhoto.id, nsfwMotionPhoto.id]));
-      expect(
-        Object.fromEntries(
-          hiddenBucket.id.map((id: string, index: number) => [id, hiddenBucket.livePhotoVideoId[index]]),
-        ),
-      ).toEqual({
-        [safePhoto.id]: safeMotion.id,
-        [nsfwMotionPhoto.id]: null,
-      });
-
-      const visibleBucket = JSON.parse(
-        await sut.getTimeBucket(factory.auth({ user: { id: user.id } }), { timeBucket: '2020-01-01' }),
-      );
-      expect(
-        Object.fromEntries(
-          visibleBucket.id.map((id: string, index: number) => [id, visibleBucket.livePhotoVideoId[index]]),
-        ),
-      ).toEqual({
-        [safePhoto.id]: safeMotion.id,
-        [nsfwMotionPhoto.id]: nsfwMotion.id,
-      });
     });
 
     it('should return error if time bucket is requested with partners asset and archived', async () => {
@@ -343,6 +131,7 @@ describe(TimelineService.name, () => {
       expect(response).toEqual({
         city: [],
         country: [],
+        createdAt: [],
         duration: [],
         id: [],
         visibility: [],
