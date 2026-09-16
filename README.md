@@ -53,6 +53,20 @@ Start with the [fork privacy suite guide](docs/docs/features/fork-privacy-suite.
 
 ---
 
+## Latest Integration Changes
+
+The latest upstream integration preserves the fork's privacy controls, AI enrichment, album organization, media utilities, and migration tools while bringing shared server and client code forward with Immich.
+
+- **Search and client compatibility:** retained fork search routes, privacy and enrichment filters, people merge APIs, and legacy SDK compatibility alongside upstream changes. Mobile API generation preserves backward-compatible response defaults.
+- **Plugin and workflow compatibility:** official plugin and workflow records remain in upstream tables. Core plugin updates preserve existing IDs and workflow references, detect changed plugin content even when its version is unchanged, and check HTTP permissions across redirects.
+- **Library migration and media fixes:** the CLI keeps the `migrate` command and recognizes both SHA-1 and SHA-256 duplicates. Review fixes also cover video refresh, hidden-media navigation, and mobile representative-asset selection.
+- **Reversible database handoff:** fork-owned state stays in sidecar tables while official Immich runs. Handoff and return reconcile shared people and face mappings, including changes made in official Immich. The supported official target is exactly **v3.1.0**; integrating newer upstream code does not certify another handoff target.
+- **Fork-specific CI:** the Fork integration workflow checks generated API clients, server unit and database tests, web checks, CLI behavior, mobile analysis and tests, and offline ML tests. Separate official-container certification covers all three handoff/return paths. CI now resolves npm generator executable paths through Mise, and fork validation does not require upstream publishing credentials.
+
+For future upstream merges, follow the [fork integration checklist](docs/docs/developer/fork-integration.md). Migration checks preserve upstream and fork history separately without renumbering released migrations. For database switching, follow the [handoff and return runbook](docs/docs/administration/upstream-handoff.md), including matched database/media backups and validation against a production-shaped clone. Repository tests do not certify an individual installation.
+
+---
+
 ## Why This Fork Exists
 
 Immich is already excellent. This fork adds features aimed at real home-lab and family-library workflows where users often need more than a standard photo timeline.
