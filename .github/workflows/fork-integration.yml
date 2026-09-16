@@ -43,7 +43,7 @@ jobs:
           {
             "$RUNNER_TEMP/mise" where github:extism/js-pdk
             echo "$("$RUNNER_TEMP/mise" where github:webassembly/binaryen)/bin"
-            echo "$("$RUNNER_TEMP/mise" where npm:oazapfts)/bin"
+            "$RUNNER_TEMP/mise" bin-paths npm:oazapfts
           } >> "$GITHUB_PATH"
       - name: Build SDK and core plugin WASM
         run: |
@@ -138,7 +138,7 @@ jobs:
           (cd .. && "$RUNNER_TEMP/mise" install --locked node npm:@openapitools/openapi-generator-cli)
           {
             echo "$("$RUNNER_TEMP/mise" where aqua:flutter/flutter)/flutter/bin"
-            echo "$(cd .. && "$RUNNER_TEMP/mise" where npm:@openapitools/openapi-generator-cli)/bin"
+            (cd .. && "$RUNNER_TEMP/mise" bin-paths npm:@openapitools/openapi-generator-cli)
           } >> "$GITHUB_PATH"
       - name: Generate Dart API client
         working-directory: open-api
