@@ -1,4 +1,8 @@
 import { Kysely, sql } from 'kysely';
+import {
+  applyClusterGroupsAfterOfficial,
+  revertClusterGroupsForOfficial,
+} from 'src/fork-schema/cluster-group-compatibility.js';
 import { POST_CERTIFIED_UPSTREAM_MIGRATIONS } from 'src/fork-schema/migration-manifest.js';
 import {
   down as revertConvertUserPasswordEmptyStringToNull,
@@ -21,10 +25,6 @@ import {
   up as applyAssetOcrUpdatedAtTrigger,
 } from 'src/schema/migrations/1786972746371-AssetOcrUpdatedAtTrigger.js';
 import { up as applyAssetOcrSyncReset } from 'src/schema/migrations/1786972746372-AssetOcrSyncReset.js';
-import {
-  down as revertClusterGroups,
-  up as applyClusterGroups,
-} from 'src/schema/migrations/1787148183729-ClusterGroups.js';
 import { up as applyDeleteMismatchedMemoryAssets } from 'src/schema/migrations/1787148183730-DeleteMismatchedMemoryAssets.js';
 import {
   down as revertConvertUserOAuthIdEmptyStringToNull,
@@ -125,11 +125,11 @@ export const REVERSIBLE_POST_CERTIFIED_MIGRATIONS: ReadonlyMap<
   ],
   [
     '1787148183729-ClusterGroups',
-    // Upstream ships a full down() that restores person.id / asset_face.personId
-    // and drops the cluster/person-group tables — the certified v3.1.0 shape.
+    // Split shared groups into owner-specific official people and preserve the
+    // grouping in the existing audit sidecar for the return reconciliation.
     {
-      apply: skipWhenApplied(relationExists('public.cluster_group'), applyClusterGroups),
-      revert: revertClusterGroups,
+      apply: applyClusterGroupsAfterOfficial,
+      revert: revertClusterGroupsForOfficial,
     },
   ],
   [

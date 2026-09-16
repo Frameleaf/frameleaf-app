@@ -71,8 +71,41 @@ jobs:
           pnpm --filter immich-web exec svelte-kit sync
           pnpm --filter immich-web check:typescript
           pnpm --filter immich-web check:svelte
+      - name: Check CLI and migration command
+        run: |
+          pnpm --filter @immich/cli check
+          pnpm --filter @immich/cli lint
+          pnpm --filter @immich/cli test --run
+          pnpm --filter @immich/cli build
+          node packages/cli/bin/immich migrate --help
+      - name: Check end-to-end fixtures against generated clients
+        run: pnpm --filter immich-e2e check
       - name: Run web unit tests
         run: pnpm --filter immich-web test --run
+
+  machine-learning:
+    if: github.repository == 'adamtaylor152/immich'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: machine-learning
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: '0.8.15'
+          python-version: '3.11'
+      - name: Install locked CPU test dependencies
+        run: uv sync --frozen --extra cpu --group test --no-default-groups
+      - name: Run ML unit tests without model downloads
+        env:
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+          MACHINE_LEARNING_TEST_FULL: 'false'
+        run: .venv/bin/python -m pytest -q
 
   mobile:
     if: github.repository == 'adamtaylor152/immich'

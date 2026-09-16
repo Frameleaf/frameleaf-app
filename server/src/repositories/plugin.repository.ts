@@ -175,12 +175,24 @@ export class PluginRepository {
           return legacyMethod;
         });
     return this.db.transaction().execute(async (tx) => {
+      // Certified/legacy schemas also enforce name-only uniqueness. Upgrading
+      // there must retain plugin and method IDs used by existing workflows.
+      const uniqueName = await sql<{ exists: boolean }>`
+        SELECT EXISTS (
+          SELECT 1 FROM pg_constraint constraint_row
+          JOIN pg_attribute attribute ON attribute.attrelid = constraint_row.conrelid
+            AND attribute.attname = 'name'
+          WHERE constraint_row.conrelid = 'public.plugin'::regclass
+            AND constraint_row.contype = 'u'
+            AND constraint_row.conkey = ARRAY[attribute.attnum]
+        ) AS "exists"
+      `.execute(tx);
       // Upsert the plugin
       const plugin = await tx
         .insertInto('plugin')
         .values(dto)
         .onConflict((oc) =>
-          oc.columns(['name', 'version']).doUpdateSet((eb) => ({
+          oc.columns(uniqueName.rows[0]?.exists ? ['name'] : ['name', 'version']).doUpdateSet((eb) => ({
             title: eb.ref('excluded.title'),
             description: eb.ref('excluded.description'),
             author: eb.ref('excluded.author'),

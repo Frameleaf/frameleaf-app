@@ -572,6 +572,29 @@ describe('core plugin', () => {
     });
   });
 
+  describe('assetTagFilter', () => {
+    it.each([
+      { matching: 'any', tags: ['00000000-0000-4000-8000-000000000001'], expected: false },
+      { matching: 'all', tags: ['00000000-0000-4000-8000-000000000001'], expected: false },
+      { matching: 'none', tags: ['00000000-0000-4000-8000-000000000001'], expected: true },
+      { matching: 'any', tags: [], expected: false },
+    ])('does not match absent tags with $matching', async ({ matching, tags, expected }) => {
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const workflow = await createWorkflow({
+        ownerId: user.id,
+        trigger: WorkflowTrigger.AssetCreate,
+        steps: [
+          { method: 'immich-plugin-core#assetTagFilter', config: { matching, tags } },
+          { method: 'immich-plugin-core#assetFavorite' },
+        ],
+      });
+
+      await ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id });
+      await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({ isFavorite: expected });
+    });
+  });
+
   describe('assetDateFilter', () => {
     it('should favorite assets created during the first 7 days of a specific year and month', async () => {
       const { user } = await ctx.newUser();
@@ -652,7 +675,7 @@ describe('core plugin', () => {
       const { user } = await ctx.newUser();
       const { asset } = await ctx.newAsset({ ownerId: user.id });
 
-      const fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('') }));
+      const fetchMock = vi.fn(() => Promise.resolve(new Response('')));
       vi.stubGlobal('fetch', fetchMock);
 
       const workflow = await createWorkflow({

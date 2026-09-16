@@ -32,11 +32,24 @@ pnpm --filter immich-web exec svelte-kit sync
 pnpm --filter immich-web check:typescript
 pnpm --filter immich-web check:svelte
 pnpm --filter immich-web test --run
+pnpm --filter @immich/cli check
+pnpm --filter @immich/cli lint
+pnpm --filter @immich/cli test --run
+pnpm --filter @immich/cli build
+node packages/cli/bin/immich migrate --help
+pnpm --filter immich-e2e check
 ```
 
 The plugin build must produce current `packages/plugin-core/dist/plugin.wasm` before running the medium tests. Those tests exercise actual plugin behavior and local PostgreSQL migrations; stale WASM can give misleading results. The workflow installs only the two WASM build tools and oazapfts in addition to Node and pnpm. It generates OpenAPI from the built server in Nest preview mode, then regenerates the TypeScript client and fails if either tracked file changes. This catches missing runtime DTO imports that type checking alone can miss. The mobile job generates the Dart client before compilation; regenerate it locally after API changes through `mise run //:open-api`.
 
 The separate mobile job installs the locked Flutter SDK, installs dependencies with the lockfile enforced, regenerates Drift/Pigeon/localization/build-runner output, and runs Dart analysis and Flutter tests for the app and UI package. Dart SDK generation also repairs native enum defaults emitted by the pinned OpenAPI generator; keep that shared generation step rather than editing generated models by hand.
+
+The CLI gate checks both checksum formats and builds the executable before verifying `migrate --help`. The ML job installs frozen CPU test dependencies and runs the mocked suite offline; the three full-model prediction tests remain a separate hardware/model acceptance check. Run it locally from `machine-learning/`:
+
+```sh
+uv sync --frozen --extra cpu --group test --no-default-groups
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 MACHINE_LEARNING_TEST_FULL=false .venv/bin/python -m pytest -q
+```
 
 ## Record the evidence separately
 

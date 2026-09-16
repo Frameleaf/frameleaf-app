@@ -43,6 +43,20 @@ void main() {
     );
   }
 
+  test('maps a duplicate with a cloud ID when the lowest local ID has none', () async {
+    final user = await ctx.newUser();
+    final remote = await ctx.newRemoteAsset(ownerId: user.id, checksum: 'same-content');
+    await ctx.newLocalAsset(id: 'a', checksum: remote.checksum, iCloudIdOption: const .none());
+    await ctx.newLocalAsset(id: 'b', checksum: remote.checksum, iCloudId: 'cloud-b');
+    await ctx.newLocalAsset(id: 'c', checksum: remote.checksum, iCloudId: 'cloud-c');
+
+    final mappings = await fetchMapping(ctx.db, user.id, 20, null);
+
+    expect(mappings, hasLength(1));
+    expect(mappings.single.remoteAssetId, remote.id);
+    expect(mappings.single.cloudId, 'cloud-b');
+  });
+
   group('populateCloudIds', () {
     test('writes the cloud ID resolved for each asset', () async {
       await ctx.newLocalAsset(id: 'asset-0', iCloudIdOption: const .none());
