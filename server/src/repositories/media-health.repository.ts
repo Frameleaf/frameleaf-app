@@ -227,6 +227,26 @@ export class MediaHealthRepository {
       .execute() as Promise<MediaHealthFinding[]>;
   }
 
+  async count(options: {
+    category?: MediaHealthCategory;
+    ownerId?: string;
+    privacy?: HiddenContentQueryOptions;
+    status?: MediaHealthStatus;
+  }): Promise<number> {
+    const phase = await getForkSchemaPhase(this.db);
+    const schema = readsForkSidecar(phase) ? 'immich_fork' : 'public';
+    const row = await (this.db as Kysely<any>)
+      .selectFrom(`${schema}.asset_health as asset_health`)
+      .innerJoin('public.asset as asset', 'asset.id', 'asset_health.assetId')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .$if(!!options.ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(options.ownerId!)))
+      .$call((qb) => withHiddenContentFilter(qb, options.privacy))
+      .$if(!!options.category, (qb) => qb.where('asset_health.category', '=', options.category!))
+      .$if(!!options.status, (qb) => qb.where('asset_health.status', '=', options.status!))
+      .executeTakeFirstOrThrow();
+    return Number(row.count);
+  }
+
   async getByIds(ids: string[], ownerId?: string, privacy?: HiddenContentQueryOptions): Promise<MediaHealthFinding[]> {
     if (ids.length === 0) {
       return [];

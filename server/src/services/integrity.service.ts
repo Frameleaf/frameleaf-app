@@ -510,18 +510,12 @@ export class IntegrityService extends BaseService {
     assetId: string,
     reportId: string | null,
   ) {
-    const hash = this.hashForAlgorithm(checksumAlgorithm);
-    if (!hash) {
+    if (!this.hashForAlgorithm(checksumAlgorithm)) {
       return;
     }
 
-    // Clients pre-check for duplicates with sha1 and cannot match a sha256
-    // row without a recorded sha1. Uploads record one as they stream, but
-    // assets that predate that never got one — so hash sha1 alongside the
-    // verification read, which is already streaming the whole file. This is
-    // the backfill: no extra I/O, and it inherits the job's checkpointing and
-    // time limits.
-    const legacyHash = checksumAlgorithm === ChecksumAlgorithm.sha256File ? createHash('sha1') : null;
+    const sha1Hash = createHash('sha1');
+    const sha256Hash = createHash('sha256');
     let sizeInBytes = 0;
 
     try {
@@ -529,27 +523,25 @@ export class IntegrityService extends BaseService {
         this.storageRepository.createPlainReadStream(originalPath),
         new Writable({
           write(chunk, _encoding, callback) {
-            hash.update(chunk);
-            legacyHash?.update(chunk);
+            sha1Hash.update(chunk);
+            sha256Hash.update(chunk);
             sizeInBytes += chunk.length;
             callback();
           },
         }),
       ]);
 
-      const digest = hash.digest();
-      if (checksum.equals(digest)) {
-        // Only record digests for a file that just verified against its row.
-        if (legacyHash) {
-          await this.forkSchemaRepository.recordAssetChecksums({
-            assetId,
-            sha1: legacyHash.digest(),
-            sha256: digest,
-            sizeInBytes,
-            path: originalPath,
-            source: 'integrity',
-          });
-        }
+      const sha1 = sha1Hash.digest();
+      const sha256 = sha256Hash.digest();
+      if (checksum.equals(sha1) || checksum.equals(sha256)) {
+        await this.forkSchemaRepository.recordAssetChecksums({
+          assetId,
+          sha1,
+          sha256,
+          sizeInBytes,
+          path: originalPath,
+          source: 'integrity',
+        });
 
         if (reportId) {
           await this.integrityRepository.deleteById(reportId);
