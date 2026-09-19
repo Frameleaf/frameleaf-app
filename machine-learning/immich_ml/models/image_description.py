@@ -327,13 +327,16 @@ class ImageDescriptionModel(InferenceModel):
         device = self._torch_device(torch)
         torch_dtype = torch.float16 if str(device).startswith("cuda") else torch.float32
         trust_remote_code = self._is_florence_model()
-        processor = AutoProcessor.from_pretrained(str(self.cache_dir), trust_remote_code=trust_remote_code)
+        processor = AutoProcessor.from_pretrained(
+            str(self.cache_dir), trust_remote_code=trust_remote_code, local_files_only=True
+        )
 
         if self._is_florence_model():
             model = AutoModelForCausalLM.from_pretrained(
                 str(self.cache_dir),
                 torch_dtype=torch_dtype,
                 trust_remote_code=trust_remote_code,
+                local_files_only=True,
             ).to(device)
         else:
             # AutoModelForImageTextToText dispatches to the right vision-LM class
@@ -344,6 +347,7 @@ class ImageDescriptionModel(InferenceModel):
             model = AutoModelForImageTextToText.from_pretrained(
                 str(self.cache_dir),
                 torch_dtype="auto",
+                local_files_only=True,
             ).to(device)
 
         model.eval()

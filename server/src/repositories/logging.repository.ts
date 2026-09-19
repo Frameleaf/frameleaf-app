@@ -1,7 +1,6 @@
 import { ConsoleLogger, Inject, Injectable, Scope } from '@nestjs/common';
 import { isLogLevelEnabled } from '@nestjs/common/services/utils/is-log-level-enabled.util';
 import { ClsService } from 'nestjs-cls';
-import { Telemetry } from 'src/decorators.js';
 import { LogFormat, LogLevel } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 
@@ -72,7 +71,6 @@ export class MyConsoleLogger extends ConsoleLogger {
 }
 
 @Injectable({ scope: Scope.TRANSIENT })
-@Telemetry({ enabled: false })
 export class LoggingRepository {
   private logger: MyConsoleLogger;
 

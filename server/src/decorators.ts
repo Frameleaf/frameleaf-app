@@ -133,9 +133,6 @@ export interface GenerateSqlQueries {
   stream?: boolean;
 }
 
-export const Telemetry = (options: { enabled?: boolean }) =>
-  SetMetadata(MetadataKey.TelemetryEnabled, options?.enabled ?? true);
-
 /** Decorator to enable versioning/tracking of generated Sql */
 export const GenerateSql = (...options: GenerateSqlQueries[]) => SetMetadata(GENERATE_SQL_KEY, options);
 

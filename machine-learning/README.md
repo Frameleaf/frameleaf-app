@@ -3,6 +3,14 @@
 - CLIP embeddings
 - Facial recognition
 
+## Privacy
+
+Telemetry is hard-disabled at package initialization for every ML entry point. Deployment
+variables cannot opt back into Hugging Face, ONNX Runtime, or OpenVINO reporting. Downloads
+remain online and Transformers loads the downloaded files locally. See the
+[fork telemetry policy](../docs/docs/features/fork-privacy-suite.md#telemetry-and-automatic-reporting)
+for coverage, tests, and remaining functional network requests.
+
 # Setup
 
 This project uses [uv](https://docs.astral.sh/uv/getting-started/installation/), so be sure to install it first.

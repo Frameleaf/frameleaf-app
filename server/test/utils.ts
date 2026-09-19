@@ -69,7 +69,6 @@ import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repos
 import { SyncRepository } from 'src/repositories/sync.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
-import { TelemetryRepository } from 'src/repositories/telemetry.repository.js';
 import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
@@ -93,7 +92,6 @@ import { newMediaRepositoryMock } from 'test/repositories/media.repository.mock.
 import { newMetadataRepositoryMock } from 'test/repositories/metadata.repository.mock.js';
 import { newStorageRepositoryMock } from 'test/repositories/storage.repository.mock.js';
 import { newSystemMetadataRepositoryMock } from 'test/repositories/system-metadata.repository.mock.js';
-import { ITelemetryRepositoryMock, newTelemetryRepositoryMock } from 'test/repositories/telemetry.repository.mock.js';
 
 export type ControllerContext = {
   authenticate: Mock;
@@ -288,7 +286,6 @@ export type ServiceOverrides = {
   syncCheckpoint: SyncCheckpointRepository;
   systemMetadata: SystemMetadataRepository;
   tag: TagRepository;
-  telemetry: TelemetryRepository;
   trash: TrashRepository;
   user: UserRepository;
   versionHistory: VersionHistoryRepository;
@@ -302,8 +299,8 @@ type As<T> = T extends RepositoryInterface<infer U> ? U : never;
 type IAccessRepository = { [K in keyof AccessRepository]: RepositoryInterface<AccessRepository[K]> };
 
 export type ServiceMocks = {
-  [K in keyof Omit<ServiceOverrides, 'access' | 'telemetry'>]: Mocked<RepositoryInterface<ServiceOverrides[K]>>;
-} & { access: IAccessRepositoryMock; telemetry: ITelemetryRepositoryMock };
+  [K in keyof Omit<ServiceOverrides, 'access'>]: Mocked<RepositoryInterface<ServiceOverrides[K]>>;
+} & { access: IAccessRepositoryMock };
 
 type BaseServiceArgs = ConstructorParameters<typeof BaseService>;
 type Constructor<Type, Args extends Array<any>> = {
@@ -381,7 +378,6 @@ export const getMocks = () => {
     // systemMetadata: automock(SystemMetadataRepository, { strict: false }),
     // eslint-disable-next-line no-sparse-arrays
     tag: automock(TagRepository, { args: [, loggerMock], strict: false }),
-    telemetry: newTelemetryRepositoryMock(),
     trash: automock(TrashRepository),
     user: automock(UserRepository, { strict: false }),
     versionHistory: automock(VersionHistoryRepository),
@@ -456,7 +452,6 @@ export const newTestService = <T extends BaseService>(
     overrides.syncCheckpoint || (mocks.syncCheckpoint as As<SyncCheckpointRepository>),
     overrides.systemMetadata || (mocks.systemMetadata as As<SystemMetadataRepository>),
     overrides.tag || (mocks.tag as As<TagRepository>),
-    overrides.telemetry || (mocks.telemetry as unknown as TelemetryRepository),
     overrides.trash || (mocks.trash as As<TrashRepository>),
     overrides.user || (mocks.user as As<UserRepository>),
     overrides.versionHistory || (mocks.versionHistory as As<VersionHistoryRepository>),
