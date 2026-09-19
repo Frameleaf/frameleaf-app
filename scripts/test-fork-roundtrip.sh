@@ -133,11 +133,11 @@ on_error() {
 trap on_error ERR
 trap cleanup EXIT
 
-echo "Pulling exact official image ghcr.io/immich-app/immich-server:$OFFICIAL_IMMICH_TAG"
-# ghcr.io intermittently returns "toomanyrequests" when parallel CI lanes pull at once
+echo "Pulling official image $OFFICIAL_IMMICH_TAG and pinned database/Redis dependencies"
+# Registries can rate-limit any remote service when parallel CI lanes pull at once.
 pulled=false
 for attempt in 1 2 3 4 5; do
-  if docker pull "ghcr.io/immich-app/immich-server:$OFFICIAL_IMMICH_TAG"; then
+  if compose pull official-server database redis; then
     pulled=true
     break
   fi

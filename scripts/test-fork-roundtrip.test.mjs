@@ -87,3 +87,57 @@ for (const [failure, status, output] of [
     assert.equal(result.stderr, output);
   });
 }
+
+const pulls = source.match(/^pulled=false[\s\S]*?(?=^official_digest=)/m)?.[0];
+assert.ok(pulls, "image pulls finish before official digest verification");
+
+for (const [failures, attempts, status] of [
+  [0, 1, 0],
+  [2, 3, 0],
+  [5, 5, 1],
+]) {
+  test(`pulls all remote services with ${failures} transient failures`, () => {
+    const result = spawnSync(
+      "bash",
+      [
+        "-c",
+        `
+set -Eeuo pipefail
+attempts=0
+compose() {
+  [[ "$*" == 'pull official-server database redis' ]] || return 90
+  attempts=$((attempts + 1))
+  echo "pull $attempts"
+  [[ "$attempts" -gt "$FAILURES" ]]
+}
+docker() { echo 'unguarded direct pull'; return 91; }
+sleep() { echo "sleep $1"; }
+${pulls}
+echo ready
+`,
+      ],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          FAILURES: String(failures),
+          OFFICIAL_IMMICH_TAG: "v3.1.0",
+        },
+        timeout: 5000,
+      },
+    );
+    assert.equal(result.status, status, result.stderr);
+    assert.deepEqual(
+      result.stdout.match(/^pull \d+$/gm),
+      Array.from({ length: attempts }, (_, index) => `pull ${index + 1}`),
+    );
+    assert.deepEqual(
+      result.stdout.match(/^sleep \d+$/gm) ?? [],
+      Array.from(
+        { length: attempts - 1 },
+        (_, index) => `sleep ${(index + 1) * 15}`,
+      ),
+    );
+    assert.equal(result.stdout.includes("ready"), status === 0);
+  });
+}
