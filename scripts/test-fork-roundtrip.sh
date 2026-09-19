@@ -105,6 +105,15 @@ start_fork_normal() {
   return 1
 }
 stop_fork() { compose stop fork-server; }
+interrupt_fork() {
+  local id
+  id="$(compose ps -a -q fork-server)"
+  [[ -n "$id" ]] || { echo 'No fork container to interrupt' >&2; return 1; }
+  compose kill -s SIGKILL fork-server
+  # A successful kill request can precede the daemon's exited state. Without
+  # this barrier, compose up can reuse the dying container instead of starting it.
+  docker wait "$id" >/dev/null
+}
 psql_sql() { compose exec -T database psql -v ON_ERROR_STOP=1 -U postgres -d immich "$@"; }
 admin() { compose exec -T fork-server immich-admin "$@"; }
 
@@ -124,11 +133,11 @@ on_error() {
 trap on_error ERR
 trap cleanup EXIT
 
-echo "Pulling exact official image ghcr.io/immich-app/immich-server:$OFFICIAL_IMMICH_TAG"
-# ghcr.io intermittently returns "toomanyrequests" when parallel CI lanes pull at once
+echo "Pulling official image $OFFICIAL_IMMICH_TAG and pinned database/Redis dependencies"
+# Registries can rate-limit any remote service when parallel CI lanes pull at once.
 pulled=false
 for attempt in 1 2 3 4 5; do
-  if docker pull "ghcr.io/immich-app/immich-server:$OFFICIAL_IMMICH_TAG"; then
+  if compose pull official-server database redis; then
     pulled=true
     break
   fi
@@ -270,7 +279,7 @@ jq -e 'length == 7
   and all(.[]; (.processed + .remaining) == 256)
   and any(.[]; .processed > 0 and .remaining > 0)' <<<"$partial_snapshot" >/dev/null || exit 1
 echo "Backfill partial checkpoint: $partial_snapshot"
-compose kill -s SIGKILL fork-server
+interrupt_fork
 start_fork
 restarted_snapshot="$(psql_sql -Atc "
   SELECT jsonb_agg(jsonb_build_object(
@@ -303,7 +312,7 @@ grep -q 'Verified: yes' <<<"$prepare_output" || { echo 'Official handoff prepara
 admin fork-schema-cutover verify-storage start --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID"
 storage_status="$(admin fork-schema-cutover verify-storage resume --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID" --batch-size 1)"
 jq -e '.status == "running" and .verifiedCount > 0 and .verifiedCount < .applicableAssetCount' <<<"$storage_status" >/dev/null || exit 1
-compose kill -s SIGKILL fork-server
+interrupt_fork
 start_fork
 for _ in {1..600}; do
   storage_status="$(admin fork-schema-cutover verify-storage resume --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID" --batch-size 32)"
