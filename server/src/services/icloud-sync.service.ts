@@ -119,14 +119,15 @@ export class ICloudSyncService {
   }
 
   async update(auth: AuthDto, id: string, dto: ICloudConnectionUpdateDto): Promise<ICloudConnectionResponseDto> {
-    await this.owned(auth, id);
-    if (dto.config) {
-      if (dto.config.includeHidden) {
+    const connection = await this.owned(auth, id);
+    const config = dto.config ? { ...connection.config, ...dto.config } : undefined;
+    if (config) {
+      if (config.includeHidden) {
         requireElevatedPermission(auth);
       }
-      this.checkLimits(dto.config);
+      this.checkLimits(config);
     }
-    await this.repository.update(id, auth.user.id, dto);
+    await this.repository.update(id, auth.user.id, { ...dto, config });
     return this.response((await this.repository.get(id, auth.user.id))!);
   }
 

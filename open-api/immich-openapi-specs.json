@@ -7609,6 +7609,8 @@
             "required": true,
             "in": "path",
             "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
             }
           }
@@ -7652,6 +7654,8 @@
             "required": true,
             "in": "path",
             "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
             }
           }
@@ -7714,6 +7718,8 @@
             "required": true,
             "in": "path",
             "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
             }
           }
@@ -7776,6 +7782,8 @@
             "required": true,
             "in": "path",
             "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
             }
           }
@@ -7838,6 +7846,8 @@
             "required": true,
             "in": "path",
             "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
             }
           }
@@ -26885,6 +26895,7 @@
       "ICloudConnectionResponseDto": {
         "properties": {
           "config": {
+            "additionalProperties": false,
             "properties": {
               "albums": {
                 "items": {
@@ -26985,7 +26996,6 @@
             "additionalProperties": false,
             "properties": {
               "albums": {
-                "default": [],
                 "items": {
                   "maxLength": 1024,
                   "minLength": 1,
@@ -26995,27 +27005,22 @@
                 "type": "array"
               },
               "concurrency": {
-                "default": 1,
                 "maximum": 4,
                 "minimum": 1,
                 "type": "integer"
               },
               "includeEdits": {
-                "default": true,
                 "type": "boolean"
               },
               "includeHidden": {
-                "default": false,
                 "type": "boolean"
               },
               "intervalHours": {
-                "default": 24,
                 "maximum": 8760,
                 "minimum": 1,
                 "type": "integer"
               },
               "libraries": {
-                "default": [],
                 "items": {
                   "maxLength": 1024,
                   "minLength": 1,
@@ -27025,11 +27030,9 @@
                 "type": "array"
               },
               "recoverExternalAsManaged": {
-                "default": false,
                 "type": "boolean"
               },
               "stagingBytes": {
-                "default": 21474836480,
                 "maximum": 9007199254740991,
                 "minimum": 1048576,
                 "type": "integer"

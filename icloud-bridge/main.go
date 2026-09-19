@@ -249,10 +249,15 @@ func (b *bridge) auth(w http.ResponseWriter, r *http.Request, q *request) error 
 	}
 	if err != nil {
 		var f fault
-		if errors.As(err, &f) && f.code == "rate_limited" {
-			return f
-		}
 		e.State = "reauthentication-required"
+		if errors.As(err, &f) {
+			switch f.code {
+			case "rate_limited":
+				return f
+			case "device_approval_required":
+				e.State = "awaiting-device-approval"
+			}
+		}
 	}
 	writeJSON(w, map[string]any{"version": 1, "state": e.State, "session": e, "capabilities": capabilities})
 	return nil

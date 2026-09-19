@@ -30,6 +30,10 @@ describe(ICloudSyncRepository.name, () => {
 
   beforeAll(async () => {
     db = await getKyselyDB();
+    // getKyselyDB clones CI's migrated template; this suite uses its own focused schema.
+    await sql`DROP SCHEMA IF EXISTS immich_fork CASCADE`.execute(db);
+    await sql`DROP SCHEMA public CASCADE`.execute(db);
+    await sql`CREATE SCHEMA public`.execute(db);
     await sql`CREATE SCHEMA immich_fork`.execute(db);
     await sql`CREATE TABLE immich_fork.state (id integer PRIMARY KEY,phase text)`.execute(db);
     await sql`INSERT INTO immich_fork.state VALUES (1,'active')`.execute(db);
@@ -40,6 +44,7 @@ describe(ICloudSyncRepository.name, () => {
   afterAll(async () => {
     await db.destroy();
   });
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(async () => {
     await sql`TRUNCATE immich_fork.icloud_connection CASCADE`.execute(db);
     connection = await repository.create(randomUUID(), 'Photos', ICloudConfigSchema.parse({}));
@@ -47,6 +52,59 @@ describe(ICloudSyncRepository.name, () => {
     connection.state = 'connected';
   });
 
+  it('stores opaque materialization names as strings across keyset resume and empty pages', async () => {
+    const records = Array.from({ length: 101 }, (_, index) => ({
+      ...asset,
+      recordName: `ABC-${String(index).padStart(3, '0')}`,
+    }));
+    await repository.savePage(connection.id, 'assets:library', 'library', [master, ...records], null, true);
+    expect(await repository.materialize(connection, 'library', library)).toBe(false);
+    expect(await repository.checkpoint(connection.id, 'materialize:library')).toMatchObject({
+      cursor: 'ABC-099',
+      complete: false,
+    });
+    expect(await repository.materialize(connection, 'library', library)).toBe(true);
+    expect(await repository.checkpoint(connection.id, 'materialize:library')).toMatchObject({
+      cursor: 'ABC-100',
+      complete: true,
+    });
+    expect(await repository.materialize(connection, 'library', library)).toBe(true);
+    const count = await sql<{ count: number }>`SELECT count(*)::int AS count FROM immich_fork.icloud_resource`.execute(
+      db,
+    );
+    expect(count.rows[0].count).toBe(101);
+    expect(await repository.materialize(connection, 'empty', library)).toBe(true);
+    expect(await repository.checkpoint(connection.id, 'materialize:empty')).toMatchObject({
+      cursor: '',
+      complete: true,
+    });
+  });
+  it.each(
+    ['IMMICH_ICLOUD_MAX_CONCURRENCY', 'IMMICH_ICLOUD_MAX_STAGING_BYTES'].flatMap((name) =>
+      ['garbage', 'NaN', 'Infinity', '-1', '0', '1.5', '9007199254740992', ''].map((value) => ({ name, value })),
+    ),
+  )('refuses new admission with invalid $name=$value', async ({ name, value }) => {
+    await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
+    await repository.materialize(connection, 'library', library);
+    vi.stubEnv(name, value);
+    expect(await repository.claim(connection.id, 1000)).toBeUndefined();
+    const rows = await sql<{
+      status: string;
+      reservedBytes: number;
+      leaseToken: string | null;
+    }>`SELECT status,"reservedBytes"::float8 AS "reservedBytes","leaseToken" FROM immich_fork.icloud_resource`.execute(
+      db,
+    );
+    expect(rows.rows[0]).toMatchObject({ status: 'pending', reservedBytes: 0, leaseToken: null });
+  });
+  it('allows committed cleanup even when administrator limit settings are malformed', async () => {
+    await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
+    await repository.materialize(connection, 'library', library);
+    await sql`UPDATE immich_fork.icloud_resource SET status='committed'`.execute(db);
+    vi.stubEnv('IMMICH_ICLOUD_MAX_CONCURRENCY', 'NaN');
+    vi.stubEnv('IMMICH_ICLOUD_MAX_STAGING_BYTES', 'NaN');
+    expect(await repository.claim(connection.id, 1000)).toMatchObject({ status: 'committed' });
+  });
   it('roundtrips typed JSON, keeps split-page master joins and opaque checkpoints, and materializes idempotently', async () => {
     expect(connection.config.concurrency).toBe(1);
     await repository.savePage(connection.id, 'assets:library', 'library', [asset], 'cursor-page-2', false);

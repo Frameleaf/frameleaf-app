@@ -135,6 +135,49 @@ describe('iCloud Photos Sync controls', () => {
     );
   });
 
+  it('allows removing unsupported selections but prevents adding them or their albums', async () => {
+    const initialConnection = {
+      ...connection(),
+      config: { ...connection().config, libraries: ['supported', 'unsupported'], albums: ['selected-album'] },
+    };
+    mocks.getICloudInventory.mockResolvedValue({
+      complete: true,
+      libraries: [
+        { id: 'supported', name: 'Supported library', supported: true },
+        { id: 'unsupported', name: 'Unsupported library', supported: false },
+        { id: 'unselected', name: 'Unavailable library', supported: false },
+      ],
+      albums: [
+        { id: 'selected-album', libraryId: 'unsupported', name: 'Selected album', parentId: null },
+        { id: 'new-album', libraryId: 'unsupported', name: 'Unavailable album', parentId: null },
+      ],
+    });
+    mocks.updateICloudConnection.mockResolvedValue(connection());
+    render(ICloudSync, { initial: { enabled: true, connections: [initialConnection] } });
+    await fireEvent.click(screen.getByRole('button', { name: 'icloud_sync.load_inventory' }));
+    const library = await screen.findByRole('checkbox', { name: /^Unsupported library/ });
+    const album = screen.getByRole('checkbox', { name: /Selected album/ });
+    expect(library).toBeEnabled();
+    expect(album).toBeEnabled();
+    expect(screen.getByRole('checkbox', { name: /Unavailable library/ })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: /Unavailable album/ })).toBeDisabled();
+    await fireEvent.click(library);
+    expect(library).not.toBeChecked();
+    expect(library).toBeDisabled();
+    expect(album).toBeInTheDocument();
+    await fireEvent.click(album);
+    await fireEvent.click(screen.getByRole('button', { name: 'save' }));
+    await waitFor(() =>
+      expect(mocks.updateICloudConnection).toHaveBeenCalledWith({
+        id: connection().id,
+        iCloudConnectionUpdateDto: {
+          label: connection().label,
+          config: { ...connection().config, libraries: ['supported'], albums: [] },
+        },
+      }),
+    );
+  });
+
   it('links verified recovery receipts to their existing asset and resolved health history', async () => {
     const assetId = '00000000-0000-4000-8000-000000000002';
     mocks.getICloudInventory.mockResolvedValue({

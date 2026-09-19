@@ -105,6 +105,15 @@ start_fork_normal() {
   return 1
 }
 stop_fork() { compose stop fork-server; }
+interrupt_fork() {
+  local id
+  id="$(compose ps -a -q fork-server)"
+  [[ -n "$id" ]] || { echo 'No fork container to interrupt' >&2; return 1; }
+  compose kill -s SIGKILL fork-server
+  # A successful kill request can precede the daemon's exited state. Without
+  # this barrier, compose up can reuse the dying container instead of starting it.
+  docker wait "$id" >/dev/null
+}
 psql_sql() { compose exec -T database psql -v ON_ERROR_STOP=1 -U postgres -d immich "$@"; }
 admin() { compose exec -T fork-server immich-admin "$@"; }
 
@@ -270,7 +279,7 @@ jq -e 'length == 7
   and all(.[]; (.processed + .remaining) == 256)
   and any(.[]; .processed > 0 and .remaining > 0)' <<<"$partial_snapshot" >/dev/null || exit 1
 echo "Backfill partial checkpoint: $partial_snapshot"
-compose kill -s SIGKILL fork-server
+interrupt_fork
 start_fork
 restarted_snapshot="$(psql_sql -Atc "
   SELECT jsonb_agg(jsonb_build_object(
@@ -303,7 +312,7 @@ grep -q 'Verified: yes' <<<"$prepare_output" || { echo 'Official handoff prepara
 admin fork-schema-cutover verify-storage start --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID"
 storage_status="$(admin fork-schema-cutover verify-storage resume --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID" --batch-size 1)"
 jq -e '.status == "running" and .verifiedCount > 0 and .verifiedCount < .applicableAssetCount' <<<"$storage_status" >/dev/null || exit 1
-compose kill -s SIGKILL fork-server
+interrupt_fork
 start_fork
 for _ in {1..600}; do
   storage_status="$(admin fork-schema-cutover verify-storage resume --database-backup-id "$BACKUP_ID" --media-snapshot-id "$SNAPSHOT_ID" --batch-size 32)"

@@ -20,6 +20,19 @@ export const ICloudConfigSchema = z
   .strict();
 export type ICloudConfig = z.infer<typeof ICloudConfigSchema>;
 
+const ConfigFieldsSchema = z
+  .object({
+    libraries: ICloudConfigSchema.shape.libraries.unwrap(),
+    albums: ICloudConfigSchema.shape.albums.unwrap(),
+    includeEdits: ICloudConfigSchema.shape.includeEdits.unwrap(),
+    includeHidden: ICloudConfigSchema.shape.includeHidden.unwrap(),
+    recoverExternalAsManaged: ICloudConfigSchema.shape.recoverExternalAsManaged.unwrap(),
+    intervalHours: ICloudConfigSchema.shape.intervalHours.unwrap(),
+    concurrency: ICloudConfigSchema.shape.concurrency.unwrap(),
+    stagingBytes: ICloudConfigSchema.shape.stagingBytes.unwrap(),
+  })
+  .strict();
+
 export class ICloudConnectionCreateDto extends createZodDto(
   z
     .object({
@@ -34,7 +47,7 @@ export class ICloudConnectionUpdateDto extends createZodDto(
   z
     .object({
       label: z.string().trim().min(1).max(100).optional(),
-      config: ICloudConfigSchema.optional(),
+      config: ConfigFieldsSchema.partial().optional(),
     })
     .strict()
     .meta({ id: 'ICloudConnectionUpdateDto' }),
@@ -73,16 +86,7 @@ const ConnectionSchema = z
     id: z.uuid(),
     label: z.string(),
     state: z.string(),
-    config: z.object({
-      libraries: ICloudConfigSchema.shape.libraries.unwrap(),
-      albums: ICloudConfigSchema.shape.albums.unwrap(),
-      includeEdits: ICloudConfigSchema.shape.includeEdits.unwrap(),
-      includeHidden: ICloudConfigSchema.shape.includeHidden.unwrap(),
-      recoverExternalAsManaged: ICloudConfigSchema.shape.recoverExternalAsManaged.unwrap(),
-      intervalHours: ICloudConfigSchema.shape.intervalHours.unwrap(),
-      concurrency: ICloudConfigSchema.shape.concurrency.unwrap(),
-      stagingBytes: ICloudConfigSchema.shape.stagingBytes.unwrap(),
-    }),
+    config: ConfigFieldsSchema,
     lastError: z.string().nullable(),
     nextRunAt: z.string().nullable(),
     counts: z.record(z.string(), z.number()),

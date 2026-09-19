@@ -15,20 +15,20 @@ Implemented in the local fork checkout. No production deployment, GitHub Actions
 
 ## Final checks
 
-| Scope | Result |
-| --- | --- |
-| Focused server unit/HTTP suites | 158 tests across 12 files passed |
-| PostgreSQL integration suites | 60 tests across 7 files passed |
-| Svelte component tests | 6 passed |
-| Server TypeScript | Passed |
-| Web TypeScript | Passed |
-| Svelte diagnostics | Passed, zero errors/warnings |
-| Server Nest build | Passed |
-| OpenAPI generation and SDK build | Passed |
-| Changed server/web TypeScript and Svelte lint/format | Passed |
-| Go bridge race tests and vet | Passed |
-| Compose overlay | Previously validated against the release base with fixture configuration |
-| Git diff whitespace check | Passed with the verbatim upstream MIT license trailing blank line excepted |
+| Scope                                                | Result                                                                     |
+| ---------------------------------------------------- | -------------------------------------------------------------------------- |
+| Focused server unit/HTTP suites                      | 158 tests across 12 files passed                                           |
+| PostgreSQL integration suites                        | 60 tests across 7 files passed                                             |
+| Svelte component tests                               | 6 passed                                                                   |
+| Server TypeScript                                    | Passed                                                                     |
+| Web TypeScript                                       | Passed                                                                     |
+| Svelte diagnostics                                   | Passed, zero errors/warnings                                               |
+| Server Nest build                                    | Passed                                                                     |
+| OpenAPI generation and SDK build                     | Passed                                                                     |
+| Changed server/web TypeScript and Svelte lint/format | Passed                                                                     |
+| Go bridge race tests and vet                         | Passed                                                                     |
+| Compose overlay                                      | Previously validated against the release base with fixture configuration   |
+| Git diff whitespace check                            | Passed with the verbatim upstream MIT license trailing blank line excepted |
 
 Node was pinned for commands to `/Users/adamtaylor/.local/share/mise/installs/node/24.21.0/bin/node` (abbreviated `node24` below), with the same directory prepended to PATH. Commands ran in the indicated package.
 
