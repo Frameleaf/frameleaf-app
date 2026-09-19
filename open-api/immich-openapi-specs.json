@@ -35430,6 +35430,9 @@
         ],
         "type": "object"
       },
+      "SyncAssetFaceV2": {
+        "$ref": "#/components/schemas/SyncAssetFaceV3"
+      },
       "SyncAssetFaceV3": {
         "properties": {
           "assetId": {

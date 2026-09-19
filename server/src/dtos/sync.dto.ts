@@ -377,6 +377,9 @@ const SyncAssetFaceV3Schema = SyncAssetFaceV1Schema.extend({
   isVisible: z.boolean().describe('Is the face visible in the asset'),
 }).meta({ id: 'SyncAssetFaceV3' });
 
+// Keep the published V2 SDK model available for existing fork clients.
+const SyncAssetFaceV2Schema = SyncAssetFaceV3Schema.meta({ id: 'SyncAssetFaceV2' });
+
 const SyncAssetFaceDeleteV1Schema = z
   .object({ assetFaceId: z.uuidv4().describe('Asset face ID') })
   .meta({ id: 'SyncAssetFaceDeleteV1' });
@@ -454,6 +457,8 @@ class SyncPersonDeleteV1 extends createZodDto(SyncPersonDeleteV1Schema) {}
 @ExtraModel()
 class SyncAssetFaceV1 extends createZodDto(SyncAssetFaceV1Schema) {}
 @ExtraModel()
+class SyncAssetFaceV2 extends createZodDto(SyncAssetFaceV2Schema) {}
+@ExtraModel()
 class SyncAssetFaceV3 extends createZodDto(SyncAssetFaceV3Schema) {}
 @ExtraModel()
 class SyncAssetFaceDeleteV1 extends createZodDto(SyncAssetFaceDeleteV1Schema) {}
@@ -516,7 +521,7 @@ export type SyncItem = {
   [SyncEntityType.PersonV1]: SyncPersonV1;
   [SyncEntityType.PersonDeleteV1]: SyncPersonDeleteV1;
   [SyncEntityType.AssetFaceV1]: SyncAssetFaceV1;
-  [SyncEntityType.AssetFaceV2]: SyncAssetFaceV3;
+  [SyncEntityType.AssetFaceV2]: SyncAssetFaceV2;
   [SyncEntityType.AssetFaceV3]: SyncAssetFaceV3;
   [SyncEntityType.AssetFaceDeleteV1]: SyncAssetFaceDeleteV1;
   [SyncEntityType.UserMetadataV1]: SyncUserMetadataV1;

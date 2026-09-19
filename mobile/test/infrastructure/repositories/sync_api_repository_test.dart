@@ -83,6 +83,33 @@ void main() {
     );
   }
 
+  for (final (version, expected) in [
+    (const SemVer(major: 2, minor: 5, patch: 0), SyncRequestType.assetFacesV1),
+    (const SemVer(major: 2, minor: 6, patch: 0), SyncRequestType.assetFacesV2),
+    (const SemVer(major: 3, minor: 2, patch: 0), SyncRequestType.assetFacesV2),
+    (const SemVer(major: 3, minor: 3, patch: 0), SyncRequestType.assetFacesV3),
+  ]) {
+    test('negotiates $expected with server $version', () async {
+      final sent = Completer<http.BaseRequest>();
+      when(() => mockHttpClient.send(any())).thenAnswer((invocation) async {
+        sent.complete(invocation.positionalArguments.first as http.BaseRequest);
+        return mockStreamedResponse;
+      });
+
+      final stream = streamChanges((_, _, _) async {}, version);
+      final request = await sent.future as http.Request;
+      final types = (jsonDecode(request.body) as Map<String, dynamic>)['types'] as List<dynamic>;
+      expect(types, contains(expected.toString()));
+      for (final other in [SyncRequestType.assetFacesV1, SyncRequestType.assetFacesV2, SyncRequestType.assetFacesV3]) {
+        if (other != expected) {
+          expect(types, isNot(contains(other.toString())));
+        }
+      }
+      await responseStreamController.close();
+      await stream;
+    });
+  }
+
   test('streamChanges stops processing stream when abort is called', () async {
     int onDataCallCount = 0;
     bool abortWasCalledInCallback = false;

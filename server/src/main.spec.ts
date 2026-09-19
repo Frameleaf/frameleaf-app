@@ -20,7 +20,8 @@ it('returns a failing admin exit status when a command rejects', async () => {
     vi.stubEnv('IMMICH_LOG_LEVEL', 'warn');
     await import('src/main.js');
 
-    expect(process.exitCode).toBe(1);
+    // Loading the admin module now happens asynchronously after the entrypoint import.
+    await vi.waitFor(() => expect(process.exitCode).toBe(1));
     expect(log).toHaveBeenCalledWith(error);
   } finally {
     process.argv = argv;
