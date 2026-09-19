@@ -10,13 +10,19 @@ from immich_ml.privacy import disable_telemetry
 
 
 @pytest.mark.parametrize("entrypoint", ["immich_ml", "immich_ml.main", "immich_ml.models.image_description"])
-def test_entrypoints_override_telemetry_opt_ins(entrypoint: str) -> None:
+@pytest.mark.parametrize("offline_flag", [None, "HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"])
+def test_entrypoints_override_telemetry_opt_ins(entrypoint: str, offline_flag: str | None) -> None:
     # A fresh interpreter catches import-order regressions that in-process tests
     # miss because conftest has already imported the ASGI application.
     env = dict(os.environ)
     for key in ["DO_NOT_TRACK", "HF_HUB_DISABLE_TELEMETRY", "DISABLE_TELEMETRY", "ORT_DISABLE_TELEMETRY"]:
         env[key] = "0"
-    env.pop("HF_HUB_OFFLINE", None)
+    # The Hub accepts either variable. Exercise online startup and each explicit
+    # offline preference independently of the parent test runner's environment.
+    for key in ["HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"]:
+        env.pop(key, None)
+    if offline_flag is not None:
+        env[offline_flag] = "1"
     env["HF_HUB_DISABLE_XET"] = "0"
     env["HF_XET_TELEMETRY_ENABLED"] = "1"
     env["HF_TOKEN"] = "download-token-must-survive"
@@ -38,7 +44,7 @@ with patch.object(onnxruntime, 'disable_telemetry_events', wraps=onnxruntime.dis
 assert constants.HF_HUB_DISABLE_TELEMETRY
 assert constants.HF_HUB_DISABLE_XET
 assert os.environ['HF_XET_TELEMETRY_ENABLED'] == '0'
-assert not constants.is_offline_mode()
+assert constants.is_offline_mode() is {offline_flag is not None}
 assert os.environ['HF_TOKEN'] == 'download-token-must-survive'
 for key in ['DO_NOT_TRACK', 'HF_HUB_DISABLE_TELEMETRY', 'DISABLE_TELEMETRY', 'ORT_DISABLE_TELEMETRY']:
     assert os.environ[key] == '1', key
