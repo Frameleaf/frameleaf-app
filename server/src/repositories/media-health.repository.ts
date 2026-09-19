@@ -997,8 +997,8 @@ export class MediaHealthRepository {
         }
         const forkId = forkPhysical?.id ?? legacyId ?? randomUUID();
         if (!forkPhysical) {
-          await sql`INSERT INTO immich_fork.physical_file (id, "canonicalAssetId", type, checksum, "sizeInBytes", "canonicalPath")
-            VALUES (${forkId}::uuid, ${canonical}::uuid, 'original', ${input.sha256}, ${input.sizeInBytes}, ${recoveredPath})`.execute(
+          await sql`INSERT INTO immich_fork.physical_file (id, "canonicalAssetId", type, checksum, "sizeInBytes", "canonicalPath", "createdAt", "updatedAt")
+            VALUES (${forkId}::uuid, ${canonical}::uuid, 'original', ${input.sha256}, ${input.sizeInBytes}, ${recoveredPath}, now(), now())`.execute(
             trx,
           );
         }

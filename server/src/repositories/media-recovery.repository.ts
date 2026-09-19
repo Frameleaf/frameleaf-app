@@ -431,8 +431,8 @@ export class MediaRecoveryRepository {
             .execute();
         }
         if (writesForkSidecar(phase)) {
-          await sql`INSERT INTO immich_fork.physical_file (id, "canonicalAssetId", type, checksum, "sizeInBytes", "canonicalPath")
-            VALUES (${physicalId}::uuid, ${assetId}::uuid, 'original', ${final.sha256}, ${final.sizeInBytes}, ${promotedPath})`.execute(
+          await sql`INSERT INTO immich_fork.physical_file (id, "canonicalAssetId", type, checksum, "sizeInBytes", "canonicalPath", "createdAt", "updatedAt")
+            VALUES (${physicalId}::uuid, ${assetId}::uuid, 'original', ${final.sha256}, ${final.sizeInBytes}, ${promotedPath}, now(), now())`.execute(
             trx,
           );
           await sql`INSERT INTO immich_fork.asset_physical_file ("assetId", "physicalFileId", "upstreamPath", "verifiedAt", "updatedAt")
