@@ -433,11 +433,16 @@ describe.each([
       expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
     ]);
     const elevated = { ...auth, session: { ...auth.session!, hasElevatedPermission: true } };
-    expect(await ctx.syncStream(elevated, [request])).toEqual([
-      expect.objectContaining({ type: entity, data: expect.objectContaining({ id: hiddenFace.id }) }),
-      expect.objectContaining({ type: entity, data: expect.objectContaining({ id: safeFace.id }) }),
-      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
-    ]);
+    const elevatedUpserts = await ctx.syncStream(elevated, [request]);
+    // Faces created in the same millisecond need not have update IDs in insertion order.
+    expect(elevatedUpserts).toHaveLength(3);
+    expect(elevatedUpserts.slice(0, -1)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: entity, data: expect.objectContaining({ id: hiddenFace.id }) }),
+        expect.objectContaining({ type: entity, data: expect.objectContaining({ id: safeFace.id }) }),
+      ]),
+    );
+    expect(elevatedUpserts.at(-1)).toEqual(expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }));
 
     await ctx.get(PersonRepository).deleteAssetFace(hiddenFace.id);
     await ctx.get(PersonRepository).deleteAssetFace(safeFace.id);
@@ -445,11 +450,15 @@ describe.each([
       expect.objectContaining({ type: SyncEntityType.AssetFaceDeleteV1, data: { assetFaceId: safeFace.id } }),
       expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
     ]);
-    expect(await ctx.syncStream(elevated, [request])).toEqual([
-      expect.objectContaining({ type: SyncEntityType.AssetFaceDeleteV1, data: { assetFaceId: hiddenFace.id } }),
-      expect.objectContaining({ type: SyncEntityType.AssetFaceDeleteV1, data: { assetFaceId: safeFace.id } }),
-      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
-    ]);
+    const elevatedDeletes = await ctx.syncStream(elevated, [request]);
+    expect(elevatedDeletes).toHaveLength(3);
+    expect(elevatedDeletes.slice(0, -1)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: SyncEntityType.AssetFaceDeleteV1, data: { assetFaceId: hiddenFace.id } }),
+        expect.objectContaining({ type: SyncEntityType.AssetFaceDeleteV1, data: { assetFaceId: safeFace.id } }),
+      ]),
+    );
+    expect(elevatedDeletes.at(-1)).toEqual(expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }));
   });
 
   it('honors tag suppression for upserts and deletes', async () => {
