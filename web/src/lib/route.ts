@@ -154,6 +154,7 @@ export const Route = {
   largeFileUtility: () => '/utilities/large-files',
   livePhotosUtility: () => '/utilities/live-photos',
   geolocationUtility: () => '/utilities/geolocation',
+  icloudSyncUtility: () => '/utilities/icloud-sync',
   missingMediaUtility: (params?: { status?: MediaHealthStatus }) => '/utilities/missing-media' + asQueryString(params),
   corruptMediaUtility: (params?: { status?: MediaHealthStatus }) => '/utilities/corrupt-media' + asQueryString(params),
 

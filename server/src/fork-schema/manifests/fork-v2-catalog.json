@@ -561,6 +561,330 @@
       "identity": "immich_fork.cutover_verification_run.verifiedCount"
     },
     {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.icloud_album.albumId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_album.connectionId"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "immich_fork.icloud_album.deleted"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_album.libraryKey"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_album.name"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_album.parentSourceId"
+    },
+    {
+      "definition": "jsonb|not null|'{}'::jsonb||",
+      "identity": "immich_fork.icloud_album.source"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_album.sourceId"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "immich_fork.icloud_checkpoint.complete"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_checkpoint.connectionId"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "immich_fork.icloud_checkpoint.cursor"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_checkpoint.scope"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_checkpoint.snapshotId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "immich_fork.icloud_checkpoint.updatedAt"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "immich_fork.icloud_connection.authAttempts"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.icloud_connection.authRetryAt"
+    },
+    {
+      "definition": "jsonb|not null|'{}'::jsonb||",
+      "identity": "immich_fork.icloud_connection.config"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "immich_fork.icloud_connection.createdAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_connection.encryptedSession"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.icloud_connection.id"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_connection.label"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_connection.lastError"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.icloud_connection.nextRunAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_connection.ownerId"
+    },
+    {
+      "definition": "text|not null|'paused'::text||",
+      "identity": "immich_fork.icloud_connection.state"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "immich_fork.icloud_connection.updatedAt"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "immich_fork.icloud_membership.addedBySync"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.icloud_membership.albumId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.icloud_membership.assetId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_membership.connectionId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_membership.libraryKey"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_membership.snapshotId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_membership.sourceAlbumId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_membership.sourceAssetId"
+    },
+    {
+      "definition": "boolean|not null|true||",
+      "identity": "immich_fork.icloud_membership.sourcePresent"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_record.connectionId"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "immich_fork.icloud_record.deleted"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.icloud_record.fields"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_record.libraryKey"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_record.masterId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_record.recordId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_record.recordType"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_record.revision"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "immich_fork.icloud_record.updatedAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.icloud_resource.assetId"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "immich_fork.icloud_resource.attempts"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_resource.connectionId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "immich_fork.icloud_resource.createdAt"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "immich_fork.icloud_resource.expectedSize"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "immich_fork.icloud_resource.expectedTarget"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_resource.fingerprint"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.icloud_resource.id"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_resource.lastError"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.icloud_resource.leaseExpiresAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.icloud_resource.leaseToken"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.icloud_resource.library"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_resource.libraryKey"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.icloud_resource.nextAttemptAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_resource.ownerId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_resource.path"
+    },
+    {
+      "definition": "jsonb|not null|'[]'::jsonb||",
+      "identity": "immich_fork.icloud_resource.pendingJobs"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_resource.promotedPath"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_resource.recordId"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "immich_fork.icloud_resource.reservedBytes"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_resource.resourceKey"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_resource.role"
+    },
+    {
+      "definition": "bytea|nullable|||",
+      "identity": "immich_fork.icloud_resource.sha1"
+    },
+    {
+      "definition": "bytea|nullable|||",
+      "identity": "immich_fork.icloud_resource.sha256"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.icloud_resource.source"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_resource.sourceAssetId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_resource.stagingPath"
+    },
+    {
+      "definition": "text|not null|'pending'::text||",
+      "identity": "immich_fork.icloud_resource.status"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "immich_fork.icloud_resource.updatedAt"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "immich_fork.icloud_resource.verification"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_run.connectionId"
+    },
+    {
+      "definition": "jsonb|not null|'{}'::jsonb||",
+      "identity": "immich_fork.icloud_run.counts"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.icloud_run.finishedAt"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.icloud_run.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_run.ownerId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "immich_fork.icloud_run.startedAt"
+    },
+    {
+      "definition": "text|not null|'queued'::text||",
+      "identity": "immich_fork.icloud_run.status"
+    },
+    {
       "definition": "timestamp with time zone|nullable|||",
       "identity": "immich_fork.migration_audit.completedAt"
     },
@@ -3259,6 +3583,126 @@
       "identity": "immich_fork.cutover_verification_run.cutover_verification_run_verifiedCount_check"
     },
     {
+      "definition": "FOREIGN KEY (\"connectionId\") REFERENCES immich_fork.icloud_connection(id) ON DELETE CASCADE",
+      "identity": "immich_fork.icloud_album.icloud_album_connectionId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"connectionId\", \"libraryKey\", \"sourceId\")",
+      "identity": "immich_fork.icloud_album.icloud_album_pkey"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(source) = 'object'::text)",
+      "identity": "immich_fork.icloud_album.icloud_album_source_check"
+    },
+    {
+      "definition": "FOREIGN KEY (\"connectionId\") REFERENCES immich_fork.icloud_connection(id) ON DELETE CASCADE",
+      "identity": "immich_fork.icloud_checkpoint.icloud_checkpoint_connectionId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"connectionId\", scope)",
+      "identity": "immich_fork.icloud_checkpoint.icloud_checkpoint_pkey"
+    },
+    {
+      "definition": "CHECK (\"authAttempts\" >= 0)",
+      "identity": "immich_fork.icloud_connection.icloud_connection_authAttempts_check"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(config) = 'object'::text)",
+      "identity": "immich_fork.icloud_connection.icloud_connection_config_check"
+    },
+    {
+      "definition": "UNIQUE (id, \"ownerId\")",
+      "identity": "immich_fork.icloud_connection.icloud_connection_id_ownerId_key"
+    },
+    {
+      "definition": "CHECK (length(label) >= 1 AND length(label) <= 256)",
+      "identity": "immich_fork.icloud_connection.icloud_connection_label_check"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.icloud_connection.icloud_connection_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"connectionId\") REFERENCES immich_fork.icloud_connection(id) ON DELETE CASCADE",
+      "identity": "immich_fork.icloud_membership.icloud_membership_connectionId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"connectionId\", \"libraryKey\", \"sourceAlbumId\", \"sourceAssetId\")",
+      "identity": "immich_fork.icloud_membership.icloud_membership_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"connectionId\") REFERENCES immich_fork.icloud_connection(id) ON DELETE CASCADE",
+      "identity": "immich_fork.icloud_record.icloud_record_connectionId_fkey"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(fields) = 'object'::text)",
+      "identity": "immich_fork.icloud_record.icloud_record_fields_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"connectionId\", \"libraryKey\", \"recordId\")",
+      "identity": "immich_fork.icloud_record.icloud_record_pkey"
+    },
+    {
+      "definition": "CHECK (attempts >= 0)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_attempts_check"
+    },
+    {
+      "definition": "CHECK ((\"leaseToken\" IS NULL) = (\"leaseExpiresAt\" IS NULL))",
+      "identity": "immich_fork.icloud_resource.icloud_resource_check"
+    },
+    {
+      "definition": "UNIQUE (\"connectionId\", \"libraryKey\", \"sourceAssetId\", \"resourceKey\", fingerprint)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_connectionId_libraryKey_sourceAssetId_resou_key"
+    },
+    {
+      "definition": "FOREIGN KEY (\"connectionId\", \"ownerId\") REFERENCES immich_fork.icloud_connection(id, \"ownerId\") ON DELETE CASCADE",
+      "identity": "immich_fork.icloud_resource.icloud_resource_connectionId_ownerId_fkey"
+    },
+    {
+      "definition": "CHECK (\"expectedSize\" >= 0 AND \"expectedSize\" <= '9007199254740991'::bigint)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_expectedSize_check"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(library) = 'object'::text)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_library_check"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(\"pendingJobs\") = 'array'::text)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_pendingJobs_check"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_pkey"
+    },
+    {
+      "definition": "CHECK (\"reservedBytes\" >= 0 AND \"reservedBytes\" <= '9007199254740991'::bigint)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_reservedBytes_check"
+    },
+    {
+      "definition": "CHECK (octet_length(sha1) = 20)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_sha1_check"
+    },
+    {
+      "definition": "CHECK (octet_length(sha256) = 32)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_sha256_check"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(source) = 'object'::text)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_source_check"
+    },
+    {
+      "definition": "FOREIGN KEY (\"connectionId\", \"ownerId\") REFERENCES immich_fork.icloud_connection(id, \"ownerId\") ON DELETE CASCADE",
+      "identity": "immich_fork.icloud_run.icloud_run_connectionId_ownerId_fkey"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(counts) = 'object'::text)",
+      "identity": "immich_fork.icloud_run.icloud_run_counts_check"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.icloud_run.icloud_run_pkey"
+    },
+    {
       "definition": "PRIMARY KEY (id)",
       "identity": "immich_fork.migration_audit.migration_audit_pkey"
     },
@@ -3495,12 +3939,12 @@
       "identity": "public.asset_health_candidate.asset_health_candidate_pkey"
     },
     {
-      "definition": "PRIMARY KEY (id)",
-      "identity": "public.asset_health_run.asset_health_run_pkey"
-    },
-    {
       "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.asset_health_run.asset_health_run_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.asset_health_run.asset_health_run_pkey"
     },
     {
       "definition": "UNIQUE (\"assetId\", category)",
@@ -4174,7 +4618,8 @@
     "0000000000050-CutoverVerification",
     "0000000000060-SharedUpstreamPaths",
     "0000000000070-ResetAssetSyncChecksums",
-    "0000000000080-MediaHealthRunOwner"
+    "0000000000080-MediaHealthRunOwner",
+    "0000000000090-ICloudSync"
   ],
   "functions": [
     {
@@ -5410,6 +5855,98 @@
     {
       "definition": "CREATE UNIQUE INDEX cutover_verification_run_pkey ON immich_fork.cutover_verification_run USING btree (id)",
       "identity": "immich_fork.cutover_verification_run.cutover_verification_run_pkey"
+    },
+    {
+      "definition": "CREATE INDEX icloud_album_mapping_idx ON immich_fork.icloud_album USING btree (\"albumId\") WHERE (\"albumId\" IS NOT NULL)",
+      "identity": "immich_fork.icloud_album.icloud_album_mapping_idx"
+    },
+    {
+      "definition": "CREATE INDEX icloud_album_parent_idx ON immich_fork.icloud_album USING btree (\"connectionId\", \"libraryKey\", \"parentSourceId\")",
+      "identity": "immich_fork.icloud_album.icloud_album_parent_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_album_pkey ON immich_fork.icloud_album USING btree (\"connectionId\", \"libraryKey\", \"sourceId\")",
+      "identity": "immich_fork.icloud_album.icloud_album_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_checkpoint_pkey ON immich_fork.icloud_checkpoint USING btree (\"connectionId\", scope)",
+      "identity": "immich_fork.icloud_checkpoint.icloud_checkpoint_pkey"
+    },
+    {
+      "definition": "CREATE INDEX icloud_connection_due_idx ON immich_fork.icloud_connection USING btree (\"nextRunAt\") WHERE (\"nextRunAt\" IS NOT NULL)",
+      "identity": "immich_fork.icloud_connection.icloud_connection_due_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"icloud_connection_id_ownerId_key\" ON immich_fork.icloud_connection USING btree (id, \"ownerId\")",
+      "identity": "immich_fork.icloud_connection.icloud_connection_id_ownerId_key"
+    },
+    {
+      "definition": "CREATE INDEX icloud_connection_owner_idx ON immich_fork.icloud_connection USING btree (\"ownerId\")",
+      "identity": "immich_fork.icloud_connection.icloud_connection_owner_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_connection_pkey ON immich_fork.icloud_connection USING btree (id)",
+      "identity": "immich_fork.icloud_connection.icloud_connection_pkey"
+    },
+    {
+      "definition": "CREATE INDEX icloud_membership_asset_idx ON immich_fork.icloud_membership USING btree (\"connectionId\", \"libraryKey\", \"sourceAssetId\")",
+      "identity": "immich_fork.icloud_membership.icloud_membership_asset_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_membership_pkey ON immich_fork.icloud_membership USING btree (\"connectionId\", \"libraryKey\", \"sourceAlbumId\", \"sourceAssetId\")",
+      "identity": "immich_fork.icloud_membership.icloud_membership_pkey"
+    },
+    {
+      "definition": "CREATE INDEX icloud_membership_snapshot_idx ON immich_fork.icloud_membership USING btree (\"connectionId\", \"libraryKey\", \"sourceAlbumId\", \"snapshotId\") WHERE \"sourcePresent\"",
+      "identity": "immich_fork.icloud_membership.icloud_membership_snapshot_idx"
+    },
+    {
+      "definition": "CREATE INDEX icloud_record_master_idx ON immich_fork.icloud_record USING btree (\"connectionId\", \"libraryKey\", \"masterId\") WHERE (\"masterId\" IS NOT NULL)",
+      "identity": "immich_fork.icloud_record.icloud_record_master_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_record_pkey ON immich_fork.icloud_record USING btree (\"connectionId\", \"libraryKey\", \"recordId\")",
+      "identity": "immich_fork.icloud_record.icloud_record_pkey"
+    },
+    {
+      "definition": "CREATE INDEX icloud_record_type_idx ON immich_fork.icloud_record USING btree (\"connectionId\", \"libraryKey\", \"recordType\", \"recordId\") WHERE (NOT deleted)",
+      "identity": "immich_fork.icloud_record.icloud_record_type_idx"
+    },
+    {
+      "definition": "CREATE INDEX icloud_resource_asset_idx ON immich_fork.icloud_resource USING btree (\"assetId\") WHERE (\"assetId\" IS NOT NULL)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_asset_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"icloud_resource_connectionId_libraryKey_sourceAssetId_resou_key\" ON immich_fork.icloud_resource USING btree (\"connectionId\", \"libraryKey\", \"sourceAssetId\", \"resourceKey\", fingerprint)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_connectionId_libraryKey_sourceAssetId_resou_key"
+    },
+    {
+      "definition": "CREATE INDEX icloud_resource_jobs_idx ON immich_fork.icloud_resource USING btree (\"connectionId\", id) WHERE (\"pendingJobs\" <> '[]'::jsonb)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_jobs_idx"
+    },
+    {
+      "definition": "CREATE INDEX icloud_resource_lease_idx ON immich_fork.icloud_resource USING btree (\"leaseExpiresAt\") WHERE (\"leaseToken\" IS NOT NULL)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_lease_idx"
+    },
+    {
+      "definition": "CREATE INDEX icloud_resource_owner_idx ON immich_fork.icloud_resource USING btree (\"ownerId\", status)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_owner_idx"
+    },
+    {
+      "definition": "CREATE INDEX icloud_resource_pending_idx ON immich_fork.icloud_resource USING btree (\"connectionId\", status, \"nextAttemptAt\", id) WHERE (status = ANY (ARRAY['pending'::text, 'retry'::text]))",
+      "identity": "immich_fork.icloud_resource.icloud_resource_pending_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_resource_pkey ON immich_fork.icloud_resource USING btree (id)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_pkey"
+    },
+    {
+      "definition": "CREATE INDEX icloud_run_connection_started_idx ON immich_fork.icloud_run USING btree (\"connectionId\", \"startedAt\" DESC)",
+      "identity": "immich_fork.icloud_run.icloud_run_connection_started_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_run_pkey ON immich_fork.icloud_run USING btree (id)",
+      "identity": "immich_fork.icloud_run.icloud_run_pkey"
     },
     {
       "definition": "CREATE UNIQUE INDEX migration_audit_pkey ON immich_fork.migration_audit USING btree (id)",
@@ -6828,6 +7365,34 @@
     {
       "definition": "table",
       "identity": "immich_fork.cutover_verification_run"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.icloud_album"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.icloud_checkpoint"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.icloud_connection"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.icloud_membership"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.icloud_record"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.icloud_resource"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.icloud_run"
     },
     {
       "definition": "table",

@@ -7,7 +7,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
+import { MediaHealthFinding, MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { DB } from 'src/schema/index.js';
 import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service.js';
 import { mediumFactory } from 'test/medium.factory.js';
@@ -222,12 +222,13 @@ describe('health, scoring, and duplicate-frame fork sidecars', () => {
         category: MediaHealthCategory.Corrupt,
         status: MediaHealthStatus.Found,
         severity: MediaHealthSeverity.Warning,
-        originalPath: '/asset.jpg',
+        originalPath: asset.originalPath,
         originalFileName: 'asset.jpg',
         evidence: { exact: true },
         resolution: {},
         checkedAt: new Date('2026-07-15T04:05:06.789Z'),
       });
+      assert.isDefined(finding);
       await bestPhotosRepository.upsertScore({
         assetId: asset.id!,
         ownerId: user.id,
@@ -282,7 +283,7 @@ describe('health, scoring, and duplicate-frame fork sidecars', () => {
       category: MediaHealthCategory.Corrupt,
       status: MediaHealthStatus.Found,
       severity: MediaHealthSeverity.Warning,
-      originalPath: '/asset.jpg',
+      originalPath: asset.originalPath,
       originalFileName: 'asset.jpg',
       evidence: {},
       resolution: {},
@@ -431,20 +432,27 @@ describe('health, scoring, and duplicate-frame fork sidecars', () => {
         { assetId: missingAssetId, frameIndex: 0, timestampMs: 0, path: '/missing.jpg', embedding: vector },
       ]),
     ).rejects.toThrow();
-    await expect(
-      healthRepository.upsertFinding({
-        assetId: missingAssetId,
-        runId: run.id,
-        category: MediaHealthCategory.Missing,
-        status: MediaHealthStatus.Missing,
-        severity: MediaHealthSeverity.Warning,
-        originalPath: '/missing.jpg',
-        originalFileName: 'missing.jpg',
-        evidence: {},
-        resolution: {},
-        checkedAt: new Date(),
-      }),
-    ).rejects.toThrow();
+    const missingFinding = await healthRepository.upsertFinding({
+      assetId: missingAssetId,
+      runId: run.id,
+      category: MediaHealthCategory.Missing,
+      status: MediaHealthStatus.Missing,
+      severity: MediaHealthSeverity.Warning,
+      originalPath: '/missing.jpg',
+      originalFileName: 'missing.jpg',
+      evidence: {},
+      resolution: {},
+      checkedAt: new Date(),
+    });
+    expectTypeOf(missingFinding).toEqualTypeOf<MediaHealthFinding | undefined>();
+    expect(missingFinding).toBeUndefined();
+    for (const schema of ['public', 'immich_fork']) {
+      const rows =
+        await sql`SELECT id FROM ${sql.id(schema, 'asset_health')} WHERE "assetId" = ${missingAssetId}::uuid`.execute(
+          db,
+        );
+      expect(rows.rows).toHaveLength(0);
+    }
     await expect(
       healthRepository.replaceCandidates(missingHealthId, [
         {
