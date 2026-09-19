@@ -30,6 +30,7 @@ It is designed for users who want to keep the Immich experience they already kno
 - Family-library physical deduplication
 - Enhanced RAW support for difficult camera files
 - Media Health utilities for missing or corrupt source files
+- [iCloud Photos Sync](docs/docs/guides/icloud-photos-sync.md) with server-side imports and health-aware recovery
 - Better duplicate video detection
 - Original-format-aware duplicate cleanup that keeps your HEIC or RAW instead of a re-encoded JPG
 - Live Photo relinking that reunites separated stills and videos

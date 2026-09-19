@@ -1,0 +1,73 @@
+# Overlay the release's existing Compose file. All source paths must be absolute.
+services:
+  immich-server:
+    image: ${IMMICH_FORK_IMAGE:?Set the tested fork image tag or digest}
+    user: '${IMMICH_UID:-1000}:${IMMICH_GID:-1000}'
+    environment:
+      IMMICH_ICLOUD_BRIDGE_URL: https://icloud-bridge:9443
+      IMMICH_ICLOUD_BRIDGE_TOKEN_FILE: /run/secrets/icloud_bridge_token
+      IMMICH_ICLOUD_KEY_FILE: /run/secrets/icloud_encryption_key
+      IMMICH_ICLOUD_CA_FILE: /run/secrets/icloud_bridge_ca
+      IMMICH_ICLOUD_STAGING_PATH: /var/lib/immich-icloud-staging
+    secrets:
+      - icloud_bridge_token
+      - icloud_encryption_key
+      - icloud_bridge_ca
+    volumes:
+      - type: bind
+        source: ${ICLOUD_STAGING_DIR:?Set a private staging directory outside every media and external-library root}
+        target: /var/lib/immich-icloud-staging
+        bind:
+          create_host_path: false
+    networks:
+      - default
+      - icloud-transport
+    depends_on:
+      icloud-bridge:
+        condition: service_started
+
+  icloud-bridge:
+    build:
+      context: ${IMMICH_SOURCE_ROOT:?Set the absolute path to this fork checkout}/icloud-bridge
+      args:
+        UID: ${IMMICH_UID:-1000}
+        GID: ${IMMICH_GID:-1000}
+    image: immich-icloud-bridge:rclone-1.75.1
+    user: '${IMMICH_UID:-1000}:${IMMICH_GID:-1000}'
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=16m,mode=0700,uid=${IMMICH_UID:-1000},gid=${IMMICH_GID:-1000}
+    environment:
+      ICLOUD_BRIDGE_LISTEN: :9443
+      ICLOUD_BRIDGE_TOKEN_FILE: /run/secrets/icloud_bridge_token
+      ICLOUD_BRIDGE_TLS_CERT_FILE: /run/secrets/icloud_bridge_certificate
+      ICLOUD_BRIDGE_TLS_KEY_FILE: /run/secrets/icloud_bridge_private_key
+    secrets:
+      - icloud_bridge_token
+      - icloud_bridge_certificate
+      - icloud_bridge_private_key
+    networks:
+      - icloud-transport
+    # No published port, host network, media mounts, Apple credentials, or plaintext listener.
+
+networks:
+  icloud-transport:
+    driver: bridge
+
+secrets:
+  icloud_bridge_token:
+    file: ${ICLOUD_SECRETS_DIR:?Set the private secrets directory}/bridge-token
+  icloud_encryption_key:
+    file: ${ICLOUD_SECRETS_DIR:?Set the private secrets directory}/encryption-key
+  icloud_bridge_ca:
+    file: ${ICLOUD_SECRETS_DIR:?Set the private secrets directory}/ca.crt
+  icloud_bridge_certificate:
+    file: ${ICLOUD_SECRETS_DIR:?Set the private secrets directory}/bridge.crt
+  icloud_bridge_private_key:
+    file: ${ICLOUD_SECRETS_DIR:?Set the private secrets directory}/bridge.key

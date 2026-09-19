@@ -7,6 +7,7 @@
   import {
     mdiCellphoneArrowDownVariant,
     mdiContentDuplicate,
+    mdiCloudDownloadOutline,
     mdiCrosshairsGps,
     mdiFileSearchOutline,
     mdiImageSizeSelectLarge,
@@ -22,6 +23,7 @@
     { href: Route.largeFileUtility(), icon: mdiImageSizeSelectLarge, label: $t('review_large_files') },
     { href: Route.livePhotosUtility(), icon: mdiMotionPlayOutline, label: $t('relink_live_photos') },
     { href: Route.geolocationUtility(), icon: mdiCrosshairsGps, label: $t('manage_geolocation') },
+    { href: Route.icloudSyncUtility(), icon: mdiCloudDownloadOutline, label: $t('icloud_sync.title') },
     ...(authManager.user.isAdmin
       ? [
           { href: Route.missingMediaUtility(), icon: mdiFileSearchOutline, label: $t('review_missing_media') },
