@@ -29,8 +29,8 @@ It is designed for users who want to keep the Immich experience they already kno
 - **Nested album folders** with custom icons, drag-and-drop organization, and manual reordering
 - Family-library physical deduplication
 - Enhanced RAW support for difficult camera files
-- Media Health utilities for missing or corrupt source files
-- [iCloud Photos Sync](docs/docs/guides/icloud-photos-sync.md) with server-side imports and health-aware recovery
+- [Hash-based Media Health recovery](docs/docs/guides/media-recovery.md) for missing, renamed, or corrupt source files
+- [iCloud Photos Sync](docs/docs/guides/icloud-photos-sync.md) with background imports, same-asset recovery, Apple edit Stacks, and Live Photo pairing
 - Better duplicate video detection
 - Original-format-aware duplicate cleanup that keeps your HEIC or RAW instead of a re-encoded JPG
 - Live Photo relinking that reunites separated stills and videos
@@ -205,8 +205,8 @@ This fork adds admin tools for libraries with RAW camera files, external-library
 ### Missing media review
 
 - Finds assets whose source files are missing or unreadable
-- Locates same-named candidates inside external-library import paths
-- Compares candidate media against existing thumbnails or previews before relinking
+- Locates content-hash matches in configured library/storage locations, even after files are renamed or moved
+- Requires verified content identity before relinking; matching names, thumbnails, or video durations are not enough
 - Relinks validated external-library matches and leaves uncertain findings for review
 
 ### Corrupt media review
@@ -214,7 +214,28 @@ This fork adds admin tools for libraries with RAW camera files, external-library
 - Scans source media for decode failures
 - Shows timeline-style findings with thumbnails and error evidence
 - Moves recently revalidated corrupt assets to Immich trash only after PIN and typed confirmation
-- Separates unsupported RAW files from true corruption so they are not treated as broken originals
+- Separates unsupported RAW files and validation timeouts from confirmed corruption
+- Accepts validated matching iCloud recovery copies while preserving the existing asset ID and associations
+
+See [Recover missing or corrupt media](docs/docs/guides/media-recovery.md) for Locate, managed/external recovery, privacy, and why visible-media, health-scan, and orphan-file counts can differ. Orphan reports require separate investigation; this feature does not delete transcodes or XMP sidecars.
+
+---
+
+## iCloud Photos Sync and Recovery
+
+Import iCloud Photos directly into your Immich account through **Utilities → iCloud Photos Sync**. Transfers run on the server and continue after you close the browser. Choose libraries/albums, schedule runs, pause/resume, retry failures, and review saved progress.
+
+- **Recover the existing asset:** validated content-hash matches can repair missing, corrupt, unreadable, or offline media while preserving its ID and associations. Healthy matching assets are reused; intentionally trashed assets stay in Trash.
+- **Preserve Apple edits with Stacks:** available edited versions are separate Immich assets stacked with their originals. Apple edit/revert changes respect manual Stack choices and local edits.
+- **Keep Live Photos together:** still images and movies link through native Live Photo relationships using Apple source identities. A missing movie can recover independently of its healthy still.
+- **Keep album context:** source album identities, supported nesting, and managed memberships survive renames. Supported metadata includes favorites, hidden status, and capture dates.
+- **Choose recovery boundaries:** hidden-media import and conversion of damaged external-library matches to managed assets are opt-in. Recovery does not overwrite external files.
+
+Sync is one-way: it does not write back to iCloud or mirror source deletions into Immich. Exact duplicate detection may require an initial download. Retained edit versions are bounded; existing recovery copies are not automatically deleted.
+
+An administrator must install the private HTTPS bridge and staging storage. Live Apple-account verification remains outstanding for this implementation. Shared Albums, SMS verification, edited Live Photo pairing, and full Apple edit-effect fidelity are unsupported; see the guide for the complete scope.
+
+**Get started:** [User guide](docs/docs/guides/icloud-photos-sync.md) · [Administrator setup](docs/docs/guides/icloud-photos-server-setup.md) · [Media recovery guide](docs/docs/guides/media-recovery.md)
 
 ---
 
@@ -228,6 +249,8 @@ This fork adds a utility that finds those separated pairs and reassembles them.
 - Matches pairs primarily on the identifier Apple embeds in both files, so confident matches are exact
 - Adds a best-effort fallback for files whose metadata was stripped, matching on filename and capture time — these are shown as lower-confidence matches for you to review before relinking
 - Relinking hides the standalone video and restores the playable live photo, just as if it had been uploaded intact
+
+For iCloud imports, [iCloud Photos Sync](docs/docs/guides/icloud-photos-sync.md#live-photos-and-raw-alternatives) links the source still/movie resources and supports independent component recovery. This is separate from the general relinking utility’s lower-confidence fallback suggestions.
 
 Note: the optional AAC audio track that some live photos include is not part of the reassembled pair.
 
@@ -555,7 +578,10 @@ Run `node packages/cli/dist/index.js migrate --help` for the full list.
 
 ## Links
 
-- [Documentation](https://docs.immich.app/)
+- [iCloud Photos Sync user guide](docs/docs/guides/icloud-photos-sync.md)
+- [iCloud Photos Sync administrator setup](docs/docs/guides/icloud-photos-server-setup.md)
+- [Recover missing or corrupt media](docs/docs/guides/media-recovery.md)
+- [Upstream documentation](https://docs.immich.app/)
 - [About](https://docs.immich.app/overview/introduction)
 - [Installation](https://docs.immich.app/install/requirements)
 - [Roadmap](https://immich.app/roadmap)

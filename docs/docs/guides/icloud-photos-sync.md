@@ -1,173 +1,126 @@
 # iCloud Photos Sync
 
-**Utilities → iCloud Photos Sync** manages one-way imports from iCloud Photos into your Immich account. Transfers run on the server; your browser does not relay photos and can close while a run continues. The connector never writes to or deletes from iCloud, and source deletions do not mirror-delete Immich assets.
+Import your iCloud Photos library into Immich from **Utilities → iCloud Photos Sync**. Downloads run on the server and continue when you close the browser. You can import available Apple edits, preserve Live Photos, and recover matching Immich files that are missing or damaged.
 
-This feature requires the fork server, its database migrations, and the separate HTTPS iCloud bridge. It is not a global Rclone installation, mounted cloud filesystem, Mac agent, or `rclone sync` mirror.
+This is a one-way import. It does not write changes back to Apple or delete Immich photos when you delete them from iCloud. Disconnecting leaves your imported Immich photos in place.
 
-## Deploy the bridge
+## Before you start
 
-Use the [Compose overlay](../../../deployment/icloud-sync.compose.yml) with the Compose file for your installed fork release. The bridge imports Rclone **v1.75.1**, commit `687d264b689b8c49a67e2e52a8a5e0caa01c04ce`; its Go modules and container base images are pinned. The original Rclone MIT copyright and permission notice is included at `icloud-bridge/licenses/rclone/COPYING` in the checkout and `/usr/share/licenses/icloud-bridge/rclone/COPYING` in the runtime image. The [protocol reference](../../../icloud-bridge/api.md) records the transport contract and limitations.
+Your administrator must enable the connector using the [server setup guide](icloud-photos-server-setup.md). If the page says sync is not enabled, account sign-in alone cannot enable it. Use an HTTPS address for Immich.
 
-Prepare absolute paths in your deployment environment:
+Have your Apple account password and a trusted Apple device available. Enable **Access iCloud Data on the Web** on that device. Advanced Data Protection may require you to approve web access again when it expires. This connector supports trusted-device verification codes; SMS verification is not supported.
 
-```dotenv
-IMMICH_SOURCE_ROOT=/opt/immich
-IMMICH_FORK_IMAGE=your-registry/immich-server:your-tested-fork-release
-IMMICH_UID=1000
-IMMICH_GID=1000
-ICLOUD_SECRETS_DIR=/srv/immich-icloud/secrets
-ICLOUD_STAGING_DIR=/srv/immich-icloud/staging
-```
+The implementation has passed local protocol, database, and web tests. A live Apple-account sync has not yet been verified. Start with a small album before selecting a large library.
 
-Set the UID/GID to the non-root identity that owns this installation's Immich media files. Both services use that identity. Existing media directories must already be writable by it; this overlay does not recursively change their ownership. Do not set either ID to zero.
+## Connect and choose photos
 
-Staging must be a private directory disjoint from Immich's upload, library, thumbnail, profile, backup, and every external-library root. Do not place it inside a monitored media tree or expose it through a web server or file share. It holds partial downloads and verified recovery copies. Check available disk space as well as the configured staging byte limit.
+1. Open **Utilities → iCloud Photos Sync**.
+2. Enter a **Connection name**, such as “Personal iCloud”, and select **Add connection**.
+3. Enter your **Apple account email** and password, then select **Sign in to iCloud**.
+4. If prompted, enter the six-digit code from your trusted device and select **Verify code**. If device approval is required, approve access on your device, then select **Check device approval**.
+5. Select **Load libraries and albums**. If the inventory is incomplete, load it again before relying on the selection. Filter albums by name if needed.
+6. Select the libraries and albums you want. Leaving libraries unselected includes all supported libraries; leaving albums unselected includes all supported photos and videos within the selected libraries, including items outside albums. Albums retain their identity when renamed.
+7. Choose your settings, select **Save**, then **Run now**.
 
-Generate secrets on the deployment host without printing their values:
+Passwords and verification codes clear after submission. The server stores an encrypted session so you do not have to enter them for every run. **Check saved session** checks whether that access is still valid.
 
-```sh
-umask 077
-mkdir -p "$ICLOUD_SECRETS_DIR" "$ICLOUD_STAGING_DIR"
-openssl rand -hex 32 > "$ICLOUD_SECRETS_DIR/bridge-token"
-openssl rand -base64 32 > "$ICLOUD_SECRETS_DIR/encryption-key"
-openssl req -x509 -newkey rsa:3072 -nodes -days 3650 \
-  -subj '/CN=Immich iCloud private CA' \
-  -keyout "$ICLOUD_SECRETS_DIR/ca.key" -out "$ICLOUD_SECRETS_DIR/ca.crt"
-openssl req -newkey rsa:3072 -nodes -subj '/CN=icloud-bridge' \
-  -keyout "$ICLOUD_SECRETS_DIR/bridge.key" -out "$ICLOUD_SECRETS_DIR/bridge.csr"
-printf 'subjectAltName=DNS:icloud-bridge\nextendedKeyUsage=serverAuth\nbasicConstraints=CA:FALSE\n' > "$ICLOUD_SECRETS_DIR/bridge.ext"
-openssl x509 -req -days 365 -in "$ICLOUD_SECRETS_DIR/bridge.csr" \
-  -CA "$ICLOUD_SECRETS_DIR/ca.crt" -CAkey "$ICLOUD_SECRETS_DIR/ca.key" -CAcreateserial \
-  -extfile "$ICLOUD_SECRETS_DIR/bridge.ext" -out "$ICLOUD_SECRETS_DIR/bridge.crt"
-sudo chown -R "$IMMICH_UID:$IMMICH_GID" "$ICLOUD_SECRETS_DIR" "$ICLOUD_STAGING_DIR"
-chmod 700 "$ICLOUD_SECRETS_DIR" "$ICLOUD_STAGING_DIR"
-chmod 600 "$ICLOUD_SECRETS_DIR"/*
-```
+## Choose import settings
 
-Run these once for a new installation. Do not regenerate the encryption key when updating containers: stored sessions need the original key. The server reads a **base64-encoded 32-byte key**, not a password or arbitrary text. Keep the CA signing key offline after issuing the bridge certificate. Renew the certificate before expiration.
+| Setting                                                                  | What it does                                                                                                                                                    |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Import available Apple-edited versions and stack them with originals** | Imports available finished edits as separate assets in an Immich Stack with the original. Enabled by default.                                                   |
+| **Import hidden source media**                                           | Includes Apple Hidden media. Requires an unlocked elevated Immich session when saving. Imported hidden media uses Immich Locked privacy. Off by default.        |
+| **Allow damaged external-library matches to become managed assets**      | Allows a verified recovery copy to become Immich-managed media while preserving the existing asset ID. It does not overwrite the external file. Off by default. |
+| **Interval (hours)**                                                     | Sets the interval between scheduled runs; default 24 hours.                                                                                                     |
+| **Concurrent downloads**                                                 | Sets the number of concurrent downloads for this connection; default 1, maximum 4, also subject to server limits.                                               |
+| **Staging budget (bytes)**                                               | Reserves space for downloads and recovery copies; default 20 GiB (`21474836480` bytes). This is separate from your account's media quota.                       |
 
-Compose file-backed secrets are bind mounts on many installations; host ownership and modes are authoritative. Apple passwords and verification codes belong only in the HTTPS web form, never `.env`, Compose, shell arguments, or support logs. The bridge receives only its bearer token and TLS files. The server receives the bearer token, CA certificate, and session encryption key.
+Save changed settings before running. If you reduce the selection, downloaded recovery copies may remain in staging until they can be safely finalized. They still count toward capacity.
 
-Validate and start from the checkout, using your release's base Compose path:
+## What happens to existing photos?
 
-```sh
-docker compose --env-file /absolute/path/to/immich.env \
-  -f /absolute/path/to/docker-compose.yml \
-  -f "$IMMICH_SOURCE_ROOT/deployment/icloud-sync.compose.yml" config --quiet
-docker compose --env-file /absolute/path/to/immich.env \
-  -f /absolute/path/to/docker-compose.yml \
-  -f "$IMMICH_SOURCE_ROOT/deployment/icloud-sync.compose.yml" up -d --build
-```
+The connector compares file contents using hashes. A renamed file can still be the same photo; matching names alone do not establish a match. An initial download may be necessary to identify an exact duplicate.
 
-The bridge has no published port or media mount. Its private Docker network permits outbound Apple HTTPS traffic. Do not add host networking or a public reverse-proxy route. The Immich web application itself must be served over HTTPS for account authentication.
+| Existing Immich media                                                              | Result                                                                                                                    |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Same content and healthy file                                                      | Reuses the existing asset instead of importing another copy.                                                              |
+| Matching saved content hash, but missing, corrupt, unreadable, or offline media    | Downloads and validates the matching resource, then repairs the existing asset when safe. Its ID and associations remain. |
+| No matching content                                                                | Imports a new asset.                                                                                                      |
+| Intentionally trashed asset                                                        | Leaves it in Trash; sync does not restore it automatically.                                                               |
+| Damaged external-library match without managed-recovery permission                 | Requires review and retains the recovery copy.                                                                            |
+| Uncertain identity, unsupported media, or conflicting privacy/relationship choices | Requires review rather than claiming success.                                                                             |
 
-The server configuration paths are `IMMICH_ICLOUD_BRIDGE_URL`, `IMMICH_ICLOUD_BRIDGE_TOKEN_FILE`, `IMMICH_ICLOUD_KEY_FILE`, `IMMICH_ICLOUD_CA_FILE`, and `IMMICH_ICLOUD_STAGING_PATH`. They are set by the overlay. For split API/worker deployments, give each process the same transport/key configuration and consistent access to the private staging directory.
+A database checksum alone is not enough to skip recovery: the connector verifies the destination file. A previously imported photo can therefore be fetched again if its Immich copy later becomes missing or corrupt. Failed validation never counts as a repair.
 
-### Check readiness and the pinned version
+See [Recover missing or corrupt media](media-recovery.md) for the full workflow and how to review results.
 
-From the server container, verify the bridge's HTTPS certificate and health response using Node's built-in client. Prefix `exec` with the same Compose files and environment used above:
+## Apple edits and Stacks
 
-```sh
-docker compose exec immich-server node --input-type=module -e '
-import https from "node:https";
-import fs from "node:fs";
-https.get(new URL("/health", process.env.IMMICH_ICLOUD_BRIDGE_URL), {
-  ca: fs.readFileSync(process.env.IMMICH_ICLOUD_CA_FILE)
-}, response => {
-  if (response.statusCode !== 200) process.exitCode = 1;
-  response.pipe(process.stdout);
-}).on("error", () => { console.error("Bridge TLS/readiness check failed"); process.exitCode = 1; });
-'
-```
+When edit import is enabled, an available Apple-edited photo or video becomes a separate Immich asset grouped with its original using **Stacks**. Open the Stack to view its members and access the original. The current Apple edit can become the displayed member when that does not override your manual Stack choice or local work.
 
-The response identifies protocol version 1 and its pinned Rclone source. This proves local readiness, not Apple authentication or a successful import. No live Apple-account verification is implied by a container build, synthetic fixture, or health response.
+For example, an original photo and Apple's cropped version appear together in a Stack. A later Apple edit adds another available version. Reverting in Apple removes the current edit preference; it does not delete your original, older imported versions, or independent Immich edits.
 
-## Connect an Apple account
+Apple's finished image/video is imported; its adjustment recipe is not converted into Immich editing instructions. Separate Apple photos that share identical original bytes keep their source relationships and distinct edits, although their original may reuse one destination asset.
 
-1. Open **Utilities → iCloud Photos Sync**, add a descriptive connection name, and sign in with your Apple account email and password.
-2. Enter the six-digit trusted-device verification code when requested. SMS verification is not supported by this bridge.
-3. Enable **Access iCloud Data on the Web** on a trusted Apple device. With Advanced Data Protection, approve the device prompt and select **Check device approval**. One click makes one approval request; access may expire and require approval again.
-4. Select **Load libraries and albums**. Unsupported source scopes remain explicitly marked. An incomplete inventory is not proof that an album or photo disappeared.
-5. Choose libraries/albums or leave a scope unselected to include all supported items in it. Filter albums by name to browse large inventories; selection retains stable source IDs even when names change.
-6. Set the interval, download concurrency, staging budget, and media policies. **Save**, then **Run now**.
+Up to **20 distinct retained Apple edit versions per source photo** can be admitted. A new version above that ceiling requires review; existing versions are preserved. Repeatedly choosing Retry does not bypass the limit. Ask your administrator for help reviewing retained versions before removing anything.
 
-Passwords and codes clear after submission and are not stored in browser storage. Opaque Apple sessions are encrypted in the server database. **Check saved session** validates existing access without transferring media.
+## Live Photos and RAW alternatives
 
-**Pause**, **Resume**, **Cancel current run**, **Retry failures**, and **Reconcile and rescan** operate on saved server state. Closing the browser does not cancel a run. **Refresh** reads persisted counts; logical photos/videos and file resources are separate because a Live Photo or RAW pair contains multiple files. An exact duplicate may require an initial download to establish content identity.
+A Live Photo contains a still image, such as JPG or HEIC, and a short movie. The connector uses Apple source identities to link these through Immich's native Live Photo relationship. The movie becomes the still's motion component rather than a separate timeline item.
 
-## Recovery and privacy
+If only the movie is missing or corrupt, the connector can recover that component without replacing the healthy still. General pairing of files already imported outside this connector remains available under **Utilities → Relink live photos**.
 
-A matching database checksum alone does not prove the destination file is healthy. A validated iCloud original can recover an existing managed asset with missing, corrupt, unreadable, or offline media while preserving that asset's ID and relationships. Applicable active health findings clear only after the recovered bytes pass verification. A failed, truncated, wrong-variant, or unverified download cannot count as a repair.
+Available original and RAW alternatives are preserved as their own resources. An available JPEG preview is not substituted for an original HEIC or RAW file. Unsupported decoding is reported for review.
 
-External-library recovery is **off by default**. Opting into **Allow damaged external-library matches to become managed assets** authorizes the server to recover a proven match into managed storage while keeping its identity. It does not authorize overwriting external files. Without this policy, a damaged external match requires review and its staged recovery copy remains available; the connector does not silently convert it to managed storage.
+## Albums and metadata
 
-Hidden-source import is also opt-in and requires an elevated unlocked session when saving. Destination privacy and metadata locks remain authoritative. Progress/errors must not disclose hidden asset IDs, names, paths, or matches. Intentionally trashed assets are not automatically restored.
+Source album names, nesting, and memberships are kept where reliable source information is available. Connections have their own album organization, and albums with identical names retain separate identities. Existing or repaired assets can receive their source album memberships without another import.
 
-## Source metadata
+A complete source inventory can remove a membership managed by that connection. It does not remove an independently managed membership or delete your local albums. Source album deletion does not delete destination photos.
 
-The verified source fields are favorites, hidden status, and capture date. They are applied after metadata extraction, with source/applied baselines saved for later reconciliation. Native metadata locks and local changes remain authoritative. Apple Hidden maps to Immich **Locked**; Immich's internal **Hidden** visibility is reserved for motion companions. A source unhide never automatically removes a destination privacy choice.
+Favorites, hidden status, and capture dates are supported. Metadata locks and tracked local changes remain authoritative; missing source data does not erase destination values. On the first sync of an existing asset, a source favorite can replace Immich's default false value because an earlier untracked manual false cannot be distinguished from that default. Later comparisons use the saved sync history.
 
-On first adoption, an existing favorite is preserved when the source is not a favorite. A destination's default false can adopt source true; the native schema cannot distinguish that default from an untracked historical manual false. Later favorite changes use the saved applied baseline. Capture dates respect the native date lock and retain the existing timezone interpretation. Conflicting source metadata for distinct logical photos sharing one destination asset requires review.
+Source captions, locations, and timezone fields are not currently supported by the verified adapter. Existing extracted or locally entered values are preserved. Unhiding a photo in Apple does not automatically remove an Immich privacy choice.
 
-Source captions, locations, and timezone fields are **not supported** by the verified raw-field adapter. Existing extracted or local values are preserved; absent source fields never erase destination metadata. The connector does not rewrite original EXIF or fabricate unavailable Apple fields.
+## Monitor, pause, and resume
 
-## Health counts and orphan reports
+Choose **Refresh** to read saved progress. Counts survive closing the page or restarting the server; they are not a live animation of each download.
 
-The health scanner includes native hidden Live Photo motion assets. Server photo/video statistics exclude those hidden assets, and per-user statistics apply Timeline/Archive and privacy filters. These totals describe different populations; compare the same scope before treating a difference as missing media. Orphan reports also include physical derivative and sidecar files, rather than only logical photos.
+| Control                  | Use it to                                                                                          |
+| ------------------------ | -------------------------------------------------------------------------------------------------- |
+| **Run now**              | Start or continue work using saved settings.                                                       |
+| **Pause**                | Stop further work while preserving resumable state.                                                |
+| **Resume**               | Continue a paused connection with a saved Apple session.                                           |
+| **Cancel current run**   | Stop current work while retaining imported assets and resumable recovery state.                    |
+| **Retry failures**       | Retry failed or reviewable work after addressing its cause.                                        |
+| **Reconcile and rescan** | Rebuild the source inventory and recheck mappings. This is not a delete-and-reimport operation.    |
+| **Disconnect account**   | Stop the connection and remove its saved Apple session after confirmation. Imported assets remain. |
 
-Locate accepts verified content hashes even when filenames, paths, or saved sizes changed. A path-derived `sha1Path` is not content identity. This connector can recover matching original, rendition, or Live Photo component bytes, but an original's hash cannot identify a differently encoded transcode or XMP sidecar. It does not delete orphaned files or establish that a reported orphan is safe to remove. The reported production orphan inventory still needs a separate scoped reconciliation.
+**Logical photos and videos** and **File resources** are different totals. One Live Photo has a still and movie; an edited photo or RAW pair may have additional resources. Imported, reused, repaired, staged, and review counts describe different stages or outcomes and should not be added together as a total number of photos.
 
-## Originals, edits, albums, and limits
+**Recent verified results** links to **View media** and resolved missing/corrupt history. **Committed; follow-up pending** means the database change has been saved but follow-up work remains. Authentication challenges, incomplete inventories, and deferred repairs are not completed imports.
 
-Source identities are library/zone, asset/master, resource, and album IDs—not filenames or album names. Multiple logical source photos may share original bytes while retaining different source renditions and memberships. Apple-edited files are independent Immich assets grouped with their originals using native **Stacks**, with the source-edited asset preferred when that does not overwrite manual stack choices or local work. This uses normal Immich serving and downloads. It does not fabricate an Immich edit operation: original bytes, Apple-rendered assets, and local Immich edit instructions remain separate. Live Photo still/movie resources are linked through Immich's native Live Photo relationship using source identities; the existing Relink Live Photos utility remains available.
+## Troubleshooting
 
-The pinned bridge exposes original, original motion, RAW/alternate original, available full-size JPEG, and full-size video resource descriptors. Actual availability depends on Apple's response. It preserves raw adjustment fields when exposed; it does not reconstruct Apple adjustment recipes or promise portable edits. Edited Live Photo pairing and all special slow-motion/HDR edit semantics are not supported. Do not substitute a preview JPEG for an original HEIC/RAW.
+| What you see                                         | What to do                                                                                                                         |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Sync is not enabled                                  | Ask your administrator to complete [server setup](icloud-photos-server-setup.md).                                                  |
+| Device approval or sign-in required                  | Approve on your trusted device or sign in again. Use **Check saved session** to check access.                                      |
+| Waiting to retry or rate limited                     | Allow the retry delay. Do not create extra connections to bypass it.                                                               |
+| Incomplete inventory                                 | Load the inventory again. Do not treat missing entries as deleted photos.                                                          |
+| Reserved staging bytes outside the current selection | Reselect the affected source and retry, or ask the administrator to review capacity. Do not empty staging manually.                |
+| `staging_retained_capacity`                          | Retained recovery copies are using the available budget. Reselection/recovery or more capacity is needed; the files are preserved. |
+| `retained_edit_limit`                                | The retained edit-version limit was reached. Review existing versions before deciding whether anything can be removed.             |
+| `icloud_finalization_failed`                         | Follow-up work repeatedly failed. Ask the administrator to resolve the queue/storage problem, then use **Retry failures**.         |
+| Unsupported or requires review                       | Check the scope below and the recovery guide. A timeout or unsupported decoder is not proof that a file is corrupt.                |
 
-Primary and enumerated shared sync zones are distinct from Shared Albums. `CMM-*` Shared Albums are unsupported. Apple sharing permissions and Smart Album semantics are not reproduced. Nested albums use source parent IDs when available. Source membership removals require a complete authoritative inventory and only affect memberships owned by that connection; independent/manual memberships and local albums remain separate. Source album deletion is non-destructive.
+## Supported media and limits
 
-The library/album selector supports at most **100 libraries and 10,000 albums per connection**. Exceeding either limit fails explicitly with `icloud_inventory_limit_exceeded`; it does not return a silently truncated selection or a completed scan. Source album IDs remain distinct even when names match.
+- Supports exposed originals, original Live Photo motion components, RAW alternatives, and available full-size Apple-rendered image/video edits.
+- Shared sync libraries are distinct from Apple Shared Albums. Shared Albums (`CMM-*`), Apple sharing permissions, and Smart Album semantics are unsupported.
+- Edited Live Photo pairing, Apple adjustment rendering, and all special slow-motion/HDR edit behavior are not supported. Do not assume these formats reproduce every Apple effect.
+- At most 100 libraries and 10,000 albums per connection are supported. Larger inventories fail explicitly. The selector shows up to 200 matching albums at once; filtering helps find others.
+- Interrupted downloads restart from the beginning. A run resumes its saved work, but individual file transfers do not resume from a byte offset.
+- Sync does not delete orphaned transcodes or XMP sidecars. See [why health and orphan counts differ](media-recovery.md#why-do-the-counts-differ).
 
-Relationship reconciliation inspects at most 100 **current** resources in a shared-original family. A larger family requires review (`resource_family_too_large`). Historical Apple edit admission is separately limited to **20 distinct retained edit fingerprints per logical source photo**, across image/video renditions. Existing mapped assets, reservations, and staged or precommit versions count, including superseded versions. At the ceiling a new descriptor remains recorded but becomes `needs-review` with `retained_edit_limit`; it is not downloaded. Already retained fingerprints can be reused, and original/motion recovery is not subject to this edit limit.
-
-Superseded renditions remain immutable Immich assets and can remain in their Stack. The connector does not prune them or delete the only recoverable version. Pre-existing histories above the ceiling are retained. Moving an old asset to Trash does not release its slot: only confirmed removal of the mapped asset, followed by **Retry failures**, can restore admission capacity; retained staging/precommit copies still count until safely finalized. Review source relationships and recoverability before any manual asset removal. Native account quota and staging limits continue to apply to bytes.
-
-Downloads restart from the beginning after interruption; the bridge does not support Range resume. Inventory pages are bounded, but an initial scan is not a transactionally isolated Apple snapshot. Changes must reconcile after the initial scan. Authentication failure or a partial page must never be presented as a completed scan.
-
-Retained staging for source versions that are no longer current stays reserved. If it prevents another reservation, the affected connection stops with `staging_retained_capacity`; reservations and recovery files are not discarded. An operator can reselect the affected source and retry to verify, promote, and finalize its retained copy, or an administrator can add capacity. There is no unchecked disposal action or staging-directory purge workflow. An already reserved resource may continue within its existing reservation even after budgets are reduced, and committed cleanup can release space without new capacity admission.
-
-### Media validation timeout
-
-The server environment variable `IMMICH_MEDIA_VALIDATION_TIMEOUT_MS` controls the integrity validator's timeout, including full video decoding. Its default is **120000 ms (two minutes)**; finite values are clamped to **10000–86400000 ms** and invalid values use the default. Set it on each server/worker that performs validation, for example in an additional Compose override:
-
-```yaml
-services:
-  immich-server:
-    environment:
-      IMMICH_MEDIA_VALIDATION_TIMEOUT_MS: '600000'
-```
-
-A timeout is unresolved validation, not proof of corruption or successful repair. Raising the timeout can permit long videos to finish; it does not add decoder support. Native operations keep their concurrency slot until they actually finish after a timeout, preventing timed-out work from creating unbounded parallel decoding.
-
-## Disconnect, backup, and restore
-
-**Disconnect account** removes its saved Apple session and stops new work. Existing imported Immich assets remain. It does not delete the Apple account's photos or turn the connector into a mirror. Do not manually empty staging while a run is active or while it contains the only verified recovery copy.
-
-Back up the Immich database, managed media, retained source resources, private staging state, and encryption key as one consistent checkpoint. Restrict backup access as tightly as production secrets. Stop/pause workers before taking an application-consistent snapshot. Keep the bearer token and TLS material separately recoverable; restore permissions before starting services. Restoring a database without its matching encryption key requires Apple reauthentication. Never attach session values, tokens, signed URLs, passwords, or keys to support reports.
-
-All connector tables live in `immich_fork`. During a certified official-Immich handoff they remain dormant. On return, missing public asset/album mappings are archived and cleared, source records remain, and deleted owners' connections are disabled. Follow the existing [fork/official switching procedure](../features/switching-between-fork-and-official.md); deploying an arbitrary official image is not a compatibility check.
-
-## Troubleshooting and acceptance
-
-| State or symptom                   | Next action                                                                                       |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Connector disabled                 | Check server environment paths, readable secret files, and the HTTPS bridge URL.                  |
-| Awaiting two-factor authentication | Enter the current trusted-device code; SMS is unsupported.                                        |
-| Awaiting device approval           | Enable web access, approve on a trusted device, then check approval once.                         |
-| Reauthentication required          | Sign in again. Do not repeatedly retry downloads with an expired session.                         |
-| Rate limited                       | Preserve the retry state and allow its delay; do not create parallel connections to bypass it.    |
-| Partial inventory                  | Resume/reload the inventory. Do not interpret absent rows as source deletions.                    |
-| Staging/disk or quota limit        | Free authorized space or adjust the configured limit; preserve verified recovery copies.          |
-| Unsupported or requires review     | Inspect the safe reason and source-format capability. These resources are not successful imports. |
-| External repair outstanding        | Decide whether to authorize managed recovery; external files are not silently overwritten.        |
-
-Release acceptance requires real integration checks plus an operator-authorized Apple account run. Verify a small selected album, repeat import, an authentication challenge, a restart, and recovery of a deliberately broken synthetic managed asset. Confirm that the same asset ID serves healthy bytes and its applicable active findings disappear. A second run should reuse that healthy resource. Fixture and local database tests do not establish live iCloud compatibility, universal edit fidelity, or production readiness.
+Administrator details for backups, encryption keys, storage, and decoder timeouts are in [server setup](icloud-photos-server-setup.md).
