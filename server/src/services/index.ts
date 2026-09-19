@@ -19,6 +19,11 @@ import { ForkHandoffService } from 'src/services/fork-handoff.service.js';
 import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service.js';
 import { ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service.js';
 import { HlsService } from 'src/services/hls.service.js';
+import { ICloudAlbumService } from 'src/services/icloud-album.service.js';
+import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
+import { ICloudRelationsService } from 'src/services/icloud-relations.service.js';
+import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
+import { ICloudSyncService } from 'src/services/icloud-sync.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { JobService } from 'src/services/job.service.js';
@@ -27,6 +32,8 @@ import { LivePhotoService } from 'src/services/live-photo.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { MapService } from 'src/services/map.service.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
+import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
+import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
 import { MediaService } from 'src/services/media.service.js';
 import { MemoryService } from 'src/services/memory.service.js';
 import { MetadataService } from 'src/services/metadata.service.js';
@@ -65,6 +72,13 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  ICloudMetadataService,
+  ICloudRelationsService,
+  ICloudAlbumService,
+  MediaRecoveryService,
+  MediaIntegrityService,
+  ICloudStagingService,
+  ICloudSyncService,
   ApiKeyService,
   ActivityService,
   AlbumService,

@@ -7506,6 +7506,381 @@
         "x-immich-state": "Stable"
       }
     },
+    "/icloud-sync/connections": {
+      "get": {
+        "operationId": "listICloudConnections",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudConnectionsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "operationId": "createICloudConnection",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ICloudConnectionCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudConnectionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/icloud-sync/connections/{id}": {
+      "delete": {
+        "operationId": "disconnectICloudConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "patch": {
+        "operationId": "updateICloudConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ICloudConnectionUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudConnectionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/icloud-sync/connections/{id}/auth": {
+      "post": {
+        "operationId": "authenticateICloudConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ICloudAuthDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudConnectionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/icloud-sync/connections/{id}/control": {
+      "post": {
+        "operationId": "controlICloudConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ICloudControlDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudConnectionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/icloud-sync/connections/{id}/inventory": {
+      "get": {
+        "operationId": "getICloudInventory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudInventoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/jobs": {
       "get": {
         "deprecated": true,
@@ -26391,6 +26766,414 @@
         ],
         "type": "integer"
       },
+      "ICloudAuthAction": {
+        "enum": [
+          "login",
+          "two-factor",
+          "device-approval",
+          "validate"
+        ],
+        "type": "string"
+      },
+      "ICloudAuthDto": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ICloudAuthAction"
+          },
+          "appleId": {
+            "format": "email",
+            "maxLength": 320,
+            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "type": "string"
+          },
+          "code": {
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "ICloudConnectionCreateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": false,
+            "default": {
+              "albums": [],
+              "concurrency": 1,
+              "includeEdits": true,
+              "includeHidden": false,
+              "intervalHours": 24,
+              "libraries": [],
+              "recoverExternalAsManaged": false,
+              "stagingBytes": 21474836480
+            },
+            "properties": {
+              "albums": {
+                "default": [],
+                "items": {
+                  "maxLength": 1024,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 10000,
+                "type": "array"
+              },
+              "concurrency": {
+                "default": 1,
+                "maximum": 4,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "includeEdits": {
+                "default": true,
+                "type": "boolean"
+              },
+              "includeHidden": {
+                "default": false,
+                "type": "boolean"
+              },
+              "intervalHours": {
+                "default": 24,
+                "maximum": 8760,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "libraries": {
+                "default": [],
+                "items": {
+                  "maxLength": 1024,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "recoverExternalAsManaged": {
+                "default": false,
+                "type": "boolean"
+              },
+              "stagingBytes": {
+                "default": 21474836480,
+                "maximum": 9007199254740991,
+                "minimum": 1048576,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "label": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "type": "object"
+      },
+      "ICloudConnectionResponseDto": {
+        "properties": {
+          "config": {
+            "properties": {
+              "albums": {
+                "items": {
+                  "maxLength": 1024,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 10000,
+                "type": "array"
+              },
+              "concurrency": {
+                "maximum": 4,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "includeEdits": {
+                "type": "boolean"
+              },
+              "includeHidden": {
+                "type": "boolean"
+              },
+              "intervalHours": {
+                "maximum": 8760,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "libraries": {
+                "items": {
+                  "maxLength": 1024,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "recoverExternalAsManaged": {
+                "type": "boolean"
+              },
+              "stagingBytes": {
+                "maximum": 9007199254740991,
+                "minimum": 1048576,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "libraries",
+              "albums",
+              "includeEdits",
+              "includeHidden",
+              "recoverExternalAsManaged",
+              "intervalHours",
+              "concurrency",
+              "stagingBytes"
+            ],
+            "type": "object"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "lastError": {
+            "nullable": true,
+            "type": "string"
+          },
+          "nextRunAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "config",
+          "counts",
+          "id",
+          "label",
+          "lastError",
+          "nextRunAt",
+          "state"
+        ],
+        "type": "object"
+      },
+      "ICloudConnectionUpdateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": false,
+            "properties": {
+              "albums": {
+                "default": [],
+                "items": {
+                  "maxLength": 1024,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 10000,
+                "type": "array"
+              },
+              "concurrency": {
+                "default": 1,
+                "maximum": 4,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "includeEdits": {
+                "default": true,
+                "type": "boolean"
+              },
+              "includeHidden": {
+                "default": false,
+                "type": "boolean"
+              },
+              "intervalHours": {
+                "default": 24,
+                "maximum": 8760,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "libraries": {
+                "default": [],
+                "items": {
+                  "maxLength": 1024,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "recoverExternalAsManaged": {
+                "default": false,
+                "type": "boolean"
+              },
+              "stagingBytes": {
+                "default": 21474836480,
+                "maximum": 9007199254740991,
+                "minimum": 1048576,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "label": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ICloudConnectionsResponseDto": {
+        "properties": {
+          "connections": {
+            "items": {
+              "$ref": "#/components/schemas/ICloudConnectionResponseDto"
+            },
+            "type": "array"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "connections",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "ICloudControlAction": {
+        "enum": [
+          "run",
+          "pause",
+          "resume",
+          "cancel",
+          "rescan",
+          "retry"
+        ],
+        "type": "string"
+      },
+      "ICloudControlDto": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ICloudControlAction"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "ICloudInventoryResponseDto": {
+        "properties": {
+          "albums": {
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "libraryId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "parentId": {
+                  "nullable": true,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "libraryId",
+                "name",
+                "parentId"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "libraries": {
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "supported": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "supported"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "recent": {
+            "items": {
+              "properties": {
+                "assetId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "outcome": {
+                  "type": "string"
+                },
+                "resourceId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "assetId",
+                "resourceId",
+                "outcome"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "albums",
+          "complete",
+          "libraries"
+        ],
+        "type": "object"
+      },
       "IdFilter": {
         "properties": {
           "eq": {
@@ -26747,6 +27530,7 @@
       "JobName": {
         "description": "Job name",
         "enum": [
+          "ICloudSync",
           "ForkSchemaBackfill",
           "AssetDelete",
           "AssetDeleteCheck",

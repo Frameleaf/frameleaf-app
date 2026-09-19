@@ -1,11 +1,8 @@
 import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { execFile as execFileCallback } from 'node:child_process';
 import { constants } from 'node:fs';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { JobOf } from 'src/types.js';
-import { SystemConfig } from 'src/config.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
@@ -22,11 +19,9 @@ import {
   MediaHealthScanResponseDto,
 } from 'src/dtos/media-health.dto.js';
 import {
-  AssetStatus,
   AssetType,
   AssetVisibility,
   ChecksumAlgorithm,
-  Colorspace,
   JobName,
   JobStatus,
   MediaHealthCategory,
@@ -36,7 +31,6 @@ import {
   StorageFolder,
 } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
-import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
@@ -52,19 +46,15 @@ import {
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
-import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
-import { getConfig } from 'src/utils/config.js';
+import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import { classifyImageDecodeFailure, getErrorMessage } from 'src/utils/media-health.js';
+import { getErrorMessage } from 'src/utils/media-health.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
-import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 
-const execFile = promisify(execFileCallback);
 const MEDIA_HEALTH_PAGE_SIZE = 100;
-const VISUAL_MATCH_THRESHOLD = 0.85;
 const MANAGED_LOOKUP_MAX_ENTRIES = 10_000;
 const MANAGED_LOOKUP_MAX_BYTES = 10 * 1024 ** 3;
 const MANAGED_LOOKUP_COOLDOWN_MS = 5 * 60_000;
@@ -81,18 +71,17 @@ export class MediaHealthService {
   constructor(
     private logger: LoggingRepository,
     private assetRepository: AssetRepository,
-    private configRepository: ConfigRepository,
     private cryptoRepository: CryptoRepository,
     private eventRepository: EventRepository,
     private forkSchemaRepository: ForkSchemaRepository,
     private jobRepository: JobRepository,
     private libraryRepository: LibraryRepository,
     private mediaHealthRepository: MediaHealthRepository,
-    private mediaRepository: MediaRepository,
+    _mediaRepository: MediaRepository,
     private physicalFileRepository: PhysicalFileRepository,
     private storageRepository: StorageRepository,
-    private systemMetadataRepository: SystemMetadataRepository,
     private userRepository: UserRepository,
+    private integrityService: MediaIntegrityService,
   ) {
     this.logger.setContext(MediaHealthService.name);
   }
@@ -520,12 +509,12 @@ export class MediaHealthService {
     // (millions of assets, mostly healthy) doing one UPDATE per asset inside
     // the streaming loop dominates the DB cost; batching collapses that.
     const RESOLVE_BATCH = 500;
-    const resolveBuffer: string[] = [];
+    const resolveBuffer: MediaHealthAsset[] = [];
     const flushResolved = async () => {
       if (resolveBuffer.length === 0) {
         return;
       }
-      await this.mediaHealthRepository.markResolvedMany(MediaHealthCategory.Corrupt, resolveBuffer);
+      await this.mediaHealthRepository.markResolvedForAssets([MediaHealthCategory.Corrupt], resolveBuffer);
       resolveBuffer.length = 0;
     };
 
@@ -537,17 +526,21 @@ export class MediaHealthService {
         checkedAssets++;
         const result = await this.validateAssetIntegrity(asset);
         if (!result) {
-          resolveBuffer.push(asset.id);
+          resolveBuffer.push(asset);
           if (resolveBuffer.length >= RESOLVE_BATCH) {
             await flushResolved();
           }
           continue;
         }
 
+        if (result.status === MediaHealthStatus.Missing) {
+          continue;
+        }
         foundAssets++;
         await this.mediaHealthRepository.upsertFinding({
           runId: run,
           assetId: asset.id,
+          expectedUpdateId: asset.updateId,
           category: MediaHealthCategory.Corrupt,
           status: result.status,
           severity:
@@ -588,7 +581,6 @@ export class MediaHealthService {
       job.userId,
     );
     const assetsById = new Map(assets.map((asset) => [asset.id, asset]));
-    const healthIdsToTrash: string[] = [];
     const assetIdsToTrash: string[] = [];
 
     for (const finding of findings) {
@@ -599,11 +591,13 @@ export class MediaHealthService {
 
       const result = await this.validateAssetIntegrity(asset);
       if (result?.status === MediaHealthStatus.CorruptConfirmed) {
-        healthIdsToTrash.push(finding.id);
-        assetIdsToTrash.push(finding.assetId);
+        if (await this.mediaHealthRepository.trashCorruptIfUnchanged({ healthId: finding.id, asset })) {
+          assetIdsToTrash.push(finding.assetId);
+        }
       } else {
         await this.mediaHealthRepository.upsertFinding({
           ...finding,
+          expectedUpdateId: asset.updateId,
           runId: finding.runId,
           status: result?.status ?? MediaHealthStatus.Resolved,
           severity: result ? MediaHealthSeverity.Warning : MediaHealthSeverity.Info,
@@ -616,29 +610,13 @@ export class MediaHealthService {
     }
 
     if (assetIdsToTrash.length > 0) {
-      await this.assetRepository.updateAll(assetIdsToTrash, {
-        deletedAt: new Date(),
-        status: AssetStatus.Trashed,
-      });
       await this.eventRepository.emit('AssetTrashAll', {
         assetIds: assetIdsToTrash,
         userId: job.userId,
       });
-      await this.mediaHealthRepository.markStatus(healthIdsToTrash, MediaHealthStatus.Trashed);
     }
 
     return JobStatus.Success;
-  }
-
-  private async getConfig(): Promise<SystemConfig> {
-    return getConfig(
-      {
-        configRepo: this.configRepository,
-        metadataRepo: this.systemMetadataRepository,
-        logger: this.logger,
-      },
-      { withCache: true },
-    );
   }
 
   private mapRun(run: MediaHealthRun): MediaHealthRunResponseDto {
@@ -714,6 +692,7 @@ export class MediaHealthService {
           await this.mediaHealthRepository.upsertFinding({
             runId: missingRunId,
             assetId: asset.id,
+            expectedUpdateId: asset.updateId,
             category: MediaHealthCategory.Missing,
             status: MediaHealthStatus.Missing,
             severity: MediaHealthSeverity.Critical,
@@ -723,30 +702,45 @@ export class MediaHealthService {
             resolution: { autoRelinkable: !!asset.isExternal && !!asset.libraryId },
             checkedAt: new Date(),
           });
-          if (corruptRunId) {
-            await this.mediaHealthRepository.markResolved(MediaHealthCategory.Corrupt, asset.id);
-          }
           continue;
         }
 
         if (!corruptRunId) {
-          await this.mediaHealthRepository.markResolved(MediaHealthCategory.Missing, asset.id);
+          await this.mediaHealthRepository.markResolvedForAssets([MediaHealthCategory.Missing], [asset]);
           continue;
         }
         const result = await this.validateReadableAssetIntegrity(asset);
         if (!result) {
-          await this.mediaHealthRepository.markResolvedCategories(
+          await this.mediaHealthRepository.markResolvedForAssets(
             [MediaHealthCategory.Missing, MediaHealthCategory.Corrupt],
-            asset.id,
+            [asset],
           );
           continue;
         }
-        await this.mediaHealthRepository.markResolved(MediaHealthCategory.Missing, asset.id);
+        if (result.status === MediaHealthStatus.Missing) {
+          missingFoundAssets++;
+          await this.mediaHealthRepository.upsertFinding({
+            runId: missingRunId,
+            assetId: asset.id,
+            expectedUpdateId: asset.updateId,
+            category: MediaHealthCategory.Missing,
+            status: MediaHealthStatus.Missing,
+            severity: MediaHealthSeverity.Critical,
+            originalPath: asset.originalPath,
+            originalFileName: asset.originalFileName,
+            evidence: result.evidence,
+            resolution: result.resolution,
+            checkedAt: new Date(),
+          });
+          continue;
+        }
+        await this.mediaHealthRepository.markResolvedForAssets([MediaHealthCategory.Missing], [asset]);
 
         corruptFoundAssets++;
         await this.mediaHealthRepository.upsertFinding({
           runId: corruptRunId,
           assetId: asset.id,
+          expectedUpdateId: asset.updateId,
           category: MediaHealthCategory.Corrupt,
           status: result.status,
           severity:
@@ -804,11 +798,6 @@ export class MediaHealthService {
   }
 
   private async validateAssetIntegrity(asset: MediaHealthAsset): Promise<CandidateValidation | null> {
-    const sourceExists = await this.storageRepository.checkFileExists(asset.originalPath, constants.R_OK);
-    if (!sourceExists) {
-      return null;
-    }
-
     return this.validateReadableAssetIntegrity(asset);
   }
 
@@ -923,91 +912,28 @@ export class MediaHealthService {
   }
 
   private async validateReadableAssetIntegrity(asset: MediaHealthAsset): Promise<CandidateValidation | null> {
-    return asset.type === AssetType.Video ? this.validateVideo(asset) : this.validateImage(asset);
-  }
-
-  private async validateImage(asset: MediaHealthAsset): Promise<CandidateValidation | null> {
-    const config = await this.getConfig();
-    const isRaw = mimeTypes.isRaw(asset.originalFileName);
-    const enhancedRawEnabled = config.image.enhancedRaw?.enabled;
-    let firstError: unknown;
-
-    try {
-      if (isRaw && config.image.extractEmbedded) {
-        const extracted = await this.mediaRepository.extract(asset.originalPath);
-        if (extracted) {
-          await this.decodeSmallImage(extracted.buffer);
-          return null;
-        }
-      }
-
-      await this.decodeSmallImage(asset.originalPath);
-      return null;
-    } catch (error) {
-      firstError = error;
-    }
-
-    if (isRaw && enhancedRawEnabled) {
-      try {
-        const rendered = await renderRawWithLibRaw(asset.originalPath);
-        await this.decodeSmallImage(rendered);
-        return null;
-      } catch (error) {
-        return {
-          status: classifyImageDecodeFailure(error, { isRaw, enhancedRawAttempted: true }),
-          score: null,
-          evidence: {
-            reason: 'image_decode_failed',
-            error: getErrorMessage(error),
-            initialError: firstError ? getErrorMessage(firstError) : undefined,
-            rawRenderer: 'dcraw_emu',
-          },
-          resolution: { reuploadRecommended: true },
-        };
-      }
-    }
-
-    return {
-      status: classifyImageDecodeFailure(firstError, { isRaw, enhancedRawAttempted: false }),
-      score: null,
-      evidence: { reason: 'image_decode_failed', error: getErrorMessage(firstError) },
-      resolution: {
-        reuploadRecommended: !isRaw,
-        unsupportedRaw: isRaw,
-      },
-    };
-  }
-
-  private async validateVideo(asset: MediaHealthAsset): Promise<CandidateValidation | null> {
-    try {
-      const info = await this.mediaRepository.probe(asset.originalPath, { countFrames: false });
-      if (info.videoStreams.length === 0) {
-        return {
-          status: MediaHealthStatus.CorruptConfirmed,
-          score: null,
-          evidence: { reason: 'video_probe_has_no_video_stream' },
-          resolution: { reuploadRecommended: true },
-        };
-      }
-
-      await execFile('ffmpeg', ['-v', 'error', '-i', asset.originalPath, '-f', 'null', '-'], { timeout: 120_000 });
-      return null;
-    } catch (error) {
-      return {
-        status: MediaHealthStatus.CorruptConfirmed,
-        score: null,
-        evidence: { reason: 'video_decode_failed', error: getErrorMessage(error) },
-        resolution: { reuploadRecommended: true },
-      };
-    }
-  }
-
-  private async decodeSmallImage(input: string | Buffer) {
-    return this.mediaRepository.decodeImage(input, {
-      colorspace: Colorspace.Srgb,
-      processInvalidImages: false,
-      size: 64,
+    const result = await this.integrityService.validate({
+      path: asset.originalPath,
+      originalFileName: asset.originalFileName,
+      type: asset.type,
+      deep: true,
     });
+    if (result.status === 'healthy') {
+      return null;
+    }
+    return {
+      status:
+        result.status === 'missing' || result.status === 'unreadable'
+          ? MediaHealthStatus.Missing
+          : result.status === 'corrupt'
+            ? MediaHealthStatus.CorruptConfirmed
+            : result.status === 'unsupported'
+              ? MediaHealthStatus.UnsupportedRaw
+              : MediaHealthStatus.CorruptSuspect,
+      score: null,
+      evidence: { reason: result.reason, validationStatus: result.status },
+      resolution: { reuploadRecommended: result.status === 'corrupt' },
+    };
   }
 
   private async locateExternalCandidates(assets: MediaHealthAsset[]): Promise<Map<string, CandidateValidation[]>> {
@@ -1037,12 +963,14 @@ export class MediaHealthService {
       const sidecar = storedByAsset.get(asset.id);
       const target = {
         asset,
-        sha1: [sidecar?.sha1, asset.checksum?.length === 20 ? asset.checksum : undefined].filter(
-          (digest): digest is Buffer => !!digest,
-        ),
-        sha256: [sidecar?.sha256, asset.checksum?.length === 32 ? asset.checksum : undefined].filter(
-          (digest): digest is Buffer => !!digest,
-        ),
+        sha1: [
+          sidecar?.sha1,
+          asset.checksumAlgorithm === ChecksumAlgorithm.sha1File ? asset.checksum : undefined,
+        ].filter((digest): digest is Buffer => !!digest),
+        sha256: [
+          sidecar?.sha256,
+          asset.checksumAlgorithm === ChecksumAlgorithm.sha256File ? asset.checksum : undefined,
+        ].filter((digest): digest is Buffer => !!digest),
       };
       targetByAsset.set(asset.id, target);
       for (const digest of target.sha1) {
@@ -1067,9 +995,18 @@ export class MediaHealthService {
           .map(({ id }) => storedByAsset.get(id)?.sizeInBytes)
           .filter((size): size is number => size !== undefined),
       );
-      const basenames = new Set(libraryAssets.map(({ originalFileName }) => originalFileName));
+      const hasUnknownSize = libraryAssets.some((asset) => {
+        const sidecar = storedByAsset.get(asset.id);
+        if (!sidecar) {
+          return true;
+        }
+        return asset.checksumAlgorithm === ChecksumAlgorithm.sha1File
+          ? !asset.checksum.equals(sidecar.sha1)
+          : asset.checksumAlgorithm === ChecksumAlgorithm.sha256File
+            ? !asset.checksum.equals(sidecar.sha256)
+            : true;
+      });
       const originalPaths = new Set(libraryAssets.map(({ originalPath }) => originalPath));
-      const fallbackIndex = new Map<string, string[]>();
       for await (const batch of this.storageRepository.walk({
         pathsToCrawl: library.importPaths,
         exclusionPatterns: library.exclusionPatterns,
@@ -1080,13 +1017,6 @@ export class MediaHealthService {
           if (!mimeTypes.isAsset(candidatePath) || originalPaths.has(candidatePath)) {
             continue;
           }
-          const base = path.basename(candidatePath);
-          if (basenames.has(base)) {
-            fallbackIndex.set(base, [...(fallbackIndex.get(base) ?? []), candidatePath]);
-          }
-          if (sizes.size === 0) {
-            continue;
-          }
           let size: number;
           try {
             ({ size } = await this.storageRepository.stat(candidatePath));
@@ -1094,7 +1024,7 @@ export class MediaHealthService {
             this.logger.debug(`Could not stat external media candidate ${candidatePath}: ${getErrorMessage(error)}`);
             continue;
           }
-          if (!sizes.has(size)) {
+          if (!hasUnknownSize && !sizes.has(size)) {
             continue;
           }
           let digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>;
@@ -1148,18 +1078,6 @@ export class MediaHealthService {
           }
         }
       }
-
-      for (const asset of libraryAssets) {
-        if (result.has(asset.id)) {
-          continue;
-        }
-        const candidates = await Promise.all(
-          (fallbackIndex.get(asset.originalFileName) ?? []).map((candidatePath) =>
-            this.validateMissingCandidate(asset, candidatePath),
-          ),
-        );
-        result.set(asset.id, candidates);
-      }
     }
 
     return result;
@@ -1182,9 +1100,9 @@ export class MediaHealthService {
       if (!sidecar) {
         return true;
       }
-      return asset.checksum.length === 20
+      return asset.checksumAlgorithm === ChecksumAlgorithm.sha1File
         ? !asset.checksum.equals(sidecar.sha1)
-        : asset.checksum.length === 32
+        : asset.checksumAlgorithm === ChecksumAlgorithm.sha256File
           ? !asset.checksum.equals(sidecar.sha256)
           : true;
     });
@@ -1207,12 +1125,14 @@ export class MediaHealthService {
       const sidecar = storedByAsset.get(asset.id);
       const target = {
         asset,
-        sha1: [sidecar?.sha1, asset.checksum?.length === 20 ? asset.checksum : undefined].filter(
-          (digest): digest is Buffer => !!digest,
-        ),
-        sha256: [sidecar?.sha256, asset.checksum?.length === 32 ? asset.checksum : undefined].filter(
-          (digest): digest is Buffer => !!digest,
-        ),
+        sha1: [
+          sidecar?.sha1,
+          asset.checksumAlgorithm === ChecksumAlgorithm.sha1File ? asset.checksum : undefined,
+        ].filter((digest): digest is Buffer => !!digest),
+        sha256: [
+          sidecar?.sha256,
+          asset.checksumAlgorithm === ChecksumAlgorithm.sha256File ? asset.checksum : undefined,
+        ].filter((digest): digest is Buffer => !!digest),
       };
       targetByAsset.set(asset.id, target);
       for (const digest of target.sha1) {
@@ -1369,20 +1289,11 @@ export class MediaHealthService {
       }
     }
 
-    const score =
-      asset.type === AssetType.Video
-        ? await this.scoreVideoCandidate(asset, candidatePath)
-        : await this.scoreImageCandidate(asset, candidatePath);
-    const valid = score === null ? false : score >= VISUAL_MATCH_THRESHOLD;
-
+    const valid = !!(await this.validateManagedCandidate(asset, candidatePath));
     return {
       status: valid ? MediaHealthStatus.Found : MediaHealthStatus.Candidate,
-      score,
-      evidence: {
-        ...evidence,
-        reason: valid ? 'candidate_validated' : 'visual_match_below_threshold',
-        threshold: VISUAL_MATCH_THRESHOLD,
-      },
+      score: valid ? 1 : null,
+      evidence: { ...evidence, reason: valid ? 'checksum_match' : 'checksum_mismatch_or_unreadable' },
       resolution: { autoRelinkable: valid && asset.isExternal && !!asset.libraryId },
     };
   }
@@ -1402,58 +1313,10 @@ export class MediaHealthService {
     const sidecars = await this.mediaHealthRepository.getAssetChecksums([asset.id]);
     const sidecar = sidecars[0];
     const matches =
-      digests.sha1.equals(asset.checksum) ||
-      digests.sha256.equals(asset.checksum) ||
+      (asset.checksumAlgorithm === ChecksumAlgorithm.sha1File && digests.sha1.equals(asset.checksum)) ||
+      (asset.checksumAlgorithm === ChecksumAlgorithm.sha256File && digests.sha256.equals(asset.checksum)) ||
       (!!sidecar && (digests.sha1.equals(sidecar.sha1) || digests.sha256.equals(sidecar.sha256)));
     return matches ? digests : undefined;
-  }
-
-  private async scoreImageCandidate(asset: MediaHealthAsset, candidatePath: string): Promise<number | null> {
-    const referencePath = asset.previewPath ?? asset.thumbnailPath;
-    if (!referencePath || !(await this.storageRepository.checkFileExists(referencePath, constants.R_OK))) {
-      return null;
-    }
-
-    try {
-      const candidateInput = mimeTypes.isRaw(candidatePath) ? await renderRawWithLibRaw(candidatePath) : candidatePath;
-      const [reference, candidate] = await Promise.all([
-        this.decodeSmallImage(referencePath),
-        this.decodeSmallImage(candidateInput),
-      ]);
-      const length = Math.min(reference.data.length, candidate.data.length);
-      if (length === 0) {
-        return null;
-      }
-
-      let delta = 0;
-      for (let index = 0; index < length; index++) {
-        delta += Math.abs(reference.data[index] - candidate.data[index]);
-      }
-
-      return Math.max(0, 1 - delta / length / 255);
-    } catch (error) {
-      this.logger.debug(`Could not compare missing media candidate ${candidatePath}: ${error}`);
-      return null;
-    }
-  }
-
-  private async scoreVideoCandidate(asset: MediaHealthAsset, candidatePath: string): Promise<number | null> {
-    if (!asset.duration) {
-      return null;
-    }
-
-    try {
-      const info = await this.mediaRepository.probe(candidatePath, { countFrames: false });
-      const durationMs = Math.round((info.format.duration ?? 0) * 1000);
-      if (!durationMs) {
-        return null;
-      }
-
-      const difference = Math.abs(durationMs - asset.duration);
-      return Math.max(0, 1 - difference / Math.max(asset.duration, durationMs));
-    } catch {
-      return null;
-    }
   }
 
   private async relinkAsset(asset: MediaHealthAsset, candidatePath: string, healthId: string): Promise<boolean> {

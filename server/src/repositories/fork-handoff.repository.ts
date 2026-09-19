@@ -3,6 +3,7 @@ import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
 import { StorageCore } from 'src/cores/storage.core.js';
+import { assertICloudReferences, reconcileICloudReferences } from 'src/fork-schema/icloud-reconciliation.js';
 import forkCatalogManifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import { CERTIFIED_TAG_MIGRATIONS, POST_CERTIFIED_UPSTREAM_MIGRATIONS } from 'src/fork-schema/migration-manifest.js';
 import { REVERSIBLE_POST_CERTIFIED_MIGRATIONS } from 'src/fork-schema/post-certified-residue.js';
@@ -213,7 +214,11 @@ const ORPHAN_FAMILIES = [
 const ORPHAN_RELATIONS = [
   'public.album',
   'public.asset',
+  'public.user',
   'immich_fork.orphaned_records',
+  ...forkCatalogManifest.tables
+    .map(({ identity }) => identity)
+    .filter((identity) => identity.startsWith('immich_fork.icloud_')),
   ...ORPHAN_FAMILIES.map(([, table]) => table),
 ].sort();
 
@@ -600,6 +605,8 @@ export class ForkHandoffRepository {
           throw new Error('Cannot activate fork schema with incomplete backfills');
         }
 
+        await assertICloudReferences(transaction);
+
         for (const [sourceTable, table, , where] of ORPHAN_FAMILIES) {
           const remaining = await sql
             .raw<{ count: number }>(`SELECT count(*)::int AS count FROM ${table} candidate WHERE ${where}`)
@@ -795,7 +802,8 @@ export class ForkHandoffRepository {
             throw new Error(`Fork orphan reconciliation left references in ${family.sourceTable}`);
           }
         }
-        return { archived: deleted, deleted };
+        const preservedMappings = await reconcileICloudReferences(transaction);
+        return { archived: deleted + preservedMappings, deleted };
       });
   }
 }

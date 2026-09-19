@@ -194,9 +194,9 @@ export const onAfterUnlink = async (
 };
 
 export type LivePhotoLinkRepositories = {
-  asset: AssetRepository;
-  album: AlbumRepository;
-  event: EventRepository;
+  asset: Pick<AssetRepository, 'update'>;
+  album: Pick<AlbumRepository, 'removeAssetsFromAll'>;
+  event: Pick<EventRepository, 'emit'>;
 };
 
 /**

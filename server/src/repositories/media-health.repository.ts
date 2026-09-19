@@ -84,6 +84,7 @@ export type UpsertMediaHealthFinding = Omit<
 > & {
   dismissedAt?: Date | null;
   resolvedAt?: Date | null;
+  expectedUpdateId?: string;
 };
 
 export type UpsertMediaHealthCandidate = Omit<Insertable<AssetHealthCandidateTable>, 'id' | 'createdAt' | 'updatedAt'>;
@@ -364,16 +365,36 @@ export class MediaHealthRepository {
     });
   }
 
-  async upsertFinding(finding: UpsertMediaHealthFinding): Promise<MediaHealthFinding> {
-    const phase = await getForkSchemaPhase(this.db);
-    let result: MediaHealthFinding | undefined;
-    await this.db.transaction().execute(async (trx) => {
+  async upsertFinding(
+    finding: UpsertMediaHealthFinding & { expectedUpdateId: string },
+  ): Promise<MediaHealthFinding | undefined>;
+  async upsertFinding(finding: UpsertMediaHealthFinding): Promise<MediaHealthFinding>;
+  async upsertFinding(input: UpsertMediaHealthFinding): Promise<MediaHealthFinding | undefined> {
+    const { expectedUpdateId, ...finding } = input;
+    return this.db.transaction().execute(async (trx) => {
+      const phase = await this.lockHealthPhase(trx);
+      const asset = await trx
+        .withSchema('public')
+        .selectFrom('asset')
+        .select(['updateId', 'originalPath', 'deletedAt', 'status'])
+        .where('id', '=', asUuid(finding.assetId))
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        !asset ||
+        asset.originalPath !== finding.originalPath ||
+        (expectedUpdateId &&
+          (asset.updateId !== expectedUpdateId || asset.deletedAt || asset.status !== AssetStatus.Active))
+      ) {
+        return;
+      }
       if (writesForkSidecar(phase)) {
         await lockForkAssetParent(trx, finding.assetId);
         if (finding.runId) {
           await this.lockForkHealthRun(trx, finding.runId);
         }
       }
+      let result: MediaHealthFinding | undefined;
       if (writesLegacy(phase)) {
         result = await this.upsertFindingInto(trx.withSchema('public'), finding);
       }
@@ -384,8 +405,119 @@ export class MediaHealthRepository {
           result = await this.upsertFindingInto(trx.withSchema('immich_fork'), finding);
         }
       }
+      return result;
     });
-    return result!;
+  }
+
+  private async lockHealthPhase(trx: Kysely<DB>) {
+    const phase = await getForkSchemaPhase(trx);
+    if (phase === 'legacy') {
+      return phase;
+    }
+    const result = await sql<{
+      phase: typeof phase;
+    }>`SELECT phase FROM immich_fork.state WHERE id = 1 FOR SHARE`.execute(trx);
+    return result.rows[0]?.phase ?? phase;
+  }
+
+  async markResolvedForAssets(
+    categories: MediaHealthCategory[],
+    assets: Pick<MediaHealthAsset, 'id' | 'updateId' | 'originalPath'>[],
+  ): Promise<void> {
+    if (assets.length === 0 || categories.length === 0) {
+      return;
+    }
+    await this.db.transaction().execute(async (trx) => {
+      const phase = await this.lockHealthPhase(trx);
+      const current = await trx
+        .withSchema('public')
+        .selectFrom('asset')
+        .select(['id', 'updateId', 'originalPath'])
+        .where('id', '=', anyUuid(assets.map(({ id }) => id)))
+        .where('deletedAt', 'is', null)
+        .where('status', '=', AssetStatus.Active)
+        .orderBy('id')
+        .forUpdate()
+        .execute();
+      const expected = new Map(assets.map((asset) => [asset.id, asset]));
+      const ids = current
+        .filter(
+          (asset) =>
+            asset.updateId === expected.get(asset.id)?.updateId &&
+            asset.originalPath === expected.get(asset.id)?.originalPath,
+        )
+        .map(({ id }) => id);
+      if (ids.length === 0) {
+        return;
+      }
+      for (const schema of this.writeSchemas(phase)) {
+        await trx
+          .withSchema(schema)
+          .updateTable('asset_health')
+          .set({ status: MediaHealthStatus.Resolved, severity: MediaHealthSeverity.Info, resolvedAt: new Date() })
+          .where('category', 'in', categories)
+          .where('assetId', '=', anyUuid(ids))
+          .execute();
+      }
+    });
+  }
+
+  async trashCorruptIfUnchanged(input: {
+    healthId: string;
+    asset: Pick<MediaHealthAsset, 'id' | 'ownerId' | 'updateId' | 'originalPath'>;
+  }): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      const phase = await this.lockHealthPhase(trx);
+      const asset = await trx
+        .withSchema('public')
+        .selectFrom('asset')
+        .select(['updateId', 'originalPath', 'ownerId', 'deletedAt', 'status'])
+        .where('id', '=', asUuid(input.asset.id))
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        !asset ||
+        asset.updateId !== input.asset.updateId ||
+        asset.originalPath !== input.asset.originalPath ||
+        asset.ownerId !== input.asset.ownerId ||
+        asset.deletedAt ||
+        asset.status !== AssetStatus.Active
+      ) {
+        return false;
+      }
+      const health = await trx
+        .withSchema(readsForkSidecar(phase) ? 'immich_fork' : 'public')
+        .selectFrom('asset_health')
+        .select(['status', 'originalPath', 'resolvedAt'])
+        .where('id', '=', asUuid(input.healthId))
+        .where('assetId', '=', asUuid(input.asset.id))
+        .where('category', '=', MediaHealthCategory.Corrupt)
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        !health ||
+        health.status !== MediaHealthStatus.TrashQueued ||
+        health.resolvedAt ||
+        health.originalPath !== asset.originalPath
+      ) {
+        return false;
+      }
+      await trx
+        .withSchema('public')
+        .updateTable('asset')
+        .set({ deletedAt: new Date(), status: AssetStatus.Trashed })
+        .where('id', '=', asUuid(input.asset.id))
+        .execute();
+      for (const schema of this.writeSchemas(phase)) {
+        await trx
+          .withSchema(schema)
+          .updateTable('asset_health')
+          .set({ status: MediaHealthStatus.Trashed })
+          .where('id', '=', asUuid(input.healthId))
+          .execute();
+      }
+      return true;
+    });
   }
 
   private async lockForkHealthRun(db: Kysely<DB>, runId: string): Promise<void> {
