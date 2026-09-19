@@ -32,7 +32,7 @@ describe('Media health transactional relink audit', () => {
       'CREATE TABLE immich_fork.migration_audit (name text, status text)',
       'CREATE TABLE immich_fork.asset_storage_reservation ("assetId" uuid, status text)',
       'CREATE TABLE immich_fork.asset_checksum ("assetId" uuid PRIMARY KEY, sha1 bytea, sha256 bytea, "sizeInBytes" bigint, "verifiedPaths" text[], "linkCount" integer, evidence jsonb, "verifiedAt" timestamptz, "updatedAt" timestamptz)',
-      'CREATE TABLE immich_fork.physical_file (id uuid PRIMARY KEY, "canonicalAssetId" uuid, type text, checksum bytea, "sizeInBytes" bigint, "canonicalPath" text UNIQUE)',
+      'CREATE TABLE immich_fork.physical_file (id uuid PRIMARY KEY, "canonicalAssetId" uuid, type text, checksum bytea, "sizeInBytes" bigint, "canonicalPath" text UNIQUE, "createdAt" timestamptz NOT NULL, "updatedAt" timestamptz NOT NULL)',
       'CREATE TABLE immich_fork.asset_physical_file ("assetId" uuid PRIMARY KEY, "physicalFileId" uuid, "upstreamPath" text, "verifiedAt" timestamptz, "updatedAt" timestamptz)',
       `CREATE TABLE public.asset_health (id uuid PRIMARY KEY, "assetId" uuid, "runId" uuid, category text, status text, severity text,
         "originalPath" text, "originalFileName" text, evidence jsonb DEFAULT '{}', resolution jsonb DEFAULT '{}', "checkedAt" timestamptz, "resolvedAt" timestamptz, "dismissedAt" timestamptz)`,
@@ -227,11 +227,13 @@ describe('Media health transactional relink audit', () => {
       (
         await sql<{
           canonicalPath: string;
-        }>`SELECT p."canonicalPath" FROM immich_fork.asset_physical_file m JOIN immich_fork.physical_file p ON p.id=m."physicalFileId" WHERE m."assetId"=${input.assetId}::uuid`.execute(
+          createdAt: Date;
+          updatedAt: Date;
+        }>`SELECT p."canonicalPath", p."createdAt", p."updatedAt" FROM immich_fork.asset_physical_file m JOIN immich_fork.physical_file p ON p.id=m."physicalFileId" WHERE m."assetId"=${input.assetId}::uuid`.execute(
           db,
         )
-      ).rows[0].canonicalPath,
-    ).toBe(input.originalPath);
+      ).rows[0],
+    ).toEqual({ canonicalPath: input.originalPath, createdAt: expect.any(Date), updatedAt: expect.any(Date) });
     expect((await sql<{ status: string }>`SELECT status FROM public.asset_health`.execute(db)).rows[0].status).toBe(
       'found',
     );
@@ -249,7 +251,7 @@ describe('Media health transactional relink audit', () => {
       await sql`INSERT INTO public.physical_file VALUES (${physicalId}::uuid, ${sharedId}::uuid, ${input.sha1}, ${input.originalPath}, 100, 'original')`.execute(
         db,
       );
-      await sql`INSERT INTO immich_fork.physical_file VALUES (${physicalId}::uuid, ${sharedId}::uuid, 'original', ${input.sha1}, 100, ${input.originalPath})`.execute(
+      await sql`INSERT INTO immich_fork.physical_file VALUES (${physicalId}::uuid, ${sharedId}::uuid, 'original', ${input.sha1}, 100, ${input.originalPath}, now(), now())`.execute(
         db,
       );
       await sql`INSERT INTO immich_fork.asset_physical_file VALUES (${sharedId}::uuid, ${physicalId}::uuid, ${input.originalPath}, now(), now())`.execute(
@@ -286,7 +288,7 @@ describe('Media health transactional relink audit', () => {
     await sql`INSERT INTO public.physical_file VALUES (${physical}::uuid,${input.assetId}::uuid,${input.sha256},${input.expectedOriginalPath},100,'original')`.execute(
       db,
     );
-    await sql`INSERT INTO immich_fork.physical_file VALUES (${physical}::uuid,${input.assetId}::uuid,'original',${input.sha256},100,${input.expectedOriginalPath})`.execute(
+    await sql`INSERT INTO immich_fork.physical_file VALUES (${physical}::uuid,${input.assetId}::uuid,'original',${input.sha256},100,${input.expectedOriginalPath},now(),now())`.execute(
       db,
     );
     for (const id of [input.assetId, shared]) {

@@ -77,7 +77,7 @@ describe(MediaRecoveryRepository.name, () => {
       'CREATE TABLE immich_fork.asset_privacy ("assetId" uuid PRIMARY KEY, "isNsfw" boolean, suppression jsonb, "updatedAt" timestamptz)',
       'CREATE TABLE immich_fork.asset_enrichment ("assetId" uuid PRIMARY KEY)',
       'CREATE TABLE immich_fork.asset_checksum ("assetId" uuid PRIMARY KEY, sha1 bytea, sha256 bytea, "sizeInBytes" bigint, "verifiedPaths" text[], "linkCount" integer, evidence jsonb, "verifiedAt" timestamptz, "updatedAt" timestamptz)',
-      'CREATE TABLE immich_fork.physical_file (id uuid PRIMARY KEY, "canonicalAssetId" uuid, type text, checksum bytea, "sizeInBytes" bigint, "canonicalPath" text UNIQUE)',
+      'CREATE TABLE immich_fork.physical_file (id uuid PRIMARY KEY, "canonicalAssetId" uuid, type text, checksum bytea, "sizeInBytes" bigint, "canonicalPath" text UNIQUE, "createdAt" timestamptz NOT NULL, "updatedAt" timestamptz NOT NULL)',
       'CREATE TABLE immich_fork.asset_physical_file ("assetId" uuid PRIMARY KEY, "physicalFileId" uuid, "upstreamPath" text, "verifiedAt" timestamptz, "updatedAt" timestamptz)',
       `CREATE TABLE public.asset_health (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "assetId" uuid, "runId" uuid, category text,
         status text, severity text, "originalPath" text, "originalFileName" text, evidence jsonb DEFAULT '{}', resolution jsonb DEFAULT '{}',
@@ -170,6 +170,13 @@ describe(MediaRecoveryRepository.name, () => {
       await sql`UPDATE immich_fork.state SET phase = ${phase}`.execute(db);
       const context = await arrange();
       expect(await sut.commit(context.commitInput)).toEqual({ outcome: 'repaired-missing', assetId: context.assetId });
+      expect(
+        (
+          await sql`SELECT "createdAt", "updatedAt" FROM immich_fork.physical_file WHERE "canonicalAssetId" = ${context.assetId}::uuid`.execute(
+            db,
+          )
+        ).rows,
+      ).toEqual([{ createdAt: expect.any(Date), updatedAt: expect.any(Date) }]);
       expect(
         await db.selectFrom('asset').selectAll().where('id', '=', context.assetId).executeTakeFirst(),
       ).toMatchObject({
