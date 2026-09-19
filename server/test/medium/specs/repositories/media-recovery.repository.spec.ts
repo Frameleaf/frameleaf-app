@@ -449,6 +449,7 @@ describe(MediaRecoveryRepository.name, () => {
       resolution: {},
       checkedAt: new Date(),
     });
+    assert.isDefined(finding);
     const [recovery, trashed] = await Promise.all([
       sut.commit(context.commitInput),
       health.trashCorruptIfUnchanged({ healthId: finding.id, asset: context.candidate }),

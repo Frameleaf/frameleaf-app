@@ -1,4 +1,4 @@
-import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
+import { ICloudConfigSchema, ICloudConnectionUpdateDto } from 'src/dtos/icloud-sync.dto.js';
 import { AssetType, JobName, JobStatus } from 'src/enum.js';
 import { ICloudTransportError } from 'src/repositories/icloud-transport.repository.js';
 import { ICloudSyncService } from 'src/services/icloud-sync.service.js';
@@ -89,6 +89,49 @@ describe(ICloudSyncService.name, () => {
       {} as never,
       albums as never,
     );
+  });
+
+  it('patches only supplied config fields and validates the merged settings', async () => {
+    const auth = { user: { id: 'owner' }, session: { hasElevatedPermission: true } } as never;
+    const config = ICloudConfigSchema.parse({
+      libraries: ['selected-library'],
+      albums: ['selected-album'],
+      includeHidden: true,
+      includeEdits: false,
+      recoverExternalAsManaged: true,
+      concurrency: 3,
+      stagingBytes: 40 * 1024 ** 3,
+    });
+    repository.get.mockResolvedValue({ ...connection, config });
+    const dto = ICloudConnectionUpdateDto.schema.parse({ config: { intervalHours: 12 } });
+    expect(dto.config).toEqual({ intervalHours: 12 });
+    await sut.update(auth, connection.id, dto);
+    expect(repository.update).toHaveBeenLastCalledWith(connection.id, connection.ownerId, {
+      config: { ...config, intervalHours: 12 },
+    });
+
+    await sut.update(
+      auth,
+      connection.id,
+      ICloudConnectionUpdateDto.schema.parse({ config: { albums: [], includeHidden: false } }),
+    );
+    expect(repository.update).toHaveBeenLastCalledWith(connection.id, connection.ownerId, {
+      config: { ...config, albums: [], includeHidden: false },
+    });
+    expect(ICloudConnectionUpdateDto.schema.safeParse({ config: { typo: true } }).success).toBe(false);
+
+    repository.update.mockClear();
+    await expect(sut.update({ user: { id: 'owner' }, session: {} } as never, connection.id, dto)).rejects.toThrow(
+      'Elevated permission is required',
+    );
+    expect(repository.update).not.toHaveBeenCalled();
+    vi.stubEnv('IMMICH_ICLOUD_MAX_CONCURRENCY', '2');
+    try {
+      await expect(sut.update(auth, connection.id, dto)).rejects.toThrow('icloud_admin_limit_exceeded');
+      expect(repository.update).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('recovers a damaged unchanged mapping, forwards hidden visibility and only cleans after durable outbox dispatch', async () => {

@@ -369,10 +369,6 @@ export class MediaHealthRepository {
     });
   }
 
-  async upsertFinding(
-    finding: UpsertMediaHealthFinding & { expectedUpdateId: string },
-  ): Promise<MediaHealthFinding | undefined>;
-  async upsertFinding(finding: UpsertMediaHealthFinding): Promise<MediaHealthFinding>;
   async upsertFinding(input: UpsertMediaHealthFinding): Promise<MediaHealthFinding | undefined> {
     const { expectedUpdateId, ...finding } = input;
     return this.db.transaction().execute(async (trx) => {

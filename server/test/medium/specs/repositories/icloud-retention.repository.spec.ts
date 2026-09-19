@@ -12,6 +12,10 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
   let connection: ICloudConnection;
   beforeAll(async () => {
     db = await getKyselyDB();
+    // getKyselyDB clones CI's migrated template; this suite uses its own focused schema.
+    await sql`DROP SCHEMA IF EXISTS immich_fork CASCADE`.execute(db);
+    await sql`DROP SCHEMA public CASCADE`.execute(db);
+    await sql`CREATE SCHEMA public`.execute(db);
     await sql`CREATE SCHEMA immich_fork`.execute(db);
     await sql`CREATE TABLE immich_fork.state(id integer PRIMARY KEY,phase text)`.execute(db);
     await sql`INSERT INTO immich_fork.state VALUES(1,'active')`.execute(db);

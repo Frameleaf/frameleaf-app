@@ -193,6 +193,27 @@ func TestSafetyBoundaries(t *testing.T) {
 	if call(t, b, "/v1/inventory", q).Code != 400 {
 		t.Fatal("arbitrary endpoint accepted")
 	}
+	// A valid envelope and request must reach service-host validation before any outbound request.
+	for _, host := range []string{"https://evil.test", "https://icloud.com.evil.test"} {
+		e, err := restore(testSession(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Upstream.AccountInfo.Webservices[api.WsPhotos].URL = host
+		session, err := json.Marshal(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		calls := 0
+		b.http = &http.Client{Transport: transportFunc(func(*http.Request) (*http.Response, error) {
+			calls++
+			return response(`{"records":[]}`), nil
+		})}
+		w := call(t, b, "/v1/inventory", request{Session: session, Kind: "albums", Library: &library{Area: "private", ZoneID: map[string]string{"zoneName": "PrimarySync"}}})
+		if w.Code != 400 || calls != 0 {
+			t.Fatalf("service host accepted: status=%d outbound=%d", w.Code, calls)
+		}
+	}
 	if call(t, b, "/v1/auth", map[string]string{"action": "bogus"}).Code != 400 {
 		t.Fatal("invalid action accepted")
 	}
@@ -336,5 +357,49 @@ func TestPCSRateLimitIsNotReauthentication(t *testing.T) {
 	w := call(t, b, "/v1/auth", request{Session: testSession(t), Action: "device-approval"})
 	if w.Code != 429 || !strings.Contains(w.Body.String(), `"code":"rate_limited"`) || strings.Contains(w.Body.String(), "SECRET") {
 		t.Fatalf("PCS throttle lost: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestPCSHTTP423PreservesApprovalSession(t *testing.T) {
+	for _, state := range []string{"awaiting-device-approval", "connected"} {
+		t.Run(state, func(t *testing.T) {
+			b := newBridge([]byte(testToken))
+			calls := 0
+			b.http = &http.Client{Transport: transportFunc(func(*http.Request) (*http.Response, error) {
+				calls++
+				r := response("SECRET provider response")
+				r.StatusCode = 423
+				r.Header.Add("Set-Cookie", "pending=rotated; Secure")
+				return r, nil
+			})}
+			e, err := restore(testSession(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.State = state
+			session, err := json.Marshal(e)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w := call(t, b, "/v1/auth", request{Session: session, Action: "device-approval"})
+			var result struct {
+				State   string          `json:"state"`
+				Session json.RawMessage `json:"session"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if w.Code != 200 || calls != 1 || result.State != "awaiting-device-approval" || strings.Contains(w.Body.String(), "SECRET") {
+				t.Fatalf("approval lost: %d %s", w.Code, w.Body)
+			}
+			restored, err := restore(result.Session)
+			if err != nil || restored.State != "awaiting-device-approval" || !bytes.Contains(result.Session, []byte("rotated")) {
+				t.Fatal("pending session not retained")
+			}
+			w = call(t, b, "/v1/auth", request{Session: result.Session, Action: "device-approval"})
+			if w.Code != 200 || calls != 2 {
+				t.Fatal("subsequent approval action rejected")
+			}
+		})
 	}
 }

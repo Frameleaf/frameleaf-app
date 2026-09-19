@@ -45,7 +45,9 @@
     inventory?.albums
       .filter(
         (album) =>
-          (!draft?.config.libraries?.length || draft.config.libraries.includes(album.libraryId)) &&
+          (draft?.config.albums.includes(album.id) ||
+            !draft?.config.libraries?.length ||
+            draft.config.libraries.includes(album.libraryId)) &&
           album.name.toLocaleLowerCase().includes(albumSearch.toLocaleLowerCase()),
       )
       .slice(0, 200) ?? [],
@@ -379,7 +381,7 @@
                         type="checkbox"
                         bind:group={draft.config.libraries}
                         value={library.id}
-                        disabled={!library.supported}
+                        disabled={!library.supported && !draft.config.libraries.includes(library.id)}
                       />{library.name}{#if !library.supported}
                         ({$t('icloud_sync.unsupported')}){/if}</label
                     >
@@ -392,7 +394,14 @@
                   <div class="max-h-64 space-y-2 overflow-y-auto py-2">
                     {#each visibleAlbums as album (album.id)}
                       <label class="flex items-start gap-3"
-                        ><input type="checkbox" bind:group={draft.config.albums} value={album.id} class="mt-1" /><span
+                        ><input
+                          type="checkbox"
+                          bind:group={draft.config.albums}
+                          value={album.id}
+                          disabled={!draft.config.albums.includes(album.id) &&
+                            !inventory.libraries.find(({ id }) => id === album.libraryId)?.supported}
+                          class="mt-1"
+                        /><span
                           >{album.name}<span class="block text-xs text-gray-500"
                             >{inventory.libraries.find(({ id }) => id === album.libraryId)?.name}{#if album.parentId}
                               / {inventory.albums.find(({ id }) => id === album.parentId)?.name ??

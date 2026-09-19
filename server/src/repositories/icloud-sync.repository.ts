@@ -396,6 +396,18 @@ export class ICloudSyncRepository {
           .execute(db)
           .then(({ rows }) => rows[0]);
       }
+      const maxConcurrency = Number(process.env.IMMICH_ICLOUD_MAX_CONCURRENCY ?? 4);
+      const maxStagingBytes = Number(process.env.IMMICH_ICLOUD_MAX_STAGING_BYTES ?? 100 * 1024 ** 3);
+      // Match service configuration validation: malformed administrator limits deny
+      // new admission. Already committed cleanup above must remain recoverable.
+      if (
+        !Number.isSafeInteger(maxConcurrency) ||
+        maxConcurrency <= 0 ||
+        !Number.isSafeInteger(maxStagingBytes) ||
+        maxStagingBytes <= 0
+      ) {
+        return;
+      }
       const used = await sql<{
         bytes: number;
         active: number;
@@ -416,10 +428,7 @@ export class ICloudSyncRepository {
         FROM immich_fork.icloud_resource WHERE status NOT IN ('finalized','removed')`
         .execute(db)
         .then(({ rows }) => rows[0]);
-      if (
-        used.active >= connection.config.concurrency ||
-        global.active >= Number(process.env.IMMICH_ICLOUD_MAX_CONCURRENCY ?? 4)
-      ) {
+      if (used.active >= connection.config.concurrency || global.active >= maxConcurrency) {
         return;
       }
       if (!Number.isSafeInteger(candidate.expectedSize) || candidate.expectedSize <= 0) {
@@ -430,9 +439,7 @@ export class ICloudSyncRepository {
       }
       const additional = Math.max(0, candidate.expectedSize - Number(candidate.reservedBytes));
       const localBlocked = additional > 0 && used.bytes + additional > maximumBytes;
-      const globalBlocked =
-        additional > 0 &&
-        global.bytes + additional > Number(process.env.IMMICH_ICLOUD_MAX_STAGING_BYTES ?? 100 * 1024 ** 3);
+      const globalBlocked = additional > 0 && global.bytes + additional > maxStagingBytes;
       if (localBlocked || globalBlocked) {
         if ((localBlocked && used.retained > 0) || (globalBlocked && global.retained > 0)) {
           await sql`UPDATE immich_fork.icloud_connection SET state='error',"lastError"='staging_retained_capacity',"nextRunAt"=NULL WHERE id=${connectionId}::uuid`.execute(
@@ -599,7 +606,7 @@ export class ICloudSyncRepository {
       }
       const complete = rows.length < 100;
       await sql`INSERT INTO immich_fork.icloud_checkpoint ("connectionId",scope,cursor,complete,"snapshotId")
-        VALUES (${connection.id}::uuid,${scope},${rows.at(-1)?.recordName ?? ''}::jsonb,${complete},gen_random_uuid())
+        VALUES (${connection.id}::uuid,${scope},to_jsonb(${rows.at(-1)?.recordName ?? ''}::text),${complete},gen_random_uuid())
         ON CONFLICT ("connectionId",scope) DO UPDATE SET cursor=excluded.cursor,complete=excluded.complete,"updatedAt"=now()`.execute(
         db,
       );

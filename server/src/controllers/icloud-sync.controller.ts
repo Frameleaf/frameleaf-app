@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { LoginDetails } from 'src/services/auth.service.js';
@@ -14,6 +14,7 @@ import {
 } from 'src/dtos/icloud-sync.dto.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
 import { ICloudSyncService } from 'src/services/icloud-sync.service.js';
+import { UUIDParamDto } from 'src/validation.js';
 
 @ApiTags('ICloud Sync')
 @Controller('icloud-sync/connections')
@@ -42,7 +43,7 @@ export class ICloudSyncController {
   @Endpoint({ history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0') })
   updateICloudConnection(
     @Auth() auth: AuthDto,
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param() { id }: UUIDParamDto,
     @Body() dto: ICloudConnectionUpdateDto,
   ): Promise<ICloudConnectionResponseDto> {
     return this.service.update(auth, id, dto);
@@ -53,7 +54,7 @@ export class ICloudSyncController {
   @Endpoint({ history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0') })
   authenticateICloudConnection(
     @Auth() auth: AuthDto,
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param() { id }: UUIDParamDto,
     @Body() dto: ICloudAuthDto,
     @GetLoginDetails() details: LoginDetails,
   ): Promise<ICloudConnectionResponseDto> {
@@ -65,7 +66,7 @@ export class ICloudSyncController {
   @Endpoint({ history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0') })
   controlICloudConnection(
     @Auth() auth: AuthDto,
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param() { id }: UUIDParamDto,
     @Body() dto: ICloudControlDto,
   ): Promise<ICloudConnectionResponseDto> {
     return this.service.control(auth, id, dto);
@@ -74,10 +75,7 @@ export class ICloudSyncController {
   @Get(':id/inventory')
   @Authenticated()
   @Endpoint({ history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0') })
-  getICloudInventory(
-    @Auth() auth: AuthDto,
-    @Param('id', new ParseUUIDPipe()) id: string,
-  ): Promise<ICloudInventoryResponseDto> {
+  getICloudInventory(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<ICloudInventoryResponseDto> {
     return this.service.inventory(auth, id);
   }
 
@@ -85,7 +83,7 @@ export class ICloudSyncController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @Authenticated()
   @Endpoint({ history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0') })
-  disconnectICloudConnection(@Auth() auth: AuthDto, @Param('id', new ParseUUIDPipe()) id: string): Promise<void> {
+  disconnectICloudConnection(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
     return this.service.disconnect(auth, id);
   }
 }

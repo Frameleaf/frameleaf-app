@@ -188,6 +188,25 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
     expect(result.state).toMatchObject({ status: 'needs-review', reason: 'source_metadata_conflict' });
     expect(await service.reconcile(ctx.connectionId, ctx.ownerId)).toBe(true);
   });
+  it('deduplicates conflict overrides across repeated extraction and reconciliation', async () => {
+    const ctx = await setup({ isFavorite: true });
+    await sql`INSERT INTO immich_fork.icloud_resource(id,"connectionId","ownerId","libraryKey",library,"sourceAssetId","recordId","resourceKey",role,fingerprint,source,"expectedSize",status,"assetId")
+      VALUES(gen_random_uuid(),${ctx.connectionId}::uuid,${ctx.ownerId}::uuid,'private','{}','logical-2','master','resOriginalRes','original','different','{"isFavorite":false}',3,'finalized',${ctx.assetId}::uuid)`.execute(
+      db,
+    );
+    for (let index = 0; index < 4; index++) {
+      await sql`UPDATE asset_job_status SET "metadataExtractedAt"=now()+${index}*interval '1 second' WHERE "assetId"=${ctx.assetId}::uuid`.execute(
+        db,
+      );
+      await service.reconcile(ctx.connectionId, ctx.ownerId);
+      const rows = await sql<{
+        overridden: string[];
+      }>`SELECT source#>'{_sync,metadata,overridden}' AS overridden FROM immich_fork.icloud_resource WHERE "assetId"=${ctx.assetId}::uuid AND source#>'{_sync,metadata}' IS NOT NULL`.execute(
+        db,
+      );
+      expect(rows.rows[0].overridden).toEqual(['isFavorite']);
+    }
+  });
   it('continues one destination at a time and carries baselines across superseded resource versions', async () => {
     const ctx = await setup({ isFavorite: true });
     const second = randomUUID();

@@ -184,6 +184,7 @@ export class ICloudMetadataRepository {
           }
         }
       }
+      state.overridden = [...new Set(state.overridden)];
       await sql`UPDATE immich_fork.icloud_resource SET source=jsonb_set(source,'{_sync}',coalesce(source->'_sync','{}') || jsonb_build_object('metadata',${state}::jsonb)) WHERE id=${candidate.id}::uuid AND "ownerId"=${ownerId}::uuid`.execute(
         db,
       );
