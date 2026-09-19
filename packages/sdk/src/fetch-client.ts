@@ -2156,6 +2156,84 @@ export type FaceDto = {
     /** Face ID */
     id: string;
 };
+export type ICloudConnectionResponseDto = {
+    config: {
+        albums: string[];
+        concurrency: number;
+        includeEdits: boolean;
+        includeHidden: boolean;
+        intervalHours: number;
+        libraries: string[];
+        recoverExternalAsManaged: boolean;
+        stagingBytes: number;
+    };
+    counts: {
+        [key: string]: number;
+    };
+    id: string;
+    label: string;
+    lastError: string | null;
+    nextRunAt: string | null;
+    state: string;
+};
+export type ICloudConnectionsResponseDto = {
+    connections: ICloudConnectionResponseDto[];
+    enabled: boolean;
+};
+export type ICloudConnectionCreateDto = {
+    config?: {
+        albums?: string[];
+        concurrency?: number;
+        includeEdits?: boolean;
+        includeHidden?: boolean;
+        intervalHours?: number;
+        libraries?: string[];
+        recoverExternalAsManaged?: boolean;
+        stagingBytes?: number;
+    };
+    label: string;
+};
+export type ICloudConnectionUpdateDto = {
+    config?: {
+        albums?: string[];
+        concurrency?: number;
+        includeEdits?: boolean;
+        includeHidden?: boolean;
+        intervalHours?: number;
+        libraries?: string[];
+        recoverExternalAsManaged?: boolean;
+        stagingBytes?: number;
+    };
+    label?: string;
+};
+export type ICloudAuthDto = {
+    action: ICloudAuthAction;
+    appleId?: string;
+    code?: string;
+    password?: string;
+};
+export type ICloudControlDto = {
+    action: ICloudControlAction;
+};
+export type ICloudInventoryResponseDto = {
+    albums: {
+        id: string;
+        libraryId: string;
+        name: string;
+        parentId: string | null;
+    }[];
+    complete: boolean;
+    libraries: {
+        id: string;
+        name: string;
+        supported: boolean;
+    }[];
+    recent?: {
+        assetId: string;
+        outcome: string;
+        resourceId: string;
+    }[];
+};
 export type QueueStatisticsDto = {
     /** Number of active jobs */
     active: number;
@@ -6312,6 +6390,83 @@ export function reassignFacesById({ id, faceDto }: {
         body: faceDto
     })));
 }
+export function listICloudConnections(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudConnectionsResponseDto;
+    }>("/icloud-sync/connections", {
+        ...opts
+    }));
+}
+export function createICloudConnection({ iCloudConnectionCreateDto }: {
+    iCloudConnectionCreateDto: ICloudConnectionCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ICloudConnectionResponseDto;
+    }>("/icloud-sync/connections", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: iCloudConnectionCreateDto
+    })));
+}
+export function disconnectICloudConnection({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/icloud-sync/connections/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+export function updateICloudConnection({ id, iCloudConnectionUpdateDto }: {
+    id: string;
+    iCloudConnectionUpdateDto: ICloudConnectionUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudConnectionResponseDto;
+    }>(`/icloud-sync/connections/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: iCloudConnectionUpdateDto
+    })));
+}
+export function authenticateICloudConnection({ id, iCloudAuthDto }: {
+    id: string;
+    iCloudAuthDto: ICloudAuthDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ICloudConnectionResponseDto;
+    }>(`/icloud-sync/connections/${encodeURIComponent(id)}/auth`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: iCloudAuthDto
+    })));
+}
+export function controlICloudConnection({ id, iCloudControlDto }: {
+    id: string;
+    iCloudControlDto: ICloudControlDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ICloudConnectionResponseDto;
+    }>(`/icloud-sync/connections/${encodeURIComponent(id)}/control`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: iCloudControlDto
+    })));
+}
+export function getICloudInventory({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudInventoryResponseDto;
+    }>(`/icloud-sync/connections/${encodeURIComponent(id)}/inventory`, {
+        ...opts
+    }));
+}
 /**
  * Retrieve queue counts and status
  */
@@ -9458,6 +9613,20 @@ export enum SourceType {
     Exif = "exif",
     Manual = "manual"
 }
+export enum ICloudAuthAction {
+    Login = "login",
+    TwoFactor = "two-factor",
+    DeviceApproval = "device-approval",
+    Validate = "validate"
+}
+export enum ICloudControlAction {
+    Run = "run",
+    Pause = "pause",
+    Resume = "resume",
+    Cancel = "cancel",
+    Rescan = "rescan",
+    Retry = "retry"
+}
 export enum ManualJobName {
     PersonCleanup = "person-cleanup",
     TagCleanup = "tag-cleanup",
@@ -9568,6 +9737,7 @@ export enum QueueJobStatus {
     Paused = "paused"
 }
 export enum JobName {
+    ICloudSync = "ICloudSync",
     ForkSchemaBackfill = "ForkSchemaBackfill",
     AssetDelete = "AssetDelete",
     AssetDeleteCheck = "AssetDeleteCheck",

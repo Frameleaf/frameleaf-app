@@ -87,6 +87,9 @@ describe(JobRepository.name, () => {
       sut,
     );
 
+    expect(getJobOptions({ name: JobName.ICloudSync, data: { id: 'connection' } })).toEqual({
+      deduplication: { id: `${JobName.ICloudSync}:connection`, keepLastIfActive: true },
+    });
     expect(getJobOptions({ name: JobName.ForkSchemaBackfill, data: { kind: 'privacy', batchSize: 100 } })).toEqual({
       deduplication: { id: `${JobName.ForkSchemaBackfill}:privacy`, keepLastIfActive: true },
     });

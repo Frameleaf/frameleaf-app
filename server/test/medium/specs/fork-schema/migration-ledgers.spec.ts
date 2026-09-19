@@ -66,6 +66,7 @@ describe('fork schema migration ledgers', () => {
       { name: '0000000000060-SharedUpstreamPaths' },
       { name: '0000000000070-ResetAssetSyncChecksums' },
       { name: '0000000000080-MediaHealthRunOwner' },
+      { name: '0000000000090-ICloudSync' },
     ]);
     expect(controlTables.rows.map(({ tableName }) => tableName)).toEqual([
       'backfill_progress',

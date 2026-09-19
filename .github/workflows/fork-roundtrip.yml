@@ -8,6 +8,7 @@ on:
       - 'e2e/docker-compose.fork-roundtrip.yml'
       - 'e2e/src/specs/server/fork-schema-*.ts'
       - 'scripts/test-fork-roundtrip.sh'
+      - 'scripts/test-fork-roundtrip.test.mjs'
       - 'server/src/app.module.ts'
       - 'server/src/commands/**'
       - 'server/src/fork-schema/**'
@@ -53,6 +54,8 @@ jobs:
           node-version-file: '.nvmrc'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Test certification restart handling
+        run: node --test scripts/test-fork-roundtrip.test.mjs
       - name: Run real official-container certification lane
         run: pnpm --filter immich-e2e test:fork-roundtrip
       - name: Capture container evidence
