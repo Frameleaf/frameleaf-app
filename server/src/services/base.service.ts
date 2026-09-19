@@ -57,7 +57,6 @@ import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repos
 import { SyncRepository } from 'src/repositories/sync.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
-import { TelemetryRepository } from 'src/repositories/telemetry.repository.js';
 import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
@@ -121,7 +120,6 @@ export const BASE_SERVICE_DEPENDENCIES = [
   SyncCheckpointRepository,
   SystemMetadataRepository,
   TagRepository,
-  TelemetryRepository,
   TrashRepository,
   UserRepository,
   VersionHistoryRepository,
@@ -187,7 +185,6 @@ export class BaseService {
     protected syncCheckpointRepository: SyncCheckpointRepository,
     protected systemMetadataRepository: SystemMetadataRepository,
     protected tagRepository: TagRepository,
-    protected telemetryRepository: TelemetryRepository,
     protected trashRepository: TrashRepository,
     protected userRepository: UserRepository,
     protected versionRepository: VersionHistoryRepository,
@@ -262,7 +259,6 @@ export class BaseService {
       ctx.syncCheckpointRepository,
       ctx.systemMetadataRepository,
       ctx.tagRepository,
-      ctx.telemetryRepository,
       ctx.trashRepository,
       ctx.userRepository,
       ctx.versionRepository,

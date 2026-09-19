@@ -715,7 +715,6 @@ export enum MetadataKey {
   ApiKeySecurity = 'api_key',
   EventConfig = 'event_config',
   JobConfig = 'job_config',
-  TelemetryEnabled = 'telemetry_enabled',
 }
 
 export enum RouteKey {
