@@ -4243,6 +4243,7 @@ export type SyncAssetFaceV3 = {
     /** Source type */
     sourceType: string;
 };
+export type SyncAssetFaceV2 = SyncAssetFaceV3;
 export type SyncAssetMetadataDeleteV1 = {
     /** Asset ID */
     assetId: string;

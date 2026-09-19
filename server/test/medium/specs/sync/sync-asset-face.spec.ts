@@ -420,7 +420,8 @@ describe.each([
 ])('fork face privacy ($request, shared=$shared)', ({ request, entity, shared }) => {
   it('filters NSFW upserts and deletes while retaining safe faces and elevated access', async () => {
     const { auth, user, ctx } = await setup();
-    const ownerId = shared ? (await ctx.newUser({ clusterGroupId: user.clusterGroupId })).user.id : user.id;
+    const { user: owner } = shared ? await ctx.newUser({ clusterGroupId: user.clusterGroupId }) : { user };
+    const ownerId = owner.id;
     const { asset: hidden } = await ctx.newAsset({ ownerId, is_nsfw: true });
     const { asset: safe } = await ctx.newAsset({ ownerId, is_nsfw: false });
     const { assetFace: hiddenFace } = await ctx.newAssetFace({ assetId: hidden.id });
@@ -453,7 +454,8 @@ describe.each([
 
   it('honors tag suppression for upserts and deletes', async () => {
     const { auth, user, ctx } = await setup();
-    const ownerId = shared ? (await ctx.newUser({ clusterGroupId: user.clusterGroupId })).user.id : user.id;
+    const { user: owner } = shared ? await ctx.newUser({ clusterGroupId: user.clusterGroupId }) : { user };
+    const ownerId = owner.id;
     const { asset } = await ctx.newAsset({ ownerId });
     const { assetFace } = await ctx.newAssetFace({ assetId: asset.id });
     const { tag } = await ctx.newTag({ userId: ownerId, value: 'suppressed' });
