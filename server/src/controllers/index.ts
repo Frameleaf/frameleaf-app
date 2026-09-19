@@ -16,6 +16,7 @@ import { DatabaseBackupController } from 'src/controllers/database-backup.contro
 import { DownloadController } from 'src/controllers/download.controller.js';
 import { DuplicateController } from 'src/controllers/duplicate.controller.js';
 import { FaceController } from 'src/controllers/face.controller.js';
+import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';
 import { LibraryController } from 'src/controllers/library.controller.js';
@@ -50,6 +51,7 @@ import { ViewController } from 'src/controllers/view.controller.js';
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  ICloudSyncController,
   ApiKeyController,
   ActivityController,
   AlbumController,

@@ -84,10 +84,14 @@ export type UpsertMediaHealthFinding = Omit<
 > & {
   dismissedAt?: Date | null;
   resolvedAt?: Date | null;
+  expectedUpdateId?: string;
 };
 
 export type UpsertMediaHealthCandidate = Omit<Insertable<AssetHealthCandidateTable>, 'id' | 'createdAt' | 'updatedAt'>;
 export type RelinkManagedAsset = {
+  verifyCandidate: () => Promise<{ sha1: Buffer; sha256: Buffer; sizeInBytes: number } | undefined>;
+  expectedUpdateId: string;
+  expectedChecksumAlgorithm: ChecksumAlgorithm;
   assetId: string;
   candidateId: string;
   ownerId: string;
@@ -101,6 +105,7 @@ export type RelinkManagedAsset = {
   sizeInBytes: number;
   fileModifiedAt: Date;
 };
+export type RelinkExternalAsset = RelinkManagedAsset & { expectedLibraryId: string };
 type HealthBackfillTables = {
   assetHealthRun: TableVerification;
   assetHealth: TableVerification;
@@ -364,16 +369,32 @@ export class MediaHealthRepository {
     });
   }
 
-  async upsertFinding(finding: UpsertMediaHealthFinding): Promise<MediaHealthFinding> {
-    const phase = await getForkSchemaPhase(this.db);
-    let result: MediaHealthFinding | undefined;
-    await this.db.transaction().execute(async (trx) => {
+  async upsertFinding(input: UpsertMediaHealthFinding): Promise<MediaHealthFinding | undefined> {
+    const { expectedUpdateId, ...finding } = input;
+    return this.db.transaction().execute(async (trx) => {
+      const phase = await this.lockHealthPhase(trx);
+      const asset = await trx
+        .withSchema('public')
+        .selectFrom('asset')
+        .select(['updateId', 'originalPath', 'deletedAt', 'status'])
+        .where('id', '=', asUuid(finding.assetId))
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        !asset ||
+        asset.originalPath !== finding.originalPath ||
+        (expectedUpdateId &&
+          (asset.updateId !== expectedUpdateId || asset.deletedAt || asset.status !== AssetStatus.Active))
+      ) {
+        return;
+      }
       if (writesForkSidecar(phase)) {
         await lockForkAssetParent(trx, finding.assetId);
         if (finding.runId) {
           await this.lockForkHealthRun(trx, finding.runId);
         }
       }
+      let result: MediaHealthFinding | undefined;
       if (writesLegacy(phase)) {
         result = await this.upsertFindingInto(trx.withSchema('public'), finding);
       }
@@ -384,8 +405,119 @@ export class MediaHealthRepository {
           result = await this.upsertFindingInto(trx.withSchema('immich_fork'), finding);
         }
       }
+      return result;
     });
-    return result!;
+  }
+
+  private async lockHealthPhase(trx: Kysely<DB>) {
+    const phase = await getForkSchemaPhase(trx);
+    if (phase === 'legacy') {
+      return phase;
+    }
+    const result = await sql<{
+      phase: typeof phase;
+    }>`SELECT phase FROM immich_fork.state WHERE id = 1 FOR SHARE`.execute(trx);
+    return result.rows[0]?.phase ?? phase;
+  }
+
+  async markResolvedForAssets(
+    categories: MediaHealthCategory[],
+    assets: Pick<MediaHealthAsset, 'id' | 'updateId' | 'originalPath'>[],
+  ): Promise<void> {
+    if (assets.length === 0 || categories.length === 0) {
+      return;
+    }
+    await this.db.transaction().execute(async (trx) => {
+      const phase = await this.lockHealthPhase(trx);
+      const current = await trx
+        .withSchema('public')
+        .selectFrom('asset')
+        .select(['id', 'updateId', 'originalPath'])
+        .where('id', '=', anyUuid(assets.map(({ id }) => id)))
+        .where('deletedAt', 'is', null)
+        .where('status', '=', AssetStatus.Active)
+        .orderBy('id')
+        .forUpdate()
+        .execute();
+      const expected = new Map(assets.map((asset) => [asset.id, asset]));
+      const ids = current
+        .filter(
+          (asset) =>
+            asset.updateId === expected.get(asset.id)?.updateId &&
+            asset.originalPath === expected.get(asset.id)?.originalPath,
+        )
+        .map(({ id }) => id);
+      if (ids.length === 0) {
+        return;
+      }
+      for (const schema of this.writeSchemas(phase)) {
+        await trx
+          .withSchema(schema)
+          .updateTable('asset_health')
+          .set({ status: MediaHealthStatus.Resolved, severity: MediaHealthSeverity.Info, resolvedAt: new Date() })
+          .where('category', 'in', categories)
+          .where('assetId', '=', anyUuid(ids))
+          .execute();
+      }
+    });
+  }
+
+  async trashCorruptIfUnchanged(input: {
+    healthId: string;
+    asset: Pick<MediaHealthAsset, 'id' | 'ownerId' | 'updateId' | 'originalPath'>;
+  }): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      const phase = await this.lockHealthPhase(trx);
+      const asset = await trx
+        .withSchema('public')
+        .selectFrom('asset')
+        .select(['updateId', 'originalPath', 'ownerId', 'deletedAt', 'status'])
+        .where('id', '=', asUuid(input.asset.id))
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        !asset ||
+        asset.updateId !== input.asset.updateId ||
+        asset.originalPath !== input.asset.originalPath ||
+        asset.ownerId !== input.asset.ownerId ||
+        asset.deletedAt ||
+        asset.status !== AssetStatus.Active
+      ) {
+        return false;
+      }
+      const health = await trx
+        .withSchema(readsForkSidecar(phase) ? 'immich_fork' : 'public')
+        .selectFrom('asset_health')
+        .select(['status', 'originalPath', 'resolvedAt'])
+        .where('id', '=', asUuid(input.healthId))
+        .where('assetId', '=', asUuid(input.asset.id))
+        .where('category', '=', MediaHealthCategory.Corrupt)
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        !health ||
+        health.status !== MediaHealthStatus.TrashQueued ||
+        health.resolvedAt ||
+        health.originalPath !== asset.originalPath
+      ) {
+        return false;
+      }
+      await trx
+        .withSchema('public')
+        .updateTable('asset')
+        .set({ deletedAt: new Date(), status: AssetStatus.Trashed })
+        .where('id', '=', asUuid(input.asset.id))
+        .execute();
+      for (const schema of this.writeSchemas(phase)) {
+        await trx
+          .withSchema(schema)
+          .updateTable('asset_health')
+          .set({ status: MediaHealthStatus.Trashed })
+          .where('id', '=', asUuid(input.healthId))
+          .execute();
+      }
+      return true;
+    });
   }
 
   private async lockForkHealthRun(db: Kysely<DB>, runId: string): Promise<void> {
@@ -634,55 +766,115 @@ export class MediaHealthRepository {
   }
 
   async relinkManagedAsset(input: RelinkManagedAsset): Promise<boolean> {
-    const phase = await getForkSchemaPhase(this.db);
+    return this.commitRelink(input);
+  }
+
+  async relinkExternalAsset(input: RelinkExternalAsset): Promise<boolean> {
+    return this.commitRelink(input);
+  }
+
+  private async commitRelink(input: RelinkManagedAsset | RelinkExternalAsset): Promise<boolean> {
     const recoveredPath = path.normalize(input.originalPath);
-    const expectedOriginalPath = path.normalize(input.expectedOriginalPath);
-
+    const external = 'expectedLibraryId' in input;
     return this.db.transaction().execute(async (trx) => {
-      const lockKey = createHash('sha1').update(recoveredPath).digest().readBigInt64BE(0);
-      await sql`SELECT pg_advisory_xact_lock(${lockKey.toString()}::bigint)`.execute(trx);
-
+      const phase = await this.lockHealthPhase(trx);
+      if (!writesForkSidecar(phase)) {
+        return false;
+      }
+      const migrating = await sql`SELECT 1 FROM immich_fork.migration_audit
+        WHERE status = 'running' AND name IN ('fork-return-reconciliation', 'official-handoff-preparation') LIMIT 1`.execute(
+        trx,
+      );
+      if (migrating.rows.length > 0) {
+        return false;
+      }
+      // Match recovery's owner-before-path ordering and serialize canonical path changes.
+      const owner = await trx
+        .withSchema('public')
+        .selectFrom('user')
+        .select('id')
+        .where('id', '=', input.ownerId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!owner) {
+        return false;
+      }
+      for (const candidatePath of [...new Set([input.expectedOriginalPath, recoveredPath])].sort()) {
+        const key = createHash('sha1').update(candidatePath).digest().readBigInt64BE(0);
+        await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(trx);
+      }
       const asset = await trx
         .withSchema('public')
         .selectFrom('asset')
-        .select(['id', 'ownerId', 'checksum', 'originalPath', 'isExternal', 'libraryId', 'deletedAt', 'status'])
-        .where('id', '=', asUuid(input.assetId))
+        .selectAll()
+        .where('id', '=', input.assetId)
         .forUpdate()
         .executeTakeFirst();
       if (
         !asset ||
         asset.ownerId !== input.ownerId ||
-        asset.isExternal ||
-        asset.libraryId ||
+        asset.updateId !== input.expectedUpdateId ||
+        asset.originalPath !== input.expectedOriginalPath ||
+        !asset.checksum.equals(input.expectedChecksum) ||
+        asset.checksumAlgorithm !== input.expectedChecksumAlgorithm ||
         asset.deletedAt ||
         asset.status !== AssetStatus.Active ||
-        path.normalize(asset.originalPath) !== expectedOriginalPath ||
-        !asset.checksum.equals(input.expectedChecksum)
+        asset.isExternal !== external ||
+        (external ? asset.libraryId !== input.expectedLibraryId : asset.libraryId !== null)
       ) {
         return false;
       }
-
-      const healthSchema = readsForkSidecar(phase) ? 'immich_fork' : 'public';
-      const health = await (trx as Kysely<any>)
-        .selectFrom(`${healthSchema}.asset_health as asset_health`)
-        .select(['assetId', 'category', 'originalPath', 'resolution', 'status'])
-        .where('id', '=', asUuid(input.healthId))
+      const reserved =
+        await sql`SELECT 1 FROM immich_fork.asset_storage_reservation WHERE "assetId" = ${asset.id}::uuid AND status = 'reserved'`.execute(
+          trx,
+        );
+      if (reserved.rows.length > 0) {
+        return false;
+      }
+      const sidecars =
+        await sql<MediaHealthChecksum>`SELECT "assetId", sha1, sha256, "sizeInBytes" FROM immich_fork.asset_checksum WHERE "assetId" = ${asset.id}::uuid FOR UPDATE`.execute(
+          trx,
+        );
+      const contentMatches =
+        asset.checksumAlgorithm === ChecksumAlgorithm.sha256File
+          ? input.sha256.equals(asset.checksum)
+          : asset.checksumAlgorithm === ChecksumAlgorithm.sha1File
+            ? input.sha1.equals(asset.checksum)
+            : !!sidecars.rows[0]?.sha1.equals(input.sha1) && !!sidecars.rows[0]?.sha256.equals(input.sha256);
+      if (
+        !contentMatches ||
+        input.sha1.length !== 20 ||
+        input.sha256.length !== 32 ||
+        !Number.isSafeInteger(input.sizeInBytes) ||
+        input.sizeInBytes <= 0
+      ) {
+        return false;
+      }
+      const schema = readsForkSidecar(phase) ? 'immich_fork' : 'public';
+      const health = await trx
+        .withSchema(schema)
+        .selectFrom('asset_health')
+        .selectAll()
+        .where('id', '=', input.healthId)
         .forUpdate()
         .executeTakeFirst();
       if (
-        health?.assetId !== input.assetId ||
+        !health ||
+        health.assetId !== asset.id ||
         health.category !== MediaHealthCategory.Missing ||
         health.status !== MediaHealthStatus.Found ||
-        path.normalize(health.originalPath) !== expectedOriginalPath ||
+        health.resolvedAt ||
+        health.dismissedAt ||
+        health.originalPath !== asset.originalPath ||
         health.resolution?.autoRelinkable !== true
       ) {
         return false;
       }
-
-      const candidates = await (trx as Kysely<any>)
-        .selectFrom(`${healthSchema}.asset_health_candidate as candidate`)
-        .select(['id', 'candidatePath', 'resolution'])
-        .where('healthId', '=', asUuid(input.healthId))
+      const candidates = await trx
+        .withSchema(schema)
+        .selectFrom('asset_health_candidate')
+        .selectAll()
+        .where('healthId', '=', input.healthId)
         .where('status', '=', MediaHealthStatus.Found)
         .forUpdate()
         .execute();
@@ -695,77 +887,164 @@ export class MediaHealthRepository {
       ) {
         return false;
       }
-
-      const candidateAsset = await trx
+      const occupants = await trx
         .withSchema('public')
         .selectFrom('asset')
-        .select('id')
+        .select(['id', 'isExternal', 'libraryId', 'status', 'deletedAt'])
         .where('originalPath', '=', recoveredPath)
-        .where('libraryId', 'is', null)
-        .where('isExternal', '=', false)
-        .where('deletedAt', 'is', null)
-        .where('status', '=', AssetStatus.Active)
-        .executeTakeFirst();
-      const existingPhysical = await trx
-        .withSchema('public')
-        .selectFrom('physical_file')
-        .selectAll()
-        .where('path', '=', recoveredPath)
-        .executeTakeFirst();
-      const physical = existingPhysical
-        ? await trx
-            .withSchema('public')
-            .updateTable('physical_file')
-            .set({ checksum: input.sha256, sizeInBytes: input.sizeInBytes, type: PhysicalFileType.Original })
-            .where('id', '=', existingPhysical.id)
-            .returningAll()
-            .executeTakeFirstOrThrow()
-        : await trx
-            .withSchema('public')
-            .insertInto('physical_file')
-            .values({
-              canonicalAssetId: candidateAsset?.id ?? input.assetId,
-              checksum: input.sha256,
-              path: recoveredPath,
-              sizeInBytes: input.sizeInBytes,
-              type: PhysicalFileType.Original,
-            })
-            .returningAll()
-            .executeTakeFirstOrThrow();
-
-      await trx
-        .withSchema('public')
-        .updateTable('asset')
-        .set({
-          physicalOriginalFileId: physical.id,
-          originalPath: recoveredPath,
-          checksum: input.sha256,
-          checksumAlgorithm: ChecksumAlgorithm.sha256File,
-          fileModifiedAt: input.fileModifiedAt,
-          isOffline: false,
-          deletedAt: null,
-          status: AssetStatus.Active,
-        })
-        .where('id', '=', asUuid(input.assetId))
-        .executeTakeFirstOrThrow();
-
-      await sql`
-        INSERT INTO immich_fork.asset_checksum
-          ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
-        VALUES (
-          ${input.assetId}::uuid, ${input.sha1}, ${input.sha256}, ${input.sizeInBytes}, ARRAY[${recoveredPath}]::text[],
-          1, '{"source":"recovery"}'::jsonb, now(), now()
-        )
-        ON CONFLICT ("assetId") DO UPDATE SET
-          sha1 = EXCLUDED.sha1, sha256 = EXCLUDED.sha256, "sizeInBytes" = EXCLUDED."sizeInBytes",
-          "verifiedPaths" = EXCLUDED."verifiedPaths", evidence = EXCLUDED.evidence,
-          "verifiedAt" = EXCLUDED."verifiedAt", "updatedAt" = EXCLUDED."updatedAt"
-      `.execute(trx);
-
-      const checkedAt = new Date();
-      for (const schema of this.writeSchemas(phase)) {
+        .where('id', '!=', asset.id)
+        .orderBy('id')
+        .forShare()
+        .execute();
+      if (external && occupants.some((item) => item.libraryId === asset.libraryId)) {
+        return false;
+      }
+      const verify = async () => {
+        const verified = await input.verifyCandidate();
+        return (
+          !!verified &&
+          verified.sha1.equals(input.sha1) &&
+          verified.sha256.equals(input.sha256) &&
+          verified.sizeInBytes === input.sizeInBytes
+        );
+      };
+      const canonical =
+        occupants.find(
+          (item) => !item.isExternal && !item.libraryId && !item.deletedAt && item.status === AssetStatus.Active,
+        )?.id ?? asset.id;
+      if (external) {
+        if (!(await verify())) {
+          return false;
+        }
         await trx
-          .withSchema(schema)
+          .withSchema('public')
+          .updateTable('asset')
+          .set({
+            originalPath: recoveredPath,
+            originalFileName: input.originalFileName,
+            checksum: createHash('sha1').update(`path:${recoveredPath}`).digest(),
+            checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+            fileModifiedAt: input.fileModifiedAt,
+            isOffline: false,
+          })
+          .where('id', '=', asset.id)
+          .execute();
+      } else {
+        const oldMapping = await sql<{
+          physicalFileId: string;
+        }>`SELECT "physicalFileId" FROM immich_fork.asset_physical_file WHERE "assetId" = ${asset.id}::uuid FOR UPDATE`.execute(
+          trx,
+        );
+        const forkRows = await sql<{
+          id: string;
+          checksum: Buffer;
+          sizeInBytes: number;
+          type: string;
+        }>`SELECT id, checksum, "sizeInBytes", type FROM immich_fork.physical_file WHERE "canonicalPath" = ${recoveredPath} FOR UPDATE`.execute(
+          trx,
+        );
+        const forkPhysical = forkRows.rows[0];
+        if (
+          forkPhysical &&
+          (forkPhysical.type !== PhysicalFileType.Original ||
+            !(forkPhysical.checksum.length === 20
+              ? forkPhysical.checksum.equals(input.sha1)
+              : forkPhysical.checksum.length === 32 && forkPhysical.checksum.equals(input.sha256)) ||
+            Number(forkPhysical.sizeInBytes) !== input.sizeInBytes)
+        ) {
+          return false;
+        }
+        let legacyId: string | undefined;
+        if (writesLegacy(phase)) {
+          const physical = await trx
+            .withSchema('public')
+            .selectFrom('physical_file')
+            .selectAll()
+            .where('path', '=', recoveredPath)
+            .forUpdate()
+            .executeTakeFirst();
+          if (
+            physical &&
+            (physical.type !== PhysicalFileType.Original ||
+              !(physical.checksum.length === 20
+                ? physical.checksum.equals(input.sha1)
+                : physical.checksum.length === 32 && physical.checksum.equals(input.sha256)) ||
+              Number(physical.sizeInBytes) !== input.sizeInBytes)
+          ) {
+            return false;
+          }
+          if (!(await verify())) {
+            return false;
+          }
+          legacyId = physical?.id ?? randomUUID();
+          if (!physical) {
+            await trx
+              .withSchema('public')
+              .insertInto('physical_file')
+              .values({
+                id: legacyId,
+                canonicalAssetId: canonical,
+                checksum: input.sha256,
+                path: recoveredPath,
+                sizeInBytes: input.sizeInBytes,
+                type: PhysicalFileType.Original,
+              })
+              .execute();
+          }
+        }
+        if (!writesLegacy(phase) && !(await verify())) {
+          return false;
+        }
+        const forkId = forkPhysical?.id ?? legacyId ?? randomUUID();
+        if (!forkPhysical) {
+          await sql`INSERT INTO immich_fork.physical_file (id, "canonicalAssetId", type, checksum, "sizeInBytes", "canonicalPath", "createdAt", "updatedAt")
+            VALUES (${forkId}::uuid, ${canonical}::uuid, 'original', ${input.sha256}, ${input.sizeInBytes}, ${recoveredPath}, now(), now())`.execute(
+            trx,
+          );
+        }
+        await sql`INSERT INTO immich_fork.asset_physical_file ("assetId", "physicalFileId", "upstreamPath", "verifiedAt", "updatedAt")
+          VALUES (${asset.id}::uuid, ${forkId}::uuid, ${recoveredPath}, now(), now()) ON CONFLICT ("assetId") DO UPDATE SET
+          "physicalFileId" = EXCLUDED."physicalFileId", "upstreamPath" = EXCLUDED."upstreamPath", "verifiedAt" = now(), "updatedAt" = now()`.execute(
+          trx,
+        );
+        const column = await sql<{
+          present: boolean;
+        }>`SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'public.asset'::regclass AND attname = 'physicalOriginalFileId' AND NOT attisdropped) AS present`.execute(
+          trx,
+        );
+        await trx
+          .withSchema('public')
+          .updateTable('asset')
+          .set({
+            originalPath: recoveredPath,
+            checksum: input.sha256,
+            checksumAlgorithm: ChecksumAlgorithm.sha256File,
+            fileModifiedAt: input.fileModifiedAt,
+            isOffline: false,
+            ...(column.rows[0]?.present && { physicalOriginalFileId: legacyId ?? null }),
+          })
+          .where('id', '=', asset.id)
+          .execute();
+        if (writesLegacy(phase) && asset.physicalOriginalFileId) {
+          await sql`UPDATE public.physical_file SET "canonicalAssetId" = (SELECT id FROM public.asset WHERE "physicalOriginalFileId" = ${asset.physicalOriginalFileId}::uuid ORDER BY id LIMIT 1)
+            WHERE id = ${asset.physicalOriginalFileId}::uuid AND "canonicalAssetId" = ${asset.id}::uuid`.execute(trx);
+        }
+        const previousForkId = oldMapping.rows[0]?.physicalFileId;
+        if (previousForkId) {
+          await sql`UPDATE immich_fork.physical_file SET "canonicalAssetId" = (SELECT "assetId" FROM immich_fork.asset_physical_file WHERE "physicalFileId" = ${previousForkId}::uuid ORDER BY "assetId" LIMIT 1)
+            WHERE id = ${previousForkId}::uuid AND "canonicalAssetId" = ${asset.id}::uuid`.execute(trx);
+        }
+      }
+      await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
+        VALUES (${asset.id}::uuid, ${input.sha1}, ${input.sha256}, ${input.sizeInBytes}, ARRAY[${recoveredPath}]::text[], 1, '{"source":"recovery"}'::jsonb, now(), now())
+        ON CONFLICT ("assetId") DO UPDATE SET sha1=EXCLUDED.sha1, sha256=EXCLUDED.sha256, "sizeInBytes"=EXCLUDED."sizeInBytes",
+          "verifiedPaths"=EXCLUDED."verifiedPaths", evidence=EXCLUDED.evidence, "verifiedAt"=now(), "updatedAt"=now()`.execute(
+        trx,
+      );
+      const checkedAt = new Date();
+      for (const writeSchema of this.writeSchemas(phase)) {
+        await trx
+          .withSchema(writeSchema)
           .updateTable('asset_health')
           .set({
             runId: null,
@@ -778,41 +1057,18 @@ export class MediaHealthRepository {
             checkedAt,
             resolvedAt: checkedAt,
           })
-          .where('id', '=', asUuid(input.healthId))
-          .where('assetId', '=', asUuid(input.assetId))
+          .where('id', '=', input.healthId)
+          .where('assetId', '=', asset.id)
+          .execute();
+        await trx
+          .withSchema(writeSchema)
+          .updateTable('asset_health_candidate')
+          .set({ resolution: { autoRelinkable: false } })
+          .where('healthId', '=', input.healthId)
           .execute();
       }
-
       return true;
     });
-  }
-
-  async relinkExternalAsset(options: {
-    assetId: string;
-    originalPath: string;
-    originalFileName: string;
-    checksum: Buffer;
-    fileModifiedAt: Date;
-  }): Promise<boolean> {
-    const result = await this.db
-      .withSchema('public')
-      .updateTable('asset')
-      .set({
-        originalPath: options.originalPath,
-        originalFileName: options.originalFileName,
-        checksum: options.checksum,
-        checksumAlgorithm: ChecksumAlgorithm.sha1Path,
-        fileModifiedAt: options.fileModifiedAt,
-        isOffline: false,
-        deletedAt: null,
-        status: AssetStatus.Active,
-      })
-      .where('id', '=', asUuid(options.assetId))
-      .where('isExternal', '=', true)
-      .where('libraryId', 'is not', null)
-      .execute();
-
-    return Number(result[0]?.numUpdatedRows ?? 0) > 0;
   }
 
   async deleteForAssets(assetIds: string[], db: Kysely<DB> = this.db): Promise<void> {
