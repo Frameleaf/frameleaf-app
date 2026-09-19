@@ -147,10 +147,16 @@ export class MediaRecoveryRepository {
     const rows = await sql<RecoveryCandidate>`
       SELECT a.id, a."ownerId", a."updateId", a."originalPath", a.checksum, a."checksumAlgorithm",
         a."originalFileName", a.type, a."isExternal", a."libraryId", a."deletedAt", a.status, a."isOffline",
-        (s.sha256 IS NOT NULL AND s.sha256 <> ${verified.sha256}) AS "identityConflict",
-        ((a."checksumAlgorithm" = ${ChecksumAlgorithm.sha1File} AND a.checksum = ${verified.sha1}) OR
-         (a."checksumAlgorithm" = ${ChecksumAlgorithm.sha256File} AND a.checksum = ${verified.sha256}) OR
-         COALESCE(s.sha1 = ${verified.sha1} OR s.sha256 = ${verified.sha256}, false)) AS "matchesContent",
+        CASE a."checksumAlgorithm"
+          WHEN ${ChecksumAlgorithm.sha1File} THEN a.checksum <> ${verified.sha1}
+          WHEN ${ChecksumAlgorithm.sha256File} THEN a.checksum <> ${verified.sha256}
+          ELSE (s.sha1 IS NOT NULL AND s.sha1 <> ${verified.sha1}) OR (s.sha256 IS NOT NULL AND s.sha256 <> ${verified.sha256})
+        END AS "identityConflict",
+        CASE a."checksumAlgorithm"
+          WHEN ${ChecksumAlgorithm.sha1File} THEN a.checksum = ${verified.sha1}
+          WHEN ${ChecksumAlgorithm.sha256File} THEN a.checksum = ${verified.sha256}
+          ELSE COALESCE(s.sha1 = ${verified.sha1} AND s.sha256 = ${verified.sha256}, false)
+        END AS "matchesContent",
         (to_jsonb(a)->>'physicalOriginalFileId') AS "physicalOriginalFileId", p."physicalFileId" AS "forkPhysicalFileId", e."fileSizeInByte"::float8 AS "sizeInBytes",
         (a.visibility = 'locked' OR ${hidden}) AS hidden,
         EXISTS (SELECT 1 FROM ${sql.id(readsForkSidecar(phase) ? 'immich_fork' : 'public', 'asset_health')} h
@@ -252,6 +258,21 @@ export class MediaRecoveryRepository {
         return;
       }
       if (target.updateId) {
+        // Retry unrelated asset edits against a fresh generation, preserving the reserved bytes and identity.
+        const refreshed = input.candidate;
+        if (
+          refreshed &&
+          refreshed.id === target.assetId &&
+          refreshed.originalPath === target.originalPath &&
+          refreshed.checksum.toString('hex') === target.checksumHex &&
+          refreshed.checksumAlgorithm === target.checksumAlgorithm &&
+          refreshed.isExternal === target.isExternal &&
+          refreshed.libraryId === target.libraryId &&
+          refreshed.physicalOriginalFileId === target.physicalOriginalFileId &&
+          refreshed.forkPhysicalFileId === target.forkPhysicalFileId
+        ) {
+          target.updateId = refreshed.updateId;
+        }
         if (!(await this.lockTarget(trx, input, target, input.verified))) {
           return;
         }
@@ -483,7 +504,7 @@ export class MediaRecoveryRepository {
         ? []
         : [
             { name: JobName.AssetExtractMetadata, data: { id: assetId, source: 'upload' } },
-            { name: JobName.AssetGenerateThumbnails, data: { id: assetId } },
+            { name: JobName.AssetGenerateThumbnails, data: { id: assetId, source: 'upload' } },
           ];
       await sql`UPDATE immich_fork.icloud_resource SET status = 'committed', "assetId" = ${assetId}::uuid,
         path = ${promotedPath}, verification = ${{ outcome: target.outcome, identity: final.identity, sizeInBytes: final.sizeInBytes }}::jsonb,

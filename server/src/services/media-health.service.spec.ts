@@ -1,3 +1,8 @@
+import { createHash } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import sharp from 'sharp';
 import { CORRUPT_MEDIA_DELETE_CONFIRM_TEXT } from 'src/dtos/media-health.dto.js';
 import {
   AssetType,
@@ -8,8 +13,12 @@ import {
   MediaHealthSeverity,
   MediaHealthStatus,
 } from 'src/enum.js';
+import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
+import { MediaRepository } from 'src/repositories/media.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
+import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -290,7 +299,8 @@ describe(MediaHealthService.name, () => {
 
   describe('relinkMissing', () => {
     it.each([
-      { type: AssetType.Image, matches: true, candidatePath: '/external/migrated/renamed.jpg', pathHash: false },
+      { type: AssetType.Image, matches: true, candidatePath: '/external/migrated/renamed', pathHash: false },
+      { type: AssetType.Video, matches: true, candidatePath: '/external/migrated/renamed.dat', pathHash: false },
       { type: AssetType.Image, matches: true, candidatePath: '/external/migrated/path.jpg', pathHash: true },
       { type: AssetType.Video, matches: false, candidatePath: '/external/migrated/original.mp4' },
     ])(
@@ -407,9 +417,20 @@ describe(MediaHealthService.name, () => {
       ]);
       vi.mocked(mocks.crypto.hashFileDigests).mockResolvedValue({ sha1, sha256, sizeInBytes: 10 });
       vi.mocked(mocks.storage.stat).mockResolvedValue({ mtime: new Date('2026-09-04T00:00:00Z') } as never);
-      vi.mocked(mediaHealthRepository.relinkManagedAsset).mockResolvedValue(true);
+      vi.mocked(mediaHealthRepository.relinkManagedAsset).mockImplementation(async (input) => {
+        expect(await input.verifyCandidate()).toEqual({ sha1, sha256, sizeInBytes: 10 });
+        return true;
+      });
 
       await sut.relinkMissing(authStub.admin, { ids: ['health-1'] });
+
+      // The transaction callback must not acquire another database connection while holding locks.
+      expect(mediaHealthRepository.getAssetChecksums).toHaveBeenCalledTimes(1);
+      expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(2);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.SidecarCheck, data: { id: 'asset-1', source: 'upload' } },
+        { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
+      ]);
 
       expect(mediaHealthRepository.relinkManagedAsset).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1001,14 +1022,14 @@ describe(MediaHealthService.name, () => {
         expect(mediaHealthRepository.upsertFinding).toHaveBeenLastCalledWith(
           expect.objectContaining({
             evidence: expect.objectContaining({ searchTruncated: false }),
-            resolution: { autoRelinkable: !conflict },
+            resolution: { autoRelinkable: true },
           }),
         );
         const finalCandidates = vi.mocked(mediaHealthRepository.replaceCandidates).mock.calls.at(-1)![1];
-        expect(finalCandidates).toHaveLength(conflict ? 2 : 1);
+        expect(finalCandidates).toHaveLength(1);
         expect(finalCandidates[0]).toMatchObject({
           candidatePath: '/data/upload/user-2/found.jpg',
-          status: conflict ? MediaHealthStatus.Candidate : MediaHealthStatus.Found,
+          status: MediaHealthStatus.Found,
         });
         expect(mocks.job.queue).toHaveBeenCalledTimes(size > 10 * 1024 ** 3 ? 2 : 1);
       },
@@ -1094,12 +1115,13 @@ describe(MediaHealthService.name, () => {
       vi.mocked(mocks.storage.walk).mockReturnValue(
         (async function* () {
           await Promise.resolve();
-          yield ['/external/photos/wrong-size.jpg', '/external/photos/renamed.jpg', '/external/photos/renamed.xmp'];
+          yield ['/external/photos/wrong-size.jpg', '/external/photos/renamed', '/external/photos/renamed.xmp'];
         })() as never,
       );
       vi.mocked(mocks.storage.stat)
         .mockResolvedValueOnce({ size: 9 } as never)
-        .mockResolvedValueOnce({ size: 10 } as never);
+        .mockResolvedValueOnce({ size: 10 } as never)
+        .mockResolvedValueOnce({ size: 9 } as never);
       vi.mocked(mocks.crypto.hashFileDigests).mockResolvedValue({ sha1, sha256, sizeInBytes: 10 });
       vi.mocked(mocks.asset.getByLibraryIdAndOriginalPath).mockResolvedValue(undefined);
 
@@ -1110,7 +1132,7 @@ describe(MediaHealthService.name, () => {
         'health-1',
         expect.arrayContaining([
           expect.objectContaining({
-            candidatePath: '/external/photos/renamed.jpg',
+            candidatePath: '/external/photos/renamed',
             status: MediaHealthStatus.Found,
             evidence: expect.objectContaining({ reason: 'checksum_match' }),
             resolution: { autoRelinkable: true },
@@ -1157,12 +1179,14 @@ describe(MediaHealthService.name, () => {
           })() as never,
         );
         vi.mocked(mocks.storage.stat).mockResolvedValue({ size: 10 } as never);
-        vi.mocked(mocks.crypto.hashFileDigests).mockResolvedValue({ sha1, sha256, sizeInBytes: 10 });
+        vi.mocked(mocks.crypto.hashFileDigests)
+          .mockResolvedValueOnce({ sha1, sha256, sizeInBytes: 10 })
+          .mockResolvedValueOnce({ sha1: Buffer.alloc(20, 9), sha256: Buffer.alloc(32, 9), sizeInBytes: 10 });
         vi.mocked(mocks.asset.getByLibraryIdAndOriginalPath).mockResolvedValue(undefined);
 
         await sut.handleLocateMissing({ runId: 'run-1', ids: ['health-1'], userId: 'user-1' });
 
-        expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(1);
+        expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(2);
         expect(mediaHealthRepository.replaceCandidates).toHaveBeenCalledWith(
           'health-1',
           expect.arrayContaining([
@@ -1247,7 +1271,7 @@ describe(MediaHealthService.name, () => {
       );
     });
 
-    it('finds managed files by either SHA-1 or SHA-256 and skips metadata files', async () => {
+    it('finds managed files by either SHA-1 or SHA-256 regardless of filename and rejects metadata hashes', async () => {
       const sha1 = Buffer.alloc(20, 1);
       const sha256 = Buffer.alloc(32, 2);
       vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
@@ -1288,8 +1312,8 @@ describe(MediaHealthService.name, () => {
           await Promise.resolve();
           yield [
             '/data/upload/user-2/gone.jpg',
-            '/data/upload/user-2/found.jpg',
-            '/data/library/other/found.mp4',
+            '/data/upload/user-2/renamed',
+            '/data/library/other/renamed.dat',
             '/data/upload/user-2/found.xmp',
           ];
         })() as never,
@@ -1297,18 +1321,19 @@ describe(MediaHealthService.name, () => {
       vi.mocked(mocks.crypto.hashFileDigests)
         .mockRejectedValueOnce(new Error('file disappeared'))
         .mockResolvedValueOnce({ sha1, sha256: Buffer.alloc(32, 8), sizeInBytes: 10 })
-        .mockResolvedValueOnce({ sha1: Buffer.alloc(20, 9), sha256, sizeInBytes: 20 });
+        .mockResolvedValueOnce({ sha1: Buffer.alloc(20, 9), sha256, sizeInBytes: 20 })
+        .mockResolvedValueOnce({ sha1: Buffer.alloc(20, 7), sha256: Buffer.alloc(32, 7), sizeInBytes: 20 });
 
       await expect(
         sut.handleLocateMissing({ runId: 'run-1', ids: ['health-sha1', 'health-sha256'], userId: 'user-1' }),
       ).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(3);
+      expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(4);
       expect(mediaHealthRepository.replaceCandidates).toHaveBeenCalledWith(
         'health-sha1',
         expect.arrayContaining([
           expect.objectContaining({
-            candidatePath: '/data/upload/user-2/found.jpg',
+            candidatePath: '/data/upload/user-2/renamed',
             status: MediaHealthStatus.Found,
           }),
         ]),
@@ -1317,14 +1342,14 @@ describe(MediaHealthService.name, () => {
         'health-sha256',
         expect.arrayContaining([
           expect.objectContaining({
-            candidatePath: '/data/library/other/found.mp4',
+            candidatePath: '/data/library/other/renamed.dat',
             status: MediaHealthStatus.Found,
           }),
         ]),
       );
     });
 
-    it('does not auto-relink when SHA-1 and SHA-256 evidence points to different files', async () => {
+    it('uses the public SHA-256 match when stale sidecar SHA-1 evidence points elsewhere', async () => {
       const sha1 = Buffer.alloc(20, 1);
       const sha256 = Buffer.alloc(32, 2);
       vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([
@@ -1363,17 +1388,13 @@ describe(MediaHealthService.name, () => {
       await sut.handleLocateMissing({ runId: 'run-1', ids: ['health-1'], userId: 'user-1' });
 
       expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(2);
-      expect(mediaHealthRepository.replaceCandidates).toHaveBeenCalledWith(
-        'health-1',
-        expect.arrayContaining([
-          expect.objectContaining({ status: MediaHealthStatus.Candidate }),
-          expect.objectContaining({ status: MediaHealthStatus.Candidate }),
-        ]),
-      );
+      expect(mediaHealthRepository.replaceCandidates).toHaveBeenCalledWith('health-1', [
+        expect.objectContaining({ candidatePath: '/data/upload/user-2/sha256.jpg', status: MediaHealthStatus.Found }),
+      ]);
       expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
         expect.objectContaining({
-          status: MediaHealthStatus.Candidate,
-          resolution: expect.objectContaining({ autoRelinkable: false }),
+          status: MediaHealthStatus.Found,
+          resolution: expect.objectContaining({ autoRelinkable: true }),
         }),
       );
     });
@@ -1527,7 +1548,6 @@ describe(MediaHealthService.name, () => {
           ],
         ]),
       );
-      const relinkSpy = vi.spyOn(sut as any, 'relinkAsset').mockResolvedValue(undefined);
 
       await expect(sut.handleLocateMissing({ ids: ['health-1'] })).resolves.toBe(JobStatus.Success);
 
@@ -1540,12 +1560,78 @@ describe(MediaHealthService.name, () => {
           }),
         ]),
       );
-      expect(relinkSpy).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.relinkExternalAsset).not.toHaveBeenCalled();
+      expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
       expect(mediaHealthRepository.finishRun).toHaveBeenCalledWith(
         'run-1',
         expect.objectContaining({ status: 'completed', checkedAssets: 1, foundAssets: 1 }),
       );
     });
+  });
+
+  it.each([ChecksumAlgorithm.sha1File, ChecksumAlgorithm.sha256File])(
+    'reports decodable wrong content as corruption using stored %s identity',
+    async (algorithm) => {
+      const directory = await mkdtemp(join(tmpdir(), 'health-content-audit-'));
+      try {
+        const imagePath = join(directory, 'original.png');
+        await sharp({ create: { width: 8, height: 8, channels: 3, background: 'red' } })
+          .png()
+          .toFile(imagePath);
+        const original = await sharp({ create: { width: 8, height: 8, channels: 3, background: 'blue' } })
+          .png()
+          .toBuffer();
+        const expected = createHash(algorithm === ChecksumAlgorithm.sha1File ? 'sha1' : 'sha256')
+          .update(original)
+          .digest();
+        const checker = new MediaIntegrityService(
+          new StorageRepository(mocks.logger as never),
+          new CryptoRepository(),
+          new MediaRepository(mocks.logger as never),
+        );
+        Object.assign(sut, { integrityService: checker });
+        const asset = AssetFactory.create({
+          originalPath: imagePath,
+          originalFileName: 'original.png',
+          type: AssetType.Image,
+          checksumAlgorithm: algorithm,
+          checksum: expected,
+        });
+        const result = await (sut as any).validateReadableAssetIntegrity(asset);
+        expect(result).toMatchObject({
+          status: MediaHealthStatus.CorruptConfirmed,
+          evidence: { reason: 'expected_mismatch' },
+        });
+        // A path checksum is not expected file content.
+        const pathResult = await (sut as any).validateReadableAssetIntegrity({
+          ...asset,
+          checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+        });
+        expect(pathResult).toBeNull();
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it('uses public content identity ahead of stale sidecars and requires complete sidecar identity for path hashes', async () => {
+    const digests = { sha1: Buffer.alloc(20, 1), sha256: Buffer.alloc(32, 2), sizeInBytes: 100 };
+    vi.mocked(mocks.crypto.hashFileDigests).mockResolvedValue(digests);
+    const asset = AssetFactory.create({
+      checksumAlgorithm: ChecksumAlgorithm.sha256File,
+      checksum: Buffer.alloc(32, 3),
+    });
+    vi.mocked(mediaHealthRepository.getAssetChecksums).mockResolvedValue([{ assetId: asset.id, ...digests }]);
+    expect(await (sut as any).validateManagedCandidate(asset, '/candidate.jpg')).toBeUndefined();
+    asset.checksum = digests.sha256;
+    vi.mocked(mediaHealthRepository.getAssetChecksums).mockResolvedValue([
+      { assetId: asset.id, ...digests, sha256: Buffer.alloc(32, 3) },
+    ]);
+    expect(await (sut as any).validateManagedCandidate(asset, '/candidate.jpg')).toEqual(digests);
+    asset.checksumAlgorithm = ChecksumAlgorithm.sha1Path;
+    expect(await (sut as any).validateManagedCandidate(asset, '/candidate.jpg')).toBeUndefined();
+    vi.mocked(mediaHealthRepository.getAssetChecksums).mockResolvedValue([{ assetId: asset.id, ...digests }]);
+    expect(await (sut as any).validateManagedCandidate(asset, '/candidate.jpg')).toEqual(digests);
   });
 
   describe('classifyImageDecodeFailure', () => {

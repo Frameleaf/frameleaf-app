@@ -17,7 +17,8 @@ export async function assertICloudReferences(db: Kysely<DB>): Promise<void> {
       SELECT 1 FROM immich_fork.icloud_album album
       JOIN immich_fork.icloud_connection connection ON connection.id = album."connectionId"
       WHERE album."albumId" IS NOT NULL AND NOT EXISTS (
-        SELECT 1 FROM public.album target WHERE target.id = album."albumId" AND target."ownerId" = connection."ownerId"
+        SELECT 1 FROM public.album target JOIN public.album_user ownership ON ownership."albumId"=target.id
+        WHERE target.id = album."albumId" AND ownership."userId" = connection."ownerId" AND ownership.role='owner'
       )
       UNION ALL
       SELECT 1 FROM immich_fork.icloud_membership membership
@@ -25,7 +26,8 @@ export async function assertICloudReferences(db: Kysely<DB>): Promise<void> {
       WHERE (membership."assetId" IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM public.asset asset WHERE asset.id = membership."assetId" AND asset."ownerId" = connection."ownerId"
       )) OR (membership."albumId" IS NOT NULL AND NOT EXISTS (
-        SELECT 1 FROM public.album album WHERE album.id = membership."albumId" AND album."ownerId" = connection."ownerId"
+        SELECT 1 FROM public.album album JOIN public.album_user ownership ON ownership."albumId"=album.id
+        WHERE album.id = membership."albumId" AND ownership."userId" = connection."ownerId" AND ownership.role='owner'
       ))
     ) AS invalid
   `.execute(db);
@@ -82,14 +84,16 @@ export async function reconcileICloudReferences(db: Kysely<DB>): Promise<number>
       SELECT album.* FROM immich_fork.icloud_album album
       JOIN immich_fork.icloud_connection connection ON connection.id = album."connectionId"
       WHERE album."albumId" IS NOT NULL AND NOT EXISTS (
-        SELECT 1 FROM public.album target WHERE target.id = album."albumId" AND target."ownerId" = connection."ownerId"
+        SELECT 1 FROM public.album target JOIN public.album_user ownership ON ownership."albumId"=target.id
+        WHERE target.id = album."albumId" AND ownership."userId" = connection."ownerId" AND ownership.role='owner'
       )
     ), archived AS (
       INSERT INTO immich_fork.orphaned_records ("sourceTable", "sourceKey", payload)
       SELECT 'icloud_album_mapping', jsonb_build_array("connectionId", "libraryKey", "sourceId")::text, to_jsonb(missing)
       FROM missing ON CONFLICT ("sourceTable", "sourceKey") DO NOTHING RETURNING 1
     ), updated AS (
-    UPDATE immich_fork.icloud_album album SET "albumId" = NULL
+    UPDATE immich_fork.icloud_album album SET "albumId" = NULL,
+      source=jsonb_set(album.source,'{_sync}',coalesce(album.source->'_sync','{}'::jsonb) || '{"suppressed":true}'::jsonb,true)
     FROM missing WHERE album."connectionId" = missing."connectionId"
       AND album."libraryKey" = missing."libraryKey" AND album."sourceId" = missing."sourceId" RETURNING 1
     ) SELECT count(*)::int AS count FROM archived
@@ -102,7 +106,8 @@ export async function reconcileICloudReferences(db: Kysely<DB>): Promise<number>
       WHERE (membership."assetId" IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM public.asset asset WHERE asset.id = membership."assetId" AND asset."ownerId" = connection."ownerId"
       )) OR (membership."albumId" IS NOT NULL AND NOT EXISTS (
-        SELECT 1 FROM public.album album WHERE album.id = membership."albumId" AND album."ownerId" = connection."ownerId"
+        SELECT 1 FROM public.album album JOIN public.album_user ownership ON ownership."albumId"=album.id
+        WHERE album.id = membership."albumId" AND ownership."userId" = connection."ownerId" AND ownership.role='owner'
       ))
     ), archived AS (
       INSERT INTO immich_fork.orphaned_records ("sourceTable", "sourceKey", payload)

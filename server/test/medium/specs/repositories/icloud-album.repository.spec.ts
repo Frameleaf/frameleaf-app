@@ -241,4 +241,50 @@ describe('iCloud album owner and provenance reconciliation (PostgreSQL)', () => 
       state: { sourceName: 'new', appliedName: 'old', appliedParentId: 'old-parent' },
     });
   });
+  it.each(['library', 'album', 'noncurrent'])(
+    'does not attach a queued membership after %s selection is revoked',
+    async (revoked) => {
+      const context = await arrange();
+      await source(context.connectionId, 'album');
+      await finish(context);
+      const albumId = await mapped(context.connectionId, 'album');
+      const existing = await membership(context, 'existing');
+      await finish(context);
+      const queued = await membership(context, 'queued');
+      if (revoked === 'noncurrent') {
+        await sql`UPDATE immich_fork.icloud_resource SET source=source || '{"current":false}'::jsonb
+        WHERE "connectionId"=${context.connectionId}::uuid AND "sourceAssetId"='queued'`.execute(db);
+      } else {
+        const config = ICloudConfigSchema.parse(
+          revoked === 'library' ? { libraries: ['different'] } : { albums: ['private:different'] },
+        );
+        await sql`UPDATE immich_fork.icloud_connection SET config=${config}::jsonb WHERE id=${context.connectionId}::uuid`.execute(
+          db,
+        );
+      }
+      await finish(context);
+      expect(await rows(sql`SELECT "assetId" FROM album_asset WHERE "albumId"=${albumId}::uuid`)).toEqual([
+        { assetId: existing },
+      ]);
+      expect(
+        await rows(sql`SELECT 1 FROM album_asset WHERE "albumId"=${albumId}::uuid AND "assetId"=${queued}::uuid`),
+      ).toHaveLength(0);
+      await sql`UPDATE immich_fork.icloud_connection SET config=${ICloudConfigSchema.parse({})}::jsonb WHERE id=${context.connectionId}::uuid`.execute(
+        db,
+      );
+      await sql`UPDATE immich_fork.icloud_resource SET source=source || '{"current":true}'::jsonb WHERE "connectionId"=${context.connectionId}::uuid`.execute(
+        db,
+      );
+      await finish(context);
+      expect(await rows(sql`SELECT 1 FROM album_asset WHERE "albumId"=${albumId}::uuid`)).toHaveLength(2);
+    },
+  );
+  it('does not recreate a container suppressed during official handoff', async () => {
+    const context = await arrange();
+    await finish(context);
+    await sql`UPDATE immich_fork.icloud_album SET "albumId"=NULL,source=jsonb_set(source,'{_sync,suppressed}','true')
+      WHERE "connectionId"=${context.connectionId}::uuid AND "sourceId"='__icloud_container__'`.execute(db);
+    await expect(service.reconcile(context.connectionId, context.ownerId)).rejects.toThrow('icloud_container_removed');
+    expect(await rows(sql`SELECT 1 FROM album_user WHERE "userId"=${context.ownerId}::uuid`)).toHaveLength(1);
+  });
 });

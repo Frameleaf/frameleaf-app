@@ -102,17 +102,18 @@ Choose **Refresh** to read saved progress. Counts survive closing the page or re
 
 ## Troubleshooting
 
-| What you see                                         | What to do                                                                                                                         |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Sync is not enabled                                  | Ask your administrator to complete [server setup](icloud-photos-server-setup.md).                                                  |
-| Device approval or sign-in required                  | Approve on your trusted device or sign in again. Use **Check saved session** to check access.                                      |
-| Waiting to retry or rate limited                     | Allow the retry delay. Do not create extra connections to bypass it.                                                               |
-| Incomplete inventory                                 | Load the inventory again. Do not treat missing entries as deleted photos.                                                          |
-| Reserved staging bytes outside the current selection | Reselect the affected source and retry, or ask the administrator to review capacity. Do not empty staging manually.                |
-| `staging_retained_capacity`                          | Retained recovery copies are using the available budget. Reselection/recovery or more capacity is needed; the files are preserved. |
-| `retained_edit_limit`                                | The retained edit-version limit was reached. Review existing versions before deciding whether anything can be removed.             |
-| `icloud_finalization_failed`                         | Follow-up work repeatedly failed. Ask the administrator to resolve the queue/storage problem, then use **Retry failures**.         |
-| Unsupported or requires review                       | Check the scope below and the recovery guide. A timeout or unsupported decoder is not proof that a file is corrupt.                |
+| What you see                                         | What to do                                                                                                                                                                   |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sync is not enabled                                  | Ask your administrator to complete [server setup](icloud-photos-server-setup.md).                                                                                            |
+| Device approval or sign-in required                  | Approve on your trusted device or sign in again. Use **Check saved session** to check access.                                                                                |
+| Waiting to retry or rate limited                     | Allow the retry delay. Do not create extra connections to bypass it.                                                                                                         |
+| Incomplete inventory                                 | Load the inventory again. Do not treat missing entries as deleted photos.                                                                                                    |
+| Reserved staging bytes outside the current selection | Reselect and retry if that source version is still available; otherwise ask the administrator to review retained copies and capacity. Do not empty staging manually.         |
+| `staging_retained_capacity`                          | Retained recovery copies are using the available budget. Reselection/recovery or more capacity is needed; the files are preserved.                                           |
+| `reserved_import_content_match`                      | Another upload created matching media after sync reserved a new asset. Ask the administrator to reconcile the retained copies. Retry alone does not change that reservation. |
+| `retained_edit_limit`                                | The retained edit-version limit was reached. Review existing versions before deciding whether anything can be removed.                                                       |
+| `icloud_finalization_failed`                         | Follow-up work repeatedly failed. Ask the administrator to resolve the queue/storage problem, then use **Retry failures**.                                                   |
+| Unsupported or requires review                       | Check the scope below and the recovery guide. A timeout or unsupported decoder is not proof that a file is corrupt.                                                          |
 
 ## Supported media and limits
 
