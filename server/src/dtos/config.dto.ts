@@ -1284,7 +1284,7 @@ export const defaults = Object.freeze<SystemConfig>({
     },
   },
   newVersionCheck: {
-    enabled: true,
+    enabled: false,
     channel: ReleaseChannel.Stable,
   },
   nightlyTasks: {

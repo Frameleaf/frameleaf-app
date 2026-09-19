@@ -20,6 +20,46 @@ This fork is not a replacement for backups, access control, or careful human rev
 
 ## What Changed
 
+### Telemetry and Automatic Reporting
+
+Telemetry is disabled in code and cannot be enabled through application settings or deployment
+variables. This applies to local and RunPod machine-learning images built from this fork.
+
+- Hugging Face reporting is disabled before importing ML libraries. Its direct telemetry sender
+  is also blocked, including when the host imported the Hub first. Download headers use a
+  fixed user agent without dependency versions, session IDs, model metadata, or deployment IDs.
+- The native Xet downloader and its separate transfer telemetry are disabled. Model downloads
+  use the Hub's standard HTTPS fallback, including for models stored in Xet.
+- ONNX Runtime telemetry is disabled before inference, and its public enable function is blocked.
+- OpenVINO telemetry always declines consent and cannot submit reports through its sender,
+  including forced events, error reports, and reports about opting out. No user consent files
+  are changed.
+- Server OpenTelemetry dependencies, automatic instrumentation, exporters, metrics listeners,
+  and user/job collectors are removed. Legacy telemetry environment variables have no effect.
+- External version checks never run. Existing settings cannot re-enable them, and old queued
+  checks are skipped. Local version history and client/server compatibility information remain.
+- Transformers loads downloaded model files locally. Required model downloads remain enabled;
+  no global offline mode or network block is imposed.
+
+Photo uploads, sharing, model downloads, configured remote ML/RunPod inference, OAuth, email,
+and map tiles remain functional. Download hosts necessarily receive the requested model/file,
+network address, and any required download credentials. Configured remote inference providers
+receive the images/prompts needed for that inference. These are functional requests, not usage
+or library analytics.
+
+Console logs, local job progress, and health checks remain available. The policy covers this
+fork's application and bundled dependencies; it is not a network sandbox for administrator-added
+plugins, arbitrary downloaded Python code, host agents, or the infrastructure provider.
+Rebuild and redeploy both server and ML images, including RunPod images, to apply this policy.
+If an older bundled Compose stack started Prometheus or Grafana, stop and remove those orphaned
+containers when updating the stack; removing their service definitions does not stop an already
+running container.
+
+The ML regression tests exercise blocked reporting and an authenticated model download using
+a mock HTTP transport. Run `uv run --extra cpu pytest test_privacy.py`; install the locked
+`openvino-telemetry==2025.2.0` package in the test environment as well to exercise the optional
+OpenVINO sender test without GPU hardware.
+
 ### Image Descriptions and Tags
 
 Admins can enable an optional machine-learning job that looks at image previews and adds:

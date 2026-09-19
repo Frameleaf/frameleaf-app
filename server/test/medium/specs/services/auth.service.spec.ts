@@ -12,7 +12,6 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
-import { TelemetryRepository } from 'src/repositories/telemetry.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AuthService } from 'src/services/auth.service.js';
@@ -35,7 +34,7 @@ const setup = (db?: Kysely<DB>) => {
       SystemMetadataRepository,
       UserRepository,
     ],
-    mock: [LoggingRepository, StorageRepository, EventRepository, TelemetryRepository],
+    mock: [LoggingRepository, StorageRepository, EventRepository],
   });
 };
 

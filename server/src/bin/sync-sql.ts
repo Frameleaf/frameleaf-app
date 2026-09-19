@@ -5,7 +5,6 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { Test } from '@nestjs/testing';
 import { ClsModule } from 'nestjs-cls';
 import { KyselyModule } from 'nestjs-kysely';
-import { OpenTelemetryModule } from 'nestjs-otel';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { format } from 'sql-formatter';
@@ -77,7 +76,7 @@ class SqlGenerator {
     if (!process.env.DB_HOSTNAME) {
       process.env.DB_HOSTNAME = 'localhost';
     }
-    const { database, cls, otel } = new ConfigRepository().getEnv();
+    const { database, cls } = new ConfigRepository().getEnv();
 
     const moduleFixture = await Test.createTestingModule({
       imports: [
@@ -93,7 +92,6 @@ class SqlGenerator {
           },
         }),
         ClsModule.forRoot(cls.config),
-        OpenTelemetryModule.forRoot(otel),
       ],
       providers: [...repositories, AuthService, SchedulerRegistry],
     }).compile();

@@ -1,4 +1,3 @@
-import { ImmichTelemetry } from 'src/enum.js';
 import { ConfigRepository, clearEnvCache } from 'src/repositories/config.repository.js';
 
 const getEnv = () => {
@@ -303,25 +302,17 @@ describe('getEnv', () => {
       });
     });
 
-    it('should run with telemetry enabled', () => {
-      process.env.IMMICH_TELEMETRY_INCLUDE = 'all';
-      const { telemetry } = getEnv();
-      expect(telemetry.metrics).toEqual(new Set(Object.values(ImmichTelemetry)));
-    });
-
-    it('should run with telemetry enabled and jobs disabled', () => {
-      process.env.IMMICH_TELEMETRY_INCLUDE = 'all';
-      process.env.IMMICH_TELEMETRY_EXCLUDE = 'job';
-      const { telemetry } = getEnv();
-      expect(telemetry.metrics).toEqual(
-        new Set([ImmichTelemetry.Api, ImmichTelemetry.Host, ImmichTelemetry.Io, ImmichTelemetry.Repo]),
-      );
-    });
-
-    it('should run with specific telemetry metrics', () => {
-      process.env.IMMICH_TELEMETRY_INCLUDE = 'io, host, api';
-      const { telemetry } = getEnv();
-      expect(telemetry.metrics).toEqual(new Set([ImmichTelemetry.Api, ImmichTelemetry.Host, ImmichTelemetry.Io]));
+    it.each(['all', 'io,host,api,repo,job', 'unknown'])('ignores telemetry opt-ins: %s', (included) => {
+      process.env.IMMICH_TELEMETRY_INCLUDE = included;
+      process.env.IMMICH_TELEMETRY_EXCLUDE = '';
+      process.env.OTEL_TRACES_EXPORTER = 'otlp';
+      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = 'https://collector.invalid:4318';
+      try {
+        expect(getEnv().telemetry.metrics).toEqual(new Set());
+      } finally {
+        delete process.env.OTEL_TRACES_EXPORTER;
+        delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+      }
     });
   });
 });

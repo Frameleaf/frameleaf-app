@@ -56,30 +56,8 @@ export class ServerInfoRepository {
     this.logger.setContext(ServerInfoRepository.name);
   }
 
-  async getLatestRelease(channel: ReleaseChannel): Promise<VersionResponse> {
-    try {
-      const { versionCheck } = this.configRepository.getEnv();
-      const url = new URL(versionCheck.url);
-      switch (channel) {
-        case ReleaseChannel.Stable: {
-          url.searchParams.append('channel', 'stable');
-          break;
-        }
-        case ReleaseChannel.ReleaseCandidate: {
-          url.searchParams.append('channel', 'rc');
-          break;
-        }
-      }
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error(`Version check request failed with status ${response.status}: ${await response.text()}`);
-      }
-
-      return response.json();
-    } catch (error) {
-      throw new Error('Failed to fetch latest release', { cause: error });
-    }
+  getLatestRelease(_channel: ReleaseChannel): Promise<VersionResponse> {
+    return Promise.reject(new Error('External version checks are disabled in this fork'));
   }
 
   buildVersions?: ServerBuildVersions;

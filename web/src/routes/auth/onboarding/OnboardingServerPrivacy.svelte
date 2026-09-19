@@ -8,7 +8,7 @@
   const configToEdit = $state(systemConfigManager.cloneValue());
 
   onDestroy(async () => {
-    await handleSystemConfigSave({ map: configToEdit.map, newVersionCheck: configToEdit.newVersionCheck });
+    await handleSystemConfigSave({ map: configToEdit.map });
   });
 </script>
 
@@ -24,7 +24,8 @@
   />
   <SettingSwitch
     title={$t('admin.version_check_settings')}
-    subtitle={$t('admin.version_check_implications', { values: { server: 'version.immich.cloud' } })}
-    bind:checked={configToEdit.newVersionCheck.enabled}
+    subtitle={$t('admin.version_check_disabled_by_privacy_policy')}
+    checked={false}
+    disabled
   />
 </div>

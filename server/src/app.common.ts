@@ -10,16 +10,8 @@ import { MaintenanceWorkerService } from 'src/maintenance/maintenance-worker.ser
 import { WebSocketAdapter } from 'src/middleware/websocket.adapter.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { bootstrapTelemetry } from 'src/repositories/telemetry.repository.js';
 import { ApiService } from 'src/services/api.service.js';
 import { useSwagger } from 'src/utils/misc.js';
-
-export function configureTelemetry() {
-  const { telemetry } = new ConfigRepository().getEnv();
-  if (telemetry.metrics.size > 0) {
-    bootstrapTelemetry(telemetry.apiPort);
-  }
-}
 
 export async function configureExpress(
   app: NestExpressApplication,
