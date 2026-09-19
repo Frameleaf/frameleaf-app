@@ -393,6 +393,9 @@ describe(MediaHealthRepository.name, () => {
 
       await expect(
         sut.relinkManagedAsset({
+          expectedUpdateId: asset.updateId!,
+          expectedChecksumAlgorithm: asset.checksumAlgorithm,
+          verifyCandidate: () => Promise.resolve({ sha1, sha256, sizeInBytes: 100 }),
           assetId: asset.id,
           candidateId: candidate.id,
           ownerId: user.id,
@@ -439,6 +442,9 @@ describe(MediaHealthRepository.name, () => {
 
       await expect(
         sut.relinkManagedAsset({
+          expectedUpdateId: asset.updateId!,
+          expectedChecksumAlgorithm: asset.checksumAlgorithm,
+          verifyCandidate: () => Promise.resolve({ sha1, sha256, sizeInBytes: 100 }),
           assetId: asset.id,
           candidateId: 'candidate-1',
           ownerId: user.id,
@@ -465,6 +471,9 @@ describe(MediaHealthRepository.name, () => {
 
       await expect(
         sut.relinkManagedAsset({
+          expectedUpdateId: asset.updateId!,
+          expectedChecksumAlgorithm: asset.checksumAlgorithm,
+          verifyCandidate: () => Promise.resolve({ sha1, sha256, sizeInBytes: 100 }),
           assetId: asset.id,
           candidateId: candidate.id,
           ownerId: user.id,
@@ -487,6 +496,9 @@ describe(MediaHealthRepository.name, () => {
 
       await expect(
         sut.relinkManagedAsset({
+          expectedUpdateId: asset.updateId!,
+          expectedChecksumAlgorithm: asset.checksumAlgorithm,
+          verifyCandidate: () => Promise.resolve({ sha1, sha256, sizeInBytes: 100 }),
           assetId: asset.id,
           candidateId: candidate.id,
           ownerId: user.id,
@@ -530,6 +542,9 @@ describe(MediaHealthRepository.name, () => {
 
       await expect(
         sut.relinkManagedAsset({
+          expectedUpdateId: asset.updateId!,
+          expectedChecksumAlgorithm: asset.checksumAlgorithm,
+          verifyCandidate: () => Promise.resolve({ sha1, sha256, sizeInBytes: 100 }),
           assetId: asset.id,
           candidateId: candidate.id,
           ownerId: user.id,
@@ -580,6 +595,9 @@ describe(MediaHealthRepository.name, () => {
 
       await expect(
         sut.relinkManagedAsset({
+          expectedUpdateId: asset.updateId!,
+          expectedChecksumAlgorithm: asset.checksumAlgorithm,
+          verifyCandidate: () => Promise.resolve({ sha1, sha256, sizeInBytes: 100 }),
           assetId: asset.id,
           candidateId: candidate.id,
           ownerId: owner.id,
@@ -595,12 +613,17 @@ describe(MediaHealthRepository.name, () => {
         }),
       ).resolves.toBe(true);
 
-      const relinked = await defaultDatabase
-        .selectFrom('asset')
-        .innerJoin('physical_file', 'physical_file.id', 'asset.physicalOriginalFileId')
-        .select(['asset.originalPath', 'asset.checksum', 'asset.fileModifiedAt', 'physical_file.canonicalAssetId'])
-        .where('asset.id', '=', asset.id!)
-        .executeTakeFirstOrThrow();
+      const relinkedRows = await sql<{
+        originalPath: string;
+        checksum: Buffer;
+        fileModifiedAt: Date;
+        canonicalAssetId: string;
+      }>`
+        SELECT a."originalPath", a.checksum, a."fileModifiedAt", p."canonicalAssetId"
+        FROM public.asset a JOIN immich_fork.asset_physical_file m ON m."assetId" = a.id
+        JOIN immich_fork.physical_file p ON p.id = m."physicalFileId" WHERE a.id = ${asset.id}::uuid
+      `.execute(defaultDatabase);
+      const relinked = relinkedRows.rows[0];
       expect(relinked).toMatchObject({
         originalPath: recoveredPath,
         checksum: sha256,

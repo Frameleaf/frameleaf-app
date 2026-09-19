@@ -224,4 +224,44 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
     ).toEqual({ reason: 'resource_owner_or_trash_changed' });
     await expect(service.reconcile(ctx.connectionId, randomUUID())).rejects.toThrow('icloud_connection_not_found');
   });
+  it.each(['failed', 'unsupported', 'needs-review', 'preserve-trashed', 'pending', 'retry'])(
+    'does not let a %s rendition starve other families',
+    async (status) => {
+      const ctx = await setup();
+      await sql`UPDATE immich_fork.icloud_resource SET status=${status},"assetId"=NULL WHERE id=${ctx.editResource}::uuid`.execute(
+        db,
+      );
+      const otherOriginal = await asset(ctx.ownerId),
+        otherEdit = await asset(ctx.ownerId);
+      await resource(ctx, 'original', otherOriginal, 'other');
+      await resource(ctx, 'edited-image', otherEdit, 'other');
+      await finish(ctx);
+      const terminal = !['pending', 'retry'].includes(status);
+      expect(
+        await first(
+          sql`SELECT source#>>'{_sync,relations,status}' AS status FROM immich_fork.icloud_resource WHERE id=${ctx.originalResource}::uuid`,
+        ),
+      ).toEqual({ status: terminal ? 'needs-review' : 'pending' });
+      expect(await rows(sql`SELECT id FROM stack WHERE "ownerId"=${ctx.ownerId}::uuid`)).toHaveLength(1);
+    },
+  );
+  it.each(['locked', 'archive'])('preserves existing %s motion visibility', async (visibility) => {
+    const ctx = await context(),
+      still = await asset(ctx.ownerId),
+      motion = await asset(ctx.ownerId, 'VIDEO');
+    const originalResource = await resource(ctx, 'original', still);
+    await resource(ctx, 'motion', motion);
+    await sql`UPDATE asset SET visibility=${visibility} WHERE id=${motion}::uuid`.execute(db);
+    await finish(ctx);
+    expect(await first(sql`SELECT visibility FROM asset WHERE id=${motion}::uuid`)).toEqual({ visibility });
+    expect(await first(sql`SELECT "livePhotoVideoId" FROM asset WHERE id=${still}::uuid`)).toEqual({
+      livePhotoVideoId: null,
+    });
+    expect(
+      await first(
+        sql`SELECT source#>>'{_sync,relations,reason}' AS reason FROM immich_fork.icloud_resource WHERE id=${originalResource}::uuid`,
+      ),
+    ).toEqual({ reason: 'motion_visibility_override' });
+    expect(emit).not.toHaveBeenCalled();
+  });
 });

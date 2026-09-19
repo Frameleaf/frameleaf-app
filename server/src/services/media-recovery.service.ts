@@ -132,6 +132,10 @@ export class MediaRecoveryService {
       if (candidate && candidate.type !== input.type) {
         return { outcome: 'needs-review', reason: 'media_type_mismatch' };
       }
+      if (candidate && resource.expectedTarget && !resource.expectedTarget.updateId) {
+        // Keep both recovery copies accounted for until the concurrent import is reconciled.
+        return { outcome: 'needs-review', reason: 'reserved_import_content_match' };
+      }
       let outcome: RecoveryTarget['outcome'] = 'imported';
       if (candidate) {
         const current = await this.integrity.validate({

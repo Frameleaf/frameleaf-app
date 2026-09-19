@@ -108,13 +108,12 @@ export class ICloudStagingService {
       0o600,
     );
     const controller = new AbortController();
-    let checking = false;
+    let checking: Promise<void> | undefined;
     const heartbeat = setInterval(() => {
       if (checking) {
         return;
       }
-      checking = true;
-      void this.repository
+      checking = this.repository
         .get(connection.id)
         .then(async (current) => {
           if (current?.state !== 'connected' || !(await this.repository.progress(resource, { status: 'staging' }))) {
@@ -123,7 +122,7 @@ export class ICloudStagingService {
         })
         .catch(() => controller.abort())
         .finally(() => {
-          checking = false;
+          checking = undefined;
         });
     }, 15_000);
     let received = 0;
@@ -174,6 +173,7 @@ export class ICloudStagingService {
     } finally {
       clearInterval(heartbeat);
       controller.abort();
+      await checking;
       await file.close();
       await unlink(temporary).catch(() => {});
     }

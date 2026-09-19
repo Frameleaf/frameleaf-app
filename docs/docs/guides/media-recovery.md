@@ -14,8 +14,8 @@ Keep existing backups and recovery copies until you can open the recovered media
 
 1. Open the missing-media review tool under **Utilities** and run a scan.
 2. Review the affected assets and use **Locate** to search for candidates in the configured library/storage locations.
-3. Review the result. A candidate is accepted for relinking only when its actual content hash matches the expected media.
-4. Apply a validated external-library relink where offered, then open the asset to verify access. Uncertain candidates remain for review.
+3. Review the result. A candidate is accepted for relinking only when its actual content hash matches the expected media. Names and extensions can change without changing that identity.
+4. Apply the validated relink where offered, then open the asset to verify access. Uncertain candidates remain for review.
 
 Filenames and directories are not reliable identity. For example, a storage migration can rename `IMG_1234.JPG` and move it into dated folders while keeping identical bytes. Locate can recognize those bytes without the old name. Matching filenames, similar thumbnails, or equal video durations cannot authorize a relink.
 
@@ -43,14 +43,14 @@ Importing hidden Apple media and recovery involving Locked/suppressed destinatio
 
 ## Understand corruption results
 
-| Result                    | Meaning and next step                                                                                                 |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Missing or unreadable     | Check storage availability and permissions, then locate or recover a matching copy.                                   |
-| Confirmed corruption      | The file failed supported media validation. Recover a matching good original where available.                         |
-| Unsupported RAW or format | The decoder cannot validate it. This is not a confirmed-corruption result.                                            |
-| Validation timeout        | The check did not finish. Ask the administrator whether a longer timeout is appropriate for the file.                 |
-| Requires review           | Identity, privacy, external recovery, or another safety condition prevented automatic completion. Inspect the reason. |
-| Resolved                  | The applicable finding has been resolved. Open the asset and verify the expected media.                               |
+| Result                    | Meaning and next step                                                                                                                    |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Missing or unreadable     | Check storage availability and permissions, then locate or recover a matching copy.                                                      |
+| Confirmed corruption      | The file failed supported media validation or differs from its saved content checksum. Recover a matching good original where available. |
+| Unsupported RAW or format | The decoder cannot validate it. This is not a confirmed-corruption result.                                                               |
+| Validation timeout        | The check did not finish. Ask the administrator whether a longer timeout is appropriate for the file.                                    |
+| Requires review           | Identity, privacy, external recovery, or another safety condition prevented automatic completion. Inspect the reason.                    |
+| Resolved                  | The applicable finding has been resolved. Open the asset and verify the expected media.                                                  |
 
 The corrupt-media tool can move revalidated corrupt assets to Immich Trash after its PIN and typed-confirmation flow. That is not a recovery action. iCloud sync does not automatically restore intentionally trashed assets. Review the destination's current state before retrying a recovery.
 

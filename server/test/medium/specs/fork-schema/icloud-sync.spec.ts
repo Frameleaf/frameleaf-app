@@ -32,13 +32,17 @@ describe('fork-owned iCloud state', () => {
     await sql`CREATE TABLE public.migration_overrides (name text)`.execute(db);
     await sql`CREATE TABLE public.user (id uuid PRIMARY KEY)`.execute(db);
     await sql`CREATE TABLE public.asset (id uuid PRIMARY KEY, "ownerId" uuid NOT NULL)`.execute(db);
-    await sql`CREATE TABLE public.album (id uuid PRIMARY KEY, "ownerId" uuid NOT NULL)`.execute(db);
+    await sql`CREATE TABLE public.album (id uuid PRIMARY KEY)`.execute(db);
+    await sql`CREATE TABLE public.album_user ("albumId" uuid REFERENCES public.album ON DELETE CASCADE,"userId" uuid REFERENCES public.user ON DELETE CASCADE,role text,PRIMARY KEY ("albumId","userId"))`.execute(
+      db,
+    );
     await sql`CREATE TABLE immich_fork.orphaned_records (
       "sourceTable" text, "sourceKey" text, payload jsonb, PRIMARY KEY ("sourceTable", "sourceKey")
     )`.execute(db);
     await sql`INSERT INTO public.user VALUES (${ownerId}::uuid), (${otherOwnerId}::uuid)`.execute(db);
     await sql`INSERT INTO public.asset VALUES (${assetId}::uuid, ${ownerId}::uuid)`.execute(db);
-    await sql`INSERT INTO public.album VALUES (${albumId}::uuid, ${ownerId}::uuid)`.execute(db);
+    await sql`INSERT INTO public.album VALUES (${albumId}::uuid)`.execute(db);
+    await sql`INSERT INTO public.album_user VALUES (${albumId}::uuid,${ownerId}::uuid,'owner')`.execute(db);
     migrator = new Migrator({
       db,
       migrationTableSchema: 'immich_fork',
@@ -199,4 +203,43 @@ describe('fork-owned iCloud state', () => {
       expect(result14.rows).toEqual([]);
     }
   });
+  it.each(['deleted', 'transferred'])(
+    'suppresses an album %s while official Immich owns the database',
+    async (change) => {
+      const connection = randomUUID(),
+        album = randomUUID(),
+        recipient = randomUUID();
+      await sql`INSERT INTO public.user VALUES(${recipient}::uuid)`.execute(db);
+      await sql`INSERT INTO public.album VALUES(${album}::uuid)`.execute(db);
+      await sql`INSERT INTO public.album_user VALUES(${album}::uuid,${otherOwnerId}::uuid,'owner')`.execute(db);
+      await sql`INSERT INTO immich_fork.icloud_connection(id,"ownerId",label) VALUES(${connection}::uuid,${otherOwnerId}::uuid,'Photos')`.execute(
+        db,
+      );
+      await sql`INSERT INTO immich_fork.icloud_album("connectionId","libraryKey","sourceId",name,"albumId",source)
+      VALUES(${connection}::uuid,'private','removed','Keep source name',${album}::uuid,'{"_sync":{"appliedName":"baseline"},"sourceMetadata":"keep"}')`.execute(
+        db,
+      );
+      if (change === 'deleted') {
+        await sql`DELETE FROM public.album WHERE id=${album}::uuid`.execute(db);
+      } else {
+        await sql`UPDATE public.album_user SET role='viewer' WHERE "albumId"=${album}::uuid`.execute(db);
+        await sql`INSERT INTO public.album_user VALUES(${album}::uuid,${recipient}::uuid,'owner')`.execute(db);
+      }
+      await db.transaction().execute(reconcileICloudReferences);
+      const { rows } = await sql<{
+        albumId: string | null;
+        source: object;
+      }>`SELECT "albumId",source FROM immich_fork.icloud_album WHERE "connectionId"=${connection}::uuid`.execute(db);
+      expect(rows[0]).toEqual({
+        albumId: null,
+        source: { _sync: { appliedName: 'baseline', suppressed: true }, sourceMetadata: 'keep' },
+      });
+      await assertICloudReferences(db);
+      if (change === 'transferred') {
+        const { rows: owners } =
+          await sql`SELECT "userId" FROM public.album_user WHERE "albumId"=${album}::uuid AND role='owner'`.execute(db);
+        expect(owners).toEqual([{ userId: recipient }]);
+      }
+    },
+  );
 });

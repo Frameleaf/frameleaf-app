@@ -213,6 +213,7 @@ const ORPHAN_FAMILIES = [
 
 const ORPHAN_RELATIONS = [
   'public.album',
+  'public.album_user',
   'public.asset',
   'public.user',
   'immich_fork.orphaned_records',
@@ -222,7 +223,15 @@ const ORPHAN_RELATIONS = [
   ...ORPHAN_FAMILIES.map(([, table]) => table),
 ].sort();
 
-const FINAL_ACTIVATION_RELATIONS = [...new Set(forkCatalogManifest.tables.map(({ identity }) => identity))].sort();
+const FINAL_ACTIVATION_RELATIONS = [
+  ...new Set([
+    ...forkCatalogManifest.tables.map(({ identity }) => identity),
+    'public.album',
+    'public.album_user',
+    'public.asset',
+    'public.user',
+  ]),
+].sort();
 
 const RETURN_BACKFILL_SOURCES: Record<BackfillKind, 'public.album' | 'public.asset'> = {
   albums: 'public.album',

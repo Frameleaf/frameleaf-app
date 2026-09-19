@@ -6,7 +6,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { AssetStatus, AssetType, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum.js';
+import {
+  AssetStatus,
+  AssetType,
+  JobName,
+  MediaHealthCategory,
+  MediaHealthSeverity,
+  MediaHealthStatus,
+} from 'src/enum.js';
 import * as migration from 'src/fork-schema/migrations/0000000000090-ICloudSync.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
@@ -199,7 +206,10 @@ describe(MediaRecoveryRepository.name, () => {
         }>`SELECT * FROM immich_fork.icloud_resource WHERE id = ${context.authority.resourceId}::uuid`.execute(db)
       ).rows[0];
       expect(resource.status).toBe('committed');
-      expect(resource.pendingJobs).toHaveLength(2);
+      expect(resource.pendingJobs).toEqual([
+        { name: JobName.AssetExtractMetadata, data: { id: context.assetId, source: 'upload' } },
+        { name: JobName.AssetGenerateThumbnails, data: { id: context.assetId, source: 'upload' } },
+      ]);
       expect(await sut.commit(context.commitInput)).toMatchObject({ outcome: 'reused', assetId: context.assetId });
       expect(
         Number(
@@ -268,6 +278,110 @@ describe(MediaRecoveryRepository.name, () => {
     );
     expect(await sut.commit(second.commitInput)).toMatchObject({ outcome: 'retry', reason: 'lease_changed' });
   });
+
+  it('refreshes the reserved generation after an unrelated favorite change', async () => {
+    const context = await arrange();
+    await db.updateTable('asset').set({ isFavorite: false }).where('id', '=', context.assetId).execute();
+    expect(await sut.commit(context.commitInput)).toMatchObject({ outcome: 'retry', reason: 'target_changed' });
+    const fresh = (await sut.findCandidates(context.authority.ownerId, verified))[0];
+    const next = await sut.reserve({ ...context.reserveInput, candidate: fresh });
+    expect(next).toBeDefined();
+    expect(next!.promotedPath).toBe(context.reservation.promotedPath);
+    expect(await sut.commit({ ...context.commitInput, reservation: next! })).toMatchObject({
+      outcome: 'repaired-missing',
+      assetId: context.assetId,
+    });
+    expect(
+      await db.selectFrom('asset').select('isFavorite').where('id', '=', context.assetId).executeTakeFirst(),
+    ).toEqual({ isFavorite: false });
+  });
+  it.each(['sha1', 'sha256'])(
+    'rejects sidecar bytes contradicting the saved %s content checksum',
+    async (algorithm) => {
+      const context = await arrange();
+      await sql`UPDATE public.asset SET checksum = ${algorithm === 'sha1' ? verified.sha1 : verified.sha256}, "checksumAlgorithm" = ${algorithm} WHERE id = ${context.assetId}::uuid`.execute(
+        db,
+      );
+      const wrong = Buffer.from('different complete original');
+      const other = {
+        ...verified,
+        sha1: createHash('sha1').update(wrong).digest(),
+        sha256: createHash('sha256').update(wrong).digest(),
+        sizeInBytes: wrong.length,
+      };
+      await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256) VALUES (${context.assetId}::uuid, ${other.sha1}, ${other.sha256})`.execute(
+        db,
+      );
+      const candidate = (await sut.findCandidates(context.authority.ownerId, other))[0];
+      expect(candidate).toBeDefined();
+      expect(candidate.identityConflict).toBe(true);
+      expect(candidate.matchesContent).toBe(false);
+      const expected = (await sut.findCandidates(context.authority.ownerId, verified))[0];
+      expect(expected).toMatchObject({ matchesContent: true, identityConflict: false });
+    },
+  );
+  it('uses matching sidecar content digests for an external path checksum', async () => {
+    const context = await arrange();
+    await sql`UPDATE public.asset SET "checksumAlgorithm" = 'sha1-path', checksum = ${Buffer.alloc(20)} WHERE id = ${context.assetId}::uuid`.execute(
+      db,
+    );
+    await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256) VALUES (${context.assetId}::uuid, ${verified.sha1}, ${verified.sha256})`.execute(
+      db,
+    );
+    expect((await sut.findCandidates(context.authority.ownerId, verified))[0]).toMatchObject({
+      matchesContent: true,
+      identityConflict: false,
+    });
+    await sql`UPDATE immich_fork.asset_checksum SET sha256 = ${Buffer.alloc(32)} WHERE "assetId" = ${context.assetId}::uuid`.execute(
+      db,
+    );
+    expect((await sut.findCandidates(context.authority.ownerId, verified))[0]).toMatchObject({
+      matchesContent: false,
+      identityConflict: true,
+    });
+  });
+
+  it('retains staged and promoted bytes for review when an upload wins an import reservation', async () => {
+    const context = await arrange(false);
+    const directory = await mkdtemp(join(tmpdir(), 'icloud-import-race-'));
+    const stagedPath = join(directory, 'stage.jpg');
+    const promotedPath = join(directory, 'promoted.jpg');
+    try {
+      await writeFile(stagedPath, bytes);
+      await writeFile(promotedPath, bytes);
+      await sql`UPDATE immich_fork.icloud_resource SET "stagingPath" = ${stagedPath}, "promotedPath" = ${promotedPath}
+        WHERE id = ${context.authority.resourceId}::uuid`.execute(db);
+      await sql`INSERT INTO public.asset (id, "ownerId", "originalPath", "originalFileName", checksum, "checksumAlgorithm", type)
+        VALUES (${context.assetId}::uuid, ${context.authority.ownerId}::uuid, '/upload/winner.jpg', 'original.jpg', ${verified.sha256}, 'sha256', 'IMAGE')`.execute(
+        db,
+      );
+      await sql`INSERT INTO immich_fork.asset_privacy ("assetId", "isNsfw") VALUES (${context.assetId}::uuid, false)`.execute(
+        db,
+      );
+      const integrity = { validate: vi.fn().mockResolvedValue(verified) };
+      const recovery = new MediaRecoveryService(sut, integrity as never);
+      expect(
+        await recovery.reconcile({
+          ...context.authority,
+          stagedPath,
+          originalFileName: 'original.jpg',
+          type: AssetType.Image,
+        }),
+      ).toEqual({
+        outcome: 'needs-review',
+        reason: 'reserved_import_content_match',
+      });
+      expect(
+        await db.selectFrom('asset').select('id').where('ownerId', '=', context.authority.ownerId).execute(),
+      ).toEqual([{ id: context.assetId }]);
+      expect(await readFile(stagedPath)).toEqual(bytes);
+      expect(await readFile(promotedPath)).toEqual(bytes);
+      expect((await sut.getResource(context.authority))?.expectedTarget).toEqual(context.reservation.target);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('rejects stale scans and queued trash after recovery', async () => {
     const context = await arrange();
     const stale = context.candidate;

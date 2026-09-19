@@ -79,6 +79,39 @@ describe(ICloudStagingService.name, () => {
     await expect(readFile(path)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  it('drains an in-flight heartbeat before returning bytes to the recovery commit', async () => {
+    let tick!: () => void;
+    const timer = vi.spyOn(globalThis, 'setInterval').mockImplementation(((callback: () => void) => {
+      tick = callback;
+      return 0 as never;
+    }) as never);
+    const { promise, resolve: release } = Promise.withResolvers<ICloudConnection>();
+    repository.get.mockReturnValue(promise);
+    transport.download.mockImplementation(() => {
+      tick();
+      return Promise.resolve({
+        stream: Readable.from([Buffer.from('data')]),
+        session: { version: 1 },
+        fingerprint: 'opaque',
+        size: 4,
+      });
+    });
+    let returned = false;
+    const download = sut.download(connection, resource).then((path) => {
+      returned = true;
+      return path;
+    });
+    try {
+      await vi.waitFor(() => expect(repository.progress).toHaveBeenCalledTimes(2));
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(returned).toBe(false);
+    } finally {
+      release(connection);
+      await download;
+      timer.mockRestore();
+    }
+  });
+
   it('rejects public staging permissions, exhausted disk and a revoked lease before transfer', async () => {
     await sut.root();
     await chmod(root, 0o755);

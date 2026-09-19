@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { JobOf } from 'src/types.js';
+import type { IEntityJob, JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   ICloudAuthDto,
@@ -425,7 +425,14 @@ export class ICloudSyncService {
       }
       for (const job of committed.pendingJobs) {
         if (job.name === JobName.AssetExtractMetadata || job.name === JobName.AssetGenerateThumbnails) {
-          await this.jobs.queue({ name: job.name, data: { id: job.data.id } });
+          const data: IEntityJob = { id: job.data.id };
+          if (job.data.source === 'upload') {
+            data.source = job.data.source;
+          }
+          if ('notify' in job.data && typeof job.data.notify === 'boolean') {
+            data.notify = job.data.notify;
+          }
+          await this.jobs.queue({ name: job.name, data });
         } else {
           throw new Error('icloud_outbox_job_invalid');
         }

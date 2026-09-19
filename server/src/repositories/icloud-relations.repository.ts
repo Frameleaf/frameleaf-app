@@ -13,7 +13,7 @@ export type ICloudRelationEvent =
   | { name: 'StackCreate' | 'StackUpdate'; stackId: string; userId: string };
 type RelationState = {
   signature?: string;
-  status?: 'applied' | 'needs-review';
+  status?: 'applied' | 'needs-review' | 'pending';
   reason?: string;
   stackId?: string;
   appliedPrimaryAssetId?: string;
@@ -163,7 +163,16 @@ export class ICloudRelationsRepository {
         state.status = 'needs-review';
         state.reason = 'resource_family_too_large';
       } else if (resources.some((r) => !r.assetId || !['committed', 'finalized', 'reused'].includes(r.status))) {
-        return false;
+        const terminal = resources.some(
+          (r) =>
+            !['pending', 'retry', 'staging', 'validated', 'promoted', 'committed', 'finalized', 'reused'].includes(
+              r.status,
+            ),
+        );
+        state.status = terminal ? 'needs-review' : 'pending';
+        state.reason = terminal ? 'resource_family_incomplete' : 'awaiting_resources';
+        // Save this signature so a waiting or failed family cannot starve other
+        // families. A changed resource status/mapping makes it eligible again.
       } else {
         const ids = [...new Set(resources.map((r) => r.assetId!))];
         const { rows: targets } =
@@ -218,6 +227,14 @@ export class ICloudRelationsRepository {
     ) {
       state.status = 'needs-review';
       state.reason = 'local_live_photo_override';
+      return;
+    }
+    if (
+      ![AssetVisibility.Timeline, AssetVisibility.Hidden].includes(motion.visibility) ||
+      (state.motionAssetId === motion.id && motion.visibility !== AssetVisibility.Hidden)
+    ) {
+      state.status = 'needs-review';
+      state.reason = 'motion_visibility_override';
       return;
     }
     const memberships = await sql`SELECT 1 FROM album_asset WHERE "assetId"=${motion.id}::uuid LIMIT 1`.execute(db);

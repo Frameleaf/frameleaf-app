@@ -133,6 +133,18 @@ describe(ICloudSyncService.name, () => {
     expect(repository.finish).toHaveBeenCalledWith(resource, 'committed', 'icloud_transfer_failed');
   });
 
+  it('preserves upload source and notification flags when dispatching the durable outbox', async () => {
+    const pendingJobs = [
+      { name: JobName.AssetExtractMetadata, data: { id: 'same-asset', source: 'upload' } },
+      { name: JobName.AssetGenerateThumbnails, data: { id: 'same-asset', source: 'upload', notify: true } },
+    ];
+    repository.resource.mockResolvedValue({ ...resource, status: 'committed', pendingJobs });
+    await sut.handleSync({ id: 'connection' });
+    for (const job of pendingJobs) {
+      expect(jobs.queue).toHaveBeenCalledWith(job);
+    }
+  });
+
   it('rejects cross-owner and insecure credential submission before calling Apple, and redacts provider errors', async () => {
     const auth = { user: { id: 'owner' }, session: {} } as never;
     const dto = { action: 'login', appleId: 'user@example.test', password: 'private-password' } as const;

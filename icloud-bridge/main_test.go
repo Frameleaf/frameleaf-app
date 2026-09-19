@@ -138,7 +138,7 @@ func TestDownloadFreshResourceAndSession(t *testing.T) {
 			if !strings.HasSuffix(r.URL.Path, "/records/lookup") {
 				t.Fatal("download did not refresh record")
 			}
-			resp := response(`{"records":[{"recordName":"master-1","fields":{"resOriginalRes":{"value":{"downloadURL":"https://asset.icloud-content.com/fresh","size":3,"fileChecksum":"abc"}}}}]}`)
+			resp := response(`{"records":[{"recordName":"master-1","fields":{"filenameEnc":{"value":"SU1HXzAwMDEuSEVJQw==","type":"ENCRYPTED_BYTES"},"itemType":{"value":"public.heic","type":"STRING"},"assetDate":{"value":1720000000000,"type":"TIMESTAMP"},"isHidden":{"value":false},"keywords":{"value":["family"]},"resOriginalRes":{"value":{"downloadURL":"https://asset.icloud-content.com/fresh","size":3,"fileChecksum":"abc"}}}}]}`)
 			resp.Header.Add("Set-Cookie", "fresh=cookie; Secure")
 			return resp, nil
 		}

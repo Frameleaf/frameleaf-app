@@ -1,5 +1,7 @@
 # iCloud sync and media recovery verification — 2026-09-19
 
+This records the initial implementation checks. The subsequent [pre-push audit](2026-09-19-media-repair-pre-push-audit.md) found defects those fixtures missed, records the fixes, and supersedes the readiness assessment below.
+
 Implemented in the local fork checkout. No production deployment, GitHub Actions run, or live Apple-account sync was performed. The reported production orphan inventory was not scanned or modified.
 
 ## Demonstrated behavior

@@ -152,7 +152,7 @@ export class ICloudAlbumRepository {
       if (unresolved.rows.length > 0) {
         throw new Error('icloud_album_parent_unresolved');
       }
-      return this.memberships(db, connectionId, ownerId, budget - rows.length);
+      return this.memberships(db, connectionId, ownerId, budget - rows.length, connection.config);
     });
   }
 
@@ -199,6 +199,9 @@ export class ICloudAlbumRepository {
       AND "libraryKey"='' AND "sourceId"='__icloud_container__'`
       .execute(db)
       .then(({ rows }) => rows[0]);
+    if (row.source._sync?.suppressed) {
+      throw new Error('icloud_container_removed');
+    }
     if (row.albumId) {
       if (!(await this.ownedAlbum(db, metadata, row.albumId, ownerId))) {
         throw new Error('icloud_container_removed');
@@ -264,15 +267,25 @@ export class ICloudAlbumRepository {
       AND "libraryKey"=${row.libraryKey} AND "sourceId"=${row.sourceId}`.execute(db);
   }
 
-  private async memberships(db: Kysely<DB>, connectionId: string, ownerId: string, limit: number): Promise<boolean> {
+  private async memberships(
+    db: Kysely<DB>,
+    connectionId: string,
+    ownerId: string,
+    limit: number,
+    config: ICloudConfig,
+  ): Promise<boolean> {
     const { rows } = await sql<Membership>`SELECT m.*,s."albumId" AS "targetAlbumId",r."assetId" AS "targetAssetId"
       FROM immich_fork.icloud_membership m JOIN immich_fork.icloud_album s
         ON s."connectionId"=m."connectionId" AND s."libraryKey"=m."libraryKey" AND s."sourceId"=m."sourceAlbumId" AND NOT s.deleted
       LEFT JOIN LATERAL (SELECT r."assetId" FROM immich_fork.icloud_resource r JOIN asset a ON a.id=r."assetId"
         WHERE r."connectionId"=m."connectionId" AND r."libraryKey"=m."libraryKey" AND r."sourceAssetId"=m."sourceAssetId"
           AND r."ownerId"=${ownerId}::uuid AND a."ownerId"=${ownerId}::uuid AND a."deletedAt" IS NULL
+          AND coalesce((r.source->>'current')::boolean,true)
           AND r.role='original' AND r.status IN ('committed','finalized','reused') ORDER BY r."updatedAt" DESC,r.id LIMIT 1) r ON true
       WHERE m."connectionId"=${connectionId}::uuid
+        AND (${config.libraries.length === 0} OR m."libraryKey"=ANY(${config.libraries}::text[]))
+        AND (${config.albums.length === 0} OR (m."libraryKey" || ':' || m."sourceAlbumId")=ANY(${config.albums}::text[]))
+        AND NOT coalesce((s.source#>>'{_sync,suppressed}')::boolean,false)
         AND EXISTS(SELECT 1 FROM album a JOIN album_user u ON u."albumId"=a.id WHERE a.id=s."albumId" AND a."deletedAt" IS NULL
           AND u."userId"=${ownerId}::uuid AND u.role='owner')
         AND ((m."sourcePresent" AND r."assetId" IS NOT NULL AND (m."albumId" IS DISTINCT FROM s."albumId" OR m."assetId" IS DISTINCT FROM r."assetId"))

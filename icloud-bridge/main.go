@@ -692,11 +692,9 @@ func (b *bridge) download(w http.ResponseWriter, r *http.Request, q *request) er
 	}
 	var out struct {
 		Records []struct {
-			RecordName string `json:"recordName"`
-			Fields     map[string]struct {
-				Value map[string]json.RawMessage `json:"value"`
-			} `json:"fields"`
-			ServerErrorCode string `json:"serverErrorCode"`
+			RecordName      string                     `json:"recordName"`
+			Fields          map[string]json.RawMessage `json:"fields"`
+			ServerErrorCode string                     `json:"serverErrorCode"`
 		} `json:"records"`
 	}
 	body := map[string]any{"zoneID": q.Library.ZoneID, "records": []any{map[string]string{"recordName": q.RecordID}}}
@@ -706,10 +704,13 @@ func (b *bridge) download(w http.ResponseWriter, r *http.Request, q *request) er
 	if len(out.Records) != 1 || out.Records[0].ServerErrorCode != "" || out.Records[0].RecordName != q.RecordID {
 		return upstream()
 	}
-	value := out.Records[0].Fields[q.ResourceKey].Value
-	if len(value) == 0 {
+	var field struct {
+		Value map[string]json.RawMessage `json:"value"`
+	}
+	if json.Unmarshal(out.Records[0].Fields[q.ResourceKey], &field) != nil || len(field.Value) == 0 {
 		return upstream()
 	}
+	value := field.Value
 	var target string
 	if json.Unmarshal(value["downloadURL"], &target) != nil || validateURL(target) != nil {
 		return upstream()
