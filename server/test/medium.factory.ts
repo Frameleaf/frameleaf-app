@@ -64,7 +64,6 @@ import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repos
 import { SyncRepository } from 'src/repositories/sync.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
-import { TelemetryRepository } from 'src/repositories/telemetry.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
@@ -90,7 +89,6 @@ import { SyncService } from 'src/services/sync.service.js';
 import { ClassConstructor, ClassConstructorsToInstances, UploadFile } from 'src/types.js';
 import { getConfig, updateConfig } from 'src/utils/config.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
-import { newTelemetryRepositoryMock } from 'test/repositories/telemetry.repository.mock.js';
 import { factory, newDate, newEmbedding, newUuid } from 'test/small.factory.js';
 import { automock, wait } from 'test/utils.js';
 
@@ -589,10 +587,6 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
 
     case MapRepository: {
       return automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] });
-    }
-
-    case TelemetryRepository: {
-      return newTelemetryRepositoryMock();
     }
 
     case DatabaseRepository: {

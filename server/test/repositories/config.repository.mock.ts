@@ -51,12 +51,6 @@ export const envData: EnvData = {
     trustedProxies: [],
   },
 
-  otel: {
-    metrics: {
-      hostMetrics: false,
-    },
-  },
-
   redis: {
     host: 'redis',
     port: 6379,

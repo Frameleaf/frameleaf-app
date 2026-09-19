@@ -4,7 +4,6 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ScheduleModule, SchedulerRegistry } from '@nestjs/schedule';
 import { ClsModule } from 'nestjs-cls';
 import { KyselyModule } from 'nestjs-kysely';
-import { OpenTelemetryModule } from 'nestjs-otel';
 import { ZodSerializerInterceptor, ZodValidationPipe } from 'nestjs-zod';
 import { commandsAndQuestions } from 'src/commands/index.js';
 import { IWorker } from 'src/constants.js';
@@ -30,7 +29,6 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
-import { TelemetryRepository, teardownTelemetry } from 'src/repositories/telemetry.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { AuthService } from 'src/services/auth.service.js';
@@ -55,13 +53,9 @@ const commonMiddleware = [
 const apiMiddleware = [FileUploadInterceptor, ...commonMiddleware, { provide: APP_GUARD, useClass: AuthGuard }];
 
 const configRepository = new ConfigRepository();
-const { bull, cls, database, otel } = configRepository.getEnv();
+const { bull, cls, database } = configRepository.getEnv();
 
-const commonImports = [
-  ClsModule.forRoot(cls.config),
-  KyselyModule.forRoot(getKyselyConfig(database.config)),
-  OpenTelemetryModule.forRoot(otel),
-];
+const commonImports = [ClsModule.forRoot(cls.config), KyselyModule.forRoot(getKyselyConfig(database.config))];
 
 const bullImports = [BullModule.forRoot(bull.config), BullModule.registerQueue(...bull.queues)];
 
@@ -75,15 +69,12 @@ export class BaseModule implements OnModuleInit, OnModuleDestroy {
     private authService: AuthService,
     private eventRepository: EventRepository,
     private queueService: QueueService,
-    private telemetryRepository: TelemetryRepository,
     private websocketRepository: WebsocketRepository,
   ) {
     logger.setAppName(this.worker);
   }
 
   async onModuleInit() {
-    this.telemetryRepository.setup({ repositories });
-
     this.queueService.setServices(services);
 
     this.websocketRepository.setAuthFn(async (client) =>
@@ -100,7 +91,6 @@ export class BaseModule implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy() {
     await this.eventRepository.emit('AppShutdown');
-    await teardownTelemetry();
   }
 }
 

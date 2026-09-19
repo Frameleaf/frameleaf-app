@@ -40,8 +40,8 @@ These environment variables are used by the `docker-compose.yml` file and do **N
 | `IMMICH_HELMET_FILE`                | Path to a json file with [helmet](https://www.npmjs.com/package/helmet) options. Set to `false` to disable. Set to `true` to use `server/helmet.json`<sup>\*3</sup>. |           `false`            | server                   | api                |
 | `NO_COLOR`                          | Set to `true` to disable color-coded log output                                                                                                                      |           `false`            | server, machine learning |                    |
 | `CPU_CORES`                         | Number of cores available to the Immich server                                                                                                                       | auto-detected CPU core count | server                   |                    |
-| `IMMICH_API_METRICS_PORT`           | Port for the OTEL metrics                                                                                                                                            |            `8081`            | server                   | api                |
-| `IMMICH_MICROSERVICES_METRICS_PORT` | Port for the OTEL metrics                                                                                                                                            |            `8082`            | server                   | microservices      |
+| `IMMICH_API_METRICS_PORT`           | Unused: metrics are permanently disabled                                                                                                                             |            `8081`            | server                   | api                |
+| `IMMICH_MICROSERVICES_METRICS_PORT` | Unused: metrics are permanently disabled                                                                                                                             |            `8082`            | server                   | microservices      |
 | `IMMICH_PROCESS_INVALID_IMAGES`     | When `true`, generate thumbnails for invalid images                                                                                                                  |                              | server                   | microservices      |
 | `IMMICH_TRUSTED_PROXIES`            | List of comma-separated IPs set as trusted proxies                                                                                                                   |                              | server                   | api                |
 | `IMMICH_IGNORE_MOUNT_CHECK_ERRORS`  | See [System Integrity](/administration/system-integrity)                                                                                                             |                              | server                   | api, microservices |
@@ -202,10 +202,11 @@ Additional machine learning parameters can be tuned from the admin UI.
 
 ## Prometheus
 
-| Variable                   | Description                                                                                                           | Default | Containers | Workers            |
-| :------------------------- | :-------------------------------------------------------------------------------------------------------------------- | :-----: | :--------- | :----------------- |
-| `IMMICH_TELEMETRY_INCLUDE` | Collect these telemetries. List of `host`, `api`, `io`, `repo`, `job`. Note: You can also specify `all` to enable all |         | server     | api, microservices |
-| `IMMICH_TELEMETRY_EXCLUDE` | Do not collect these telemetries. List of `host`, `api`, `io`, `repo`, `job`                                          |         | server     | api, microservices |
+Telemetry and metrics export are permanently disabled in this fork.
+`IMMICH_TELEMETRY_INCLUDE`, `IMMICH_TELEMETRY_EXCLUDE`, `IMMICH_API_METRICS_PORT`, and
+`IMMICH_MICROSERVICES_METRICS_PORT` are accepted for compatibility but do not enable
+collection, open a listener, or configure an exporter. `OTEL_*` variables cannot
+activate the removed OpenTelemetry SDK.
 
 ## Secrets
 

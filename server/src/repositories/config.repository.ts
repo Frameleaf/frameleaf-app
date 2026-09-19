@@ -6,12 +6,10 @@ import { Request, Response } from 'express';
 import { HelmetOptions } from 'helmet';
 import { RedisOptions } from 'ioredis';
 import { CLS_ID, ClsModuleOptions } from 'nestjs-cls';
-import { OpenTelemetryModuleOptions } from 'nestjs-otel/lib/interfaces/index.js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { VectorExtension } from 'src/types.js';
 import { IWorker, citiesFile } from 'src/constants.js';
-import { Telemetry } from 'src/decorators.js';
 import { EnvSchema } from 'src/dtos/env.dto.js';
 import {
   DatabaseExtension,
@@ -81,8 +79,6 @@ export interface EnvData {
     trustedProxies: string[];
   };
 
-  otel: OpenTelemetryModuleOptions;
-
   resourcePaths: {
     lockFile: string;
     geodata: {
@@ -144,7 +140,6 @@ const stagingKeys = {
 };
 
 const WORKER_TYPES = new Set(Object.values(ImmichWorker));
-const TELEMETRY_TYPES = new Set(Object.values(ImmichTelemetry));
 
 const asSet = <T>(value: string | undefined, defaults: T[]) => {
   const values = (value || '').replaceAll(/\s/g, '').split(',').filter(Boolean);
@@ -210,19 +205,6 @@ const getEnv = (): EnvData => {
       redisConfig = JSON.parse(Buffer.from(redisUrl.slice(10), 'base64').toString());
     } catch (error) {
       throw new Error('Failed to decode redis options', { cause: error });
-    }
-  }
-
-  const includedTelemetries =
-    dto.IMMICH_TELEMETRY_INCLUDE === 'all'
-      ? new Set(Object.values(ImmichTelemetry))
-      : asSet<ImmichTelemetry>(dto.IMMICH_TELEMETRY_INCLUDE, []);
-
-  const excludedTelemetries = asSet<ImmichTelemetry>(dto.IMMICH_TELEMETRY_EXCLUDE, []);
-  const telemetries = setDifference(includedTelemetries, excludedTelemetries);
-  for (const telemetry of telemetries) {
-    if (!TELEMETRY_TYPES.has(telemetry)) {
-      throw new Error(`Invalid telemetry found: ${telemetry}`);
     }
   }
 
@@ -323,12 +305,6 @@ const getEnv = (): EnvData => {
       trustedProxies: dto.IMMICH_TRUSTED_PROXIES ?? ['linklocal', 'uniquelocal'],
     },
 
-    otel: {
-      metrics: {
-        hostMetrics: telemetries.has(ImmichTelemetry.Host),
-      },
-    },
-
     redis: redisConfig,
 
     resourcePaths: {
@@ -359,7 +335,8 @@ const getEnv = (): EnvData => {
     telemetry: {
       apiPort: dto.IMMICH_API_METRICS_PORT || 8081,
       microservicesPort: dto.IMMICH_MICROSERVICES_METRICS_PORT || 8082,
-      metrics: telemetries,
+      // Legacy telemetry settings cannot enable collection or export in this fork.
+      metrics: new Set<ImmichTelemetry>(),
     },
 
     workers,
@@ -378,7 +355,6 @@ const getEnv = (): EnvData => {
 let cached: EnvData | undefined;
 
 @Injectable()
-@Telemetry({ enabled: false })
 export class ConfigRepository {
   constructor(@Inject(IWorker) @Optional() private worker?: ImmichWorker) {}
 
