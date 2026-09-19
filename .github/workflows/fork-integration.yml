@@ -97,7 +97,7 @@ jobs:
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: '0.8.15'
-          python-version: '3.11'
+          python-version: '3.12'
       - name: Install locked CPU test dependencies
         run: uv sync --frozen --extra cpu --group test --no-default-groups
       - name: Run ML unit tests without model downloads
@@ -178,3 +178,23 @@ jobs:
           flutter pub get --enforce-lockfile
           dart analyze --fatal-infos
           flutter test
+
+  machine-learning-containers:
+    if: github.repository == 'adamtaylor152/immich'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [cpu, cuda]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Build ML runtime with locked fork dependencies
+        run: docker build --build-arg DEVICE=${{ matrix.device }} --target prod -t fork-ml-test machine-learning
+      - name: Verify runtime imports without downloading models
+        run: |
+          docker run --rm --entrypoint python fork-ml-test -c 'import onnxruntime; import immich_ml.models.image_description'
+      - name: Verify the CUDA image-description stack without a GPU
+        if: matrix.device == 'cuda'
+        run: |
+          docker run --rm --entrypoint python fork-ml-test -c 'import torch; import torchvision; from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration'

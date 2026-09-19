@@ -1410,7 +1410,7 @@ where
 order by
   "asset_edit"."updateId" asc
 
--- SyncRepository.assetFace.getDeletes
+-- SyncRepository.assetFace.getDeletesV2
 select
   "asset_face_audit"."id",
   "assetFaceId"
@@ -1465,19 +1465,86 @@ where
 order by
   "asset_face_audit"."id" asc
 
--- SyncRepository.assetFace.getUpserts
+-- SyncRepository.assetFace.getDeletesV3
+select
+  "asset_face_audit"."id",
+  "assetFaceId"
+from
+  "asset_face_audit" as "asset_face_audit"
+  inner join "asset" on "asset"."id" = "asset_face_audit"."assetId"
+  inner join "user" as "owner" on "owner"."id" = "asset"."ownerId"
+where
+  "asset_face_audit"."id" < $1
+  and "asset_face_audit"."id" > $2
+  and (
+    "asset"."ownerId" = $3
+    or "asset"."visibility" in ($4, $5)
+  )
+  and "owner"."clusterGroupId" = (
+    select
+      "user"."clusterGroupId"
+    from
+      "user"
+    where
+      "user"."id" = $6
+  )
+  and not (
+    case
+      when "asset"."id" is null then false
+      when coalesce(
+        (
+          select
+            phase
+          from
+            immich_fork.state
+          where
+            id = 1
+        ),
+        'inactive'
+      ) in ('legacy', 'dual-write', 'ready') then exists (
+        select
+          1
+        from
+          asset as nsfw_asset
+        where
+          nsfw_asset.id = "asset"."id"
+          and nsfw_asset.is_nsfw = true
+      )
+      when (
+        select
+          phase
+        from
+          immich_fork.state
+        where
+          id = 1
+      ) = 'active' then not exists (
+        select
+          1
+        from
+          immich_fork.asset_privacy as privacy_asset
+        where
+          privacy_asset."assetId" = "asset"."id"
+          and privacy_asset."isNsfw" = false
+      )
+      else false
+    end
+  )
+order by
+  "asset_face_audit"."id" asc
+
+-- SyncRepository.assetFace.getUpsertsV2
 select
   "asset_face"."id",
-  "assetId",
-  "personGroupId" as "personId",
-  "imageWidth",
-  "imageHeight",
-  "boundingBoxX1",
-  "boundingBoxY1",
-  "boundingBoxX2",
-  "boundingBoxY2",
-  "sourceType",
-  "isVisible",
+  "asset_face"."assetId",
+  "asset_face"."personGroupId" as "personId",
+  "asset_face"."imageWidth",
+  "asset_face"."imageHeight",
+  "asset_face"."boundingBoxX1",
+  "asset_face"."boundingBoxY1",
+  "asset_face"."boundingBoxX2",
+  "asset_face"."boundingBoxY2",
+  "asset_face"."sourceType",
+  "asset_face"."isVisible",
   "asset_face"."deletedAt",
   "asset_face"."updateId"
 from
@@ -1487,6 +1554,84 @@ where
   "asset_face"."updateId" < $1
   and "asset_face"."updateId" > $2
   and "asset"."ownerId" = $3
+  and not (
+    case
+      when "asset"."id" is null then false
+      when coalesce(
+        (
+          select
+            phase
+          from
+            immich_fork.state
+          where
+            id = 1
+        ),
+        'inactive'
+      ) in ('legacy', 'dual-write', 'ready') then exists (
+        select
+          1
+        from
+          asset as nsfw_asset
+        where
+          nsfw_asset.id = "asset"."id"
+          and nsfw_asset.is_nsfw = true
+      )
+      when (
+        select
+          phase
+        from
+          immich_fork.state
+        where
+          id = 1
+      ) = 'active' then not exists (
+        select
+          1
+        from
+          immich_fork.asset_privacy as privacy_asset
+        where
+          privacy_asset."assetId" = "asset"."id"
+          and privacy_asset."isNsfw" = false
+      )
+      else false
+    end
+  )
+order by
+  "asset_face"."updateId" asc
+
+-- SyncRepository.assetFace.getUpsertsV3
+select
+  "asset_face"."id",
+  "asset_face"."assetId",
+  "asset_face"."personGroupId" as "personId",
+  "asset_face"."imageWidth",
+  "asset_face"."imageHeight",
+  "asset_face"."boundingBoxX1",
+  "asset_face"."boundingBoxY1",
+  "asset_face"."boundingBoxX2",
+  "asset_face"."boundingBoxY2",
+  "asset_face"."sourceType",
+  "asset_face"."isVisible",
+  "asset_face"."deletedAt",
+  "asset_face"."updateId"
+from
+  "asset_face" as "asset_face"
+  inner join "asset" on "asset"."id" = "asset_face"."assetId"
+  inner join "user" as "owner" on "owner"."id" = "asset"."ownerId"
+where
+  "asset_face"."updateId" < $1
+  and "asset_face"."updateId" > $2
+  and (
+    "asset"."ownerId" = $3
+    or "asset"."visibility" in ($4, $5)
+  )
+  and "owner"."clusterGroupId" = (
+    select
+      "user"."clusterGroupId"
+    from
+      "user"
+    where
+      "user"."id" = $6
+  )
   and not (
     case
       when "asset"."id" is null then false

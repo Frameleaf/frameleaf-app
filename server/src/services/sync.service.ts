@@ -18,6 +18,7 @@ import { SyncQueryOptions } from 'src/repositories/sync.repository.js';
 import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { ClientDisconnectedError, waitForDrain } from 'src/utils/response.js';
 import { SerializeOptions, fromAck, serialize, toAck } from 'src/utils/sync.js';
 
@@ -87,6 +88,7 @@ export const SYNC_TYPES_ORDER = [
   SyncRequestType.PeopleV1,
   SyncRequestType.AssetFacesV1,
   SyncRequestType.AssetFacesV2,
+  SyncRequestType.AssetFacesV3,
   SyncRequestType.UserMetadataV1,
   SyncRequestType.AssetMetadataV1,
   SyncRequestType.AssetEditsV1,
@@ -181,7 +183,7 @@ export class SyncService extends BaseService {
     }
 
     const { nowId } = await this.syncCheckpointRepository.getNow();
-    const options: SyncQueryOptions = { nowId, userId: auth.user.id };
+    const options: SyncQueryOptions = { nowId, userId: auth.user.id, ...getHiddenContentQueryOptions(auth) };
 
     const handlers: Record<SyncRequestType, () => Promise<void>> = {
       // deprecated handlers
@@ -214,6 +216,7 @@ export class SyncService extends BaseService {
       [SyncRequestType.PartnerStacksV1]: () => this.syncPartnerStackV1(options, response, checkpointMap, session.id),
       [SyncRequestType.PeopleV1]: () => this.syncPeopleV1(options, response, checkpointMap),
       [SyncRequestType.AssetFacesV2]: () => this.syncAssetFacesV2(options, response, checkpointMap),
+      [SyncRequestType.AssetFacesV3]: () => this.syncAssetFacesV3(options, response, checkpointMap),
       [SyncRequestType.UserMetadataV1]: () => this.syncUserMetadataV1(options, response, checkpointMap),
       [SyncRequestType.AssetOcrV1]: () => this.syncAssetOcrV1(options, response, checkpointMap, auth),
     } as const;
@@ -896,15 +899,30 @@ export class SyncService extends BaseService {
     );
   }
 
+  // TODO(v5) drop when AssetFacesV2 is removed
   private async syncAssetFacesV2(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
     const deleteType = SyncEntityType.AssetFaceDeleteV1;
-    const deletes = this.syncRepository.assetFace.getDeletes({ ...options, ack: checkpointMap[deleteType] });
+    const deletes = this.syncRepository.assetFace.getDeletesV2({ ...options, ack: checkpointMap[deleteType] });
     for await (const { id, ...data } of deletes) {
       await send(response, { type: deleteType, ids: [id], data });
     }
 
     const upsertType = SyncEntityType.AssetFaceV2;
-    const upserts = this.syncRepository.assetFace.getUpserts({ ...options, ack: checkpointMap[upsertType] });
+    const upserts = this.syncRepository.assetFace.getUpsertsV2({ ...options, ack: checkpointMap[upsertType] });
+    for await (const { updateId, ...data } of upserts) {
+      await send(response, { type: upsertType, ids: [updateId], data });
+    }
+  }
+
+  private async syncAssetFacesV3(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
+    const deleteType = SyncEntityType.AssetFaceDeleteV1;
+    const deletes = this.syncRepository.assetFace.getDeletesV3({ ...options, ack: checkpointMap[deleteType] });
+    for await (const { id, ...data } of deletes) {
+      await send(response, { type: deleteType, ids: [id], data });
+    }
+
+    const upsertType = SyncEntityType.AssetFaceV3;
+    const upserts = this.syncRepository.assetFace.getUpsertsV3({ ...options, ack: checkpointMap[upsertType] });
     for await (const { updateId, ...data } of upserts) {
       await send(response, { type: upsertType, ids: [updateId], data });
     }
