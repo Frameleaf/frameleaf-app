@@ -775,6 +775,7 @@
     "users_page_description": "Admin users page",
     "version_check_channel": "Release channel",
     "version_check_channel_description": "Pick the release channel you want to get version announcements for",
+    "version_check_disabled_by_privacy_policy": "Automatic version checks are permanently disabled for privacy.",
     "version_check_enabled_description": "Enable version check",
     "version_check_implications": "The version check feature relies on periodic communication with {server}",
     "version_check_settings": "Version Check",
