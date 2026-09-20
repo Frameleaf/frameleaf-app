@@ -2472,10 +2472,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-101",
@@ -2507,10 +2505,8 @@
       "workstream": "studio",
       "priority": "High",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-102",
@@ -2541,10 +2537,8 @@
       "workstream": "studio",
       "priority": "High",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-103",
@@ -2576,10 +2570,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-200",
@@ -2604,10 +2596,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-201",
@@ -2637,10 +2627,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-202",
@@ -2672,10 +2660,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-203",
@@ -2707,10 +2693,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-204",
@@ -2742,10 +2726,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-205",
@@ -2777,10 +2759,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-300",
@@ -2807,10 +2787,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-301",
@@ -2835,10 +2813,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-302",
@@ -2867,10 +2843,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-303",
@@ -2902,10 +2876,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-304",
@@ -2937,10 +2909,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-305",
@@ -2971,10 +2941,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-306",
@@ -3006,10 +2974,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-400",
@@ -3038,10 +3004,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-401",
@@ -3073,10 +3037,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-402",
@@ -3107,10 +3069,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-403",
@@ -3142,10 +3102,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-404",
@@ -3177,10 +3135,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "STU-405",
@@ -3221,10 +3177,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "VID-100",
@@ -3249,10 +3203,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "VID-101",
@@ -3284,10 +3236,8 @@
       "workstream": "studio",
       "priority": "High",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "VID-102",
@@ -3317,10 +3267,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "VID-103",
@@ -3351,10 +3299,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "VID-104",
@@ -3386,10 +3332,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "VID-105",
@@ -3419,10 +3363,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "VID-200",
@@ -3449,10 +3391,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "VID-090",
@@ -3486,10 +3426,8 @@
       "workstream": "studio",
       "priority": "High",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "VID-201",
@@ -3521,10 +3459,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "VID-202",
@@ -3553,10 +3489,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "VID-203",
@@ -3587,10 +3521,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "VID-204",
@@ -3621,10 +3553,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "AI-100",
@@ -3651,10 +3581,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "AI-101",
@@ -3686,10 +3614,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "AI-102",
@@ -3721,10 +3647,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "AI-103",
@@ -3756,10 +3680,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "AI-104",
@@ -3792,10 +3714,8 @@
       "workstream": "studio",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-100",

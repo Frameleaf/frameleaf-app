@@ -1,0 +1,1059 @@
+{
+  "backlogPath": "docs/docs/developer/frameleaf-plan/studio-backlog.json",
+  "engine": "freecut",
+  "engineRevision": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+  "manifestPath": "studio/freecut-feature-manifest.json",
+  "rows": [
+    {
+      "id": "readme.timeline-editing.1",
+      "issueIds": ["STU-301"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.timeline-editing.2",
+      "issueIds": ["STU-301"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.timeline-editing.3",
+      "issueIds": ["STU-301"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.timeline-editing.4",
+      "issueIds": ["STU-301"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.timeline-editing.5",
+      "issueIds": ["STU-301"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.timeline-editing.6",
+      "issueIds": ["STU-301"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.timeline-editing.7",
+      "issueIds": ["STU-301"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.timeline-editing.8",
+      "issueIds": ["STU-301"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.preview-playback.1",
+      "issueIds": ["STU-302"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.preview-playback.2",
+      "issueIds": ["STU-302"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.preview-playback.3",
+      "issueIds": ["STU-302"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.preview-playback.4",
+      "issueIds": ["STU-302"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.preview-playback.5",
+      "issueIds": ["STU-302"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.preview-playback.6",
+      "issueIds": ["STU-302"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.audio.1",
+      "issueIds": ["STU-305"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.audio.2",
+      "issueIds": ["STU-305"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.audio.3",
+      "issueIds": ["STU-305"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.audio.4",
+      "issueIds": ["STU-305"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.effects-masks-compositing.1",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.effects-masks-compositing.2",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.effects-masks-compositing.3",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.effects-masks-compositing.4",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.effects-masks-compositing.5",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.effects-masks-compositing.6",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.effects-masks-compositing.7",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.effects-masks-compositing.8",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.transitions.1",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.transitions.2",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.transitions.3",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.keyframe-animation.1",
+      "issueIds": ["STU-304"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.keyframe-animation.2",
+      "issueIds": ["STU-304"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.keyframe-animation.3",
+      "issueIds": ["STU-304"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.keyframe-animation.4",
+      "issueIds": ["STU-304"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.keyframe-animation.5",
+      "issueIds": ["STU-304"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.keyframe-animation.6",
+      "issueIds": ["STU-304"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.media-import.1",
+      "issueIds": ["STU-306"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.media-import.2",
+      "issueIds": ["STU-306"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.media-import.3",
+      "issueIds": ["STU-306"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.media-import.4",
+      "issueIds": ["STU-306"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.local-ai-analysis.1",
+      "issueIds": ["AI-104"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.local-ai-analysis.2",
+      "issueIds": ["AI-104"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.local-ai-analysis.3",
+      "issueIds": ["AI-104"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.local-ai-analysis.4",
+      "issueIds": ["AI-104"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.local-ai-analysis.5",
+      "issueIds": ["AI-104"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.local-ai-analysis.6",
+      "issueIds": ["AI-104"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.local-ai-analysis.7",
+      "issueIds": ["AI-104"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.projects-storage.1",
+      "issueIds": ["STU-204"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.projects-storage.2",
+      "issueIds": ["STU-204"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.projects-storage.3",
+      "issueIds": ["STU-204"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.projects-storage.4",
+      "issueIds": ["STU-204"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.projects-storage.5",
+      "issueIds": ["STU-204"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.projects-storage.6",
+      "issueIds": ["STU-204"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.export.1",
+      "issueIds": ["STU-306"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.export.2",
+      "issueIds": ["STU-306"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.export.3",
+      "issueIds": ["STU-306"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.export.4",
+      "issueIds": ["STU-306"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.export.5",
+      "issueIds": ["STU-306"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.export.6",
+      "issueIds": ["STU-306"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "readme.export.7",
+      "issueIds": ["STU-306"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-gaussian-blur",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-box-blur",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-motion-blur",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-radial-blur",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-zoom-blur",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-brightness",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-contrast",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-exposure",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-hue-shift",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-invert",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-levels",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-saturation",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-temperature",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-grayscale",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-sepia",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-curves",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-color-wheels",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-secondary-qualifier",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-power-window",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-vibrance",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-gradient-map",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-pixelate",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-rgb-split",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-twirl",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-wave",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-trigger-wave",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-bulge",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-kaleidoscope",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-mirror",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-fluted-glass",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-ripple-glass",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-glass-mosaic",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-blocks",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-droste",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-chroma-key",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-lut",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-vignette",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-grain",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-sharpen",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-posterize",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-glow",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-edge-detect",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-scanlines",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-color-glitch",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-block-glitch",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-crt",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-halftone",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-dither",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-ascii",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-threshold",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-vhs",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-ink",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-pixel-sort",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "effect.gpu-pixel-sort-hq",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.chromatic",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.clockWipe",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.additiveDissolve",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.blurDissolve",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.dipToColorDissolve",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.nonAdditiveDissolve",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.smoothCut",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.dissolve",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.fade",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.filmGateSlip",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.flip",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.glitch",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.iris",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.lensWarpZoom",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.lightLeakBurn",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.liquidDistort",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.pixelate",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.radialBlur",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.slide",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.sparkles",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "transition.wipe",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.normal",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.dissolve",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.darken",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.multiply",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.color-burn",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.linear-burn",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.lighten",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.screen",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.color-dodge",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.linear-dodge",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.overlay",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.soft-light",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.hard-light",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.vivid-light",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.linear-light",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.pin-light",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.hard-mix",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.difference",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.exclusion",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.subtract",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.divide",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.hue",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.saturation",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.color",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "blend.luminosity",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.addText",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.addItem",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.updateItem",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.moveItem",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.removeItems",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.split",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.trimStart",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.trimEnd",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.addTransition",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.updateTransition",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.removeTransition",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.addTrack",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.addClip",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.addKeyframe",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.removeKeyframes",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.setTransformParent",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.addEffect",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.removeEffect",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "command.setTransform",
+      "issueIds": ["STU-205"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.compose",
+      "issueIds": ["STU-304"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.expressions",
+      "issueIds": ["STU-304"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.published-controls",
+      "issueIds": ["STU-304"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.parenting",
+      "issueIds": ["STU-304"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.color-workspace",
+      "issueIds": ["STU-302"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.bento",
+      "issueIds": ["STU-302"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.silence-removal",
+      "issueIds": ["STU-305"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.filler-removal",
+      "issueIds": ["STU-305"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.microphone",
+      "issueIds": ["STU-305"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.reverse-conform",
+      "issueIds": ["AI-104"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.render-queue",
+      "issueIds": ["STU-403"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.upscale-anime4k",
+      "issueIds": ["AI-104"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.interpolation-rife",
+      "issueIds": ["AI-104"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.tts-moss",
+      "issueIds": ["AI-104"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.tts-supertonic",
+      "issueIds": ["AI-104"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.tts-kokoro",
+      "issueIds": ["AI-104"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.musicgen",
+      "issueIds": ["AI-104"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "extra.portable-headless",
+      "issueIds": ["STU-204"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "module.docs",
+      "issueIds": ["STU-201"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "module.editor",
+      "issueIds": ["STU-201"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "module.effects",
+      "issueIds": ["STU-303"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "module.export",
+      "issueIds": ["STU-306"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "module.keyframes",
+      "issueIds": ["STU-304"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "module.lottie-browser",
+      "issueIds": ["STU-306"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "module.media-library",
+      "issueIds": ["STU-306"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "module.preview",
+      "issueIds": ["STU-302"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "module.project-bundle",
+      "issueIds": ["STU-204"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "module.projects",
+      "issueIds": ["STU-204"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "module.scene-browser",
+      "issueIds": ["AI-104"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "module.settings",
+      "issueIds": ["STU-201"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "module.timeline",
+      "issueIds": ["STU-301"],
+      "status": "planned-not-qualified"
+    },
+    {
+      "id": "module.workspace-gate",
+      "issueIds": ["STU-204"],
+      "status": "planned-not-qualified"
+    }
+  ],
+  "schemaVersion": 1
+}

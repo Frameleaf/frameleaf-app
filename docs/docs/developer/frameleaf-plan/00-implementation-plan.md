@@ -8,7 +8,7 @@ Frameleaf will be a complete photo and video library with a restrained, dark-fir
 
 This plan supersedes chronological planning notes where they conflict. Explicit subsequent owner decisions take precedence. The source audits remain the preservation baseline; historical checkmarks are not release evidence. Read the [agent execution instructions](01-agent-execution.md), then the assigned issue and its source paths in the consolidated backlog.
 
-This FL-25 baseline slice deliberately restores only the reviewed execution core. The dirty checkout also contains workstream narratives for library/administration, Studio/rendering, native/release, delivery sequencing, brand integration and feature ownership. Those six narratives and their specialized ownership maps are not part of this slice because their source inventories and application evidence remain unreviewed. Their absence must not be interpreted as reduced product scope or permission to start a dependency early.
+The initial FL-25 baseline slice deliberately restored only the reviewed execution core. A later bounded slice restored the Studio/rendering preservation contract, its 210-row Freecut inventory and ownership map without importing or accepting the dirty application implementation. The dirty checkout still contains separate narratives for library/administration, native/release, delivery sequencing, brand integration and feature ownership whose source inventories and application evidence remain unreviewed. Their absence must not be interpreted as reduced product scope or permission to start a dependency early.
 
 The restored machine-readable records are:
 
@@ -30,7 +30,7 @@ The preserved dirty-checkout evidence includes the following unreviewed implemen
 - An opt-in Svelte shell and Flutter foundations. Existing application surfaces are retained; changing shell branding does not migrate their workflows.
 - Fork-owned Studio project/revision/lease structures and real project-review APIs. These are not a complete editor, renderer, preview service or export service.
 - Existing reliable-video/restoration/discovery/sharing/import/enrichment implementations from earlier work. Inspect and integrate them; do not duplicate them because their new UI is missing. Verify each acceptance criterion against real behavior.
-- Pinned Freecut source at `4d62e8082c5eb387a96275bcbd323d28f6e41a62`, provenance and feature manifests, and measured GPU/encoder prerequisites. Full Studio, HDR and Dolby Vision qualification remain false.
+- Freecut provenance and the 210-row feature manifest pinned at `4d62e8082c5eb387a96275bcbd323d28f6e41a62` are restored as preservation metadata. The vendor source, dirty diagnostics and measured GPU/encoder claims remain outside the accepted clean slice; full Studio, restoration, HDR and Dolby Vision qualification remain false.
 - Schema handoff and physical-deduplication safeguards that must remain intact.
 
 ## Product requirements that must not drift

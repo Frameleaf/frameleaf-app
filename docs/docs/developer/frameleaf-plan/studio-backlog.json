@@ -1,0 +1,1022 @@
+[
+  {
+    "acceptance": [
+      "All 210 manifest IDs have explicit story owners and independent client/command/render/test evidence.",
+      "Unqualified models, workers and formats remain unavailable."
+    ],
+    "dependencies": [],
+    "id": "STU-100",
+    "objective": "Establish reproducible, attributable Frameleaf builds without changing the 2,646-file source snapshot.",
+    "paths": [
+      "studio/freecut-provenance.json",
+      "studio/freecut-feature-manifest.json",
+      "studio/dependency-attribution.json",
+      "AGENTS.md"
+    ],
+    "phase": "foundation",
+    "risks": [
+      "Source presence is not working feature parity; third-party model licenses differ from the application MIT license."
+    ],
+    "tests": ["Source hashes and coverage checks; clean isolated engine build."],
+    "title": "Preserve the pinned engine and make every feature auditable",
+    "type": "epic"
+  },
+  {
+    "acceptance": [
+      "Clean checkout reproduces adapted engine digest and traces every patch to the pinned SHA.",
+      "No install, generated output or formatter modifies vendor/freecut; direct and transitive licenses are captured.",
+      "No implicit model/font/asset downloads occur during ordinary library startup."
+    ],
+    "dependencies": ["FN-101"],
+    "epicId": "STU-100",
+    "id": "STU-101",
+    "objective": "Create a new studio/engine build workspace from the immutable snapshot using explicit versioned patches and its own lockfile; keep vendor files unchanged.",
+    "paths": [
+      "studio/freecut-provenance.json",
+      "studio/tools/feature-manifest.mjs",
+      "studio/vendor/freecut/package.json",
+      "studio/vendor/freecut/package-lock.json"
+    ],
+    "phase": "foundation",
+    "risks": [
+      "Vite-plus/npm versions differ from the pnpm application; package scripts may require explicit reviewed installation."
+    ],
+    "tests": [
+      "node studio/tools/feature-manifest.mjs --check",
+      "Build and run upstream unit/headless contracts in the generated engine workspace; compare original source hashes before/after."
+    ],
+    "title": "Create a reproducible adapted-engine build",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Missing, duplicate, unknown and unowned IDs fail CI.",
+      "Native, browser control, command, graph round-trip, preview, export, timing/color and test results cannot be inferred from one another.",
+      "Family README rows require every constituent action; all 54 effects, 21 transitions, 25 blends and 19 commands receive individual fixture IDs."
+    ],
+    "dependencies": ["STU-101", "FN-102"],
+    "epicId": "STU-100",
+    "id": "STU-102",
+    "objective": "Add a separate Frameleaf conformance overlay keyed by all 210 immutable IDs, implementing the row gate in the companion plan.",
+    "paths": [
+      "studio/freecut-feature-manifest.json",
+      "studio/tools/feature-manifest.mjs",
+      "studio/tools/feature-manifest.test.mjs"
+    ],
+    "phase": "foundation",
+    "risks": [
+      "The existing manifest generator regenerates status fields; store measured evidence outside the immutable generated inventory."
+    ],
+    "tests": [
+      "Validate manifest-overlay exact set equality and required evidence fields.",
+      "Deliberately remove a row and mark an upstream test reference as passed without a run; both fail."
+    ],
+    "title": "Track independent conformance for every manifest row",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "MIT attribution, Mediabunny MPL obligations, SoundTouch LGPL notice and bundled weights notices remain distributed.",
+      "MusicGen noncommercial weight terms, all voice/model weights, fonts and Lottie assets have explicit permitted-use decisions.",
+      "Dolby binaries remain administrator-installed unless automation, redistribution and hosted-use rights are established; artistic-trim licensing is recorded separately."
+    ],
+    "dependencies": ["STU-101"],
+    "epicId": "STU-100",
+    "id": "STU-103",
+    "objective": "Produce a reviewed dependency/model/asset bill of materials and deployment rules before bundling or runtime downloads.",
+    "paths": [
+      "studio/dependency-attribution.json",
+      "studio/vendor/freecut/LICENSE",
+      "studio/vendor/freecut/src/infrastructure/audio/THIRD_PARTY_LICENSE",
+      "studio/vendor/freecut/src/infrastructure/upscale/models/NOTICE.md"
+    ],
+    "phase": "foundation",
+    "risks": [
+      "Public/free download does not prove redistribution or hosted-service permission; a blocked feature still blocks the promised full feature release."
+    ],
+    "tests": [
+      "Package artifact attribution audit and offline/no-implicit-download tests.",
+      "Review each model checksum/license reference; unavailable rights block that manifest row rather than silently remove it."
+    ],
+    "title": "Resolve distribution and optional asset/model rights",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Source revocation, owner deletion, handoff and old revisions remain safe.",
+      "Native clients receive a complete versioned command/schema contract, not an embedded web editor."
+    ],
+    "dependencies": ["STU-100"],
+    "id": "STU-200",
+    "objective": "Extend current draft storage/review into complete authenticated editor adapters while retaining one editor lease and lossless graphs.",
+    "paths": [
+      "server/src/repositories/studio-project.repository.ts",
+      "server/src/utils/studio-project.ts",
+      "web/src/routes/(user)/studio/+page.svelte"
+    ],
+    "phase": "core",
+    "risks": ["Opaque stored graphs are not safe executable worker inputs."],
+    "tests": ["Project PostgreSQL integration; browser adapter lifecycle; generated SDK round-trips."],
+    "title": "Connect complete projects to web and native clients",
+    "type": "epic"
+  },
+  {
+    "acceptance": [
+      "Editor panels, hotkeys, focus, dialogs, locale/theme and route transitions work without global CSS/router collisions.",
+      "Dispose releases audio, GPU, workers, media URLs, subscriptions and leases; auth/relock clears private state.",
+      "Library/quick editor remain GPU-free; full Studio unavailable state identifies missing worker capabilities."
+    ],
+    "dependencies": ["STU-101", "STU-102", "VID-090", "FN-202", "FN-301"],
+    "epicId": "STU-200",
+    "id": "STU-201",
+    "objective": "Create a new studio/adapters/web React host with a typed mount/update/dispose boundary and Svelte lifecycle wrapper; preserve existing project review until editing is qualified.",
+    "paths": [
+      "web/src/routes/(user)/studio/+page.svelte",
+      "web/src/lib/frameleaf/StudioPage.spec.ts",
+      "studio/vendor/freecut/src/features/editor",
+      "studio/vendor/freecut/src/features/workspace-gate"
+    ],
+    "phase": "core",
+    "risks": ["React 19 and Svelte app lifecycles must not share uncontrolled global state."],
+    "tests": [
+      "Adapter lifecycle leak tests; actual authenticated route mount/unmount/reconnect tests.",
+      "Compare all module.editor, module.settings and module.docs rows against the pinned UI."
+    ],
+    "title": "Mount the complete React editor within the Svelte shell",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Only one editor writes; expired/conflicting clients preserve unsaved drafts and explicitly reacquire or fork.",
+      "Historical graphs and aliases remain withheld if any source changes or becomes inaccessible; UI aborts stale responses and clears caches.",
+      "Paged history/review, identical retry, shared-space revocation, owner deletion and official handoff retain existing transaction behavior."
+    ],
+    "dependencies": ["STU-101", "FN-301", "FN-304"],
+    "epicId": "STU-200",
+    "id": "STU-202",
+    "objective": "Use current immutable revisions, expectedRevision/idempotency and 90-second lease for autosave, explicit restore-as-new-revision, history diff and read-only review.",
+    "paths": [
+      "server/src/repositories/studio-project.repository.ts",
+      "server/src/dtos/studio-project.dto.ts",
+      "server/src/repositories/studio-project.integration.spec.ts",
+      "web/src/routes/(user)/studio/+page.svelte"
+    ],
+    "phase": "core",
+    "risks": ["A history restore must append a revision, never mutate old revisions or bypass current source access."],
+    "tests": [
+      "Extend existing PostgreSQL lease/revision/cleanup races and StudioPage failure/pagination tests.",
+      "Two-browser conflict, reload-after-lost-ack and reviewer revocation scenarios."
+    ],
+    "title": "Complete autosave, history, conflict and review workflows",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Resolve approved asset/artifact IDs to short-lived worker read grants bound to revision, owner and checksum.",
+      "Reject arbitrary graph URLs, host paths, traversal, remote fonts/subresources, undeclared dependencies and cyclic/oversized resources before execution.",
+      "Resource revocation stops streams/jobs and invalidates preview/cache entries; project sharing never grants original access."
+    ],
+    "dependencies": ["STU-102", "STU-202"],
+    "epicId": "STU-200",
+    "id": "STU-203",
+    "objective": "Build a typed executable-graph resource resolver for all media, nested sequences, captions, LUTs, images, fonts, Lottie/SVG, generated resources and reverse conform assets.",
+    "paths": [
+      "server/src/utils/studio-project.ts",
+      "server/src/repositories/studio-project.repository.ts",
+      "studio/vendor/freecut/src/types/project.ts",
+      "studio/vendor/freecut/src/features/project-bundle/schemas/project-schema.ts"
+    ],
+    "phase": "core",
+    "risks": [
+      "Current recursive mediaId validation alone does not cover auxiliary resource references or runtime fetches."
+    ],
+    "tests": [
+      "Malicious bundle/expression/resource fixtures plus nested resource completeness tests.",
+      "Source deletion, checksum replacement, personal suppression and Shared Space revocation while streaming/rendering."
+    ],
+    "title": "Inventory and authorize every graph resource",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Safari/Firefox can import/export complete portable bundles without File System Access handles.",
+      "All readme.projects-storage and extra.portable-headless behaviors have server/native equivalents; plain-file workspace export remains available.",
+      "Bundle schema/version/digests and archive limits are validated; original shared assets survive project deletion; cache/orphan retention is bounded."
+    ],
+    "dependencies": ["STU-202", "STU-203"],
+    "epicId": "STU-200",
+    "id": "STU-204",
+    "objective": "Implement account-scoped server workspaces, project thumbnails/cache, import/export and soft-delete/restore/empty-trash with optional filesystem adapters where available.",
+    "paths": [
+      "studio/vendor/freecut/src/infrastructure/storage/workspace-fs",
+      "studio/vendor/freecut/src/features/project-bundle",
+      "studio/vendor/freecut/src/features/projects",
+      "server/src/fork-schema/migrations/0000000000270-StudioProjects.ts"
+    ],
+    "phase": "feature-completion",
+    "risks": [
+      "Current DELETE removes metadata directly; soft deletion requires an additive private migration and explicit retention policy."
+    ],
+    "tests": [
+      "Portable upstream lifecycle contract suite against the adapter and ZIP path/bomb tests.",
+      "Round-trip nested/unknown fields, missing media relink, project trash restore and owner removal."
+    ],
+    "title": "Adapt workspaces, portable bundles and project lifecycle",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Every command.* row has lease/revision/idempotence/access validation, undo/redo behavior and deterministic graph result.",
+      "Native can express all Freecut controls including Compose, expressions, published controls and multi-sequence state without lossy projection.",
+      "Regenerated TypeScript/Dart SDKs retain unknown graph fields, nulls, arrays, rational timing extensions and actionable errors."
+    ],
+    "dependencies": ["STU-102", "STU-202", "STU-203"],
+    "epicId": "STU-200",
+    "id": "STU-205",
+    "objective": "Adapt all 19 public commands and extend a typed versioned operation vocabulary to the complete graph; publish schema and events for real Flutter controls.",
+    "paths": [
+      "studio/vendor/freecut/headless/lib/contract.mjs",
+      "server/src/dtos/studio-project.dto.ts",
+      "open-api/patch/studio_document.dart.patch",
+      "studio/vendor/freecut/src/types"
+    ],
+    "phase": "core",
+    "risks": [
+      "The existing replace-graph command is a safe draft primitive, not a dedicated implementation of every editing command."
+    ],
+    "tests": [
+      "Replay command corpus through web/native serialization and compare canonical graph hashes.",
+      "No-op/stale/retry/partial-command rollback and malformed graph property tests."
+    ],
+    "title": "Publish canonical commands and native contracts",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "All assigned manifest rows pass the detailed row gate; no generic FFmpeg approximations replace shaders.",
+      "Optional hardware/model or license failures are actionable and remain tracked blockers."
+    ],
+    "dependencies": ["STU-200"],
+    "id": "STU-300",
+    "objective": "Integrate all pinned features, not a selected subset, with common preview/export semantics and dedicated native-control mappings.",
+    "paths": [
+      "studio/vendor/freecut/src/features",
+      "studio/vendor/freecut/src/runtime",
+      "studio/freecut-feature-manifest.json"
+    ],
+    "phase": "feature-completion",
+    "risks": [
+      "README feature families contain multiple independent actions and are not satisfied by one visible panel."
+    ],
+    "tests": ["Per-row fixtures, upstream tests in adapted workspace and authenticated interaction suites."],
+    "title": "Deliver every pinned Freecut tool and workflow",
+    "type": "epic"
+  },
+  {
+    "acceptance": [
+      "Split/join/ripple/rolling/slip/slide/rate-stretch, push/pull/close-gap and in/out insert/overwrite operate on correct linked ranges.",
+      "Track lock/mute/visibility, sync badges, thumbnails/waveforms and compound sequence tabs survive save/reload.",
+      "Template and first-media auto-match require explicit timing/color policy when changing existing projects."
+    ],
+    "dependencies": ["STU-201", "STU-205", "VID-102", "VID-090"],
+    "epicId": "STU-300",
+    "id": "STU-301",
+    "objective": "Integrate every readme.timeline-editing row: all item types, sequences/compound clips, linked edit tools, transitions, track controls, snapping/markers/timecode/history, source monitor and templates/shortcuts.",
+    "paths": ["studio/vendor/freecut/src/features/timeline", "studio/vendor/freecut/src/features/editor"],
+    "phase": "feature-completion",
+    "risks": ["Integer frame-index assumptions must not silently coerce VFR or fractional rates."],
+    "tests": [
+      "Golden graph edits and undo/redo for every tool; linked audio sync and nested sequence fixtures.",
+      "Pointer/keyboard/touch interactions and long-timeline performance on desktop/tablet."
+    ],
+    "title": "Complete timeline, sequences and source-monitor editing",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Every readme.preview-playback row and extra.color-workspace/extra.bento is reachable with reliable hit geometry and keyboard alternatives.",
+      "Monitor volume is separate from master mix; displayed scopes identify color space and evaluate the matching revision/frame.",
+      "Late preview/scopes from old seeks or revisions are discarded; adaptive quality changes previews only."
+    ],
+    "dependencies": ["STU-201", "STU-205", "STU-402", "VID-201", "VID-090"],
+    "epicId": "STU-300",
+    "id": "STU-302",
+    "objective": "Implement transform/crop/corner-pin/mask/group gizmos, source warming, adaptive preview, Clock playback, two/four-up edit views, scopes, Color workspace and Bento.",
+    "paths": [
+      "studio/vendor/freecut/src/features/preview",
+      "studio/vendor/freecut/src/features/editor",
+      "studio/vendor/freecut/src/runtime"
+    ],
+    "phase": "feature-completion",
+    "risks": ["Remote video display or SDR monitor capability must not silently constrain exported master color."],
+    "tests": [
+      "Deterministic frame/time/overlay correspondence; latency/reconnect tests; scope reference ramps.",
+      "Compare desktop/tablet tools in Safari, Firefox and Chromium."
+    ],
+    "title": "Complete preview tools, layouts and scopes",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Each exact manifest ID has parameter/animation/mask/stack-order fixtures in preview and native export.",
+      "All transition direction/alignment/duration/source anchoring and alpha/premultiplication behavior are preserved.",
+      "SDR semantics match pinned references; HDR conventions are explicit and do not clamp through 8-bit canvas paths."
+    ],
+    "dependencies": ["STU-205", "VID-201", "STU-402", "VID-090"],
+    "epicId": "STU-300",
+    "id": "STU-303",
+    "objective": "Carry all 54 effect rows, 25 blend modes, 21 transitions and all mask/keying/color-picker controls into the shared render graph.",
+    "paths": [
+      "studio/vendor/freecut/src/infrastructure/gpu-effects",
+      "studio/vendor/freecut/src/infrastructure/gpu-compositor",
+      "studio/vendor/freecut/src/features/effects",
+      "studio/freecut-feature-manifest.json"
+    ],
+    "phase": "feature-completion",
+    "risks": [
+      "Temporal/random effects need stable seeds and frame context; one successful effect cannot qualify the family."
+    ],
+    "tests": [
+      "Per-row parameter-extreme, animated and composed golden frames; render twice for determinism.",
+      "LUT/secondary qualifier/power window, pen geometry, chroma spill and transition-boundary tests."
+    ],
+    "title": "Integrate every effect, blend, transition and mask",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Every readme.keyframe-animation row and extra.compose/expressions/published-controls/parenting passes independent control/command/render tests.",
+      "Expression evaluation is deterministic and constrained by time/memory with no filesystem, network or credentials; imported expressions never run at graph review.",
+      "Nested instance overrides, baking modifiers and tangent/marquee/auto-keyframe operations round-trip without flattening."
+    ],
+    "dependencies": ["STU-205", "VID-201", "STU-402", "VID-090"],
+    "epicId": "STU-300",
+    "id": "STU-304",
+    "objective": "Implement Bezier/dopesheet/split views, all easing/motion/text tools, nested Compose, nulls/groups, expressions, published controls, overrides and pick-whip parenting.",
+    "paths": [
+      "studio/vendor/freecut/src/features/keyframes",
+      "studio/vendor/freecut/src/features/editor",
+      "studio/vendor/freecut/src/runtime/composition-runtime",
+      "studio/vendor/freecut/src/types/composition-controls.ts"
+    ],
+    "phase": "feature-completion",
+    "risks": [
+      "Do not implement safety by silently removing expressions or flattening Compose; unsupported graphs must explain the blocked capability."
+    ],
+    "tests": [
+      "Cycle/recursion/nontermination and escape tests for the expression sandbox.",
+      "Nested composition, expression/keyframe interaction, per-character animation and baking-equivalence fixtures."
+    ],
+    "title": "Complete keyframes, Compose, expressions and parenting",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Clip/track/master automation and monitor volume are distinct; channel layouts and nonedited tracks are preserved.",
+      "Microphone permission/refusal/device change/latency and recorded artifact ownership work in each browser/native client.",
+      "Removal workflows preview edits, preserve source timing and undo; caption styling/timing survives export modes."
+    ],
+    "dependencies": ["STU-205", "VID-102", "VID-104", "VID-090"],
+    "epicId": "STU-300",
+    "id": "STU-305",
+    "objective": "Integrate all audio faders/meters/fades/EQ/pitch/transition paths plus microphone recording, reviewed silence/filler removal and caption authoring.",
+    "paths": [
+      "studio/vendor/freecut/src/infrastructure/audio",
+      "studio/vendor/freecut/src/features/export/utils/canvas-audio.ts",
+      "studio/vendor/freecut/src/features/timeline"
+    ],
+    "phase": "feature-completion",
+    "risks": [
+      "Pinned stereo assumptions and SoundTouch timing/latency require explicit qualification, not just retaining controls."
+    ],
+    "tests": [
+      "Sample-accurate sync/channel impulses, pitch/EQ automation and transition audio reference renders.",
+      "Permission denial/device replacement and silence/filler preview/cancel/undo tests."
+    ],
+    "title": "Complete audio, recording and caption editing",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Animated SVG/Lottie subresources pass authorization/sanitization; color/theme/text/slot edits survive render and bundle export.",
+      "MP4/WebM/MOV/MKV and H264/H265/VP8/VP9/AV1 supported combinations are worker-probed; invalid combinations are explained before jobs.",
+      "MP3/AAC/WAV, burn-in/sidecar/embedded subtitles, quality presets and export ranges preserve complete project semantics."
+    ],
+    "dependencies": ["STU-203", "STU-204", "VID-103", "VID-104", "STU-403", "VID-090"],
+    "epicId": "STU-300",
+    "id": "STU-306",
+    "objective": "Implement all media/import and export rows including GIF/SVG/Lottie editing, ProRes, proxies/caches/relink, every sequence, video/audio formats and subtitles.",
+    "paths": [
+      "studio/vendor/freecut/src/features/media-library",
+      "studio/vendor/freecut/src/features/project-bundle",
+      "studio/vendor/freecut/src/features/export",
+      "studio/vendor/freecut/src/features/lottie-browser"
+    ],
+    "phase": "feature-completion",
+    "risks": [
+      "Browser codec support is not the complete-studio baseline; native worker exports provide equal controls on supported browsers."
+    ],
+    "tests": [
+      "Codec/container/subtitle capability matrix with real output probes, decode, channel/timestamp checks.",
+      "ProRes variants, GIF disposal, SVG/Lottie assets, relink checksum change and orphan-cache cases."
+    ],
+    "title": "Complete media import, relink and export options",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "No client GPU is required for complete desktop/tablet controls.",
+      "Render jobs survive clients/restarts and never publish stale or unauthorized output."
+    ],
+    "dependencies": ["STU-100", "STU-200"],
+    "id": "STU-400",
+    "objective": "Create a separately admitted rendering workload usable on the server, home-network worker or explicitly chosen cloud worker.",
+    "paths": [
+      "studio/tools/preflight-validators.mjs",
+      "server/src/services/studio-project.service.ts",
+      "server/src/repositories/asset-edit.repository.ts"
+    ],
+    "phase": "core",
+    "risks": [
+      "Existing ML capability discovery is not renderer admission; editable JSON reports are not trust anchors."
+    ],
+    "tests": [
+      "Signed admission, device-loss/restart, network faults, exact revision frame comparison and browser matrix."
+    ],
+    "title": "Qualify remote GPU preview and durable rendering",
+    "type": "epic"
+  },
+  {
+    "acceptance": [
+      "Reject software/fallback GPUs and expired/stale or mismatched engine/tool/model evidence.",
+      "Bind worker capability scopes to tested GPU memory, codecs, formats and concurrency; queue if busy instead of overcommitting.",
+      "Existing diagnostic harness remains diagnostic; fullStudioEditing/render/HDR/Dolby flags become true only through complete release evidence."
+    ],
+    "dependencies": ["STU-102", "STU-103", "FN-302"],
+    "epicId": "STU-400",
+    "id": "STU-401",
+    "objective": "Create new studio/worker registration/protocol with authenticated identity, version-bound conformance evidence, heartbeat and explicit capacity reservations.",
+    "paths": [
+      "scripts/frameleaf-studio-preflight.mjs",
+      "studio/tools/preflight-validators.mjs",
+      "studio/evidence/2026-09-19-macos-arm64-preflight.json",
+      "server/src/services/studio-project.service.ts"
+    ],
+    "phase": "core",
+    "risks": [
+      "Apple M1 synthetic success says nothing about Linux CUDA/Vulkan deployment or full renderer conformance."
+    ],
+    "tests": [
+      "Forged/replayed report, mismatched digest, timeout, low-memory and device-loss tests.",
+      "Run actual hardware preflight on each supported worker image/driver; retain failed/unavailable evidence."
+    ],
+    "title": "Implement authenticated renderer admission and resource limits",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Safari/Firefox/Chromium controls do not require File System Access, WebGPU, WebCodecs or local HEVC.",
+      "Use bounded WebRTC playback plus an authenticated exact-frame/HTTP fallback; discard stale frames and apply backpressure.",
+      "Read grants, streams, thumbnails and scope caches stop on revoke/relock; reconnect resumes only after current source and lease validation."
+    ],
+    "dependencies": ["STU-203", "STU-205", "STU-401", "VID-102", "VID-090"],
+    "epicId": "STU-400",
+    "id": "STU-402",
+    "objective": "Run the adapted engine on a qualified GPU worker; stream transport-compatible preview and exact sought frames with revision/seek generation/frame PTS identity.",
+    "paths": [
+      "studio/vendor/freecut/src/runtime",
+      "studio/vendor/freecut/src/features/preview",
+      "studio/vendor/freecut/headless/lib/render-core.mjs"
+    ],
+    "phase": "core",
+    "risks": ["An 8-bit stream may be an explicitly tone-mapped preview, never the color authority or export source."],
+    "tests": [
+      "Chromium/Firefox/WebKit UI automation plus real Safari/tablet playback and seek tests.",
+      "Offline/packet loss/reorder, superseded seek/revision, forbidden resource and worker-loss tests."
+    ],
+    "title": "Build revision-bound remote preview without client API dependencies",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Queued/preparing/rendering/validating/completed/cancelling/cancelled/failed states and attempts are persisted; stale claim tokens cannot write.",
+      "Chunk reuse validates full input/effect history/seed/config digests; stateful filters/audio preroll restore correct context or rerender a safe earlier boundary.",
+      "Browser closure, server/worker restart and network loss recover; cancellation kills subordinate processes and records remote acknowledgement."
+    ],
+    "dependencies": ["STU-203", "STU-401", "VID-102", "FN-303"],
+    "epicId": "STU-400",
+    "id": "STU-403",
+    "objective": "Create project-specific jobs binding immutable revision/resource/engine/color/output/destination snapshots; reuse proven claim/publication patterns without mixing asset-edit state.",
+    "paths": [
+      "server/src/repositories/asset-edit.repository.ts",
+      "server/src/repositories/media-operation.integration.spec.ts",
+      "studio/vendor/freecut/src/features/export",
+      "studio/vendor/freecut/headless/lib/operation-queue.mjs"
+    ],
+    "phase": "core",
+    "risks": [
+      "Not all temporal effects can resume from an arbitrary frame; correctness takes precedence over checkpoint reuse."
+    ],
+    "tests": [
+      "Real PostgreSQL duplicate claim/stale completion/lost acknowledgement/cancel-retry tests.",
+      "Kill worker mid-chunk, mid-encode and after object upload; compare resumed frame/audio output to uninterrupted output."
+    ],
+    "title": "Implement durable Studio render job state and checkpoints",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Claim/source/current-access checks and inherited privacy install precede publication; multiple-source suppression is a union, not just first-clip privacy.",
+      "Failed/stale/interrupted jobs leave valid prior versions available; physical-dedup references and originals remain unchanged.",
+      "Owner/source removal and handoff cancel pending work; remote cancellation/deletion references persist until acknowledged; retention protects referenced versions."
+    ],
+    "dependencies": ["STU-202", "STU-203", "STU-403"],
+    "epicId": "STU-400",
+    "id": "STU-404",
+    "objective": "Publish validated project exports atomically as versioned results, inheriting conservative evidence from every source and retaining provenance.",
+    "paths": [
+      "server/src/repositories/derivative-privacy.repository.ts",
+      "server/src/repositories/media-operation.integration.spec.ts",
+      "server/src/repositories/asset-edit.repository.ts",
+      "server/src/repositories/studio-project.repository.ts"
+    ],
+    "phase": "core",
+    "risks": [
+      "Rendering a shared source must not convert temporary permission into a permanently visible unrestricted derivative."
+    ],
+    "tests": [
+      "Multiowner/suppressed-source/revocation-during-publish, source deletion and user deletion races.",
+      "Real handoff/round-trip and storage integrity tests including uncertain commit acknowledgement."
+    ],
+    "title": "Publish project derivatives with privacy and retention",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Every row has actual control/command/reopen/preview/export coverage per browser, with accessible pointer/keyboard/touch behavior.",
+      "Browser render/display capability never silently removes a tool or downgrades a master; SDR monitoring is clearly identified.",
+      "Native desktop/tablet evidence from the native plan is an additional full-release gate; phone scope remains quick editing, AI jobs and project review."
+    ],
+    "dependencies": [
+      "STU-301",
+      "STU-302",
+      "STU-303",
+      "STU-304",
+      "STU-305",
+      "STU-306",
+      "STU-404",
+      "VID-202",
+      "VID-203",
+      "VID-204",
+      "AI-104"
+    ],
+    "epicId": "STU-400",
+    "id": "STU-405",
+    "objective": "Run the same full manifest scenarios on Safari, Firefox and Chromium desktop/tablet against the admitted worker and publish measured support evidence.",
+    "paths": [
+      "studio/freecut-feature-manifest.json",
+      "web/src/routes/(user)/studio/+page.svelte",
+      "studio/tools/preflight-validators.mjs"
+    ],
+    "phase": "release-qualification",
+    "risks": ["Playwright WebKit is not sufficient evidence for actual Safari/iPad hardware behavior."],
+    "tests": [
+      "Full end-to-end browser matrix with agreed latency/performance budgets, long timelines and client reconnection.",
+      "Compare frame hashes/tolerances, waveform/timestamp results and exported media across clients."
+    ],
+    "title": "Qualify complete browser control and output parity",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "4K/portrait/VFR/multichannel/repeated edits retain intended dimensions, timing and channels.",
+      "Quick editing/library continue without GPU; unsupported preservation paths fail before replacing a valid version."
+    ],
+    "dependencies": [],
+    "id": "VID-100",
+    "objective": "Extend and qualify existing original-resolution masters and independent playback proxies; define media semantics shared with Studio.",
+    "paths": [
+      "server/src/utils/video-edit.ts",
+      "server/src/services/media.service.ts",
+      "server/src/services/video-edit.integration.spec.ts"
+    ],
+    "phase": "core",
+    "risks": ["Current CRF18 master is high-quality lossy, not mathematically lossless."],
+    "tests": ["Native FFmpeg fixtures, transaction tests and independent decoded-output validation."],
+    "title": "Preserve master quality, timing and audio",
+    "type": "epic"
+  },
+  {
+    "acceptance": [
+      "General targetResolution/CRF/codec playback settings cannot cap an edited master.",
+      "Metadata-only rotation preserves packets where qualified; baked rotation/crop validate display dimensions and color/bit-depth intent.",
+      "Save version, Export and Revert have separate meanings; history restore/pruning preserves originals and referenced files."
+    ],
+    "dependencies": ["FN-101"],
+    "epicId": "VID-100",
+    "id": "VID-101",
+    "objective": "Make explicit original-derived quality policy and preservation metadata common to quick edits and new Studio outputs.",
+    "paths": [
+      "server/src/utils/video-edit.ts",
+      "server/src/services/media.service.ts",
+      "server/src/repositories/asset-edit.repository.ts",
+      "docs/docs/features/video-editing.md"
+    ],
+    "phase": "core",
+    "risks": [
+      "Current validation checks dimensions/pixel format/color tags but does not prove full dynamic/static HDR fidelity."
+    ],
+    "tests": [
+      "4K rotation/crop, portrait metadata, repeated edits and playback configuration independence.",
+      "Version recovery/retention and incompatible audio/HDR error tests."
+    ],
+    "title": "Formalize edited-master and playback-proxy policies",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "30000/1001 and 24000/1001 do not accumulate float drift; VFR frame order/duration and nonzero origins are explicit.",
+      "Multi-track composition uses a declared output cadence; unchanged single-source VFR exports preserve PTS, and any cadence conversion is an explicit reviewed choice.",
+      "Speed/reverse/transitions/nested sequences/keyframes and chunk boundaries use the same mapping in preview, audio and encoder."
+    ],
+    "dependencies": ["STU-101"],
+    "epicId": "VID-100",
+    "id": "VID-102",
+    "objective": "Add exact rational project timebase and per-source PTS/duration maps while preserving legacy Freecut graphs and source-index correspondence.",
+    "paths": [
+      "studio/vendor/freecut/src/types/project.ts",
+      "studio/vendor/freecut/src/runtime",
+      "studio/vendor/freecut/src/features/export",
+      "server/src/services/video-edit.integration.spec.ts"
+    ],
+    "phase": "core",
+    "risks": ["Silently coercing a VFR source to a nominal fps conflicts with the preservation requirement."],
+    "tests": [
+      "Hour-long rational timeline, VFR/burst gaps/B-frame reorder, nonzero timestamps and mixed-cadence fixtures.",
+      "Property tests for frame\u2194time conversion and deterministic trim/edit boundaries."
+    ],
+    "title": "Use rational time and preserve original VFR mappings",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Advertise a tested matrix including ordinary SDR, HDR10, HLG, portrait, ProRes and required Dolby profiles; reject other profiles explicitly before editing.",
+      "Correctly interpret YUV range/matrix/chroma, PQ/HLG and Dolby reshaping/enhancement requirements; do not treat Profile5 as ordinary HDR10.",
+      "Decode planes reach the float pipeline without a hidden 8-bit canvas or RGB PNG conversion."
+    ],
+    "dependencies": ["STU-101", "STU-203"],
+    "epicId": "VID-100",
+    "id": "VID-103",
+    "objective": "Add a native decoder/resource transport that retains high-precision planes, timestamp maps, orientation and source color/Dolby metadata.",
+    "paths": [
+      "studio/vendor/freecut/src/features/media-library",
+      "studio/tools/encode-probe.mjs",
+      "server/src/repositories/media.repository.ts"
+    ],
+    "phase": "core",
+    "risks": [
+      "Full Dolby profile support is unproven; Profile7 enhancement-layer treatment and Profile5 reshaping need explicit technical qualification."
+    ],
+    "tests": [
+      "Reference clip/ramp decoding against independently trusted software/hardware and profile-specific side data.",
+      "B-frame, rotation, anamorphic/non-square pixel, missing/corrupt metadata and resource exhaustion tests."
+    ],
+    "title": "Qualify source decoding and HDR/Dolby input profiles",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Use rgba16float-or-better processing/readback and explicit dither/transfer/YUV conversion to qualified 10-bit encoders; reject incompatible output options.",
+      "Avoid current hardcoded stereo export; preserve channel layout/sample rate and unchanged tracks, with explicit downmix only if chosen.",
+      "Backpressure and cancellation prevent unbounded frame queues; validate content and sample alignment, not only file tags."
+    ],
+    "dependencies": ["VID-101", "VID-102", "VID-103", "VID-201"],
+    "epicId": "VID-100",
+    "id": "VID-104",
+    "objective": "Implement bounded GPU readback/native encoder transport with exact PTS manifests and a channel-aware audio bus graph.",
+    "paths": [
+      "studio/tools/encode-probe.mjs",
+      "studio/vendor/freecut/src/features/export/utils/canvas-render-orchestrator.ts",
+      "studio/vendor/freecut/src/features/export/utils/canvas-audio.ts",
+      "studio/vendor/freecut/src/infrastructure/audio"
+    ],
+    "phase": "core",
+    "risks": [
+      "WebCodecs HEVC Main10 availability is not universal; native worker encoding must supply the delivery path."
+    ],
+    "tests": [
+      "GPU\u2192encoder gradient/clipping/alpha tests, >256-level preservation and native decode comparison.",
+      "Mono/stereo/5.1/7.1 impulses, long-run A/V sync, pitch/EQ and encoding failure/device-loss fixtures."
+    ],
+    "title": "Connect float frames to native encoding and channel-aware audio",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Trim/Rotate/Crop/Adjust/Audio remain direct; shared draft/playhead/selection/undo survive full-editor and back transitions.",
+      "Exact versus fast trim shows actual boundaries; rotation, crop, repeated edits, audio channels and hardware fallback have real media coverage.",
+      "Cancel/retry/reload and stale jobs do not replace valid media; unavailable HDR/Dolby paths explain why without destructive fallback."
+    ],
+    "dependencies": ["VID-101", "VID-102"],
+    "epicId": "VID-100",
+    "id": "VID-105",
+    "objective": "Verify the retained quick drawer and full-workspace handoff with original-derived rendering, history and accurate supported-tool previews.",
+    "paths": [
+      "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.svelte",
+      "web/src/lib/components/asset-viewer/editor/VideoEditorPanel.spec.ts",
+      "web/src/lib/components/asset-viewer/editor/VideoTimelineFrames.svelte",
+      "server/src/services/video-edit.integration.spec.ts"
+    ],
+    "phase": "release-qualification",
+    "risks": ["Do not interpret the sample React editor or CSS preview as proof of FFmpeg output fidelity."],
+    "tests": [
+      "Extend the existing six native media fixtures with crop, repeated revisions, hardware planning/encode failure and combined portrait/HDR/VFR cases.",
+      "Authenticated browser drawer/full-workspace continuity and version selection/restore tests."
+    ],
+    "title": "Close quick-editor regression and usability gates",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "No release with SDR-only effects, copied old RPU, fabricated metadata or an archive substituted for the required DV delivery.",
+      "Qualified HDR and Dolby output remains separate from client monitor capability."
+    ],
+    "dependencies": ["VID-100", "STU-400"],
+    "id": "VID-200",
+    "objective": "Make HDR/10-bit through every effect and edited Dolby Vision initial full-Studio release gates, with real artifacts and rights evidence.",
+    "paths": [
+      "studio/tools/preflight-validators.mjs",
+      "scripts/frameleaf-studio-preflight.mjs",
+      "docs/docs/developer/frameleaf-studio-foundation.md"
+    ],
+    "phase": "release-qualification",
+    "risks": [
+      "No complete Dolby chain or installed Dolby tools were demonstrated by the stored diagnostic checkpoint."
+    ],
+    "tests": ["Float/effect/encode chain, edited DV metadata/mux/device QC and supported-profile corpus."],
+    "title": "Require complete HDR and newly authored edited Dolby Vision",
+    "type": "epic"
+  },
+  {
+    "acceptance": [
+      "Administrator-installed licensed/permitted tool versions run actual operations; prove selected Dolby input profile decoding/reshaping, owned HDR10/HLG/VFR sources and extended-range float exposure/composite through native HEVC10 without an 8-bit intermediary.",
+      "Produce a genuinely edited specimen with cuts and changed pixel values: final pictures/PTS -> CM Analyze fresh XML -> Metafier -> schema-compatible XML-to-RPU generation -> HEVC Main10/RPU insertion -> correctly signalled Profile8.1 MP4 with HDR10 fallback. Preserve an exact frame/timestamp manifest and verify on Dolby and HDR10 devices.",
+      "Record XML/schema/tool compatibility, frame mapping including fractional/VFR behavior, device evidence, source/output digests, automation rights and reproducible commands. Missing tools, unsupported input decode, VFR incompatibility or failed QC block broad Studio adoption and require a reported resolution; never pass by copying old RPU or substituting an archive.",
+      "This limited proof does not qualify all effects, full project semantics, native controls or production worker admission. Keep library, project review and quick-edit work unblocked; repeat complete qualification under VID-203/VID-204 after integration."
+    ],
+    "dependencies": ["STU-101", "FN-101"],
+    "epicId": "VID-200",
+    "id": "VID-090",
+    "objective": "Stage 2 go/no-go: build a bounded local-worker proof using a small owned fixture corpus and an isolated float edit path, independent of complete editor/effect migration; establish real tool rights and the entire newly analyzed Dolby chain before adopting the full Studio.",
+    "paths": [
+      "scripts/frameleaf-studio-preflight.mjs",
+      "studio/tools/gpu-probe.mjs",
+      "studio/tools/encode-probe.mjs",
+      "studio/tools/preflight-validators.mjs",
+      "studio/dependency-attribution.json"
+    ],
+    "phase": "foundation",
+    "risks": [
+      "Dolby portal access, current XML interoperability, Profile5/7 handling and VFR mux/metadata alignment have not been demonstrated; feasibility failure must be discovered before large integration cost."
+    ],
+    "tests": [
+      "Run the complete local specimen pipeline twice; compare deterministic picture/timestamp/metadata correspondence and retain all intermediate artifacts and tool outputs.",
+      "Negative tests for mismatched XML schema/RPU frame count, broken PTS, unauthorized tool distribution and unavailable decode profile; the go/no-go result remains false."
+    ],
+    "title": "Prove the edited Dolby vertical slice before broad Studio integration",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Keep out-of-range/negative float values until explicit output conversion; audit masks, LUTs, blends, transitions, text, Lottie and nested Compose.",
+      "Each effect has defined HDR parameter semantics and preserves SDR reference behavior; SDR assets are mapped deliberately into HDR projects.",
+      "Tone mapping is limited to explicitly chosen monitoring/export policies and never inherited from playback defaults."
+    ],
+    "dependencies": ["STU-101", "VID-090"],
+    "epicId": "VID-200",
+    "id": "VID-201",
+    "objective": "Define linear working primaries, reference white, scene/display conventions and alpha; replace all 8-bit intermediates across complete graph paths.",
+    "paths": [
+      "studio/vendor/freecut/src/infrastructure/gpu-effects/effects-pipeline.ts",
+      "studio/vendor/freecut/src/infrastructure/gpu-compositor/compositor-pipeline.ts",
+      "studio/vendor/freecut/src/runtime",
+      "studio/tools/gpu-probe.mjs"
+    ],
+    "phase": "core",
+    "risks": [
+      "Changing texture formats alone cannot qualify shader math, LUT domains, text/canvas rasterization or color transforms."
+    ],
+    "tests": [
+      "Per-node ramps, extended range, premultiplied alpha and mixed SDR/PQ/HLG golden tests.",
+      "Complete graph allocation audit and readback precision checks across supported GPU backends."
+    ],
+    "title": "Migrate the complete graph to managed floating-point color",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Edited sequence preserves intended 10-bit picture precision, gamut and timing through every effect family, titles, masks and transitions.",
+      "Recalculate or validate static mastering/content-light data for edited outputs; never blindly claim copied source values remain correct.",
+      "HDR preview/export frame comparisons, VFR mappings, multichannel audio and restart behavior pass on each admitted deployment."
+    ],
+    "dependencies": ["VID-103", "VID-104", "STU-303", "STU-304", "STU-305", "STU-403"],
+    "epicId": "VID-200",
+    "id": "VID-202",
+    "objective": "Extend tiny diagnostic fixtures into complete edit\u2192float graph\u2192native master proofs for HDR10/HLG and 4K workloads.",
+    "paths": [
+      "studio/tools/encode-probe.mjs",
+      "studio/tools/preflight-validators.mjs",
+      "studio/evidence/2026-09-19-macos-arm64-preflight.json"
+    ],
+    "phase": "release-qualification",
+    "risks": ["Existing 64x64 12-frame synthetic checks do not qualify real 4K color-managed content."],
+    "tests": [
+      "Independent decoded luma/chroma/error checks, reference monitor review and 4K stress/device loss.",
+      "All HDR-related manifest row evidence links to versioned input/output digests and exact command/tool versions."
+    ],
+    "title": "Prove full HDR10 and HLG edited exports",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Analyze the exact final graded frame sequence with CM Analyze; validate Dolby XML with Metafier; pin XML schema/CM version accepted by the chosen XML-to-RPU tool.",
+      "Generate new RPU via proven dovi_tool or a validated authorized alternative, encode HEVC Main10, inject correctly aligned metadata and mux verified DV MP4.",
+      "Cuts, transitions, reframing, speed and rational/VFR mapping keep exact metadata/frame correspondence; never copy original RPU after editing."
+    ],
+    "dependencies": ["VID-202", "STU-103", "VID-090"],
+    "epicId": "VID-200",
+    "id": "VID-203",
+    "objective": "Implement a pinned, tested chain from final edited HDR pictures to fresh Dolby metadata and a properly signalled Profile8.1 MP4 with HDR10 fallback.",
+    "paths": [
+      "docs/docs/developer/frameleaf-studio-foundation.md",
+      "scripts/frameleaf-studio-preflight.mjs",
+      "studio/tools/preflight-validators.mjs"
+    ],
+    "phase": "release-qualification",
+    "risks": [
+      "Installed tool compatibility, XML revisions, metadata timing through VFR and legal automation rights remain unproven; failures block initial full-Studio release."
+    ],
+    "tests": [
+      "Retain frame/PTS manifest, analysis XML, validation logs, generated/extracted RPU, HEVC and final MP4 hashes; compare metadata count/order to decoded pictures.",
+      "Actual edited footage on DV and HDR10-only devices plus interrupted/retried chain tests."
+    ],
+    "title": "Prove newly analyzed edited Dolby Vision delivery",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Device QC verifies Dolby activation, HDR10 fallback, scene mapping, no flashes/banding, A/V sync and intended trims if licensed.",
+      "Preserve high-precision edited master plus XML/provenance; test Mezzinator archival output separately where tool access permits.",
+      "Record administrator-installed versions, download/automation/container/cloud terms and renewal/update impact; do not assume all usage requires a trims license or all free tools are redistributable."
+    ],
+    "dependencies": ["VID-203"],
+    "epicId": "VID-200",
+    "id": "VID-204",
+    "objective": "Qualify output presentation, preservation archive and the actual supported deployment of Dolby tooling.",
+    "paths": [
+      "studio/dependency-attribution.json",
+      "studio/tools/preflight-validators.mjs",
+      "docs/docs/developer/frameleaf-studio-foundation.md"
+    ],
+    "phase": "release-qualification",
+    "risks": [
+      "Mezzanine/archive support is not a substitute for edited Dolby delivery; subjective mastering needs retained comparison evidence."
+    ],
+    "tests": [
+      "Device/decoder matrix and archive reconstruction with checksums and timing manifests.",
+      "Requalification on tool/schema/GPU/encoder changes; unavailable required evidence leaves capabilities false."
+    ],
+    "title": "Complete Dolby/HDR device QC, archive and deployment rights",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Faithful/Creative restoration qualifies against baseline before availability; source remains unchanged.",
+      "All pinned Freecut AI/analysis rows are implemented with permitted models and explicit destinations."
+    ],
+    "dependencies": ["STU-100"],
+    "id": "AI-100",
+    "objective": "Complete actual model-qualified workflows, keeping local/LAN choice explicit and cloud transfer/cost observable.",
+    "paths": [
+      "server/src/services/video-restoration.service.ts",
+      "machine-learning/immich_ml/video_restoration",
+      "studio/vendor/freecut/src/features/media-library"
+    ],
+    "phase": "feature-completion",
+    "risks": [
+      "Current tests primarily use a resize substitute; model adapters and operator reports are not empirical model readiness."
+    ],
+    "tests": ["Model/temporal fixtures, durable job faults, destination matrix and browser/native client workflows."],
+    "title": "Qualify local-first restoration and the full AI toolset",
+    "type": "epic"
+  },
+  {
+    "acceptance": [
+      "Default new jobs to compatible local or home-network endpoints; GPU memory/model/profile status are shown and rechecked at admission.",
+      "Persist destination/model/weights/profile with the job; unavailable local never uploads to cloud; changing destination requires explicit new preview/job.",
+      "RunPod uses a dedicated durable workload; rate/runtime/idle-volume-transfer exclusions, cancellation and budget limits are visible."
+    ],
+    "dependencies": ["STU-401", "FN-302"],
+    "epicId": "AI-100",
+    "id": "AI-101",
+    "objective": "Retain per-ML-endpoint restoration discovery and add explicitly qualified Studio/AI workload profiles without reusing ordinary RunPod image inference routing.",
+    "paths": [
+      "server/src/services/video-restoration.service.ts",
+      "server/src/repositories/video-restoration-worker.repository.ts",
+      "web/src/lib/components/video-restoration/VideoRestorationSettings.svelte",
+      "machine-learning/immich_ml/video_restoration/models.py"
+    ],
+    "phase": "core",
+    "risks": [
+      "A generic ML URL or NVIDIA device alone does not prove compatibility with a particular rendering/model profile."
+    ],
+    "tests": [
+      "Local-only, RunPod-only, both, no GPU, insufficient memory, busy endpoint, removed endpoint and configuration-change tests.",
+      "Cloud upload starts only after explicit selection; retries remain on original destination."
+    ],
+    "title": "Unify explicit destination and workload capability selection",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Run actual weights; hash all runtime/support weights and record measured VRAM/input-size/time behavior and supported GPU/container versions.",
+      "Compare faces/text/foliage/motion/cuts/chunk seams/timing/audio to conventional resize; assess hallucination and temporal stability, not still-frame sharpness only.",
+      "Models remain unavailable until all qualification evidence and licenses pass; keep existing SDR-only rejection unless HDR is independently qualified."
+    ],
+    "dependencies": ["STU-103", "AI-101"],
+    "epicId": "AI-100",
+    "id": "AI-102",
+    "objective": "Install pinned isolated RealBasicVSR and SeedVR2 runtimes on controlled qualified hardware and record reproducible model-quality evidence.",
+    "paths": [
+      "machine-learning/immich_ml/video_restoration/models.py",
+      "machine-learning/video-restoration/models.example.json",
+      "machine-learning/video-restoration/qualification.example.json",
+      "machine-learning/Dockerfile.video-restoration"
+    ],
+    "phase": "feature-completion",
+    "risks": [
+      "SeedVR2 resources and compression behavior may defeat initial assumptions; mode names express intention, not fidelity guarantees."
+    ],
+    "tests": [
+      "RealBasicVSR x4\u2192requested2x comparisons and SeedVR2 intermediate compression/frame-count/seam evaluation.",
+      "OOM/NaN/changed weights/dirty checkout/unsupported input and deterministic repeat tests."
+    ],
+    "title": "Qualify real Faithful and Creative model adapters",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Full render binds reviewed preview destination/model/source/size; source timing/audio and original are preserved with AI provenance.",
+      "Uploads/downloads/chunks/cancellation/restart/handoff/owner deletion recover safely; remote artifact release is acknowledged and abandoned uploads have bounded cleanup.",
+      "Show measured estimates and billing limits honestly; selection of AI version as playback or Studio source is explicit and privacy-safe, never auto-overwrites."
+    ],
+    "dependencies": ["AI-102", "VID-102", "STU-404"],
+    "epicId": "AI-100",
+    "id": "AI-103",
+    "objective": "Finish actual five-second synchronized previews, 2x/4K-capped full versions, recovery, retention and project/version integration.",
+    "paths": [
+      "server/src/services/video-restoration.service.ts",
+      "server/src/repositories/video-restoration.repository.ts",
+      "machine-learning/immich_ml/video_restoration/worker.py",
+      "web/src/lib/components/video-restoration/VideoRestorationPanel.svelte"
+    ],
+    "phase": "feature-completion",
+    "risks": [
+      "Current AI masters are exportable separate versions; automatic Pod lifecycle and serverless durable adapters are not implemented."
+    ],
+    "tests": [
+      "Real-model preview\u2192full, chunk interruption, multi-audio/VFR, endpoint loss and resumed artifact verification.",
+      "Authenticated web/native UI, complete remote cleanup, source-change and inherited-privacy tests."
+    ],
+    "title": "Complete preview-first restoration lifecycle and retention",
+    "type": "story"
+  },
+  {
+    "acceptance": [
+      "Transcription/Whisper fallback, caption cadence, scene methods/verification, Scene Browser, TTS/music and cache/unload controls retain complete workflows and provenance.",
+      "Anime4K enlargement, RIFE interpolation and reverse conforming are distinct requested jobs; restoration never silently interpolates frames.",
+      "Local/offline behavior remains available on supported devices; full browser parity uses authorized local/LAN workers, and cloud is always explicit."
+    ],
+    "dependencies": ["STU-103", "STU-203", "STU-205", "STU-403", "AI-101"],
+    "epicId": "AI-100",
+    "id": "AI-104",
+    "objective": "Adapt all local-ai-analysis rows and supplemental Anime4K, RIFE, Kokoro/MOSS/Supertonic, MusicGen and reverse-conform paths to explicit browser-local or qualified worker jobs.",
+    "paths": [
+      "studio/vendor/freecut/src/features/media-library",
+      "studio/vendor/freecut/src/features/scene-browser",
+      "studio/vendor/freecut/src/infrastructure/upscale",
+      "studio/vendor/freecut/src/infrastructure/interpolation",
+      "studio/freecut-feature-manifest.json"
+    ],
+    "phase": "feature-completion",
+    "risks": [
+      "MusicGen noncommercial weights and model hardware limitations may block release; replacements require explicit approved equivalence, not silent omission."
+    ],
+    "tests": [
+      "Per-model real input/output, cancellation/progress, artifact/relink/bundle round-trip and scene-caption alignment tests.",
+      "Weight-license, cache/privacy cleanup, unavailable model and cross-browser workflow tests for each supplemental ID."
+    ],
+    "title": "Integrate every pinned Freecut AI and analysis feature",
+    "type": "story"
+  }
+]

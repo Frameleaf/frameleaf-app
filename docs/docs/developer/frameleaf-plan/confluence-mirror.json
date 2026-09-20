@@ -482,12 +482,12 @@
       "source": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "category": "plan",
       "title": "AI Coding Agent Execution Guide",
-      "sourceSha256": "1116f132b21759125943be33293264bfb3c71e22049e5ffba575e09d3c026d61",
-      "bytes": 17753,
+      "sourceSha256": "4dd0667d39ccd6841331641009a247ae935e6f29c8d6064b3fb2934e8ba4094c",
+      "bytes": 17876,
       "id": "61407516",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407516/AI+Coding+Agent+Execution+Guide",
-      "version": 4,
-      "verifiedAt": "2026-09-20T08:17:45.000Z",
+      "version": 5,
+      "verifiedAt": "2026-09-20T09:33:30.000Z",
       "verification": "source hash marker, fetched baseline and terminal content read back after update"
     },
     {
@@ -506,11 +506,13 @@
       "source": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
       "category": "plan",
       "title": "Studio Rendering and Restoration Implementation",
-      "sourceSha256": "9e7fa2cf32506436c6a829875b54aa985630927d9035abee4b723ca3fed6797a",
-      "bytes": 48177,
+      "sourceSha256": "bd71e6e91955dc3013f34870892f2354db8b5ecf3da5daf260c5ae4000040006",
+      "bytes": 83723,
       "id": "61440418",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440418/Studio+Rendering+and+Restoration+Implementation",
-      "version": 2
+      "version": 3,
+      "verifiedAt": "2026-09-20T09:33:30.000Z",
+      "verification": "source hash marker, fetched baseline and terminal content read back after update"
     },
     {
       "source": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
@@ -556,13 +558,25 @@
       "source": "docs/docs/developer/frameleaf-plan/00-implementation-plan.md",
       "category": "plan",
       "title": "Frameleaf Implementation Plan",
-      "sourceSha256": "09f81df1aff86db33ed427f9d01f686b92908844b359c8133fb035d25780957c",
-      "bytes": 18528,
+      "sourceSha256": "08860d282df3b8122314d591d971e6285298991c2dcb2002af87fa9f202108e9",
+      "bytes": 18738,
       "id": "61538319",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538319/Frameleaf+Implementation+Plan",
-      "version": 6,
-      "verifiedAt": "2026-09-20T08:24:34.000Z",
+      "version": 7,
+      "verifiedAt": "2026-09-20T09:33:30.000Z",
       "verification": "source hash marker, fetched baseline and terminal content read back after update"
+    },
+    {
+      "source": "studio/README.md",
+      "category": "plan",
+      "title": "Studio and Freecut Source Inventory",
+      "sourceSha256": "04642a8139e9784074c2c60ae1c73322f7c178e995d23e618204084c984e27d0",
+      "bytes": 2045,
+      "id": "61408007",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61408007/Studio+and+Freecut+Source+Inventory",
+      "version": 1,
+      "verifiedAt": "2026-09-20T09:33:30.000Z",
+      "verification": "source hash marker, fetched baseline and terminal content read back after creation"
     },
     {
       "source": "docs/docs/developer/frameleaf-plan/05-delivery-and-backlog.md",
