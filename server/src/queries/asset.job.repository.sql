@@ -565,7 +565,7 @@ select
   ) as "faces",
   (
     select
-      to_json(obj)
+      coalesce(json_agg(agg), '[]')
     from
       (
         select
@@ -578,18 +578,14 @@ select
           "asset_file"
         where
           "asset_file"."assetId" = "asset"."id"
-          and "asset_file"."type" = 'preview'
-        order by
-          "asset_file"."isEdited" desc
-        limit
-          1
-      ) as obj
-  ) as "previewFile"
+          and "asset_file"."type" = $1
+      ) as agg
+  ) as "files"
 from
   "asset"
   inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
-  "asset"."id" = $1
+  "asset"."id" = $2
 
 -- AssetJobRepository.getForOcr
 select
@@ -603,15 +599,11 @@ select
       "asset_file"."assetId" = "asset"."id"
       and "asset_file"."type" = 'preview'
       and "asset_file"."isEdited" = false
-    order by
-      "asset_file"."createdAt" desc
-    limit
-      $1
   ) as "previewFile"
 from
   "asset"
 where
-  "asset"."id" = $2
+  "asset"."id" = $1
 
 -- AssetJobRepository.getForImageEnrichment
 select
@@ -631,16 +623,12 @@ select
       "asset_file"."assetId" = "asset"."id"
       and "asset_file"."type" = 'preview'
       and "asset_file"."isEdited" = false
-    order by
-      "asset_file"."createdAt" desc
-    limit
-      $1
   ) as "previewFile"
 from
   "asset"
   left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
-  "asset"."id" = $2
+  "asset"."id" = $1
 
 -- AssetJobRepository.streamForBestPhotosScoring
 select
@@ -698,10 +686,6 @@ select
       "asset_file"."assetId" = "asset"."id"
       and "asset_file"."type" = 'preview'
       and "asset_file"."isEdited" = false
-    order by
-      "asset_file"."createdAt" desc
-    limit
-      $1
   ) as "previewFile",
   (
     select
@@ -716,7 +700,7 @@ select
 from
   "asset"
 where
-  "asset"."id" = $2
+  "asset"."id" = $1
 
 -- AssetJobRepository.getForSyncAssets
 select
@@ -806,6 +790,7 @@ where
       "asset_file"."assetId" = "asset"."id"
       and "asset_file"."type" = 'encoded_video'
   )
+  and "asset"."visibility" != 'hidden'
   and "asset"."deletedAt" is null
 
 -- AssetJobRepository.getForVideoConversion
