@@ -550,12 +550,12 @@
       "source": "docs/docs/developer/frameleaf-plan/00-implementation-plan.md",
       "category": "plan",
       "title": "Frameleaf Implementation Plan",
-      "sourceSha256": "e483afccf20bafb2223747b838d1e134afb0f1c950dee337a5d3be06e1e43b5b",
-      "bytes": 18451,
+      "sourceSha256": "09f81df1aff86db33ed427f9d01f686b92908844b359c8133fb035d25780957c",
+      "bytes": 18528,
       "id": "61538319",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538319/Frameleaf+Implementation+Plan",
-      "version": 5,
-      "verifiedAt": "2026-09-20T08:18:42.000Z",
+      "version": 6,
+      "verifiedAt": "2026-09-20T08:24:34.000Z",
       "verification": "source hash marker, fetched baseline and terminal content read back after update"
     },
     {
