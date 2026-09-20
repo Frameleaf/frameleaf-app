@@ -100,6 +100,57 @@ test("all eleven protected check contexts execute real commands on external fork
   }
 });
 
+test("standalone script tests and native translation codegen install their locked JavaScript dependencies first", () => {
+  const scripts = workflow("test.yml").jobs["script-unit-tests"].steps;
+  const install = scripts.findIndex(
+    (step) =>
+      step.run ===
+      "pnpm --filter @immich/scripts --filter immich install --frozen-lockfile",
+  );
+  assert.ok(install >= 0);
+  for (const command of [
+    "pnpm --filter @immich/scripts test",
+    "node --test scripts/frameleaf-workflows.test.mjs",
+  ]) {
+    assert.ok(scripts.findIndex((step) => step.run === command) > install);
+  }
+
+  for (const [file, job] of [
+    ["test.yml", "mobile-unit-tests"],
+    ["static_analysis.yml", "mobile-dart-analyze"],
+  ]) {
+    const steps = workflow(file).jobs[job].steps;
+    const rootInstall = steps.findIndex(
+      (step) => step.run === "pnpm -w install --frozen-lockfile",
+    );
+    assert.ok(
+      rootInstall >= 0,
+      `${file}:${job} needs root Prettier dependencies`,
+    );
+    assert.equal(steps[rootInstall]["working-directory"], ".");
+    assert.ok(
+      steps.findIndex((step) => step.run === "mise run //mobile:codegen") >
+        rootInstall,
+    );
+  }
+});
+
+test("locked Java and media tools include artifact URLs and checksums for hosted platforms", () => {
+  const lockfile = readFileSync(path.join(root, "mise.lock"), "utf8");
+  for (const tool of ["java", '"github:jellyfin/jellyfin-ffmpeg"']) {
+    for (const platform of ["linux-x64", "linux-arm64", "windows-x64"]) {
+      const section = `[tools.${tool}."platforms.${platform}"]`;
+      assert.ok(
+        lockfile.includes(section),
+        `${tool} requires ${platform} lock metadata`,
+      );
+      const fields = lockfile.split(section)[1].split(/\n\[/)[0];
+      assert.match(fields, /checksum = "sha256:[a-f0-9]{64}"/);
+      assert.match(fields, /url = "https:\/\//);
+    }
+  }
+});
+
 test("owned workflows have no upstream service secrets, write-trigger PR execution, unpinned actions or retained checkout credentials", () => {
   for (const file of owned) {
     const w = workflow(file);

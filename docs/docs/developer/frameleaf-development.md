@@ -6,6 +6,8 @@ title: Frameleaf development and delivery
 
 Frameleaf development lives in [Frameleaf/frameleaf-app](https://github.com/Frameleaf/frameleaf-app), on the literal default branch `fork/main`. Work is tracked in [Jira project FL](https://heroit.atlassian.net/jira/software/c/projects/FL/boards/233/backlog). The [implementation plan](https://heroit.atlassian.net/wiki/spaces/FR/pages/61538319) and the assigned issue define acceptance; infrastructure readiness is separate from application feature parity.
 
+A [Confluence mirror of this guide](https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844) records the setup checkpoint and review links.
+
 ## Jira and GitHub
 
 The existing **GitHub for Atlassian** application connects the Frameleaf organization to `heroit.atlassian.net`. On September 19, 2026, its configuration showed one repository with backfill **Finished** and full access. No duplicate installation, new Jira API token, or webhook secret is required by these workflows.
