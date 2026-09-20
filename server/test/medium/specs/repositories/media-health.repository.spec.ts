@@ -9,6 +9,10 @@ import {
   down as revertHealthTriggers,
   up as repairHealthTriggers,
 } from 'src/schema/migrations/2100000000060-FixMediaHealthUpdatedAtTriggers.js';
+import {
+  down as revertHealthSchema,
+  up as reconcileHealthSchema,
+} from 'src/schema/migrations/2100000000070-ReconcileMediaHealthSchema.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
@@ -152,6 +156,59 @@ describe(MediaHealthRepository.name, () => {
   });
 
   describe('finding state transitions', () => {
+    it('reconciles and rolls back health metadata without changing functions, owner runs, or findings', async () => {
+      await sql`UPDATE immich_fork.state SET phase = 'legacy' WHERE id = 1`.execute(defaultDatabase);
+      let reconciled = true;
+      try {
+        await revertHealthSchema(defaultDatabase);
+        reconciled = false;
+        const { asset, candidate, finding, sut, user } = await arrangeManagedRelink();
+        const runBefore = await sut.getLatestRun(MediaHealthCategory.Missing, user.id);
+        const catalogBefore = await getCatalogEvidence(defaultDatabase);
+        const storageBefore = await sql`SELECT oid, relfilenode FROM pg_class
+          WHERE oid IN ('public.asset_health_run'::regclass, 'public.asset_health'::regclass,
+            'public.asset_health_candidate'::regclass) ORDER BY oid`.execute(defaultDatabase);
+
+        await reconcileHealthSchema(defaultDatabase);
+        reconciled = true;
+
+        const catalogAfter = await getCatalogEvidence(defaultDatabase);
+        expect(catalogAfter.functions).toEqual(catalogBefore.functions);
+        expect(catalogAfter.triggers).toEqual(catalogBefore.triggers);
+        expect(catalogAfter.indexes).toEqual(
+          expect.arrayContaining([
+            {
+              definition:
+                'CREATE INDEX "asset_health_run_ownerId_idx" ON public.asset_health_run USING btree ("ownerId")',
+              identity: 'public.asset_health_run.asset_health_run_ownerId_idx',
+            },
+          ]),
+        );
+        expect(catalogAfter.migrationOverrides).toContain('function_media_health_updated_at');
+        expect(await sut.getLatestRun(MediaHealthCategory.Missing, user.id)).toEqual(runBefore);
+        expect(await sut.getByIds([finding.id])).toEqual([finding]);
+        expect(await sut.getCandidatesByHealthIds([finding.id])).toEqual([candidate]);
+        const storageAfter = await sql`SELECT oid, relfilenode FROM pg_class
+          WHERE oid IN ('public.asset_health_run'::regclass, 'public.asset_health'::regclass,
+            'public.asset_health_candidate'::regclass) ORDER BY oid`.execute(defaultDatabase);
+        expect(storageAfter.rows).toEqual(storageBefore.rows);
+
+        await revertHealthSchema(defaultDatabase);
+        reconciled = false;
+        expect(await getCatalogEvidence(defaultDatabase)).toEqual(catalogBefore);
+        expect(await sut.getLatestRun(MediaHealthCategory.Missing, user.id)).toEqual(runBefore);
+        await sut.markDismissed([finding.id]);
+        expect(await sut.getByIds([finding.id])).toEqual([
+          expect.objectContaining({ assetId: asset.id, status: MediaHealthStatus.Dismissed }),
+        ]);
+      } finally {
+        if (!reconciled) {
+          await reconcileHealthSchema(defaultDatabase);
+        }
+        await sql`UPDATE immich_fork.state SET phase = 'active' WHERE id = 1`.execute(defaultDatabase);
+      }
+    });
+
     it('upgrades populated legacy health tables without rewriting rows or changing asset sync triggers', async () => {
       await sql`UPDATE immich_fork.state SET phase = 'legacy' WHERE id = 1`.execute(defaultDatabase);
       try {

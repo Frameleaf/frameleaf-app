@@ -6337,6 +6337,10 @@
       "identity": "public.asset_health_candidate.asset_health_candidate_pkey"
     },
     {
+      "definition": "CREATE INDEX \"asset_health_run_ownerId_idx\" ON public.asset_health_run USING btree (\"ownerId\")",
+      "identity": "public.asset_health_run.asset_health_run_ownerId_idx"
+    },
+    {
       "definition": "CREATE INDEX \"asset_health_run_ownerId_startedAt_idx\" ON public.asset_health_run USING btree (\"ownerId\", \"startedAt\")",
       "identity": "public.asset_health_run.asset_health_run_ownerId_startedAt_idx"
     },
@@ -7206,6 +7210,7 @@
     "function_f_unaccent",
     "function_immich_uuid_v7",
     "function_ll_to_earth_public",
+    "function_media_health_updated_at",
     "function_memory_asset_delete_audit",
     "function_memory_delete_audit",
     "function_partner_delete_audit",
