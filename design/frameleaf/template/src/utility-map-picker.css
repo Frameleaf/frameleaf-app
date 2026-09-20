@@ -1,0 +1,112 @@
+.um-location > .um-map-picker {
+  padding: 0;
+  overflow: hidden;
+  min-width: 0;
+}
+.um-map-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+}
+.um-map-heading strong,
+.um-map-heading small {
+  display: block;
+}
+.um-map-heading strong {
+  font-size: 12px;
+}
+.um-map-heading small {
+  font-size: 10px;
+  color: var(--fl-muted);
+  margin-top: 2px;
+}
+.um-map-heading > div:last-child {
+  display: flex;
+  gap: 5px;
+}
+.um-map-heading .button {
+  min-width: 30px;
+  padding: 4px 9px;
+}
+.um-map-picker > svg {
+  display: block;
+  width: 100%;
+  height: 275px;
+  cursor: crosshair;
+  outline-offset: -3px;
+}
+.um-map-background {
+  fill: color-mix(in srgb, var(--fl-accent) 6%, var(--fl-panel));
+}
+.um-map-picker line {
+  stroke: var(--fl-border);
+  stroke-width: 1;
+}
+.um-map-picker text {
+  fill: var(--fl-muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+.um-map-photo {
+  cursor: pointer;
+  outline: none;
+}
+.um-map-photo circle {
+  fill: var(--fl-panel);
+  stroke: var(--fl-muted);
+  stroke-width: 2;
+}
+.um-map-photo:focus-visible circle,
+.um-map-photo:hover circle {
+  stroke: var(--fl-accent);
+  stroke-width: 4;
+}
+.um-map-photo text {
+  fill: var(--fl-text);
+}
+.um-map-selected circle:first-child {
+  fill: color-mix(in srgb, var(--fl-accent) 13%, transparent);
+  stroke: var(--fl-accent);
+  stroke-width: 2;
+}
+.um-map-selected circle:nth-child(2) {
+  fill: var(--fl-accent);
+}
+.um-map-selected line {
+  stroke: var(--fl-accent);
+  stroke-width: 2;
+}
+.um-map-controls {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+.um-map-controls > div {
+  display: flex;
+  gap: 4px;
+}
+.um-map-controls .button {
+  padding: 5px 8px;
+  font-size: 11px;
+}
+.um-map-picker output {
+  display: block;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 14px;
+  color: var(--fl-text);
+}
+.um-map-picker > p {
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--fl-muted);
+  padding: 0 14px;
+  margin: 8px 0 12px;
+}
+.um-map-picker .um-map-outside {
+  color: var(--fl-accent);
+}

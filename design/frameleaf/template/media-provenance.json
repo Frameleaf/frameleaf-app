@@ -1,0 +1,63 @@
+{
+  "tool": "built-in image_gen",
+  "sampleType": "AI-generated fictional demonstration imagery",
+  "createdAt": "2026-09-19",
+  "assets": [
+    {
+      "name": "emma",
+      "input": "public/media/portrait.png",
+      "generatedSource": "exec-496bab0a-2453-48ee-89a2-8cbac906efe4.png",
+      "destination": "public/media/avatar-emma.png",
+      "prompt": "Use case: identity-preserve. Edit target: the supplied already AI-generated sample photo, portrait.png. Create ONE square natural head-and-shoulders photographic portrait of the same fictional girl. Preserve her exact visible face, age, smile, light freckles, long brown hair, cream cable-knit pom-pom winter hat and navy fleece from the source. Change only framing: face centered, full hat comfortably inside the square with a little breathing room, shoulders visible, face large enough for a small avatar. Keep soft daylight and a softly blurred alpine lake and trees photo background. This is a standalone square photograph, not a UI or mockup. No circle, borders, text, labels, watermarks, added people or graphic elements. Keep natural photographic texture; no beautification or altered identity. Output a square PNG.",
+      "notes": "Identity-preserving edit of visible generated sample face.",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "sha256": "e7a17437466517e2bf59723cf80e243972c4ad57190441f062a41f1c34ef8b8f",
+      "bytes": 2205258
+    },
+    {
+      "name": "taylor",
+      "input": "public/media/dog.png",
+      "generatedSource": "exec-d29b2f52-cd50-439e-84fb-f1b5ee4dd403.png",
+      "destination": "public/media/avatar-taylor.png",
+      "prompt": "Use case: identity-preserve. Edit target: the supplied already AI-generated sample photo, dog.png. Create ONE square natural head-and-shoulders photographic portrait of the same fictional adult man on the left. Preserve his exact visible face, friendly smile, short grey-brown beard/stubble, weathered skin, navy baseball cap with its existing small mountain embroidery, navy fleece and backpack straps. Reframe him alone centered with cap fully inside frame, shoulders visible and face large enough for a small avatar. Remove the dog from the portrait framing. Keep warm natural daylight and a softly blurred alpine evergreen background. This is a standalone square photograph, not a UI or mockup. No circle, borders, text, labels, watermarks, added people or graphic elements. No beautification or altered identity. Output a square PNG.",
+      "notes": "Identity-preserving edit of visible generated sample face.",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "sha256": "3fa673a6720010ff12ddf8466f025e8c955f1613d9106f28432aa4d22be9723e",
+      "bytes": 2370644
+    },
+    {
+      "name": "jamie",
+      "input": "public/media/hiking.png",
+      "generatedSource": "exec-34747dff-0b00-4527-8888-9d941a2f04a3.png",
+      "destination": "public/media/avatar-jamie.png",
+      "prompt": "Use case: identity-preserve. Edit target: the supplied already AI-generated sample photo, hiking.png. Create ONE square natural head-and-shoulders photographic portrait of the prominent adult male hiker on the LEFT of the two hikers (grey baseball cap, navy short-sleeved T-shirt, black/dark backpack). He is facing away in the source, so his unseen facial details must be a plausible newly generated fictional face, not a claim to recover a real person's identity. Preserve his visible middle-aged adult build, light-to-medium warm skin tone, short dark greying hair, grey cap, navy T-shirt and dark backpack straps. Turn him toward the camera with an easy natural closed-mouth smile. Center his face, full cap inside the square with breathing room, shoulders visible, face large enough for a small avatar. Keep natural alpine daylight and softly blurred evergreen trees and blue lake in the background. This is a standalone square photograph, not a UI or mockup. No circle, borders, text, labels, watermarks, other people or graphic elements. Output a square PNG.",
+      "notes": "Original hiker faces away; face newly generated. Clothing and visible appearance based on input.",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "sha256": "6d13775c248d429623b993d3c7125eed3b69058f7525e31be41b212073155937",
+      "bytes": 2241817
+    },
+    {
+      "name": "trail-sign",
+      "input": null,
+      "generatedSource": "exec-eb5d4c1c-3f57-4254-9798-0678f3fa81aa.png",
+      "destination": "public/media/trail-sign.png",
+      "prompt": "Use case: photorealistic-natural. Asset type: standalone generated sample photograph for a photo-library OCR demonstration. Create one landscape 3:2 natural daylight photograph of a rustic wooden trailhead sign in a Canadian Rockies pine forest. The weathered rectangular wooden sign dominates the central foreground, front-facing enough that its carved or painted high-contrast lettering is plainly readable. Exact text on the sign, on two lines: \"LAKE AGNES\" and \"3.4 km\". Spell these exactly, no other writing anywhere. A simple directional arrow carved into the wood is acceptable. Natural timber grain, a sturdy wood post, evergreen trees, soft daylight, a hint of rocky trail and distant mountain landscape, authentic casual travel photography. The sign and both lines of lettering must be sharp and unobstructed, with enough breathing room around the sign. No people, no logos, no UI, no overlays, no watermark, no caption. This is a fictional generated demonstration photograph, not an official park sign or a map. Output landscape PNG.",
+      "notes": "Fictional generated sign. Visually verified literal LAKE AGNES and 3.4 km; not an actual park sign or live OCR result.",
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "sha256": "70804caed5137408bbfc6dce9e394cd07fdb52f6a8531276a7320a201af74ab5",
+      "bytes": 3314402
+    }
+  ]
+}

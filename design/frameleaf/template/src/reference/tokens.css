@@ -1,0 +1,44 @@
+.frameleaf {
+  --fl-canvas: #101416;
+  --fl-panel: #171d21;
+  --fl-raised: #222a30;
+  --fl-border: #303940;
+  --fl-text: #e5e7eb;
+  --fl-muted: #a1adb8;
+  --fl-accent: #22c55e;
+  --fl-accent-text: #072211;
+  --fl-radius: 4px;
+  color: var(--fl-text);
+  background: var(--fl-canvas);
+  color-scheme: dark;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+}
+.frameleaf[data-theme='light'] {
+  --fl-canvas: #f4f6f7;
+  --fl-panel: #fff;
+  --fl-raised: #eef1f3;
+  --fl-border: #d6dce0;
+  --fl-text: #18252b;
+  --fl-muted: #53636d;
+  --fl-accent: #157b40;
+  --fl-accent-text: #fff;
+  color-scheme: light;
+}
+.frameleaf :focus-visible {
+  outline: 2px solid var(--fl-accent);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .frameleaf *,
+  .frameleaf *::before,
+  .frameleaf *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

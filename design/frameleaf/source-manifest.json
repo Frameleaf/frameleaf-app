@@ -1,0 +1,1222 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-09-20",
+  "sourceState": "Snapshot of the existing uncommitted planning working tree; source hashes, not HEAD, identify these files.",
+  "repository": "https://github.com/Frameleaf/frameleaf-app",
+  "sourceCheckoutHead": "91d5dfe0f829d15d122c1a8b2bbc474fc195dbaf",
+  "packagingBase": "96ce72c00b3fe71cdc9e6187d60c942fce3ba454",
+  "issue": "FL-25",
+  "productionParity": false,
+  "files": [
+    {
+      "source": "design/frameleaf/mark.png",
+      "path": "mark.png",
+      "sourceSha256": "728022864c6e1b33f073d28a340ceda88bba81f7ed5de1fa42bb62587f8364db",
+      "sha256": "728022864c6e1b33f073d28a340ceda88bba81f7ed5de1fa42bb62587f8364db",
+      "bytes": 988033,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "design/frameleaf/tokens.json",
+      "path": "tokens.json",
+      "sourceSha256": "a96c48c2c279fd99cf20a49276f647dae5f95eb523f45171cc8d45155aca71aa",
+      "sha256": "a96c48c2c279fd99cf20a49276f647dae5f95eb523f45171cc8d45155aca71aa",
+      "bytes": 750,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "path": "brand-kit/frameleaf-symbol.svg",
+      "sourceSha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",
+      "sha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",
+      "bytes": 2165,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "design/frameleaf/brand-kit/frameleaf-logo-dark-tagline.svg",
+      "path": "brand-kit/frameleaf-logo-dark-tagline.svg",
+      "sourceSha256": "9b8c1286f289874a2c40c2d75d0ad168152bd1ee91916da3d4d6e47ae56a98f7",
+      "sha256": "9b8c1286f289874a2c40c2d75d0ad168152bd1ee91916da3d4d6e47ae56a98f7",
+      "bytes": 13971,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "design/frameleaf/brand-kit/frameleaf-dark-styleboard.svg",
+      "path": "brand-kit/frameleaf-dark-styleboard.svg",
+      "sourceSha256": "7c633f7095f9e647a841ec567dbce50229095e5c0da3554ad1edae250b78d6ea",
+      "sha256": "7c633f7095f9e647a841ec567dbce50229095e5c0da3554ad1edae250b78d6ea",
+      "bytes": 200233,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "design/frameleaf/brand-kit/frameleaf-logo-dark.svg",
+      "path": "brand-kit/frameleaf-logo-dark.svg",
+      "sourceSha256": "f99cfa4ef5c10da51cfa54627f12ad6e7eba4decb59fe0829f06f0e0978a609b",
+      "sha256": "f99cfa4ef5c10da51cfa54627f12ad6e7eba4decb59fe0829f06f0e0978a609b",
+      "bytes": 6442,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "design/frameleaf/brand-kit/manifest.json",
+      "path": "brand-kit/manifest.json",
+      "sourceSha256": "768b1780125b5548becf87c43b12092eb695c00a1d088883d58b1f18462ca7a7",
+      "sha256": "768b1780125b5548becf87c43b12092eb695c00a1d088883d58b1f18462ca7a7",
+      "bytes": 11927,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "path": "brand-kit/frameleaf-app-icon.svg",
+      "sourceSha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94",
+      "sha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94",
+      "bytes": 2126,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "design/frameleaf/brand-kit/README.txt",
+      "path": "brand-kit/README.txt",
+      "sourceSha256": "1255df3da15dc546ca160f50583a7e37044a8ef733d0768a0f28ac594688f7ff",
+      "sha256": "1255df3da15dc546ca160f50583a7e37044a8ef733d0768a0f28ac594688f7ff",
+      "bytes": 2089,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "design/frameleaf/brand-kit/frameleaf-logo-white.svg",
+      "path": "brand-kit/frameleaf-logo-white.svg",
+      "sourceSha256": "1ab00db27ed39ea9e3de7374bf324c88a097fc684b25ecfeb7695a504b92be45",
+      "sha256": "1ab00db27ed39ea9e3de7374bf324c88a097fc684b25ecfeb7695a504b92be45",
+      "bytes": 5306,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "design/frameleaf/brand-kit/frameleaf-symbol-white.svg",
+      "path": "brand-kit/frameleaf-symbol-white.svg",
+      "sourceSha256": "a32b14f656a7ddef255190aacc18b4575b0966bd79f96db93d4fd8153525602b",
+      "sha256": "a32b14f656a7ddef255190aacc18b4575b0966bd79f96db93d4fd8153525602b",
+      "bytes": 1325,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/locked-content.mjs",
+      "path": "template/src/locked-content.mjs",
+      "sourceSha256": "44d16dd92f3c15024d1cd4db171da7c2a509dbf0c9138effc2a2d4d22a51de3d",
+      "sha256": "44d16dd92f3c15024d1cd4db171da7c2a509dbf0c9138effc2a2d4d22a51de3d",
+      "bytes": 3131,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/explore-timeline.mjs",
+      "path": "template/src/explore-timeline.mjs",
+      "sourceSha256": "5cc4d3a3b9f27bde70d5e41dfd4e918f474483d9a820bb66a4e691b9df086cbb",
+      "sha256": "5cc4d3a3b9f27bde70d5e41dfd4e918f474483d9a820bb66a4e691b9df086cbb",
+      "bytes": 7947,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/analytics-data.mjs",
+      "path": "template/src/analytics-data.mjs",
+      "sourceSha256": "a7ad9683156574993e7ad7736fa9171220bfcfd206b1efa89d990a6232e709fe",
+      "sha256": "a7ad9683156574993e7ad7736fa9171220bfcfd206b1efa89d990a6232e709fe",
+      "bytes": 20869,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/settings-analytics.css",
+      "path": "template/src/settings-analytics.css",
+      "sourceSha256": "a248227a8c932c355daa4d760789ac03e1a3b64df49ddd69200adbd81d8a672b",
+      "sha256": "a248227a8c932c355daa4d760789ac03e1a3b64df49ddd69200adbd81d8a672b",
+      "bytes": 10563,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/accounts-libraries.css",
+      "path": "template/src/accounts-libraries.css",
+      "sourceSha256": "0a6244469e9c023ccddda5d912e6b747cb60b3c95cf2418ae8ff4f9760b5d099",
+      "sha256": "0a6244469e9c023ccddda5d912e6b747cb60b3c95cf2418ae8ff4f9760b5d099",
+      "bytes": 12739,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/trash-manager.css",
+      "path": "template/src/trash-manager.css",
+      "sourceSha256": "ed1a52d9df73b1f104352b60b3917bc26e0c997bdee99177079743bfd3f1ae40",
+      "sha256": "ed1a52d9df73b1f104352b60b3917bc26e0c997bdee99177079743bfd3f1ae40",
+      "bytes": 4794,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/state.mjs",
+      "path": "template/src/state.mjs",
+      "sourceSha256": "47623eaad9e030434750cd90fc148a3052af947b5a05b9dd4199db863bb56e4b",
+      "sha256": "47623eaad9e030434750cd90fc148a3052af947b5a05b9dd4199db863bb56e4b",
+      "bytes": 11022,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/settings-coverage.mjs",
+      "path": "template/src/settings-coverage.mjs",
+      "sourceSha256": "b0feba0fde5fff70f2d2204c08c8307d380ead8d993e3cf32d969d31b4394c20",
+      "sha256": "b0feba0fde5fff70f2d2204c08c8307d380ead8d993e3cf32d969d31b4394c20",
+      "bytes": 177252,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/UtilityMapPicker.jsx",
+      "path": "template/src/UtilityMapPicker.jsx",
+      "sourceSha256": "b6eac13318e523a475753571cc02538d3881e6ec6ea92bcde297ededea6ba470",
+      "sha256": "b6eac13318e523a475753571cc02538d3881e6ec6ea92bcde297ededea6ba470",
+      "bytes": 7832,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/settings-advanced.mjs",
+      "path": "template/src/settings-advanced.mjs",
+      "sourceSha256": "5ae50ae4bda315d8415bb20ad2d7cfa47518fd49c6ab2e8e6636c2b1adcf8684",
+      "sha256": "5ae50ae4bda315d8415bb20ad2d7cfa47518fd49c6ab2e8e6636c2b1adcf8684",
+      "bytes": 65939,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/SharingAccess.jsx",
+      "path": "template/src/SharingAccess.jsx",
+      "sourceSha256": "572050884e96e0ffb99c37e55c156b2d2524e2e37cd9e059270771deb9c84ebc",
+      "sha256": "572050884e96e0ffb99c37e55c156b2d2524e2e37cd9e059270771deb9c84ebc",
+      "bytes": 14009,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/SearchDialog.jsx",
+      "path": "template/src/SearchDialog.jsx",
+      "sourceSha256": "1e1393d3b8550309a9db2b5790ad85be5445149867f7611b3964de3d02c48655",
+      "sha256": "1e1393d3b8550309a9db2b5790ad85be5445149867f7611b3964de3d02c48655",
+      "bytes": 9509,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/AccountsLibraries.jsx",
+      "path": "template/src/AccountsLibraries.jsx",
+      "sourceSha256": "606169f7ce35d08e13acc77b3b9c1bee13b01525e173814721c686786786be50",
+      "sha256": "606169f7ce35d08e13acc77b3b9c1bee13b01525e173814721c686786786be50",
+      "bytes": 72680,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/styles.css",
+      "path": "template/src/styles.css",
+      "sourceSha256": "3d6114d02df6dbf36451b8f01a18cda7eb315138c107059f5db55f4c35fc7424",
+      "sha256": "3d6114d02df6dbf36451b8f01a18cda7eb315138c107059f5db55f4c35fc7424",
+      "bytes": 45515,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/jobs-data.mjs",
+      "path": "template/src/jobs-data.mjs",
+      "sourceSha256": "8e1d101b57e17ce29ad65ebf48f5170d52e5b3f72af30874e3df0f0430d051aa",
+      "sha256": "8e1d101b57e17ce29ad65ebf48f5170d52e5b3f72af30874e3df0f0430d051aa",
+      "bytes": 42307,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/face-tags.mjs",
+      "path": "template/src/face-tags.mjs",
+      "sourceSha256": "1baf939b01ccf94b5f9e427e3d619efa44e104d34bc33604a0643aed85298df5",
+      "sha256": "1baf939b01ccf94b5f9e427e3d619efa44e104d34bc33604a0643aed85298df5",
+      "bytes": 14788,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/WorkerManager.jsx",
+      "path": "template/src/WorkerManager.jsx",
+      "sourceSha256": "e505df1f1ba08a3e170da4e78f6df9fb30111639b7c31888538963da238cbc97",
+      "sha256": "e505df1f1ba08a3e170da4e78f6df9fb30111639b7c31888538963da238cbc97",
+      "bytes": 9340,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/AccountPreferences.jsx",
+      "path": "template/src/AccountPreferences.jsx",
+      "sourceSha256": "9899af4c14c1b2985e860686876127080c1b5c618eb184c9d0d8a108a67730f9",
+      "sha256": "9899af4c14c1b2985e860686876127080c1b5c618eb184c9d0d8a108a67730f9",
+      "bytes": 17596,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/media.js",
+      "path": "template/src/media.js",
+      "sourceSha256": "4c5acc6051c4cbaad801fe80c7d987e926c782b7f8d1139c7caf7aa497c77311",
+      "sha256": "4c5acc6051c4cbaad801fe80c7d987e926c782b7f8d1139c7caf7aa497c77311",
+      "bytes": 5884,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/face-tagger.css",
+      "path": "template/src/face-tagger.css",
+      "sourceSha256": "dc963f07c8a99334eca807476d401fccd087442aa940c996e095ffa744e027b1",
+      "sha256": "dc963f07c8a99334eca807476d401fccd087442aa940c996e095ffa744e027b1",
+      "bytes": 7648,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/MediaViewer.jsx",
+      "path": "template/src/MediaViewer.jsx",
+      "sourceSha256": "44f4704613f94b71d79cfd662409db1aea6cde9419b71a8eec4b5e8b8c1f18f1",
+      "sha256": "44f4704613f94b71d79cfd662409db1aea6cde9419b71a8eec4b5e8b8c1f18f1",
+      "bytes": 32367,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/worker-settings.mjs",
+      "path": "template/src/worker-settings.mjs",
+      "sourceSha256": "b0531aa9f8bc9cb43d2f2cf4585162559a3f2f912c38cc36789ae5f1ad1357d7",
+      "sha256": "b0531aa9f8bc9cb43d2f2cf4585162559a3f2f912c38cc36789ae5f1ad1357d7",
+      "bytes": 2740,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/PhysicalDedupManager.jsx",
+      "path": "template/src/PhysicalDedupManager.jsx",
+      "sourceSha256": "299811180a544cdd6a9bfe4d7bb537c5112576ee5d03d05d8b67229435f44ffb",
+      "sha256": "299811180a544cdd6a9bfe4d7bb537c5112576ee5d03d05d8b67229435f44ffb",
+      "bytes": 19218,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/account-preferences.mjs",
+      "path": "template/src/account-preferences.mjs",
+      "sourceSha256": "a831a06cc72b3cd1fe46dad3d1b2f6389743d837611aa12e0061ad8cf20d3820",
+      "sha256": "a831a06cc72b3cd1fe46dad3d1b2f6389743d837611aa12e0061ad8cf20d3820",
+      "bytes": 6945,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/account-preference-settings.mjs",
+      "path": "template/src/account-preference-settings.mjs",
+      "sourceSha256": "b12d059c8815472ffd2b7dd5cf7698f0036978a65be93e0f388381dcd57ae151",
+      "sha256": "b12d059c8815472ffd2b7dd5cf7698f0036978a65be93e0f388381dcd57ae151",
+      "bytes": 4142,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/duplicate-review.mjs",
+      "path": "template/src/duplicate-review.mjs",
+      "sourceSha256": "b67b808aa50d60cb4be13f55084ad20741f39b9d3665fa0d4304ecead7fef72f",
+      "sha256": "b67b808aa50d60cb4be13f55084ad20741f39b9d3665fa0d4304ecead7fef72f",
+      "bytes": 14720,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/JobsManager.jsx",
+      "path": "template/src/JobsManager.jsx",
+      "sourceSha256": "dafc50f37f4ede52cfbbae1af93b70bed4ad36181aa342095b543aa1bd664579",
+      "sha256": "dafc50f37f4ede52cfbbae1af93b70bed4ad36181aa342095b543aa1bd664579",
+      "bytes": 59470,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/account-library-data.mjs",
+      "path": "template/src/account-library-data.mjs",
+      "sourceSha256": "0a1d1ca0c47030232558224945c8011a1024411a0a549d267f856b7a16f769c1",
+      "sha256": "0a1d1ca0c47030232558224945c8011a1024411a0a549d267f856b7a16f769c1",
+      "bytes": 39425,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/People.jsx",
+      "path": "template/src/People.jsx",
+      "sourceSha256": "4aa86f65848520a0d19d3ba48f54230364a186dfa02122db33e2bc82b0f93bbc",
+      "sha256": "4aa86f65848520a0d19d3ba48f54230364a186dfa02122db33e2bc82b0f93bbc",
+      "bytes": 5916,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/media-viewer.css",
+      "path": "template/src/media-viewer.css",
+      "sourceSha256": "2677b69d34a0d9ce81ec9be6a2a6cf4c3c5520c9683ef2ce48355cde8275e4a9",
+      "sha256": "2677b69d34a0d9ce81ec9be6a2a6cf4c3c5520c9683ef2ce48355cde8275e4a9",
+      "bytes": 10299,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/DuplicateReview.jsx",
+      "path": "template/src/DuplicateReview.jsx",
+      "sourceSha256": "a45ff08b9f22e3b3b7b5621d083dff5b9e93a809d0857ce7a1b74a3b97694699",
+      "sha256": "a45ff08b9f22e3b3b7b5621d083dff5b9e93a809d0857ce7a1b74a3b97694699",
+      "bytes": 29533,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/LibraryRail.jsx",
+      "path": "template/src/LibraryRail.jsx",
+      "sourceSha256": "398d0db4ce4fec3439805349b7eaeb7c33e1b3c036a7770820c41e66c8a06ed4",
+      "sha256": "398d0db4ce4fec3439805349b7eaeb7c33e1b3c036a7770820c41e66c8a06ed4",
+      "bytes": 4569,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/Icon.jsx",
+      "path": "template/src/Icon.jsx",
+      "sourceSha256": "681420cac380cc5fff860368f0229a6c04d89b521262599c55ed1000401061d3",
+      "sha256": "681420cac380cc5fff860368f0229a6c04d89b521262599c55ed1000401061d3",
+      "bytes": 3280,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/SearchableSelect.jsx",
+      "path": "template/src/SearchableSelect.jsx",
+      "sourceSha256": "fb0cf216310607297ff99af7519b684c7e350445f7bd36594e7ba540d07b9f63",
+      "sha256": "fb0cf216310607297ff99af7519b684c7e350445f7bd36594e7ba540d07b9f63",
+      "bytes": 10366,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/account-preferences.css",
+      "path": "template/src/account-preferences.css",
+      "sourceSha256": "c2ecd801201e17cb702155e5d8e67d4a8a67d32a1190dc7ff3c51a1e5699fe69",
+      "sha256": "c2ecd801201e17cb702155e5d8e67d4a8a67d32a1190dc7ff3c51a1e5699fe69",
+      "bytes": 6299,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/ProtectedContent.jsx",
+      "path": "template/src/ProtectedContent.jsx",
+      "sourceSha256": "484db49dd8ff6015e0981d7432c2c6e91d2ff3c8e8ace2cb7401a15e4d63cf0d",
+      "sha256": "484db49dd8ff6015e0981d7432c2c6e91d2ff3c8e8ace2cb7401a15e4d63cf0d",
+      "bytes": 9808,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/physical-dedup-manager.css",
+      "path": "template/src/physical-dedup-manager.css",
+      "sourceSha256": "1061e90bd02341ad9c0c55c2f81fd7082ccd8aeb349cf7c989ce566ba73738df",
+      "sha256": "1061e90bd02341ad9c0c55c2f81fd7082ccd8aeb349cf7c989ce566ba73738df",
+      "bytes": 1951,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/FaceTagger.jsx",
+      "path": "template/src/FaceTagger.jsx",
+      "sourceSha256": "1787c578666288450ed620234c0c03ced12bbeecfc3e17b29a829d06011daa73",
+      "sha256": "1787c578666288450ed620234c0c03ced12bbeecfc3e17b29a829d06011daa73",
+      "bytes": 24517,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/locked-rules.mjs",
+      "path": "template/src/locked-rules.mjs",
+      "sourceSha256": "3b4e68f54fba48b7e928fea0d6d17f879abe8f8f2cf05a8a978ec5c3624f5728",
+      "sha256": "3b4e68f54fba48b7e928fea0d6d17f879abe8f8f2cf05a8a978ec5c3624f5728",
+      "bytes": 3388,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/physical-dedup-data.mjs",
+      "path": "template/src/physical-dedup-data.mjs",
+      "sourceSha256": "726d3930bd9d05f741146c659fd51150097bb030cd250489471ea7bedc09b82f",
+      "sha256": "726d3930bd9d05f741146c659fd51150097bb030cd250489471ea7bedc09b82f",
+      "bytes": 11508,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/ConfigurationTransfer.jsx",
+      "path": "template/src/ConfigurationTransfer.jsx",
+      "sourceSha256": "ca0055e4fae0afa4c6ed4f8deb536ed585054e861099019e7dc9cbeb68e87cd7",
+      "sha256": "ca0055e4fae0afa4c6ed4f8deb536ed585054e861099019e7dc9cbeb68e87cd7",
+      "bytes": 2855,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/main.jsx",
+      "path": "template/src/main.jsx",
+      "sourceSha256": "0b83ab75714a217f03d869528d3783fa63f7af1fe8b391bf1f2640cb1dba3001",
+      "sha256": "0b83ab75714a217f03d869528d3783fa63f7af1fe8b391bf1f2640cb1dba3001",
+      "bytes": 368,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/WorkflowDesigner.jsx",
+      "path": "template/src/WorkflowDesigner.jsx",
+      "sourceSha256": "23cfbf56e8e793b092454d26f37bc1867e63da45b0d7a2d4aee6bbc5bf4f4f84",
+      "sha256": "23cfbf56e8e793b092454d26f37bc1867e63da45b0d7a2d4aee6bbc5bf4f4f84",
+      "bytes": 28521,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/media-viewer.mjs",
+      "path": "template/src/media-viewer.mjs",
+      "sourceSha256": "b942f410cd9d858edd60360b3599e80da04ac51dc50ae9d2bd93c231cd649021",
+      "sha256": "b942f410cd9d858edd60360b3599e80da04ac51dc50ae9d2bd93c231cd649021",
+      "bytes": 5232,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/App.jsx",
+      "path": "template/src/App.jsx",
+      "sourceSha256": "f0b6ca7ed83d4e2f5e1c59fec97cb42cf41c50ec1d72897cd9d921e03a391af8",
+      "sha256": "c065afb63fd950d116cfb934e7571ff44b01c9d073c60f365cfec780e45bf033",
+      "bytes": 77124,
+      "modifiedForPortability": true
+    },
+    {
+      "source": "prototypes/frameleaf/src/worker-manager.css",
+      "path": "template/src/worker-manager.css",
+      "sourceSha256": "6aad27f1f1663df90c9f526343659ac18d836d3d73e8b50ce0e97aab5be08ed7",
+      "sha256": "6aad27f1f1663df90c9f526343659ac18d836d3d73e8b50ce0e97aab5be08ed7",
+      "bytes": 1952,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/utilities-data.mjs",
+      "path": "template/src/utilities-data.mjs",
+      "sourceSha256": "84f477f4f09804b9315a1d5d9906af87e2c527dd48aa1bb5cc690b079701ca84",
+      "sha256": "84f477f4f09804b9315a1d5d9906af87e2c527dd48aa1bb5cc690b079701ca84",
+      "bytes": 28884,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/CommandCenter.jsx",
+      "path": "template/src/CommandCenter.jsx",
+      "sourceSha256": "5575171afdfa7cbcfe9c3d244631ad40815502483e40feb5b3b3480a7a29dfae",
+      "sha256": "5575171afdfa7cbcfe9c3d244631ad40815502483e40feb5b3b3480a7a29dfae",
+      "bytes": 91230,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/library-enhancements.css",
+      "path": "template/src/library-enhancements.css",
+      "sourceSha256": "a2b7ce83378b11f11499e9c308c9a77b028a92689ee8e9e99087fa72371c3f0e",
+      "sha256": "a2b7ce83378b11f11499e9c308c9a77b028a92689ee8e9e99087fa72371c3f0e",
+      "bytes": 4970,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/duplicate-review.css",
+      "path": "template/src/duplicate-review.css",
+      "sourceSha256": "74383bdc9b601c94eea755c6796e8d750d232203bb72ecb019a089f2b4916e9c",
+      "sha256": "74383bdc9b601c94eea755c6796e8d750d232203bb72ecb019a089f2b4916e9c",
+      "bytes": 10746,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/SettingsAnalytics.jsx",
+      "path": "template/src/SettingsAnalytics.jsx",
+      "sourceSha256": "a49806d6e10a4e4dd1a48d840c8569c861bf96ce6ef497e17287da93f611ffa9",
+      "sha256": "a49806d6e10a4e4dd1a48d840c8569c861bf96ce6ef497e17287da93f611ffa9",
+      "bytes": 29650,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/workflow-schema.mjs",
+      "path": "template/src/workflow-schema.mjs",
+      "sourceSha256": "324a0ebf5a1c513242c63a02e7901b06b7769b5580dfeefa3b584e5f0f03650d",
+      "sha256": "f5660f6f85de534c269a63a2620aebf2aa6b04ca69eb493119847b0289ef64fc",
+      "bytes": 10621,
+      "modifiedForPortability": true
+    },
+    {
+      "source": "prototypes/frameleaf/src/LockedContent.jsx",
+      "path": "template/src/LockedContent.jsx",
+      "sourceSha256": "76b6cf0862e2641499220ad7ca1c05c3c444f89b23ca53382b23f1db0c9da1b6",
+      "sha256": "76b6cf0862e2641499220ad7ca1c05c3c444f89b23ca53382b23f1db0c9da1b6",
+      "bytes": 7751,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/utility-map-picker.css",
+      "path": "template/src/utility-map-picker.css",
+      "sourceSha256": "cf62cf3ebef3550e1f1e6d11a0eedfe0224d1ede91aa1d508517e1057ffd1a28",
+      "sha256": "cf62cf3ebef3550e1f1e6d11a0eedfe0224d1ede91aa1d508517e1057ffd1a28",
+      "bytes": 2110,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/UtilityRecovery.jsx",
+      "path": "template/src/UtilityRecovery.jsx",
+      "sourceSha256": "fee0f03683f08df0edec08177ca2b353997797a058f201be2b5ca3aa03439344",
+      "sha256": "fee0f03683f08df0edec08177ca2b353997797a058f201be2b5ca3aa03439344",
+      "bytes": 4829,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/utilities-manager.css",
+      "path": "template/src/utilities-manager.css",
+      "sourceSha256": "dfb8f3c0babb42caed4884614f8d3c202760bc4a271237c6cdba45ae254c1682",
+      "sha256": "dfb8f3c0babb42caed4884614f8d3c202760bc4a271237c6cdba45ae254c1682",
+      "bytes": 10933,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/settings-state.mjs",
+      "path": "template/src/settings-state.mjs",
+      "sourceSha256": "1c1a4a09cd11d05c61f9668c52c9d211c7a161f97e578415d11d3c9244474537",
+      "sha256": "1c1a4a09cd11d05c61f9668c52c9d211c7a161f97e578415d11d3c9244474537",
+      "bytes": 7893,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/TimelineLibrary.jsx",
+      "path": "template/src/TimelineLibrary.jsx",
+      "sourceSha256": "610fefaf526ed79835b13d701e1daf7cb9e76557fd2891acf0da71ffee56fc14",
+      "sha256": "610fefaf526ed79835b13d701e1daf7cb9e76557fd2891acf0da71ffee56fc14",
+      "bytes": 7221,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/settings-catalog.mjs",
+      "path": "template/src/settings-catalog.mjs",
+      "sourceSha256": "4b0981498593e83c3ab1226e738235e19b93ca85161ad6664d8dbaf3dfc3cb09",
+      "sha256": "4b0981498593e83c3ab1226e738235e19b93ca85161ad6664d8dbaf3dfc3cb09",
+      "bytes": 68416,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/locked-content.css",
+      "path": "template/src/locked-content.css",
+      "sourceSha256": "ecc5efadf2431213792b77c588e0c715590add00924650021bcb694bb0a6847e",
+      "sha256": "ecc5efadf2431213792b77c588e0c715590add00924650021bcb694bb0a6847e",
+      "bytes": 3693,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/library-assets.mjs",
+      "path": "template/src/library-assets.mjs",
+      "sourceSha256": "72f74b9e13161d1e48db6a3c45fbd063903b00b93da9f5b5991bae42503b65a8",
+      "sha256": "72f74b9e13161d1e48db6a3c45fbd063903b00b93da9f5b5991bae42503b65a8",
+      "bytes": 5480,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/ExploreLibrary.jsx",
+      "path": "template/src/ExploreLibrary.jsx",
+      "sourceSha256": "60a5e7a8ee6cbf466f1097a8c190232ef4636734e9fa879a4cd0855d63a4ec81",
+      "sha256": "60a5e7a8ee6cbf466f1097a8c190232ef4636734e9fa879a4cd0855d63a4ec81",
+      "bytes": 10583,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/Editor.jsx",
+      "path": "template/src/Editor.jsx",
+      "sourceSha256": "eaff419858743f43653c0101984a9b6f2b4277dae64fddcbafc0773cc72e91d6",
+      "sha256": "eaff419858743f43653c0101984a9b6f2b4277dae64fddcbafc0773cc72e91d6",
+      "bytes": 29990,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/FilterPanel.jsx",
+      "path": "template/src/FilterPanel.jsx",
+      "sourceSha256": "a3398e3a235ca5dda9564b8ba02d985967b54dc84ec82a01355e997e27115e39",
+      "sha256": "a3398e3a235ca5dda9564b8ba02d985967b54dc84ec82a01355e997e27115e39",
+      "bytes": 13335,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/jobs-manager.css",
+      "path": "template/src/jobs-manager.css",
+      "sourceSha256": "07b47c13e764fb195eafe1acd8ec4d1811af38fd1818d9464d678dd55392124b",
+      "sha256": "07b47c13e764fb195eafe1acd8ec4d1811af38fd1818d9464d678dd55392124b",
+      "bytes": 17623,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/timeline-library.css",
+      "path": "template/src/timeline-library.css",
+      "sourceSha256": "a8b6c307198971278dde479969d79c55e0fa8438f360642f17d4ed2bb6096f79",
+      "sha256": "a8b6c307198971278dde479969d79c55e0fa8438f360642f17d4ed2bb6096f79",
+      "bytes": 5704,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/trash-data.mjs",
+      "path": "template/src/trash-data.mjs",
+      "sourceSha256": "a7c57ba6746d6b860981463d863b9fb87d14314c0f5b9275aa1a4b2c87d5b610",
+      "sha256": "a7c57ba6746d6b860981463d863b9fb87d14314c0f5b9275aa1a4b2c87d5b610",
+      "bytes": 7923,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/search.mjs",
+      "path": "template/src/search.mjs",
+      "sourceSha256": "e50108aafa70fa73d27a56554cef9910624bfb0a4356537e73c688acaacd2956",
+      "sha256": "e50108aafa70fa73d27a56554cef9910624bfb0a4356537e73c688acaacd2956",
+      "bytes": 29372,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/UtilitiesManager.jsx",
+      "path": "template/src/UtilitiesManager.jsx",
+      "sourceSha256": "40ec2c5cee60dfc36fbf6d9bf702f8298aa2b2e892e1f873f91596bd5bef6399",
+      "sha256": "40ec2c5cee60dfc36fbf6d9bf702f8298aa2b2e892e1f873f91596bd5bef6399",
+      "bytes": 47614,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/explore-library.css",
+      "path": "template/src/explore-library.css",
+      "sourceSha256": "02bc6b8a99169f2d4608f5ae1a3c3fb404ef81ca3d4dd847de7de2c84fcee235",
+      "sha256": "02bc6b8a99169f2d4608f5ae1a3c3fb404ef81ca3d4dd847de7de2c84fcee235",
+      "bytes": 9333,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/TrashManager.jsx",
+      "path": "template/src/TrashManager.jsx",
+      "sourceSha256": "2d695c023752d5aa4ea10d9c3e24ca40282d448a67d4ff4caf88fc4d52f18219",
+      "sha256": "2d695c023752d5aa4ea10d9c3e24ca40282d448a67d4ff4caf88fc4d52f18219",
+      "bytes": 16975,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/filter-state.mjs",
+      "path": "template/src/filter-state.mjs",
+      "sourceSha256": "5610152b313ec860eb8c61566fa685e3ffc34b5eaceb924962a8873c52186da7",
+      "sha256": "5610152b313ec860eb8c61566fa685e3ffc34b5eaceb924962a8873c52186da7",
+      "bytes": 4403,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/configuration-transfer.mjs",
+      "path": "template/src/configuration-transfer.mjs",
+      "sourceSha256": "29837f489ff147fcadcc4c8e774af5d60738e6f7c5c9812512ce05ec508d9f76",
+      "sha256": "29837f489ff147fcadcc4c8e774af5d60738e6f7c5c9812512ce05ec508d9f76",
+      "bytes": 2572,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/workflow-designer.css",
+      "path": "template/src/workflow-designer.css",
+      "sourceSha256": "e54509bb16e30acfaf8c3a31ca1a503b4cf9a2785e1422326384cb91405b6a7f",
+      "sha256": "e54509bb16e30acfaf8c3a31ca1a503b4cf9a2785e1422326384cb91405b6a7f",
+      "bytes": 3241,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/src/command-center.css",
+      "path": "template/src/command-center.css",
+      "sourceSha256": "e27093b98784bbb84119e52f4f6b1519b748d636e36910b26e23d6f36902e0c6",
+      "sha256": "e27093b98784bbb84119e52f4f6b1519b748d636e36910b26e23d6f36902e0c6",
+      "bytes": 36108,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/viewport.html",
+      "path": "template/public/viewport.html",
+      "sourceSha256": "580ef14f51f029ee76049fba1a7d16f8d52554a21ee0ee51f09d5b25b7b6f878",
+      "sha256": "580ef14f51f029ee76049fba1a7d16f8d52554a21ee0ee51f09d5b25b7b6f878",
+      "bytes": 4492,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/dog.png",
+      "path": "template/public/media/dog.png",
+      "sourceSha256": "826a5bd292fd8f8eaeb17bc8ddf80161ae05eabc3c19864dca76fd02fec2624c",
+      "sha256": "826a5bd292fd8f8eaeb17bc8ddf80161ae05eabc3c19864dca76fd02fec2624c",
+      "bytes": 2657290,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/summit.png",
+      "path": "template/public/media/summit.png",
+      "sourceSha256": "944ce969fd382b60d24f9b7191f46f3355b36b097c39c225e454e147ababa1b0",
+      "sha256": "944ce969fd382b60d24f9b7191f46f3355b36b097c39c225e454e147ababa1b0",
+      "bytes": 3260940,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/lake-demo.mp4",
+      "path": "template/public/media/lake-demo.mp4",
+      "sourceSha256": "dd7732869420b14aaa7e577847b933dee9fb84d97ebccaeccc5530641749d6de",
+      "sha256": "dd7732869420b14aaa7e577847b933dee9fb84d97ebccaeccc5530641749d6de",
+      "bytes": 432918,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/flowers.png",
+      "path": "template/public/media/flowers.png",
+      "sourceSha256": "3bab9c85ef843bf13f080bd47b95cba33c249abe41108dd72a4538e1d48ef883",
+      "sha256": "3bab9c85ef843bf13f080bd47b95cba33c249abe41108dd72a4538e1d48ef883",
+      "bytes": 3140869,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/campfire.png",
+      "path": "template/public/media/campfire.png",
+      "sourceSha256": "7ca708bcc01bff4ac6d7a25edba02a3c3e2cb04791866ff6b64fc66d021377d8",
+      "sha256": "7ca708bcc01bff4ac6d7a25edba02a3c3e2cb04791866ff6b64fc66d021377d8",
+      "bytes": 2720379,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/portrait.png",
+      "path": "template/public/media/portrait.png",
+      "sourceSha256": "8b10a42ada371cb0b619831ef9ded377296e32ff8f3860f865c1636207f3986c",
+      "sha256": "8b10a42ada371cb0b619831ef9ded377296e32ff8f3860f865c1636207f3986c",
+      "bytes": 2241764,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/forest.png",
+      "path": "template/public/media/forest.png",
+      "sourceSha256": "e059861192d08a4e8a465e4c425581c8540adeb9aca1bf8e7f10ebcebbbf430e",
+      "sha256": "e059861192d08a4e8a465e4c425581c8540adeb9aca1bf8e7f10ebcebbbf430e",
+      "bytes": 3619951,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/elk.png",
+      "path": "template/public/media/elk.png",
+      "sourceSha256": "d55f426fcf0db57df10e3d306189b21b88006f7916be65ede196075f34c6e24f",
+      "sha256": "d55f426fcf0db57df10e3d306189b21b88006f7916be65ede196075f34c6e24f",
+      "bytes": 2866077,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/kayak-demo.mp4",
+      "path": "template/public/media/kayak-demo.mp4",
+      "sourceSha256": "5b4e019ce659394e31cca606174d079f7cb3a694944eb1a479fefe68b1595904",
+      "sha256": "5b4e019ce659394e31cca606174d079f7cb3a694944eb1a479fefe68b1595904",
+      "bytes": 221223,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/avatar-taylor.png",
+      "path": "template/public/media/avatar-taylor.png",
+      "sourceSha256": "3fa673a6720010ff12ddf8466f025e8c955f1613d9106f28432aa4d22be9723e",
+      "sha256": "3fa673a6720010ff12ddf8466f025e8c955f1613d9106f28432aa4d22be9723e",
+      "bytes": 2370644,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/creek.png",
+      "path": "template/public/media/creek.png",
+      "sourceSha256": "6918a8e698a7f5a2b456c9a55fccad578a8db5bcd6fb59566b1cb36bfe12aee0",
+      "sha256": "6918a8e698a7f5a2b456c9a55fccad578a8db5bcd6fb59566b1cb36bfe12aee0",
+      "bytes": 3617674,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/kayak.png",
+      "path": "template/public/media/kayak.png",
+      "sourceSha256": "96b2f46e63559cc1d902c2ff4edcbe9f71f70657c7fcfebe7de23082f50f68a9",
+      "sha256": "96b2f46e63559cc1d902c2ff4edcbe9f71f70657c7fcfebe7de23082f50f68a9",
+      "bytes": 2775590,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/lake.png",
+      "path": "template/public/media/lake.png",
+      "sourceSha256": "85b62d8633d06c5139b33c91b95fa8c7fe12aada4c435e4a862f9789d53cbe42",
+      "sha256": "85b62d8633d06c5139b33c91b95fa8c7fe12aada4c435e4a862f9789d53cbe42",
+      "bytes": 3394380,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/trail-sign.png",
+      "path": "template/public/media/trail-sign.png",
+      "sourceSha256": "70804caed5137408bbfc6dce9e394cd07fdb52f6a8531276a7320a201af74ab5",
+      "sha256": "70804caed5137408bbfc6dce9e394cd07fdb52f6a8531276a7320a201af74ab5",
+      "bytes": 3314402,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/avatar-emma.png",
+      "path": "template/public/media/avatar-emma.png",
+      "sourceSha256": "e7a17437466517e2bf59723cf80e243972c4ad57190441f062a41f1c34ef8b8f",
+      "sha256": "e7a17437466517e2bf59723cf80e243972c4ad57190441f062a41f1c34ef8b8f",
+      "bytes": 2205258,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/hiking.png",
+      "path": "template/public/media/hiking.png",
+      "sourceSha256": "1ad633f4f4bc0e2422c1c2fc71bebf1b1a240806776b34080c536b9f3abd7097",
+      "sha256": "1ad633f4f4bc0e2422c1c2fc71bebf1b1a240806776b34080c536b9f3abd7097",
+      "bytes": 3258854,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/avatar-jamie.png",
+      "path": "template/public/media/avatar-jamie.png",
+      "sourceSha256": "6d13775c248d429623b993d3c7125eed3b69058f7525e31be41b212073155937",
+      "sha256": "6d13775c248d429623b993d3c7125eed3b69058f7525e31be41b212073155937",
+      "bytes": 2241817,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/brand.png",
+      "path": "template/public/media/brand.png",
+      "sourceSha256": "728022864c6e1b33f073d28a340ceda88bba81f7ed5de1fa42bb62587f8364db",
+      "sha256": "728022864c6e1b33f073d28a340ceda88bba81f7ed5de1fa42bb62587f8364db",
+      "bytes": 988033,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/cabin.png",
+      "path": "template/public/media/cabin.png",
+      "sourceSha256": "fd5e065b442b37e081758136342fecb27859c58ef50430c0e1a4154117ea3cee",
+      "sha256": "fd5e065b442b37e081758136342fecb27859c58ef50430c0e1a4154117ea3cee",
+      "bytes": 3110449,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/public/media/forest-demo.mp4",
+      "path": "template/public/media/forest-demo.mp4",
+      "sourceSha256": "bf9fe124520dc05146e7d3b027234a14e8ed758580330163459f29ef244145ba",
+      "sha256": "bf9fe124520dc05146e7d3b027234a14e8ed758580330163459f29ef244145ba",
+      "bytes": 309881,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "web/src/lib/frameleaf/library-session.ts",
+      "path": "template/src/reference/library-session.ts",
+      "sourceSha256": "fe2d0325ca14caad7a990f4ef2ed436b5e6d037339a27be5a98e92c4802dac7c",
+      "sha256": "c4d00bfbba54b873281232c8c978844f457645156072f1e558d6b18c09c128e4",
+      "bytes": 8761,
+      "modifiedForPortability": true
+    },
+    {
+      "source": "web/src/lib/components/discovery/query.ts",
+      "path": "template/src/reference/query.ts",
+      "sourceSha256": "ccff927d2318af4e99000124fc4433f1a2e0fd2d0b9140db1943ec7936a80bfb",
+      "sha256": "ccff927d2318af4e99000124fc4433f1a2e0fd2d0b9140db1943ec7936a80bfb",
+      "bytes": 4207,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "web/src/lib/frameleaf/tokens.css",
+      "path": "template/src/reference/tokens.css",
+      "sourceSha256": "a720103212031b4226304a8f326c6654effc1ecb9cef848a7b2604302c855b57",
+      "sha256": "a720103212031b4226304a8f326c6654effc1ecb9cef848a7b2604302c855b57",
+      "bytes": 982,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "packages/plugin-core/manifest.json",
+      "path": "template/src/reference/plugin-core-manifest.json",
+      "sourceSha256": "9010aa46ad80f79d91726d91e65d5dc494690d5c764746bcb81d453590664183",
+      "sha256": "9010aa46ad80f79d91726d91e65d5dc494690d5c764746bcb81d453590664183",
+      "bytes": 17164,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/index.html",
+      "path": "template/index.html",
+      "sourceSha256": "ff49999b0dd822d8c658465e6217e8f4e8afb6d3aed73a118788401ad8783d7b",
+      "sha256": "ff49999b0dd822d8c658465e6217e8f4e8afb6d3aed73a118788401ad8783d7b",
+      "bytes": 296,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/pnpm-lock.yaml",
+      "path": "template/pnpm-lock.yaml",
+      "sourceSha256": "a8d3622a6aefb93e5cf2feec0cfe150900955b1e7b8a07d8b7c41e5a5d693bf4",
+      "sha256": "a8d3622a6aefb93e5cf2feec0cfe150900955b1e7b8a07d8b7c41e5a5d693bf4",
+      "bytes": 36861,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/package.json",
+      "path": "template/package.json",
+      "sourceSha256": "65c2d10ad2802be573a8e8fb0567d4a1b575bf2c2ef26a4ac78e5778ffb45220",
+      "sha256": "8d2a6bdd73e2f36ec26d215b23c6cff0d9f095520bd6c4228b23d1d51eb4c962",
+      "bytes": 495,
+      "modifiedForPortability": true
+    },
+    {
+      "source": "prototypes/frameleaf/tests/analytics-data.test.mjs",
+      "path": "template/tests/analytics-data.test.mjs",
+      "sourceSha256": "5121389e30da9e02c687c710a00cc1fdd083811259c0fa2304ac08aac95191fa",
+      "sha256": "5121389e30da9e02c687c710a00cc1fdd083811259c0fa2304ac08aac95191fa",
+      "bytes": 14171,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/search.test.mjs",
+      "path": "template/tests/search.test.mjs",
+      "sourceSha256": "04e6efb42e8dbdad618d708f3fe13ddce5fb6ade3b24261e459c831623a34137",
+      "sha256": "04e6efb42e8dbdad618d708f3fe13ddce5fb6ade3b24261e459c831623a34137",
+      "bytes": 13752,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/filter-state.test.mjs",
+      "path": "template/tests/filter-state.test.mjs",
+      "sourceSha256": "6f203d29006d9517a87f89049860c62ed104a929f7f3a8af0781517094878f32",
+      "sha256": "6f203d29006d9517a87f89049860c62ed104a929f7f3a8af0781517094878f32",
+      "bytes": 6966,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/state.test.mjs",
+      "path": "template/tests/state.test.mjs",
+      "sourceSha256": "9e58da655fce45dd90a08b0a2dd84ba905d4ddc418eef46aa7943e159563c2e0",
+      "sha256": "9e58da655fce45dd90a08b0a2dd84ba905d4ddc418eef46aa7943e159563c2e0",
+      "bytes": 8543,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/settings-catalog.test.mjs",
+      "path": "template/tests/settings-catalog.test.mjs",
+      "sourceSha256": "330d10533ef2962bdd399c6b1d67746633a3ee49eb7acdd7c9ba0e8642c1921c",
+      "sha256": "330d10533ef2962bdd399c6b1d67746633a3ee49eb7acdd7c9ba0e8642c1921c",
+      "bytes": 13265,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/settings-state.test.mjs",
+      "path": "template/tests/settings-state.test.mjs",
+      "sourceSha256": "28288d226e41c51531500fef795982579c1464e904b5c1f7fa260c556eddd616",
+      "sha256": "28288d226e41c51531500fef795982579c1464e904b5c1f7fa260c556eddd616",
+      "bytes": 13897,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/library-assets.test.mjs",
+      "path": "template/tests/library-assets.test.mjs",
+      "sourceSha256": "3177201fd13f6917477cbf77f029f647ad2e567780a33e7812e1f1b012305257",
+      "sha256": "3177201fd13f6917477cbf77f029f647ad2e567780a33e7812e1f1b012305257",
+      "bytes": 13880,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/utilities-data.test.mjs",
+      "path": "template/tests/utilities-data.test.mjs",
+      "sourceSha256": "d84ea01c0f2eb6aec5cfae2c19dc240db40688eb0d29ae00ca5cfdd0dd02995c",
+      "sha256": "d84ea01c0f2eb6aec5cfae2c19dc240db40688eb0d29ae00ca5cfdd0dd02995c",
+      "bytes": 5754,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/trash-data.test.mjs",
+      "path": "template/tests/trash-data.test.mjs",
+      "sourceSha256": "e933a2ecc6049e51bef4750129887d4ccb0116cdbd6e9990fe3bf9fe05d4982b",
+      "sha256": "e933a2ecc6049e51bef4750129887d4ccb0116cdbd6e9990fe3bf9fe05d4982b",
+      "bytes": 7897,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/duplicate-review.test.mjs",
+      "path": "template/tests/duplicate-review.test.mjs",
+      "sourceSha256": "81af44d1f9c0a396dbd19000cb904e6771864de15f55997dcc6a4d7d54b70963",
+      "sha256": "81af44d1f9c0a396dbd19000cb904e6771864de15f55997dcc6a4d7d54b70963",
+      "bytes": 17085,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/media-viewer.test.mjs",
+      "path": "template/tests/media-viewer.test.mjs",
+      "sourceSha256": "ae9e77541593a3ec5b4cd2b732cc3561772bf3d5c21077234eb530d4547b92db",
+      "sha256": "ae9e77541593a3ec5b4cd2b732cc3561772bf3d5c21077234eb530d4547b92db",
+      "bytes": 5540,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/face-tags.test.mjs",
+      "path": "template/tests/face-tags.test.mjs",
+      "sourceSha256": "75e39e37d900b463f72988a56e3f8f1ee18913d8bc2a8bdafd1709c2e06202c4",
+      "sha256": "75e39e37d900b463f72988a56e3f8f1ee18913d8bc2a8bdafd1709c2e06202c4",
+      "bytes": 8026,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/explore-timeline.test.mjs",
+      "path": "template/tests/explore-timeline.test.mjs",
+      "sourceSha256": "0f07e43f4739186651b28fb203985134259f86e3d11ef506c2785b2c63eb3939",
+      "sha256": "0f07e43f4739186651b28fb203985134259f86e3d11ef506c2785b2c63eb3939",
+      "bytes": 5339,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/locked-content.test.mjs",
+      "path": "template/tests/locked-content.test.mjs",
+      "sourceSha256": "0d1e2592a295e51aad88244a8ece91387459b870a97cdb5d5914d28355301c56",
+      "sha256": "0d1e2592a295e51aad88244a8ece91387459b870a97cdb5d5914d28355301c56",
+      "bytes": 6306,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/physical-dedup-data.test.mjs",
+      "path": "template/tests/physical-dedup-data.test.mjs",
+      "sourceSha256": "6ebbe7a956514115a1ef700144b525e9b3b89eaaaf60a63d6ea13e3d96771db6",
+      "sha256": "6ebbe7a956514115a1ef700144b525e9b3b89eaaaf60a63d6ea13e3d96771db6",
+      "bytes": 6508,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/account-preference-settings.test.mjs",
+      "path": "template/tests/account-preference-settings.test.mjs",
+      "sourceSha256": "d3a35c568a5061de8dab29120e540a5a68a73dd97d93a1f1ff95882be3a1e00d",
+      "sha256": "d3a35c568a5061de8dab29120e540a5a68a73dd97d93a1f1ff95882be3a1e00d",
+      "bytes": 5864,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/worker-settings.test.mjs",
+      "path": "template/tests/worker-settings.test.mjs",
+      "sourceSha256": "1593697fe84ecdcc2f923fb29c14763c51274e85e0c8b6a6294b0ce238caa4f4",
+      "sha256": "1593697fe84ecdcc2f923fb29c14763c51274e85e0c8b6a6294b0ce238caa4f4",
+      "bytes": 2567,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/tests/configuration-transfer.test.mjs",
+      "path": "template/tests/configuration-transfer.test.mjs",
+      "sourceSha256": "d20673ac9629b05ac21b87443145ab57b220b9d48b3da034e2ab9bf62396f06c",
+      "sha256": "d20673ac9629b05ac21b87443145ab57b220b9d48b3da034e2ab9bf62396f06c",
+      "bytes": 2280,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa/reference-library-dark.png",
+      "path": "references/reference-library-dark.png",
+      "sourceSha256": "ecad2724f3da67d29b164f4de78383d061f7bfdd8f81d46ef42361c6f4cfa738",
+      "sha256": "ecad2724f3da67d29b164f4de78383d061f7bfdd8f81d46ef42361c6f4cfa738",
+      "bytes": 2106565,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa/reference-library-light.png",
+      "path": "references/reference-library-light.png",
+      "sourceSha256": "8e93e4576797c85846f89f842077c9409b94fe9945add621d45abf396798073b",
+      "sha256": "8e93e4576797c85846f89f842077c9409b94fe9945add621d45abf396798073b",
+      "bytes": 2025936,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa/reference-studio.png",
+      "path": "references/reference-studio.png",
+      "sourceSha256": "f09eb85073fe979f595a7396b9100720ece4b853ced2847300520e2a7870bcb0",
+      "sha256": "f09eb85073fe979f595a7396b9100720ece4b853ced2847300520e2a7870bcb0",
+      "bytes": 1995476,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa/desktop-dark.jpg",
+      "path": "references/desktop-dark.jpg",
+      "sourceSha256": "52ca703656ebe02db7ea79f13a3a0a01c22286780319ae7ad5bce9e30933abf7",
+      "sha256": "52ca703656ebe02db7ea79f13a3a0a01c22286780319ae7ad5bce9e30933abf7",
+      "bytes": 155557,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa/desktop-light.jpg",
+      "path": "references/desktop-light.jpg",
+      "sourceSha256": "36c94885f8ee8662e5a191cc1ed0fa2d56c009caa5e1316510c395af928d1b97",
+      "sha256": "36c94885f8ee8662e5a191cc1ed0fa2d56c009caa5e1316510c395af928d1b97",
+      "bytes": 153969,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa/phone-quick-edit.jpg",
+      "path": "references/phone-quick-edit.jpg",
+      "sourceSha256": "4de555acc3ed56e96ee30d35105bc03438c641b555da3b20f8dd3ad8c69d31b1",
+      "sha256": "4de555acc3ed56e96ee30d35105bc03438c641b555da3b20f8dd3ad8c69d31b1",
+      "bytes": 45999,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa/tablet-studio.jpg",
+      "path": "references/tablet-studio.jpg",
+      "sourceSha256": "22ac95024ffaabeeb2342975ab9d75e78618500e56a7a98498216b9037a000ba",
+      "sha256": "22ac95024ffaabeeb2342975ab9d75e78618500e56a7a98498216b9037a000ba",
+      "bytes": 98087,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa/settings-11-overview-dark.jpg",
+      "path": "references/settings-11-overview-dark.jpg",
+      "sourceSha256": "5ca80b3ba47c073bdd7dd19d9ceee36581f5446b131822f32f2d1d4d1039128e",
+      "sha256": "5ca80b3ba47c073bdd7dd19d9ceee36581f5446b131822f32f2d1d4d1039128e",
+      "bytes": 94902,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa/settings-09-tablet-analytics.jpg",
+      "path": "references/settings-09-tablet-analytics.jpg",
+      "sourceSha256": "0e1890d93df22d782f17ddfbc74827daab421e9c32bafe1a14ccd1c4953c92ba",
+      "sha256": "0e1890d93df22d782f17ddfbc74827daab421e9c32bafe1a14ccd1c4953c92ba",
+      "bytes": 88131,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa/settings-22-account-features-dark.jpg",
+      "path": "references/settings-22-account-features-dark.jpg",
+      "sourceSha256": "b0f1dbc4ece1f78af234c368e2800775226e20163e9172f5fd52e360f396ce27",
+      "sha256": "b0f1dbc4ece1f78af234c368e2800775226e20163e9172f5fd52e360f396ce27",
+      "bytes": 69918,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa/settings-23-account-preferences-light.jpg",
+      "path": "references/settings-23-account-preferences-light.jpg",
+      "sourceSha256": "c5fb05bbd98da1efbef080cb76b1cb3df95ad33f70b744bc6c59386767b1cdba",
+      "sha256": "c5fb05bbd98da1efbef080cb76b1cb3df95ad33f70b744bc6c59386767b1cdba",
+      "bytes": 72008,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa/settings-24-duplicates-owner-only.jpg",
+      "path": "references/settings-24-duplicates-owner-only.jpg",
+      "sourceSha256": "d8d683bce7bffc84e2326bfce31cfcc6e8b99392e0242f628463e8bd17696926",
+      "sha256": "d8d683bce7bffc84e2326bfce31cfcc6e8b99392e0242f628463e8bd17696926",
+      "bytes": 111584,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa/settings-18-burst-contact-sheet-dark.jpg",
+      "path": "references/settings-18-burst-contact-sheet-dark.jpg",
+      "sourceSha256": "b861fa8987b905e6dd4c7174d166f127e3f3260e5c838b3538aab96f95896bfa",
+      "sha256": "b861fa8987b905e6dd4c7174d166f127e3f3260e5c838b3538aab96f95896bfa",
+      "bytes": 156357,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa-library/timeline-dark.jpg",
+      "path": "references/timeline-dark.jpg",
+      "sourceSha256": "9f6027e034d323e08ce94b174f1d4b077f0f4a765ab69f9f35506abd0f08cd41",
+      "sha256": "9f6027e034d323e08ce94b174f1d4b077f0f4a765ab69f9f35506abd0f08cd41",
+      "bytes": 121209,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa-library/explore-light.jpg",
+      "path": "references/explore-light.jpg",
+      "sourceSha256": "88748f7afabaae198273ea8f348fc04a296f02b079934c6dea5a2fe5d3fa6913",
+      "sha256": "88748f7afabaae198273ea8f348fc04a296f02b079934c6dea5a2fe5d3fa6913",
+      "bytes": 89820,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa-library/library-phone.jpg",
+      "path": "references/library-phone.jpg",
+      "sourceSha256": "8fd679485561f688a1dac0fa635f26dd0b14a62256d8b505392aab4868783a32",
+      "sha256": "8fd679485561f688a1dac0fa635f26dd0b14a62256d8b505392aab4868783a32",
+      "bytes": 58021,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/qa-library/face-tagging-dark.jpg",
+      "path": "references/face-tagging-dark.jpg",
+      "sourceSha256": "51fe6f5296af464dcc15d9e5b749f481557051a77d26a3628f0a4fb4002ef29c",
+      "sha256": "51fe6f5296af464dcc15d9e5b749f481557051a77d26a3628f0a4fb4002ef29c",
+      "bytes": 84287,
+      "modifiedForPortability": false
+    },
+    {
+      "source": "prototypes/frameleaf/face-image-provenance.json",
+      "path": "template/media-provenance.json",
+      "sourceSha256": "4dd98e70b8ca34ccb4c3d1ef1f977eb48c289217745c23d0448011f849d1e842",
+      "sha256": "08db0e22c480f9e9d27d20428925fbcee29eef63d6b32b16e9e6b2f2927ad32e",
+      "bytes": 5870,
+      "modifiedForPortability": true
+    }
+  ],
+  "excluded": [
+    "node_modules",
+    "dist",
+    ".openai hosting bindings",
+    "Sites worker and publishing scripts",
+    "environment/credential files",
+    "OS metadata",
+    "repository-dependent UI/contract tests"
+  ],
+  "testScope": "18 existing portable state/data test files; original DOM and repository-source contract suites are not represented as portable acceptance."
+}
