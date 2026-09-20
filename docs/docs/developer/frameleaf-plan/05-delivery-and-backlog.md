@@ -4,7 +4,7 @@ Status: reviewed planning contract, not implementation, qualification, release, 
 
 This guide turns the canonical [backlog](backlog.json) and [Jira map](jira-map.json) into safe dispatch decisions. It does not start any dependent issue, infer acceptance from workflow state, or replace the issue-specific acceptance criteria.
 
-Read the [implementation plan](00-implementation-plan.md), [agent execution guide](01-agent-execution.md), assigned Jira issue, and the relevant restored workstream contract before implementation. The [library and administration contract](02-library-and-administration.md), [Studio, rendering and restoration contract](03-studio-rendering-and-restoration.md), [native and release contract](04-native-and-release.md), and [brand-assets contract](06-brand-assets.md) are present in the delivery integration baseline. The feature-ownership narrative remains unreviewed until separately restored; its absence does not reduce scope or make its issues ready.
+Read the [implementation plan](00-implementation-plan.md), [agent execution guide](01-agent-execution.md), assigned Jira issue, and the relevant restored workstream contract before implementation. The [library and administration contract](02-library-and-administration.md), [Studio, rendering and restoration contract](03-studio-rendering-and-restoration.md), [native and release contract](04-native-and-release.md), and [brand-assets contract](06-brand-assets.md) are present in the delivery integration baseline. The preserved feature-ownership narrative and route map remain unaccepted; page `61538800` is not accepted evidence. FL-26 owns action- and requirement-level preservation coverage and ownership. Their absence does not reduce scope or make an issue ready.
 
 ## Authoritative records
 
@@ -34,11 +34,11 @@ A story is executable only when all of the following are true:
 
 1. Every declared dependency has issue-specific accepted evidence for the contract being consumed. Jira Done alone is insufficient.
 2. Current source paths and preserved dirty evidence have been inspected without silently importing unreviewed files.
-3. One owner has claimed the issue, recorded exact file ownership and verified the issue remains available for work.
+3. One owner has claimed the implementation issue, named the files they will edit and verified the issue remains available for work. Raw-path Jira routing is not an FL-25 acceptance prerequisite; FL-26 establishes behavior-level preservation ownership before dependent implementation dispatch.
 4. Required fixtures, rollback path, authorization boundaries, and practical validation environment are named.
 5. External hardware, credentials, licenses, publication, or deployment inputs are either present and authorized or retained as explicit blockers.
 
-At this checkpoint `FN-101` is the only story without declared prerequisites. It is already In Progress and remains the sole executable reconciliation lane. `REL-201` being Done does not satisfy `FN-101`, and it does not unlock dependents whose other prerequisites lack accepted evidence. Do not start the dependency-blocked first-wave stories (`FN-102`, `FN-301`, `LIB-002`, `STU-101`, or `VID-101`) from this document.
+At this checkpoint `FN-101` is the only story without declared prerequisites. It is already In Progress; deterministic preservation and classification of all 3,520 paths is its acceptance boundary, while preserved-only source remains unaccepted and forbidden from bulk copy. The 1,603 paths without exact source-backed routing are an informational triage statistic, not an FL-25 acceptance gap. This candidate does not close FL-25 or unblock `FN-102`; merge, hosted verification, and Jira closeout remain required. `REL-201` being Done does not satisfy `FN-101`, and it does not unlock dependents whose other prerequisites lack accepted evidence. Do not start the dependency-blocked first-wave stories (`FN-102`, `FN-301`, `LIB-002`, `STU-101`, or `VID-101`) from this document.
 
 Read-only investigation may proceed without claiming that a dependency is accepted. Production edits, implementation delegation, and Jira transitions remain governed by root `AGENTS.md` and the development lifecycle.
 
@@ -79,4 +79,4 @@ Repository Markdown is authoritative. The existing Confluence delivery page is p
 
 ## Completion boundary
 
-This slice is complete when its local graph, identities, status snapshot, and evidence semantics validate deterministically. FL-25 remains open because the wider dirty-source reconciliation is incomplete. No product feature, release, registry publication, deployment, native submission, GPU/Dolby qualification, or application parity is claimed here.
+This planning slice is complete when its local graph, identities, status snapshot, and evidence semantics validate deterministically. FL-25 accepts preservation and classification evidence, not dirty application source or raw-path ownership. FL-26 owns action- and requirement-level coverage, gap ownership, and completeness. FL-25 remains In Progress until this acceptance-alignment candidate is merged, hosted checks are verified, and Jira closeout is performed; only then may FL-26 dependency readiness be reconsidered. No product feature implementation, browser/device/media/hardware parity, release, registry publication, deployment, native submission, GPU/Dolby qualification, or application parity is claimed here.

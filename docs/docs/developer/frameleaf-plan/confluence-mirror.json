@@ -627,16 +627,16 @@
       "version": 1
     },
     {
-      "bytes": 8269,
+      "bytes": 9292,
       "category": "plan",
       "id": "61407624",
       "source": "docs/docs/developer/frameleaf-plan/05-delivery-and-backlog.md",
-      "sourceSha256": "318f0cbe2d96a5df42bfd69b8bf380fd25e49ca09d37cbfe4bc816244d9cdf2a",
+      "sourceSha256": "2b159525f794f753b1abb55ec8fb15794d8739303a48946f751ac782a49a9096",
       "title": "Delivery Sequence and Jira Backlog",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407624/Delivery+Sequence+and+Jira+Backlog",
-      "verification": "source path, SHA-256, byte count, integration base, open qualification gates and terminal boundary read back after update; related native Confluence resources preserved through HTML replacement",
-      "verifiedAt": "2026-09-20T11:20:24.312Z",
-      "version": 4
+      "verification": "Source path, SHA-256, byte count, exact 59133353 fork/main baseline, informational 1603-path routing statistic, FL-25/FL-26 ownership boundary, open merge/hosted/Jira gates and terminal non-implementation boundary read back; existing Confluence resource links preserved through HTML replacement.",
+      "verifiedAt": "2026-09-20T13:33:18.638Z",
+      "version": 5
     },
     {
       "bytes": 7868,
@@ -652,16 +652,28 @@
       "version": 4
     },
     {
-      "bytes": 5748,
+      "bytes": 11072,
       "category": "development",
       "id": "61407916",
       "source": "docs/docs/developer/frameleaf-baseline-inventory.md",
-      "sourceSha256": "864fc74747c0d443da995210d51cbf1aeb4ee2d60d995bee234420e91a8c6e2d",
+      "sourceSha256": "c1df5d16a750cbede362659748ec84389b6832d75d2a0997e9f86f66a7eec2e5",
       "title": "Frameleaf working-tree baseline inventory",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407916/Frameleaf+working-tree+baseline+inventory",
-      "verification": "Source path, candidate status, source and reconciliation hashes, exact-main identity, 164/3356 dispositions, 1603 unresolved routing paths, epic-routing semantics, and remaining FL-25 acceptance read back after update.",
-      "verifiedAt": "2026-09-20T13:01:15.759Z",
-      "version": 4
+      "verification": "Source path, source SHA-256 and 2078229-byte reconciliation receipt SHA-256 bedd7a38a45ce4d2cf860ed1e33cf29af4caf0ebadb7a1333c3e09e543a0addd; exact 59133353 candidate base; all four FL-25 criteria including controlled-host tool versions; 164/3356 dispositions; informational 1603-path routing statistic; FL-26 ownership boundary; and page-61538800 non-acceptance read back.",
+      "verifiedAt": "2026-09-20T13:35:37.993Z",
+      "version": 6
+    },
+    {
+      "bytes": 5723,
+      "category": "development",
+      "id": "61407947",
+      "source": "docs/docs/developer/frameleaf-toolchain-baseline.md",
+      "sourceSha256": "48a3826427b0ee18c5e3bec50f9fe7e3e9ea31e2cd547d343947059c6b677bbb",
+      "title": "Frameleaf toolchain baseline",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407947/Frameleaf+toolchain+baseline",
+      "verification": "Source path, source SHA-256 and 20865-byte toolchain receipt SHA-256 b7c6a826b0a1bbdd3c5aa4cfcd6df6114da10cbc2a9f935f9e9ec1b5fe8eb6f6; reviewed source baseline 4bedc0c4; exact 59133353 candidate base; and tool-evidence-only acceptance boundary read back.",
+      "verifiedAt": "2026-09-20T13:32:22.391Z",
+      "version": 2
     },
     {
       "bytes": 26181,

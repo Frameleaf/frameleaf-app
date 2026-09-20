@@ -81,6 +81,97 @@ test("rejects duplicate JSON keys", () => {
   );
 });
 
+test("documents FL-25 acceptance separately from FL-26 ownership", () => {
+  const inventory = readFileSync(
+    path.join(
+      repository,
+      "docs/docs/developer/frameleaf-baseline-inventory.md",
+    ),
+    "utf8",
+  );
+  const delivery = readFileSync(
+    path.join(
+      repository,
+      "docs/docs/developer/frameleaf-plan/05-delivery-and-backlog.md",
+    ),
+    "utf8",
+  );
+  const toolchain = readFileSync(
+    path.join(
+      repository,
+      "docs/docs/developer/frameleaf-toolchain-baseline.md",
+    ),
+    "utf8",
+  );
+  const mirrorPath =
+    "docs/docs/developer/frameleaf-plan/confluence-mirror.json";
+  const mirror = parseJsonRejectingDuplicateKeys(
+    readFileSync(path.join(repository, mirrorPath), "utf8"),
+    mirrorPath,
+  );
+
+  for (const criterion of [
+    "Verify Frameleaf repository ownership and the literal default branch",
+    "Record old local remotes and authorized remote/branch changes",
+    "Preserve and classify every modified or untracked path",
+    "Record tool versions and the exact reviewed baseline",
+  ])
+    assert.ok(inventory.includes(criterion), `Missing criterion: ${criterion}`);
+
+  for (const statement of [
+    "1,603 paths lack exact source-backed routing",
+    "informational triage statistic, not an FL-25 acceptance gap",
+    "44 epic references across 36 paths and 17 unique epic IDs",
+    "Raw-path Jira ownership is not required to accept FL-25",
+    "FL-26 owns action- and requirement-level preservation coverage",
+    "bulk copying the dirty checkout is forbidden",
+    "ffmpeg 9.0.1, Node.js 24.19.0, and Python 3.9.6",
+  ])
+    assert.ok(inventory.includes(statement), `Missing boundary: ${statement}`);
+
+  assert.ok(
+    delivery.includes("FL-26 owns action- and requirement-level coverage"),
+  );
+  assert.ok(
+    delivery.includes(
+      "Raw-path Jira routing is not an FL-25 acceptance prerequisite",
+    ),
+  );
+  assert.ok(toolchain.includes("satisfy the tool-version evidence criterion"));
+  assert.doesNotMatch(
+    `${inventory}\n${delivery}\n${toolchain}`,
+    /Resolving those paths remains explicit FL-25 acceptance work|wider dirty-source reconciliation is incomplete|wider preserved working tree is reviewed and accepted/,
+  );
+
+  assert.deepEqual(
+    Object.fromEntries(
+      mirror.pages
+        .filter(({ id }) => ["61407624", "61407916", "61407947"].includes(id))
+        .map(({ id, sourceSha256, version }) => [
+          id,
+          { sourceSha256, version },
+        ]),
+    ),
+    {
+      61407624: {
+        sourceSha256:
+          "2b159525f794f753b1abb55ec8fb15794d8739303a48946f751ac782a49a9096",
+        version: 5,
+      },
+      61407916: {
+        sourceSha256:
+          "c1df5d16a750cbede362659748ec84389b6832d75d2a0997e9f86f66a7eec2e5",
+        version: 6,
+      },
+      61407947: {
+        sourceSha256:
+          "48a3826427b0ee18c5e3bec50f9fe7e3e9ea31e2cd547d343947059c6b677bbb",
+        version: 2,
+      },
+    },
+  );
+});
+
 test("detects path, hash, disposition, and main-blob drift", () => {
   const original = buildReconciliation({ currentMain, root: repository });
   for (const mutate of [

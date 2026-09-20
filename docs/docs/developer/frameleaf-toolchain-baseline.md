@@ -43,4 +43,4 @@ The command rejects an unknown or abbreviated baseline, a baseline that is not a
 - A reported version is not proof that all architecture-specific artifacts in `mise.lock`, application dependency lockfiles, native SDKs, Xcode, Android SDK components, browsers, codecs, or licensed media tools are installed or qualified.
 - Conflicting declarations remain visible as separate records and require an owner decision; the inventory does not silently choose one.
 - Missing tools must be resolved through the repository's normal pinned setup in a separately authorized environment. This slice does not install them.
-- FL-25 remains open until the wider preserved working tree is reviewed and accepted from clean fetched-baseline worktrees.
+- For FL-25, the exact declarations and controlled-host observations above satisfy the tool-version evidence criterion after this acceptance-alignment candidate merges and receives Jira closeout. The mismatches, missing tools, unprobed tools, and probe failures remain explicit setup or qualification concerns; they do not authorize installation and they do not make preserved application source accepted.
