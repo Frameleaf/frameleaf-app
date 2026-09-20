@@ -58,11 +58,13 @@
       "source": "docs/docs/developer/frameleaf-library-action-parity.md",
       "category": "reference",
       "title": "Frameleaf library action parity audit",
-      "sourceSha256": "d8f5942885a144221798f81f458eb58a7a6f8f8bd1f2cb1f7c04d80aea834379",
-      "bytes": 33634,
+      "sourceSha256": "5d007780e048330da577a052aa8cb844cf168721d3ec38dd9b422d2025677d0f",
+      "bytes": 8273,
       "id": "61407369",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407369/Frameleaf+library+action+parity+audit",
-      "version": 2
+      "version": 3,
+      "verifiedAt": "2026-09-20T09:17:48.000Z",
+      "verification": "source hash marker, reviewed baseline and terminal content read back after update"
     },
     {
       "source": "docs/docs/developer/frameleaf-mobile-foundation.md",
@@ -138,11 +140,13 @@
       "source": "docs/docs/developer/frameleaf-settings-inventory.md",
       "category": "audits",
       "title": "Frameleaf settings and administration inventory",
-      "sourceSha256": "c73889a593373481d8e79768b3a150145de2b010305d4e5caa337e2879bcb08a",
-      "bytes": 76859,
+      "sourceSha256": "5584906075c26e290f551d7ceff28e7425c63a2cb3e895ba087731fbcbf76e86",
+      "bytes": 4044,
       "id": "61374842",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374842/Frameleaf+settings+and+administration+inventory",
-      "version": 2
+      "version": 3,
+      "verifiedAt": "2026-09-20T09:17:48.000Z",
+      "verification": "source hash marker, reviewed baseline and terminal content read back after update"
     },
     {
       "source": "docs/docs/developer/frameleaf-studio-foundation.md",
@@ -490,11 +494,13 @@
       "source": "docs/docs/developer/frameleaf-plan/02-library-and-administration.md",
       "category": "plan",
       "title": "Library and Administration Implementation",
-      "sourceSha256": "997d023b792379e97b347f223d79993e681fc96871a2f15e74f7372d428d473a",
-      "bytes": 44696,
+      "sourceSha256": "f011e579f8a32baac94e85af675fcf9f646644fe958e4c0662ffd0e0c772fabb",
+      "bytes": 6137,
       "id": "61375040",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61375040/Library+and+Administration+Implementation",
-      "version": 2
+      "version": 3,
+      "verifiedAt": "2026-09-20T09:17:48.000Z",
+      "verification": "source hash marker, reviewed baseline and terminal content read back after update"
     },
     {
       "source": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
