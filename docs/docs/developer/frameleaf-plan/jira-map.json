@@ -1,0 +1,996 @@
+{
+  "projectKey": "FL",
+  "cloudId": "9b68c4fc-dbd2-4864-a050-674c27f779b2",
+  "issues": {
+    "FN-E01": {
+      "id": "23616",
+      "key": "FL-1",
+      "url": "https://heroit.atlassian.net/browse/FL-1"
+    },
+    "FN-E02": {
+      "id": "23617",
+      "key": "FL-2",
+      "url": "https://heroit.atlassian.net/browse/FL-2"
+    },
+    "FN-E03": {
+      "id": "23618",
+      "key": "FL-3",
+      "url": "https://heroit.atlassian.net/browse/FL-3"
+    },
+    "LIB-E01": {
+      "id": "23619",
+      "key": "FL-4",
+      "url": "https://heroit.atlassian.net/browse/FL-4"
+    },
+    "LIB-E02": {
+      "id": "23620",
+      "key": "FL-5",
+      "url": "https://heroit.atlassian.net/browse/FL-5"
+    },
+    "LIB-E03": {
+      "id": "23621",
+      "key": "FL-6",
+      "url": "https://heroit.atlassian.net/browse/FL-6"
+    },
+    "REC-E01": {
+      "id": "23622",
+      "key": "FL-7",
+      "url": "https://heroit.atlassian.net/browse/FL-7"
+    },
+    "REC-E02": {
+      "id": "23623",
+      "key": "FL-8",
+      "url": "https://heroit.atlassian.net/browse/FL-8"
+    },
+    "IMP-E01": {
+      "id": "23624",
+      "key": "FL-9",
+      "url": "https://heroit.atlassian.net/browse/FL-9"
+    },
+    "ADM-E01": {
+      "id": "23625",
+      "key": "FL-10",
+      "url": "https://heroit.atlassian.net/browse/FL-10"
+    },
+    "ADM-E02": {
+      "id": "23626",
+      "key": "FL-11",
+      "url": "https://heroit.atlassian.net/browse/FL-11"
+    },
+    "STU-100": {
+      "id": "23627",
+      "key": "FL-12",
+      "url": "https://heroit.atlassian.net/browse/FL-12"
+    },
+    "STU-200": {
+      "id": "23628",
+      "key": "FL-13",
+      "url": "https://heroit.atlassian.net/browse/FL-13"
+    },
+    "STU-300": {
+      "id": "23629",
+      "key": "FL-14",
+      "url": "https://heroit.atlassian.net/browse/FL-14"
+    },
+    "STU-400": {
+      "id": "23630",
+      "key": "FL-15",
+      "url": "https://heroit.atlassian.net/browse/FL-15"
+    },
+    "VID-100": {
+      "id": "23631",
+      "key": "FL-16",
+      "url": "https://heroit.atlassian.net/browse/FL-16"
+    },
+    "VID-200": {
+      "id": "23632",
+      "key": "FL-17",
+      "url": "https://heroit.atlassian.net/browse/FL-17"
+    },
+    "AI-100": {
+      "id": "23633",
+      "key": "FL-18",
+      "url": "https://heroit.atlassian.net/browse/FL-18"
+    },
+    "MOB-100": {
+      "id": "23634",
+      "key": "FL-19",
+      "url": "https://heroit.atlassian.net/browse/FL-19"
+    },
+    "MOB-200": {
+      "id": "23635",
+      "key": "FL-20",
+      "url": "https://heroit.atlassian.net/browse/FL-20"
+    },
+    "MOB-300": {
+      "id": "23636",
+      "key": "FL-21",
+      "url": "https://heroit.atlassian.net/browse/FL-21"
+    },
+    "REL-100": {
+      "id": "23637",
+      "key": "FL-22",
+      "url": "https://heroit.atlassian.net/browse/FL-22"
+    },
+    "QA-100": {
+      "id": "23638",
+      "key": "FL-23",
+      "url": "https://heroit.atlassian.net/browse/FL-23"
+    },
+    "REL-200": {
+      "id": "23639",
+      "key": "FL-24",
+      "url": "https://heroit.atlassian.net/browse/FL-24"
+    },
+    "FN-101": {
+      "id": "23640",
+      "key": "FL-25",
+      "url": "https://heroit.atlassian.net/browse/FL-25"
+    },
+    "FN-102": {
+      "id": "23641",
+      "key": "FL-26",
+      "url": "https://heroit.atlassian.net/browse/FL-26"
+    },
+    "FN-103": {
+      "id": "23642",
+      "key": "FL-27",
+      "url": "https://heroit.atlassian.net/browse/FL-27"
+    },
+    "FN-104": {
+      "id": "23643",
+      "key": "FL-28",
+      "url": "https://heroit.atlassian.net/browse/FL-28"
+    },
+    "FN-201": {
+      "id": "23644",
+      "key": "FL-29",
+      "url": "https://heroit.atlassian.net/browse/FL-29"
+    },
+    "FN-202": {
+      "id": "23645",
+      "key": "FL-30",
+      "url": "https://heroit.atlassian.net/browse/FL-30"
+    },
+    "FN-203": {
+      "id": "23646",
+      "key": "FL-31",
+      "url": "https://heroit.atlassian.net/browse/FL-31"
+    },
+    "FN-204": {
+      "id": "23647",
+      "key": "FL-32",
+      "url": "https://heroit.atlassian.net/browse/FL-32"
+    },
+    "LIB-001": {
+      "id": "23648",
+      "key": "FL-33",
+      "url": "https://heroit.atlassian.net/browse/FL-33"
+    },
+    "LIB-002": {
+      "id": "23649",
+      "key": "FL-34",
+      "url": "https://heroit.atlassian.net/browse/FL-34"
+    },
+    "LIB-003": {
+      "id": "23650",
+      "key": "FL-35",
+      "url": "https://heroit.atlassian.net/browse/FL-35"
+    },
+    "LIB-004": {
+      "id": "23651",
+      "key": "FL-36",
+      "url": "https://heroit.atlassian.net/browse/FL-36"
+    },
+    "REC-001": {
+      "id": "23652",
+      "key": "FL-37",
+      "url": "https://heroit.atlassian.net/browse/FL-37"
+    },
+    "REC-002": {
+      "id": "23653",
+      "key": "FL-38",
+      "url": "https://heroit.atlassian.net/browse/FL-38"
+    },
+    "VID-101": {
+      "id": "23654",
+      "key": "FL-39",
+      "url": "https://heroit.atlassian.net/browse/FL-39"
+    },
+    "FN-205": {
+      "id": "23655",
+      "key": "FL-40",
+      "url": "https://heroit.atlassian.net/browse/FL-40"
+    },
+    "FN-301": {
+      "id": "23656",
+      "key": "FL-41",
+      "url": "https://heroit.atlassian.net/browse/FL-41"
+    },
+    "FN-302": {
+      "id": "23657",
+      "key": "FL-42",
+      "url": "https://heroit.atlassian.net/browse/FL-42"
+    },
+    "FN-303": {
+      "id": "23658",
+      "key": "FL-43",
+      "url": "https://heroit.atlassian.net/browse/FL-43"
+    },
+    "FN-304": {
+      "id": "23659",
+      "key": "FL-44",
+      "url": "https://heroit.atlassian.net/browse/FL-44"
+    },
+    "LIB-005": {
+      "id": "23660",
+      "key": "FL-45",
+      "url": "https://heroit.atlassian.net/browse/FL-45"
+    },
+    "LIB-006": {
+      "id": "23661",
+      "key": "FL-46",
+      "url": "https://heroit.atlassian.net/browse/FL-46"
+    },
+    "LIB-007": {
+      "id": "23662",
+      "key": "FL-47",
+      "url": "https://heroit.atlassian.net/browse/FL-47"
+    },
+    "LIB-101": {
+      "id": "23663",
+      "key": "FL-48",
+      "url": "https://heroit.atlassian.net/browse/FL-48"
+    },
+    "LIB-102": {
+      "id": "23664",
+      "key": "FL-49",
+      "url": "https://heroit.atlassian.net/browse/FL-49"
+    },
+    "LIB-103": {
+      "id": "23665",
+      "key": "FL-50",
+      "url": "https://heroit.atlassian.net/browse/FL-50"
+    },
+    "LIB-104": {
+      "id": "23666",
+      "key": "FL-51",
+      "url": "https://heroit.atlassian.net/browse/FL-51"
+    },
+    "LIB-201": {
+      "id": "23667",
+      "key": "FL-52",
+      "url": "https://heroit.atlassian.net/browse/FL-52"
+    },
+    "LIB-202": {
+      "id": "23668",
+      "key": "FL-53",
+      "url": "https://heroit.atlassian.net/browse/FL-53"
+    },
+    "LIB-203": {
+      "id": "23669",
+      "key": "FL-54",
+      "url": "https://heroit.atlassian.net/browse/FL-54"
+    },
+    "LIB-204": {
+      "id": "23670",
+      "key": "FL-55",
+      "url": "https://heroit.atlassian.net/browse/FL-55"
+    },
+    "LIB-205": {
+      "id": "23671",
+      "key": "FL-56",
+      "url": "https://heroit.atlassian.net/browse/FL-56"
+    },
+    "REC-003": {
+      "id": "23672",
+      "key": "FL-57",
+      "url": "https://heroit.atlassian.net/browse/FL-57"
+    },
+    "REC-004": {
+      "id": "23673",
+      "key": "FL-58",
+      "url": "https://heroit.atlassian.net/browse/FL-58"
+    },
+    "REC-101": {
+      "id": "23674",
+      "key": "FL-59",
+      "url": "https://heroit.atlassian.net/browse/FL-59"
+    },
+    "REC-102": {
+      "id": "23675",
+      "key": "FL-60",
+      "url": "https://heroit.atlassian.net/browse/FL-60"
+    },
+    "REC-103": {
+      "id": "23676",
+      "key": "FL-61",
+      "url": "https://heroit.atlassian.net/browse/FL-61"
+    },
+    "REC-104": {
+      "id": "23677",
+      "key": "FL-62",
+      "url": "https://heroit.atlassian.net/browse/FL-62"
+    },
+    "REC-105": {
+      "id": "23678",
+      "key": "FL-63",
+      "url": "https://heroit.atlassian.net/browse/FL-63"
+    },
+    "REC-106": {
+      "id": "23679",
+      "key": "FL-64",
+      "url": "https://heroit.atlassian.net/browse/FL-64"
+    },
+    "IMP-001": {
+      "id": "23680",
+      "key": "FL-65",
+      "url": "https://heroit.atlassian.net/browse/FL-65"
+    },
+    "ADM-001": {
+      "id": "23681",
+      "key": "FL-66",
+      "url": "https://heroit.atlassian.net/browse/FL-66"
+    },
+    "ADM-005": {
+      "id": "23682",
+      "key": "FL-67",
+      "url": "https://heroit.atlassian.net/browse/FL-67"
+    },
+    "IMP-002": {
+      "id": "23683",
+      "key": "FL-68",
+      "url": "https://heroit.atlassian.net/browse/FL-68"
+    },
+    "IMP-003": {
+      "id": "23684",
+      "key": "FL-69",
+      "url": "https://heroit.atlassian.net/browse/FL-69"
+    },
+    "IMP-004": {
+      "id": "23685",
+      "key": "FL-70",
+      "url": "https://heroit.atlassian.net/browse/FL-70"
+    },
+    "ADM-002": {
+      "id": "23686",
+      "key": "FL-71",
+      "url": "https://heroit.atlassian.net/browse/FL-71"
+    },
+    "ADM-101": {
+      "id": "23687",
+      "key": "FL-72",
+      "url": "https://heroit.atlassian.net/browse/FL-72"
+    },
+    "IMP-005": {
+      "id": "23688",
+      "key": "FL-73",
+      "url": "https://heroit.atlassian.net/browse/FL-73"
+    },
+    "IMP-006": {
+      "id": "23689",
+      "key": "FL-74",
+      "url": "https://heroit.atlassian.net/browse/FL-74"
+    },
+    "IMP-007": {
+      "id": "23690",
+      "key": "FL-75",
+      "url": "https://heroit.atlassian.net/browse/FL-75"
+    },
+    "ADM-003": {
+      "id": "23691",
+      "key": "FL-76",
+      "url": "https://heroit.atlassian.net/browse/FL-76"
+    },
+    "ADM-004": {
+      "id": "23692",
+      "key": "FL-77",
+      "url": "https://heroit.atlassian.net/browse/FL-77"
+    },
+    "ADM-006": {
+      "id": "23693",
+      "key": "FL-78",
+      "url": "https://heroit.atlassian.net/browse/FL-78"
+    },
+    "ADM-102": {
+      "id": "23694",
+      "key": "FL-79",
+      "url": "https://heroit.atlassian.net/browse/FL-79"
+    },
+    "ADM-103": {
+      "id": "23695",
+      "key": "FL-80",
+      "url": "https://heroit.atlassian.net/browse/FL-80"
+    },
+    "ADM-104": {
+      "id": "23696",
+      "key": "FL-81",
+      "url": "https://heroit.atlassian.net/browse/FL-81"
+    },
+    "ADM-105": {
+      "id": "23697",
+      "key": "FL-82",
+      "url": "https://heroit.atlassian.net/browse/FL-82"
+    },
+    "ADM-106": {
+      "id": "23698",
+      "key": "FL-83",
+      "url": "https://heroit.atlassian.net/browse/FL-83"
+    },
+    "STU-101": {
+      "id": "23699",
+      "key": "FL-84",
+      "url": "https://heroit.atlassian.net/browse/FL-84"
+    },
+    "STU-102": {
+      "id": "23700",
+      "key": "FL-85",
+      "url": "https://heroit.atlassian.net/browse/FL-85"
+    },
+    "STU-103": {
+      "id": "23701",
+      "key": "FL-86",
+      "url": "https://heroit.atlassian.net/browse/FL-86"
+    },
+    "VID-090": {
+      "id": "23702",
+      "key": "FL-87",
+      "url": "https://heroit.atlassian.net/browse/FL-87"
+    },
+    "STU-201": {
+      "id": "23703",
+      "key": "FL-88",
+      "url": "https://heroit.atlassian.net/browse/FL-88"
+    },
+    "STU-202": {
+      "id": "23704",
+      "key": "FL-89",
+      "url": "https://heroit.atlassian.net/browse/FL-89"
+    },
+    "STU-203": {
+      "id": "23705",
+      "key": "FL-90",
+      "url": "https://heroit.atlassian.net/browse/FL-90"
+    },
+    "STU-204": {
+      "id": "23706",
+      "key": "FL-91",
+      "url": "https://heroit.atlassian.net/browse/FL-91"
+    },
+    "STU-205": {
+      "id": "23707",
+      "key": "FL-92",
+      "url": "https://heroit.atlassian.net/browse/FL-92"
+    },
+    "VID-102": {
+      "id": "23708",
+      "key": "FL-93",
+      "url": "https://heroit.atlassian.net/browse/FL-93"
+    },
+    "STU-301": {
+      "id": "23709",
+      "key": "FL-94",
+      "url": "https://heroit.atlassian.net/browse/FL-94"
+    },
+    "STU-401": {
+      "id": "23710",
+      "key": "FL-95",
+      "url": "https://heroit.atlassian.net/browse/FL-95"
+    },
+    "STU-402": {
+      "id": "23711",
+      "key": "FL-96",
+      "url": "https://heroit.atlassian.net/browse/FL-96"
+    },
+    "VID-201": {
+      "id": "23712",
+      "key": "FL-97",
+      "url": "https://heroit.atlassian.net/browse/FL-97"
+    },
+    "STU-302": {
+      "id": "23713",
+      "key": "FL-98",
+      "url": "https://heroit.atlassian.net/browse/FL-98"
+    },
+    "STU-303": {
+      "id": "23714",
+      "key": "FL-99",
+      "url": "https://heroit.atlassian.net/browse/FL-99"
+    },
+    "STU-304": {
+      "id": "23715",
+      "key": "FL-100",
+      "url": "https://heroit.atlassian.net/browse/FL-100"
+    },
+    "VID-103": {
+      "id": "23716",
+      "key": "FL-101",
+      "url": "https://heroit.atlassian.net/browse/FL-101"
+    },
+    "VID-104": {
+      "id": "23717",
+      "key": "FL-102",
+      "url": "https://heroit.atlassian.net/browse/FL-102"
+    },
+    "STU-305": {
+      "id": "23718",
+      "key": "FL-103",
+      "url": "https://heroit.atlassian.net/browse/FL-103"
+    },
+    "STU-403": {
+      "id": "23719",
+      "key": "FL-104",
+      "url": "https://heroit.atlassian.net/browse/FL-104"
+    },
+    "STU-306": {
+      "id": "23720",
+      "key": "FL-105",
+      "url": "https://heroit.atlassian.net/browse/FL-105"
+    },
+    "STU-404": {
+      "id": "23721",
+      "key": "FL-106",
+      "url": "https://heroit.atlassian.net/browse/FL-106"
+    },
+    "VID-202": {
+      "id": "23722",
+      "key": "FL-107",
+      "url": "https://heroit.atlassian.net/browse/FL-107"
+    },
+    "VID-203": {
+      "id": "23723",
+      "key": "FL-108",
+      "url": "https://heroit.atlassian.net/browse/FL-108"
+    },
+    "VID-204": {
+      "id": "23724",
+      "key": "FL-109",
+      "url": "https://heroit.atlassian.net/browse/FL-109"
+    },
+    "AI-101": {
+      "id": "23725",
+      "key": "FL-110",
+      "url": "https://heroit.atlassian.net/browse/FL-110"
+    },
+    "AI-104": {
+      "id": "23726",
+      "key": "FL-111",
+      "url": "https://heroit.atlassian.net/browse/FL-111"
+    },
+    "STU-405": {
+      "id": "23727",
+      "key": "FL-112",
+      "url": "https://heroit.atlassian.net/browse/FL-112"
+    },
+    "VID-105": {
+      "id": "23728",
+      "key": "FL-113",
+      "url": "https://heroit.atlassian.net/browse/FL-113"
+    },
+    "AI-102": {
+      "id": "23729",
+      "key": "FL-114",
+      "url": "https://heroit.atlassian.net/browse/FL-114"
+    },
+    "AI-103": {
+      "id": "23730",
+      "key": "FL-115",
+      "url": "https://heroit.atlassian.net/browse/FL-115"
+    },
+    "MOB-101": {
+      "id": "23731",
+      "key": "FL-116",
+      "url": "https://heroit.atlassian.net/browse/FL-116"
+    },
+    "MOB-102": {
+      "id": "23732",
+      "key": "FL-117",
+      "url": "https://heroit.atlassian.net/browse/FL-117"
+    },
+    "REL-201": {
+      "id": "23733",
+      "key": "FL-118",
+      "url": "https://heroit.atlassian.net/browse/FL-118"
+    },
+    "REL-202": {
+      "id": "23734",
+      "key": "FL-119",
+      "url": "https://heroit.atlassian.net/browse/FL-119"
+    },
+    "MOB-103": {
+      "id": "23735",
+      "key": "FL-120",
+      "url": "https://heroit.atlassian.net/browse/FL-120"
+    },
+    "MOB-104": {
+      "id": "23736",
+      "key": "FL-121",
+      "url": "https://heroit.atlassian.net/browse/FL-121"
+    },
+    "MOB-105": {
+      "id": "23737",
+      "key": "FL-122",
+      "url": "https://heroit.atlassian.net/browse/FL-122"
+    },
+    "MOB-106": {
+      "id": "23738",
+      "key": "FL-123",
+      "url": "https://heroit.atlassian.net/browse/FL-123"
+    },
+    "MOB-107": {
+      "id": "23739",
+      "key": "FL-124",
+      "url": "https://heroit.atlassian.net/browse/FL-124"
+    },
+    "MOB-201": {
+      "id": "23740",
+      "key": "FL-125",
+      "url": "https://heroit.atlassian.net/browse/FL-125"
+    },
+    "MOB-202": {
+      "id": "23741",
+      "key": "FL-126",
+      "url": "https://heroit.atlassian.net/browse/FL-126"
+    },
+    "MOB-203": {
+      "id": "23742",
+      "key": "FL-127",
+      "url": "https://heroit.atlassian.net/browse/FL-127"
+    },
+    "MOB-204": {
+      "id": "23743",
+      "key": "FL-128",
+      "url": "https://heroit.atlassian.net/browse/FL-128"
+    },
+    "MOB-301": {
+      "id": "23744",
+      "key": "FL-129",
+      "url": "https://heroit.atlassian.net/browse/FL-129"
+    },
+    "REL-101": {
+      "id": "23745",
+      "key": "FL-130",
+      "url": "https://heroit.atlassian.net/browse/FL-130"
+    },
+    "REL-102": {
+      "id": "23746",
+      "key": "FL-131",
+      "url": "https://heroit.atlassian.net/browse/FL-131"
+    },
+    "MOB-302": {
+      "id": "23747",
+      "key": "FL-132",
+      "url": "https://heroit.atlassian.net/browse/FL-132"
+    },
+    "MOB-303": {
+      "id": "23748",
+      "key": "FL-133",
+      "url": "https://heroit.atlassian.net/browse/FL-133"
+    },
+    "MOB-304": {
+      "id": "23749",
+      "key": "FL-134",
+      "url": "https://heroit.atlassian.net/browse/FL-134"
+    },
+    "REL-103": {
+      "id": "23750",
+      "key": "FL-135",
+      "url": "https://heroit.atlassian.net/browse/FL-135"
+    },
+    "REL-104": {
+      "id": "23751",
+      "key": "FL-136",
+      "url": "https://heroit.atlassian.net/browse/FL-136"
+    },
+    "QA-101": {
+      "id": "23752",
+      "key": "FL-137",
+      "url": "https://heroit.atlassian.net/browse/FL-137"
+    },
+    "QA-102": {
+      "id": "23753",
+      "key": "FL-138",
+      "url": "https://heroit.atlassian.net/browse/FL-138"
+    },
+    "QA-103": {
+      "id": "23754",
+      "key": "FL-139",
+      "url": "https://heroit.atlassian.net/browse/FL-139"
+    },
+    "QA-104": {
+      "id": "23755",
+      "key": "FL-140",
+      "url": "https://heroit.atlassian.net/browse/FL-140"
+    },
+    "QA-105": {
+      "id": "23756",
+      "key": "FL-141",
+      "url": "https://heroit.atlassian.net/browse/FL-141"
+    },
+    "REL-203": {
+      "id": "23757",
+      "key": "FL-142",
+      "url": "https://heroit.atlassian.net/browse/FL-142"
+    }
+  },
+  "links": [
+    ["FN-101", "FN-102"],
+    ["FN-102", "FN-103"],
+    ["FN-102", "FN-104"],
+    ["FN-E01", "FN-E02"],
+    ["FN-103", "FN-201"],
+    ["FN-201", "FN-202"],
+    ["FN-201", "FN-203"],
+    ["FN-203", "FN-204"],
+    ["LIB-003", "FN-205"],
+    ["REC-002", "FN-205"],
+    ["VID-101", "FN-205"],
+    ["FN-E01", "FN-E03"],
+    ["FN-101", "FN-301"],
+    ["FN-301", "FN-302"],
+    ["FN-301", "FN-303"],
+    ["FN-301", "FN-304"],
+    ["FN-202", "LIB-001"],
+    ["FN-203", "LIB-001"],
+    ["FN-101", "LIB-002"],
+    ["LIB-001", "LIB-003"],
+    ["LIB-002", "LIB-003"],
+    ["LIB-001", "LIB-004"],
+    ["LIB-002", "LIB-004"],
+    ["FN-204", "LIB-004"],
+    ["LIB-001", "LIB-005"],
+    ["LIB-004", "LIB-006"],
+    ["LIB-004", "LIB-007"],
+    ["LIB-001", "LIB-101"],
+    ["FN-301", "LIB-101"],
+    ["LIB-101", "LIB-102"],
+    ["LIB-002", "LIB-102"],
+    ["LIB-102", "LIB-103"],
+    ["LIB-101", "LIB-104"],
+    ["LIB-002", "LIB-104"],
+    ["LIB-004", "LIB-201"],
+    ["LIB-201", "LIB-202"],
+    ["LIB-005", "LIB-202"],
+    ["LIB-202", "LIB-203"],
+    ["LIB-102", "LIB-204"],
+    ["LIB-203", "LIB-204"],
+    ["FN-304", "LIB-204"],
+    ["LIB-003", "LIB-205"],
+    ["LIB-203", "LIB-205"],
+    ["LIB-001", "REC-001"],
+    ["LIB-002", "REC-001"],
+    ["REC-001", "REC-002"],
+    ["LIB-004", "REC-002"],
+    ["REC-002", "REC-003"],
+    ["FN-304", "REC-003"],
+    ["LIB-102", "REC-004"],
+    ["REC-003", "REC-004"],
+    ["LIB-102", "REC-101"],
+    ["REC-003", "REC-101"],
+    ["FN-303", "REC-101"],
+    ["REC-101", "REC-102"],
+    ["LIB-006", "REC-102"],
+    ["LIB-007", "REC-103"],
+    ["REC-004", "REC-104"],
+    ["REC-101", "REC-104"],
+    ["LIB-003", "REC-104"],
+    ["LIB-202", "REC-104"],
+    ["VID-101", "REC-104"],
+    ["LIB-102", "REC-105"],
+    ["LIB-003", "REC-106"],
+    ["REC-101", "REC-106"],
+    ["LIB-201", "IMP-001"],
+    ["LIB-005", "IMP-001"],
+    ["FN-303", "IMP-001"],
+    ["FN-304", "IMP-001"],
+    ["ADM-005", "IMP-002"],
+    ["LIB-007", "IMP-003"],
+    ["LIB-003", "IMP-004"],
+    ["IMP-003", "IMP-005"],
+    ["ADM-101", "IMP-005"],
+    ["FN-304", "IMP-005"],
+    ["LIB-201", "IMP-006"],
+    ["REC-105", "IMP-006"],
+    ["REC-101", "IMP-006"],
+    ["IMP-006", "IMP-007"],
+    ["IMP-005", "IMP-007"],
+    ["FN-201", "ADM-001"],
+    ["FN-301", "ADM-001"],
+    ["ADM-001", "ADM-002"],
+    ["ADM-001", "ADM-003"],
+    ["ADM-003", "ADM-004"],
+    ["ADM-001", "ADM-005"],
+    ["LIB-002", "ADM-005"],
+    ["ADM-003", "ADM-006"],
+    ["ADM-002", "ADM-101"],
+    ["ADM-005", "ADM-101"],
+    ["FN-302", "ADM-101"],
+    ["FN-303", "ADM-101"],
+    ["ADM-006", "ADM-102"],
+    ["ADM-101", "ADM-102"],
+    ["ADM-005", "ADM-103"],
+    ["ADM-001", "ADM-104"],
+    ["IMP-003", "ADM-104"],
+    ["ADM-005", "ADM-105"],
+    ["LIB-104", "ADM-106"],
+    ["LIB-103", "ADM-106"],
+    ["LIB-205", "ADM-106"],
+    ["LIB-204", "ADM-106"],
+    ["REC-102", "ADM-106"],
+    ["REC-103", "ADM-106"],
+    ["REC-104", "ADM-106"],
+    ["REC-106", "ADM-106"],
+    ["IMP-001", "ADM-106"],
+    ["IMP-002", "ADM-106"],
+    ["IMP-004", "ADM-106"],
+    ["IMP-007", "ADM-106"],
+    ["ADM-004", "ADM-106"],
+    ["ADM-102", "ADM-106"],
+    ["ADM-103", "ADM-106"],
+    ["ADM-104", "ADM-106"],
+    ["ADM-105", "ADM-106"],
+    ["FN-101", "STU-101"],
+    ["STU-101", "STU-102"],
+    ["FN-102", "STU-102"],
+    ["STU-101", "STU-103"],
+    ["STU-100", "STU-200"],
+    ["STU-102", "STU-201"],
+    ["VID-090", "STU-201"],
+    ["FN-202", "STU-201"],
+    ["FN-301", "STU-201"],
+    ["STU-101", "STU-202"],
+    ["FN-304", "STU-202"],
+    ["STU-102", "STU-203"],
+    ["STU-202", "STU-203"],
+    ["STU-203", "STU-204"],
+    ["STU-203", "STU-205"],
+    ["STU-200", "STU-300"],
+    ["STU-201", "STU-301"],
+    ["STU-205", "STU-301"],
+    ["VID-102", "STU-301"],
+    ["STU-201", "STU-302"],
+    ["STU-402", "STU-302"],
+    ["VID-201", "STU-302"],
+    ["VID-201", "STU-303"],
+    ["STU-402", "STU-303"],
+    ["VID-201", "STU-304"],
+    ["STU-402", "STU-304"],
+    ["STU-205", "STU-305"],
+    ["VID-104", "STU-305"],
+    ["STU-204", "STU-306"],
+    ["VID-104", "STU-306"],
+    ["STU-403", "STU-306"],
+    ["STU-200", "STU-400"],
+    ["STU-102", "STU-401"],
+    ["STU-103", "STU-401"],
+    ["FN-302", "STU-401"],
+    ["STU-205", "STU-402"],
+    ["STU-401", "STU-402"],
+    ["VID-102", "STU-402"],
+    ["VID-090", "STU-402"],
+    ["STU-203", "STU-403"],
+    ["STU-401", "STU-403"],
+    ["VID-102", "STU-403"],
+    ["FN-303", "STU-403"],
+    ["STU-403", "STU-404"],
+    ["STU-301", "STU-405"],
+    ["STU-302", "STU-405"],
+    ["STU-306", "STU-405"],
+    ["STU-404", "STU-405"],
+    ["VID-204", "STU-405"],
+    ["AI-104", "STU-405"],
+    ["FN-101", "VID-101"],
+    ["STU-101", "VID-102"],
+    ["STU-203", "VID-103"],
+    ["VID-101", "VID-104"],
+    ["VID-102", "VID-104"],
+    ["VID-103", "VID-104"],
+    ["VID-201", "VID-104"],
+    ["VID-101", "VID-105"],
+    ["VID-102", "VID-105"],
+    ["VID-100", "VID-200"],
+    ["STU-400", "VID-200"],
+    ["STU-101", "VID-090"],
+    ["VID-090", "VID-201"],
+    ["STU-303", "VID-202"],
+    ["STU-304", "VID-202"],
+    ["STU-305", "VID-202"],
+    ["STU-403", "VID-202"],
+    ["VID-202", "VID-203"],
+    ["VID-203", "VID-204"],
+    ["STU-100", "AI-100"],
+    ["STU-401", "AI-101"],
+    ["AI-101", "AI-102"],
+    ["AI-102", "AI-103"],
+    ["STU-404", "AI-103"],
+    ["STU-205", "AI-104"],
+    ["STU-403", "AI-104"],
+    ["AI-101", "AI-104"],
+    ["FN-203", "MOB-101"],
+    ["MOB-101", "MOB-102"],
+    ["REC-002", "MOB-102"],
+    ["VID-101", "MOB-102"],
+    ["MOB-101", "MOB-103"],
+    ["REL-202", "MOB-103"],
+    ["LIB-102", "MOB-103"],
+    ["REC-001", "MOB-103"],
+    ["MOB-102", "MOB-104"],
+    ["MOB-103", "MOB-104"],
+    ["LIB-204", "MOB-104"],
+    ["REC-004", "MOB-104"],
+    ["MOB-104", "MOB-105"],
+    ["REC-102", "MOB-105"],
+    ["REC-103", "MOB-105"],
+    ["REC-104", "MOB-105"],
+    ["REC-105", "MOB-105"],
+    ["MOB-102", "MOB-106"],
+    ["MOB-103", "MOB-106"],
+    ["IMP-001", "MOB-106"],
+    ["IMP-004", "MOB-106"],
+    ["IMP-007", "MOB-106"],
+    ["REC-106", "MOB-106"],
+    ["MOB-101", "MOB-107"],
+    ["REL-202", "MOB-107"],
+    ["ADM-101", "MOB-107"],
+    ["MOB-100", "MOB-200"],
+    ["STU-205", "MOB-200"],
+    ["VID-090", "MOB-200"],
+    ["MOB-102", "MOB-201"],
+    ["STU-205", "MOB-201"],
+    ["REL-202", "MOB-201"],
+    ["MOB-201", "MOB-202"],
+    ["STU-301", "MOB-202"],
+    ["STU-304", "MOB-202"],
+    ["MOB-202", "MOB-203"],
+    ["STU-303", "MOB-203"],
+    ["STU-305", "MOB-203"],
+    ["STU-306", "MOB-203"],
+    ["AI-104", "MOB-203"],
+    ["STU-302", "MOB-203"],
+    ["MOB-203", "MOB-204"],
+    ["STU-405", "MOB-204"],
+    ["AI-103", "MOB-204"],
+    ["MOB-101", "MOB-300"],
+    ["MOB-103", "MOB-301"],
+    ["MOB-301", "MOB-302"],
+    ["REL-102", "MOB-302"],
+    ["REL-102", "MOB-303"],
+    ["MOB-102", "MOB-304"],
+    ["MOB-301", "MOB-304"],
+    ["REL-201", "REL-101"],
+    ["MOB-101", "REL-102"],
+    ["REL-101", "REL-102"],
+    ["MOB-101", "REL-103"],
+    ["REL-101", "REL-103"],
+    ["VID-204", "REL-104"],
+    ["AI-102", "REL-104"],
+    ["MOB-200", "QA-100"],
+    ["MOB-300", "QA-100"],
+    ["REL-100", "QA-100"],
+    ["MOB-104", "QA-101"],
+    ["MOB-106", "QA-101"],
+    ["MOB-107", "QA-101"],
+    ["MOB-301", "QA-101"],
+    ["MOB-303", "QA-101"],
+    ["STU-404", "QA-101"],
+    ["MOB-204", "QA-102"],
+    ["VID-105", "QA-102"],
+    ["MOB-203", "QA-103"],
+    ["MOB-301", "QA-103"],
+    ["MOB-302", "QA-104"],
+    ["STU-404", "QA-104"],
+    ["QA-101", "QA-105"],
+    ["QA-102", "QA-105"],
+    ["QA-103", "QA-105"],
+    ["QA-104", "QA-105"],
+    ["REL-103", "QA-105"],
+    ["REL-104", "QA-105"],
+    ["FN-101", "REL-201"],
+    ["REL-201", "REL-202"],
+    ["FN-301", "REL-202"],
+    ["QA-105", "REL-203"]
+  ],
+  "linkStrategy": "Transitive reduction: 275 Blocks links preserve all 408 declared dependency relationships.",
+  "linkEvidence": [],
+  "linkEvidenceStatus": "The dirty-checkout Jira link batches were omitted from this reviewed slice. The 275 declared links were independently read from live Jira and matched this transitive reduction on 2026-09-20; no durable local response artifact is claimed."
+}

@@ -1,0 +1,734 @@
+{
+  "spaceId": "61374475",
+  "spaceKey": "FR",
+  "cloudId": "9b68c4fc-dbd2-4864-a050-674c27f779b2",
+  "homePageId": "61374652",
+  "pages": [
+    {
+      "source": "docs/docs/developer/frameleaf-account-settings-audit.md",
+      "category": "audits",
+      "title": "Frameleaf account settings audit",
+      "sourceSha256": "d9fa8ea183fd52c79973b7a68e7e7c7dc37fb7f87d0d9d5259518bfaf9c838dc",
+      "bytes": 12350,
+      "id": "61407287",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407287/Frameleaf+account+settings+audit",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-accounts-design.md",
+      "category": "reference",
+      "title": "Frameleaf accounts, libraries and personal access",
+      "sourceSha256": "61ef39ee775ec0ae4dc64d33dae3a944c86bde34881d638868aa7b89fd238ab6",
+      "bytes": 15154,
+      "id": "61407307",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407307/Frameleaf+accounts+libraries+and+personal+access",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-command-center-data.md",
+      "category": "reference",
+      "title": "Frameleaf command center data",
+      "sourceSha256": "3b909f7bc98f350bca5a9c996ec422eb3562d231149b1c2b67312b76316f21c5",
+      "bytes": 26097,
+      "id": "61538366",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538366/Frameleaf+command+center+data",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-implementation-status.md",
+      "category": "reference",
+      "title": "Frameleaf implementation status",
+      "sourceSha256": "c8ceaf771bbd49a263784e22220316d1b443a43b264f4fbbaedf5261da447319",
+      "bytes": 22841,
+      "id": "61407327",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407327/Frameleaf+implementation+status",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-jobs-design.md",
+      "category": "reference",
+      "title": "Frameleaf Compute & Jobs design",
+      "sourceSha256": "28dd8ae3a8d39c6bd8b42035ce9440bf9ee147548c36e21bfbdf3ccf9930439f",
+      "bytes": 19235,
+      "id": "61407349",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407349/Frameleaf+Compute+Jobs+design",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-library-action-parity.md",
+      "category": "reference",
+      "title": "Frameleaf library action parity audit",
+      "sourceSha256": "d8f5942885a144221798f81f458eb58a7a6f8f8bd1f2cb1f7c04d80aea834379",
+      "bytes": 33634,
+      "id": "61407369",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407369/Frameleaf+library+action+parity+audit",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-mobile-foundation.md",
+      "category": "reference",
+      "title": "Frameleaf native foundation",
+      "sourceSha256": "f0201b85f0cb7affa07488a36e359068c89c7add71338d27aea87d331671698f",
+      "bytes": 9805,
+      "id": "61538386",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538386/Frameleaf+native+foundation",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-physical-dedup-design.md",
+      "category": "reference",
+      "title": "Physical-file reuse review",
+      "sourceSha256": "dc2f937b231135c930eaa88dd75a13827b99af68ebe34445e58998c7d68ae32b",
+      "bytes": 5682,
+      "id": "61374763",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374763/Physical-file+reuse+review",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-project-api.md",
+      "category": "reference",
+      "title": "Frameleaf project API and app authentication",
+      "sourceSha256": "ced7bc6ba10a750d9c9db668d7bb9a6ad3f269415c3e285e835e44e07b573623",
+      "bytes": 8378,
+      "id": "61538406",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538406/Frameleaf+project+API+and+app+authentication",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-screen-parity-audit.md",
+      "category": "audits",
+      "title": "Frameleaf screen and workflow parity audit",
+      "sourceSha256": "f7366f53ca274283b086ca20807bcdb12eacc8475ed75ac77ed8ede51f451c90",
+      "bytes": 72625,
+      "id": "61407389",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407389/Frameleaf+screen+and+workflow+parity+audit",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-settings-coverage.md",
+      "category": "audits",
+      "title": "Frameleaf settings coverage audit",
+      "sourceSha256": "c368399f14d6b96d72a7bc2f21aed46af32054b1705d3c7e06c291be114d1b9a",
+      "bytes": 24252,
+      "id": "61407417",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407417/Frameleaf+settings+coverage+audit",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-settings-design-review.md",
+      "category": "reference",
+      "title": "Frameleaf settings design review",
+      "sourceSha256": "7c6c4357ba958bc6cef2c47f6ed8714865da7295a1780404f369759c7220bf79",
+      "bytes": 16374,
+      "id": "61374783",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374783/Frameleaf+settings+design+review",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-settings-handoff.md",
+      "category": "history",
+      "title": "Frameleaf settings work handoff",
+      "sourceSha256": "44c5bc60378f7bdc71bdeb43953f05df9a7816a81a9f9bfc5c9ad9cf581c347a",
+      "bytes": 19395,
+      "id": "61374807",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374807/Frameleaf+settings+work+handoff",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-settings-inventory.md",
+      "category": "audits",
+      "title": "Frameleaf settings and administration inventory",
+      "sourceSha256": "c73889a593373481d8e79768b3a150145de2b010305d4e5caa337e2879bcb08a",
+      "bytes": 76859,
+      "id": "61374842",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374842/Frameleaf+settings+and+administration+inventory",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-studio-foundation.md",
+      "category": "reference",
+      "title": "Frameleaf studio foundation and rendering proof",
+      "sourceSha256": "c8b5455d4efe86aac906883cf3b9e53644a320ae1ad4690aa55769fbf587e66e",
+      "bytes": 11030,
+      "id": "61440084",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440084/Frameleaf+studio+foundation+and+rendering+proof",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-utility-recovery.md",
+      "category": "reference",
+      "title": "Frameleaf recovery and coordinate controls",
+      "sourceSha256": "6d34853906dc771d84f0c79dbe82a3cd2277a35e52625ee517e08767b2e84a95",
+      "bytes": 3636,
+      "id": "61374864",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374864/Frameleaf+recovery+and+coordinate+controls",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-web-shell.md",
+      "category": "reference",
+      "title": "Frameleaf web shell",
+      "sourceSha256": "a60ba1dafb5d0e92b8b20a86690756e911641e67b68c06687b546aa29a89a62d",
+      "bytes": 5177,
+      "id": "61440119",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440119/Frameleaf+web+shell",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-workflow-design.md",
+      "category": "reference",
+      "title": "Frameleaf workflow editor checkpoint",
+      "sourceSha256": "16b0f441ab2943a01e5d84c0f7c5ec169337ef66f004d1812b1dbd6fd6c8da2b",
+      "bytes": 4304,
+      "id": "61440140",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440140/Frameleaf+workflow+editor+checkpoint",
+      "version": 2
+    },
+    {
+      "source": "docs/library-privacy-audit.md",
+      "category": "audits",
+      "title": "Sensitive Media Source Semantics and Privacy Audit",
+      "sourceSha256": "2ad05891758b84ad76e9f7ab386e99c844f81bf0f041a88c63dd4fdef004468d",
+      "bytes": 11625,
+      "id": "61538427",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538427/Sensitive+Media+Source+Semantics+and+Privacy+Audit",
+      "version": 2
+    },
+    {
+      "source": "prototypes/frameleaf/README.md",
+      "category": "prototype",
+      "title": "Interactive Prototype Guide",
+      "sourceSha256": "6af5acb3ce466c93d390106277c7abcdd01db4c88592d1215d197e0f514cccf7",
+      "bytes": 13013,
+      "id": "61538447",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538447/Interactive+Prototype+Guide",
+      "version": 2
+    },
+    {
+      "source": "prototypes/frameleaf/design-qa.md",
+      "category": "prototype",
+      "title": "Prototype Design and Validation Record",
+      "sourceSha256": "35e5d79042b68b67bf1feb6c19916ee4e71b5077e6506f60ff1c790b7bcb5c94",
+      "bytes": 23126,
+      "id": "61440160",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440160/Prototype+Design+and+Validation+Record",
+      "version": 2
+    },
+    {
+      "source": "prototypes/frameleaf/AGENTS.md",
+      "category": "prototype",
+      "title": "Prototype Design Instructions",
+      "sourceSha256": "d76a9d6af11a51a55c0b895cc90bcf53e726c41ef8696c949003bf8051f140ac",
+      "bytes": 8593,
+      "id": "61538488",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538488/Prototype+Design+Instructions",
+      "version": 2
+    },
+    {
+      "source": "prototypes/frameleaf/docs/manual-face-tagging.md",
+      "category": "prototype",
+      "title": "Manual Face Tagging Design and Source Contracts",
+      "sourceSha256": "7477a67eb2e5ba7c98bb92cd2d6bd8bf1e457d74222263f2f037cd1e076dc2a2",
+      "bytes": 6753,
+      "id": "61440190",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440190/Manual+Face+Tagging+Design+and+Source+Contracts",
+      "version": 2
+    },
+    {
+      "source": "docs/superpowers/plans/2026-09-19-enhanced-roadmap.md",
+      "category": "history",
+      "title": "Earlier Enhanced Roadmap Implementation Checkpoint",
+      "sourceSha256": "c13d43d27c1a92a57dadfc97b8393668bd3a31d7fb255707551d66d24a720453",
+      "bytes": 12771,
+      "id": "61440211",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440211/Earlier+Enhanced+Roadmap+Implementation+Checkpoint",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/adr/2026-09-19-optional-object-storage.md",
+      "category": "reference",
+      "title": "Optional Object Storage Architecture Decision",
+      "sourceSha256": "376841bce6883823731ef362b8a40a36b7e8d6558f078cfc02411f7c82fe0bb5",
+      "bytes": 15955,
+      "id": "61374884",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374884/Optional+Object+Storage+Architecture+Decision",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/fork-integration.md",
+      "category": "reference",
+      "title": "Inherited Compatibility and Integration Gate",
+      "sourceSha256": "274a3531ba1066a0d6a3ac6ad65792acaaedf6e6a28532b97ac12035cb9dce0c",
+      "bytes": 5454,
+      "id": "61374926",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374926/Inherited+Compatibility+and+Integration+Gate",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/classification-and-culling.md",
+      "category": "features",
+      "title": "Feature Reference — Classification And Culling",
+      "sourceSha256": "6737e871fd53574c5dd00df4548c27bc3b9246f63be2c74053a16b24f22cdde2",
+      "bytes": 4144,
+      "id": "61538514",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538514/Feature+Reference+Classification+And+Culling",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/derivative-privacy.md",
+      "category": "features",
+      "title": "Feature Reference — Derivative Privacy",
+      "sourceSha256": "e56484ed9702f2c0f73fc91cd99710c19f4ff11ce059a6947644901f3b2ed391",
+      "bytes": 2908,
+      "id": "61407445",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407445/Feature+Reference+Derivative+Privacy",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/descriptions-and-smart-albums.md",
+      "category": "features",
+      "title": "Feature Reference — Descriptions And Smart Albums",
+      "sourceSha256": "c57ac67f4de2c974e8c64ddf85e7f2ed8776d911edc4a86322e3793b1837b4ac",
+      "bytes": 50706,
+      "id": "61538534",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538534/Feature+Reference+Descriptions+And+Smart+Albums",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/documents-and-receipts.md",
+      "category": "features",
+      "title": "Feature Reference — Documents And Receipts",
+      "sourceSha256": "65c6692886fc8196f87417172687c6c5d13f0f3ad8d9aa0a58084663227335f7",
+      "bytes": 2788,
+      "id": "61374947",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374947/Feature+Reference+Documents+And+Receipts",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/duplicates-utility.md",
+      "category": "features",
+      "title": "Feature Reference — Duplicates Utility",
+      "sourceSha256": "f02ae75889c7e3f789282aa24ac73e3137d8939ebc817f68ee7c53b57f328689",
+      "bytes": 2825,
+      "id": "61538555",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538555/Feature+Reference+Duplicates+Utility",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/enrichment-workspace.md",
+      "category": "features",
+      "title": "Feature Reference — Enrichment Workspace",
+      "sourceSha256": "c085331d0fc8e248873202457d8fe3a88f49559ef0a93a318d37025f08e23749",
+      "bytes": 4638,
+      "id": "61440234",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440234/Feature+Reference+Enrichment+Workspace",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/face-review.md",
+      "category": "features",
+      "title": "Feature Reference — Face Review",
+      "sourceSha256": "ee31ec43309ddbcab21cea323a009318088cd144590444d512bb719affd3baa2",
+      "bytes": 3145,
+      "id": "61440256",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440256/Feature+Reference+Face+Review",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/fork-privacy-suite.md",
+      "category": "features",
+      "title": "Feature Reference — Fork Privacy Suite",
+      "sourceSha256": "dd9f4a8bae7d1b24cfaea4d80e4c931c16680ccdf1f52e89b10cec40ec390f52",
+      "bytes": 14761,
+      "id": "61440280",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440280/Feature+Reference+Fork+Privacy+Suite",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/google-photos-import.md",
+      "category": "features",
+      "title": "Feature Reference — Google Photos Import",
+      "sourceSha256": "af4d0989e7aca0308d9339a6d07320d4776aff858bf05de9eac89b613749b19e",
+      "bytes": 2889,
+      "id": "61538579",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538579/Feature+Reference+Google+Photos+Import",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/image-enrichment.md",
+      "category": "features",
+      "title": "Feature Reference — Image Enrichment",
+      "sourceSha256": "18f9267fcd625956c8e8ae532221552530d099e5cd7cb50e7a1511c5cf398042",
+      "bytes": 14648,
+      "id": "61374970",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374970/Feature+Reference+Image+Enrichment",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/individual-pets.md",
+      "category": "features",
+      "title": "Feature Reference — Individual Pets",
+      "sourceSha256": "891cbf77b32938bb87efa3f73032280add21ee6ce7c2695dcc26b2d73753be73",
+      "bytes": 3873,
+      "id": "61407465",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407465/Feature+Reference+Individual+Pets",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/library-care.md",
+      "category": "features",
+      "title": "Feature Reference — Library Care",
+      "sourceSha256": "e82e0d76f6070afdc42d5499e37d6a493bcf9fc5f7b8786921cc23abfd12ae6e",
+      "bytes": 2082,
+      "id": "61407493",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407493/Feature+Reference+Library+Care",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/memory-stories.md",
+      "category": "features",
+      "title": "Feature Reference — Memory Stories",
+      "sourceSha256": "024c794c138109f18b75f9a25afe15f16500df6cdf6b9b051109f5f3391c627f",
+      "bytes": 3902,
+      "id": "61440302",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440302/Feature+Reference+Memory+Stories",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/photo-tools.md",
+      "category": "features",
+      "title": "Feature Reference — Photo Tools",
+      "sourceSha256": "2745d9633453353e22e016d07df15bc591e1d54cafb5779b3693ff6c47592120",
+      "bytes": 5116,
+      "id": "61538603",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538603/Feature+Reference+Photo+Tools",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/preservation.md",
+      "category": "features",
+      "title": "Feature Reference — Preservation",
+      "sourceSha256": "f2e650f9cfef0a19806545da5a474715397abc29b5096cfe42b7e022f40eedaa",
+      "bytes": 7066,
+      "id": "61374992",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374992/Feature+Reference+Preservation",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/shared-spaces.md",
+      "category": "features",
+      "title": "Feature Reference — Shared Spaces",
+      "sourceSha256": "7d586462c0824793f7301690f9eefd9801c3d0bb8829f089cc5f8b5c0fb33577",
+      "bytes": 4197,
+      "id": "61440324",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440324/Feature+Reference+Shared+Spaces",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/unified-discovery.md",
+      "category": "features",
+      "title": "Feature Reference — Unified Discovery",
+      "sourceSha256": "25f48c93763b6807ae113231fa1b3cc329a79af65faf49fbf77729e2ce22a830",
+      "bytes": 6517,
+      "id": "61440346",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440346/Feature+Reference+Unified+Discovery",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/video-editing.md",
+      "category": "features",
+      "title": "Feature Reference — Video Editing",
+      "sourceSha256": "1ee7195e5c88e34f3271e8d7d0ee7e5a9a02fd960cf878f279ac987a070e3c4c",
+      "bytes": 5534,
+      "id": "61440372",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440372/Feature+Reference+Video+Editing",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/video-restoration.md",
+      "category": "features",
+      "title": "Feature Reference — Video Restoration",
+      "sourceSha256": "7235d56179452083b049ac36400bac3512d80f5d209c6ea8f78648f300d446f3",
+      "bytes": 9362,
+      "id": "61375014",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61375014/Feature+Reference+Video+Restoration",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/switching-between-fork-and-official.md",
+      "category": "features",
+      "title": "Feature Reference — Switching Between Fork And Official",
+      "sourceSha256": "dd9fb1160783cff514ac1b7232d089eaf49af7f821a500ccbbd439364959d238",
+      "bytes": 824,
+      "id": "61440396",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440396/Feature+Reference+Switching+Between+Fork+And+Official",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/features/revert-to-upstream.md",
+      "category": "features",
+      "title": "Feature Reference — Revert To Upstream",
+      "sourceSha256": "1e76c46e9a56042353fd1dd51a749af2fe182dcb7aee22b95a1a37a24584b83d",
+      "bytes": 3464,
+      "id": "61538631",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538631/Feature+Reference+Revert+To+Upstream",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "category": "plan",
+      "title": "AI Coding Agent Execution Guide",
+      "sourceSha256": "1116f132b21759125943be33293264bfb3c71e22049e5ffba575e09d3c026d61",
+      "bytes": 17753,
+      "id": "61407516",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407516/AI+Coding+Agent+Execution+Guide",
+      "version": 4,
+      "verifiedAt": "2026-09-20T08:17:45.000Z",
+      "verification": "source hash marker, fetched baseline and terminal content read back after update"
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-plan/02-library-and-administration.md",
+      "category": "plan",
+      "title": "Library and Administration Implementation",
+      "sourceSha256": "997d023b792379e97b347f223d79993e681fc96871a2f15e74f7372d428d473a",
+      "bytes": 44696,
+      "id": "61375040",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61375040/Library+and+Administration+Implementation",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+      "category": "plan",
+      "title": "Studio Rendering and Restoration Implementation",
+      "sourceSha256": "9e7fa2cf32506436c6a829875b54aa985630927d9035abee4b723ca3fed6797a",
+      "bytes": 48177,
+      "id": "61440418",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440418/Studio+Rendering+and+Restoration+Implementation",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "category": "plan",
+      "title": "Native Applications and Release Implementation",
+      "sourceSha256": "8d7083c26bbf873394473a824006e2503d364fcaee9728a8c07a1c22b5c2ccbe",
+      "bytes": 27579,
+      "id": "61538653",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538653/Native+Applications+and+Release+Implementation",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-plan/06-brand-assets.md",
+      "category": "plan",
+      "title": "Frameleaf SVG Brand Kit",
+      "sourceSha256": "2de5788a4a5ed9c6374025c3b5f7531180aa718a1e0fee3b485bcd3a6215c958",
+      "bytes": 12452,
+      "id": "61407537",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407537/Frameleaf+SVG+Brand+Kit",
+      "version": 2
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-context-handoff.md",
+      "category": "history",
+      "title": "Frameleaf context handoff",
+      "sourceSha256": "5defef0d2e57e54be60ff563c1c017fcd9c8eefa34bc3e186631426b99b4b09e",
+      "bytes": 42239,
+      "id": "61440057",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440057/Frameleaf+context+handoff",
+      "version": 3
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-plan/07-feature-ownership.md",
+      "category": "plan",
+      "title": "Complete Feature Ownership and Jira Coverage",
+      "sourceSha256": "a2775bfdc50ea9545b7d458074ca5eeab6ec45f042d3068d7f7fca50e904d01b",
+      "bytes": 167481,
+      "id": "61538800",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538800/Complete+Feature+Ownership+and+Jira+Coverage",
+      "version": 1
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-plan/00-implementation-plan.md",
+      "category": "plan",
+      "title": "Frameleaf Implementation Plan",
+      "sourceSha256": "e483afccf20bafb2223747b838d1e134afb0f1c950dee337a5d3be06e1e43b5b",
+      "bytes": 18451,
+      "id": "61538319",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538319/Frameleaf+Implementation+Plan",
+      "version": 5,
+      "verifiedAt": "2026-09-20T08:18:42.000Z",
+      "verification": "source hash marker, fetched baseline and terminal content read back after update"
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-plan/05-delivery-and-backlog.md",
+      "category": "plan",
+      "title": "Delivery Sequence and Jira Backlog",
+      "sourceSha256": "0c6120635dbb5c4f9ed913212d814679ea4a298b3434850b17af45dbe2b9744c",
+      "bytes": 35245,
+      "id": "61407624",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407624/Delivery+Sequence+and+Jira+Backlog",
+      "version": 3
+    },
+    {
+      "source": "AGENTS.md",
+      "category": "development",
+      "title": "Frameleaf Repository Agent Instructions",
+      "sourceSha256": "5d005db96c3a51d4b58c426613587a243e5132df870992fa1fe26eb93e4db2cb",
+      "bytes": 7868,
+      "id": "61440673",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440673",
+      "version": 4,
+      "verifiedAt": "2026-09-20T07:35:43.401Z",
+      "verification": "Full normalized page readback verified after owner merge; source content and hash unchanged.",
+      "sourceCommit": "e1b7e063180bc7853775419017768f57adc5f030"
+    },
+    {
+      "source": "docs/docs/developer/frameleaf-development.md",
+      "category": "development",
+      "title": "Frameleaf Development and Delivery",
+      "sourceSha256": "b178313fd1253361a298be39a5bba575cdc26e0b548e1a6b9abe631125f19406",
+      "bytes": 26181,
+      "id": "61407844",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844",
+      "version": 7,
+      "verifiedAt": "2026-09-20T07:35:43.401Z",
+      "verification": "Full normalized page readback verified after owner merge; source content and hash unchanged.",
+      "sourceCommit": "e1b7e063180bc7853775419017768f57adc5f030"
+    },
+    {
+      "source": "design/README.md",
+      "category": "design-template",
+      "sourceSha256": "1d64dcbf499b84a94a20744c50fdbbc5227a25e997a1030a38fe3fa4707be69d",
+      "bytes": 411,
+      "id": "61539021",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
+      "version": 2,
+      "verified": true,
+      "title": "Frameleaf Reusable Design Template",
+      "verifiedAt": "2026-09-20T07:35:43.401Z",
+      "verification": "Full normalized page readback verified after owner merge; source content and hash unchanged."
+    },
+    {
+      "source": "design/AGENTS.md",
+      "category": "design-template",
+      "sourceSha256": "1aee3224386aed5ce97f80493d41d6fb6492c792e7d49ca54e08a35674051ecb",
+      "bytes": 1449,
+      "id": "61539021",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
+      "version": 2,
+      "verified": true,
+      "title": "Frameleaf Reusable Design Template",
+      "verifiedAt": "2026-09-20T07:35:43.401Z",
+      "verification": "Full normalized page readback verified after owner merge; source content and hash unchanged."
+    },
+    {
+      "source": "design/frameleaf/README.md",
+      "category": "design-template",
+      "sourceSha256": "9c793aa8d72cd40b68e3a2979b47173279ab48744ab1e94eb8f496e180a03a30",
+      "bytes": 4380,
+      "id": "61539021",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
+      "version": 2,
+      "verified": true,
+      "title": "Frameleaf Reusable Design Template",
+      "verifiedAt": "2026-09-20T07:35:43.401Z",
+      "verification": "Full normalized page readback verified after owner merge; source content and hash unchanged."
+    },
+    {
+      "source": "design/frameleaf/INTERACTION-REQUIREMENTS.md",
+      "category": "design-template",
+      "sourceSha256": "8a821b6b1b84016ccc74a824a55ee16947df96add2d1e5aad007fea046145574",
+      "bytes": 7574,
+      "id": "61539021",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
+      "version": 2,
+      "verified": true,
+      "title": "Frameleaf Reusable Design Template",
+      "verifiedAt": "2026-09-20T07:35:43.401Z",
+      "verification": "Full normalized page readback verified after owner merge; source content and hash unchanged."
+    },
+    {
+      "source": "design/frameleaf/template/README.md",
+      "category": "design-template",
+      "sourceSha256": "1f132c8c586ed22c48a914c785e4bcc2d1a86119b0e17e5dd6eea790c7e63b3c",
+      "bytes": 3782,
+      "id": "61539021",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
+      "version": 2,
+      "verified": true,
+      "title": "Frameleaf Reusable Design Template",
+      "verifiedAt": "2026-09-20T07:35:43.401Z",
+      "verification": "Full normalized page readback verified after owner merge; source content and hash unchanged."
+    },
+    {
+      "source": "design/frameleaf/references/README.md",
+      "category": "design-template",
+      "sourceSha256": "d8fb86f6284408e6a843f41a7ba8047e1c68f55e8cc8eb0006c198b2ed988744",
+      "bytes": 1547,
+      "id": "61539021",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
+      "version": 2,
+      "verified": true,
+      "title": "Frameleaf Reusable Design Template",
+      "verifiedAt": "2026-09-20T07:35:43.401Z",
+      "verification": "Full normalized page readback verified after owner merge; source content and hash unchanged."
+    },
+    {
+      "category": "development",
+      "source": ".agents/skills/frameleaf-deploy-release/SKILL.md",
+      "sourceSha256": "d35d7045d8f73f564fd6da65f5fba24ae6a9d47c752dbde2b61cb0b3ddf1d43d",
+      "bytes": 9820,
+      "id": "61375285",
+      "title": "Frameleaf Delivery and Release Skill",
+      "version": 2,
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61375285",
+      "sourceCommit": "e1b7e063180bc7853775419017768f57adc5f030",
+      "verifiedAt": "2026-09-20T07:35:43.401Z",
+      "verification": "Full normalized page readback verified after owner merge; source content and hash unchanged."
+    }
+  ],
+  "hubs": {
+    "docs": {
+      "id": "61374675",
+      "title": "Documentation Library",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374675/Documentation+Library",
+      "version": 2
+    },
+    "audits": {
+      "id": "61374697",
+      "title": "Feature Preservation Audits",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374697/Feature+Preservation+Audits",
+      "version": 2
+    },
+    "reference": {
+      "id": "61374719",
+      "title": "Architecture and Integration References",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374719/Architecture+and+Integration+References",
+      "version": 2
+    },
+    "prototype": {
+      "id": "61374741",
+      "title": "Prototype Design and Validation",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374741/Prototype+Design+and+Validation",
+      "version": 2
+    },
+    "history": {
+      "id": "61538344",
+      "title": "Historical Planning and Handoffs",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538344/Historical+Planning+and+Handoffs",
+      "version": 2
+    },
+    "features": {
+      "id": "61440035",
+      "title": "Existing Feature References",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440035/Existing+Feature+References",
+      "version": 2
+    }
+  },
+  "home": {
+    "source": "docs/docs/developer/frameleaf-plan/confluence-home.md",
+    "sourceSha256": "530f308020ab078a6bb97aa6d195fffc08d523936f078095d3f85c125e7a1f61",
+    "id": "61374652",
+    "url": "https://heroit.atlassian.net/wiki/spaces/FR/overview",
+    "version": 3
+  }
+}
