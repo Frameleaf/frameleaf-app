@@ -6,7 +6,6 @@ import hashlib
 import json
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
 
@@ -93,19 +92,52 @@ def load_json(path):
     return json.loads(path.read_text(), object_pairs_hook=reject_duplicate_keys)
 
 
+def json_scalar(value):
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
+    raise TypeError(f'Unsupported JSON scalar: {type(value).__name__}')
+
+
 def canonical_json(value):
-    """Serialize JSON exactly as the repository root Prettier contract requires."""
-    prettier = shutil.which('prettier')
-    if prettier is None:
-        raise RuntimeError('Prettier is required to generate or check the native parity inventory')
-    raw = json.dumps(value, indent=2) + '\n'
-    return subprocess.run(
-        [prettier, '--stdin-filepath', str(OUTPUT)],
-        input=raw,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
+    """Serialize the inventory like root Prettier plus recursive lexical JSON sorting."""
+    def primitive_array(values):
+        if not all(item is None or isinstance(item, (str, int, float, bool)) for item in values):
+            return None
+        return '[' + ', '.join(json_scalar(item) for item in values) + ']'
+
+    def render(current, indent=0, column=0):
+        if isinstance(current, dict):
+            if not current:
+                return '{}'
+            keys = sorted(current)
+            lines = ['{']
+            for index, key in enumerate(keys):
+                prefix = ' ' * (indent + 2) + json_scalar(key) + ': '
+                child_lines = render(current[key], indent + 2, len(prefix)).splitlines()
+                lines.append(prefix + child_lines[0])
+                lines.extend(child_lines[1:])
+                if index < len(keys) - 1:
+                    lines[-1] += ','
+            lines.append(' ' * indent + '}')
+            return '\n'.join(lines)
+        if isinstance(current, list):
+            flat = primitive_array(current)
+            if flat is not None and column + len(flat) <= 80:
+                return flat
+            if not current:
+                return '[]'
+            lines = ['[']
+            for index, item in enumerate(current):
+                child_lines = render(item, indent + 2, indent + 2).splitlines()
+                lines.append(' ' * (indent + 2) + child_lines[0])
+                lines.extend(child_lines[1:])
+                if index < len(current) - 1:
+                    lines[-1] += ','
+            lines.append(' ' * indent + ']')
+            return '\n'.join(lines)
+        return json_scalar(current)
+
+    return render(value) + '\n'
 
 
 def reject_nested_release_claims(value, location='native issue map'):
