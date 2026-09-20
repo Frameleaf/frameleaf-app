@@ -501,6 +501,7 @@ with
       "asset"."ownerId",
       "asset"."status",
       asset."fileCreatedAt" at time zone 'utc' as "fileCreatedAt",
+      asset."createdAt" at time zone 'utc' as "createdAt",
       encode("asset"."thumbhash", 'base64') as "thumbhash",
       "asset_exif"."projectionType",
       coalesce(
@@ -546,7 +547,8 @@ with
       )
     order by
       (asset."localDateTime" AT TIME ZONE 'UTC')::date desc,
-      asset."fileCreatedAt" desc
+      asset."fileCreatedAt" desc,
+      "asset"."originalFileName" desc
   ),
   "agg" as (
     select
@@ -558,6 +560,7 @@ with
       coalesce(array_agg("isTrashed"), '{}') as "isTrashed",
       coalesce(array_agg("livePhotoVideoId"), '{}') as "livePhotoVideoId",
       coalesce(array_agg("fileCreatedAt"), '{}') as "fileCreatedAt",
+      coalesce(array_agg("createdAt"), '{}') as "createdAt",
       coalesce(array_agg("localOffsetHours"), '{}') as "localOffsetHours",
       coalesce(array_agg("ownerId"), '{}') as "ownerId",
       coalesce(array_agg("projectionType"), '{}') as "projectionType",
@@ -752,10 +755,6 @@ select
       "asset_file"."assetId" = "asset"."id"
       and "asset_file"."type" = 'encoded_video'
       and "asset_file"."isEdited" = false
-    order by
-      "asset_file"."createdAt" desc
-    limit
-      $1
   ) as "encodedVideoPath",
   (
     select
@@ -766,16 +765,12 @@ select
       "asset_file"."assetId" = "asset"."id"
       and "asset_file"."type" = 'encoded_video'
       and "asset_file"."isEdited" = true
-    order by
-      "asset_file"."createdAt" desc
-    limit
-      $2
   ) as "editedVideoPath"
 from
   "asset"
 where
-  "asset"."id" = $3
-  and "asset"."type" = $4
+  "asset"."id" = $1
+  and "asset"."type" = $2
 
 -- AssetRepository.getForOcr
 select
