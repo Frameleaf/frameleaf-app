@@ -3,6 +3,8 @@ import importlib.util
 import copy
 import json
 from pathlib import Path
+import shutil
+import subprocess
 from types import SimpleNamespace
 import tempfile
 import unittest
@@ -35,6 +37,49 @@ class InventoryContractTests(unittest.TestCase):
             with patch.object(inventory, 'ISSUE_MAP', issue_path), patch.object(inventory, 'BACKLOG', backlog_path):
                 with self.assertRaises(ValueError):
                     inventory.validate_issue_map(self.result, self.serialized)
+
+    def test_canonical_json_matches_known_bytes(self):
+        value = {
+            'zeta': ['short', 'values'],
+            'alpha': {'zulu': 2, 'alpha': ['one']},
+            'empty': [],
+            'long': ['a value that cannot remain on the same line because its complete property exceeds eighty columns'],
+        }
+        expected = '''{
+  "alpha": {
+    "alpha": ["one"],
+    "zulu": 2
+  },
+  "empty": [],
+  "long": [
+    "a value that cannot remain on the same line because its complete property exceeds eighty columns"
+  ],
+  "zeta": ["short", "values"]
+}
+'''
+        with patch.object(inventory.subprocess, 'run', side_effect=AssertionError('external process invoked')):
+            self.assertEqual(inventory.canonical_json(value), expected)
+
+    def test_canonical_json_matches_prettier_when_available(self):
+        prettier = shutil.which('prettier')
+        if prettier is None:
+            self.skipTest('repository Prettier is not available on PATH')
+        plugin = next((parent / 'prettier-plugin-sort-json' / 'dist/index.js'
+            for parent in Path(prettier).parents
+            if (parent / 'prettier-plugin-sort-json' / 'dist/index.js').is_file()), None)
+        if plugin is None:
+            self.skipTest('repository prettier-plugin-sort-json is not available beside Prettier')
+        value = self.result
+        raw = json.dumps(value, indent=2) + '\n'
+        formatted = subprocess.run(
+            [prettier, '--no-config', f'--plugin={plugin}', '--json-recursive-sort',
+                '--json-sort-order={"/.*/": "lexical"}', '--stdin-filepath', str(inventory.OUTPUT)],
+            input=raw,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        self.assertEqual(inventory.canonical_json(value), formatted)
 
     def test_map_status_rationale_and_owners_fail_closed(self):
         mutations = [
