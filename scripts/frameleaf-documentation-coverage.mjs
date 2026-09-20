@@ -49,6 +49,7 @@ const REQUIRED_READBACK_SOURCES = new Set([
   "docs/docs/developer/frameleaf-plan/05-delivery-and-backlog.md",
   "docs/docs/developer/frameleaf-plan/06-brand-assets.md",
   "docs/docs/developer/frameleaf-plan/07-feature-ownership.md",
+  "docs/docs/developer/frameleaf-plan/08-high-risk-workflow-designs.md",
   "docs/docs/developer/frameleaf-plan/08-reproducibility.md",
   "docs/docs/developer/frameleaf-settings-inventory.md",
   "docs/docs/developer/frameleaf-toolchain-baseline.md",

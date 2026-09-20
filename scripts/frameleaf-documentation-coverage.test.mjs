@@ -103,8 +103,8 @@ async function mutateJson(root, file, mutate) {
 
 test("documentation coverage joins every reproducibility contract", async () => {
   assert.deepEqual(await validateDocumentationCoverage(), {
-    confluencePages: 69,
-    currentMirrorReceipts: 29,
+    confluencePages: 70,
+    currentMirrorReceipts: 30,
     declaredDependencies: 408,
     epics: 24,
     historicalMirrorReceipts: 40,
@@ -113,7 +113,7 @@ test("documentation coverage joins every reproducibility contract", async () => 
     ledgerRequirements: 1189,
     ledgerSourceRows: 1209,
     sourceAnchorSha256:
-      "c67faaa8b95aafccd50864e6d323ca6e7a0b5a7e11d608a1dcfd10c721e6e610",
+      "a9fdaa522ae5017df74a9caf791e585ffe4b426788f05bb96c45dd1981c37a3e",
     sourceAnchors: 518,
     stories: 118,
   });
@@ -198,6 +198,16 @@ test("Confluence IDs, source receipts, and readback metadata fail closed", async
     },
     (mirror) => {
       const page = mirror.pages.find(({ verified }) => verified);
+      delete page.verified;
+      delete page.verification;
+      delete page.verifiedAt;
+    },
+    (mirror) => {
+      const page = mirror.pages.find(
+        ({ source }) =>
+          source ===
+          "docs/docs/developer/frameleaf-plan/08-high-risk-workflow-designs.md",
+      );
       delete page.verified;
       delete page.verification;
       delete page.verifiedAt;
