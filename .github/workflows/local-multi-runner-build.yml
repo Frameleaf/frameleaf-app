@@ -19,7 +19,7 @@ on:
         required: true
       suffix:
         type: string
-        default: ""
+        default: ''
       device:
         type: string
         required: true

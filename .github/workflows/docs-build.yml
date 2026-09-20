@@ -1,5 +1,5 @@
 name: Docs build
-"on":
+'on':
   workflow_dispatch: null
   pull_request:
     branches:

@@ -1,7 +1,7 @@
 # The Frameleaf Jira-key workflow owns PR title policy; the inherited label-writing conventional-title action is disabled.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: PR Conventional Commit
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:

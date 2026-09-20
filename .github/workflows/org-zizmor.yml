@@ -1,6 +1,6 @@
 # Pinned scanner; annotation mode fails on findings without a write-scoped token.
 name: Zizmor
-"on":
+'on':
   workflow_dispatch: null
   pull_request:
     branches:

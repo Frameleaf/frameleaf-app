@@ -1,7 +1,7 @@
 # Inherited release bot and mobile signing automation are disabled; use the owned Frameleaf release workflow.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: Draft new release
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:

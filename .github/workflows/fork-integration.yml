@@ -2,7 +2,7 @@ name: Fork integration
 
 on:
   pull_request:
-    branches: ["fork/main"]
+    branches: ['fork/main']
   workflow_call:
   workflow_dispatch:
 
@@ -26,7 +26,7 @@ jobs:
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version-file: ".nvmrc"
+          node-version-file: '.nvmrc'
           cache: pnpm
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
@@ -102,15 +102,15 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.8.15"
-          python-version: "3.12"
+          version: '0.8.15'
+          python-version: '3.12'
       - name: Install locked CPU test dependencies
         run: uv sync --frozen --extra cpu --group test --no-default-groups
       - name: Run ML unit tests without model downloads
         env:
-          HF_HUB_OFFLINE: "1"
-          TRANSFORMERS_OFFLINE: "1"
-          MACHINE_LEARNING_TEST_FULL: "false"
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+          MACHINE_LEARNING_TEST_FULL: 'false'
         run: .venv/bin/python -m pytest -q
 
   mobile:
@@ -126,11 +126,11 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version-file: ".nvmrc"
+          node-version-file: '.nvmrc'
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
-          distribution: "zulu"
-          java-version: "21.0.2"
+          distribution: 'zulu'
+          java-version: '21.0.2'
       - name: Install pinned Flutter and API generator
         env:
           GITHUB_TOKEN: ${{ github.token }}

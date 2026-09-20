@@ -1,7 +1,7 @@
 # No owned documentation deployment target or Cloudflare credentials are configured.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: Docs deploy
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:

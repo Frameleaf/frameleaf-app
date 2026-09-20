@@ -1,5 +1,5 @@
 name: Test
-"on":
+'on':
   workflow_dispatch: null
   pull_request:
     branches:
@@ -274,7 +274,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-          cache-dependency-path: "**/pnpm-lock.yaml"
+          cache-dependency-path: '**/pnpm-lock.yaml'
       - name: Setup packages
         run:
           pnpm --filter @immich/sdk --filter @immich/cli install --frozen-lockfile && pnpm --filter @immich/sdk --filter
@@ -338,7 +338,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-          cache-dependency-path: "**/pnpm-lock.yaml"
+          cache-dependency-path: '**/pnpm-lock.yaml'
       - name: Run setup @immich/sdk
         run: pnpm --filter @immich/sdk install --frozen-lockfile && pnpm --filter @immich/sdk build
         if: ${{ !cancelled() }}
@@ -498,7 +498,7 @@ jobs:
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38
         with:
-          ignore_paths: "**/open-api/** **/openapi** **/node_modules/**"
+          ignore_paths: '**/open-api/** **/openapi** **/node_modules/**'
     timeout-minutes: 60
   generated-api-up-to-date:
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}

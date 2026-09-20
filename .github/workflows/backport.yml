@@ -1,7 +1,7 @@
 # No owned backport bot or write-token configuration has been supplied.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: Backport
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:

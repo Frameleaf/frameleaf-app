@@ -4,7 +4,7 @@ name: Frameleaf Release
 # This workflow owns version/release/latest promotion; Docker creates candidates.
 on:
   workflow_run: # zizmor: ignore[dangerous-triggers] API-verified same-repo Docker run and exact current mainline SHA are required before checkout
-    workflows: ["Docker"]
+    workflows: ['Docker']
     branches: [fork/main]
     types: [completed]
   workflow_dispatch:

@@ -1,7 +1,7 @@
 # No owned Weblate instance or credentials are configured.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: Weblate checks
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:

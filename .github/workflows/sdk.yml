@@ -1,7 +1,7 @@
 # Publishing the upstream @immich/sdk namespace is disabled; internal SDK generation remains required CI.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: Update Immich SDK
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:

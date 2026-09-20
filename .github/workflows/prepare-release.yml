@@ -1,7 +1,7 @@
 # Inherited version-writing and Weblate release pipeline is disabled; Frameleaf release preparation is separately controlled.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: Prepare new release
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:

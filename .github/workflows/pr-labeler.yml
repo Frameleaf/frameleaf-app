@@ -1,7 +1,7 @@
 # Inherited bot-based label mutation is disabled pending an owned label policy.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: Pull Request Labeler
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:

@@ -4,25 +4,25 @@ on:
   workflow_call:
   pull_request:
     paths:
-      - ".github/workflows/fork-roundtrip.yml"
-      - "e2e/docker-compose.fork-roundtrip.yml"
-      - "e2e/src/specs/server/fork-schema-*.ts"
-      - "scripts/test-fork-roundtrip.sh"
-      - "scripts/test-fork-roundtrip.test.mjs"
-      - "server/src/app.module.ts"
-      - "server/src/commands/**"
-      - "server/src/fork-schema/**"
-      - "server/src/repositories/**"
-      - "server/src/schema/**"
-      - "server/src/services/storage.service.ts"
-      - "server/src/services/storage-template.service.ts"
-      - "server/src/services/physical-deduplication.service.ts"
-      - "server/src/utils/database.ts"
+      - '.github/workflows/fork-roundtrip.yml'
+      - 'e2e/docker-compose.fork-roundtrip.yml'
+      - 'e2e/src/specs/server/fork-schema-*.ts'
+      - 'scripts/test-fork-roundtrip.sh'
+      - 'scripts/test-fork-roundtrip.test.mjs'
+      - 'server/src/app.module.ts'
+      - 'server/src/commands/**'
+      - 'server/src/fork-schema/**'
+      - 'server/src/repositories/**'
+      - 'server/src/schema/**'
+      - 'server/src/services/storage.service.ts'
+      - 'server/src/services/storage-template.service.ts'
+      - 'server/src/services/physical-deduplication.service.ts'
+      - 'server/src/utils/database.ts'
   workflow_dispatch:
   # Nightly backstop against fork/main: catches cutover breakage introduced by
   # changes outside the path filter above.
   schedule:
-    - cron: "0 6 * * *"
+    - cron: '0 6 * * *'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-roundtrip
@@ -57,7 +57,7 @@ jobs:
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version-file: ".nvmrc"
+          node-version-file: '.nvmrc'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Test certification restart handling

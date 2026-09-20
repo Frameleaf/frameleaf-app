@@ -1,7 +1,7 @@
 # Inherited bot-based cache deletion is disabled; no cleanup write credentials are configured.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: Cache Cleanup
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:
