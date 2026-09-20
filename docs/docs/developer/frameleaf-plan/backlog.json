@@ -25,9 +25,7 @@
       "risks": [],
       "sourcePhase": 1,
       "status": "planned-not-qualified",
-      "tests": [
-        "Inventory validators, graph validation and source-to-backlog coverage report."
-      ],
+      "tests": ["Inventory validators, graph validation and source-to-backlog coverage report."],
       "title": "Establish a preserved baseline and complete feature ledger",
       "type": "epic",
       "workstream": "foundation",
@@ -52,9 +50,7 @@
       ],
       "phase": 1,
       "priority": "High",
-      "risks": [
-        "Large uncommitted working tree means current HEAD alone does not represent accepted work."
-      ],
+      "risks": ["Large uncommitted working tree means current HEAD alone does not represent accepted work."],
       "sourcePhase": 1,
       "status": "planned-not-qualified",
       "tests": [
@@ -137,18 +133,13 @@
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "FN-104",
       "objective": "Maintain the plan/backlog/mirror as an auditable implementation contract.",
-      "paths": [
-        "docs/docs/developer/frameleaf-plan",
-        "docs/docs/developer/frameleaf-context-handoff.md"
-      ],
+      "paths": ["docs/docs/developer/frameleaf-plan", "docs/docs/developer/frameleaf-context-handoff.md"],
       "phase": 1,
       "priority": "Medium",
       "risks": [],
       "sourcePhase": 1,
       "status": "planned-not-qualified",
-      "tests": [
-        "Run plan validator; compare mirror expected IDs/counts and Jira parent/link graph to local manifest."
-      ],
+      "tests": ["Run plan validator; compare mirror expected IDs/counts and Jira parent/link graph to local manifest."],
       "title": "Make documentation and Jira coverage reproducible",
       "type": "story",
       "workstream": "foundation",
@@ -176,9 +167,7 @@
       "risks": [],
       "sourcePhase": 3,
       "status": "planned-not-qualified",
-      "tests": [
-        "Production component/session tests plus browser/native accessibility evidence."
-      ],
+      "tests": ["Production component/session tests plus browser/native accessibility evidence."],
       "title": "Deliver the production design system and continuous library session",
       "type": "epic",
       "workstream": "foundation",
@@ -320,15 +309,7 @@
         "Source controls including face drawing have API-backed equivalents and preserved permissions.",
         "Legacy route remains available until complete slice acceptance passes."
       ],
-      "dependencies": [
-        "FN-202",
-        "FN-203",
-        "FN-204",
-        "LIB-003",
-        "LIB-004",
-        "REC-002",
-        "VID-101"
-      ],
+      "dependencies": ["FN-202", "FN-203", "FN-204", "LIB-003", "LIB-004", "REC-002", "VID-101"],
       "epicId": "FN-E02",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "FN-205",
@@ -375,9 +356,7 @@
       "risks": [],
       "sourcePhase": 3,
       "status": "planned-not-qualified",
-      "tests": [
-        "DTO/access, real PostgreSQL, SDK generation and client capability tests."
-      ],
+      "tests": ["DTO/access, real PostgreSQL, SDK generation and client capability tests."],
       "title": "Stabilize additive API, schema and activity contracts",
       "type": "epic",
       "workstream": "foundation",
@@ -501,9 +480,7 @@
       ],
       "phase": 3,
       "priority": "Medium",
-      "risks": [
-        "Round-trip harness resets isolated volumes; never use live data."
-      ],
+      "risks": ["Round-trip harness resets isolated volumes; never use live data."],
       "sourcePhase": 3,
       "status": "planned-not-qualified",
       "tests": [
@@ -889,9 +866,7 @@
       ],
       "phase": 4,
       "priority": "Medium",
-      "risks": [
-        "Manual/detected face assignment is REC-002; avoid concurrent edits to that inspector section."
-      ],
+      "risks": ["Manual/detected face assignment is REC-002; avoid concurrent edits to that inspector section."],
       "sourcePhase": "P1",
       "status": "planned-not-qualified",
       "tests": [
@@ -959,9 +934,7 @@
       ],
       "phase": 4,
       "priority": "Medium",
-      "risks": [
-        "No new filesystem move operation is implied by rearranging the UI."
-      ],
+      "risks": ["No new filesystem move operation is implied by rearranging the UI."],
       "sourcePhase": "P1",
       "status": "planned-not-qualified",
       "tests": [
@@ -1065,9 +1038,7 @@
       ],
       "phase": 4,
       "priority": "Medium",
-      "risks": [
-        "No automatic ASR claim; video frame sampling and captions are not exhaustive scene understanding."
-      ],
+      "risks": ["No automatic ASR claim; video frame sampling and captions are not exhaustive scene understanding."],
       "sourcePhase": "P1",
       "status": "planned-not-qualified",
       "tests": [
@@ -1207,9 +1178,7 @@
       ],
       "phase": 4,
       "priority": "Medium",
-      "risks": [
-        "Do not reuse generic local recipient arrays as real album access grants."
-      ],
+      "risks": ["Do not reuse generic local recipient arrays as real album access grants."],
       "sourcePhase": "P2",
       "status": "planned-not-qualified",
       "tests": [
@@ -1243,9 +1212,7 @@
       ],
       "phase": 4,
       "priority": "Medium",
-      "risks": [
-        "Link passwords/tokens must not enter client history, telemetry or global settings exports."
-      ],
+      "risks": ["Link passwords/tokens must not enter client history, telemetry or global settings exports."],
       "sourcePhase": "P2",
       "status": "planned-not-qualified",
       "tests": [
@@ -1312,9 +1279,7 @@
       ],
       "phase": 4,
       "priority": "Medium",
-      "risks": [
-        "Do not substitute authenticated owner APIs for shared-link-scoped requests."
-      ],
+      "risks": ["Do not substitute authenticated owner APIs for shared-link-scoped requests."],
       "sourcePhase": "P2",
       "status": "planned-not-qualified",
       "tests": [
@@ -1453,9 +1418,7 @@
       ],
       "phase": 4,
       "priority": "Medium",
-      "risks": [
-        "GPU/model qualification belongs to provider/media gates; configured URL alone is not readiness."
-      ],
+      "risks": ["GPU/model qualification belongs to provider/media gates; configured URL alone is not readiness."],
       "sourcePhase": "P2",
       "status": "planned-not-qualified",
       "tests": [
@@ -1523,9 +1486,7 @@
       ],
       "phase": 4,
       "priority": "Medium",
-      "risks": [
-        "Avoid destructive cleanup of shared tags when another rule or user also contributed them."
-      ],
+      "risks": ["Avoid destructive cleanup of shared tags when another rule or user also contributed them."],
       "sourcePhase": "P2",
       "status": "planned-not-qualified",
       "tests": [
@@ -1578,14 +1539,7 @@
         "Edit/reorder/save event collections and share only by explicit action; timestamped video moments open at their evidence position.",
         "Export saved stories through independent cancellable jobs with source snapshots, length/resolution/audio policy, recovery and download; never auto-publish."
       ],
-      "dependencies": [
-        "REC-004",
-        "REC-101",
-        "LIB-003",
-        "LIB-202",
-        "FN-303",
-        "VID-101"
-      ],
+      "dependencies": ["REC-004", "REC-101", "LIB-003", "LIB-202", "FN-303", "VID-101"],
       "epicId": "REC-E02",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "REC-104",
@@ -1690,14 +1644,7 @@
         "Review ambiguous/localized sidecars, split archives, Live Photo candidates and metadata/album choices; reuse matched assets without losing membership.",
         "Inspect imported/matched/skipped/unresolved reports, retry/cancel safely and prevent repeated imports from duplicating assets or overriding manual metadata."
       ],
-      "dependencies": [
-        "LIB-201",
-        "LIB-005",
-        "LIB-002",
-        "FN-301",
-        "FN-303",
-        "FN-304"
-      ],
+      "dependencies": ["LIB-201", "LIB-005", "LIB-002", "FN-301", "FN-303", "FN-304"],
       "epicId": "IMP-E01",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "IMP-001",
@@ -1782,9 +1729,7 @@
       ],
       "phase": 4,
       "priority": "Medium",
-      "risks": [
-        "Never run live repair against the user's library as a test; use disposable copies and manifests."
-      ],
+      "risks": ["Never run live repair against the user's library as a test; use disposable copies and manifests."],
       "sourcePhase": "P2",
       "status": "planned-not-qualified",
       "tests": [
@@ -2134,9 +2079,7 @@
       ],
       "phase": 4,
       "priority": "Medium",
-      "risks": [
-        "Do not offer mutable owner transfer unless a separate verified reference migration contract exists."
-      ],
+      "risks": ["Do not offer mutable owner transfer unless a separate verified reference migration contract exists."],
       "sourcePhase": "P1",
       "status": "planned-not-qualified",
       "tests": [
@@ -2416,9 +2359,7 @@
       ],
       "sourcePhase": "foundation",
       "status": "planned-not-qualified",
-      "tests": [
-        "Source hashes and coverage checks; clean isolated engine build."
-      ],
+      "tests": ["Source hashes and coverage checks; clean isolated engine build."],
       "title": "Preserve the pinned engine and make every feature auditable",
       "type": "epic",
       "workstream": "studio",
@@ -2542,9 +2483,7 @@
       "risks": ["Opaque stored graphs are not safe executable worker inputs."],
       "sourcePhase": "core",
       "status": "planned-not-qualified",
-      "tests": [
-        "Project PostgreSQL integration; browser adapter lifecycle; generated SDK round-trips."
-      ],
+      "tests": ["Project PostgreSQL integration; browser adapter lifecycle; generated SDK round-trips."],
       "title": "Connect complete projects to web and native clients",
       "type": "epic",
       "workstream": "studio",
@@ -2569,9 +2508,7 @@
       ],
       "phase": 3,
       "priority": "Medium",
-      "risks": [
-        "React 19 and Svelte app lifecycles must not share uncontrolled global state."
-      ],
+      "risks": ["React 19 and Svelte app lifecycles must not share uncontrolled global state."],
       "sourcePhase": "core",
       "status": "planned-not-qualified",
       "tests": [
@@ -2737,9 +2674,7 @@
       ],
       "sourcePhase": "feature-completion",
       "status": "planned-not-qualified",
-      "tests": [
-        "Per-row fixtures, upstream tests in adapted workspace and authenticated interaction suites."
-      ],
+      "tests": ["Per-row fixtures, upstream tests in adapted workspace and authenticated interaction suites."],
       "title": "Deliver every pinned Freecut tool and workflow",
       "type": "epic",
       "workstream": "studio",
@@ -2756,15 +2691,10 @@
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "STU-301",
       "objective": "Integrate every readme.timeline-editing row: all item types, sequences/compound clips, linked edit tools, transitions, track controls, snapping/markers/timecode/history, source monitor and templates/shortcuts.",
-      "paths": [
-        "studio/vendor/freecut/src/features/timeline",
-        "studio/vendor/freecut/src/features/editor"
-      ],
+      "paths": ["studio/vendor/freecut/src/features/timeline", "studio/vendor/freecut/src/features/editor"],
       "phase": 5,
       "priority": "Medium",
-      "risks": [
-        "Integer frame-index assumptions must not silently coerce VFR or fractional rates."
-      ],
+      "risks": ["Integer frame-index assumptions must not silently coerce VFR or fractional rates."],
       "sourcePhase": "feature-completion",
       "status": "planned-not-qualified",
       "tests": [
@@ -2794,9 +2724,7 @@
       ],
       "phase": 5,
       "priority": "Medium",
-      "risks": [
-        "Remote video display or SDR monitor capability must not silently constrain exported master color."
-      ],
+      "risks": ["Remote video display or SDR monitor capability must not silently constrain exported master color."],
       "sourcePhase": "feature-completion",
       "status": "planned-not-qualified",
       "tests": [
@@ -2912,14 +2840,7 @@
         "MP4/WebM/MOV/MKV and H264/H265/VP8/VP9/AV1 supported combinations are worker-probed; invalid combinations are explained before jobs.",
         "MP3/AAC/WAV, burn-in/sidecar/embedded subtitles, quality presets and export ranges preserve complete project semantics."
       ],
-      "dependencies": [
-        "STU-203",
-        "STU-204",
-        "VID-103",
-        "VID-104",
-        "STU-403",
-        "VID-090"
-      ],
+      "dependencies": ["STU-203", "STU-204", "VID-103", "VID-104", "STU-403", "VID-090"],
       "epicId": "STU-300",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "STU-306",
@@ -3137,9 +3058,7 @@
       ],
       "phase": 6,
       "priority": "Medium",
-      "risks": [
-        "Playwright WebKit is not sufficient evidence for actual Safari/iPad hardware behavior."
-      ],
+      "risks": ["Playwright WebKit is not sufficient evidence for actual Safari/iPad hardware behavior."],
       "sourcePhase": "release-qualification",
       "status": "planned-not-qualified",
       "tests": [
@@ -3168,14 +3087,10 @@
       ],
       "phase": 3,
       "priority": "Medium",
-      "risks": [
-        "Current CRF18 master is high-quality lossy, not mathematically lossless."
-      ],
+      "risks": ["Current CRF18 master is high-quality lossy, not mathematically lossless."],
       "sourcePhase": "core",
       "status": "planned-not-qualified",
-      "tests": [
-        "Native FFmpeg fixtures, transaction tests and independent decoded-output validation."
-      ],
+      "tests": ["Native FFmpeg fixtures, transaction tests and independent decoded-output validation."],
       "title": "Preserve master quality, timing and audio",
       "type": "epic",
       "workstream": "studio",
@@ -3233,9 +3148,7 @@
       ],
       "phase": 3,
       "priority": "Medium",
-      "risks": [
-        "Silently coercing a VFR source to a nominal fps conflicts with the preservation requirement."
-      ],
+      "risks": ["Silently coercing a VFR source to a nominal fps conflicts with the preservation requirement."],
       "sourcePhase": "core",
       "status": "planned-not-qualified",
       "tests": [
@@ -3331,9 +3244,7 @@
       ],
       "phase": 6,
       "priority": "Medium",
-      "risks": [
-        "Do not interpret the sample React editor or CSS preview as proof of FFmpeg output fidelity."
-      ],
+      "risks": ["Do not interpret the sample React editor or CSS preview as proof of FFmpeg output fidelity."],
       "sourcePhase": "release-qualification",
       "status": "planned-not-qualified",
       "tests": [
@@ -3367,9 +3278,7 @@
       ],
       "sourcePhase": "release-qualification",
       "status": "planned-not-qualified",
-      "tests": [
-        "Float/effect/encode chain, edited DV metadata/mux/device QC and supported-profile corpus."
-      ],
+      "tests": ["Float/effect/encode chain, edited DV metadata/mux/device QC and supported-profile corpus."],
       "title": "Require complete HDR and newly authored edited Dolby Vision",
       "type": "epic",
       "workstream": "studio",
@@ -3449,14 +3358,7 @@
         "Recalculate or validate static mastering/content-light data for edited outputs; never blindly claim copied source values remain correct.",
         "HDR preview/export frame comparisons, VFR mappings, multichannel audio and restart behavior pass on each admitted deployment."
       ],
-      "dependencies": [
-        "VID-103",
-        "VID-104",
-        "STU-303",
-        "STU-304",
-        "STU-305",
-        "STU-403"
-      ],
+      "dependencies": ["VID-103", "VID-104", "STU-303", "STU-304", "STU-305", "STU-403"],
       "epicId": "VID-200",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "VID-202",
@@ -3468,9 +3370,7 @@
       ],
       "phase": 6,
       "priority": "Medium",
-      "risks": [
-        "Existing 64x64 12-frame synthetic checks do not qualify real 4K color-managed content."
-      ],
+      "risks": ["Existing 64x64 12-frame synthetic checks do not qualify real 4K color-managed content."],
       "sourcePhase": "release-qualification",
       "status": "planned-not-qualified",
       "tests": [
@@ -3568,9 +3468,7 @@
       ],
       "sourcePhase": "feature-completion",
       "status": "planned-not-qualified",
-      "tests": [
-        "Model/temporal fixtures, durable job faults, destination matrix and browser/native client workflows."
-      ],
+      "tests": ["Model/temporal fixtures, durable job faults, destination matrix and browser/native client workflows."],
       "title": "Qualify local-first restoration and the full AI toolset",
       "type": "epic",
       "workstream": "studio",
@@ -3865,16 +3763,7 @@
         "Face verdicts, contaminated-cluster splitting, manual correction history/undo and individual pet profiles persist across reprocessing; private names and reversible identity links rely on accessible evidence.",
         "Partner sharing, public-link creation/options/revocation, named recipient shortcuts and recognition groups have native controls, real pending/error states, and no implicit change to existing grants."
       ],
-      "dependencies": [
-        "MOB-102",
-        "MOB-103",
-        "LIB-201",
-        "LIB-202",
-        "LIB-203",
-        "LIB-204",
-        "REC-003",
-        "REC-004"
-      ],
+      "dependencies": ["MOB-102", "MOB-103", "LIB-201", "LIB-202", "LIB-203", "LIB-204", "REC-003", "REC-004"],
       "epicId": "MOB-100",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "MOB-104",
@@ -3911,16 +3800,7 @@
         "Classification sample/threshold/action preview and provenance preserve manual metadata; enrichment stage dependencies, Best Photos/video-cover suggestions, generated captions and reprocessing are inspectable.",
         "Memories/events/birthdays/timezone preferences/highlight jobs, document evidence crops and editable fields, sensitive suppression and show-less controls are fully represented and backed by their APIs."
       ],
-      "dependencies": [
-        "MOB-102",
-        "MOB-103",
-        "MOB-104",
-        "REC-101",
-        "REC-102",
-        "REC-103",
-        "REC-104",
-        "REC-105"
-      ],
+      "dependencies": ["MOB-102", "MOB-103", "MOB-104", "REC-101", "REC-102", "REC-103", "REC-104", "REC-105"],
       "epicId": "MOB-100",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "MOB-105",
@@ -4153,15 +4033,7 @@
         "Native asset/resource import, LUT/font/audio/model availability, relinking, bundles and project recovery use authorized resource inventory and explicit licenses/capabilities.",
         "No unavailable tool appears to run locally or render successfully; capability reasons and retry/destination choices are actionable."
       ],
-      "dependencies": [
-        "MOB-202",
-        "STU-303",
-        "STU-304",
-        "STU-305",
-        "STU-306",
-        "AI-104",
-        "STU-302"
-      ],
+      "dependencies": ["MOB-202", "STU-303", "STU-304", "STU-305", "STU-306", "AI-104", "STU-302"],
       "epicId": "MOB-200",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "MOB-203",
@@ -4263,9 +4135,7 @@
       ],
       "phase": 4,
       "priority": "Medium",
-      "risks": [
-        "Platform scheduling and permission behavior cannot be certified by widget tests alone."
-      ],
+      "risks": ["Platform scheduling and permission behavior cannot be certified by widget tests alone."],
       "sourcePhase": 4,
       "status": "planned-not-qualified",
       "tests": [
@@ -4650,14 +4520,10 @@
       ],
       "phase": 6,
       "priority": "Medium",
-      "risks": [
-        "Mocked/browser-prototype success cannot qualify real backend/native rendering."
-      ],
+      "risks": ["Mocked/browser-prototype success cannot qualify real backend/native rendering."],
       "sourcePhase": 6,
       "status": "planned-not-qualified",
-      "tests": [
-        "Run QA-101 through QA-105 against a frozen candidate and retained reports."
-      ],
+      "tests": ["Run QA-101 through QA-105 against a frozen candidate and retained reports."],
       "title": "Qualify privacy, media fidelity, native usability and compatibility",
       "type": "epic",
       "workstream": "native",
@@ -4669,15 +4535,7 @@
         "Counts/facets/names/avatars/maps/OCR/moments/thumbs/exports/notifications/widgets/offline caches/jobs/projects never expose inaccessible evidence; private identity names remain owner-specific.",
         "Revoke or delete during long operations and pending storage/network events; previous working versions survive failure, stale jobs cannot publish and review clears before refresh."
       ],
-      "dependencies": [
-        "MOB-104",
-        "MOB-106",
-        "MOB-107",
-        "MOB-301",
-        "MOB-303",
-        "STU-404",
-        "FN-204"
-      ],
+      "dependencies": ["MOB-104", "MOB-106", "MOB-107", "MOB-301", "MOB-303", "STU-404", "FN-204"],
       "epicId": "QA-100",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "QA-101",
@@ -4838,15 +4696,7 @@
         "Run new-account/onboarding, populated library migration, family sharing/revocation, native administration, local backup/offline, media editing/AI and tablet full-Studio journeys on signed candidate builds.",
         "Owner inputs and release approvals are explicit tasks; unresolved signing, tool rights, device/media/privacy failures block distribution or the affected capability rather than becoming hidden scope cuts."
       ],
-      "dependencies": [
-        "QA-101",
-        "QA-102",
-        "QA-103",
-        "QA-104",
-        "REL-103",
-        "REL-104",
-        "FN-102"
-      ],
+      "dependencies": ["QA-101", "QA-102", "QA-103", "QA-104", "REL-103", "REL-104", "FN-102"],
       "epicId": "QA-100",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "QA-105",
@@ -4886,13 +4736,7 @@
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "REL-200",
       "objective": "Move automation to Frameleaf-owned infrastructure with additive API compatibility, reproducible SDKs and release checks tied to the exact candidate.",
-      "paths": [
-        ".github/workflows",
-        "mise.toml",
-        "open-api",
-        "packages/sdk",
-        "mobile/mise.toml"
-      ],
+      "paths": [".github/workflows", "mise.toml", "open-api", "packages/sdk", "mobile/mise.toml"],
       "phase": 6,
       "priority": "Medium",
       "risks": [
@@ -4900,9 +4744,7 @@
       ],
       "sourcePhase": 6,
       "status": "planned-not-qualified",
-      "tests": [
-        "Workflow static/dry-run checks, SDK freshness, qualified CI and owner-approved release rehearsal."
-      ],
+      "tests": ["Workflow static/dry-run checks, SDK freshness, qualified CI and owner-approved release rehearsal."],
       "title": "Migrate repository automation and deliver reproducible releases",
       "type": "epic",
       "workstream": "native",
@@ -4997,15 +4839,7 @@
         "Rehearse owned release channels, upgrade/rollback, staged cohort rollout, kill switches and capability downgrades; library/admin/backup remain useful without an admitted full Studio worker.",
         "Remove opt-in flags or superseded UI only after native/web/Freecut manifest parity and QA gates pass. Release checks use operator/Frameleaf-owned infrastructure; local analytics do not imply outbound telemetry."
       ],
-      "dependencies": [
-        "REL-101",
-        "REL-102",
-        "REL-103",
-        "REL-104",
-        "REL-201",
-        "REL-202",
-        "QA-105"
-      ],
+      "dependencies": ["REL-101", "REL-102", "REL-103", "REL-104", "REL-201", "REL-202", "QA-105"],
       "epicId": "REL-200",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "id": "REL-203",
