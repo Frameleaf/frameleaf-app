@@ -32,6 +32,7 @@ import { getKyselyDB, newTestService } from 'test/utils.js';
 const EMPTY_STORAGE_DIGEST = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 const LEGACY_OVERRIDE_NAMES = [
   'function_album_parent_cycle_check',
+  'function_media_health_updated_at',
   'index_album_parentId_idx',
   'index_album_parent_sort_idx',
   'index_album_root_sort_idx',

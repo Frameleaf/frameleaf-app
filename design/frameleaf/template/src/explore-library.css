@@ -1,0 +1,453 @@
+.explore-library {
+  color: var(--fl-text);
+  padding: 26px 30px 36px;
+  max-width: 1400px;
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  margin: 0 auto;
+}
+.explore-library button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.explore-library :focus-visible {
+  outline: 2px solid var(--fl-accent);
+  outline-offset: 4px;
+}
+.explore-library h1 {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: -0.035em;
+  font-weight: 600;
+}
+.explore-library .el-header {
+  margin-bottom: 28px;
+}
+.explore-library .el-header p {
+  color: var(--fl-muted);
+  font-size: 13px;
+  margin: 8px 0 0;
+  line-height: 1.6;
+}
+.explore-library .el-section {
+  margin: 0 0 28px;
+  min-width: 0;
+}
+.explore-library .el-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.explore-library h2 {
+  font-size: 15px;
+  font-weight: 580;
+  margin: 0;
+}
+.explore-library .el-section-heading button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 0;
+  padding: 5px 0 5px 8px;
+  color: var(--fl-muted);
+  font-size: 12px;
+}
+.explore-library .el-section-heading button:hover {
+  color: var(--fl-text);
+}
+.explore-library .el-people {
+  display: flex;
+  gap: 22px;
+  overflow: auto;
+  padding: 4px 4px 10px;
+}
+.explore-library .el-person {
+  border: 0;
+  background: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 0 0 92px;
+  gap: 7px;
+  padding: 0;
+}
+.explore-library .el-person .person-avatar {
+  object-fit: cover;
+  border-radius: 50%;
+}
+.explore-library strong {
+  font-weight: 560;
+}
+.explore-library .el-person strong {
+  font-size: 12px;
+}
+.explore-library small {
+  font-size: 11px;
+  color: var(--fl-muted);
+  font-weight: 400;
+}
+.explore-library .el-person small {
+  margin-top: -2px;
+}
+.explore-library .el-highlights {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(260px, 1fr);
+  gap: 18px;
+}
+.explore-library .el-best {
+  position: relative;
+  border: 1px solid var(--fl-border);
+  border-radius: 6px;
+  overflow: hidden;
+  text-align: left;
+  min-height: 220px;
+  padding: 0;
+  background: var(--fl-raised);
+  color: white;
+}
+.explore-library .el-best > img,
+.explore-library .el-place > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  position: absolute;
+  inset: 0;
+}
+.explore-library .el-cover-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 20%, rgba(0, 0, 0, 0.72));
+  pointer-events: none;
+}
+.explore-library .el-best-copy {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 90px 24px 22px;
+}
+.explore-library .el-best-copy > strong {
+  font-size: 23px;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  max-width: 24ch;
+}
+.explore-library .el-best-copy small {
+  color: #e3e7e5;
+}
+.explore-library .el-overline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+.explore-library .el-cover-arrow {
+  position: absolute;
+  right: 15px;
+  bottom: 20px;
+}
+.explore-library .el-shortcuts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.explore-library .el-shortcuts button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  text-align: left;
+  background: var(--fl-panel);
+  border: 1px solid var(--fl-border);
+  border-radius: 5px;
+  min-width: 0;
+}
+.explore-library .el-shortcuts button > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.explore-library .el-shortcuts strong,
+.explore-library .el-shortcuts small {
+  display: block;
+}
+.explore-library .el-shortcuts strong {
+  font-size: 12px;
+}
+.explore-library .el-shortcuts small {
+  margin-top: 6px;
+}
+.explore-library .el-shortcut-icon {
+  color: var(--fl-muted);
+}
+.explore-library .el-places {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+}
+.explore-library .el-place {
+  position: relative;
+  min-height: 180px;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: var(--fl-raised);
+  color: white;
+  text-align: left;
+}
+.explore-library .el-place > span:last-child {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 14px;
+}
+.explore-library .el-place strong,
+.explore-library .el-place small {
+  display: block;
+}
+.explore-library .el-place strong {
+  font-size: 15px;
+}
+.explore-library .el-place small {
+  color: #e3e7e5;
+  margin-top: 5px;
+}
+.explore-library .el-things,
+.explore-library .el-collections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
+  gap: 10px;
+}
+.explore-library .el-things button,
+.explore-library .el-collections button {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 0;
+  border: 1px solid var(--fl-border);
+  border-radius: 5px;
+  background: var(--fl-panel);
+  overflow: hidden;
+  text-align: left;
+  min-width: 0;
+}
+.explore-library .el-things img,
+.explore-library .el-collections img {
+  width: 62px;
+  height: 62px;
+  object-fit: cover;
+}
+.explore-library .el-things button > span,
+.explore-library .el-collections button > span {
+  flex: 1;
+  min-width: 0;
+}
+.explore-library .el-things button > svg,
+.explore-library .el-collections button > svg {
+  margin-right: 12px;
+  color: var(--fl-muted);
+  flex: 0 0 auto;
+}
+.explore-library .el-things strong,
+.explore-library .el-collections strong {
+  display: block;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.explore-library .el-things strong {
+  text-transform: capitalize;
+}
+.explore-library .el-things small,
+.explore-library .el-collections small {
+  display: block;
+  margin-top: 4px;
+}
+.explore-library .el-recent {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.explore-library .el-recent button {
+  position: relative;
+  border: 0;
+  padding: 0;
+  background: none;
+  min-width: 0;
+  text-align: left;
+}
+.explore-library .el-recent img {
+  aspect-ratio: 1.45;
+  width: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: 4px;
+}
+.explore-library .el-recent button > span:not(.el-media-label) {
+  display: block;
+  font-size: 11px;
+  margin-top: 7px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.explore-library .el-recent small {
+  display: block;
+  margin-top: 4px;
+}
+.explore-library .el-recent .el-media-label {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  padding: 3px 5px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: white;
+  background: rgba(0, 0, 0, 0.65);
+  border-radius: 3px;
+}
+.explore-library .el-more {
+  display: flex;
+  gap: 12px;
+  border-top: 1px solid var(--fl-border);
+  padding-top: 20px;
+}
+.explore-library .el-more button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: none;
+  padding: 8px 0;
+  margin-right: 16px;
+  font-size: 12px;
+}
+.explore-library .el-empty {
+  padding: 50px 12px;
+  text-align: center;
+  color: var(--fl-muted);
+}
+.explore-library .el-empty h2 {
+  color: var(--fl-text);
+  margin-top: 14px;
+}
+.explore-library .el-empty p {
+  font-size: 13px;
+}
+.explore-library .el-cover-empty {
+  display: grid;
+  place-items: center;
+  min-height: 62px;
+  background: var(--fl-raised);
+  color: var(--fl-muted);
+}
+.explore-library button:hover {
+  filter: brightness(1.08);
+}
+@media (max-width: 1050px) {
+  .explore-library .el-highlights {
+    grid-template-columns: 1fr;
+  }
+  .explore-library .el-shortcuts {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .explore-library .el-shortcuts button {
+    padding: 12px;
+    gap: 8px;
+  }
+  .explore-library .el-shortcuts button > svg {
+    display: none;
+  }
+}
+@media (max-width: 600px) {
+  .explore-library {
+    padding: 22px 16px 30px;
+  }
+  .explore-library .el-people {
+    gap: 13px;
+  }
+  .explore-library .el-shortcuts {
+    grid-template-columns: 1fr 1fr;
+  }
+  .explore-library .el-places {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .explore-library .el-place {
+    min-height: 160px;
+  }
+  .explore-library .el-recent {
+    grid-template-columns: 1fr 1fr;
+  }
+  .explore-library .el-things {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .explore-library .el-things img {
+    width: 45px;
+    height: 52px;
+  }
+  .explore-library .el-things button {
+    gap: 8px;
+  }
+  .explore-library .el-things button > svg {
+    display: none;
+  }
+  .explore-library .el-best-copy {
+    margin-left: 18px;
+  }
+  .explore-library .el-more button {
+    min-height: 40px;
+  }
+}
+
+.explore-library .el-memory-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(180px, 1fr);
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+.explore-library .el-memory-row button {
+  position: relative;
+  min-height: 205px;
+  background: var(--fl-raised);
+  border: 0;
+  border-radius: 5px;
+  overflow: hidden;
+  text-align: left;
+  padding: 0;
+}
+.explore-library .el-memory-row img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.explore-library .el-memory-copy {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 16px;
+  color: white;
+}
+.explore-library .el-memory-copy strong {
+  display: block;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.explore-library .el-memory-copy small {
+  display: block;
+  color: #e3e7e5;
+  margin-top: 5px;
+}

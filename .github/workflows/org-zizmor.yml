@@ -1,30 +1,34 @@
+# Pinned scanner; annotation mode fails on findings without a write-scoped token.
 name: Zizmor
-
-on:
+'on':
+  workflow_dispatch: null
   pull_request:
+    branches:
+      - fork/main
   push:
-    branches: [main]
-
-# Cancel previous Zizmor runs for the same PR/branch when a new push lands.
-# The push-to-main case still serializes (one run per commit) so the audit
-# results posted to the security tab reflect the latest tip. Standard
-# pattern: cancel only for PR triggers, queue for push to avoid losing
-# the post-merge audit on rapid back-to-back merges.
+    branches:
+      - fork/main
+permissions:
+  contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-permissions: {}
-
+  cancel-in-progress: true
 jobs:
-  zizmor-skipped:
-    # Preserve the existing fork-only no-op check; no upstream reusable workflow.
+  zizmor:
     name: Zizmor
-    if: >-
-      ${{ github.repository == 'adamtaylor152/immich' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (github.repository_owner != 'immich-app') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
     runs-on: ubuntu-24.04
-    permissions: {}
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - name: Mark as skipped
-        run: |
-          echo "::notice::Zizmor is upstream-only. This fork runs no-op to satisfy required checks."
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          enable-cache: false
+      - name: Audit workflow security
+        run: uvx zizmor==1.30.1 --offline --format=github --min-severity=medium --min-confidence=medium .github/workflows

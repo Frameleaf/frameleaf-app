@@ -5,7 +5,7 @@ services:
     extends:
       service: immich-app-base
     profiles: !reset []
-    image: immich-server-dev:latest
+    image: frameleaf-server-dev:local
     build:
       target: dev-container-server
     env_file: !reset []
@@ -27,7 +27,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD-postgres}
       POSTGRES_USER: ${DB_USERNAME-postgres}
       POSTGRES_DB: ${DB_DATABASE_NAME-immich}
-      POSTGRES_INITDB_ARGS: '--data-checksums'
+      POSTGRES_INITDB_ARGS: "--data-checksums"
       POSTGRES_HOST_AUTH_METHOD: md5
     volumes:
       - ${UPLOAD_LOCATION:-postgres-devcontainer-volume}${UPLOAD_LOCATION:+/postgres}:/var/lib/postgresql/data

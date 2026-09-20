@@ -40,6 +40,8 @@ For more information about setting up the community image see [here](https://git
 
 :::
 
+Use the Compose files and images from a [Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases). Keep an existing stack name, `.env`, database directory and media paths when updating. The container display names are `frameleaf_*`; the Compose service names and `IMMICH_*` variables remain compatible.
+
 ## Installation Steps
 
 1. Go to "**Plugins**" and click on "**Compose.Manager**"
@@ -52,7 +54,7 @@ alt="Select Plugins > Compose.Manager > Add New Stack > Label it Immich"
 />
 
 3.  Select the cogwheel ⚙️ next to Immich and click "**Edit Stack**"
-4.  Click "**Compose File**" and then paste the entire contents of the [Immich Docker Compose](https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml) file into the Unraid editor. Remove any text that may be in the text area by default. Note that Unraid v6.12.10 uses version 24.0.9 of the Docker Engine, which does not support healthcheck `start_interval` as defined in the `database` service of the Docker compose file (version 25 or higher is needed). This parameter defines an initial waiting period before starting health checks, to give the container time to start up. Commenting out the `start_interval` and `start_period` parameters will allow the containers to start up normally. The only downside to this is that the database container will not receive an initial health check until `interval` time has passed.
+4.  Click "**Compose File**" and then paste the entire contents of the [Frameleaf Docker Compose](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/docker-compose.yml) file into the Unraid editor. Remove any text that may be in the text area by default. Note that Unraid v6.12.10 uses version 24.0.9 of the Docker Engine, which does not support healthcheck `start_interval` as defined in the `database` service of the Docker compose file (version 25 or higher is needed). This parameter defines an initial waiting period before starting health checks, to give the container time to start up. Commenting out the `start_interval` and `start_period` parameters will allow the containers to start up normally. The only downside to this is that the database container will not receive an initial health check until `interval` time has passed.
 
     <details >
         <summary>Using an existing Postgres container? Click me! Otherwise proceed to step 5.</summary>
@@ -80,7 +82,7 @@ alt="Select Plugins > Compose.Manager > Add New Stack > Label it Immich"
 
 5.  Click "**Save Changes**", you will be prompted to edit stack UI labels, just leave this blank and click "**Ok**"
 6.  Select the cog ⚙️ next to Immich, click "**Edit Stack**", then click "**Env File**"
-7.  Paste the entire contents of the [Immich example.env](https://github.com/immich-app/immich/releases/latest/download/example.env) file into the Unraid editor, then **before saving** edit the following:
+7.  Paste the entire contents of the [Frameleaf example.env](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/example.env) file into the Unraid editor, then **before saving** edit the following:
     - `UPLOAD_LOCATION`: Create a folder in your Images Unraid share and place the **absolute** location here > For example my _"images"_ share has a folder within it called _"immich"_. If I browse to this directory in the terminal and type `pwd` the output is `/mnt/user/images/immich`. This is the exact value I need to enter as my `UPLOAD_LOCATION`
     - `DB_DATA_LOCATION`: Change this to use an Unraid share (preferably a cache pool, e.g. `/mnt/user/appdata/postgresql/data`). This uses the `appdata` share. Do also create the `postgresql` folder, by running `mkdir /mnt/user/{share_location}/postgresql/data`. If left at default it will try to use Unraid's `/boot/config/plugins/compose.manager/projects/[stack_name]/postgres` folder which it doesn't have permissions to, resulting in this container continuously restarting.
 
@@ -106,7 +108,7 @@ alt="Select Plugins > Compose.Manager > Add New Stack > Label it Immich"
 
     > Note: This can take several minutes depending on your Internet speed and Unraid hardware
 
-9.  Once on the Docker page you will see several Immich containers, one of them will be labelled `immich_server` and will have a port mapping. Visit the `IP:PORT` displayed in your web browser and you should see the Immich admin setup page.
+9.  Once on the Docker page you will see several Immich containers, one of them will be labelled `frameleaf_server` and will have a port mapping. Visit the `IP:PORT` displayed in your web browser and you should see the Immich admin setup page.
 
 <img
 src={require('./img/unraid06.webp').default}

@@ -194,7 +194,7 @@ const runpodDefaults = {
   mode: 'disabled' as const,
   apiKey: '',
   hfToken: '',
-  imageName: 'ghcr.io/adamtaylor152/immich-machine-learning:fork-main-cuda-runpod',
+  imageName: 'ghcr.io/frameleaf/frameleaf-machine-learning:release-cuda-runpod',
   dataPrivacyAcknowledged: false,
   defaultGpuTypeId: 'NVIDIA RTX A5000',
   containerDiskGb: 50,

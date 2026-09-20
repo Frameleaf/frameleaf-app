@@ -58,10 +58,12 @@ where
   "path" in $1
 
 -- IntegrityRepository.getVideoDuplicateFramePathsByPaths
+SELECT
+  to_regclass('immich_fork.state')::text AS "stateTable"
 select
   "path"
 from
-  "asset_video_duplicate_frame"
+  "public"."asset_video_duplicate_frame"
 where
   "path" in $1
 

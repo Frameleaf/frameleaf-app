@@ -133,7 +133,7 @@ If the restore fails (e.g., corrupted backup or missing admin user), Immich will
 
 ### Restore via Command Line {#restore-cli}
 
-For advanced users or automated recovery scenarios, you can restore a database backup using the command line.
+For advanced users or automated recovery scenarios, you can restore a database backup using the command line. Run these commands from your existing Compose directory with its `.env` file. The `database` service name remains the same when the visible container name changes.
 
 <Tabs>
   <TabItem value="Linux system" label="Linux system" default>
@@ -141,7 +141,7 @@ For advanced users or automated recovery scenarios, you can restore a database b
 ```bash title='Backup'
 # Replace <DB_USERNAME> with the database username - usually postgres unless you have changed it.
 # Replace <DB_DATABASE_NAME> with the database name - usually immich unless you have changed it.
-docker exec -t immich_postgres pg_dump --clean --if-exists --dbname=<DB_DATABASE_NAME> --username=<DB_USERNAME> | gzip > "/path/to/backup/dump.sql.gz"
+docker compose exec -T database pg_dump --clean --if-exists --dbname=<DB_DATABASE_NAME> --username=<DB_USERNAME> | gzip > "/path/to/backup/dump.sql.gz"
 ```
 
 ```bash title='Restore'
@@ -150,14 +150,14 @@ docker compose down -v  # CAUTION! Deletes all Immich data to start from scratch
 # rm -rf DB_DATA_LOCATION # CAUTION! Deletes all Immich data to start from scratch
 docker compose pull             # Update to latest version of Immich (if desired)
 docker compose create           # Create Docker containers for Immich apps without running them
-docker start immich_postgres    # Start Postgres server
+docker compose up -d database    # Start Postgres server
 sleep 10                        # Wait for Postgres server to start up
 # Check the database user if you deviated from the default
 # Replace <DB_USERNAME> with the database username - usually postgres unless you have changed it.
 # Replace <DB_DATABASE_NAME> with the database name - usually immich unless you have changed it.
 gunzip --stdout "/path/to/backup/dump.sql.gz" \
 | sed "s/SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public, pg_catalog', true);/g" \
-| docker exec -i immich_postgres psql --dbname=<DB_DATABASE_NAME> --username=<DB_USERNAME> --single-transaction --set ON_ERROR_STOP=on  # Restore Backup
+| docker compose exec -T database psql --dbname=<DB_DATABASE_NAME> --username=<DB_USERNAME> --single-transaction --set ON_ERROR_STOP=on  # Restore Backup
 docker compose up -d            # Start remainder of Immich apps
 ```
 
@@ -167,19 +167,19 @@ docker compose up -d            # Start remainder of Immich apps
 ```powershell title='Backup'
 # Replace <DB_USERNAME> with the database username - usually postgres unless you have changed it.
 # Replace <DB_DATABASE_NAME> with the database name - usually immich unless you have changed it.
-[System.IO.File]::WriteAllLines("C:\absolute\path\to\backup\dump.sql", (docker exec -t immich_postgres pg_dump --clean --if-exists --dbname=<DB_DATABASE_NAME> --username=<DB_USERNAME>))
+[System.IO.File]::WriteAllLines("C:\absolute\path\to\backup\dump.sql", (docker compose exec -T database pg_dump --clean --if-exists --dbname=<DB_DATABASE_NAME> --username=<DB_USERNAME>))
 ```
 
 ```powershell title='Restore'
 docker compose down -v  # CAUTION! Deletes all Immich data to start from scratch
 ## Uncomment the next line and replace DB_DATA_LOCATION with your Postgres path to permanently reset the Postgres database
 # Remove-Item -Recurse -Force DB_DATA_LOCATION # CAUTION! Deletes all Immich data to start from scratch
-## You should mount the backup (as a volume, example: `- 'C:\path\to\backup\dump.sql:/dump.sql'`) into the immich_postgres container using the docker-compose.yml
+## You should mount the backup (as a volume, example: `- 'C:\path\to\backup\dump.sql:/dump.sql'`) into the database service using the docker-compose.yml
 docker compose pull                               # Update to latest version of Immich (if desired)
 docker compose create                             # Create Docker containers for Immich apps without running them
-docker start immich_postgres                      # Start Postgres server
+docker compose up -d database                      # Start Postgres server
 sleep 10                                          # Wait for Postgres server to start up
-docker exec -it immich_postgres bash              # Enter the Docker shell and run the following command
+docker compose exec database bash              # Enter the Docker shell and run the following command
 # If your backup ends in `.gz`, replace `cat` with `gunzip --stdout`
 # Replace <DB_USERNAME> with the database username - usually postgres unless you have changed it.
 # Replace <DB_DATABASE_NAME> with the database name - usually immich unless you have changed it.

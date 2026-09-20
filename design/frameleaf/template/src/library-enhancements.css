@@ -1,0 +1,223 @@
+/* Library commands stay on the photograph, with equivalent focus and touch access. */
+.asset {
+  position: relative;
+}
+.asset-quick-actions {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: #121719e8;
+  border: 1px solid #ffffff26;
+  border-radius: 5px;
+  opacity: 0;
+  transition: opacity 100ms;
+}
+.asset:hover .asset-quick-actions,
+.asset:focus-within .asset-quick-actions {
+  opacity: 1;
+}
+.asset-quick-actions button {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #e5e7eb;
+  cursor: pointer;
+}
+.asset-quick-actions button:hover,
+.asset-quick-actions button:focus-visible {
+  background: #ffffff25;
+}
+.asset-quick-actions button.is-favorite {
+  color: #5bdfa1;
+}
+.media-list .asset-quick-actions {
+  top: 12px;
+  right: 6px;
+}
+.locked-library-empty {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 15px;
+  text-align: center;
+  padding: 96px 24px;
+  color: var(--fl-muted);
+}
+.locked-library-empty h2 {
+  color: var(--fl-text);
+  margin: 0;
+}
+.locked-library-empty p {
+  margin: 0 0 8px;
+  max-width: 360px;
+  line-height: 1.6;
+}
+.library-recipient-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 22px 0;
+}
+.library-recipient-list label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--fl-border);
+  border-radius: 4px;
+}
+.library-recipient-list label span {
+  flex: 1;
+}
+.library-recipient-list input {
+  width: auto;
+}
+[data-layout="timeline"] .timeline-library {
+  padding: 20px 22px;
+  box-sizing: border-box;
+}
+@media (min-width: 1001px) {
+  .app[data-inspector="true"] .inspector {
+    display: block;
+  }
+}
+@media (max-width: 1000px) {
+  .app[data-inspector="true"] .inspector {
+    display: block;
+    position: absolute;
+    right: 0;
+    top: 56px;
+    bottom: 60px;
+    z-index: 4;
+    box-shadow: -12px 0 32px #0004;
+  }
+}
+@media (max-width: 700px) {
+  [data-layout="timeline"] .timeline-library {
+    padding: 16px 12px;
+  }
+}
+.results-toolbar {
+  flex-wrap: wrap;
+}
+.results-toolbar .sort {
+  margin-left: 0;
+}
+@media (hover: none) {
+  .asset-quick-actions {
+    opacity: 1;
+  }
+  .asset-quick-actions button {
+    width: 32px;
+    height: 34px;
+  }
+}
+@media (max-width: 700px) {
+  .collection-header {
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .layout-switch {
+    margin-left: 0;
+  }
+  .results-toolbar .button {
+    min-width: 34px;
+  }
+  .results-toolbar .sort {
+    flex: 1;
+  }
+  .locked-library-empty {
+    padding-top: 50px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .asset-quick-actions {
+    transition: none;
+  }
+}
+
+/* Explicit placement prevents the added lock control from creating a third row. */
+@media (max-width: 700px) {
+  .app .topbar {
+    grid-template-columns: 32px minmax(90px, 1fr) 36px 36px 36px;
+  }
+  .app .topbar > .mobile-menu {
+    grid-row: 1;
+    grid-column: 1;
+  }
+  .app .topbar > .brand {
+    grid-row: 1;
+    grid-column: 2;
+  }
+  .app .topbar > .locked-control {
+    grid-row: 1;
+    grid-column: 3;
+  }
+  .app .topbar > button[aria-label="Toggle theme"] {
+    grid-row: 1;
+    grid-column: 4;
+    padding: 0;
+    width: 36px;
+    min-width: 0;
+  }
+  .app .topbar > .profile {
+    grid-row: 1;
+    grid-column: 5;
+  }
+  .app .topbar > .global-search {
+    grid-row: 2;
+    grid-column: 3 / 6;
+    width: 100%;
+  }
+  .app .locked-control .locked-toggle {
+    min-width: 32px;
+    padding: 7px;
+  }
+  .app .locked-control .locked-open {
+    display: none;
+  }
+  .app .locked-control .locked-toggle span {
+    display: none;
+  }
+}
+.app[data-screen="admin"] .topbar > .locked-control {
+  margin-left: auto;
+}
+.app[data-screen="admin"] .topbar > .profile {
+  margin-left: 0;
+}
+.inspector-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  color: var(--fl-muted);
+  font-size: 12px;
+}
+@media (max-width: 700px) {
+  .app[data-inspector="true"] .inspector {
+    top: 96px;
+    bottom: 64px;
+    width: min(320px, 100vw);
+  }
+}
+@media (max-width: 700px) {
+  .app .results-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) repeat(4, 44px); gap: 6px; }
+  .app .results-toolbar > .grow { display: none; }
+  .app .results-toolbar .result-count { grid-column: 1 / 3; grid-row: 1; }
+  .app .results-toolbar > .button:first-of-type { grid-column: 3; grid-row: 1; }
+  .app .results-toolbar > button[aria-label$="information panel"] { grid-column: 4; grid-row: 1; }
+  .app .results-toolbar > button[aria-label="More library actions"] { grid-column: 5; grid-row: 1; }
+  .app .results-toolbar .sort { grid-column: 1 / 4; grid-row: 2; width: 100%; }
+  .app .results-toolbar .sort select { width: 100%; }
+  .app .results-toolbar > button[aria-label="Grid view"] { grid-column: 4; grid-row: 2; }
+  .app .results-toolbar > button[aria-label="List view"] { grid-column: 5; grid-row: 2; }
+}

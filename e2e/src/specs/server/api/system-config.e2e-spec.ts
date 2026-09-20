@@ -17,22 +17,36 @@ describe('/system-config', () => {
   describe('PUT /system-config', () => {
     it('should always return the new config', async () => {
       const config = await getSystemConfig(admin.accessToken);
+      const updatedConfig = { ...config, server: { ...config.server, loginPageMessage: 'Updated login message' } };
 
       const response1 = await request(app)
         .put('/system-config')
         .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send({ ...config, newVersionCheck: { enabled: false, channel: 'stable' } });
+        .send(updatedConfig);
 
       expect(response1.status).toBe(200);
-      expect(response1.body).toEqual({ ...config, newVersionCheck: { enabled: false, channel: 'stable' } });
+      expect(response1.body).toEqual(updatedConfig);
 
       const response2 = await request(app)
         .put('/system-config')
         .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send({ ...config, newVersionCheck: { enabled: true, channel: 'stable' } });
+        .send(config);
 
       expect(response2.status).toBe(200);
-      expect(response2.body).toEqual({ ...config, newVersionCheck: { enabled: true, channel: 'stable' } });
+      expect(response2.body).toEqual(config);
+    });
+
+    it('should keep automatic external version checks disabled when requested', async () => {
+      const config = await getSystemConfig(admin.accessToken);
+      const { status, body } = await request(app)
+        .put('/system-config')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ ...config, newVersionCheck: { ...config.newVersionCheck, enabled: true } });
+
+      const expectedConfig = { ...config, newVersionCheck: { ...config.newVersionCheck, enabled: false } };
+      expect(status).toBe(200);
+      expect(body).toEqual(expectedConfig);
+      expect(await getSystemConfig(admin.accessToken)).toEqual(expectedConfig);
     });
 
     it('should reject an invalid config entry', async () => {

@@ -3,8 +3,7 @@ name: Fork integration
 on:
   pull_request:
     branches: ['fork/main']
-  push:
-    branches: ['fork/main']
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -16,7 +15,7 @@ concurrency:
 
 jobs:
   integration:
-    if: github.repository == 'adamtaylor152/immich'
+    if: github.repository == 'Frameleaf/frameleaf-app'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -31,6 +30,13 @@ jobs:
           cache: pnpm
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
+      - name: Validate delivery workflow contracts
+        run: |
+          node .github/check-runners.cjs
+          node .github/check-release.cjs
+          node .github/check-jira.cjs
+          node --test docker/frameleaf-delivery.test.mjs
+          node --test .github/frameleaf-release.test.cjs
       - name: Install plugin WASM and API generation tools
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -84,7 +90,7 @@ jobs:
         run: pnpm --filter immich-web test --run
 
   machine-learning:
-    if: github.repository == 'adamtaylor152/immich'
+    if: github.repository == 'Frameleaf/frameleaf-app'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
@@ -108,7 +114,7 @@ jobs:
         run: .venv/bin/python -m pytest -q
 
   mobile:
-    if: github.repository == 'adamtaylor152/immich'
+    if: github.repository == 'Frameleaf/frameleaf-app'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     defaults:
@@ -180,7 +186,7 @@ jobs:
           flutter test
 
   machine-learning-containers:
-    if: github.repository == 'adamtaylor152/immich'
+    if: github.repository == 'Frameleaf/frameleaf-app'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
@@ -189,6 +195,8 @@ jobs:
         device: [cpu, cuda]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
       - name: Build ML runtime with locked fork dependencies
         run: docker build --build-arg DEVICE=${{ matrix.device }} --target prod -t fork-ml-test machine-learning
       - name: Verify runtime imports without downloading models

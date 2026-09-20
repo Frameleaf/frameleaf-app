@@ -1,0 +1,4 @@
+interface:
+  display_name: "Frameleaf Delivery and Release"
+  short_description: "Deliver Frameleaf PRs with verified Jira Smart Commits"
+  default_prompt: "Use $frameleaf-deploy-release to prepare or update this Frameleaf PR, verify Jira Smart Commits and CI, and perform only authorized release actions."
