@@ -21,7 +21,11 @@ Use the assigned issue key consistently:
 | Pull request title | `ci: FL-118 configure Frameleaf delivery` |
 | Pull request base  | `fork/main` in `Frameleaf/frameleaf-app`  |
 
-GitHub autolinks resolve `FL-123` to `https://heroit.atlassian.net/browse/FL-123`. Squash commits default to the PR title, retaining the issue key. The **Jira Issue Key** check requires a valid-looking uppercase key in human PR titles; it does not query Jira or establish that an issue exists. Dependabot-authored dependency branches have an explicit exception. The workflow reads event metadata without checking out PR code or granting write access.
+GitHub autolinks resolve `FL-123` to `https://heroit.atlassian.net/browse/FL-123`. The **Jira Issue Key** check validates a key in human PR titles; it does not execute Smart Commits, query Jira or establish that an issue exists. Dependabot-authored dependency branches have an explicit exception. The workflow reads event metadata without checking out PR code or granting write access.
+
+Use the [Frameleaf delivery and release skill](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/.agents/skills/frameleaf-deploy-release/SKILL.md), stored at `.agents/skills/frameleaf-deploy-release/SKILL.md`, for commits, PRs and closeout. Delivery commits must contain a real single-line command such as `FL-123 #comment Added the reviewed change; qualification remains pending.` in the Git message. A key in the title or a command pasted into a PR description is insufficient. Verify the resulting Jira comment after pushing and record its commit and comment ID. Only log actual authorized time; discover live transitions and never send a completion command before merge and acceptance.
+
+Squash commits currently use `PR_TITLE` with `COMMIT_MESSAGES`. Before an authorized merge, explicitly prepare the final message so historical Smart Commit commands are not replayed by the new squash SHA. Retain all issue keys and record a fresh merge milestone only where appropriate. These instructions do not authorize merging or changing account privacy/settings. See [Atlassian's Smart Commit syntax](https://support.atlassian.com/jira-software-cloud/docs/process-issues-with-smart-commits/).
 
 The Atlassian app links branches, commits, pull requests and Actions builds using these keys. It does not need a custom workflow to post comments on every issue. After the first issue-linked PR, verify the actual branch, commit and PR in that issue's Development panel; the app's installation alone does not prove event delivery.
 

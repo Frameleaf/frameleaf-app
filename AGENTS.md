@@ -12,6 +12,7 @@ This file routes repository work. Read the linked detail relevant to the task ra
 
 ## Jira-backed delivery
 
+- Use the [Frameleaf delivery and release skill](.agents/skills/frameleaf-deploy-release/SKILL.md) when starting work that will ship by PR, committing, opening/updating a PR, resolving CI, or handling Jira closeout, merge or release. Include actual Jira Smart Commit commands in delivery commits and verify their result in Jira; issue keys alone only link activity. Follow the skill's squash-message check to avoid replaying commands.
 - Read the assigned `FL-` issue, dependencies, linked Confluence specifications and relevant source inventories before implementation. Claim ownership and transition to **In Progress** before edits or implementation delegation; verify both writes. Do not take over another active task or reopen completed work implicitly.
 - Use `codex/FL-123-description` branches, include the real issue key in commit subjects and PR titles, and target `fork/main`. Batch closely related assigned issues only when scope and ownership remain clear.
 - Discover transitions on the actual issue. Frameleaf currently has **To Do**, **In Progress**, and **Done**; it has no review transition. Keep a ready PR's issue In Progress until acceptance and authorized merge are verified. Do not copy transition IDs from another project.
