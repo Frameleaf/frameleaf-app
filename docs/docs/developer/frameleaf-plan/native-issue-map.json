@@ -1,11 +1,45 @@
 {
-  "schemaVersion": 2,
-  "sourceInventory": "mobile/frameleaf-parity.json",
-  "sourceSha256": "5ac7631ac5067713e405ec0409efaf555ce581ff87b04a7efe4148b70b3ea45e",
+  "ambiguities": [
+    {
+      "id": "commercial-link-policy",
+      "entryIds": [
+        "web/src/routes/(user)/buy/+page.svelte",
+        "web/src/lib/components/admin-page/settings/machine-learning/RunPodReferralBanner.svelte"
+      ],
+      "issueIds": ["REL-103", "REL-104", "MOB-107"],
+      "status": "requires-owner-policy-before-enablement",
+      "question": "Confirm owned Frameleaf support/purchase destinations and whether an inherited RunPod referral promotion should remain. No provider/activation service or referral approval is inferred.",
+      "blockingScope": "Only enabling or distributing those commercial links; preserve source records and native settings/compute work without fabricating availability."
+    }
+  ],
   "backlogPath": "docs/docs/developer/frameleaf-plan/backlog.json",
-  "scope": "Every committed native source-inventory entry plus the 16 hashed dirty-only preservation requirements. Ownership is not committed implementation, runtime availability, authorization, or device qualification.",
-  "status": "planned-not-qualified",
-  "mappingPolicy": "Committed entry fields are regenerated from the clean source tree. Dirty-only rows retain their reviewed source identity and hash in mobile/frameleaf-preserved-dirty-evidence.json; original implementation or nativeEvidence fields describe only that uncommitted checkout and are superseded by sourceAvailability and qualification. Primary stories own native behavior or identity integration; secondary stories own interacting workflows and qualification.",
+  "boundaryNotes": [
+    {
+      "id": "legacy-locked-action",
+      "entryIds": [
+        "mobile/lib/presentation/actions/lock.action.dart",
+        "mobile/lib/presentation/pages/locked_folder.page.dart"
+      ],
+      "issueIds": ["MOB-102", "MOB-107", "QA-101"],
+      "decision": "Approved new Mark Sensitive semantics retain albums and visibility; existing origin-locked data remains a compatibility concern. Native LockAction currently relocates and may clean local copies, so it is not an implementation of the approved mark workflow."
+    },
+    {
+      "id": "diagnostic-routes",
+      "entryIds": [
+        "mobile/lib/presentation/pages/dev/main_timeline.page.dart",
+        "mobile/lib/presentation/pages/dev/media_stat.page.dart#LocalMediaSummaryPage",
+        "mobile/lib/presentation/pages/dev/media_stat.page.dart#RemoteMediaSummaryPage"
+      ],
+      "issueIds": ["MOB-102", "MOB-301", "MOB-107", "QA-103"],
+      "decision": "Preserve entry/source identity and current gating; review source reachability before adding user-facing navigation. Internal diagnostics do not imply new customer screens."
+    },
+    {
+      "id": "icloud-native-obligation",
+      "entryIds": ["web/src/routes/(user)/utilities/icloud-sync/+page.svelte"],
+      "issueIds": ["MOB-106", "IMP-002", "MOB-107", "QA-101", "QA-104"],
+      "decision": "Added after canonical inventory drift check: native iCloud management must consume actual owned-account/sync/reconciliation behavior, not merely link to the web utility."
+    }
+  ],
   "counts": {
     "entries": 227,
     "byKind": {
@@ -3527,51 +3561,17 @@
       "runtimeQualification": "not-device-qualified"
     }
   ],
-  "ambiguities": [
-    {
-      "id": "commercial-link-policy",
-      "entryIds": [
-        "web/src/routes/(user)/buy/+page.svelte",
-        "web/src/lib/components/admin-page/settings/machine-learning/RunPodReferralBanner.svelte"
-      ],
-      "issueIds": ["REL-103", "REL-104", "MOB-107"],
-      "status": "requires-owner-policy-before-enablement",
-      "question": "Confirm owned Frameleaf support/purchase destinations and whether an inherited RunPod referral promotion should remain. No provider/activation service or referral approval is inferred.",
-      "blockingScope": "Only enabling or distributing those commercial links; preserve source records and native settings/compute work without fabricating availability."
-    }
-  ],
-  "boundaryNotes": [
-    {
-      "id": "legacy-locked-action",
-      "entryIds": [
-        "mobile/lib/presentation/actions/lock.action.dart",
-        "mobile/lib/presentation/pages/locked_folder.page.dart"
-      ],
-      "issueIds": ["MOB-102", "MOB-107", "QA-101"],
-      "decision": "Approved new Mark Sensitive semantics retain albums and visibility; existing origin-locked data remains a compatibility concern. Native LockAction currently relocates and may clean local copies, so it is not an implementation of the approved mark workflow."
-    },
-    {
-      "id": "diagnostic-routes",
-      "entryIds": [
-        "mobile/lib/presentation/pages/dev/main_timeline.page.dart",
-        "mobile/lib/presentation/pages/dev/media_stat.page.dart#LocalMediaSummaryPage",
-        "mobile/lib/presentation/pages/dev/media_stat.page.dart#RemoteMediaSummaryPage"
-      ],
-      "issueIds": ["MOB-102", "MOB-301", "MOB-107", "QA-103"],
-      "decision": "Preserve entry/source identity and current gating; review source reachability before adding user-facing navigation. Internal diagnostics do not imply new customer screens."
-    },
-    {
-      "id": "icloud-native-obligation",
-      "entryIds": ["web/src/routes/(user)/utilities/icloud-sync/+page.svelte"],
-      "issueIds": ["MOB-106", "IMP-002", "MOB-107", "QA-101", "QA-104"],
-      "decision": "Added after canonical inventory drift check: native iCloud management must consume actual owned-account/sync/reconciliation behavior, not merely link to the web utility."
-    }
-  ],
+  "mappingPolicy": "Committed entry fields are regenerated from the clean source tree. Dirty-only rows retain their reviewed source identity and hash in mobile/frameleaf-preserved-dirty-evidence.json; original implementation or nativeEvidence fields describe only that uncommitted checkout and are superseded by sourceAvailability and qualification. Primary stories own native behavior or identity integration; secondary stories own interacting workflows and qualification.",
   "preservedEvidence": {
     "path": "mobile/frameleaf-preserved-dirty-evidence.json",
     "preservedCheckoutHead": "91d5dfe0f829d15d122c1a8b2bbc474fc195dbaf",
     "reviewedCleanBaseline": "7cfa62336f394189c0450533c30618c66366d868",
     "dirtyInventorySha256": "16ee3645c24a3a09b7735d5f6199f6f12e217281548a0ba40ba8f0b0200e89e4",
     "qualification": "not-committed-not-qualified"
-  }
+  },
+  "schemaVersion": 2,
+  "scope": "Every committed native source-inventory entry plus the 16 hashed dirty-only preservation requirements. Ownership is not committed implementation, runtime availability, authorization, or device qualification.",
+  "sourceInventory": "mobile/frameleaf-parity.json",
+  "sourceSha256": "0e980c2fc45b41d6644491ed654dc9ced63a0bc0c19c2a90be451e726efa22ee",
+  "status": "planned-not-qualified"
 }

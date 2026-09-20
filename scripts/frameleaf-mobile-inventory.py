@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 
@@ -90,6 +91,21 @@ def reject_duplicate_keys(pairs):
 
 def load_json(path):
     return json.loads(path.read_text(), object_pairs_hook=reject_duplicate_keys)
+
+
+def canonical_json(value):
+    """Serialize JSON exactly as the repository root Prettier contract requires."""
+    prettier = shutil.which('prettier')
+    if prettier is None:
+        raise RuntimeError('Prettier is required to generate or check the native parity inventory')
+    raw = json.dumps(value, indent=2) + '\n'
+    return subprocess.run(
+        [prettier, '--stdin-filepath', str(OUTPUT)],
+        input=raw,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
 
 
 def reject_nested_release_claims(value, location='native issue map'):
@@ -365,7 +381,7 @@ def main():
     args = parser.parse_args()
     if args.preserved_source_root:
         preserved_requirements(args.preserved_source_root.resolve())
-    expected = json.dumps(snapshot(), indent=2) + '\n'
+    expected = canonical_json(snapshot())
     if args.check:
         if not OUTPUT.exists() or OUTPUT.read_text() != expected:
             print('Native parity inventory is stale. Run python3 scripts/frameleaf-mobile-inventory.py.', file=sys.stderr)

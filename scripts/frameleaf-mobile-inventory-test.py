@@ -17,7 +17,7 @@ class InventoryContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.result = inventory.snapshot()
-        cls.serialized = json.dumps(cls.result, indent=2) + '\n'
+        cls.serialized = inventory.canonical_json(cls.result)
 
     def validate_mutation(self, mutate_map=None, mutate_backlog=None):
         with tempfile.TemporaryDirectory() as directory:

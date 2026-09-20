@@ -1,8 +1,51 @@
 {
-  "spaceId": "61374475",
-  "spaceKey": "FR",
   "cloudId": "9b68c4fc-dbd2-4864-a050-674c27f779b2",
+  "home": {
+    "source": "docs/docs/developer/frameleaf-plan/confluence-home.md",
+    "sourceSha256": "530f308020ab078a6bb97aa6d195fffc08d523936f078095d3f85c125e7a1f61",
+    "id": "61374652",
+    "url": "https://heroit.atlassian.net/wiki/spaces/FR/overview",
+    "version": 3
+  },
   "homePageId": "61374652",
+  "hubs": {
+    "docs": {
+      "id": "61374675",
+      "title": "Documentation Library",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374675/Documentation+Library",
+      "version": 2
+    },
+    "audits": {
+      "id": "61374697",
+      "title": "Feature Preservation Audits",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374697/Feature+Preservation+Audits",
+      "version": 2
+    },
+    "reference": {
+      "id": "61374719",
+      "title": "Architecture and Integration References",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374719/Architecture+and+Integration+References",
+      "version": 2
+    },
+    "prototype": {
+      "id": "61374741",
+      "title": "Prototype Design and Validation",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374741/Prototype+Design+and+Validation",
+      "version": 2
+    },
+    "history": {
+      "id": "61538344",
+      "title": "Historical Planning and Handoffs",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538344/Historical+Planning+and+Handoffs",
+      "version": 2
+    },
+    "features": {
+      "id": "61440035",
+      "title": "Existing Feature References",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440035/Existing+Feature+References",
+      "version": 2
+    }
+  },
   "pages": [
     {
       "source": "docs/docs/developer/frameleaf-account-settings-audit.md",
@@ -708,49 +751,6 @@
       "verification": "Full normalized page readback verified after owner merge; source content and hash unchanged."
     }
   ],
-  "hubs": {
-    "docs": {
-      "id": "61374675",
-      "title": "Documentation Library",
-      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374675/Documentation+Library",
-      "version": 2
-    },
-    "audits": {
-      "id": "61374697",
-      "title": "Feature Preservation Audits",
-      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374697/Feature+Preservation+Audits",
-      "version": 2
-    },
-    "reference": {
-      "id": "61374719",
-      "title": "Architecture and Integration References",
-      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374719/Architecture+and+Integration+References",
-      "version": 2
-    },
-    "prototype": {
-      "id": "61374741",
-      "title": "Prototype Design and Validation",
-      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374741/Prototype+Design+and+Validation",
-      "version": 2
-    },
-    "history": {
-      "id": "61538344",
-      "title": "Historical Planning and Handoffs",
-      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538344/Historical+Planning+and+Handoffs",
-      "version": 2
-    },
-    "features": {
-      "id": "61440035",
-      "title": "Existing Feature References",
-      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440035/Existing+Feature+References",
-      "version": 2
-    }
-  },
-  "home": {
-    "source": "docs/docs/developer/frameleaf-plan/confluence-home.md",
-    "sourceSha256": "530f308020ab078a6bb97aa6d195fffc08d523936f078095d3f85c125e7a1f61",
-    "id": "61374652",
-    "url": "https://heroit.atlassian.net/wiki/spaces/FR/overview",
-    "version": 3
-  }
+  "spaceId": "61374475",
+  "spaceKey": "FR"
 }

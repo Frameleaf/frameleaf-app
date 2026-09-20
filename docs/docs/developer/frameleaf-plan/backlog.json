@@ -1,11 +1,7 @@
 {
-  "schemaVersion": 1,
-  "repository": "Frameleaf/frameleaf-app",
-  "defaultBranchObserved": "fork/main",
   "baselineHead": "91d5dfe0f829d15d122c1a8b2bbc474fc195dbaf",
   "baselineIncludesUncommittedWork": true,
-  "projectKey": "FL",
-  "statusSemantics": "The per-item status records local delivery qualification, not Jira workflow state. Jira remains authoritative for To Do, In Progress, and Done.",
+  "defaultBranchObserved": "fork/main",
   "items": [
     {
       "id": "FN-E01",
@@ -4982,6 +4978,10 @@
       "status": "planned-not-qualified"
     }
   ],
+  "projectKey": "FL",
+  "repository": "Frameleaf/frameleaf-app",
+  "schemaVersion": 1,
+  "statusSemantics": "The per-item status records local delivery qualification, not Jira workflow state. Jira remains authoritative for To Do, In Progress, and Done.",
   "topologicalOrder": [
     "FN-E01",
     "FN-101",

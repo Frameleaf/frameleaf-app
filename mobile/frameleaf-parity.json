@@ -1,2790 +1,2764 @@
 {
-  "schemaVersion": 2,
-  "product": "Frameleaf",
-  "nativeShellFlag": "FRAMELEAF_NATIVE_PREVIEW",
-  "assessment": "Committed source inventory plus hashed dirty-checkout preservation requirements; neither source presence nor preservation ownership claims complete parity, runtime availability, or device qualification.",
   "acceptance": {
+    "androidBackupDeviceQualified": false,
     "fullNativeParity": false,
+    "iosBackupDeviceQualified": false,
     "nativeStudio": false,
     "nativeStudioProjectReview": false,
-    "webviewCountsAsNative": false,
     "releaseSigningQualified": false,
-    "iosBackupDeviceQualified": false,
-    "androidBackupDeviceQualified": false
+    "webviewCountsAsNative": false
   },
+  "assessment": "Committed source inventory plus hashed dirty-checkout preservation requirements; neither source presence nor preservation ownership claims complete parity, runtime availability, or device qualification.",
   "counts": {
-    "committedEntries": 211,
-    "preservedDirtyRequirements": 16,
-    "totalPreservationRows": 227,
     "byKind": {
       "native-asset-action": 24,
       "native-route": 61,
       "native-settings-component": 26,
       "web-admin-setting": 38,
       "web-page": 78
-    }
+    },
+    "committedEntries": 211,
+    "preservedDirtyRequirements": 16,
+    "totalPreservationRows": 227
   },
-  "preservedEvidence": {
-    "path": "mobile/frameleaf-preserved-dirty-evidence.json",
-    "preservedCheckoutHead": "91d5dfe0f829d15d122c1a8b2bbc474fc195dbaf",
-    "reviewedCleanBaseline": "7cfa62336f394189c0450533c30618c66366d868",
-    "dirtyInventorySha256": "16ee3645c24a3a09b7735d5f6199f6f12e217281548a0ba40ba8f0b0200e89e4",
-    "qualification": "not-committed-not-qualified"
-  },
-  "roadmapGaps": [
-    {
-      "id": "unified-discovery",
-      "nativeParity": "not-implemented",
-      "detail": "Shared structured queries, contextual facets, saved smart albums, timestamped moments and command palette"
-    },
-    {
-      "id": "guided-faces",
-      "nativeParity": "not-implemented",
-      "detail": "Durable face verdicts, split review, correction history and undo"
-    },
-    {
-      "id": "shared-spaces",
-      "nativeParity": "not-implemented",
-      "detail": "Space roles, recipient previews, people identity links and private naming"
-    },
-    {
-      "id": "takeout",
-      "nativeParity": "not-implemented",
-      "detail": "Resumable Takeout staging, scan/review/import/reconciliation"
-    },
-    {
-      "id": "classification",
-      "nativeParity": "not-implemented",
-      "detail": "Rule preview, provenance and rule-owned generated results"
-    },
-    {
-      "id": "culling",
-      "nativeParity": "not-implemented",
-      "detail": "Synchronized near-duplicate/burst comparison, quality explanations and keeper decisions"
-    },
-    {
-      "id": "memory-stories",
-      "nativeParity": "not-implemented",
-      "detail": "Editable event stories, preferences, timezone birthdays and independent highlight export"
-    },
-    {
-      "id": "pets",
-      "nativeParity": "not-implemented",
-      "detail": "Named individual pets, manual observation correction and model proposals"
-    },
-    {
-      "id": "enrichment",
-      "nativeParity": "not-implemented",
-      "detail": "Reusable video-frame workbench, preview and dependency stages including opt-in captions"
-    },
-    {
-      "id": "library-care",
-      "nativeParity": "not-implemented",
-      "detail": "Combined health/repair/migration queues with evidence"
-    },
-    {
-      "id": "preservation",
-      "nativeParity": "not-implemented",
-      "detail": "Verified originals/sidecars/recipes manifests and restoration reconciliation"
-    },
-    {
-      "id": "documents",
-      "nativeParity": "not-implemented",
-      "detail": "OCR-grounded fields, cropped evidence and corrections"
-    },
-    {
-      "id": "photo-tools",
-      "nativeParity": "not-implemented",
-      "detail": "Selective masks, presets and external RAW rendition workflows"
-    },
-    {
-      "id": "ai-video",
-      "nativeParity": "not-implemented",
-      "detail": "Explicit local/RunPod destination, preview comparison, jobs and qualified restoration"
-    },
-    {
-      "id": "native-studio",
-      "nativeParity": "partial-project-review",
-      "detail": "Project/revision/source review exists in preview; native graph editing, effects/animation/audio and qualified render/export remain unavailable"
-    },
-    {
-      "id": "administration",
-      "nativeParity": "not-implemented",
-      "detail": "All server settings, ML/GPU endpoints, queues, users, libraries, migration and fork handoff controls"
-    }
-  ],
   "entrypoints": [
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/backup/backup.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/backup/backup.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "BackupPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/backup/backup.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/backup/backup_album_selection.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/backup/backup_album_selection.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "BackupAlbumSelectionPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/backup/backup_album_selection.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/backup/backup_asset_detail.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/backup/backup_asset_detail.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "BackupAssetDetailPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/backup/backup_asset_detail.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/backup/backup_options.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/backup/backup_options.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "BackupOptionsPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/backup/backup_options.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/backup/upload_detail.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/backup/upload_detail.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "UploadDetailPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/backup/upload_detail.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/common/app_log.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/common/app_log.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "AppLogPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/common/app_log.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/common/app_log_detail.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/common/app_log_detail.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "AppLogDetailPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/common/app_log_detail.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/common/headers_settings.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/common/headers_settings.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "HeaderSettingsPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/common/headers_settings.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/common/settings.page.dart#SettingsPage",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/common/settings.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "SettingsPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
-    },
-    {
-      "id": "mobile/lib/pages/common/settings.page.dart#SettingsSubPage",
-      "kind": "native-route",
       "source": "mobile/lib/pages/common/settings.page.dart",
+      "sourceAvailability": "committed-source"
+    },
+    {
+      "frameleafRedesign": "pending",
+      "id": "mobile/lib/pages/common/settings.page.dart#SettingsSubPage",
+      "implementation": "existing-native",
+      "kind": "native-route",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "SettingsSubPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/common/settings.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/common/splash_screen.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/common/splash_screen.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "SplashScreenPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/common/splash_screen.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/common/tab_shell.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/common/tab_shell.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "TabShellPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/common/tab_shell.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/library/folder/folder.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/library/folder/folder.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "FolderPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/library/folder/folder.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/library/locked/pin_auth.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/library/locked/pin_auth.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "PinAuthPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/library/locked/pin_auth.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/library/partner/partner.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/library/partner/partner.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "PartnerPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/library/partner/partner.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/library/shared_link/shared_link.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/library/shared_link/shared_link.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "SharedLinkPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/library/shared_link/shared_link.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/library/shared_link/shared_link_edit.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/library/shared_link/shared_link_edit.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "SharedLinkEditPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/library/shared_link/shared_link_edit.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/login/change_password.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/login/change_password.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "ChangePasswordPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/login/change_password.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/login/login.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/login/login.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "LoginPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/login/login.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/search/map/map_location_picker.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/search/map/map_location_picker.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "MapLocationPickerPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/search/map/map_location_picker.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/settings/sync_status.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/settings/sync_status.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "SyncStatusPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/settings/sync_status.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/pages/share_intent/share_intent.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/pages/share_intent/share_intent.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "ShareIntentPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/pages/share_intent/share_intent.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/archive.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/archive.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/asset_debug.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/asset_debug.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/cast.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/cast.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/delete.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/delete.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/download.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/download.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/edit_asset.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/edit_asset.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/edit_datetime.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/edit_datetime.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/edit_location.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/edit_location.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/favorite.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/favorite.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/lock.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/lock.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/nsfw.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/nsfw.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/open_in_browser.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/open_in_browser.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/partner.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/partner.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/remove_from_album.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/remove_from_album.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/restore.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/restore.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/set_album_cover.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/set_album_cover.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/set_profile_picture.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/set_profile_picture.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/share.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/share.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/share_link.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/share_link.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/similar_photos.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/similar_photos.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/slideshow.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/slideshow.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/stack.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/stack.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/tag.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/tag.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/actions/upload.action.dart",
+      "implementation": "existing-native",
       "kind": "native-asset-action",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/presentation/actions/upload.action.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/activities.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/activities.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "ActivitiesPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/activities.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/album.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/album.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "AlbumsPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/album.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/album_options.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/album_options.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "AlbumOptionsPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/album_options.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/archive.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/archive.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "ArchivePage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/archive.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/asset_selection_timeline.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/asset_selection_timeline.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "AssetSelectionTimelinePage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/asset_selection_timeline.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/asset_troubleshoot.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/asset_troubleshoot.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "AssetTroubleshootPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/asset_troubleshoot.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/cleanup_preview.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/cleanup_preview.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "CleanupPreviewPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/cleanup_preview.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/create_album.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/create_album.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "CreateAlbumPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/create_album.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/dev/main_timeline.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/dev/main_timeline.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "MainTimelinePage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/dev/main_timeline.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/dev/media_stat.page.dart#LocalMediaSummaryPage",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/dev/media_stat.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "LocalMediaSummaryPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
-    },
-    {
-      "id": "mobile/lib/presentation/pages/dev/media_stat.page.dart#RemoteMediaSummaryPage",
-      "kind": "native-route",
       "source": "mobile/lib/presentation/pages/dev/media_stat.page.dart",
+      "sourceAvailability": "committed-source"
+    },
+    {
+      "frameleafRedesign": "pending",
+      "id": "mobile/lib/presentation/pages/dev/media_stat.page.dart#RemoteMediaSummaryPage",
+      "implementation": "existing-native",
+      "kind": "native-route",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "RemoteMediaSummaryPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/dev/media_stat.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/download_info.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/download_info.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "DownloadInfoPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/download_info.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/edit/edit.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/edit/edit.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "EditImagePage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/edit/edit.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/favorite.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/favorite.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "FavoritePage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/favorite.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/feature_message/whats_new.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/feature_message/whats_new.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "WhatsNewPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/feature_message/whats_new.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/library.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/library.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "LibraryPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/library.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/local_album.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/local_album.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "LocalAlbumsPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/local_album.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/local_timeline.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/local_timeline.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "LocalTimelinePage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/local_timeline.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/locked_folder.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/locked_folder.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "LockedFolderPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/locked_folder.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/map.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/map.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "MapPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/map.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/memory.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/memory.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "MemoryPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/memory.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/memory_list.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/memory_list.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "MemoryListPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/memory_list.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/partner_detail.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/partner_detail.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "PartnerDetailPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/partner_detail.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/people_collection.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/people_collection.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "PeopleCollectionPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/people_collection.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/person.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/person.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "PersonPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/person.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/place.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/place.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "PlacePage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/place.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/place_detail.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/place_detail.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "PlaceDetailPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/place_detail.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/profile/profile_picture_crop.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/profile/profile_picture_crop.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "ProfilePictureCropPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/profile/profile_picture_crop.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/recently_added.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/recently_added.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "RecentlyAddedPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/recently_added.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/recently_taken.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/recently_taken.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "RecentlyTakenPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/recently_taken.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/remote_album.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/remote_album.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "RemoteAlbumPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/remote_album.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/search/search.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/search/search.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "SearchPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/search/search.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/slideshow.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/slideshow.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "SlideshowPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/slideshow.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/trash.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/trash.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "TrashPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/trash.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/user_selection.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/user_selection.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "UserSelectionPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/user_selection.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/pages/video.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/pages/video.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "VideoPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/pages/video.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/presentation/widgets/asset_viewer/asset_viewer.page.dart",
+      "implementation": "existing-native",
       "kind": "native-route",
-      "source": "mobile/lib/presentation/widgets/asset_viewer/asset_viewer.page.dart",
+      "qualification": "inventory-only-not-qualified",
       "routeClass": "AssetViewerPage",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/presentation/widgets/asset_viewer/asset_viewer.page.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/advanced_settings.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/advanced_settings.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/asset_list_settings/asset_list_group_settings.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/asset_list_settings/asset_list_group_settings.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/asset_list_settings/asset_list_layout_settings.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/asset_list_settings/asset_list_layout_settings.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/asset_list_settings/asset_list_settings.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/asset_list_settings/asset_list_settings.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/asset_viewer_settings/asset_viewer_settings.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/asset_viewer_settings/asset_viewer_settings.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/asset_viewer_settings/image_viewer_quality_setting.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/asset_viewer_settings/image_viewer_quality_setting.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/asset_viewer_settings/image_viewer_tap_to_navigate_setting.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/asset_viewer_settings/image_viewer_tap_to_navigate_setting.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/asset_viewer_settings/slideshow_settings.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/asset_viewer_settings/slideshow_settings.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/asset_viewer_settings/video_viewer_settings.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/asset_viewer_settings/video_viewer_settings.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/backup_settings/backup_settings.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/backup_settings/backup_settings.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/beta_sync_settings/entity_count_tile.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/beta_sync_settings/entity_count_tile.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/beta_sync_settings/sync_status_and_actions.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/beta_sync_settings/sync_status_and_actions.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/custom_proxy_headers_settings/custom_proxy_headers_settings.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/custom_proxy_headers_settings/custom_proxy_headers_settings.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/free_up_space_settings.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/free_up_space_settings.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/language_settings.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/language_settings.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/networking_settings/endpoint_input.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/networking_settings/endpoint_input.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/networking_settings/external_network_preference.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/networking_settings/external_network_preference.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/networking_settings/local_network_preference.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/networking_settings/local_network_preference.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/networking_settings/networking_settings.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/networking_settings/networking_settings.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/notification_setting.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/notification_setting.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/preference_settings/haptic_setting.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/preference_settings/haptic_setting.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/preference_settings/preference_setting.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/preference_settings/preference_setting.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/preference_settings/primary_color_setting.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/preference_settings/primary_color_setting.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/preference_settings/share_setting.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/preference_settings/share_setting.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/preference_settings/theme_setting.dart",
+      "implementation": "existing-native",
       "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
+      "runtimeQualification": "not-device-qualified",
       "source": "mobile/lib/widgets/settings/preference_settings/theme_setting.dart",
-      "implementation": "existing-native",
-      "frameleafRedesign": "pending",
-      "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "mobile/lib/widgets/settings/ssl_client_cert_settings.dart",
-      "kind": "native-settings-component",
-      "source": "mobile/lib/widgets/settings/ssl_client_cert_settings.dart",
       "implementation": "existing-native",
-      "frameleafRedesign": "pending",
+      "kind": "native-settings-component",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "mobile/lib/widgets/settings/ssl_client_cert_settings.dart",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "albums",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/albums/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/albums/+page.svelte",
-      "area": "albums",
-      "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
       "nativeEvidence": [
         "mobile/lib/presentation/pages/album.page.dart",
         "mobile/lib/presentation/pages/remote_album.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/albums/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "albums",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "area": "albums",
-      "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
       "nativeEvidence": [
         "mobile/lib/presentation/pages/album.page.dart",
         "mobile/lib/presentation/pages/remote_album.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/archive/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/archive/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "area": "archive",
       "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
-      "nativeEvidence": [
-        "mobile/lib/presentation/pages/archive.page.dart"
-      ],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/archive/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": ["mobile/lib/presentation/pages/archive.page.dart"],
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/archive/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/best-photos/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/best-photos/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "area": "best-photos",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/best-photos/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/best-photos/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/buy/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/buy/+page.svelte",
       "area": "buy",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/buy/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/buy/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/explore/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/explore/+page.svelte",
       "area": "explore",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/explore/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/explore/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/favorites/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/favorites/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "area": "favorites",
       "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
-      "nativeEvidence": [
-        "mobile/lib/presentation/pages/favorite.page.dart"
-      ],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/favorites/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": ["mobile/lib/presentation/pages/favorite.page.dart"],
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/favorites/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "area": "folders",
       "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
-      "nativeEvidence": [
-        "mobile/lib/pages/library/folder/folder.page.dart"
-      ],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": ["mobile/lib/pages/library/folder/folder.page.dart"],
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/locked/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/locked/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "area": "locked",
       "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
+      "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/locked/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "kind": "web-page",
       "nativeEvidence": [
         "mobile/lib/presentation/pages/locked_folder.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/locked/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/map/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/map/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "area": "map",
       "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
-      "nativeEvidence": [
-        "mobile/lib/presentation/pages/map.page.dart"
-      ],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/map/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": ["mobile/lib/presentation/pages/map.page.dart"],
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/map/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "memories",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/memories/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/memories/+page.svelte",
-      "area": "memories",
-      "audience": "end-user",
+      "nativeEvidence": ["mobile/lib/presentation/pages/memory_list.page.dart"],
       "nativeParity": "partial-existing-counterpart",
-      "nativeEvidence": [
-        "mobile/lib/presentation/pages/memory_list.page.dart"
-      ],
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/memories/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "memories",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/memories/[id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/memories/[id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "area": "memories",
-      "audience": "end-user",
+      "nativeEvidence": ["mobile/lib/presentation/pages/memory_list.page.dart"],
       "nativeParity": "partial-existing-counterpart",
-      "nativeEvidence": [
-        "mobile/lib/presentation/pages/memory_list.page.dart"
-      ],
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/memories/[id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/partners/[userId]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/partners/[userId]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "area": "partners",
       "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
-      "nativeEvidence": [
-        "mobile/lib/pages/library/partner/partner.page.dart"
-      ],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/partners/[userId]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": ["mobile/lib/pages/library/partner/partner.page.dart"],
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/partners/[userId]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "people",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/people/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/people/+page.svelte",
-      "area": "people",
-      "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
       "nativeEvidence": [
         "mobile/lib/presentation/pages/people_collection.page.dart",
         "mobile/lib/presentation/pages/person.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/people/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "people",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/people/[personId]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/people/[personId]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "area": "people",
-      "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
       "nativeEvidence": [
         "mobile/lib/presentation/pages/people_collection.page.dart",
         "mobile/lib/presentation/pages/person.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/people/[personId]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "people",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/people/manage/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/people/manage/+page.svelte",
-      "area": "people",
-      "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
       "nativeEvidence": [
         "mobile/lib/presentation/pages/people_collection.page.dart",
         "mobile/lib/presentation/pages/person.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/people/manage/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/photos/[[assetId=id]]/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/photos/[[assetId=id]]/+page.svelte",
       "area": "photos",
       "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
+      "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/photos/[[assetId=id]]/+page.svelte",
+      "kind": "web-page",
       "nativeEvidence": [
         "mobile/lib/presentation/pages/dev/main_timeline.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/photos/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/places/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/places/+page.svelte",
       "area": "places",
       "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
-      "nativeEvidence": [
-        "mobile/lib/presentation/pages/place.page.dart"
-      ],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/places/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": ["mobile/lib/presentation/pages/place.page.dart"],
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/places/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "recently-added",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/recently-added/[[assetId=id]]/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/recently-added/[[assetId=id]]/+page.svelte",
-      "area": "recently-added",
-      "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
       "nativeEvidence": [
         "mobile/lib/presentation/pages/recently_added.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/recently-added/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "recently-added",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/recently-added/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/recently-added/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "area": "recently-added",
-      "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
       "nativeEvidence": [
         "mobile/lib/presentation/pages/recently_added.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/recently-added/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/s/[slug]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/s/[slug]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "area": "s",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/s/[slug]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/s/[slug]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "area": "search",
       "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
+      "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "kind": "web-page",
       "nativeEvidence": [
         "mobile/lib/presentation/pages/search/search.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/share/[key]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/share/[key]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "area": "share",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/share/[key]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/share/[key]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "shared-links",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/shared-links/(list)/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/shared-links/(list)/+page.svelte",
-      "area": "shared-links",
-      "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
       "nativeEvidence": [
         "mobile/lib/pages/library/shared_link/shared_link.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/shared-links/(list)/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "shared-links",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/shared-links/(list)/[id]/edit/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/shared-links/(list)/[id]/edit/+page.svelte",
-      "area": "shared-links",
-      "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
       "nativeEvidence": [
         "mobile/lib/pages/library/shared_link/shared_link.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/shared-links/(list)/[id]/edit/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/sharing/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/sharing/+page.svelte",
       "area": "sharing",
       "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
-      "nativeEvidence": [
-        "mobile/lib/presentation/pages/album.page.dart"
-      ],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/sharing/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": ["mobile/lib/presentation/pages/album.page.dart"],
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/sharing/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "suppressed",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/suppressed/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/suppressed/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "area": "suppressed",
-      "audience": "end-user",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/suppressed/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "suppressed",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/suppressed/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/suppressed/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "area": "suppressed",
-      "audience": "end-user",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/suppressed/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/tags/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/tags/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "area": "tags",
       "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
-      "nativeEvidence": [
-        "mobile/lib/presentation/actions/tag.action.dart"
-      ],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/tags/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": ["mobile/lib/presentation/actions/tag.action.dart"],
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/tags/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/trash/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/trash/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "area": "trash",
       "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
-      "nativeEvidence": [
-        "mobile/lib/presentation/pages/trash.page.dart"
-      ],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/trash/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": ["mobile/lib/presentation/pages/trash.page.dart"],
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/trash/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/(user)/user-settings/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/user-settings/+page.svelte",
       "area": "user-settings",
       "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
-      "nativeEvidence": [
-        "mobile/lib/pages/common/settings.page.dart"
-      ],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/user-settings/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": ["mobile/lib/pages/common/settings.page.dart"],
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/user-settings/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "utilities",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/utilities/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/utilities/+page.svelte",
-      "area": "utilities",
-      "audience": "end-user",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/utilities/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "utilities",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/utilities/corrupt-media/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/utilities/corrupt-media/+page.svelte",
-      "area": "utilities",
-      "audience": "end-user",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/utilities/corrupt-media/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "utilities",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "area": "utilities",
-      "audience": "end-user",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "utilities",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/utilities/geolocation/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/utilities/geolocation/+page.svelte",
-      "area": "utilities",
-      "audience": "end-user",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/utilities/geolocation/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "utilities",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/utilities/icloud-sync/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/utilities/icloud-sync/+page.svelte",
-      "area": "utilities",
-      "audience": "end-user",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/utilities/icloud-sync/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "utilities",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-      "area": "utilities",
-      "audience": "end-user",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "utilities",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/utilities/live-photos/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/utilities/live-photos/+page.svelte",
-      "area": "utilities",
-      "audience": "end-user",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/utilities/live-photos/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "utilities",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/utilities/missing-media/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/utilities/missing-media/+page.svelte",
-      "area": "utilities",
-      "audience": "end-user",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/utilities/missing-media/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "workflows",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/workflows/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/workflows/+page.svelte",
-      "area": "workflows",
-      "audience": "end-user",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/workflows/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "workflows",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/workflows/[workflowId]/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/workflows/[workflowId]/+page.svelte",
-      "area": "workflows",
-      "audience": "end-user",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/(user)/workflows/[workflowId]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/+page.svelte",
       "area": "root",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "admin",
+      "audience": "administrator",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/admin/+page.svelte",
-      "area": "admin",
-      "audience": "administrator",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "admin",
+      "audience": "administrator",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/library-management/(list)/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/admin/library-management/(list)/+page.svelte",
-      "area": "admin",
-      "audience": "administrator",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/library-management/(list)/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "admin",
+      "audience": "administrator",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/library-management/(list)/new/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/admin/library-management/(list)/new/+page.svelte",
-      "area": "admin",
-      "audience": "administrator",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/library-management/(list)/new/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "admin",
+      "audience": "administrator",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/library-management/[id]/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/admin/library-management/[id]/+page.svelte",
-      "area": "admin",
-      "audience": "administrator",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/library-management/[id]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "admin",
+      "audience": "administrator",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/library-management/[id]/edit/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/admin/library-management/[id]/edit/+page.svelte",
-      "area": "admin",
-      "audience": "administrator",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/library-management/[id]/edit/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "admin",
+      "audience": "administrator",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/maintenance/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/admin/maintenance/+page.svelte",
-      "area": "admin",
-      "audience": "administrator",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/maintenance/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "admin",
+      "audience": "administrator",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/maintenance/integrity-report/[type]/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/admin/maintenance/integrity-report/[type]/+page.svelte",
-      "area": "admin",
-      "audience": "administrator",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/maintenance/integrity-report/[type]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "admin",
+      "audience": "administrator",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/queues/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/admin/queues/+page.svelte",
-      "area": "admin",
-      "audience": "administrator",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/queues/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "admin",
+      "audience": "administrator",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/queues/[name]/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/admin/queues/[name]/+page.svelte",
-      "area": "admin",
-      "audience": "administrator",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/queues/[name]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "admin",
+      "audience": "administrator",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/server-status/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/admin/server-status/+page.svelte",
-      "area": "admin",
-      "audience": "administrator",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/server-status/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "admin",
+      "audience": "administrator",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/admin/system-settings/+page.svelte",
-      "area": "admin",
-      "audience": "administrator",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "admin",
+      "audience": "administrator",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/users/(list)/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/admin/users/(list)/+page.svelte",
-      "area": "admin",
-      "audience": "administrator",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/users/(list)/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "admin",
+      "audience": "administrator",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/users/(list)/new/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/admin/users/(list)/new/+page.svelte",
-      "area": "admin",
-      "audience": "administrator",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/users/(list)/new/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "admin",
+      "audience": "administrator",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/users/[id]/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/admin/users/[id]/+page.svelte",
-      "area": "admin",
-      "audience": "administrator",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/users/[id]/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "admin",
+      "audience": "administrator",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/users/[id]/edit/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/admin/users/[id]/edit/+page.svelte",
-      "area": "admin",
-      "audience": "administrator",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/users/[id]/edit/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "auth",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/auth/change-password/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/auth/change-password/+page.svelte",
-      "area": "auth",
-      "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
       "nativeEvidence": [
         "mobile/lib/pages/login/login.page.dart",
         "mobile/lib/pages/login/change_password.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/auth/change-password/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "auth",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/auth/login/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/auth/login/+page.svelte",
-      "area": "auth",
-      "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
       "nativeEvidence": [
         "mobile/lib/pages/login/login.page.dart",
         "mobile/lib/pages/login/change_password.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/auth/login/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "auth",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/auth/logout/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/auth/logout/+page.svelte",
-      "area": "auth",
-      "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
       "nativeEvidence": [
         "mobile/lib/pages/login/login.page.dart",
         "mobile/lib/pages/login/change_password.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/auth/logout/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "auth",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/auth/onboarding/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/auth/onboarding/+page.svelte",
-      "area": "auth",
-      "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
       "nativeEvidence": [
         "mobile/lib/pages/login/login.page.dart",
         "mobile/lib/pages/login/change_password.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/auth/onboarding/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "auth",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/auth/pin-prompt/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/auth/pin-prompt/+page.svelte",
-      "area": "auth",
-      "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
       "nativeEvidence": [
         "mobile/lib/pages/login/login.page.dart",
         "mobile/lib/pages/login/change_password.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/auth/pin-prompt/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "area": "auth",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/auth/register/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/auth/register/+page.svelte",
-      "area": "auth",
-      "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
       "nativeEvidence": [
         "mobile/lib/pages/login/login.page.dart",
         "mobile/lib/pages/login/change_password.page.dart"
       ],
-      "frameleafRedesign": "pending",
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/auth/register/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
-      "id": "web/src/routes/maintenance/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/maintenance/+page.svelte",
       "area": "maintenance",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/maintenance/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/maintenance/+page.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/lib/components/admin-page/settings/machine-learning/RunPodPanel.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/lib/components/admin-page/settings/machine-learning/RunPodPanel.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/lib/components/admin-page/settings/machine-learning/RunPodPanel.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/lib/components/admin-page/settings/machine-learning/RunPodReferralBanner.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/lib/components/admin-page/settings/machine-learning/RunPodReferralBanner.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/lib/components/admin-page/settings/machine-learning/RunPodReferralBanner.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/lib/components/admin-settings/StorageTemplateSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/lib/components/admin-settings/StorageTemplateSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/lib/components/admin-settings/StorageTemplateSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/lib/components/admin-settings/SupportedDatetimePanel.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/lib/components/admin-settings/SupportedDatetimePanel.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/lib/components/admin-settings/SupportedDatetimePanel.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/lib/components/admin-settings/SupportedVariablesPanel.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/lib/components/admin-settings/SupportedVariablesPanel.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/lib/components/admin-settings/SupportedVariablesPanel.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/AuthSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/AuthSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/AuthSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/BackupSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/BackupSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/BackupSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/FFmpegSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/FFmpegSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/FFmpegSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/ImageSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/ImageSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/ImageSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/IntegrityChecksSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/IntegrityChecksSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/IntegrityChecksSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/JobSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/JobSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/JobSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/LibrarySettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/LibrarySettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/LibrarySettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/LoggingSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/LoggingSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/LoggingSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/MachineLearningSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/MachineLearningSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/MachineLearningSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/MapSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/MapSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/MapSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/MetadataSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/MetadataSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/MetadataSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/NewVersionCheckSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/NewVersionCheckSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/NewVersionCheckSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/NightlyTasksSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/NightlyTasksSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/NightlyTasksSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/NotificationSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/NotificationSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/NotificationSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/ServerSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/ServerSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/ServerSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/SettingCheckboxes.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/SettingCheckboxes.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/SettingCheckboxes.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/SettingSelect.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/SettingSelect.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/SettingSelect.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/SettingTextarea.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/SettingTextarea.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/SettingTextarea.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/SmartAlbumsSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/SmartAlbumsSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/SmartAlbumsSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/TemplateSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/TemplateSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/TemplateSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/ThemeSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/ThemeSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/ThemeSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/TrashSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/TrashSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/TrashSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/UserSettings.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/UserSettings.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/UserSettings.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/machine-learning/AvailabilityChecksSection.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/machine-learning/AvailabilityChecksSection.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/machine-learning/AvailabilityChecksSection.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/machine-learning/DuplicateDetectionSection.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/machine-learning/DuplicateDetectionSection.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/machine-learning/DuplicateDetectionSection.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/machine-learning/FacialRecognitionSection.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/machine-learning/FacialRecognitionSection.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/machine-learning/FacialRecognitionSection.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/machine-learning/ImageDescriptionPromptSection.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/machine-learning/ImageDescriptionPromptSection.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/machine-learning/ImageDescriptionPromptSection.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/machine-learning/ImageDescriptionSection.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/machine-learning/ImageDescriptionSection.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/machine-learning/ImageDescriptionSection.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/machine-learning/MlUrlsSection.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/machine-learning/MlUrlsSection.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/machine-learning/MlUrlsSection.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/machine-learning/NsfwDetectionSection.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/machine-learning/NsfwDetectionSection.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/machine-learning/NsfwDetectionSection.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/machine-learning/OcrSection.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/machine-learning/OcrSection.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/machine-learning/OcrSection.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/machine-learning/RunPodSection.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/machine-learning/RunPodSection.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/machine-learning/RunPodSection.svelte",
+      "sourceAvailability": "committed-source"
     },
     {
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/admin/system-settings/machine-learning/SmartSearchSection.svelte",
       "kind": "web-admin-setting",
-      "source": "web/src/routes/admin/system-settings/machine-learning/SmartSearchSection.svelte",
       "nativeParity": "not-implemented",
-      "frameleafRedesign": "pending",
+      "qualification": "inventory-only-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceAvailability": "committed-source",
-      "qualification": "inventory-only-not-qualified"
+      "source": "web/src/routes/admin/system-settings/machine-learning/SmartSearchSection.svelte",
+      "sourceAvailability": "committed-source"
     }
   ],
+  "nativeShellFlag": "FRAMELEAF_NATIVE_PREVIEW",
+  "preservedEvidence": {
+    "dirtyInventorySha256": "16ee3645c24a3a09b7735d5f6199f6f12e217281548a0ba40ba8f0b0200e89e4",
+    "path": "mobile/frameleaf-preserved-dirty-evidence.json",
+    "preservedCheckoutHead": "91d5dfe0f829d15d122c1a8b2bbc474fc195dbaf",
+    "qualification": "not-committed-not-qualified",
+    "reviewedCleanBaseline": "7cfa62336f394189c0450533c30618c66366d868"
+  },
   "preservedRequirements": [
     {
+      "frameleafRedesign": "review-only-preview",
       "id": "mobile/lib/frameleaf/studio.page.dart#FrameleafStudioPage",
+      "implementation": "implemented-preview",
       "kind": "native-route",
-      "source": "mobile/lib/frameleaf/studio.page.dart",
+      "qualification": "not-committed-not-qualified",
       "routeClass": "FrameleafStudioPage",
-      "implementation": "implemented-preview",
-      "frameleafRedesign": "review-only-preview",
       "runtimeQualification": "not-device-qualified",
-      "sourceSha256": "33e03b95382a0a9e8dec8df7c092821e900fe1e2cdca208e092fd284941b8bc4",
-      "sourceBytes": 13022,
-      "sourceAvailability": "preserved-dirty-only",
-      "qualification": "not-committed-not-qualified"
-    },
-    {
-      "id": "mobile/lib/frameleaf/studio.page.dart#FrameleafStudioProjectPage",
-      "kind": "native-route",
       "source": "mobile/lib/frameleaf/studio.page.dart",
-      "routeClass": "FrameleafStudioProjectPage",
-      "implementation": "implemented-preview",
-      "frameleafRedesign": "review-only-preview",
-      "runtimeQualification": "not-device-qualified",
-      "sourceSha256": "33e03b95382a0a9e8dec8df7c092821e900fe1e2cdca208e092fd284941b8bc4",
-      "sourceBytes": 13022,
       "sourceAvailability": "preserved-dirty-only",
-      "qualification": "not-committed-not-qualified"
+      "sourceBytes": 13022,
+      "sourceSha256": "33e03b95382a0a9e8dec8df7c092821e900fe1e2cdca208e092fd284941b8bc4"
     },
     {
-      "id": "web/src/routes/(user)/classification/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/classification/+page.svelte",
+      "frameleafRedesign": "review-only-preview",
+      "id": "mobile/lib/frameleaf/studio.page.dart#FrameleafStudioProjectPage",
+      "implementation": "implemented-preview",
+      "kind": "native-route",
+      "qualification": "not-committed-not-qualified",
+      "routeClass": "FrameleafStudioProjectPage",
+      "runtimeQualification": "not-device-qualified",
+      "source": "mobile/lib/frameleaf/studio.page.dart",
+      "sourceAvailability": "preserved-dirty-only",
+      "sourceBytes": 13022,
+      "sourceSha256": "33e03b95382a0a9e8dec8df7c092821e900fe1e2cdca208e092fd284941b8bc4"
+    },
+    {
       "area": "classification",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/classification/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "not-committed-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceSha256": "6e8d9f6b2de745b04ebd8ba1430ac1cd7d19f029dd7eb185d0189e632e796219",
-      "sourceBytes": 18050,
+      "source": "web/src/routes/(user)/classification/+page.svelte",
       "sourceAvailability": "preserved-dirty-only",
-      "qualification": "not-committed-not-qualified"
+      "sourceBytes": 18050,
+      "sourceSha256": "6e8d9f6b2de745b04ebd8ba1430ac1cd7d19f029dd7eb185d0189e632e796219"
     },
     {
-      "id": "web/src/routes/(user)/culling/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/culling/+page.svelte",
       "area": "culling",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/culling/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "not-committed-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceSha256": "6b7e8de9f670c6637819c13b9e67d7a310a16a6eabab530156377912d13c00a1",
-      "sourceBytes": 8455,
+      "source": "web/src/routes/(user)/culling/+page.svelte",
       "sourceAvailability": "preserved-dirty-only",
-      "qualification": "not-committed-not-qualified"
+      "sourceBytes": 8455,
+      "sourceSha256": "6b7e8de9f670c6637819c13b9e67d7a310a16a6eabab530156377912d13c00a1"
     },
     {
-      "id": "web/src/routes/(user)/discover/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/discover/+page.svelte",
       "area": "discover",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/discover/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "not-committed-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceSha256": "3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190",
-      "sourceBytes": 22899,
+      "source": "web/src/routes/(user)/discover/+page.svelte",
       "sourceAvailability": "preserved-dirty-only",
-      "qualification": "not-committed-not-qualified"
+      "sourceBytes": 22899,
+      "sourceSha256": "3fee8fb2524e96c050179e511dbd01003dc855f02ace9f724a49d6ed91f5d190"
     },
     {
-      "id": "web/src/routes/(user)/documents/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/documents/+page.svelte",
       "area": "documents",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/documents/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "not-committed-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceSha256": "22111e041ad88921614b5413c7cf78a8d85dde6312a729d612421fda942b5cfc",
-      "sourceBytes": 12958,
+      "source": "web/src/routes/(user)/documents/+page.svelte",
       "sourceAvailability": "preserved-dirty-only",
-      "qualification": "not-committed-not-qualified"
+      "sourceBytes": 12958,
+      "sourceSha256": "22111e041ad88921614b5413c7cf78a8d85dde6312a729d612421fda942b5cfc"
     },
     {
-      "id": "web/src/routes/(user)/enrichment/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/enrichment/+page.svelte",
       "area": "enrichment",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/enrichment/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "not-committed-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceSha256": "f016149a5091bd27d3d693792521fc95eafcf7e31e58caa9dc0c06497294ac80",
-      "sourceBytes": 3030,
+      "source": "web/src/routes/(user)/enrichment/+page.svelte",
       "sourceAvailability": "preserved-dirty-only",
-      "qualification": "not-committed-not-qualified"
+      "sourceBytes": 3030,
+      "sourceSha256": "f016149a5091bd27d3d693792521fc95eafcf7e31e58caa9dc0c06497294ac80"
     },
     {
-      "id": "web/src/routes/(user)/face-review/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/face-review/+page.svelte",
       "area": "face-review",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/face-review/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "not-committed-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceSha256": "b2f724e0dfe055b99c13f4ebf24d2fd293835729093fd94673a214fabe052839",
-      "sourceBytes": 11102,
+      "source": "web/src/routes/(user)/face-review/+page.svelte",
       "sourceAvailability": "preserved-dirty-only",
-      "qualification": "not-committed-not-qualified"
+      "sourceBytes": 11102,
+      "sourceSha256": "b2f724e0dfe055b99c13f4ebf24d2fd293835729093fd94673a214fabe052839"
     },
     {
-      "id": "web/src/routes/(user)/library-care/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/library-care/+page.svelte",
       "area": "library-care",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/library-care/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "not-committed-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceSha256": "6ea05b62fa67cec6d211d6c7932d9f50b6f68e3c3968fabeab4d7b030ce0e6a2",
-      "sourceBytes": 6848,
+      "source": "web/src/routes/(user)/library-care/+page.svelte",
       "sourceAvailability": "preserved-dirty-only",
-      "qualification": "not-committed-not-qualified"
+      "sourceBytes": 6848,
+      "sourceSha256": "6ea05b62fa67cec6d211d6c7932d9f50b6f68e3c3968fabeab4d7b030ce0e6a2"
     },
     {
-      "id": "web/src/routes/(user)/pets/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/pets/+page.svelte",
       "area": "pets",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/pets/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "not-committed-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceSha256": "4533953895ed3f503373ad15e2c2ffa0440e28719ddff4c32c0bdc9862bed436",
-      "sourceBytes": 11477,
+      "source": "web/src/routes/(user)/pets/+page.svelte",
       "sourceAvailability": "preserved-dirty-only",
-      "qualification": "not-committed-not-qualified"
+      "sourceBytes": 11477,
+      "sourceSha256": "4533953895ed3f503373ad15e2c2ffa0440e28719ddff4c32c0bdc9862bed436"
     },
     {
-      "id": "web/src/routes/(user)/photo-tools/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/photo-tools/+page.svelte",
       "area": "photo-tools",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/photo-tools/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "not-committed-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceSha256": "86221fbc76d4e7c3e996f952ca0b935e37b8e4ac446119a9fb0cdc59aa8ca200",
-      "sourceBytes": 17703,
+      "source": "web/src/routes/(user)/photo-tools/+page.svelte",
       "sourceAvailability": "preserved-dirty-only",
-      "qualification": "not-committed-not-qualified"
+      "sourceBytes": 17703,
+      "sourceSha256": "86221fbc76d4e7c3e996f952ca0b935e37b8e4ac446119a9fb0cdc59aa8ca200"
     },
     {
-      "id": "web/src/routes/(user)/preservation/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/preservation/+page.svelte",
       "area": "preservation",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/preservation/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "not-committed-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceSha256": "56468ab43225b3021ac7e2855651f4911f5a85a85a0664789209476006c960af",
-      "sourceBytes": 19393,
+      "source": "web/src/routes/(user)/preservation/+page.svelte",
       "sourceAvailability": "preserved-dirty-only",
-      "qualification": "not-committed-not-qualified"
+      "sourceBytes": 19393,
+      "sourceSha256": "56468ab43225b3021ac7e2855651f4911f5a85a85a0664789209476006c960af"
     },
     {
+      "area": "spaces",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/spaces/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/spaces/+page.svelte",
-      "area": "spaces",
-      "audience": "end-user",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "not-committed-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceSha256": "3fa567e7b2358f634cce222907c985d5a9c0b6f359a22a74dce49d406ec696dc",
-      "sourceBytes": 6260,
+      "source": "web/src/routes/(user)/spaces/+page.svelte",
       "sourceAvailability": "preserved-dirty-only",
-      "qualification": "not-committed-not-qualified"
+      "sourceBytes": 6260,
+      "sourceSha256": "3fa567e7b2358f634cce222907c985d5a9c0b6f359a22a74dce49d406ec696dc"
     },
     {
+      "area": "spaces",
+      "audience": "end-user",
+      "frameleafRedesign": "pending",
       "id": "web/src/routes/(user)/spaces/[spaceId]/+page.svelte",
       "kind": "web-page",
-      "source": "web/src/routes/(user)/spaces/[spaceId]/+page.svelte",
-      "area": "spaces",
-      "audience": "end-user",
-      "nativeParity": "not-implemented",
       "nativeEvidence": [],
-      "frameleafRedesign": "pending",
+      "nativeParity": "not-implemented",
+      "qualification": "not-committed-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceSha256": "de4cb72c48937bdf3087421b7f1833f4bb8c316566c40b89bf853fee85957858",
-      "sourceBytes": 28983,
+      "source": "web/src/routes/(user)/spaces/[spaceId]/+page.svelte",
       "sourceAvailability": "preserved-dirty-only",
-      "qualification": "not-committed-not-qualified"
+      "sourceBytes": 28983,
+      "sourceSha256": "de4cb72c48937bdf3087421b7f1833f4bb8c316566c40b89bf853fee85957858"
     },
     {
-      "id": "web/src/routes/(user)/studio/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/studio/+page.svelte",
       "area": "studio",
       "audience": "end-user",
-      "nativeParity": "partial-existing-counterpart",
-      "nativeEvidence": [
-        "mobile/lib/frameleaf/studio.page.dart"
-      ],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/studio/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": ["mobile/lib/frameleaf/studio.page.dart"],
+      "nativeParity": "partial-existing-counterpart",
+      "qualification": "not-committed-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceSha256": "f05aa671c32e20c2e1f7993f383c9af447d17cff4cee48b2c9396081a9d49d1b",
-      "sourceBytes": 18156,
+      "source": "web/src/routes/(user)/studio/+page.svelte",
       "sourceAvailability": "preserved-dirty-only",
-      "qualification": "not-committed-not-qualified"
+      "sourceBytes": 18156,
+      "sourceSha256": "f05aa671c32e20c2e1f7993f383c9af447d17cff4cee48b2c9396081a9d49d1b"
     },
     {
-      "id": "web/src/routes/(user)/takeout/+page.svelte",
-      "kind": "web-page",
-      "source": "web/src/routes/(user)/takeout/+page.svelte",
       "area": "takeout",
       "audience": "end-user",
-      "nativeParity": "not-implemented",
-      "nativeEvidence": [],
       "frameleafRedesign": "pending",
+      "id": "web/src/routes/(user)/takeout/+page.svelte",
+      "kind": "web-page",
+      "nativeEvidence": [],
+      "nativeParity": "not-implemented",
+      "qualification": "not-committed-not-qualified",
       "runtimeQualification": "not-device-qualified",
-      "sourceSha256": "1a8fefae93065dfbbaa6c31ac68d0929db0f986b201c0047c6ea023c6c0a10f0",
-      "sourceBytes": 28436,
+      "source": "web/src/routes/(user)/takeout/+page.svelte",
       "sourceAvailability": "preserved-dirty-only",
-      "qualification": "not-committed-not-qualified"
+      "sourceBytes": 28436,
+      "sourceSha256": "1a8fefae93065dfbbaa6c31ac68d0929db0f986b201c0047c6ea023c6c0a10f0"
     }
-  ]
+  ],
+  "product": "Frameleaf",
+  "roadmapGaps": [
+    {
+      "detail": "Shared structured queries, contextual facets, saved smart albums, timestamped moments and command palette",
+      "id": "unified-discovery",
+      "nativeParity": "not-implemented"
+    },
+    {
+      "detail": "Durable face verdicts, split review, correction history and undo",
+      "id": "guided-faces",
+      "nativeParity": "not-implemented"
+    },
+    {
+      "detail": "Space roles, recipient previews, people identity links and private naming",
+      "id": "shared-spaces",
+      "nativeParity": "not-implemented"
+    },
+    {
+      "detail": "Resumable Takeout staging, scan/review/import/reconciliation",
+      "id": "takeout",
+      "nativeParity": "not-implemented"
+    },
+    {
+      "detail": "Rule preview, provenance and rule-owned generated results",
+      "id": "classification",
+      "nativeParity": "not-implemented"
+    },
+    {
+      "detail": "Synchronized near-duplicate/burst comparison, quality explanations and keeper decisions",
+      "id": "culling",
+      "nativeParity": "not-implemented"
+    },
+    {
+      "detail": "Editable event stories, preferences, timezone birthdays and independent highlight export",
+      "id": "memory-stories",
+      "nativeParity": "not-implemented"
+    },
+    {
+      "detail": "Named individual pets, manual observation correction and model proposals",
+      "id": "pets",
+      "nativeParity": "not-implemented"
+    },
+    {
+      "detail": "Reusable video-frame workbench, preview and dependency stages including opt-in captions",
+      "id": "enrichment",
+      "nativeParity": "not-implemented"
+    },
+    {
+      "detail": "Combined health/repair/migration queues with evidence",
+      "id": "library-care",
+      "nativeParity": "not-implemented"
+    },
+    {
+      "detail": "Verified originals/sidecars/recipes manifests and restoration reconciliation",
+      "id": "preservation",
+      "nativeParity": "not-implemented"
+    },
+    {
+      "detail": "OCR-grounded fields, cropped evidence and corrections",
+      "id": "documents",
+      "nativeParity": "not-implemented"
+    },
+    {
+      "detail": "Selective masks, presets and external RAW rendition workflows",
+      "id": "photo-tools",
+      "nativeParity": "not-implemented"
+    },
+    {
+      "detail": "Explicit local/RunPod destination, preview comparison, jobs and qualified restoration",
+      "id": "ai-video",
+      "nativeParity": "not-implemented"
+    },
+    {
+      "detail": "Project/revision/source review exists in preview; native graph editing, effects/animation/audio and qualified render/export remain unavailable",
+      "id": "native-studio",
+      "nativeParity": "partial-project-review"
+    },
+    {
+      "detail": "All server settings, ML/GPU endpoints, queues, users, libraries, migration and fork handoff controls",
+      "id": "administration",
+      "nativeParity": "not-implemented"
+    }
+  ],
+  "schemaVersion": 2
 }
