@@ -15,6 +15,7 @@ The restored machine-readable records are:
 - `backlog.json`: stable work IDs, dependencies, source paths, acceptance and tests.
 - `jira-map.json`: the corresponding external Jira issue identities once published.
 - `confluence-mirror.json`: documentation source hashes and destination page IDs. Most entries are historical receipts; the restored 00/01 entries record the current read-back verification explicitly.
+- [`08-reproducibility.md`](08-reproducibility.md): the fail-closed join across source anchors, backlog/Jira identities and graph, Confluence receipts, and action-ledger evidence.
 
 The latest audit covers **84 web route directories**, not 84 missing features. The Freecut manifest has **210 source-derived entries**. Native inventory has **227 entries**, largely pending redesign, not 227 finished native screens. Every number is an inventory size, never a completion percentage.
 

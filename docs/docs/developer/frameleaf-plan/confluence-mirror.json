@@ -522,17 +522,17 @@
       "version": 2
     },
     {
-      "bytes": 18084,
+      "bytes": 18501,
       "category": "plan",
       "id": "61407516",
       "source": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "sourceCommit": "8c730b9d001cd3b812f692c4ce904462b5f25700",
-      "sourceSha256": "24039e670560cfea21b1fe2293e203ab92494e60c23749215e8ac5b54bf496e2",
+      "sourceSha256": "47b7948acee2faa5360214ad47a680856bd453bc4b4a687571399cfc8481f1a9",
       "title": "AI Coding Agent Execution Guide",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407516/AI+Coding+Agent+Execution+Guide",
-      "verification": "source path, SHA-256, byte count, local-candidate/no-PR status and terminal content read back after update",
-      "verifiedAt": "2026-09-20T10:46:29.557Z",
-      "version": 6
+      "verification": "Full FL-28 candidate source path, SHA-256, byte count, fresh 49f23537 fork/main baseline, no-PR status, reproducibility-gate instructions and terminal content read back after update; no independent additions were present in the prior source-owned mirror.",
+      "verified": true,
+      "verifiedAt": "2026-09-20T16:01:41.059Z",
+      "version": 7
     },
     {
       "bytes": 6137,
@@ -605,16 +605,30 @@
       "version": 5
     },
     {
-      "bytes": 19054,
+      "bytes": 4305,
+      "category": "plan",
+      "id": "61440795",
+      "source": "docs/docs/developer/frameleaf-plan/08-reproducibility.md",
+      "sourceSha256": "335b55cc0d1ffc4ccc4be861da087af6232fb05d2b96daf161ad5b01016d5434",
+      "title": "Documentation and Jira Reproducibility Contract",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440795/Documentation+and+Jira+Reproducibility+Contract",
+      "verification": "Full FL-28 candidate source path, SHA-256, byte count, fresh 49f23537 fork/main baseline, no-PR status, parent page 61538319, historical-receipt boundary and terminal content read back after creation.",
+      "verified": true,
+      "verifiedAt": "2026-09-20T16:01:42.448Z",
+      "version": 1
+    },
+    {
+      "bytes": 19234,
       "category": "plan",
       "id": "61538319",
       "source": "docs/docs/developer/frameleaf-plan/00-implementation-plan.md",
-      "sourceSha256": "47cee66effba4f2081657d6fdbbde504784db4591e3ecb230334fa3c60dab76e",
+      "sourceSha256": "aca9a06d6a190fd5ae949fca37ed191d7432d16f167c571476886738711cfaae",
       "title": "Frameleaf Implementation Plan",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538319/Frameleaf+Implementation+Plan",
-      "verification": "source path, SHA-256, byte count, open PR #119/uncommitted-update status and terminal content read back after update",
-      "verifiedAt": "2026-09-20T10:54:45.682Z",
-      "version": 9
+      "verification": "Full FL-28 candidate source path, SHA-256, byte count, fresh 49f23537 fork/main baseline, no-PR status, reproducibility-contract link and terminal content read back after update; no independent additions were present in the prior source-owned mirror.",
+      "verified": true,
+      "verifiedAt": "2026-09-20T16:01:39.362Z",
+      "version": 10
     },
     {
       "bytes": 2045,
