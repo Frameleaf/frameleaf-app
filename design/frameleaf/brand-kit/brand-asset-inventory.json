@@ -1,0 +1,299 @@
+{
+  "approvedReferences": [
+    {
+      "bytes": 4380,
+      "id": "reference:design/frameleaf/README.md",
+      "path": "design/frameleaf/README.md",
+      "role": "approved-design-handoff",
+      "sha256": "9c793aa8d72cd40b68e3a2979b47173279ab48744ab1e94eb8f496e180a03a30",
+      "status": "reference-not-production-qualification"
+    },
+    {
+      "bytes": 7574,
+      "id": "reference:design/frameleaf/INTERACTION-REQUIREMENTS.md",
+      "path": "design/frameleaf/INTERACTION-REQUIREMENTS.md",
+      "role": "approved-interaction-contract",
+      "sha256": "8a821b6b1b84016ccc74a824a55ee16947df96add2d1e5aad007fea046145574",
+      "status": "reference-not-production-qualification"
+    },
+    {
+      "bytes": 750,
+      "id": "reference:design/frameleaf/tokens.json",
+      "path": "design/frameleaf/tokens.json",
+      "role": "approved-token-reference",
+      "sha256": "a96c48c2c279fd99cf20a49276f647dae5f95eb523f45171cc8d45155aca71aa",
+      "status": "reference-not-production-qualification"
+    },
+    {
+      "bytes": 3782,
+      "id": "reference:design/frameleaf/template/README.md",
+      "path": "design/frameleaf/template/README.md",
+      "role": "approved-prototype-usage-contract",
+      "sha256": "1f132c8c586ed22c48a914c785e4bcc2d1a86119b0e17e5dd6eea790c7e63b3c",
+      "status": "reference-not-production-qualification"
+    },
+    {
+      "bytes": 1547,
+      "id": "reference:design/frameleaf/references/README.md",
+      "path": "design/frameleaf/references/README.md",
+      "role": "approved-visual-reference-contract",
+      "sha256": "d8fb86f6284408e6a843f41a7ba8047e1c68f55e8cc8eb0006c198b2ed988744",
+      "status": "reference-not-production-qualification"
+    },
+    {
+      "bytes": 988033,
+      "id": "reference:design/frameleaf/mark.png",
+      "path": "design/frameleaf/mark.png",
+      "role": "historical-raster-reference-not-authority",
+      "sha256": "728022864c6e1b33f073d28a340ceda88bba81f7ed5de1fa42bb62587f8364db",
+      "status": "reference-not-production-qualification"
+    },
+    {
+      "bytes": 988033,
+      "id": "reference:design/frameleaf/template/public/media/brand.png",
+      "path": "design/frameleaf/template/public/media/brand.png",
+      "role": "historical-raster-reference-not-authority",
+      "sha256": "728022864c6e1b33f073d28a340ceda88bba81f7ed5de1fa42bb62587f8364db",
+      "status": "reference-not-production-qualification"
+    }
+  ],
+  "assessment": "Supplied artwork and approved references are preserved; no production web/native integration or release qualification is claimed.",
+  "compatibilitySentinels": [
+    {
+      "expectedValue": "immich_mobile",
+      "parser": "yaml-root-name",
+      "path": "mobile/pubspec.yaml"
+    },
+    {
+      "expectedValue": "assets/immich-logo.png",
+      "parser": "yaml-image-path-android",
+      "path": "mobile/pubspec.yaml"
+    },
+    {
+      "expectedValue": "@immich/sdk",
+      "parser": "json-name",
+      "path": "packages/sdk/package.json"
+    },
+    {
+      "expectedValue": "immich",
+      "parser": "json-name",
+      "path": "server/package.json"
+    },
+    {
+      "expectedValue": "immich-ml",
+      "parser": "toml-project-name",
+      "path": "machine-learning/pyproject.toml"
+    },
+    {
+      "expectedValue": "immich_ml",
+      "parser": "toml-build-includes",
+      "path": "machine-learning/pyproject.toml"
+    },
+    {
+      "expectedValue": "@immich/sdk",
+      "parser": "svelte-import",
+      "path": "web/src/routes/+layout.svelte"
+    }
+  ],
+  "counts": {
+    "approvedReferenceDocuments": 5,
+    "generatedDerivatives": 0,
+    "historicalRasterReferences": 2,
+    "nativeConsumers": 0,
+    "productionConsumers": 0,
+    "suppliedFiles": 8,
+    "suppliedVectors": 7
+  },
+  "digests": {
+    "approvedReferenceLedgerSha256": "984d7a2b33895202167d50da17d7490820be067e3e27ae0a2184270f0d084247",
+    "suppliedSourceLedgerSha256": "a317886619c3d450f81d91fb065ed698d3715e1bc537b95d2751becf59d6f488"
+  },
+  "expectedDuplicateContent": [
+    {
+      "paths": [
+        "design/frameleaf/mark.png",
+        "design/frameleaf/template/public/media/brand.png"
+      ],
+      "reason": "The portable template retained the historical generated prototype raster byte-for-byte; neither copy is production artwork authority.",
+      "sha256": "728022864c6e1b33f073d28a340ceda88bba81f7ed5de1fa42bb62587f8364db"
+    }
+  ],
+  "manifest": {
+    "bytes": 11927,
+    "path": "design/frameleaf/brand-kit/manifest.json",
+    "sha256": "768b1780125b5548becf87c43b12092eb695c00a1d088883d58b1f18462ca7a7"
+  },
+  "ownership": [
+    {
+      "dependencies": ["FN-103"],
+      "jiraId": "23644",
+      "jiraKey": "FL-29",
+      "jiraUrl": "https://heroit.atlassian.net/browse/FL-29",
+      "paths": [
+        "design/frameleaf/tokens.json",
+        "web/src/lib/frameleaf/tokens.css",
+        "web/src/lib/components/frameleaf",
+        "mobile/lib/frameleaf/frameleaf_tokens.dart",
+        "design/frameleaf/brand-kit/manifest.json",
+        "docs/docs/developer/frameleaf-plan/06-brand-assets.md"
+      ],
+      "planId": "FN-201",
+      "status": "planned-not-qualified",
+      "type": "story"
+    },
+    {
+      "dependencies": ["REL-201"],
+      "jiraId": "23745",
+      "jiraKey": "FL-130",
+      "jiraUrl": "https://heroit.atlassian.net/browse/FL-130",
+      "paths": [
+        "mobile/frameleaf-identity.example.json",
+        "scripts/frameleaf-mobile-identity.py",
+        "scripts/frameleaf-mobile-identity-test.py",
+        "mobile/android/app/build.gradle",
+        "mobile/ios/Runner.xcodeproj",
+        "mobile/ios/Runner/Runner.entitlements",
+        "mobile/ios/fastlane",
+        "design/frameleaf/brand-kit/manifest.json",
+        "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+        "design/frameleaf/brand-kit/frameleaf-symbol-white.svg",
+        "docs/docs/developer/frameleaf-plan/06-brand-assets.md"
+      ],
+      "planId": "REL-101",
+      "status": "planned-not-qualified",
+      "type": "story"
+    },
+    {
+      "dependencies": ["MOB-101", "REL-101"],
+      "jiraId": "23746",
+      "jiraKey": "FL-131",
+      "jiraUrl": "https://heroit.atlassian.net/browse/FL-131",
+      "paths": [
+        "mobile/lib/services/oauth.service.dart",
+        "mobile/lib/widgets/forms/login/login_form.dart",
+        "mobile/lib/services/auth.service.dart",
+        "mobile/lib/providers/auth.provider.dart",
+        "server/src/services/auth.service.ts",
+        "server/src/controllers/oauth.controller.ts",
+        "server/src/dtos/config.dto.ts",
+        "design/frameleaf/brand-kit/frameleaf-logo-dark.svg",
+        "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+        "docs/docs/developer/frameleaf-plan/06-brand-assets.md"
+      ],
+      "planId": "REL-102",
+      "status": "planned-not-qualified",
+      "type": "story"
+    },
+    {
+      "dependencies": ["MOB-101", "REL-101"],
+      "jiraId": "23750",
+      "jiraKey": "FL-135",
+      "jiraUrl": "https://heroit.atlassian.net/browse/FL-135",
+      "paths": [
+        "design/frameleaf",
+        "mobile/assets/frameleaf-mark.png",
+        "mobile/pubspec.yaml",
+        "mobile/android/fastlane/metadata",
+        "mobile/ios/Runner/Assets.xcassets",
+        "mobile/ios/ShareExtension",
+        "mobile/ios/WidgetExtension",
+        "mobile/lib/utils/licenses.dart",
+        "mobile/lib/frameleaf/frameleaf_links.dart",
+        "web/src/lib/components/frameleaf",
+        "design/frameleaf/brand-kit",
+        "design/frameleaf/brand-kit/manifest.json",
+        "docs/docs/developer/frameleaf-plan/06-brand-assets.md"
+      ],
+      "planId": "REL-103",
+      "status": "planned-not-qualified",
+      "type": "story"
+    }
+  ],
+  "policies": {
+    "derivativesRequireSeparateIdentityAndProvenance": true,
+    "globalImmichStringReplacementProhibited": true,
+    "suppliedSourceMutationProhibited": true,
+    "unknownBrandKitMembersProhibited": true
+  },
+  "product": "Frameleaf",
+  "qualification": {
+    "artworkAuthorityRecorded": true,
+    "nativeIntegrated": false,
+    "productionQualified": false,
+    "releaseQualified": false,
+    "sourceIntegrityReviewed": true,
+    "webIntegrated": false
+  },
+  "schemaVersion": 1,
+  "sourceManifest": {
+    "bytes": 55157,
+    "path": "design/frameleaf/source-manifest.json",
+    "sha256": "66944718daf617fd4ed1b60004fd47ab2ccbf1f59c8e14d99d295327683b3b25"
+  },
+  "suppliedSources": [
+    {
+      "bytes": 2089,
+      "id": "supplied:README.txt",
+      "kind": "supplied-provenance",
+      "path": "design/frameleaf/brand-kit/README.txt",
+      "sha256": "1255df3da15dc546ca160f50583a7e37044a8ef733d0768a0f28ac594688f7ff",
+      "status": "authoritative-source-not-runtime-implementation"
+    },
+    {
+      "bytes": 2126,
+      "id": "supplied:frameleaf-app-icon.svg",
+      "kind": "supplied-vector",
+      "path": "design/frameleaf/brand-kit/frameleaf-app-icon.svg",
+      "sha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94",
+      "status": "authoritative-source-not-runtime-implementation"
+    },
+    {
+      "bytes": 200233,
+      "id": "supplied:frameleaf-dark-styleboard.svg",
+      "kind": "supplied-vector",
+      "path": "design/frameleaf/brand-kit/frameleaf-dark-styleboard.svg",
+      "sha256": "7c633f7095f9e647a841ec567dbce50229095e5c0da3554ad1edae250b78d6ea",
+      "status": "authoritative-source-not-runtime-implementation"
+    },
+    {
+      "bytes": 13971,
+      "id": "supplied:frameleaf-logo-dark-tagline.svg",
+      "kind": "supplied-vector",
+      "path": "design/frameleaf/brand-kit/frameleaf-logo-dark-tagline.svg",
+      "sha256": "9b8c1286f289874a2c40c2d75d0ad168152bd1ee91916da3d4d6e47ae56a98f7",
+      "status": "authoritative-source-not-runtime-implementation"
+    },
+    {
+      "bytes": 6442,
+      "id": "supplied:frameleaf-logo-dark.svg",
+      "kind": "supplied-vector",
+      "path": "design/frameleaf/brand-kit/frameleaf-logo-dark.svg",
+      "sha256": "f99cfa4ef5c10da51cfa54627f12ad6e7eba4decb59fe0829f06f0e0978a609b",
+      "status": "authoritative-source-not-runtime-implementation"
+    },
+    {
+      "bytes": 5306,
+      "id": "supplied:frameleaf-logo-white.svg",
+      "kind": "supplied-vector",
+      "path": "design/frameleaf/brand-kit/frameleaf-logo-white.svg",
+      "sha256": "1ab00db27ed39ea9e3de7374bf324c88a097fc684b25ecfeb7695a504b92be45",
+      "status": "authoritative-source-not-runtime-implementation"
+    },
+    {
+      "bytes": 1325,
+      "id": "supplied:frameleaf-symbol-white.svg",
+      "kind": "supplied-vector",
+      "path": "design/frameleaf/brand-kit/frameleaf-symbol-white.svg",
+      "sha256": "a32b14f656a7ddef255190aacc18b4575b0966bd79f96db93d4fd8153525602b",
+      "status": "authoritative-source-not-runtime-implementation"
+    },
+    {
+      "bytes": 2165,
+      "id": "supplied:frameleaf-symbol.svg",
+      "kind": "supplied-vector",
+      "path": "design/frameleaf/brand-kit/frameleaf-symbol.svg",
+      "sha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",
+      "status": "authoritative-source-not-runtime-implementation"
+    }
+  ]
+}
