@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -28,6 +29,31 @@ const FILES = {
   sourceEvidence: `${PLAN}/preservation-source-evidence.json`,
 };
 const AXES = ["source", "newUi", "api", "native", "tests"];
+const REQUIRED_READBACK_SOURCES = new Set([
+  ".agents/skills/frameleaf-deploy-release/SKILL.md",
+  "AGENTS.md",
+  "design/AGENTS.md",
+  "design/README.md",
+  "design/frameleaf/INTERACTION-REQUIREMENTS.md",
+  "design/frameleaf/README.md",
+  "design/frameleaf/references/README.md",
+  "design/frameleaf/template/README.md",
+  "docs/docs/developer/frameleaf-baseline-inventory.md",
+  "docs/docs/developer/frameleaf-development.md",
+  "docs/docs/developer/frameleaf-library-action-parity.md",
+  "docs/docs/developer/frameleaf-plan/00-implementation-plan.md",
+  "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+  "docs/docs/developer/frameleaf-plan/02-library-and-administration.md",
+  "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
+  "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+  "docs/docs/developer/frameleaf-plan/05-delivery-and-backlog.md",
+  "docs/docs/developer/frameleaf-plan/06-brand-assets.md",
+  "docs/docs/developer/frameleaf-plan/07-feature-ownership.md",
+  "docs/docs/developer/frameleaf-plan/08-reproducibility.md",
+  "docs/docs/developer/frameleaf-settings-inventory.md",
+  "docs/docs/developer/frameleaf-toolchain-baseline.md",
+  "studio/README.md",
+]);
 const SHA256 = /^[a-f0-9]{64}$/u;
 const NUMERIC_ID = /^[1-9]\d*$/u;
 const digest = (value) =>
@@ -63,6 +89,26 @@ const assertRelativePath = (value, label) => {
     false,
     `${label}: parent traversal`,
   );
+};
+const assertNonBlankString = (value, label) => {
+  assert.equal(typeof value, "string", `${label}: expected string`);
+  assert.ok(value.trim().length > 0, `${label}: blank string`);
+};
+const assertMappingEvidence = (mappings, label) => {
+  for (const axis of AXES) {
+    const mapping = mappings?.[axis];
+    assertNonBlankString(mapping?.status, `${label}.${axis}.status`);
+    assert.ok(
+      Array.isArray(mapping.evidence),
+      `${label}.${axis}.evidence: expected array`,
+    );
+    assert.ok(
+      mapping.evidence.length > 0,
+      `${label}: missing ${axis} evidence`,
+    );
+    for (const [index, evidence] of mapping.evidence.entries())
+      assertNonBlankString(evidence, `${label}.${axis}.evidence[${index}]`);
+  }
 };
 
 function reduceEdges(items) {
@@ -125,6 +171,15 @@ export async function validateDocumentationCoverage(root = repository) {
   assert.equal(backlog.defaultBranchObserved, "fork/main");
   const byId = new Map(backlog.items.map((item) => [item.id, item]));
   assert.equal(byId.size, backlog.items.length, "duplicate work ID");
+  const trackedPaths = execFileSync(
+    "git",
+    ["ls-tree", "-r", "--name-only", "-z", "HEAD"],
+    { cwd: root, encoding: "utf8" },
+  )
+    .split("\0")
+    .filter(Boolean)
+    .sort();
+  const canonicalRoot = await realpath(root);
 
   const reconciliationByPath = new Map(
     reconciliation.entries.map((entry) => [entry.filePath, entry]),
@@ -199,11 +254,28 @@ export async function validateDocumentationCoverage(root = repository) {
   ].sort()) {
     assertRelativePath(source, `backlog source ${source}`);
     const target = path.join(root, source);
-    if (await exists(target)) {
-      sourceAnchors.push({ path: source, state: "accepted-main" });
+    const prefix = `${source.replace(/\/$/u, "")}/`;
+    const trackedReceipts = trackedPaths.filter(
+      (candidate) => candidate === source || candidate.startsWith(prefix),
+    );
+    if (trackedReceipts.length > 0) {
+      assert.ok(
+        await exists(target),
+        `candidate-tracked source is absent: ${source}`,
+      );
+      const canonicalTarget = await realpath(target);
+      assert.ok(
+        canonicalTarget === canonicalRoot ||
+          canonicalTarget.startsWith(`${canonicalRoot}${path.sep}`),
+        `candidate-tracked source escapes repository: ${source}`,
+      );
+      sourceAnchors.push({
+        path: source,
+        state: "candidate-tracked",
+        trackedPathSha256: digest(trackedReceipts),
+      });
       continue;
     }
-    const prefix = `${source.replace(/\/$/u, "")}/`;
     const receipts = preservedPaths.filter(
       (candidate) => candidate === source || candidate.startsWith(prefix),
     );
@@ -328,13 +400,12 @@ export async function validateDocumentationCoverage(root = repository) {
         `${page.source}: mirror hash/bytes have no exact source receipt`,
       );
     }
-    if (page.verified || page.verification || page.verifiedAt) {
-      if (Object.hasOwn(page, "verified"))
-        assert.equal(
-          page.verified,
-          true,
-          `${page.source}: false readback receipt`,
-        );
+    if (REQUIRED_READBACK_SOURCES.has(page.source)) {
+      assert.equal(
+        page.verified,
+        true,
+        `${page.source}: missing verified readback flag`,
+      );
       assert.equal(
         typeof page.verification,
         "string",
@@ -349,6 +420,22 @@ export async function validateDocumentationCoverage(root = repository) {
         page.verification,
         /read\s*back|readback/iu,
         `${page.source}: missing readback statement`,
+      );
+    } else {
+      assert.equal(
+        page.verified,
+        undefined,
+        `${page.source}: uncontracted verified readback flag`,
+      );
+      assert.equal(
+        page.verification,
+        undefined,
+        `${page.source}: uncontracted readback statement`,
+      );
+      assert.equal(
+        page.verifiedAt,
+        undefined,
+        `${page.source}: uncontracted readback time`,
       );
     }
     receiptStates.push({ id: page.id, source: page.source, state });
@@ -399,6 +486,18 @@ export async function validateDocumentationCoverage(root = repository) {
     historical.length > 0,
     "historical receipts were silently promoted",
   );
+  assert.deepEqual(
+    new Set(
+      receiptStates
+        .filter(
+          ({ source, state }) =>
+            REQUIRED_READBACK_SOURCES.has(source) && state === "current-source",
+        )
+        .map(({ source }) => source),
+    ),
+    REQUIRED_READBACK_SOURCES,
+    "required readback set is not exactly the current verified source set",
+  );
   for (const marker of [
     "Historical source receipt",
     "preserve user-authored additions",
@@ -437,23 +536,25 @@ export async function validateDocumentationCoverage(root = repository) {
       row.canonicalRequirementId,
       `${row.sourceRowId}: broken reverse mapping`,
     );
+    const requirement = requirements.get(row.canonicalRequirementId);
+    assert.ok(requirement, `${row.sourceRowId}: missing requirement`);
     assert.ok(
-      requirements.has(row.canonicalRequirementId),
-      `${row.sourceRowId}: missing requirement`,
+      requirement.sourceRowIds.includes(row.sourceRowId),
+      `${row.sourceRowId}: absent from canonical requirement membership`,
     );
-    for (const axis of AXES) {
-      assert.equal(
-        typeof row.mappings[axis]?.status,
-        "string",
-        `${row.sourceRowId}: missing ${axis} status`,
-      );
-      assert.ok(
-        row.mappings[axis].evidence?.length > 0,
-        `${row.sourceRowId}: missing ${axis} evidence`,
-      );
-    }
+    assertNonBlankString(row.qualification, `${row.sourceRowId}.qualification`);
+    assertMappingEvidence(row.mappings, row.sourceRowId);
   }
   for (const requirement of ledger.requirements) {
+    assertNonBlankString(
+      requirement.qualification,
+      `${requirement.requirementId}.qualification`,
+    );
+    assertNonBlankString(
+      requirement.disposition?.kind,
+      `${requirement.requirementId}.disposition.kind`,
+    );
+    assertMappingEvidence(requirement.mappings, requirement.requirementId);
     assert.ok(
       requirement.sourceRowIds.length > 0,
       `${requirement.requirementId}: no source evidence`,

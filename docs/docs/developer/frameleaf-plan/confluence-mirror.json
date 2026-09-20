@@ -106,6 +106,7 @@
       "title": "Frameleaf library action parity audit",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407369/Frameleaf+library+action+parity+audit",
       "verification": "source hash marker, reviewed baseline and terminal content read back after update",
+      "verified": true,
       "verifiedAt": "2026-09-20T09:17:48.000Z",
       "version": 3
     },
@@ -188,6 +189,7 @@
       "title": "Frameleaf settings and administration inventory",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374842/Frameleaf+settings+and+administration+inventory",
       "verification": "source hash marker, reviewed baseline and terminal content read back after update",
+      "verified": true,
       "verifiedAt": "2026-09-20T09:17:48.000Z",
       "version": 3
     },
@@ -543,6 +545,7 @@
       "title": "Library and Administration Implementation",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61375040/Library+and+Administration+Implementation",
       "verification": "source hash marker, reviewed baseline and terminal content read back after update",
+      "verified": true,
       "verifiedAt": "2026-09-20T09:17:48.000Z",
       "version": 3
     },
@@ -555,6 +558,7 @@
       "title": "Studio Rendering and Restoration Implementation",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440418/Studio+Rendering+and+Restoration+Implementation",
       "verification": "source hash marker, fetched baseline and terminal content read back after update",
+      "verified": true,
       "verifiedAt": "2026-09-20T09:33:30.000Z",
       "version": 3
     },
@@ -567,6 +571,7 @@
       "title": "Native Applications and Release Implementation",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538653/Native+Applications+and+Release+Implementation",
       "verification": "source path, hash, byte count, uncommitted-candidate status and terminal content read back after update",
+      "verified": true,
       "verifiedAt": "2026-09-20T10:10:08.576Z",
       "version": 4
     },
@@ -579,6 +584,7 @@
       "title": "Frameleaf SVG Brand Kit",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407537/Frameleaf+SVG+Brand+Kit",
       "verification": "source path, SHA-256, byte count, open PR #119/uncommitted-update status and terminal content read back after update",
+      "verified": true,
       "verifiedAt": "2026-09-20T10:54:47.505Z",
       "version": 4
     },
@@ -601,21 +607,22 @@
       "title": "Complete Feature Ownership and Jira Coverage",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538800/Complete+Feature+Ownership+and+Jira+Coverage",
       "verification": "Source path, post-audit SHA-256, baseline 84d32454, 1209 source rows, 1189 canonical requirements, immutable action registry, accepted inventory counts, explicit unavailable pnpm gate and clean-baseline replacement evidence, unqualified status and terminal content read back after update",
+      "verified": true,
       "verifiedAt": "2026-09-20T14:59:30Z",
       "version": 5
     },
     {
-      "bytes": 4305,
+      "bytes": 5569,
       "category": "plan",
       "id": "61440795",
       "source": "docs/docs/developer/frameleaf-plan/08-reproducibility.md",
-      "sourceSha256": "335b55cc0d1ffc4ccc4be861da087af6232fb05d2b96daf161ad5b01016d5434",
+      "sourceSha256": "e6c4f26f8b4b1f3f20a9e53633bdf0dc7b9171aa1bdba78b04acbcfab19ae241",
       "title": "Documentation and Jira Reproducibility Contract",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440795/Documentation+and+Jira+Reproducibility+Contract",
-      "verification": "Full FL-28 candidate source path, SHA-256, byte count, fresh 49f23537 fork/main baseline, no-PR status, parent page 61538319, historical-receipt boundary and terminal content read back after creation.",
+      "verification": "Full FL-28 review-fix source path, SHA-256, byte count, freshly re-fetched 49f23537 fork/main baseline, no-PR status, exact candidate HEAD tree and staged-only rejection rule, bidirectional ledger rule, exact 23-source readback contract, nonblank semantic evidence rule and terminal content read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-20T16:01:42.448Z",
-      "version": 1
+      "verifiedAt": "2026-09-20T16:23:55.342Z",
+      "version": 3
     },
     {
       "bytes": 19234,
@@ -639,6 +646,7 @@
       "title": "Studio and Freecut Source Inventory",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61408007/Studio+and+Freecut+Source+Inventory",
       "verification": "source hash marker, fetched baseline and terminal content read back after creation",
+      "verified": true,
       "verifiedAt": "2026-09-20T09:33:30.000Z",
       "version": 1
     },
@@ -651,6 +659,7 @@
       "title": "Delivery Sequence and Jira Backlog",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407624/Delivery+Sequence+and+Jira+Backlog",
       "verification": "Source path, SHA-256, byte count, exact 59133353 fork/main baseline, informational 1603-path routing statistic, FL-25/FL-26 ownership boundary, open merge/hosted/Jira gates and terminal non-implementation boundary read back; existing Confluence resource links preserved through HTML replacement.",
+      "verified": true,
       "verifiedAt": "2026-09-20T13:33:18.638Z",
       "version": 5
     },
@@ -664,6 +673,7 @@
       "title": "Frameleaf Repository Agent Instructions",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440673",
       "verification": "Full normalized page readback verified after owner merge; source content and hash unchanged.",
+      "verified": true,
       "verifiedAt": "2026-09-20T07:35:43.401Z",
       "version": 4
     },
@@ -676,6 +686,7 @@
       "title": "Frameleaf working-tree baseline inventory",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407916/Frameleaf+working-tree+baseline+inventory",
       "verification": "Source path, source SHA-256 and 2078229-byte reconciliation receipt SHA-256 bedd7a38a45ce4d2cf860ed1e33cf29af4caf0ebadb7a1333c3e09e543a0addd; exact 59133353 candidate base; all four FL-25 criteria including controlled-host tool versions; 164/3356 dispositions; informational 1603-path routing statistic; FL-26 ownership boundary; and page-61538800 non-acceptance read back.",
+      "verified": true,
       "verifiedAt": "2026-09-20T13:35:37.993Z",
       "version": 6
     },
@@ -688,6 +699,7 @@
       "title": "Frameleaf toolchain baseline",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407947/Frameleaf+toolchain+baseline",
       "verification": "Source path, source SHA-256 and 20865-byte toolchain receipt SHA-256 b7c6a826b0a1bbdd3c5aa4cfcd6df6114da10cbc2a9f935f9e9ec1b5fe8eb6f6; reviewed source baseline 4bedc0c4; exact 59133353 candidate base; and tool-evidence-only acceptance boundary read back.",
+      "verified": true,
       "verifiedAt": "2026-09-20T13:32:22.391Z",
       "version": 2
     },
@@ -701,6 +713,7 @@
       "title": "Frameleaf Development and Delivery",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844",
       "verification": "Full normalized development-guide content, source hash marker, and terminal closeout text read back after removing an unrelated inventory append; source content and hash remain unchanged.",
+      "verified": true,
       "verifiedAt": "2026-09-20T13:00:37.669Z",
       "version": 9
     },
@@ -792,6 +805,7 @@
       "title": "Frameleaf Delivery and Release Skill",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61375285",
       "verification": "Full normalized page readback verified after owner merge; source content and hash unchanged.",
+      "verified": true,
       "verifiedAt": "2026-09-20T07:35:43.401Z",
       "version": 2
     }

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import {
   cp,
   lstat,
@@ -50,8 +51,10 @@ const copy = async (root, file) => {
   if (!stat) return;
   const target = path.join(root, file);
   await mkdir(path.dirname(target), { recursive: true });
-  if (stat.isDirectory()) await mkdir(target, { recursive: true });
-  else await cp(source, target);
+  if (stat.isDirectory()) {
+    await mkdir(target, { recursive: true });
+    await writeFile(path.join(target, ".fixture-anchor"), `${file}\n`);
+  } else await cp(source, target);
 };
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "frameleaf-doc-coverage-"));
@@ -66,6 +69,22 @@ async function fixture(t) {
     await readFile(path.join(repository, `${plan}/confluence-mirror.json`)),
   );
   for (const { source } of mirror.pages) await copy(root, source);
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  execFileSync("git", ["add", "-f", "."], { cwd: root });
+  execFileSync(
+    "git",
+    [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.test",
+      "commit",
+      "-q",
+      "-m",
+      "fixture",
+    ],
+    { cwd: root },
+  );
   return root;
 }
 async function mutateJson(root, file, mutate) {
@@ -87,7 +106,7 @@ test("documentation coverage joins every reproducibility contract", async () => 
     ledgerRequirements: 1189,
     ledgerSourceRows: 1209,
     sourceAnchorSha256:
-      "7ec96e0b6479be53efa5ff2d7517a5accf1de3cb748372b3be68cfd1905f7b63",
+      "c67faaa8b95aafccd50864e6d323ca6e7a0b5a7e11d608a1dcfd10c721e6e610",
     sourceAnchors: 518,
     stories: 118,
   });
@@ -98,6 +117,37 @@ test("missing accepted and preserved source anchors fail closed", async (t) => {
   await mutateJson(root, `${plan}/backlog.json`, (backlog) => {
     backlog.items.find(({ id }) => id === "FN-104").paths = [
       "docs/does-not-exist-anywhere.md",
+    ];
+  });
+  await assert.rejects(validateDocumentationCoverage(root), /real anchor/u);
+});
+
+test("an lstat-present but untracked path is not a candidate source anchor", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "docs"), { recursive: true });
+  await writeFile(
+    path.join(root, "docs/untracked-present.md"),
+    "not candidate evidence\n",
+  );
+  await mutateJson(root, `${plan}/backlog.json`, (backlog) => {
+    backlog.items.find(({ id }) => id === "FN-104").paths = [
+      "docs/untracked-present.md",
+    ];
+  });
+  await assert.rejects(validateDocumentationCoverage(root), /real anchor/u);
+});
+
+test("a staged-only path is not a candidate source anchor", async (t) => {
+  const root = await fixture(t);
+  await mkdir(path.join(root, "docs"), { recursive: true });
+  await writeFile(
+    path.join(root, "docs/staged-only.md"),
+    "staged but absent from candidate HEAD\n",
+  );
+  execFileSync("git", ["add", "-f", "docs/staged-only.md"], { cwd: root });
+  await mutateJson(root, `${plan}/backlog.json`, (backlog) => {
+    backlog.items.find(({ id }) => id === "FN-104").paths = [
+      "docs/staged-only.md",
     ];
   });
   await assert.rejects(validateDocumentationCoverage(root), /real anchor/u);
@@ -139,6 +189,12 @@ test("Confluence IDs, source receipts, and readback metadata fail closed", async
       const page = mirror.pages.find(({ verified }) => verified);
       delete page.verifiedAt;
     },
+    (mirror) => {
+      const page = mirror.pages.find(({ verified }) => verified);
+      delete page.verified;
+      delete page.verification;
+      delete page.verifiedAt;
+    },
     (mirror) => (mirror.pages[0].id = mirror.pages[1].id),
   ];
   for (const mutate of cases) {
@@ -169,7 +225,20 @@ test("historical mirror receipts cannot be silently promoted or rewritten", asyn
 test("ledger reverse mappings, evidence axes, and Jira owners fail closed", async (t) => {
   const cases = [
     (ledger) => delete ledger.reverseIndex[ledger.sourceRows[0].sourceRowId],
+    (ledger) => {
+      const row = ledger.sourceRows[0];
+      const requirement = ledger.requirements.find(
+        ({ requirementId }) => requirementId === row.canonicalRequirementId,
+      );
+      requirement.sourceRowIds = requirement.sourceRowIds.filter(
+        (sourceRowId) => sourceRowId !== row.sourceRowId,
+      );
+    },
     (ledger) => (ledger.sourceRows[0].mappings.tests.evidence = []),
+    (ledger) => (ledger.sourceRows[0].mappings.tests.status = "   "),
+    (ledger) => (ledger.sourceRows[0].mappings.tests.evidence = ["", "  "]),
+    (ledger) => (ledger.requirements[0].mappings.api.status = ""),
+    (ledger) => (ledger.requirements[0].mappings.api.evidence = ["  "]),
     (ledger) => (ledger.requirements[0].owners.primary.jiraKey = "FL-9999"),
   ];
   for (const mutate of cases) {
