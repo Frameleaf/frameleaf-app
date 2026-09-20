@@ -593,14 +593,16 @@
       "version": 3
     },
     {
-      "bytes": 167481,
+      "bytes": 5859,
       "category": "plan",
       "id": "61538800",
       "source": "docs/docs/developer/frameleaf-plan/07-feature-ownership.md",
-      "sourceSha256": "a2775bfdc50ea9545b7d458074ca5eeab6ec45f042d3068d7f7fca50e904d01b",
+      "sourceSha256": "d339db59f5726a4d1a2ff50a20d5813b328201714acc518e3c8bb8301836772e",
       "title": "Complete Feature Ownership and Jira Coverage",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538800/Complete+Feature+Ownership+and+Jira+Coverage",
-      "version": 1
+      "verification": "Source path, post-audit SHA-256, baseline 84d32454, 1209 source rows, 1189 canonical requirements, immutable action registry, accepted inventory counts, explicit unavailable pnpm gate and clean-baseline replacement evidence, unqualified status and terminal content read back after update",
+      "verifiedAt": "2026-09-20T14:59:30Z",
+      "version": 5
     },
     {
       "bytes": 19054,
