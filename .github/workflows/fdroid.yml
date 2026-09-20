@@ -1,7 +1,7 @@
 # The inherited FUTO F-Droid destination is not owned Frameleaf infrastructure.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: Update F-Droid Repo
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:

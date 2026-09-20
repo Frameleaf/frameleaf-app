@@ -118,10 +118,9 @@ for (const event_name of [
   "workflow_call",
 ]) {
   assert.equal(
-    runInNewContext(
-      roundtripConcurrency["cancel-in-progress"].slice(3, -2),
-      { github: { event_name } },
-    ),
+    runInNewContext(roundtripConcurrency["cancel-in-progress"].slice(3, -2), {
+      github: { event_name },
+    }),
     event_name === "pull_request",
     "Only stale PR certification may be cancelled; publication gates must finish",
   );

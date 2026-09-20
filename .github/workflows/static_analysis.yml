@@ -1,6 +1,6 @@
 # Dart analysis needs no upstream bot or licensed metrics-service credentials.
 name: Static Code Analysis
-"on":
+'on':
   workflow_dispatch: null
   pull_request:
     branches:

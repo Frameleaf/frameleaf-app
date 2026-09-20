@@ -1,7 +1,7 @@
 # Inherited documentation-preview comments are disabled with the unconfigured deployment service.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: Preview label
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:

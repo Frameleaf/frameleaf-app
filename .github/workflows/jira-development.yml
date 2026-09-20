@@ -2,7 +2,7 @@ name: Jira Development
 
 on:
   pull_request:
-    branches: ["fork/main"]
+    branches: ['fork/main']
     types: [opened, edited, synchronize, reopened, ready_for_review]
 
 permissions: {}

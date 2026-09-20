@@ -1,7 +1,7 @@
 # No owned translation service or branch-writing bot is configured.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: Merge translations
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:

@@ -1,5 +1,5 @@
 name: Migration Order
-"on":
+'on':
   pull_request:
     branches:
       - fork/main

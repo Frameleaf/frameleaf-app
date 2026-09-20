@@ -1,6 +1,6 @@
 # The explicit maintainer label is retained; comparisons use the PR event base SHA, never a moving branch URL.
 name: Check OpenAPI
-"on":
+'on':
   workflow_dispatch:
     inputs:
       base_sha:

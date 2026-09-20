@@ -51,31 +51,31 @@ jobs:
       matrix:
         include:
           - device: cpu
-            suffix: ""
+            suffix: ''
             platforms: linux/amd64,linux/arm64
             target: prod
           - device: cuda
-            suffix: "-cuda"
+            suffix: '-cuda'
             platforms: linux/amd64
             target: prod
           - device: cuda
-            suffix: "-cuda-runpod"
+            suffix: '-cuda-runpod'
             platforms: linux/amd64
             target: prod-runpod
           - device: openvino
-            suffix: "-openvino"
+            suffix: '-openvino'
             platforms: linux/amd64
             target: prod
           - device: armnn
-            suffix: "-armnn"
+            suffix: '-armnn'
             platforms: linux/arm64
             target: prod
           - device: rknn
-            suffix: "-rknn"
+            suffix: '-rknn'
             platforms: linux/arm64
             target: prod
           - device: rocm
-            suffix: "-rocm"
+            suffix: '-rocm'
             platforms: linux/amd64
             target: prod
     uses: ./.github/workflows/local-multi-runner-build.yml

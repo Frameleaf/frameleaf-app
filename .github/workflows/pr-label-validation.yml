@@ -1,7 +1,7 @@
 # Inherited changelog-label comment enforcement is disabled pending an owned label policy.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: PR Label Validation
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:

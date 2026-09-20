@@ -1,7 +1,7 @@
 # Inherited automatic issue mutation is disabled pending an owned triage policy.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: Close likely duplicates
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:

@@ -1,7 +1,7 @@
 # Native signing and store identities are not configured. Unit tests and Dart analysis remain active in their CI workflows.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: Build Mobile
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:

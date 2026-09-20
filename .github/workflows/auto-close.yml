@@ -1,7 +1,7 @@
 # Inherited automatic PR closing policy is not the Frameleaf contribution policy.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: Auto-close PRs
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:

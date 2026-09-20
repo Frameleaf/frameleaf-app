@@ -1,7 +1,7 @@
 # Automated branch commits are disabled; formatting is validated by read-only CI.
 # No scheduled/event-driven mutations or foreign credentials are retained.
 name: Fix formatting
-"on":
+'on':
   workflow_dispatch: null
 permissions: {}
 jobs:
