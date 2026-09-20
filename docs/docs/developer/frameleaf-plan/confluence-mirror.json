@@ -574,14 +574,13 @@
       "source": "docs/docs/developer/frameleaf-plan/06-brand-assets.md",
       "category": "plan",
       "title": "Frameleaf SVG Brand Kit",
-      "sourceSha256": "ea7849e6dee12692b5ae89903d66d07204222bca6bcc42569ecfa18481511601",
-      "bytes": 13406,
+      "sourceSha256": "1e8805cd460436d7433af9d006bbdbe673f680dc922ca939192ddf7cff1d3066",
+      "bytes": 13483,
       "id": "61407537",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407537/Frameleaf+SVG+Brand+Kit",
-      "version": 3,
-      "verifiedAt": "2026-09-20T10:46:31.591Z",
-      "verification": "source path, SHA-256, byte count, local-candidate/no-PR status and terminal content read back after update",
-      "sourceCommit": "8c730b9d001cd3b812f692c4ce904462b5f25700"
+      "version": 4,
+      "verifiedAt": "2026-09-20T10:54:47.505Z",
+      "verification": "source path, SHA-256, byte count, open PR #119/uncommitted-update status and terminal content read back after update"
     },
     {
       "source": "docs/docs/developer/frameleaf-context-handoff.md",
@@ -607,14 +606,13 @@
       "source": "docs/docs/developer/frameleaf-plan/00-implementation-plan.md",
       "category": "plan",
       "title": "Frameleaf Implementation Plan",
-      "sourceSha256": "e5209a2f13396deb67ccca98ef6d3135b9ee7e9469b54aad14a1eae412eef69e",
-      "bytes": 18977,
+      "sourceSha256": "47cee66effba4f2081657d6fdbbde504784db4591e3ecb230334fa3c60dab76e",
+      "bytes": 19054,
       "id": "61538319",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538319/Frameleaf+Implementation+Plan",
-      "version": 8,
-      "verifiedAt": "2026-09-20T10:46:27.718Z",
-      "verification": "source path, SHA-256, byte count, local-candidate/no-PR status and terminal content read back after update",
-      "sourceCommit": "8c730b9d001cd3b812f692c4ce904462b5f25700"
+      "version": 9,
+      "verifiedAt": "2026-09-20T10:54:45.682Z",
+      "verification": "source path, SHA-256, byte count, open PR #119/uncommitted-update status and terminal content read back after update"
     },
     {
       "source": "studio/README.md",

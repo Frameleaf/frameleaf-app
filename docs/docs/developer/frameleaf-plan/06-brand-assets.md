@@ -4,7 +4,7 @@ The user supplied `frameleaf-vector-assets.zip` for use in the application. Its 
 
 This reviewed FL-25 slice is a preservation contract. It does not claim production integration, native qualification or release readiness. The deterministic [`brand-asset-inventory.json`](../../../../design/frameleaf/brand-kit/brand-asset-inventory.json) distinguishes immutable supplied sources, approved design references, historical raster references and still-empty implementation/qualification evidence. Validate it with `python3 scripts/frameleaf-brand-assets.py --repository . --check` and its adversarial tests before changing this contract.
 
-The source files live in [`design/frameleaf/brand-kit`](../../../../design/frameleaf/brand-kit). The [manifest](../../../../design/frameleaf/brand-kit/manifest.json) records the archive identity, original member paths, exact file sizes and SHA-256 hashes, SVG dimensions, colors, references and intended placements. The supplied [README](../../../../design/frameleaf/brand-kit/README.txt) is preserved unchanged as provenance.
+The source files live in [`design/frameleaf/brand-kit`](https://github.com/Frameleaf/frameleaf-app/tree/2fbab9c61f948edf392fad88167a51180fa9d8db/design/frameleaf/brand-kit). The [manifest](../../../../design/frameleaf/brand-kit/manifest.json) records the archive identity, original member paths, exact file sizes and SHA-256 hashes, SVG dimensions, colors, references and intended placements. The supplied [README](../../../../design/frameleaf/brand-kit/README.txt) is preserved unchanged as provenance.
 
 ## Provenance and preservation
 
