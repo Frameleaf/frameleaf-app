@@ -615,10 +615,11 @@ export async function validateContracts(root = repository) {
   );
 
   for (const statement of [
-    "sole executable reconciliation lane",
+    "FL-25 accepts preservation and classification evidence",
+    "FL-26 owns action- and requirement-level coverage",
     "No item is `qualified`, `released`, or `deployed`",
     "Confluence publication is documentation synchronization",
-    "No product feature, release, registry publication, deployment",
+    "No product feature implementation, browser/device/media/hardware parity",
   ])
     assert.ok(
       narrative.includes(statement),
