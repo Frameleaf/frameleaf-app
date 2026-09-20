@@ -599,30 +599,43 @@
       "version": 3
     },
     {
-      "bytes": 5859,
+      "bytes": 6602,
       "category": "plan",
       "id": "61538800",
       "source": "docs/docs/developer/frameleaf-plan/07-feature-ownership.md",
-      "sourceSha256": "d339db59f5726a4d1a2ff50a20d5813b328201714acc518e3c8bb8301836772e",
+      "sourceSha256": "2f83175407bd4d08bc1d1af811f8dea87df4ef6afa5beafab0b46f474cd59a9f",
       "title": "Complete Feature Ownership and Jira Coverage",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538800/Complete+Feature+Ownership+and+Jira+Coverage",
-      "verification": "Source path, post-audit SHA-256, baseline 84d32454, 1209 source rows, 1189 canonical requirements, immutable action registry, accepted inventory counts, explicit unavailable pnpm gate and clean-baseline replacement evidence, unqualified status and terminal content read back after update",
+      "verification": "Source path, FL-27 candidate SHA-256 and unmerged-branch status; 1209 source rows and 1189 canonical requirements unchanged; bounded design/test evidence links added without qualification inflation; terminal content read back after update",
       "verified": true,
-      "verifiedAt": "2026-09-20T14:59:30Z",
-      "version": 5
+      "verifiedAt": "2026-09-20T16:04:46.650Z",
+      "version": 6
     },
     {
-      "bytes": 5569,
+      "bytes": 11211,
+      "category": "plan",
+      "id": "61539300",
+      "source": "docs/docs/developer/frameleaf-plan/08-high-risk-workflow-designs.md",
+      "sourceSha256": "6e3d332bad93e38ab226c6ff33a34df3033930dea7ac7e13aef4de706d33df90",
+      "title": "High-risk Workflow Interaction Decisions",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539300/High-risk+Workflow+Interaction+Decisions",
+      "verification": "Source path, FL-27 candidate SHA-256, unmerged-branch status, five-flow/seven-state scope, bounded structural Invite/revision/retry surfaces, close/cancel/return and focus restoration, unresolved-only checkpoint, explicit production/native/release limitations and terminal content read back after update",
+      "verified": true,
+      "verifiedAt": "2026-09-20T16:51:16.843Z",
+      "version": 8
+    },
+    {
+      "bytes": 5710,
       "category": "plan",
       "id": "61440795",
       "source": "docs/docs/developer/frameleaf-plan/08-reproducibility.md",
-      "sourceSha256": "e6c4f26f8b4b1f3f20a9e53633bdf0dc7b9171aa1bdba78b04acbcfab19ae241",
+      "sourceSha256": "58e164b477ad0b47760b42afbc068bad2d9c742d27923c9e6c067cf353d1e019",
       "title": "Documentation and Jira Reproducibility Contract",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440795/Documentation+and+Jira+Reproducibility+Contract",
-      "verification": "Full FL-28 review-fix source path, SHA-256, byte count, freshly re-fetched 49f23537 fork/main baseline, no-PR status, exact candidate HEAD tree and staged-only rejection rule, bidirectional ledger rule, exact 23-source readback contract, nonblank semantic evidence rule and terminal content read back after update.",
+      "verification": "Full FL-27 integration source path, SHA-256, byte count, freshly re-fetched da508755 fork/main baseline, no-PR status, exact candidate HEAD tree and staged-only rejection rule, bidirectional ledger rule, exact 70-page/30-current/24-source verified readback contract, nonblank semantic evidence rule and terminal content read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-20T16:23:55.342Z",
-      "version": 3
+      "verifiedAt": "2026-09-20T17:00:07.792Z",
+      "version": 4
     },
     {
       "bytes": 19234,

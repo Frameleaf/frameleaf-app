@@ -19,6 +19,10 @@ const actionRegistryPath = resolve(
   root,
   "docs/docs/developer/frameleaf-plan/action-id-registry.json",
 );
+const highRiskDesignEvidencePath = resolve(
+  root,
+  "docs/docs/developer/frameleaf-plan/high-risk-workflow-design-evidence.json",
+);
 
 async function formatJson(value, path) {
   const config = (await resolveConfig(path)) ?? {};
@@ -730,6 +734,7 @@ async function buildLedger() {
     nativeOwners,
     backlog,
     jiraMap,
+    highRiskDesignEvidence,
   ] = await Promise.all([
     readJson(evidencePath),
     readJson(
@@ -746,6 +751,7 @@ async function buildLedger() {
     ),
     readJson(resolve(root, "docs/docs/developer/frameleaf-plan/backlog.json")),
     readJson(resolve(root, "docs/docs/developer/frameleaf-plan/jira-map.json")),
+    readJson(highRiskDesignEvidencePath),
   ]);
   const backlogIds = new Set(backlog.items.map(({ id }) => id));
   const ownerSet = (primary, secondary = []) => ({
@@ -932,6 +938,23 @@ async function buildLedger() {
     native: nativeOwners.entries.length,
   };
   const canonical = canonicalize(requirements);
+  const highRiskRequirementIds = new Set(
+    highRiskDesignEvidence.flows.flatMap(
+      ({ requirementIds }) => requirementIds,
+    ),
+  );
+  const highRiskReceipt =
+    "docs/docs/developer/frameleaf-plan/high-risk-workflow-design-evidence.json";
+  const highRiskTest = "scripts/frameleaf-high-risk-workflows.test.mjs";
+  for (const requirement of canonical.requirements) {
+    if (!highRiskRequirementIds.has(requirement.requirementId)) continue;
+    requirement.mappings.newUi.evidence = [
+      ...new Set([...requirement.mappings.newUi.evidence, highRiskReceipt]),
+    ];
+    requirement.mappings.tests.evidence = [
+      ...new Set([...requirement.mappings.tests.evidence, highRiskTest]),
+    ];
+  }
   const counts = {
     ...rawCounts,
     sourceRows: canonical.sourceRows.length,

@@ -67,6 +67,7 @@ import {
   searchChips,
 } from "./search.mjs";
 import { Editor, Processing } from "./Editor";
+import { HighRiskWorkflows } from "./HighRiskWorkflows";
 const CommandCenter = lazy(() =>
   import("./CommandCenter").then((module) => ({
     default: module.CommandCenter,
@@ -195,6 +196,7 @@ export function App() {
       "care",
       "people",
       "explore",
+      "review",
     ].includes(value)
       ? value
       : "library";
@@ -1097,7 +1099,7 @@ export function App() {
         </button>
       </header>
       <div className="workspace">
-        {screen !== "studio" && screen !== "admin" && (
+        {screen !== "studio" && screen !== "admin" && screen !== "review" && (
           <LibraryRail
             collapsed={railCollapsed}
             setCollapsed={setRailCollapsed}
@@ -1853,8 +1855,11 @@ export function App() {
             ))}
           </main>
         )}
+        {screen === "review" && (
+          <HighRiskWorkflows back={() => setScreen("library")} />
+        )}
       </div>
-      {screen !== "admin" && (
+      {screen !== "admin" && screen !== "review" && (
         <footer className="bottom-bar">
           <span>
             {visible.length} of {collectionAssets.length} items <i />

@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 1,
+  "issue": "FL-27",
+  "planId": "FN-103",
+  "baseline": {
+    "repository": "Frameleaf/frameleaf-app",
+    "defaultBranch": "fork/main",
+    "commit": "da508755cc59c178dcd8354f0f4a3a794f896d39"
+  },
+  "status": "interaction-designed-production-not-qualified",
+  "sourceAnchorReconciliation": [
+    {
+      "path": "prototypes/frameleaf/src",
+      "availability": "absent-on-fresh-baseline",
+      "replacement": "design/frameleaf/template/src",
+      "note": "The accepted portable template is the committed review source; the dirty historical prototype was not copied."
+    },
+    {
+      "path": "prototypes/frameleaf/design-qa.md",
+      "availability": "absent-on-fresh-baseline",
+      "replacement": "docs/docs/developer/frameleaf-plan/08-high-risk-workflow-designs.md",
+      "note": "Current-run screenshots and limits are recorded in the FL-27 receipt rather than attributed to an absent file."
+    },
+    {
+      "path": "docs/docs/developer/frameleaf-screen-parity-audit.md",
+      "availability": "absent-on-fresh-baseline",
+      "replacement": "docs/docs/developer/frameleaf-plan/action-preservation-ledger.json",
+      "note": "The accepted action ledger and its preserved source evidence supply the current source-action contract."
+    }
+  ],
+  "prototype": {
+    "entry": "design/frameleaf/template/?screen=review",
+    "model": "design/frameleaf/template/src/high-risk-workflows.mjs",
+    "component": "design/frameleaf/template/src/HighRiskWorkflows.jsx",
+    "domTest": "design/frameleaf/template/tests/high-risk-workflows.dom.test.mjs",
+    "statesPerFlow": ["normal", "empty", "forbidden", "stale", "retry", "keyboard", "narrow"],
+    "flowCount": 5,
+    "stateCount": 7,
+    "caseCount": 35,
+    "actionContract": "Primary actions open focus-managed bounded structural review regions; Close and Cancel remove them and restore focus; Return invokes bounded navigation. No control claims a production mutation.",
+    "keyboardContract": "The keyboard state focuses the real primary button; Enter opens a structural review and focuses its heading; Escape removes that review and restores primary-button focus."
+  },
+  "browserVerification": {
+    "capturesReplaced": [
+      "01-album-normal.png",
+      "08-studio-stale.png",
+      "09-recovery-retry.png",
+      "10-tablet-keyboard.png"
+    ],
+    "inviteSurface": "invite-review",
+    "inviteRows": 3,
+    "inviteHeadingFocused": true,
+    "inviteCancelRemovedSurface": true,
+    "inviteCancelRestoredFocus": true,
+    "revisionSurface": "revision-comparison",
+    "revisionIncludes": ["Revision 18", "Revision 19", "Overwrite blocked"],
+    "revisionHeadingFocused": true,
+    "revisionCloseRemovedSurface": true,
+    "recoverySurface": "recovery-retry-checkpoint",
+    "recoveryUnresolvedRows": 2,
+    "recoveredItemExcludedFromCheckpoint": "Lake morning.mov",
+    "recoveryCloseRemovedSurface": true,
+    "recoveryClosedMarker": true,
+    "keyboardInitialActiveElement": "BUTTON Apply with Enter",
+    "keyboardInitialFocusVisible": true,
+    "keyboardEnterSurface": "keyboard-review",
+    "keyboardEnterActiveElement": "H2",
+    "keyboardEnterFocusVisible": true,
+    "keyboardEscapeRemovedSurface": true,
+    "keyboardEscapeRestoredFocus": true
+  },
+  "flows": [
+    {
+      "id": "album",
+      "title": "Album lifecycle and sharing",
+      "requirementIds": [
+        "action:albums-organization:create-album",
+        "action:albums-organization:share-album-invite-people",
+        "action:albums-organization:change-collaborator-editor-viewer-role-remove-collaborator-leave-shared-album",
+        "action:albums-organization:create-manage-album-public-links",
+        "action:albums-organization:delete-album-while-retaining-assets"
+      ],
+      "downstreamOwners": ["FL-53", "FL-54", "FL-56", "FL-121", "FL-137"],
+      "decision": "Keep roles, public links, leave/remove, and deletion consequences explicit. Album deletion retains assets; collaborators leave rather than delete owner resources; every mutation rechecks the current role and revision.",
+      "captures": ["01-album-normal.png", "06-album-empty.png"]
+    },
+    {
+      "id": "people",
+      "title": "People correction",
+      "requirementIds": [
+        "action:info-people:add-a-person-draw-bounding-box-search-existing-person-confirm",
+        "action:info-people:create-a-person-while-tagging-a-manual-face",
+        "action:info-people:edit-reassign-existing-detected-face",
+        "action:info-people:display-edit-faces-with-no-named-person"
+      ],
+      "downstreamOwners": ["FL-36", "FL-57", "FL-121", "FL-137"],
+      "decision": "Keep manual region creation separate from detected-face correction. Clear names, previews, regions, and counts when access changes; numeric region controls remain the keyboard alternative to drawing.",
+      "captures": ["02-people-normal.png", "07-people-forbidden.png"]
+    },
+    {
+      "id": "recovery",
+      "title": "Bulk recovery",
+      "requirementIds": [
+        "setting:manual-job:integrity-missing-files",
+        "setting:manual-job:integrity-checksum-mismatch",
+        "setting:utility-gap:missing-media-recovery",
+        "route:/utilities/missing-media"
+      ],
+      "downstreamOwners": ["FL-69", "FL-72", "FL-81", "FL-123", "FL-137"],
+      "decision": "Candidate selection is root-bounded, owner-scoped, and reviewable per finding. Exact checksum, decode, ownership, access, and current finding state are revalidated before publication. Cancellation is a no-op; partial failure keeps the published finding recovered and unresolved findings unchanged; retry resumes only unresolved findings from the recorded checkpoint.",
+      "captures": ["03-recovery-normal.png", "09-recovery-retry.png"]
+    },
+    {
+      "id": "studio",
+      "title": "Studio conflicts",
+      "requirementIds": [
+        "action:quick-edit:persistent-render-status-cancel-retry-reload-revision-supersession",
+        "freecut:extra.portable-headless",
+        "freecut:module.project-bundle",
+        "freecut:module.projects",
+        "route:/studio"
+      ],
+      "downstreamOwners": ["FL-88", "FL-91", "FL-113", "FL-137"],
+      "decision": "A stale lease or newer revision blocks overwrite. Preserve the local draft, compare it with the current revision, then open latest, keep a copy, or discard before acquiring a fresh lease; takeover remains blocked while another editor's lease is active. Cloud execution remains an explicit later choice.",
+      "captures": ["04-studio-normal.png", "08-studio-stale.png"]
+    },
+    {
+      "id": "tablet",
+      "title": "Native tablet adaptation",
+      "requirementIds": [
+        "native:mobile/lib/frameleaf/studio.page.dart#FrameleafStudioPage",
+        "native:mobile/lib/frameleaf/studio.page.dart#FrameleafStudioProjectPage"
+      ],
+      "downstreamOwners": ["FL-125", "FL-126", "FL-127", "FL-128", "FL-137"],
+      "decision": "Tablet uses native project, preview, inspector, and timeline controls over shared commands. Narrow layouts keep the current decision and preview visible while moving secondary detail to a modal sheet whose background controls are inert and whose Escape path restores focus; phones retain review and quick edit instead of a compressed full Studio.",
+      "captures": ["05-tablet-normal.png", "10-tablet-keyboard.png", "11-tablet-narrow.png"]
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "01-album-normal.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "94a6e4143f53d00adaa71b864d1e3c1b0670b3d0be37ae443c4071c26c7af9c0",
+      "health": "healthy-structural-invite-review-cancel-focus-return"
+    },
+    {
+      "file": "02-people-normal.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "e4c7f2d16ad1e2e9d7adb53588c9a72e1eee756b248bac302cfbee124f38e1fb",
+      "health": "healthy"
+    },
+    {
+      "file": "03-recovery-normal.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "05f5ca482d6d09573194c27eb3a09a8c0a19f0e38cb1c9901ad2c61afe6564de",
+      "health": "healthy"
+    },
+    {
+      "file": "04-studio-normal.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "054ba106d2dfd4171f643a7936429694a60682f778d3fc42e59b96143570c653",
+      "health": "healthy"
+    },
+    {
+      "file": "05-tablet-normal.png",
+      "width": 1024,
+      "height": 768,
+      "sha256": "822cc696a30f86823610fbe939ebe3518dbdc0faa2eedd45c99a17f0c2ce3ac3",
+      "health": "healthy-design-reference-only"
+    },
+    {
+      "file": "06-album-empty.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "b383cc8b0320500871c572ea72780b1f69234c93e1230b3320f626077daab76c",
+      "health": "healthy"
+    },
+    {
+      "file": "07-people-forbidden.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "020ff8197218bb2ca429ae1c81d188ef5e25487aad37007a79dba681496b85f4",
+      "health": "healthy-private-content-cleared"
+    },
+    {
+      "file": "08-studio-stale.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "06c771a1fb541e83d2230d7fe8ab8596cabd5d57a877c829203e427e5e00e448",
+      "health": "healthy-structural-revision-comparison"
+    },
+    {
+      "file": "09-recovery-retry.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "b7e37d518c7d2333a0668445dae6686e4ce56edd7dcaf5cb72622d700695fd91",
+      "health": "healthy-unresolved-only-checkpoint-and-closed-marker"
+    },
+    {
+      "file": "10-tablet-keyboard.png",
+      "width": 1024,
+      "height": 768,
+      "sha256": "49de759fb321d1a2132722a4a5f09cf6b363965aebbed6501e0e541708ffe8da",
+      "health": "healthy-enter-heading-focus-escape-return"
+    },
+    {
+      "file": "11-tablet-narrow.png",
+      "width": 680,
+      "height": 900,
+      "sha256": "7be44e88d28c8f24f736ae742b727157210a2ac93540818f3b64c9b87d98b7e3",
+      "health": "healthy-modal-design-reference-only"
+    }
+  ],
+  "qualification": {
+    "productionWeb": false,
+    "backendAuthorization": false,
+    "nativeFlutter": false,
+    "physicalDevice": false,
+    "rendererOrFreecutParity": false,
+    "screenReader": false,
+    "wcagCompliance": false
+  }
+}
