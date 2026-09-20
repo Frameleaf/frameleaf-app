@@ -518,11 +518,13 @@
       "source": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
       "category": "plan",
       "title": "Native Applications and Release Implementation",
-      "sourceSha256": "8d7083c26bbf873394473a824006e2503d364fcaee9728a8c07a1c22b5c2ccbe",
-      "bytes": 27579,
+      "sourceSha256": "12f7d86ea3c69bc6d979dcf06a5ad93388828079da0843cad25d3dc4bd13efbb",
+      "bytes": 30120,
       "id": "61538653",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538653/Native+Applications+and+Release+Implementation",
-      "version": 2
+      "version": 4,
+      "verifiedAt": "2026-09-20T10:10:08.576Z",
+      "verification": "source path, hash, byte count, uncommitted-candidate status and terminal content read back after update"
     },
     {
       "source": "docs/docs/developer/frameleaf-plan/06-brand-assets.md",

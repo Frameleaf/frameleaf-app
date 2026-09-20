@@ -3749,10 +3749,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-101",
@@ -3789,10 +3787,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-102",
@@ -3831,10 +3827,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-103",
@@ -3870,10 +3864,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-104",
@@ -3909,10 +3901,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-105",
@@ -3950,10 +3940,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-106",
@@ -4001,10 +3989,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-107",
@@ -4041,10 +4027,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-200",
@@ -4078,10 +4062,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-201",
@@ -4117,10 +4099,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-202",
@@ -4154,10 +4134,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-203",
@@ -4191,10 +4169,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-204",
@@ -4246,10 +4222,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-300",
@@ -4280,10 +4254,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-301",
@@ -4318,10 +4290,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-302",
@@ -4357,10 +4327,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-303",
@@ -4398,10 +4366,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "MOB-304",
@@ -4438,10 +4404,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "REL-100",
@@ -4473,10 +4437,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "REL-101",
@@ -4508,7 +4470,8 @@
       ],
       "tests": [
         "python3 scripts/frameleaf-mobile-identity-test.py",
-        "python3 scripts/frameleaf-mobile-identity.py --configure after owner inputs; validate effective signed app/extension manifests",
+        "python3 scripts/frameleaf-mobile-identity.py --config /path/to/owned-frameleaf-identity.json --platform android --verify-android --android-artifact /path/to/frameleaf-release.apk",
+        "python3 scripts/frameleaf-mobile-identity.py --config /path/to/owned-frameleaf-identity.json --platform ios --effective-ios --ios-app /path/to/Runner.app",
         "Physical install/update/co-install/uninstall tests; inspect APK/AAB and IPA entitlement/certificate reports."
       ],
       "risks": [
@@ -4519,10 +4482,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "REL-102",
@@ -4563,10 +4524,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "REL-103",
@@ -4611,10 +4570,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "REL-104",
@@ -4650,10 +4607,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "QA-100",
@@ -4681,10 +4636,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "QA-101",
@@ -4720,10 +4673,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "QA-102",
@@ -4770,10 +4721,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "QA-103",
@@ -4809,10 +4758,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "QA-104",
@@ -4850,10 +4797,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "QA-105",
@@ -4887,10 +4832,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "REL-200",
@@ -4914,10 +4857,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "REL-201",
@@ -4957,12 +4898,10 @@
       "workstream": "native",
       "priority": "High",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
       "status": "delivered-with-open-qualification-gaps",
       "jiraStatusObserved": "Done",
-      "jiraStatusObservedAt": "2026-09-20T08:20:00Z",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "jiraStatusObservedAt": "2026-09-20T08:20:00Z"
     },
     {
       "id": "REL-202",
@@ -5001,10 +4940,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     },
     {
       "id": "REL-203",
@@ -5041,10 +4978,8 @@
       "workstream": "native",
       "priority": "Medium",
       "executionGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "workstreamGuide": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
-      "status": "planned-not-qualified",
-      "pendingWorkstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
-      "workstreamGuideStatus": "Pending review and restoration from the preserved dirty checkout; use the execution guide and Jira issue in this clean baseline."
+      "workstreamGuide": "docs/docs/developer/frameleaf-plan/04-native-and-release.md",
+      "status": "planned-not-qualified"
     }
   ],
   "topologicalOrder": [
