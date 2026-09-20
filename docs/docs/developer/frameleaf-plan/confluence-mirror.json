@@ -525,13 +525,14 @@
       "source": "docs/docs/developer/frameleaf-plan/01-agent-execution.md",
       "category": "plan",
       "title": "AI Coding Agent Execution Guide",
-      "sourceSha256": "4dd0667d39ccd6841331641009a247ae935e6f29c8d6064b3fb2934e8ba4094c",
-      "bytes": 17876,
+      "sourceSha256": "24039e670560cfea21b1fe2293e203ab92494e60c23749215e8ac5b54bf496e2",
+      "bytes": 18084,
       "id": "61407516",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407516/AI+Coding+Agent+Execution+Guide",
-      "version": 5,
-      "verifiedAt": "2026-09-20T09:33:30.000Z",
-      "verification": "source hash marker, fetched baseline and terminal content read back after update"
+      "version": 6,
+      "verifiedAt": "2026-09-20T10:46:29.557Z",
+      "verification": "source path, SHA-256, byte count, local-candidate/no-PR status and terminal content read back after update",
+      "sourceCommit": "8c730b9d001cd3b812f692c4ce904462b5f25700"
     },
     {
       "source": "docs/docs/developer/frameleaf-plan/02-library-and-administration.md",
@@ -573,11 +574,14 @@
       "source": "docs/docs/developer/frameleaf-plan/06-brand-assets.md",
       "category": "plan",
       "title": "Frameleaf SVG Brand Kit",
-      "sourceSha256": "2de5788a4a5ed9c6374025c3b5f7531180aa718a1e0fee3b485bcd3a6215c958",
-      "bytes": 12452,
+      "sourceSha256": "ea7849e6dee12692b5ae89903d66d07204222bca6bcc42569ecfa18481511601",
+      "bytes": 13406,
       "id": "61407537",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407537/Frameleaf+SVG+Brand+Kit",
-      "version": 2
+      "version": 3,
+      "verifiedAt": "2026-09-20T10:46:31.591Z",
+      "verification": "source path, SHA-256, byte count, local-candidate/no-PR status and terminal content read back after update",
+      "sourceCommit": "8c730b9d001cd3b812f692c4ce904462b5f25700"
     },
     {
       "source": "docs/docs/developer/frameleaf-context-handoff.md",
@@ -603,13 +607,14 @@
       "source": "docs/docs/developer/frameleaf-plan/00-implementation-plan.md",
       "category": "plan",
       "title": "Frameleaf Implementation Plan",
-      "sourceSha256": "08860d282df3b8122314d591d971e6285298991c2dcb2002af87fa9f202108e9",
-      "bytes": 18738,
+      "sourceSha256": "e5209a2f13396deb67ccca98ef6d3135b9ee7e9469b54aad14a1eae412eef69e",
+      "bytes": 18977,
       "id": "61538319",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538319/Frameleaf+Implementation+Plan",
-      "version": 7,
-      "verifiedAt": "2026-09-20T09:33:30.000Z",
-      "verification": "source hash marker, fetched baseline and terminal content read back after update"
+      "version": 8,
+      "verifiedAt": "2026-09-20T10:46:27.718Z",
+      "verification": "source path, SHA-256, byte count, local-candidate/no-PR status and terminal content read back after update",
+      "sourceCommit": "8c730b9d001cd3b812f692c4ce904462b5f25700"
     },
     {
       "source": "studio/README.md",
