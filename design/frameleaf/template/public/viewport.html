@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Frameleaf viewport review</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: clip;
+      }
+      body {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        background: #090c0e;
+        color: #e5e7eb;
+        font: 13px system-ui;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+        align-items: center;
+        padding: 12px 18px;
+        min-height: 32px;
+      }
+      a {
+        color: #8cdda8;
+      }
+      iframe {
+        display: block;
+        border: 0;
+        margin: 0;
+        transform-origin: top left;
+      }
+      main {
+        min-width: 0;
+        min-height: 0;
+        overflow: clip;
+      }
+      select {
+        min-width: 0;
+        max-width: 100%;
+        padding: 5px;
+        background: #222a30;
+        color: white;
+      }
+      label {
+        display: flex;
+        min-width: 0;
+        gap: 12px;
+        align-items: center;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>Frameleaf · viewport review</strong
+      ><label
+        >Viewport<select id="size" aria-label="Viewport">
+          <option value="window">Fill window</option>
+          <option value="1487,1058">Selected desktop · 1487 × 1058</option>
+          <option value="1280,900">Tablet landscape · 1280 × 900</option>
+          <option value="390,844">Phone · 390 × 844</option>
+        </select></label
+      ><label
+        >Screen<select id="screen" aria-label="Screen">
+          <option value="library">Library</option>
+          <option value="people">People</option>
+          <option value="explore">Explore</option>
+          <option value="search">Search</option>
+          <option value="filters">Filters</option>
+          <option value="quick">Quick edit</option>
+          <option value="studio">Studio</option>
+          <option value="admin">Settings · overview</option>
+          <option value="admin&settings=analytics">Settings · analytics</option>
+          <option value="admin&settings=server&section=updates">
+            Settings · updates
+          </option>
+          <option value="admin&settings=preferences">
+            Settings · preferences
+          </option>
+          <option value="admin&settings=processing">Settings · compute</option>
+          <option value="admin&settings=processing&section=queues">
+            Settings · job manager
+          </option>
+          <option value="admin&settings=users&section=accounts">
+            Settings · users
+          </option>
+          <option value="admin&settings=libraries&section=sources">
+            Settings · libraries
+          </option>
+          <option value="admin&settings=utilities">Settings · utilities</option>
+          <option value="admin&settings=utilities&section=duplicates">
+            Settings · duplicate review
+          </option>
+          <option value="admin&settings=utilities&section=geolocation">
+            Settings · location editor
+          </option>
+          <option value="activity">Activity</option>
+        </select></label
+      ><a href="/">Open full-window app</a>
+    </header>
+    <main id="stage">
+      <iframe
+        id="preview"
+        title="Frameleaf responsive prototype"
+        src="/"
+      ></iframe>
+    </main>
+    <script>
+      const stage = document.querySelector("#stage");
+      const frame = document.querySelector("#preview");
+      function fit() {
+        const size = document.querySelector("#size").value;
+        if (size === "window") {
+          frame.style.width = "100%";
+          frame.style.height = "100%";
+          frame.style.transform = "none";
+          return;
+        }
+        const [width, height] = size.split(",").map(Number);
+        frame.style.width = `${width}px`;
+        frame.style.height = `${height}px`;
+        frame.style.transform = `scale(${Math.min(1, stage.clientWidth / width, stage.clientHeight / height)})`;
+      }
+      document.querySelector("#screen").addEventListener("change", (event) => {
+        document.querySelector("#preview").src =
+          `/?screen=${event.target.value}`;
+      });
+      document.querySelector("#size").addEventListener("change", fit);
+      new ResizeObserver(fit).observe(stage);
+      fit();
+    </script>
+  </body>
+</html>

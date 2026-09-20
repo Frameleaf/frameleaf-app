@@ -1,0 +1,185 @@
+.workflow-designer {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.wd-tabs,
+.wd-switches,
+.wd-step-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.wd-tabs button[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.wd-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.wd-description {
+  grid-column: 1/-1;
+}
+.wd-field,
+.wd-template > label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+.workflow-designer input:not([type="checkbox"]),
+.workflow-designer select,
+.workflow-designer textarea {
+  width: 100%;
+  max-width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+}
+.workflow-designer input:not([type="checkbox"]),
+.workflow-designer select {
+  min-height: 34px;
+}
+.workflow-designer textarea {
+  resize: vertical;
+}
+.workflow-designer p,
+.workflow-designer small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.workflow-designer h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+.wd-workspace {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.8fr) minmax(0, 1.3fr);
+  gap: 16px;
+}
+.wd-steps > ol {
+  padding: 0;
+  list-style: none;
+  margin: 0 0 16px;
+  display: grid;
+  gap: 8px;
+}
+.wd-steps li {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+}
+.wd-steps li.selected {
+  border-color: var(--accent);
+}
+.wd-step-select {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--text);
+  border: 0;
+  cursor: pointer;
+  padding: 4px 2px 10px;
+}
+.wd-step-select strong {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.wd-step-actions button {
+  min-height: 28px;
+  padding: 3px 7px;
+  font-size: 11px;
+}
+.wd-parameters {
+  border-left: 1px solid var(--border);
+  padding-left: 16px;
+  min-width: 0;
+}
+.wd-object {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  min-width: 0;
+  padding: 12px;
+  margin: 10px 0;
+}
+.wd-object legend {
+  font-size: 12px;
+  padding: 0 5px;
+}
+.wd-object > p {
+  margin: 0;
+}
+.wd-check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12px;
+}
+.wd-check small {
+  display: block;
+  margin-top: 4px;
+}
+.wd-enum-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+}
+.wd-enum-list label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.wd-parameters details {
+  margin-top: 20px;
+}
+.wd-json,
+.wd-parameters pre {
+  font-family: monospace !important;
+  font-size: 12px !important;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.wd-message {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin: 0;
+}
+.wd-error {
+  color: #ef4444 !important;
+}
+.wd-danger {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+@media (max-width: 720px) {
+  .wd-workspace,
+  .wd-meta {
+    grid-template-columns: 1fr;
+  }
+  .wd-parameters {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    padding: 16px 0 0;
+  }
+  .wd-step-actions button {
+    min-height: 40px;
+  }
+  .wd-switches > label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+  }
+}
