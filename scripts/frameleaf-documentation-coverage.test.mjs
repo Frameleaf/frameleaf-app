@@ -58,7 +58,14 @@ const copy = async (root, file) => {
 };
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "frameleaf-doc-coverage-"));
-  t.after(() => rm(root, { force: true, recursive: true }));
+  t.after(() =>
+    rm(root, {
+      force: true,
+      maxRetries: 3,
+      recursive: true,
+      retryDelay: 100,
+    }),
+  );
   for (const file of files) await copy(root, file);
   const backlog = JSON.parse(
     await readFile(path.join(repository, `${plan}/backlog.json`)),
