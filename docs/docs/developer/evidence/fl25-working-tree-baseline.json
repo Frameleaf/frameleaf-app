@@ -1,78 +1,7 @@
 {
-  "schemaVersion": 1,
   "acceptedBaseline": {
     "commit": "2cdd7f016ccfe08a2fa10804c6da1c7c04d281d0",
     "tree": "5d61c46a46918a602b5bd9f59ea20876873b2876"
-  },
-  "source": {
-    "head": "91d5dfe0f829d15d122c1a8b2bbc474fc195dbaf",
-    "headTree": "fdb9fb7e65bb26b4a6fbbb7bf0afbeee83155f82",
-    "remotes": [
-      {
-        "fetchIdentities": [
-          "https://github.com/adamtaylor152/immich.git"
-        ],
-        "name": "fork",
-        "pushIdentities": [
-          "https://github.com/adamtaylor152/immich.git"
-        ]
-      },
-      {
-        "fetchIdentities": [
-          "https://github.com/Frameleaf/frameleaf-app.git"
-        ],
-        "name": "frameleaf",
-        "pushIdentities": [
-          "https://github.com/Frameleaf/frameleaf-app.git"
-        ]
-      },
-      {
-        "fetchIdentities": [
-          "https://github.com/Frameleaf/frameleaf-app.git"
-        ],
-        "name": "origin",
-        "pushIdentities": [
-          "https://github.com/Frameleaf/frameleaf-app.git"
-        ]
-      },
-      {
-        "fetchIdentities": [
-          "https://github.com/immich-app/immich.git"
-        ],
-        "name": "upstream",
-        "pushIdentities": [
-          "https://github.com/immich-app/immich.git"
-        ]
-      }
-    ]
-  },
-  "statusCommand": "git status --porcelain=v1 -z --untracked-files=all --ignore-submodules=none",
-  "summary": {
-    "byGitState": {
-      "modified": 167,
-      "untracked": 3353
-    },
-    "byReviewState": {
-      "local-evidence": 2,
-      "unreviewed-local-change": 3518
-    },
-    "byWorkstream": {
-      "api-sdk": 4,
-      "design": 357,
-      "documentation": 63,
-      "governance": 3,
-      "localization": 1,
-      "machine-learning": 15,
-      "native": 64,
-      "repository": 2,
-      "server": 233,
-      "studio": 2660,
-      "tooling": 11,
-      "web": 107
-    },
-    "entryCount": 3520,
-    "pathCount": 3520,
-    "totalBytes": 175509024
   },
   "entries": [
     {
@@ -42315,5 +42244,60 @@
       "sha256": "728022864c6e1b33f073d28a340ceda88bba81f7ed5de1fa42bb62587f8364db",
       "targetType": "file"
     }
-  ]
+  ],
+  "schemaVersion": 1,
+  "source": {
+    "head": "91d5dfe0f829d15d122c1a8b2bbc474fc195dbaf",
+    "headTree": "fdb9fb7e65bb26b4a6fbbb7bf0afbeee83155f82",
+    "remotes": [
+      {
+        "fetchIdentities": ["https://github.com/adamtaylor152/immich.git"],
+        "name": "fork",
+        "pushIdentities": ["https://github.com/adamtaylor152/immich.git"]
+      },
+      {
+        "fetchIdentities": ["https://github.com/Frameleaf/frameleaf-app.git"],
+        "name": "frameleaf",
+        "pushIdentities": ["https://github.com/Frameleaf/frameleaf-app.git"]
+      },
+      {
+        "fetchIdentities": ["https://github.com/Frameleaf/frameleaf-app.git"],
+        "name": "origin",
+        "pushIdentities": ["https://github.com/Frameleaf/frameleaf-app.git"]
+      },
+      {
+        "fetchIdentities": ["https://github.com/immich-app/immich.git"],
+        "name": "upstream",
+        "pushIdentities": ["https://github.com/immich-app/immich.git"]
+      }
+    ]
+  },
+  "statusCommand": "git status --porcelain=v1 -z --untracked-files=all --ignore-submodules=none",
+  "summary": {
+    "byGitState": {
+      "modified": 167,
+      "untracked": 3353
+    },
+    "byReviewState": {
+      "local-evidence": 2,
+      "unreviewed-local-change": 3518
+    },
+    "byWorkstream": {
+      "api-sdk": 4,
+      "design": 357,
+      "documentation": 63,
+      "governance": 3,
+      "localization": 1,
+      "machine-learning": 15,
+      "native": 64,
+      "repository": 2,
+      "server": 233,
+      "studio": 2660,
+      "tooling": 11,
+      "web": 107
+    },
+    "entryCount": 3520,
+    "pathCount": 3520,
+    "totalBytes": 175509024
+  }
 }

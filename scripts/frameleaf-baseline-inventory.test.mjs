@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   buildReport,
   classifyPath,
+  formatGeneratedContent,
   normalizeRemoteIdentity,
   parsePorcelain,
 } from "./frameleaf-baseline-inventory.mjs";
@@ -37,6 +38,22 @@ test("parses ordinary, untracked, and renamed porcelain records", () => {
   ]);
 });
 
+test("formats generated JSON and Markdown with the repository Prettier contract", async () => {
+  const json = await formatGeneratedContent(
+    "evidence.json",
+    '{"z":1,"a":{"z":2,"a":1}}',
+  );
+  assert.equal(json, '{ "a": { "a": 1, "z": 2 }, "z": 1 }\n');
+  const markdown = await formatGeneratedContent(
+    "evidence.md",
+    "# Evidence\n\nThis is a deliberately long generated sentence that should be formatted through the same repository Prettier contract used by the documentation build rather than emitted as unchecked text.\n",
+  );
+  assert.equal(
+    markdown,
+    "# Evidence\n\nThis is a deliberately long generated sentence that should be formatted through the same repository Prettier contract used by the documentation build rather than emitted as unchecked text.\n",
+  );
+});
+
 test("normalizes remote identities without retaining credential material", () => {
   assert.equal(
     normalizeRemoteIdentity(
@@ -55,7 +72,9 @@ test("normalizes remote identities without retaining credential material", () =>
     "github.com:Frameleaf/frameleaf-app.git",
   );
   assert.equal(
-    normalizeRemoteIdentity("user:secret@example.com:repository.git?token=secret"),
+    normalizeRemoteIdentity(
+      "user:secret@example.com:repository.git?token=secret",
+    ),
     "example.com:repository.git",
   );
   assert.equal(
@@ -116,9 +135,13 @@ test("builds a complete hashed inventory against an accepted commit", () => {
       "origin",
       "https://user:secret@example.com/repository.git",
     ]);
-    const baseline = execFileSync("git", ["-C", repository, "rev-parse", "HEAD"], {
-      encoding: "utf8",
-    }).trim();
+    const baseline = execFileSync(
+      "git",
+      ["-C", repository, "rev-parse", "HEAD"],
+      {
+        encoding: "utf8",
+      },
+    ).trim();
     writeFileSync(
       path.join(repository, "server", "src", "tracked.ts"),
       "two\n",
@@ -155,7 +178,13 @@ test("records a deterministic dirty gitlink state instead of reading its directo
     for (const repository of [parent, child]) {
       execFileSync("git", ["-C", repository, "init", "--initial-branch=main"]);
       execFileSync("git", ["-C", repository, "config", "user.name", "Test"]);
-      execFileSync("git", ["-C", repository, "config", "user.email", "test@example.com"]);
+      execFileSync("git", [
+        "-C",
+        repository,
+        "config",
+        "user.email",
+        "test@example.com",
+      ]);
     }
     writeFileSync(path.join(child, "tracked.txt"), "baseline\n");
     execFileSync("git", ["-C", child, "add", "."]);
@@ -176,8 +205,14 @@ test("records a deterministic dirty gitlink state instead of reading its directo
     }).trim();
     writeFileSync(path.join(parent, "modules/example/tracked.txt"), "dirty\n");
 
-    const first = buildReport({ acceptedBaseline: baseline, sourceRepository: parent });
-    const second = buildReport({ acceptedBaseline: baseline, sourceRepository: parent });
+    const first = buildReport({
+      acceptedBaseline: baseline,
+      sourceRepository: parent,
+    });
+    const second = buildReport({
+      acceptedBaseline: baseline,
+      sourceRepository: parent,
+    });
     assert.equal(first.entries.length, 1);
     assert.deepEqual(first.entries, second.entries);
     assert.equal(first.entries[0].filePath, "modules/example");
@@ -185,11 +220,20 @@ test("records a deterministic dirty gitlink state instead of reading its directo
     assert.equal(first.entries[0].gitlinkState.indexCommit.length, 40);
     assert.equal(first.entries[0].gitlinkState.headCommit.length, 40);
     assert.ok(first.entries[0].gitlinkState.nestedDiffBytes > 0);
-    assert.match(first.entries[0].gitlinkState.nestedDiffSha256, /^[a-f0-9]{64}$/);
+    assert.match(
+      first.entries[0].gitlinkState.nestedDiffSha256,
+      /^[a-f0-9]{64}$/,
+    );
     assert.ok(first.entries[0].gitlinkState.nestedStatusBytes > 0);
-    assert.match(first.entries[0].gitlinkState.nestedStatusSha256, /^[a-f0-9]{64}$/);
+    assert.match(
+      first.entries[0].gitlinkState.nestedStatusSha256,
+      /^[a-f0-9]{64}$/,
+    );
     assert.equal(first.entries[0].gitlinkState.nestedUntrackedCount, 0);
-    assert.match(first.entries[0].gitlinkState.nestedUntrackedSha256, /^[a-f0-9]{64}$/);
+    assert.match(
+      first.entries[0].gitlinkState.nestedUntrackedSha256,
+      /^[a-f0-9]{64}$/,
+    );
   } finally {
     rmSync(parent, { force: true, recursive: true });
     rmSync(child, { force: true, recursive: true });

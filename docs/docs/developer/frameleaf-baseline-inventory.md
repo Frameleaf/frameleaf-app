@@ -35,6 +35,8 @@ Generation fails if Git status, repository identity, remotes, or any twice-hashe
 
 Remote configuration is stored only as normalized identity. URL user information, query strings, and fragments are discarded; SCP-like user information is removed; unsupported credential-bearing transports are replaced rather than copied into evidence.
 
+The generator formats both outputs through the repository's pinned Prettier and recursive JSON-sort plugin before writing. Run it from a checkout with the locked root development dependencies installed.
+
 The generated JSON is the path-level evidence. The generated Markdown is a review summary. Neither file authorizes copying local application code into another worktree.
 
 ## Remaining FL-25 acceptance
