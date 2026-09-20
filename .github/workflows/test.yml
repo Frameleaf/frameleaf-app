@@ -589,8 +589,17 @@ jobs:
         run: |
           echo "ERROR: Generated migration files not up to date!"
           echo "Changed files: ${CHANGED_FILES}"
-          cat ./server/src/*-TestMigration.ts
+          cat ./server/src/schema/migrations/*-TestMigration.ts
           exit 1
+      - name: Archive generated migration diagnostics
+        if: failure() && steps.verify-changed-files.outputs.files_changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: sql-schema-migration-diagnostics
+          path: |
+            server/src/schema/migrations/*-TestMigration.ts
+            server/src/schema/migrations/ORDER
+          retention-days: 7
       - name: Run SQL generation
         run: mise run //:sql
         env:
