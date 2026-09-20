@@ -1,0 +1,107 @@
+{"baseline":{"commit":"4bedc0c4d384f365ee5c29739ce201cc114fdd85"},"probeContext":{"environmentKeys":["LANG","LC_ALL","NO_COLOR","PATH"],"pathEntryDigests":[{"index":0,"sha256":"4819f681e7455f8a2909f03ac6889f5d2d08b2af9cfcd88794c6615fac4403d0"},{"index":1,"sha256":"e726bc85c4634c1138508f953d5d02e866c23df9a39040788d6a2a92f8375fe0"},{"index":2,"sha256":"33629c0e654360bfd8ab5089302a26e27dce5044d624b22f51fcbc66f1e0d19c"},{"index":3,"sha256":"808dd192d3243666b6f1ad4f9bfeca4877ee059456c40851a93937331b26014c"},{"index":4,"sha256":"2ca5e392981637db6726b04dc2ed6607d05543a4646bf7c81aca6c4ce5bb5628"}],"policy":"Only explicitly allowlisted version commands execute; wrappers default to non-probed"},"recordType":"metadata","summary":{"containerPinCount":19,"declarationCount":61,"mismatchCount":3,"missingCount":1,"notProbedCount":15,"probeFailedCount":2,"resolvedCount":3,"sourceCount":24,"toolCount":21,"workflowActionPinCount":9,"workflowRunnerPinCount":4}}
+{"filePath":".github/workflows/fork-integration.yml","recordType":"source","sha256":"508cdd363e1ce3721b4231aefd678e93c7d7af190cfcb6ea4e6a630981e996b5"}
+{"filePath":".nvmrc","recordType":"source","sha256":"73fb1b615e2043a933be1c0895cde4358036acc28d785692509b822aa53c761f"}
+{"filePath":"deployment/mise.toml","recordType":"source","sha256":"e1847f5993365080d59fd49293d13e8b968a0e0f33527b4fdcfc7f722d058b1a"}
+{"filePath":"docs/mise.toml","recordType":"source","sha256":"8db432c2a71240fe232a8ebcce2c06a5810faae1c41cbd457b5ad45dbf3bd4eb"}
+{"filePath":"icloud-bridge/Dockerfile","recordType":"source","sha256":"f6ba0be0bf44a83704c1f30fc25e43fd7aabb045f5439e46d27ad15250e05d35"}
+{"filePath":"machine-learning/.python-version","recordType":"source","sha256":"02e735b3dfe1c32833eb550b7ff8ffa17f5f2bc3fa1e7bae61a8f5a3883ce398"}
+{"filePath":"machine-learning/Dockerfile","recordType":"source","sha256":"c82a288971dbafe5e29fd1deaf77c85eb75482e4bbcab9383adb2b2d57d7ba84"}
+{"filePath":"machine-learning/mise.toml","recordType":"source","sha256":"87c93e274a005ea1f72f0e0a359c6e1c319b40954276b45a4a65ed4b2b14fa57"}
+{"filePath":"machine-learning/pyproject.toml","recordType":"source","sha256":"3cc85b60f21d4443de987d412464fabdec32aaaad03dacc66b35f62c08eddb31"}
+{"filePath":"machine-learning/uv.lock","recordType":"source","sha256":"42ac57bc61e02fe6b2b5f029142107b09abb690336f420f53484f8d3e5118e9e"}
+{"filePath":"mise.lock","recordType":"source","sha256":"c0387d0d84018af02ae2007bdfe2469dea749757129b226482c74ddbb8da3428"}
+{"filePath":"mise.toml","recordType":"source","sha256":"8ada5679b1acb2b4c5aca59cdbadd534801597242998172b0af77bbf8b4d1582"}
+{"filePath":"mobile/android/Gemfile.lock","recordType":"source","sha256":"35055e4f9bfe43341deb24baa911e8ff0cfea2bbecac38d0018042879fc1393f"}
+{"filePath":"mobile/android/gradle/wrapper/gradle-wrapper.properties","recordType":"source","sha256":"4566bdfe046c74dd7aa93fa2494e914d29b7b14c86064c2c35885c3603bf117d"}
+{"filePath":"mobile/ios/Podfile.lock","recordType":"source","sha256":"58fb055e192c7ae86bbe619393cbde0baaf399666925761a247f35b7ff064e3c"}
+{"filePath":"mobile/mise.toml","recordType":"source","sha256":"d57399497b587e14f7a68c9d3c9081754c15b1ffa399c86ffd22fbff2a346fa3"}
+{"filePath":"mobile/pubspec.lock","recordType":"source","sha256":"ca6a2faf457fac85ce9fbc7640f7f25fb82d4b8fbd5b5702f2128568e29a3ef3"}
+{"filePath":"mobile/pubspec.yaml","recordType":"source","sha256":"cab0c56409a5ddf57bcd95eee25f5516d90c86d5bfc85d9dc89919944e8b405d"}
+{"filePath":"package.json","recordType":"source","sha256":"b7e1cf2c18aa0dd9b52e3e1842f748dbfd54b1e6d29d21511562b23ed3d44f19"}
+{"filePath":"packages/cli/Dockerfile","recordType":"source","sha256":"3f07c493651832f8bb954c1247f37c87c17448b95af5a5e3c0afd698f901c913"}
+{"filePath":"packages/e2e-auth-server/Dockerfile","recordType":"source","sha256":"e91332318fe17fb436a081c79b9ad1e8964f1f8c4893c71697f7ebc502fcb69b"}
+{"filePath":"pnpm-lock.yaml","recordType":"source","sha256":"067f12e71d7d50c31927e2efc9cf6345851f887fddc74360d544a614a77950b3"}
+{"filePath":"server/Dockerfile","recordType":"source","sha256":"31d02128290f15720dcb58837c43a06fc8b4a8bf9579f1d24790e548d1af8dc1"}
+{"filePath":"server/Dockerfile.dev","recordType":"source","sha256":"e0dada37318df41fe1901cc800b7fd3ef94050a93fdeb5e11f7e5cf2fbcbb66c"}
+{"category":"workflow-action","declared":"d23441a48e516b6c34aea4fa41551a30e30af803","kind":"commit","name":"actions/checkout","recordType":"declaration","source":".github/workflows/fork-integration.yml"}
+{"category":"workflow-action","declared":"d23441a48e516b6c34aea4fa41551a30e30af803","kind":"commit","name":"actions/checkout","recordType":"declaration","source":".github/workflows/fork-integration.yml"}
+{"category":"workflow-action","declared":"d23441a48e516b6c34aea4fa41551a30e30af803","kind":"commit","name":"actions/checkout","recordType":"declaration","source":".github/workflows/fork-integration.yml"}
+{"category":"workflow-action","declared":"d23441a48e516b6c34aea4fa41551a30e30af803","kind":"commit","name":"actions/checkout","recordType":"declaration","source":".github/workflows/fork-integration.yml"}
+{"category":"workflow-action","declared":"b6effb05e454b25005698d916606bdc6ffcbf961","kind":"commit","name":"actions/setup-java","recordType":"declaration","source":".github/workflows/fork-integration.yml"}
+{"category":"workflow-action","declared":"249970729cb0ef3589644e2896645e5dc5ba9c38","kind":"commit","name":"actions/setup-node","recordType":"declaration","source":".github/workflows/fork-integration.yml"}
+{"category":"workflow-action","declared":"249970729cb0ef3589644e2896645e5dc5ba9c38","kind":"commit","name":"actions/setup-node","recordType":"declaration","source":".github/workflows/fork-integration.yml"}
+{"category":"container-image","declared":"alpine:3.23@sha256:85fe1e81d6758c208f3e1eed4338a1997e19d4be002d4dd32d3100c9a8c010a0","kind":"tag-and-digest","name":"alpine","recordType":"declaration","source":"icloud-bridge/Dockerfile"}
+{"category":"tool","declared":"3.47.2","kind":"exact","name":"aqua:flutter/flutter","recordType":"declaration","source":"mobile/mise.toml"}
+{"category":"workflow-action","declared":"20cfd1bf945f4377ade1205e4dbc17946fc9a30d","kind":"commit","name":"astral-sh/setup-uv","recordType":"declaration","source":".github/workflows/fork-integration.yml"}
+{"category":"tool","declared":"2.3.7","kind":"lockfile","name":"bundler","recordType":"declaration","source":"mobile/android/Gemfile.lock"}
+{"category":"tool","declared":"1.17.0","kind":"lockfile","name":"cocoapods","recordType":"declaration","source":"mobile/ios/Podfile.lock"}
+{"category":"tool","declared":">=3.12.0 <4.0.0","kind":"constraint","name":"dart","recordType":"declaration","source":"mobile/pubspec.yaml"}
+{"category":"tool","declared":"3.47.2","kind":"exact","name":"flutter","recordType":"declaration","source":"mobile/pubspec.yaml"}
+{"category":"container-image","declared":"ghcr.io/immich-app/base-server-dev:202609151314@sha256:ba336c43615bf9fe10d27637c3baf84cfc1379482dc712c35e314946e378a076","kind":"tag-and-digest","name":"ghcr.io/immich-app/base-server-dev","recordType":"declaration","source":"server/Dockerfile"}
+{"category":"container-image","declared":"ghcr.io/immich-app/base-server-dev:202609151314@sha256:ba336c43615bf9fe10d27637c3baf84cfc1379482dc712c35e314946e378a076","kind":"tag-and-digest","name":"ghcr.io/immich-app/base-server-dev","recordType":"declaration","source":"server/Dockerfile.dev"}
+{"category":"container-image","declared":"ghcr.io/immich-app/base-server-prod:202609151314@sha256:1d71b4254aeba9a547ed9c6a4a1acf490b5e8786d6dad2a943bd61bb0c8ab736","kind":"tag-and-digest","name":"ghcr.io/immich-app/base-server-prod","recordType":"declaration","source":"server/Dockerfile"}
+{"category":"container-image","declared":"ghcr.io/jdx/mise:2026.9.9@sha256:a88f300ef4365494b88f8eefd271bb92ba467d4a41835739a714426207215730","kind":"tag-and-digest","name":"ghcr.io/jdx/mise","recordType":"declaration","source":".github/workflows/fork-integration.yml"}
+{"category":"container-image","declared":"ghcr.io/jdx/mise:2026.9.9@sha256:a88f300ef4365494b88f8eefd271bb92ba467d4a41835739a714426207215730","kind":"tag-and-digest","name":"ghcr.io/jdx/mise","recordType":"declaration","source":".github/workflows/fork-integration.yml"}
+{"category":"workflow-runner","declared":"ubuntu-24.04","kind":"image-label","name":"github-hosted-runner","recordType":"declaration","source":".github/workflows/fork-integration.yml"}
+{"category":"workflow-runner","declared":"ubuntu-24.04","kind":"image-label","name":"github-hosted-runner","recordType":"declaration","source":".github/workflows/fork-integration.yml"}
+{"category":"workflow-runner","declared":"ubuntu-24.04","kind":"image-label","name":"github-hosted-runner","recordType":"declaration","source":".github/workflows/fork-integration.yml"}
+{"category":"workflow-runner","declared":"ubuntu-24.04","kind":"image-label","name":"github-hosted-runner","recordType":"declaration","source":".github/workflows/fork-integration.yml"}
+{"category":"tool","declared":"1.39.1","kind":"exact","name":"github:CQLabs/homebrew-dcm","recordType":"declaration","source":"mobile/mise.toml"}
+{"category":"tool","declared":"1.6.3","kind":"exact","name":"github:extism/cli","recordType":"declaration","source":"mise.toml"}
+{"category":"tool","declared":"v1.7.0","kind":"exact","name":"github:extism/js-pdk","recordType":"declaration","source":"mise.toml"}
+{"category":"tool","declared":"7.1.3-6","kind":"exact","name":"github:jellyfin/jellyfin-ffmpeg","recordType":"declaration","source":"mise.toml"}
+{"category":"tool","declared":"version_124","kind":"exact","name":"github:webassembly/binaryen","recordType":"declaration","source":"mise.toml"}
+{"category":"container-image","declared":"golang:1.26.0-alpine@sha256:d4c4845f5d60c6a974c6000ce58ae079328d03ab7f721a0734277e69905473e5","kind":"tag-and-digest","name":"golang","recordType":"declaration","source":"icloud-bridge/Dockerfile"}
+{"category":"tool","declared":"8.14","kind":"exact-wrapper","name":"gradle","recordType":"declaration","source":"mobile/android/gradle/wrapper/gradle-wrapper.properties"}
+{"category":"tool","declared":"21.0.2","kind":"exact","name":"java","recordType":"declaration","source":"mise.toml"}
+{"category":"tool","declared":"21.0.2","kind":"exact","name":"java","recordType":"declaration","source":"mobile/mise.toml"}
+{"category":"tool","declared":"24.21.0","kind":"exact","name":"node","recordType":"declaration","source":".nvmrc"}
+{"category":"tool","declared":"24.21.0","kind":"exact","name":"node","recordType":"declaration","source":"mise.toml"}
+{"category":"container-image","declared":"node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590","kind":"tag-and-digest","name":"node","recordType":"declaration","source":"packages/cli/Dockerfile"}
+{"category":"container-image","declared":"node:24.21.0-trixie-slim@sha256:db3ae80f5d8df06e04dabdf7b44cbf008d32de168205fa0294444aabbc08c590","kind":"tag-and-digest","name":"node","recordType":"declaration","source":"packages/e2e-auth-server/Dockerfile"}
+{"category":"tool","declared":"2.41.0","kind":"exact","name":"npm:@openapitools/openapi-generator-cli","recordType":"declaration","source":"mise.toml"}
+{"category":"tool","declared":"7.5.0","kind":"exact","name":"npm:oazapfts","recordType":"declaration","source":"mise.toml"}
+{"category":"container-image","declared":"nvidia/cuda:12.2.2-runtime-ubuntu22.04@sha256:94c1577b2cd9dd6c0312dc04dff9cb2fdce2b268018abc3d7c2dbcacf1155000","kind":"tag-and-digest","name":"nvidia/cuda","recordType":"declaration","source":"machine-learning/Dockerfile"}
+{"category":"container-image","declared":"nvidia/cuda:12.2.2-runtime-ubuntu22.04@sha256:94c1577b2cd9dd6c0312dc04dff9cb2fdce2b268018abc3d7c2dbcacf1155000","kind":"tag-and-digest","name":"nvidia/cuda","recordType":"declaration","source":"machine-learning/Dockerfile"}
+{"category":"tool","declared":"1.12.6","kind":"exact","name":"opentofu","recordType":"declaration","source":"deployment/mise.toml"}
+{"category":"tool","declared":"1.12.6","kind":"exact","name":"opentofu","recordType":"declaration","source":"mise.toml"}
+{"category":"workflow-action","declared":"fc06bc1257f339d1d5d8b3a19a8cae5388b55320","kind":"commit","name":"pnpm/action-setup","recordType":"declaration","source":".github/workflows/fork-integration.yml"}
+{"category":"tool","declared":"11.24.0","kind":"exact","name":"pnpm","recordType":"declaration","source":"mise.toml"}
+{"category":"tool","declared":"11.24.0","kind":"exact","name":"pnpm","recordType":"declaration","source":"package.json"}
+{"category":"tool","declared":">=10.0.0","kind":"constraint","name":"pnpm","recordType":"declaration","source":"package.json"}
+{"category":"tool","declared":"3.13","kind":"exact","name":"python","recordType":"declaration","source":"machine-learning/.python-version"}
+{"category":"container-image","declared":"python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285","kind":"tag-and-digest","name":"python","recordType":"declaration","source":"machine-learning/Dockerfile"}
+{"category":"container-image","declared":"python:3.13-trixie@sha256:4a0820d8b1b1a1e012a23ff9a1296a3e28b48896a4d27a328a91ee197ce619d9","kind":"tag-and-digest","name":"python","recordType":"declaration","source":"machine-learning/Dockerfile"}
+{"category":"container-image","declared":"python:3.12-slim-trixie@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea","kind":"tag-and-digest","name":"python","recordType":"declaration","source":"machine-learning/Dockerfile"}
+{"category":"container-image","declared":"python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285","kind":"tag-and-digest","name":"python","recordType":"declaration","source":"machine-learning/Dockerfile"}
+{"category":"container-image","declared":"python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285","kind":"tag-and-digest","name":"python","recordType":"declaration","source":"machine-learning/Dockerfile"}
+{"category":"container-image","declared":"python:3.12-slim-trixie@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea","kind":"tag-and-digest","name":"python","recordType":"declaration","source":"machine-learning/Dockerfile"}
+{"category":"tool","declared":"3.12","kind":"exact","name":"python","recordType":"declaration","source":"machine-learning/mise.toml"}
+{"category":"tool","declared":">=3.12,<4.0","kind":"constraint","name":"python","recordType":"declaration","source":"machine-learning/pyproject.toml"}
+{"category":"container-image","declared":"rocm/dev-ubuntu-24.04:7.2-complete@sha256:86e11093b4a7ec2a79b1b6701d10e840a6994f21c7e05929b51eb9be361c683a","kind":"tag-and-digest","name":"rocm/dev-ubuntu-24.04","recordType":"declaration","source":"machine-learning/Dockerfile"}
+{"category":"container-image","declared":"rocm/dev-ubuntu-24.04:7.2-complete@sha256:86e11093b4a7ec2a79b1b6701d10e840a6994f21c7e05929b51eb9be361c683a","kind":"tag-and-digest","name":"rocm/dev-ubuntu-24.04","recordType":"declaration","source":"machine-learning/Dockerfile"}
+{"category":"tool","declared":"1.1.1","kind":"exact","name":"terragrunt","recordType":"declaration","source":"deployment/mise.toml"}
+{"category":"tool","declared":"1.1.1","kind":"exact","name":"terragrunt","recordType":"declaration","source":"mise.toml"}
+{"category":"tool","declared":"0.8.15","kind":"exact","name":"uv","recordType":"declaration","source":"machine-learning/mise.toml"}
+{"category":"tool","declared":"4.127.0","kind":"exact","name":"wrangler","recordType":"declaration","source":"docs/mise.toml"}
+{"comparisonStatus":"unavailable","exactDeclarations":["3.47.2"],"name":"aqua:flutter/flutter","reason":"Executable is absent; unsafe wrapper was not executed","recordType":"resolution","resolvedVersion":null,"status":"missing-not-probed"}
+{"comparisonStatus":"unavailable","exactDeclarations":["2.3.7"],"executableIdentity":"$PATH[2]/bundle","name":"bundler","pathPortability":"controlled-path-slot","recordType":"resolution","resolvedVersion":null,"status":"probe-failed","versionOutput":"[output redacted: no version token]"}
+{"comparisonStatus":"unavailable","exactDeclarations":["1.17.0"],"name":"cocoapods","reason":"Executable is absent; unsafe wrapper was not executed","recordType":"resolution","resolvedVersion":null,"status":"missing-not-probed"}
+{"comparisonStatus":"unavailable","exactDeclarations":[],"name":"dart","reason":"Executable is absent; unsafe wrapper was not executed","recordType":"resolution","resolvedVersion":null,"status":"missing-not-probed"}
+{"comparisonStatus":"unavailable","exactDeclarations":["3.47.2"],"name":"flutter","reason":"Executable is absent; unsafe wrapper was not executed","recordType":"resolution","resolvedVersion":null,"status":"missing-not-probed"}
+{"comparisonStatus":"unavailable","exactDeclarations":["1.39.1"],"name":"github:CQLabs/homebrew-dcm","reason":"Executable is absent; unsafe wrapper was not executed","recordType":"resolution","resolvedVersion":null,"status":"missing-not-probed"}
+{"comparisonStatus":"unavailable","exactDeclarations":["1.6.3"],"name":"github:extism/cli","reason":"Executable is absent; unsafe wrapper was not executed","recordType":"resolution","resolvedVersion":null,"status":"missing-not-probed"}
+{"comparisonStatus":"unavailable","exactDeclarations":["1.7.0"],"name":"github:extism/js-pdk","reason":"Executable is absent; unsafe wrapper was not executed","recordType":"resolution","resolvedVersion":null,"status":"missing-not-probed"}
+{"comparisonStatus":"mismatch","exactDeclarations":["7.1.3-6"],"executableIdentity":"$PATH[4]/ffmpeg","name":"github:jellyfin/jellyfin-ffmpeg","pathPortability":"controlled-path-slot","recordType":"resolution","resolvedVersion":"9.0.1","status":"resolved","versionOutput":"version 9.0.1"}
+{"comparisonStatus":"unavailable","exactDeclarations":["124"],"name":"github:webassembly/binaryen","reason":"Executable is absent; unsafe wrapper was not executed","recordType":"resolution","resolvedVersion":null,"status":"missing-not-probed"}
+{"comparisonStatus":"unavailable","exactDeclarations":["8.14"],"name":"gradle","reason":"Executable is absent; unsafe wrapper was not executed","recordType":"resolution","resolvedVersion":null,"status":"missing-not-probed"}
+{"comparisonStatus":"unavailable","exactDeclarations":["21.0.2","21.0.2"],"executableIdentity":"$PATH[2]/java","name":"java","pathPortability":"controlled-path-slot","recordType":"resolution","resolvedVersion":null,"status":"probe-failed","versionOutput":"[output redacted: no version token]"}
+{"comparisonStatus":"mismatch","exactDeclarations":["24.21.0","24.21.0"],"executableIdentity":"$PATH[0]/node","name":"node","pathPortability":"controlled-path-slot","recordType":"resolution","resolvedVersion":"24.19.0","status":"resolved","versionOutput":"version 24.19.0"}
+{"comparisonStatus":"unavailable","exactDeclarations":["2.41.0"],"name":"npm:@openapitools/openapi-generator-cli","reason":"Executable is absent; unsafe wrapper was not executed","recordType":"resolution","resolvedVersion":null,"status":"missing-not-probed"}
+{"comparisonStatus":"unavailable","exactDeclarations":["7.5.0"],"name":"npm:oazapfts","reason":"Executable is absent; unsafe wrapper was not executed","recordType":"resolution","resolvedVersion":null,"status":"missing-not-probed"}
+{"comparisonStatus":"unavailable","exactDeclarations":["1.12.6","1.12.6"],"name":"opentofu","reason":"Executable is absent; unsafe wrapper was not executed","recordType":"resolution","resolvedVersion":null,"status":"missing-not-probed"}
+{"comparisonStatus":"unavailable","exactDeclarations":["11.24.0","11.24.0"],"executableIdentity":"$PATH[1]/pnpm","name":"pnpm","pathPortability":"controlled-path-slot","reason":"Executable is present but its wrapper is not on the strict side-effect-safe probe allowlist","recordType":"resolution","resolvedVersion":null,"status":"present-not-probed"}
+{"comparisonStatus":"mismatch","exactDeclarations":["3.13","3.12"],"executableIdentity":"$PATH[2]/python3","name":"python","pathPortability":"controlled-path-slot","recordType":"resolution","resolvedVersion":"3.9.6","status":"resolved","versionOutput":"version 3.9.6"}
+{"comparisonStatus":"unavailable","exactDeclarations":["1.1.1","1.1.1"],"name":"terragrunt","reason":"Executable is absent; unsafe wrapper was not executed","recordType":"resolution","resolvedVersion":null,"status":"missing-not-probed"}
+{"comparisonStatus":"unavailable","exactDeclarations":["0.8.15"],"name":"uv","reason":"No executable found on the controlled PATH","recordType":"resolution","resolvedVersion":null,"status":"missing"}
+{"comparisonStatus":"unavailable","exactDeclarations":["4.127.0"],"name":"wrangler","reason":"Executable is absent; unsafe wrapper was not executed","recordType":"resolution","resolvedVersion":null,"status":"missing-not-probed"}
