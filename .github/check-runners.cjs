@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { createRequire } = require("node:module");
+const { runInNewContext } = require("node:vm");
 const { load } = createRequire(
   path.resolve(__dirname, "../server/package.json"),
 )("js-yaml");
@@ -99,6 +100,32 @@ assert.equal(
   docker.jobs.certification.uses,
   "./.github/workflows/fork-roundtrip.yml",
 );
+const roundtripConcurrency = workflows["fork-roundtrip.yml"].concurrency;
+assert.equal(
+  roundtripConcurrency?.group,
+  "${{ github.workflow }}-${{ github.ref }}-roundtrip",
+  "Roundtrip concurrency must isolate each workflow/ref from its caller",
+);
+assert.equal(
+  roundtripConcurrency["cancel-in-progress"],
+  "${{ github.event_name == 'pull_request' }}",
+);
+for (const event_name of [
+  "pull_request",
+  "push",
+  "schedule",
+  "workflow_dispatch",
+  "workflow_call",
+]) {
+  assert.equal(
+    runInNewContext(
+      roundtripConcurrency["cancel-in-progress"].slice(3, -2),
+      { github: { event_name } },
+    ),
+    event_name === "pull_request",
+    "Only stale PR certification may be cancelled; publication gates must finish",
+  );
+}
 assert(Object.hasOwn(workflows["fork-integration.yml"].on, "workflow_call"));
 assert(
   !workflows["fork-integration.yml"].on.push,
