@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { format, resolveConfig } from "prettier";
 
 const root = resolve(import.meta.dirname, "..");
 const evidencePath = resolve(
@@ -18,6 +19,11 @@ const actionRegistryPath = resolve(
   root,
   "docs/docs/developer/frameleaf-plan/action-id-registry.json",
 );
+
+async function formatJson(value, path) {
+  const config = (await resolveConfig(path)) ?? {};
+  return format(JSON.stringify(value), { ...config, filepath: path });
+}
 
 function assertNoDuplicateJsonKeys(text, path) {
   let index = 0;
@@ -542,7 +548,7 @@ async function importEvidence(sourceRoot) {
       },
     })),
   };
-  await writeFile(evidencePath, `${JSON.stringify(evidence)}\n`);
+  await writeFile(evidencePath, await formatJson(evidence, evidencePath));
 }
 
 const issueOwner = (planId, jiraMap) => {
@@ -1582,7 +1588,7 @@ async function validateLedger(ledger) {
     actionAuditEvidence:
       "d8f5942885a144221798f81f458eb58a7a6f8f8bd1f2cb1f7c04d80aea834379",
     actionRegistry:
-      "8dd84a981f30bc37bce9e2e5c9a8afc29a8c7b7d095b69a92d56bb5d2ce8cfa4",
+      "e47a54cab6c3010d4727eb4ca0d6f06e3bb6b313657a82fa0c4300eb9ba246c7",
     settings:
       "b0feba0fde5fff70f2d2204c08c8307d380ead8d993e3cf32d969d31b4394c20",
   };
@@ -1630,7 +1636,7 @@ if (importIndex >= 0) {
 }
 const ledger = await buildLedger();
 await validateLedger(ledger);
-const serialized = `${JSON.stringify(ledger)}\n`;
+const serialized = await formatJson(ledger, ledgerPath);
 const validateIndex = args.indexOf("--validate-ledger");
 if (validateIndex >= 0) {
   const candidatePath = args[validateIndex + 1];
