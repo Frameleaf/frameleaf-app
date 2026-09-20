@@ -1,26 +1,18 @@
+# The Frameleaf Jira-key workflow owns PR title policy; the inherited label-writing conventional-title action is disabled.
+# No scheduled/event-driven mutations or foreign credentials are retained.
 name: PR Conventional Commit
-
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, edited]
-
-# Cancel stale title-validation runs — only the latest PR title matters.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
+"on":
+  workflow_dispatch: null
+permissions: {}
 jobs:
-  validate-pr-title:
-    if: >-
-      ${{ github.repository == 'adamtaylor152/immich' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) }}
-    name: Validate PR Title (conventional commit) / validate-pr-title
+  disabled:
+    name: Legacy automation is disabled
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
     runs-on: ubuntu-24.04
-    permissions:
-      pull-requests: write
+    permissions: {}
     steps:
-      - name: PR Conventional Commit Validation
-        if: ${{ !startsWith(github.event.pull_request.head.ref, 'mergify/merge-queue/') }}
-        uses: ytanikin/PRConventionalCommits@b628c5a234cc32513014b7bfdd1e47b532124d98 # 1.3.0
-        with:
-          task_types: '["feat","fix","docs","test","ci","refactor","perf","chore","revert"]'
-          add_label: 'false'
+      - name: Explain the retired automation
+        run:
+          printf '%s\n' 'The Frameleaf Jira-key workflow owns PR title policy; the inherited label-writing conventional-title
+          action is disabled.' 'No external action was taken. Configure an owned replacement in a reviewed change before enabling
+          automation.'

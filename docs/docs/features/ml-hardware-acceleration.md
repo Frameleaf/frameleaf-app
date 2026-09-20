@@ -80,7 +80,7 @@ The default fallback setting is `microsoft/Florence-2-base-ft`. The fallback is 
 
 #### OpenVINO-WSL
 
-- Ensure your container can access the /dev/dri directory, you can verify this by doing `docker exec -t immich_machine_learning ls -la /dev/dri`. If this is not the case execute `getent group render` and `getent group video` on the WSL host, then add those groups to hwaccel.ml.yaml
+- Ensure your container can access the /dev/dri directory, you can verify this by doing `docker compose exec -T immich-machine-learning ls -la /dev/dri` from your Compose directory. If this is not the case execute `getent group render` and `getent group video` on the WSL host, then add those groups to hwaccel.ml.yaml
   ```yaml
   openvino-wsl:
     devices:
@@ -140,9 +140,9 @@ You can add this to the `immich-machine-learning` service instead of extending f
 
 ```yaml
 immich-machine-learning:
-  container_name: immich_machine_learning
+  container_name: frameleaf_machine_learning
   # Note the `-cuda` at the end
-  image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}-cuda
+  image: ghcr.io/frameleaf/frameleaf-machine-learning:${IMMICH_VERSION:-release}-cuda
   # Note the lack of an `extends` section
   deploy:
     resources:

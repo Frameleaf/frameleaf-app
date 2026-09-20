@@ -1,40 +1,64 @@
+# The explicit maintainer label is retained; comparisons use the PR event base SHA, never a moving branch URL.
 name: Check OpenAPI
-on:
+"on":
   workflow_dispatch:
+    inputs:
+      base_sha:
+        description: Exact Frameleaf base commit SHA for comparison
+        required: true
+        type: string
   pull_request:
-    # labeled/unlabeled re-evaluate the api-breaking-approved gate below
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    branches:
+      - fork/main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+      - unlabeled
     paths:
-      - 'open-api/**'
-      - 'mobile/lib/utils/openapi_patching.dart'
-      - '.github/workflows/check-openapi.yml'
-
+      - open-api/**
+      - server/src/dtos/**
+      - mobile/lib/utils/openapi_patching.dart
+      - .github/workflows/check-openapi.yml
+permissions:
+  contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-permissions: {}
-
 jobs:
   check-openapi:
-    # Breaking API changes can be acknowledged explicitly (e.g. upstream sync
-    # merges that inherit upstream's own deliberate breaking changes) by adding
-    # the `api-breaking-approved` label to the PR.
-    if: >-
-      ${{ github.repository == 'adamtaylor152/immich' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!contains(github.event.pull_request.labels.*.name, 'api-breaking-approved')) }}
+    if:
+      ${{ github.repository == 'Frameleaf/frameleaf-app' && !contains(github.event.pull_request.labels.*.name, 'api-breaking-approved')
+      }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-
-      - name: Check for breaking API changes
-        uses: oasdiff/oasdiff-action/breaking@9c0494cfee8b8fcc9fb383ed2d5d3fbdae169b93 # v0.1.15
+      - name: Validate immutable comparison commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || inputs.base_sha }}
+        run: |-
+          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::An exact 40-character base commit SHA is required."
+            exit 1
+          fi
+      - name: Checkout exact PR base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          base: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.base_ref || 'fork/main' }}/open-api/immich-openapi-specs.json
+          repository: Frameleaf/frameleaf-app
+          ref: ${{ github.event.pull_request.base.sha || inputs.base_sha }}
+          path: .frameleaf-api-base
+          persist-credentials: false
+      - name: Check for breaking API changes
+        uses: oasdiff/oasdiff-action/breaking@9c0494cfee8b8fcc9fb383ed2d5d3fbdae169b93
+        with:
+          base: .frameleaf-api-base/open-api/immich-openapi-specs.json
           revision: open-api/immich-openapi-specs.json
           fail-on: ERR
           review: false
