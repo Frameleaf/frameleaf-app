@@ -127,36 +127,31 @@ function treeEntries(root, revision) {
   );
 }
 
-function addOwner(index, filePath, planId, jira, backlogById) {
+function addRouting(index, filePath, planId, jira, backlogById) {
   const item = backlogById.get(planId);
   const issue = jira.issues[planId];
   if (!item || !issue) return;
-  const owners = index.get(filePath) ?? new Map();
-  owners.set(planId, {
+  const routing = index.get(filePath) ?? new Map();
+  routing.set(planId, {
+    issueType: item.type,
     jiraKey: issue.key,
     planId,
     workstream: item.workstream,
   });
-  index.set(filePath, owners);
+  index.set(filePath, routing);
 }
 
-function ownershipIndex({
-  backlog,
-  freecutManifest,
-  freecutMap,
-  jira,
-  native,
-}) {
+function routingIndex({ backlog, freecutManifest, freecutMap, jira, native }) {
   const index = new Map();
   const backlogById = new Map(backlog.items.map((item) => [item.id, item]));
   for (const item of backlog.items) {
     for (const filePath of item.paths) {
-      addOwner(index, filePath, item.id, jira, backlogById);
+      addRouting(index, filePath, item.id, jira, backlogById);
     }
   }
   for (const entry of native.entries) {
     for (const planId of [entry.primaryIssueId, ...entry.secondaryIssueIds]) {
-      addOwner(index, entry.source, planId, jira, backlogById);
+      addRouting(index, entry.source, planId, jira, backlogById);
     }
   }
   const freecutIssues = new Map(
@@ -167,14 +162,14 @@ function ownershipIndex({
     for (const source of feature.source) {
       const filePath = `studio/${source.path}`;
       for (const planId of issueIds) {
-        addOwner(index, filePath, planId, jira, backlogById);
+        addRouting(index, filePath, planId, jira, backlogById);
       }
     }
   }
   return new Map(
-    [...index].map(([filePath, owners]) => [
+    [...index].map(([filePath, routing]) => [
       filePath,
-      [...owners.values()].sort((left, right) =>
+      [...routing.values()].sort((left, right) =>
         left.planId.localeCompare(right.planId),
       ),
     ]),
@@ -225,7 +220,7 @@ export function buildReconciliation({ currentMain, root = repository }) {
   const commit = git(root, ["rev-parse", `${currentMain}^{commit}`]).trim();
   const tree = git(root, ["rev-parse", `${commit}^{tree}`]).trim();
   const tracked = treeEntries(root, commit);
-  const owners = ownershipIndex({
+  const routing = routingIndex({
     backlog,
     freecutManifest,
     freecutMap,
@@ -255,7 +250,7 @@ export function buildReconciliation({ currentMain, root = repository }) {
           ? "already-represented"
           : "preserved-only-unaccepted",
       filePath: entry.filePath,
-      futureOwners: owners.get(entry.filePath) ?? [],
+      sourceBackedRouting: routing.get(entry.filePath) ?? [],
       mainBlobBytes,
       mainBlobRelation,
       mainBlobSha256,
@@ -267,43 +262,72 @@ export function buildReconciliation({ currentMain, root = repository }) {
   });
   const count = (field, value) =>
     entries.filter((entry) => entry[field] === value).length;
+  const epicRouting = entries.flatMap(({ filePath, sourceBackedRouting }) =>
+    sourceBackedRouting
+      .filter(({ issueType }) => issueType === "epic")
+      .map((route) => ({ filePath, ...route })),
+  );
   const summary = {
     alreadyRepresented: count("disposition", "already-represented"),
+    epicRoutingReferences: epicRouting.length,
     mainBlobAbsent: count("mainBlobRelation", "absent"),
     mainBlobDifferent: count("mainBlobRelation", "different"),
     mainBlobIdentical: count("mainBlobRelation", "identical"),
     pathCount: entries.length,
+    pathsWithEpicRouting: new Set(epicRouting.map(({ filePath }) => filePath))
+      .size,
     preservedOnlyUnaccepted: count("disposition", "preserved-only-unaccepted"),
-    withFutureOwners: entries.filter(
-      ({ futureOwners }) => futureOwners.length > 0,
+    uniqueEpicRoutingIds: new Set(epicRouting.map(({ planId }) => planId)).size,
+    withSourceBackedRouting: entries.filter(
+      ({ sourceBackedRouting }) => sourceBackedRouting.length > 0,
     ).length,
-    withoutFutureOwners: entries.filter(
-      ({ futureOwners }) => futureOwners.length === 0,
+    withoutExactRouting: entries.filter(
+      ({ sourceBackedRouting }) => sourceBackedRouting.length === 0,
+    ).length,
+    withoutExactRoutingLocalEvidence: entries.filter(
+      ({ preservedReviewState, sourceBackedRouting }) =>
+        sourceBackedRouting.length === 0 &&
+        preservedReviewState === "local-evidence",
+    ).length,
+    withoutExactRoutingUnreviewedLocalChange: entries.filter(
+      ({ preservedReviewState, sourceBackedRouting }) =>
+        sourceBackedRouting.length === 0 &&
+        preservedReviewState === "unreviewed-local-change",
     ).length,
   };
   assert.deepEqual(summary, {
     alreadyRepresented: 164,
+    epicRoutingReferences: 44,
     mainBlobAbsent: 3164,
     mainBlobDifferent: 192,
     mainBlobIdentical: 164,
     pathCount: 3520,
+    pathsWithEpicRouting: 36,
     preservedOnlyUnaccepted: 3356,
-    withFutureOwners: summary.withFutureOwners,
-    withoutFutureOwners: summary.withoutFutureOwners,
+    uniqueEpicRoutingIds: 17,
+    withSourceBackedRouting: 1917,
+    withoutExactRouting: 1603,
+    withoutExactRoutingLocalEvidence: 1,
+    withoutExactRoutingUnreviewedLocalChange: 1602,
   });
-  assert.equal(summary.withFutureOwners + summary.withoutFutureOwners, 3520);
+  assert.equal(
+    summary.withSourceBackedRouting + summary.withoutExactRouting,
+    3520,
+  );
   return {
     currentMain: { commit, tree },
     entries,
     interpretation: {
       acceptance:
-        "No preserved dirty-checkout source is accepted by this receipt. Future ownership is routing metadata only.",
+        "No preserved dirty-checkout source is accepted by this receipt. Source-backed routing metadata is not an implementation assignment.",
       alreadyRepresented:
         "The preserved bytes are identical to the blob at the exact current-main commit.",
       preservedOnlyUnaccepted:
         "The path is absent from current main or its preserved bytes differ from current main; the preserved bytes remain unaccepted evidence.",
       reviewState:
         "The prior 3,518 count describes review-state labels: 3,518 unreviewed-local-change plus two local-evidence paths. It is not the current-main disposition count.",
+      routing:
+        "Exact-path Plan ID, Jira key, issue type, and workstream references are source-backed routing hints only. Epic references describe scope; none claims an actionable implementation owner, issue readiness, acceptance, or qualification. Paths without exact routing remain unresolved FL-25 acceptance.",
     },
     schemaVersion: 1,
     sourceInventory: {
