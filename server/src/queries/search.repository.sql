@@ -1759,12 +1759,25 @@ where
   )
   and true
 order by
-  smart_search.embedding <=> $4,
+  least(
+    (smart_search.embedding <=> $4),
+    coalesce(
+      $5 * (
+        select
+          embedding <=> $6
+        from
+          smart_search_description
+        where
+          "assetId" = asset.id
+      ),
+      (smart_search.embedding <=> $7)
+    )
+  ),
   "asset"."id" asc
 limit
-  $5
+  $8
 offset
-  $6
+  $9
 commit
 
 -- SearchRepository.searchSmartV3 (with-filter)
@@ -1815,12 +1828,25 @@ where
     and "asset"."fileCreatedAt" >= $5
   )
 order by
-  smart_search.embedding <=> $6,
+  least(
+    (smart_search.embedding <=> $6),
+    coalesce(
+      $7 * (
+        select
+          embedding <=> $8
+        from
+          smart_search_description
+        where
+          "assetId" = asset.id
+      ),
+      (smart_search.embedding <=> $9)
+    )
+  ),
   "asset"."id" asc
 limit
-  $7
+  $10
 offset
-  $8
+  $11
 commit
 
 -- SearchRepository.searchSmartV3 (cursor-offset)
@@ -1868,12 +1894,25 @@ where
   )
   and true
 order by
-  smart_search.embedding <=> $4,
+  least(
+    (smart_search.embedding <=> $4),
+    coalesce(
+      $5 * (
+        select
+          embedding <=> $6
+        from
+          smart_search_description
+        where
+          "assetId" = asset.id
+      ),
+      (smart_search.embedding <=> $7)
+    )
+  ),
   "asset"."id" asc
 limit
-  $5
+  $8
 offset
-  $6
+  $9
 commit
 
 -- SearchRepository.searchStatisticsV3 (baseline)

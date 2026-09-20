@@ -1,0 +1,421 @@
+{
+  "audit": {
+    "archiveEntries": 8,
+    "executableFiles": 0,
+    "method": "ZIP paths, modes, sizes and destination collisions checked before writes; SVG XML parsed and local fragment references validated. No bundled scripts or instructions executed.",
+    "pathTraversal": 0,
+    "regularFiles": 8,
+    "svgFiles": 7,
+    "symlinks": 0
+  },
+  "authority": "User-supplied authoritative production brand artwork; replaces earlier generated visual mark as the source for future integration.",
+  "declaredBasePalette": {
+    "canvasGradient": ["#111D26", "#091219"],
+    "leafGreen": "#22C55E",
+    "lightGray": "#E5E7EB",
+    "skyBlue": "#3B82F6",
+    "teal": "#0EA5A0"
+  },
+  "files": [
+    {
+      "archivePath": "frameleaf-vector-assets/README.txt",
+      "bytes": 2089,
+      "intendedUsage": [
+        "Original supplier description and palette reference; retained as provenance, not executable instructions."
+      ],
+      "path": "README.txt",
+      "sha256": "1255df3da15dc546ca160f50583a7e37044a8ef733d0768a0f28ac594688f7ff"
+    },
+    {
+      "archivePath": "frameleaf-vector-assets/frameleaf-app-icon.svg",
+      "bytes": 2126,
+      "intendedUsage": [
+        "Source for app/PWA/launcher and store raster exports; square 1024 viewBox with rounded transparent tile corners."
+      ],
+      "path": "frameleaf-app-icon.svg",
+      "sha256": "1f871ae45f6702e775fcd75fa67c8c38b53f328b13a672af98ecf23a12abfc94",
+      "svg": {
+        "audit": {
+          "embeddedImages": 0,
+          "eventHandlers": 0,
+          "externalReferences": 0,
+          "fontReferences": 0,
+          "foreignObjects": 0,
+          "liveText": 0,
+          "scripts": 0,
+          "unresolvedInternalReferences": 0
+        },
+        "colors": [
+          "#00ACC9",
+          "#00C4AD",
+          "#0ADEE9",
+          "#1BDD72",
+          "#33F1AC",
+          "#88F54A",
+          "#B3FF8B",
+          "#FFFFFF"
+        ],
+        "elementCounts": {
+          "circle": 1,
+          "defs": 1,
+          "desc": 1,
+          "g": 2,
+          "linearGradient": 2,
+          "path": 2,
+          "rect": 2,
+          "stop": 7,
+          "svg": 1,
+          "title": 1,
+          "use": 4
+        },
+        "height": 1024,
+        "internalReferenceCount": 6,
+        "title": "Frameleaf — app icon",
+        "viewBox": "0 0 1024 1024",
+        "width": 1024
+      }
+    },
+    {
+      "archivePath": "frameleaf-vector-assets/frameleaf-dark-styleboard.svg",
+      "bytes": 200233,
+      "intendedUsage": [
+        "Brand reference and documentation board, not an application screen or runtime UI asset."
+      ],
+      "path": "frameleaf-dark-styleboard.svg",
+      "sha256": "7c633f7095f9e647a841ec567dbce50229095e5c0da3554ad1edae250b78d6ea",
+      "svg": {
+        "audit": {
+          "embeddedImages": 0,
+          "eventHandlers": 0,
+          "externalReferences": 0,
+          "fontReferences": 0,
+          "foreignObjects": 0,
+          "liveText": 0,
+          "scripts": 0,
+          "unresolvedInternalReferences": 0
+        },
+        "colors": [
+          "#00ACC9",
+          "#00BC9E",
+          "#00BEDC",
+          "#00C4AD",
+          "#00C4D6",
+          "#00C7B0",
+          "#00D874",
+          "#04D9B7",
+          "#091219",
+          "#09DFA5",
+          "#0ADEE9",
+          "#0BDD85",
+          "#0D171F",
+          "#0EA5A0",
+          "#0FD570",
+          "#0FE58C",
+          "#111D26",
+          "#13C5E3",
+          "#14212B",
+          "#1BDD72",
+          "#21DE73",
+          "#22C55E",
+          "#23EE99",
+          "#304453",
+          "#33F1AC",
+          "#35E56A",
+          "#36EC72",
+          "#3B82F6",
+          "#405566",
+          "#56F260",
+          "#57F482",
+          "#60F35E",
+          "#62798B",
+          "#66F9AA",
+          "#86F345",
+          "#88F54A",
+          "#A0F798",
+          "#AAC7E2",
+          "#AAC9E5",
+          "#ACC9E2",
+          "#B3FF8B",
+          "#BDCDDD",
+          "#BFD2E5",
+          "#C0D7EE",
+          "#D6E0E9",
+          "#DBE9F5",
+          "#E5E7EB",
+          "#EFF5FC",
+          "#F4F7FA",
+          "#F7F9FC",
+          "#FFFFFF"
+        ],
+        "elementCounts": {
+          "circle": 10,
+          "defs": 1,
+          "desc": 1,
+          "ellipse": 5,
+          "g": 48,
+          "linearGradient": 9,
+          "path": 41,
+          "radialGradient": 3,
+          "rect": 7,
+          "stop": 34,
+          "svg": 1,
+          "title": 1,
+          "use": 13
+        },
+        "height": 1086,
+        "internalReferenceCount": 32,
+        "title": "Frameleaf — dark brand styleboard",
+        "viewBox": "0 0 1448 1086",
+        "width": 1448
+      }
+    },
+    {
+      "archivePath": "frameleaf-vector-assets/frameleaf-logo-dark-tagline.svg",
+      "bytes": 13971,
+      "intendedUsage": [
+        "Large dark-background onboarding, About or marketing placement where the outlined tagline remains legible."
+      ],
+      "path": "frameleaf-logo-dark-tagline.svg",
+      "sha256": "9b8c1286f289874a2c40c2d75d0ad168152bd1ee91916da3d4d6e47ae56a98f7",
+      "svg": {
+        "audit": {
+          "embeddedImages": 0,
+          "eventHandlers": 0,
+          "externalReferences": 0,
+          "fontReferences": 0,
+          "foreignObjects": 0,
+          "liveText": 0,
+          "scripts": 0,
+          "unresolvedInternalReferences": 0
+        },
+        "colors": [
+          "#00BC9E",
+          "#00BEDC",
+          "#00C4D6",
+          "#00C7B0",
+          "#00D874",
+          "#09DFA5",
+          "#0FD570",
+          "#21DE73",
+          "#35E56A",
+          "#36EC72",
+          "#56F260",
+          "#57F482",
+          "#60F35E",
+          "#86F345",
+          "#C0D7EE",
+          "#F7F9FC"
+        ],
+        "elementCounts": {
+          "circle": 1,
+          "defs": 1,
+          "desc": 1,
+          "g": 3,
+          "linearGradient": 4,
+          "path": 5,
+          "stop": 14,
+          "svg": 1,
+          "title": 1,
+          "use": 4
+        },
+        "height": 264,
+        "internalReferenceCount": 8,
+        "title": "Frameleaf — horizontal logo with tagline",
+        "viewBox": "0 0 1080 264",
+        "width": 1080
+      }
+    },
+    {
+      "archivePath": "frameleaf-vector-assets/frameleaf-logo-dark.svg",
+      "bytes": 6442,
+      "intendedUsage": [
+        "Primary horizontal wordmark on dark app/auth/public-share headers."
+      ],
+      "path": "frameleaf-logo-dark.svg",
+      "sha256": "f99cfa4ef5c10da51cfa54627f12ad6e7eba4decb59fe0829f06f0e0978a609b",
+      "svg": {
+        "audit": {
+          "embeddedImages": 0,
+          "eventHandlers": 0,
+          "externalReferences": 0,
+          "fontReferences": 0,
+          "foreignObjects": 0,
+          "liveText": 0,
+          "scripts": 0,
+          "unresolvedInternalReferences": 0
+        },
+        "colors": [
+          "#00BC9E",
+          "#00BEDC",
+          "#00C4D6",
+          "#00C7B0",
+          "#00D874",
+          "#09DFA5",
+          "#0FD570",
+          "#21DE73",
+          "#35E56A",
+          "#36EC72",
+          "#56F260",
+          "#57F482",
+          "#60F35E",
+          "#86F345",
+          "#F7F9FC"
+        ],
+        "elementCounts": {
+          "circle": 1,
+          "defs": 1,
+          "desc": 1,
+          "g": 2,
+          "linearGradient": 4,
+          "path": 4,
+          "stop": 14,
+          "svg": 1,
+          "title": 1,
+          "use": 4
+        },
+        "height": 264,
+        "internalReferenceCount": 8,
+        "title": "Frameleaf — horizontal logo for dark backgrounds",
+        "viewBox": "0 0 1080 264",
+        "width": 1080
+      }
+    },
+    {
+      "archivePath": "frameleaf-vector-assets/frameleaf-logo-white.svg",
+      "bytes": 5306,
+      "intendedUsage": [
+        "White monochrome horizontal wordmark on dark or sufficiently contrasting colored backgrounds."
+      ],
+      "path": "frameleaf-logo-white.svg",
+      "sha256": "1ab00db27ed39ea9e3de7374bf324c88a097fc684b25ecfeb7695a504b92be45",
+      "svg": {
+        "audit": {
+          "embeddedImages": 0,
+          "eventHandlers": 0,
+          "externalReferences": 0,
+          "fontReferences": 0,
+          "foreignObjects": 0,
+          "liveText": 0,
+          "scripts": 0,
+          "unresolvedInternalReferences": 0
+        },
+        "colors": ["#FFFFFF"],
+        "elementCounts": {
+          "circle": 1,
+          "defs": 1,
+          "desc": 1,
+          "g": 2,
+          "path": 3,
+          "svg": 1,
+          "title": 1,
+          "use": 4
+        },
+        "height": 264,
+        "internalReferenceCount": 4,
+        "title": "Frameleaf — white monochrome logo",
+        "viewBox": "0 0 1080 264",
+        "width": 1080
+      }
+    },
+    {
+      "archivePath": "frameleaf-vector-assets/frameleaf-symbol-white.svg",
+      "bytes": 1325,
+      "intendedUsage": [
+        "White monochrome compact mark on dark/colored surfaces; source for platform-specific monochrome masks when appropriate."
+      ],
+      "path": "frameleaf-symbol-white.svg",
+      "sha256": "a32b14f656a7ddef255190aacc18b4575b0966bd79f96db93d4fd8153525602b",
+      "svg": {
+        "audit": {
+          "embeddedImages": 0,
+          "eventHandlers": 0,
+          "externalReferences": 0,
+          "fontReferences": 0,
+          "foreignObjects": 0,
+          "liveText": 0,
+          "scripts": 0,
+          "unresolvedInternalReferences": 0
+        },
+        "colors": ["#FFFFFF"],
+        "elementCounts": {
+          "circle": 1,
+          "defs": 1,
+          "desc": 1,
+          "g": 1,
+          "path": 2,
+          "svg": 1,
+          "title": 1,
+          "use": 3
+        },
+        "height": 256,
+        "internalReferenceCount": 3,
+        "title": "Frameleaf — white monochrome symbol",
+        "viewBox": "0 0 256 256",
+        "width": 256
+      }
+    },
+    {
+      "archivePath": "frameleaf-vector-assets/frameleaf-symbol.svg",
+      "bytes": 2165,
+      "intendedUsage": [
+        "Primary compact symbol, sidebar/mobile brand mark and browser favicon source; validate contrast at intended size."
+      ],
+      "path": "frameleaf-symbol.svg",
+      "sha256": "beaa5788267b8eb34167dc89c13df024b33f8c02bc4914f9ac5453f10393e7b2",
+      "svg": {
+        "audit": {
+          "embeddedImages": 0,
+          "eventHandlers": 0,
+          "externalReferences": 0,
+          "fontReferences": 0,
+          "foreignObjects": 0,
+          "liveText": 0,
+          "scripts": 0,
+          "unresolvedInternalReferences": 0
+        },
+        "colors": [
+          "#00BC9E",
+          "#00BEDC",
+          "#00C4D6",
+          "#00C7B0",
+          "#00D874",
+          "#09DFA5",
+          "#21DE73",
+          "#36EC72",
+          "#56F260",
+          "#57F482",
+          "#86F345"
+        ],
+        "elementCounts": {
+          "circle": 1,
+          "defs": 1,
+          "desc": 1,
+          "g": 1,
+          "linearGradient": 3,
+          "path": 2,
+          "stop": 11,
+          "svg": 1,
+          "title": 1,
+          "use": 3
+        },
+        "height": 256,
+        "internalReferenceCount": 6,
+        "title": "Frameleaf — gradient symbol",
+        "viewBox": "0 0 256 256",
+        "width": 256
+      }
+    }
+  ],
+  "importedAt": "2026-09-19",
+  "preservation": "Every imported source file is byte-for-byte identical to its ZIP member. Source SVGs are not optimized, reformatted or recolored. Platform derivatives require separate filenames and provenance.",
+  "product": "Frameleaf",
+  "rightsEvidence": "Provided by the user for application use. Archive contains no separate font files, font license, artwork license certificate or trademark registration evidence; no such status is inferred.",
+  "schemaVersion": 1,
+  "source": {
+    "archiveName": "frameleaf-vector-assets.zip",
+    "bytes": 81800,
+    "rootPrefixRemoved": "frameleaf-vector-assets/",
+    "sha256": "95d705a5756096cd07a7a8c02f455c510e7d48b49435ef1bf07b3501b179603c",
+    "sourceFileCount": 8
+  }
+}

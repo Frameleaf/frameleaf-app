@@ -1,80 +1,57 @@
 name: Migration Order
-
-on:
+'on':
   pull_request:
+    branches:
+      - fork/main
   push:
-    branches: [main, 'release/*']
-
+    branches:
+      - fork/main
+permissions:
+  contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-permissions: {}
-
 jobs:
   migration-order:
     name: Verify migration ORDER
-    if: ${{ !github.event.created }}
-    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && !github.event.created }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: read
     env:
       BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-      BASELINE: ${{ github.workspace }}/base/server/src/schema/migrations/ORDER
-      MAIN_MIGRATIONS: ${{ github.workspace }}/main/server/src/schema/migrations
+      BASELINE: ${{ github.workspace }}/.frameleaf-migration-base/server/src/schema/migrations/ORDER
       ORDER: ${{ github.workspace }}/server/src/schema/migrations/ORDER
     steps:
-      - id: token
-        if: github.repository == 'immich-app/immich'
-        uses: immich-app/devtools/actions/create-workflow-token@df46d635b905e618b88fc4c95baa920aeb30b309 # create-workflow-token-action-v3.0.1
-        with:
-          client-id: ${{ secrets.PUSH_O_MATIC_APP_CLIENT_ID }}
-          private-key: ${{ secrets.PUSH_O_MATIC_APP_KEY }}
-          permission-contents: read
-
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          token: ${{ steps.token.outputs.token || github.token }}
-
-      - name: Checkout base
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate immutable comparison commit
+        run: |-
+          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::An exact 40-character base commit SHA is required."
+            exit 1
+          fi
+      - name: Checkout exact base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          repository: Frameleaf/frameleaf-app
           ref: ${{ env.BASE_SHA }}
-          path: base
+          path: .frameleaf-migration-base
           persist-credentials: false
-          token: ${{ steps.token.outputs.token || github.token }}
-
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
-          node-version-file: '.nvmrc'
+          node-version-file: .nvmrc
           cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Verify migration ORDER
-        if: github.repository == 'immich-app/immich'
-        run: pnpm --filter immich migrations:verify-order --append-only-from "${BASELINE}"
-
+      - name: Install migration tooling
+        run: pnpm --filter immich install --frozen-lockfile
       - name: Verify fork migration ORDER by authority
-        if: github.repository == 'adamtaylor152/immich'
-        run: |
+        run: |-
           node --test scripts/check-fork-migration-order.test.mjs
           pnpm --filter immich migrations:verify-order
           node scripts/check-fork-migration-order.mjs "$BASELINE" "$ORDER"
-
-      - name: Checkout main
-        if: ${{ startsWith(github.base_ref, 'release/') || startsWith(github.ref_name, 'release/') }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: main
-          path: main
-          persist-credentials: false
-          token: ${{ steps.token.outputs.token || github.token }}
-
-      - name: Verify the release line does not diverge from main
-        if: ${{ startsWith(github.base_ref, 'release/') || startsWith(github.ref_name, 'release/') }}
-        run: pnpm --filter immich migrations:verify-order --source-folder "${MAIN_MIGRATIONS}" --append-only-from "${ORDER}"

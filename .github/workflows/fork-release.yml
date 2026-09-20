@@ -1,14 +1,16 @@
-name: Fork Release
+name: Frameleaf Release
 
+# The Docker workflow name identifies the certified candidate completion chain.
+# This workflow owns version/release/latest promotion; Docker creates candidates.
 on:
-  workflow_run:
+  workflow_run: # zizmor: ignore[dangerous-triggers] API-verified same-repo Docker run and exact current mainline SHA are required before checkout
     workflows: ['Docker']
     branches: [fork/main]
     types: [completed]
   workflow_dispatch:
 
 concurrency:
-  group: fork-release
+  group: frameleaf-release-promotion
   cancel-in-progress: false
 
 permissions: {}
@@ -17,20 +19,20 @@ jobs:
   release:
     name: Tag and release
     if: >-
-      ${{ github.repository == 'adamtaylor152/immich'
-          && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)
+      ${{ github.repository == 'Frameleaf/frameleaf-app'
           && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/fork/main')
               || (github.event_name == 'workflow_run'
-                  && github.event.workflow_run.event == 'push'
+                  && (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch')
                   && github.event.workflow_run.conclusion == 'success'
                   && github.event.workflow_run.head_repository.full_name == github.repository
                   && github.event.workflow_run.head_branch == 'fork/main')) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      actions: read
       packages: write
     steps:
-      - name: Resolve target SHA
+      - name: Verify exact mainline source and certified Docker run before checkout
         id: sha
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
@@ -38,124 +40,39 @@ jobs:
             const sha = context.eventName === 'workflow_run'
               ? context.payload.workflow_run.head_sha : context.sha;
             if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('Invalid release SHA');
-            // Do not check out triggering code until the API confirms mainline ancestry.
-            const { data: branch } = await github.rest.git.getRef({
-              ...context.repo, ref: 'heads/fork/main',
-            });
-            const { data: comparison } = await github.rest.repos.compareCommitsWithBasehead({
-              ...context.repo, basehead: `${sha}...${branch.object.sha}`,
-            });
-            if (!['ahead', 'identical'].includes(comparison.status)) {
-              throw new Error('Release SHA is not on fork/main');
+            const { data: branch } = await github.rest.git.getRef({ ...context.repo, ref: 'heads/fork/main' });
+            if (branch.object.sha !== sha) throw new Error('Stale release candidate: fork/main has moved');
+            const trusted = (run) => run.head_sha === sha && run.head_branch === 'fork/main'
+              && run.head_repository?.full_name === 'Frameleaf/frameleaf-app'
+              && ['push', 'workflow_dispatch'].includes(run.event)
+              && run.status === 'completed' && run.conclusion === 'success'
+              && run.path === '.github/workflows/docker.yml';
+            let run;
+            if (context.eventName === 'workflow_run') {
+              ({ data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: context.payload.workflow_run.id }));
+            } else {
+              const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                ...context.repo, workflow_id: 'docker.yml', head_sha: sha, per_page: 100,
+              });
+              run = runs.find(trusted);
             }
+            if (!run || !trusted(run)) throw new Error('A successful same-SHA canonical Docker run is required, including integration and roundtrip certification');
             core.setOutput('sha', sha);
-
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+            core.setOutput('run', String(run.id));
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ steps.sha.outputs.sha }}
-          fetch-depth: 0
-          # SECURITY: don't persist the default GITHUB_TOKEN for subsequent steps.
-          # The only step that needs git authorship below (`gh release create`)
-          # uses GH_TOKEN environment variable explicitly, not the persisted
-          # checkout credentials.
           persist-credentials: false
-
-      - name: Compute next fork tag
-        id: tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-          OWNER_REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          UPSTREAM_VERSION=$(jq -r '.version' server/package.json)
-          PREFIX="fork-v${UPSTREAM_VERSION}-"
-          # Use the GitHub API (authoritative) instead of local git tags to
-          # tolerate sibling runs that publish a tag while this one is building.
-          # Falls back to git tags if the API call fails (e.g. rate-limited).
-          # grep returns 1 on no matches which would kill the pipeline under
-          # pipefail; wrap so the first-ever run (no fork-v* tags yet) is fine
-          # and LAST_N stays empty, letting NEXT_N default to 1.
-          #
-          # PAGINATION: --paginate walks all pages so very long-lived forks with
-          # >100 releases still find the highest fork-vX-N tag correctly. The
-          # git-tags fallback below also covers any API hiccup mid-pagination.
-          API_TAGS=$(gh api --paginate "repos/${OWNER_REPO}/releases?per_page=100" \
-            --jq '.[].tag_name' 2>/dev/null || true)
-          if [[ -z "${API_TAGS}" ]]; then
-            echo "GitHub API returned no releases; falling back to local git tags"
-            git fetch --tags --quiet origin || true
-            API_TAGS=$(git tag --list "${PREFIX}*" || true)
-          fi
-          LAST_N=$(printf '%s\n' "${API_TAGS}" \
-            | { grep -E "^${PREFIX}[0-9]+$" || true; } \
-            | sed "s|^${PREFIX}||" \
-            | { grep -E '^[0-9]+$' || true; } \
-            | sort -n \
-            | tail -1)
-          NEXT_N=$(( ${LAST_N:-0} + 1 ))
-          TAG="${PREFIX}${NEXT_N}"
-          PREV_TAG="${PREFIX}${LAST_N}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "prev_tag=${LAST_N:+$PREV_TAG}" >> "$GITHUB_OUTPUT"
-          echo "upstream=$UPSTREAM_VERSION" >> "$GITHUB_OUTPUT"
-          echo "Computed tag: $TAG (upstream v$UPSTREAM_VERSION, prev: ${PREV_TAG:-none})"
-
-      - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Retag images
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Verify all manifests, attach pinned installation files and promote
         env:
-          TAG: ${{ steps.tag.outputs.tag }}
-          OWNER: ${{ github.repository_owner }}
-          SHA: ${{ steps.sha.outputs.sha }}
-        run: |
-          set -euo pipefail
-          # Use the immutable per-commit tag `:commit-<sha>` published by the
-          # Docker workflow rather than the mutable `:fork-main` floating tag.
-          # `:fork-main` is overwritten on every push to fork/main, so retagging
-          # from it can promote a stale commit's digest under a "release" tag
-          # while the GitHub release's target_commitish points elsewhere.
-          # `:commit-<sha>` is digest-immutable for the same commit.
-          for IMG in immich-server immich-machine-learning; do
-            SRC="ghcr.io/${OWNER}/${IMG}:commit-${SHA}"
-            echo "Verifying source image exists: ${SRC}"
-            if ! docker buildx imagetools inspect "${SRC}" > /dev/null 2>&1; then
-              echo "::error::Commit-tagged image ${SRC} not found in GHCR."
-              echo "::error::The Docker workflow may not have pushed the per-commit tag yet."
-              echo "::error::Refusing to retag from mutable :fork-main to avoid promoting a stale commit."
-              exit 1
-            fi
-            # Retag to the release-specific tag first, then promote to `release`.
-            # If the per-version tag push fails, we never overwrite `release`.
-            echo "Tagging ${SRC} -> ghcr.io/${OWNER}/${IMG}:${TAG}"
-            docker buildx imagetools create \
-              -t "ghcr.io/${OWNER}/${IMG}:${TAG}" \
-              "$SRC"
-            echo "Tagging ${SRC} -> ghcr.io/${OWNER}/${IMG}:release"
-            docker buildx imagetools create \
-              -t "ghcr.io/${OWNER}/${IMG}:release" \
-              "$SRC"
-          done
-
-      - name: Create GitHub release
-        env:
+          SOURCE_SHA: ${{ steps.sha.outputs.sha }}
+          CERTIFIED_RUN_ID: ${{ steps.sha.outputs.run }}
+          GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.tag.outputs.tag }}
-          PREV_TAG: ${{ steps.tag.outputs.prev_tag }}
-          UPSTREAM: ${{ steps.tag.outputs.upstream }}
-          SHA: ${{ steps.sha.outputs.sha }}
-        run: |
-          set -euo pipefail
-          NOTES_ARGS=(--generate-notes)
-          if [[ -n "$PREV_TAG" ]]; then
-            NOTES_ARGS+=(--notes-start-tag "$PREV_TAG")
-          fi
-          gh release create "$TAG" \
-            --target "$SHA" \
-            --title "$TAG (upstream v${UPSTREAM})" \
-            "${NOTES_ARGS[@]}"
+        run: node .github/frameleaf-release.cjs release

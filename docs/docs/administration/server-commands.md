@@ -1,6 +1,6 @@
 # Server Commands
 
-The `immich-server` docker image comes preinstalled with an administrative CLI (`immich-admin`) that supports the following commands:
+The `ghcr.io/frameleaf/frameleaf-server` container image comes preinstalled with an administrative CLI (`immich-admin`) that supports the following commands:
 
 | Command                    | Description                                                   |
 | -------------------------- | ------------------------------------------------------------- |
@@ -21,7 +21,7 @@ The `immich-server` docker image comes preinstalled with an administrative CLI (
 
 ## How to run a command
 
-To run a command, [connect](/guides/docker-help.md#attach-to-a-container) to the `immich_server` container and then execute the command via `immich-admin <command>`.
+From your Compose directory, run `docker compose exec immich-server immich-admin <command>`. For an interactive shell, use `docker compose exec immich-server bash`, then run `immich-admin <command>`. The `immich-server` service name is unchanged by the Frameleaf container rename.
 
 ## Examples
 

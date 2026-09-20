@@ -1,0 +1,283 @@
+.account-preferences {
+  color: var(--fl-text);
+  min-width: 0;
+  container-type: inline-size;
+  font-size: 12px;
+}
+.account-preferences .ap-controls {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.account-preferences .ap-context {
+  margin: 0 0 18px;
+  color: var(--fl-muted);
+  line-height: 1.6;
+  max-width: 70ch;
+}
+.account-preferences .ap-feature-head,
+.account-preferences .ap-feature {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 88px 160px;
+  gap: 10px 16px;
+  align-items: center;
+}
+.account-preferences .ap-feature-head {
+  color: var(--fl-muted);
+  font-size: 10px;
+  padding: 0 0 10px;
+}
+.account-preferences .ap-feature-head > :not(:first-child) {
+  text-align: center;
+}
+.account-preferences .ap-feature {
+  padding: 15px 0;
+  border-top: 1px solid var(--fl-border);
+}
+.account-preferences .ap-feature-name strong {
+  display: block;
+  font-weight: 580;
+  font-size: 13px;
+}
+.account-preferences small {
+  display: block;
+  color: var(--fl-muted);
+  font-size: 11px;
+  line-height: 1.6;
+  margin-top: 4px;
+}
+.account-preferences .ap-feature-check {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  min-height: 30px;
+  gap: 8px;
+  cursor: pointer;
+}
+.account-preferences input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--fl-accent);
+}
+.account-preferences .ap-feature-check > span {
+  display: none;
+}
+.account-preferences .ap-not-applicable {
+  text-align: center;
+  color: var(--fl-muted);
+}
+.account-preferences .ap-feature-detail {
+  grid-column: 1 / -1;
+  padding-top: 3px;
+}
+.account-preferences .ap-feature-detail .ap-field {
+  grid-template-columns: minmax(150px, 1fr) 90px;
+  align-items: center;
+  max-width: 520px;
+}
+.account-preferences .ap-feature-detail .ap-field small {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.account-preferences .ap-standalone {
+  border-top: 1px solid var(--fl-border);
+  padding-top: 18px;
+}
+.account-preferences .ap-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+.account-preferences .ap-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.account-preferences .ap-field > span {
+  font-weight: 550;
+}
+.account-preferences .ap-field input,
+.account-preferences .ap-field select {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 36px;
+  font: inherit;
+  background: var(--fl-canvas);
+  color: var(--fl-text);
+  border: 1px solid var(--fl-border);
+  border-radius: 5px;
+  padding: 7px 10px;
+}
+.account-preferences .ap-toggle {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  align-items: start;
+  padding: 10px 0;
+  cursor: pointer;
+}
+.account-preferences .ap-toggle input {
+  margin-top: 2px;
+}
+.account-preferences .ap-toggle strong {
+  font-weight: 550;
+}
+.account-preferences .ap-group {
+  margin-top: 20px;
+  border-top: 1px solid var(--fl-border);
+  padding-top: 18px;
+}
+.account-preferences h3 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.account-preferences .ap-group .ap-field {
+  max-width: 350px;
+  margin-top: 12px;
+}
+.account-preferences .ap-notification-children {
+  margin: 10px 0 0 7px;
+  border-left: 1px solid var(--fl-border);
+  padding: 0 0 0 20px;
+}
+.account-preferences .ap-private {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-top: 1px solid var(--fl-border);
+  padding-top: 20px;
+  margin-top: 24px;
+}
+.account-preferences .ap-private p {
+  margin: 0;
+  color: var(--fl-muted);
+  line-height: 1.6;
+}
+.account-preferences .ap-private h3 {
+  margin-bottom: 4px;
+}
+.account-preferences .ap-save-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  border-top: 1px solid var(--fl-border);
+  margin-top: 24px;
+  padding-top: 16px;
+}
+.account-preferences .ap-save-bar > span {
+  color: var(--fl-muted);
+  font-size: 11px;
+}
+.account-preferences .ap-save-bar > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.account-preferences button {
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  min-height: 34px;
+  padding: 7px 12px;
+  background: var(--fl-raised);
+  color: var(--fl-text);
+  border: 1px solid var(--fl-border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.account-preferences button:hover {
+  border-color: var(--fl-muted);
+}
+.account-preferences button.ap-primary {
+  background: var(--fl-accent);
+  color: var(--fl-canvas);
+  border-color: transparent;
+  font-weight: 600;
+}
+.account-preferences :disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.account-preferences fieldset:disabled {
+  opacity: 0.7;
+}
+.account-preferences :focus-visible {
+  outline: 2px solid var(--fl-accent);
+  outline-offset: 3px;
+}
+.account-preferences .ap-error {
+  color: var(--fl-danger, #d95d53);
+  line-height: 1.6;
+}
+.account-preferences .ap-notice {
+  color: var(--fl-muted);
+  line-height: 1.6;
+}
+.account-preferences .ap-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--fl-raised);
+  border-left: 2px solid var(--fl-accent);
+  padding: 12px;
+  margin-bottom: 18px;
+  line-height: 1.6;
+}
+.account-preferences .ap-conflict span {
+  flex: 1 1 250px;
+}
+@container (max-width: 560px) {
+  .account-preferences .ap-feature-head {
+    display: none;
+  }
+  .account-preferences .ap-feature {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
+  }
+  .account-preferences .ap-feature-name {
+    grid-column: 1 / -1;
+  }
+  .account-preferences .ap-feature-check {
+    justify-content: start;
+    min-height: 40px;
+    font-size: 11px;
+  }
+  .account-preferences .ap-feature-check > span {
+    display: inline;
+  }
+  .account-preferences .ap-not-applicable {
+    display: none;
+  }
+  .account-preferences .ap-fields {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .account-preferences .ap-private {
+    align-items: start;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .account-preferences .ap-feature-detail .ap-field {
+    grid-template-columns: minmax(0, 1fr) 80px;
+  }
+  .account-preferences .ap-save-bar > div {
+    flex: 1 1 100%;
+  }
+  .account-preferences button,
+  .account-preferences .ap-field input,
+  .account-preferences .ap-field select {
+    min-height: 40px;
+  }
+}

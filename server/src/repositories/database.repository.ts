@@ -109,6 +109,7 @@ const LEGACY_TRIGGER_NAMES = new Set([
 
 const LEGACY_MIGRATION_OVERRIDE_NAMES = new Set([
   'function_album_parent_cycle_check',
+  'function_media_health_updated_at',
   'index_album_parentId_idx',
   'index_album_parent_sort_idx',
   'index_album_root_sort_idx',

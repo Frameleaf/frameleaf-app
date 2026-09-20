@@ -1629,11 +1629,11 @@
       "repaired_corrupt": "Corrupt media repaired",
       "repaired_missing": "Missing media repaired",
       "requires_review": "Requires review",
+      "retained_staging_bytes": "Retained staging bytes outside current selection",
       "retry": "Waiting to retry",
       "staged": "Staged resources",
       "staging_bytes": "Reserved staging bytes",
-      "unsupported": "Unsupported resources",
-      "retained_staging_bytes": "Retained staging bytes outside current selection"
+      "unsupported": "Unsupported resources"
     },
     "counts_note": "Counts are saved on the server. One photo can have several resources. Authentication challenges, partial inventory, and deferred repairs are not completed imports. Finding an exact duplicate may require an initial download.",
     "device_approval_notice": "Approve web access on a trusted Apple device, then check approval. Each click makes one approval request.",
@@ -1656,6 +1656,9 @@
     "next_run": "Next scheduled run",
     "partial_inventory": "This inventory is incomplete. Load it again before relying on the selection. No missing albums or memberships will be treated as authoritative removals.",
     "policies": "Media and recovery policies",
+    "recent_results": "Recent verified results",
+    "resolved_corrupt": "Resolved corruption history",
+    "resolved_missing": "Resolved missing-file history",
     "resources": "File resources",
     "safe_error": "Action needed",
     "saved": "iCloud settings saved",
@@ -1668,10 +1671,7 @@
     "unsupported": "unsupported",
     "verification_code": "Six-digit verification code",
     "verify": "Verify code",
-    "recent_results": "Recent verified results",
-    "view_asset": "View media",
-    "resolved_missing": "Resolved missing-file history",
-    "resolved_corrupt": "Resolved corruption history"
+    "view_asset": "View media"
   },
   "icon": "Icon",
   "id": "ID",

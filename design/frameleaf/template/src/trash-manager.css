@@ -1,0 +1,274 @@
+.trash-manager {
+  min-width: 0;
+}
+.trash-manager p {
+  color: var(--fl-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.tm-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  padding: 23px 0 10px;
+}
+.tm-summary strong {
+  display: block;
+  font-size: 25px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+.tm-summary span {
+  display: block;
+  font-size: 11px;
+  color: var(--fl-muted);
+  margin-top: 7px;
+}
+.trash-manager .tm-retention {
+  max-width: 850px;
+  font-size: 11px;
+  margin: 8px 0 22px;
+}
+.tm-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  padding-block: 16px;
+  border-block: 1px solid var(--fl-border);
+}
+.tm-toolbar > label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 140px;
+  font-size: 11px;
+  color: var(--fl-muted);
+}
+.tm-toolbar > label:first-child {
+  flex: 1;
+}
+.trash-manager input:not([type="checkbox"]),
+.trash-manager select,
+.tm-confirm input {
+  width: 100%;
+  border: 1px solid var(--fl-border);
+  border-radius: 3px;
+  color: var(--fl-text);
+  background: var(--fl-panel);
+  font-size: 12px;
+  padding: 10px;
+}
+.trash-manager input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--fl-accent);
+  margin: 0;
+}
+.tm-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding: 16px 0;
+}
+.tm-actions > label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin-right: auto;
+  font-size: 12px;
+}
+.tm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 16px;
+}
+.tm-grid article {
+  min-width: 0;
+  border: 1px solid var(--fl-border);
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--fl-panel);
+}
+.tm-grid article.selected {
+  border-color: var(--fl-accent);
+}
+.tm-photo {
+  position: relative;
+}
+.tm-photo > button {
+  display: block;
+  padding: 0;
+  width: 100%;
+  aspect-ratio: 1.5;
+  overflow: hidden;
+}
+.tm-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.tm-photo > label {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: #111a;
+  border-radius: 3px;
+  padding: 7px;
+  cursor: pointer;
+}
+.tm-photo > span {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  font-size: 10px;
+  background: #111b;
+  color: #fff;
+  padding: 4px 6px;
+}
+.tm-detail {
+  padding: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 8px;
+}
+.tm-detail strong {
+  font-size: 12px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.tm-detail span,
+.tm-detail small {
+  font-size: 10px;
+  color: var(--fl-muted);
+}
+.tm-detail .button {
+  margin-top: 5px;
+}
+.tm-all {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--fl-border);
+  padding-top: 20px;
+  margin-top: 26px;
+}
+.tm-all > div {
+  flex: 1;
+}
+.tm-all strong {
+  font-size: 13px;
+  font-weight: 550;
+}
+.tm-all p {
+  font-size: 11px;
+  margin: 7px 0;
+}
+.tm-empty {
+  text-align: center;
+  padding: 50px 20px;
+  color: var(--fl-muted);
+}
+.tm-empty h2 {
+  font-size: 20px;
+  font-weight: 500;
+  margin-top: 18px;
+  color: var(--fl-text);
+}
+.tm-empty p {
+  max-width: 500px;
+  margin: 12px auto;
+}
+.tm-notice {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: var(--fl-panel);
+  border-left: 2px solid var(--fl-accent);
+  padding: 9px 12px;
+  margin-top: 16px;
+  font-size: 12px;
+}
+.tm-notice span {
+  flex: 1;
+}
+.tm-error {
+  padding: 12px;
+  border-left: 2px solid #d3977e;
+  background: var(--fl-panel);
+}
+.button.tm-delete {
+  color: #d89783;
+  border-color: color-mix(in srgb, #d89783 35%, var(--fl-border));
+}
+[data-theme="light"] .button.tm-delete {
+  color: #983d29;
+}
+.tm-preview {
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  background: var(--fl-canvas);
+}
+.tm-delete-list {
+  padding: 12px 12px 12px 30px;
+  background: var(--fl-panel);
+  font-size: 12px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.tm-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 12px;
+}
+@media (max-width: 700px) {
+  .tm-summary {
+    gap: 10px;
+  }
+  .tm-summary strong {
+    font-size: 20px;
+  }
+  .tm-summary span {
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  .tm-toolbar {
+    flex-wrap: wrap;
+  }
+  .tm-toolbar > label:first-child {
+    flex-basis: 100%;
+  }
+  .tm-toolbar > label {
+    flex: 1;
+    min-width: 0;
+  }
+  .tm-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .tm-actions > label {
+    flex-basis: 100%;
+    margin-bottom: 5px;
+  }
+  .tm-all {
+    flex-wrap: wrap;
+  }
+  .tm-all > div {
+    flex-basis: 100%;
+  }
+  .trash-manager .button {
+    min-height: 40px;
+    font-size: 11px;
+  }
+  .tm-detail {
+    padding: 10px;
+  }
+}

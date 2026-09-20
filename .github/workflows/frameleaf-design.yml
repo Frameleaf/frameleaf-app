@@ -1,0 +1,43 @@
+name: Frameleaf design template
+'on':
+  pull_request:
+    branches: [fork/main]
+    paths:
+      - design/frameleaf/**
+      - .github/workflows/frameleaf-design.yml
+  push:
+    branches: [fork/main]
+    paths:
+      - design/frameleaf/**
+      - .github/workflows/frameleaf-design.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  design:
+    name: Frameleaf Design Template
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: design/frameleaf/template
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: design/frameleaf/template/pnpm-lock.yaml
+      - name: Install template dependencies
+        run: pnpm install --ignore-workspace --frozen-lockfile --ignore-scripts
+      - name: Test portable interactions
+        run: pnpm test
+      - name: Build portable template
+        run: pnpm build
