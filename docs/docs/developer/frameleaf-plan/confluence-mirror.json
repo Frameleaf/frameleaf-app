@@ -652,6 +652,18 @@
       "version": 4
     },
     {
+      "bytes": 5748,
+      "category": "development",
+      "id": "61407916",
+      "source": "docs/docs/developer/frameleaf-baseline-inventory.md",
+      "sourceSha256": "864fc74747c0d443da995210d51cbf1aeb4ee2d60d995bee234420e91a8c6e2d",
+      "title": "Frameleaf working-tree baseline inventory",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407916/Frameleaf+working-tree+baseline+inventory",
+      "verification": "Source path, candidate status, source and reconciliation hashes, exact-main identity, 164/3356 dispositions, 1603 unresolved routing paths, epic-routing semantics, and remaining FL-25 acceptance read back after update.",
+      "verifiedAt": "2026-09-20T13:01:15.759Z",
+      "version": 4
+    },
+    {
       "bytes": 26181,
       "category": "development",
       "id": "61407844",
@@ -660,9 +672,9 @@
       "sourceSha256": "b178313fd1253361a298be39a5bba575cdc26e0b548e1a6b9abe631125f19406",
       "title": "Frameleaf Development and Delivery",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844",
-      "verification": "Full normalized page readback verified after owner merge; source content and hash unchanged.",
-      "verifiedAt": "2026-09-20T07:35:43.401Z",
-      "version": 7
+      "verification": "Full normalized development-guide content, source hash marker, and terminal closeout text read back after removing an unrelated inventory append; source content and hash remain unchanged.",
+      "verifiedAt": "2026-09-20T13:00:37.669Z",
+      "version": 9
     },
     {
       "bytes": 411,

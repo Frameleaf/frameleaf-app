@@ -45,7 +45,7 @@ The deterministic [reconciliation receipt](evidence/fl25-working-tree-reconcilia
 
 - **164 already represented** paths whose preserved SHA-256 is byte-identical to the blob at that exact main commit;
 - **3,356 preserved-only, unaccepted** paths, comprising 192 paths whose main blob differs and 3,164 paths absent from that main tree;
-- future Plan ID, Jira key, and workstream routing only where the current backlog, native ownership map, or pinned Freecut map names the exact path.
+- source-backed Plan ID, Jira key, issue type, and workstream routing only where the current backlog, native ownership map, or pinned Freecut map names the exact path. The receipt contains 44 epic references spanning 36 paths and 17 unique epic IDs; those references describe scope routing, not actionable implementation owners.
 
 The earlier **3,518 unreviewed** wording describes the inventory's review-state labels: 3,518 `unreviewed-local-change` paths plus two `local-evidence` paths. It is not a count of paths absent from current main, and it is not an acceptance disposition. All 3,356 preserved-only paths remain unaccepted; the two local-evidence paths remain unaccepted too.
 
@@ -60,11 +60,13 @@ node scripts/frameleaf-baseline-reconciliation.mjs \
 node --test scripts/frameleaf-baseline-reconciliation.test.mjs
 ```
 
-The validator rejects duplicate JSON keys, non-canonical output, any path/hash/order or disposition drift from the authoritative inventory, main-blob relation drift, and count drift. Ownership metadata is dispatch routing, not proof that a path is implemented, reviewed, accepted, qualified, or ready to copy.
+The validator rejects duplicate JSON keys, non-canonical output, any path/hash/order or disposition drift from the authoritative inventory, main-blob relation drift, routing-count drift, and count drift. Routing metadata is not proof that a path is implemented, reviewed, accepted, qualified, ready to copy, or owned by an agent.
 
-## FL-25 completion boundary
+## Remaining FL-25 acceptance
 
-- The receipt closes path accounting only. It accepts no preserved-only application source and does not qualify product behavior.
-- Future implementation owners must inspect the preserved evidence and current production source for their assigned issue; they may not bulk-copy this checkout.
+- The receipt proves deterministic preservation and classification only. It does not complete FL-25, unblock dependent issues, accept preserved-only application source, or qualify product behavior.
+- **1,603 paths still lack exact source-backed future routing:** 1,602 are labeled `unreviewed-local-change` and one is labeled `local-evidence`. Resolving those paths remains explicit FL-25 acceptance work.
+- The source-backed routing on the other 1,917 paths is a future triage hint. Its 44 epic references across 36 paths and 17 unique epic IDs identify scope only; they are not assignments to actionable implementation owners and do not establish dependency readiness.
+- Future implementation owners must inspect the preserved evidence and current production source after their issue is independently ready and assigned; they may not bulk-copy this checkout.
 - Generated/cache material remains subject to issue-specific regeneration and review rather than implicit acceptance.
 - Downstream issues remain governed by their declared dependencies and issue-specific evidence. This receipt does not itself start, qualify, release, publish, or deploy them.
