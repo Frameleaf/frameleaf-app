@@ -6,7 +6,7 @@ title: Frameleaf working-tree baseline inventory
 
 FL-25 preserves the original application checkout without treating its uncommitted contents as part of `fork/main`. The inventory generator records every reviewable modified or untracked path, its working-tree bytes, Git state, workstream, and conservative review state.
 
-The isolated FL-25 checkout was created from fetched `frameleaf/fork/main` commit `2cdd7f016ccfe08a2fa10804c6da1c7c04d281d0`. Before this slice made any edits, these read-only checks returned the same commit and an empty status payload:
+The original isolated FL-25 inventory checkout was created from fetched `frameleaf/fork/main` commit `2cdd7f016ccfe08a2fa10804c6da1c7c04d281d0`. Before that inventory slice made any edits, read-only checks returned the same commit and an empty status payload:
 
 ```text
 git rev-parse HEAD
@@ -39,11 +39,32 @@ The generator formats both outputs through the repository's pinned Prettier and 
 
 The generated JSON is the path-level evidence. The generated Markdown is a review summary. Neither file authorizes copying local application code into another worktree.
 
-## Remaining FL-25 acceptance
+## Exact-main reconciliation receipt
 
-- Review and assign every `unreviewed-local-change`; a deterministic inventory is not acceptance of the change.
-- Separate generated/cache material from reproducible source and decide what must be regenerated rather than committed.
-- Reconcile the dirty checkout's older HEAD with the merged baseline without reset, stash, clean, or bulk copying.
-- Record tool versions alongside the eventual reviewed implementation candidates.
-- Keep downstream issues blocked until their required source is reviewed and present in a clean, fetched-baseline worktree.
-- The implementation-plan and agent-execution Markdown referenced by Jira are not present in this merged baseline; restore them through a separately reviewed documentation slice rather than importing them implicitly.
+The deterministic [reconciliation receipt](evidence/fl25-working-tree-reconciliation.json) compares all **3,520** preserved paths and hashes with freshly fetched literal `fork/main` commit `7eab5558e612b44e519052b5bf4da0c628f9093f` (tree `a8719fc6b2f6f5f0082f87ae4fd58967c0d5c6d1`). It does not read or import preserved source bytes. It records:
+
+- **164 already represented** paths whose preserved SHA-256 is byte-identical to the blob at that exact main commit;
+- **3,356 preserved-only, unaccepted** paths, comprising 192 paths whose main blob differs and 3,164 paths absent from that main tree;
+- future Plan ID, Jira key, and workstream routing only where the current backlog, native ownership map, or pinned Freecut map names the exact path.
+
+The earlier **3,518 unreviewed** wording describes the inventory's review-state labels: 3,518 `unreviewed-local-change` paths plus two `local-evidence` paths. It is not a count of paths absent from current main, and it is not an acceptance disposition. All 3,356 preserved-only paths remain unaccepted; the two local-evidence paths remain unaccepted too.
+
+Reproduce or check the receipt without making the dirty checkout an input:
+
+```sh
+node scripts/frameleaf-baseline-reconciliation.mjs \
+  --current-main 7eab5558e612b44e519052b5bf4da0c628f9093f
+node scripts/frameleaf-baseline-reconciliation.mjs \
+  --check \
+  --current-main 7eab5558e612b44e519052b5bf4da0c628f9093f
+node --test scripts/frameleaf-baseline-reconciliation.test.mjs
+```
+
+The validator rejects duplicate JSON keys, non-canonical output, any path/hash/order or disposition drift from the authoritative inventory, main-blob relation drift, and count drift. Ownership metadata is dispatch routing, not proof that a path is implemented, reviewed, accepted, qualified, or ready to copy.
+
+## FL-25 completion boundary
+
+- The receipt closes path accounting only. It accepts no preserved-only application source and does not qualify product behavior.
+- Future implementation owners must inspect the preserved evidence and current production source for their assigned issue; they may not bulk-copy this checkout.
+- Generated/cache material remains subject to issue-specific regeneration and review rather than implicit acceptance.
+- Downstream issues remain governed by their declared dependencies and issue-specific evidence. This receipt does not itself start, qualify, release, publish, or deploy them.
