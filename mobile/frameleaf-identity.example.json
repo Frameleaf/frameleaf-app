@@ -1,8 +1,8 @@
 {
   "androidApplicationId": "",
   "androidSigningSha256": "",
+  "iosAppGroupId": "",
   "iosBundleId": "",
   "iosDevelopmentBundleId": "",
-  "iosTeamId": "",
-  "iosAppGroupId": ""
+  "iosTeamId": ""
 }
