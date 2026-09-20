@@ -1,120 +1,169 @@
-// Run with: node .github/check-runners.cjs (after installing workspace dependencies).
+// Read-only contract checks for hosted CI and the canonical container publisher.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { createRequire } = require("node:module");
-const { execFileSync } = require("node:child_process");
-const { runInNewContext } = require("node:vm");
 const { load } = createRequire(
   path.resolve(__dirname, "../server/package.json"),
 )("js-yaml");
-
-const workflows = path.join(__dirname, "workflows");
-let checked = 0;
-for (const file of fs
-  .readdirSync(workflows)
-  .filter((name) => /\.ya?ml$/.test(name))) {
-  const workflow = load(fs.readFileSync(path.join(workflows, file), "utf8"));
+const { VARIANTS, validateBuildInput } = require("./frameleaf-release.cjs");
+const directory = path.join(__dirname, "workflows");
+const workflows = Object.fromEntries(
+  fs
+    .readdirSync(directory)
+    .filter((file) => /\.ya?ml$/.test(file))
+    .map((file) => [
+      file,
+      load(fs.readFileSync(path.join(directory, file), "utf8")),
+    ]),
+);
+const hosted = new Set([
+  "ubuntu-24.04",
+  "ubuntu-24.04-arm",
+  "windows-latest",
+  "macos-26",
+]);
+let count = 0;
+for (const [file, workflow] of Object.entries(workflows)) {
+  assert(
+    !JSON.stringify(workflow).match(
+      /adamtaylor152|altran1502|secrets\.(PUSH_O_MATIC|DOCKERHUB|FDROID|CLOUDFLARE)/,
+    ),
+    `${file}: inherited identity, publishing destination or secret`,
+  );
   for (const [id, job] of Object.entries(workflow.jobs)) {
-    const location = `${file}: ${id}`;
+    const label = `${file}/${id}`;
     for (const step of job.steps || []) {
-      if (step.uses && !step.uses.startsWith("./")) {
+      if (step.uses && !step.uses.startsWith("./"))
         assert.match(
           step.uses,
-          /@[0-9a-f]{40}$/,
-          `${location}: action must be commit-pinned`,
+          /@[a-f0-9]{40}$/,
+          `${label}: action must be commit-pinned`,
         );
-      }
+      if (step.uses?.startsWith("actions/checkout@"))
+        assert.equal(
+          step.with?.["persist-credentials"],
+          false,
+          `${label}: checkout must not retain credentials`,
+        );
     }
     if (job.uses) {
-      assert.ok(
+      assert(
         job.uses.startsWith("./.github/workflows/"),
-        `${location}: external workflow controls its own runners`,
+        `${label}: remote workflow could route execution elsewhere`,
       );
-      continue;
-    }
-    const runner = job["runs-on"];
-    if (file === "local-multi-runner-build.yml" && id === "build") {
-      assert.equal(
-        runner,
-        "${{ matrix.runner }}",
-        `${location}: use native architecture runner`,
+      assert(
+        fs.existsSync(path.resolve(__dirname, "..", job.uses)),
+        `${label}: missing local workflow`,
       );
-    } else {
-      assert.ok(
-        ["ubuntu-24.04", "windows-latest", "macos-26"].includes(runner),
-        `${location}: must use a GitHub-hosted runner`,
+    } else if (job["runs-on"] === "${{ matrix.runner }}") {
+      if (file === "local-multi-runner-build.yml" && id === "build")
+        assert.equal(
+          job.strategy.matrix.include,
+          "${{ fromJSON(needs.matrix.outputs.matrix) }}",
+        );
+      else {
+        const runners = job.strategy?.matrix?.runner;
+        assert(
+          Array.isArray(runners) &&
+            runners.length &&
+            runners.every((runner) => hosted.has(runner)),
+          `${label}: uncontrolled runner matrix`,
+        );
+      }
+    } else
+      assert(
+        hosted.has(job["runs-on"]),
+        `${label}: not a supported hosted runner`,
       );
-    }
-    assert.ok(
-      job.if?.includes("github.repository == 'adamtaylor152/immich'") &&
-        job.if?.includes(
-          "!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository",
-        ),
-      `${location}: missing same-repository admission guard`,
-    );
-    checked++;
+    count++;
   }
 }
-const iosBuild = load(
-  fs.readFileSync(path.join(workflows, "build-mobile.yml"), "utf8"),
-).jobs["build-sign-ios"];
-for (const [headRepo, mobile, signing, expected] of [
-  ["adamtaylor152/immich", true, "true", true],
-  ["external/immich", true, "true", false],
-  ["adamtaylor152/immich", false, "true", false],
-  ["adamtaylor152/immich", true, "false", false],
-]) {
-  assert.equal(
-    runInNewContext(iosBuild.if.slice(3, -2), {
-      github: {
-        repository: "adamtaylor152/immich",
-        event: {
-          pull_request: { head: { repo: { full_name: headRepo, fork: true } } },
-        },
-      },
-      needs: {
-        "pre-job": { outputs: { should_run: JSON.stringify({ mobile }) } },
-        "check-signing-secrets": { outputs: { "has-ios": signing } },
-      },
-      fromJSON: JSON.parse,
-    }),
-    expected,
-    "iOS admission must allow trusted fork branches while preserving change/signing gates",
+const docker = workflows["docker.yml"];
+assert.deepEqual(docker.on.push.branches, ["fork/main"]);
+assert(
+  !docker.on.pull_request && !docker.on.release,
+  "Candidate publishing must not run on PR/release events",
+);
+for (const name of ["server", "machine-learning"])
+  assert.deepEqual(
+    docker.jobs[name].needs,
+    ["integration", "certification"],
+    "Both quality gates must precede publishing",
   );
-}
-const imageBuild = load(
-  fs.readFileSync(path.join(workflows, "local-multi-runner-build.yml"), "utf8"),
+assert.equal(
+  docker.jobs.integration.uses,
+  "./.github/workflows/fork-integration.yml",
 );
-const matrixStep = imageBuild.jobs.matrix.steps.find(
-  (step) => step.id === "matrix",
+assert.equal(
+  docker.jobs.certification.uses,
+  "./.github/workflows/fork-roundtrip.yml",
 );
-for (const [platforms, expected] of [
-  [
-    "linux/amd64,linux/arm64",
-    [
-      { platform: "linux/amd64", runner: "ubuntu-24.04" },
-      { platform: "linux/arm64", runner: "ubuntu-24.04-arm" },
-    ],
-  ],
-  ["linux/arm64", [{ platform: "linux/arm64", runner: "ubuntu-24.04-arm" }]],
-]) {
-  const output = execFileSync("bash", ["-e", "-c", matrixStep.run], {
-    env: { ...process.env, PLATFORMS: platforms, GITHUB_OUTPUT: "/dev/null" },
-    encoding: "utf8",
-  });
-  assert.deepEqual(JSON.parse(output.trim().slice("matrix=".length)), expected);
+assert(Object.hasOwn(workflows["fork-integration.yml"].on, "workflow_call"));
+assert(
+  !workflows["fork-integration.yml"].on.push,
+  "Mainline integration is invoked by Docker only",
+);
+const ml = docker.jobs["machine-learning"].strategy.matrix.include;
+assert.deepEqual(
+  ml.map(({ device, suffix, platforms, target }) => ({
+    device,
+    suffix,
+    platforms,
+    target,
+  })),
+  VARIANTS.slice(1).map((v) => ({
+    device: v.device,
+    suffix: v.suffix,
+    platforms: v.platforms.join(","),
+    target: v.target,
+  })),
+);
+for (const spec of VARIANTS) {
+  const input = {
+    IMAGE: spec.image,
+    SUFFIX: spec.suffix,
+    DEVICE: spec.device,
+    PLATFORMS: spec.platforms.join(","),
+    TARGET: spec.target,
+    CONTEXT: spec.context,
+    DOCKERFILE: spec.dockerfile,
+    SOURCE_SHA: "a".repeat(40),
+    GITHUB_SHA: "a".repeat(40),
+    GITHUB_REPOSITORY: "Frameleaf/frameleaf-app",
+    GITHUB_REF: "refs/heads/fork/main",
+    GITHUB_EVENT_NAME: "push",
+  };
+  const matrix = validateBuildInput(input);
+  assert.deepEqual(
+    matrix.map((row) => row.platform),
+    spec.platforms,
+  );
+  assert(matrix.every((row) => hosted.has(row.runner)));
+  for (const change of [
+    { PLATFORMS: "linux/ppc64le" },
+    { PLATFORMS: "linux/amd64,linux/amd64" },
+    { TARGET: "attacker" },
+    { GITHUB_EVENT_NAME: "pull_request" },
+    { GITHUB_REF: "refs/heads/feature" },
+    { SOURCE_SHA: "b".repeat(40) },
+  ])
+    assert.throws(() => validateBuildInput({ ...input, ...change }));
 }
-assert.throws(() =>
-  execFileSync("bash", ["-e", "-c", matrixStep.run], {
-    env: {
-      ...process.env,
-      PLATFORMS: "linux/ppc64le",
-      GITHUB_OUTPUT: "/dev/null",
-    },
-    stdio: "pipe",
-  }),
+const unraid = workflows["nsfw-unraid-docker.yml"];
+assert.deepEqual(Object.keys(unraid.on), ["workflow_dispatch"]);
+assert(
+  !JSON.stringify(unraid).includes("packages:write") &&
+    !JSON.stringify(unraid).match(/build-push-action|docker\/login-action/),
+  "Unraid must not publish competing image tags",
+);
+const zizmor = workflows["org-zizmor.yml"];
+assert(
+  Object.values(zizmor.jobs).some((job) =>
+    job.steps?.some((step) => /uvx zizmor==[\d.]+/.test(step.run || "")),
+  ),
+  "Zizmor must execute the real pinned scanner",
 );
 console.log(
-  `Runner policy passed for ${checked} hosted job definitions and native image-build matrices.`,
+  `Hosted runner, pinned-action, quality-gate and image-variant contracts passed for ${count} jobs.`,
 );

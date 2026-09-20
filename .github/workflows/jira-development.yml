@@ -1,0 +1,35 @@
+name: Jira Development
+
+on:
+  pull_request:
+    branches: ["fork/main"]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+jobs:
+  issue-key:
+    name: Jira Issue Key
+    if: github.repository == 'Frameleaf/frameleaf-app'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      # No PR checkout, credentials for Jira, write permissions, or interpolation
+      # of user-controlled titles into executable code are needed.
+      - name: Require a Frameleaf issue in the PR title
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const dependencyUpdate = pr.user.type === 'Bot'
+              && pr.user.login === 'dependabot[bot]'
+              && pr.head.ref.startsWith('dependabot/');
+            if (dependencyUpdate) {
+              core.notice('Automated Dependabot update; no manually assigned issue required.');
+              return;
+            }
+            const key = pr.title.match(/(?:^|[^A-Za-z0-9])FL-[1-9]\d*(?=$|[^A-Za-z0-9])/);
+            if (!key) {
+              core.setFailed('Include the assigned Jira issue in the PR title, for example: FL-118 Configure Frameleaf delivery.');
+            }

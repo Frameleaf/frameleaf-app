@@ -4,7 +4,9 @@ sidebar_position: 30
 
 # Docker Compose [Recommended]
 
-Docker Compose is the recommended method to run Immich in production. Below are the steps to deploy Immich with Docker Compose.
+Docker Compose is the recommended method to run Frameleaf. Use the files attached to a published [Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases); they select the Frameleaf server and machine-learning images.
+
+For an existing installation, retain its Compose project name, `.env`, storage paths and volume names. The displayed container names change to `frameleaf_*`, while service names, database settings and `IMMICH_*` variables remain compatible. Review the [container migration notes](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/docker/README.md) before upgrading; do not create a second stack against the same database directory.
 
 import ComposeBuilder from '/docs/partials/_compose-builder.mdx';
 import DockerComposeSteps from '/docs/partials/_docker-compose-install-steps.mdx';
