@@ -389,6 +389,8 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
     const userTag = mediumFactory.tagInsert({ userId: user.id, value: 'generated-tag' });
     await db.insertInto('tag').values(userTag).execute();
     await db.insertInto('tag_asset').values({ assetId: asset.id!, tagId: userTag.id }).execute();
+    // This raw-SQL fixture simulates a completed cutover, including privacy.
+    await new ForkPrivacyRepository(db).backfillPrivacy([asset.id!]);
     await sql`UPDATE immich_fork.state SET phase = 'active', active = true WHERE id = 1`.execute(db);
     await new ForkEnrichmentRepository(db).initialize([asset.id!]);
 
