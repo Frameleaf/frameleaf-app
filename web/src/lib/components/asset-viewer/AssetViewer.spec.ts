@@ -46,6 +46,10 @@ vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   } as never,
 }));
 
+vi.mock('$lib/stores/face.svelte', () => ({
+  faceManager: { clear: vi.fn(), getAssetFaces: vi.fn(), data: [], facesByPersonId: new Map(), people: [] },
+}));
+
 vi.mock('$lib/stores/ocr.svelte', () => ({
   ocrManager: {
     clear: vi.fn(),
@@ -155,6 +159,38 @@ describe('AssetViewer', () => {
       expect(onAssetUpdate).not.toHaveBeenCalled();
     },
   );
+  it.each(['lock', 'account'] as const)('does not restore an editor refresh after %s changes', async (change) => {
+    const user = userAdminFactory.build();
+    const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+    authManager.setUser(user);
+    eventManager.emit('AuthUserLoaded', user);
+    authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    assetViewerManager.setAsset(asset);
+    assetViewerManager.isShowEditor = true;
+    let resolve!: (value: typeof asset) => void;
+    vi.mocked(getAssetInfo).mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const onAssetChange = vi.fn();
+    const { getByRole } = renderWithTooltips(AssetViewer, {
+      cursor: { current: asset },
+      showNavigation: false,
+      onAssetChange,
+    });
+    await fireEvent.click(getByRole('button', { name: 'Save video edits' }));
+    await waitFor(() => expect(getAssetInfo).toHaveBeenCalledOnce());
+    if (change === 'lock') {
+      eventManager.emit('SessionLocked');
+    } else {
+      eventManager.emit('AuthUserLoaded', userAdminFactory.build());
+    }
+    resolve(asset);
+    await waitFor(() => expect(assetViewerManager.isShowEditor).toBe(false));
+    expect(assetViewerManager.asset).toBeUndefined();
+    expect(onAssetChange).not.toHaveBeenCalled();
+  });
 
   it.skip('updates the top bar favorite action after pressing favorite', async () => {
     const ownerId = 'owner-id';

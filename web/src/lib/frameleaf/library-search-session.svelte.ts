@@ -9,6 +9,8 @@ import {
   type MetadataSearchDto,
   type SmartSearchDto,
 } from '@immich/sdk';
+import { authManager } from '$lib/managers/auth-manager.svelte';
+import { onLibraryAccessChange } from './library-access';
 
 export type LibrarySearchTerms = MetadataSearchDto & Pick<SmartSearchDto, 'query' | 'queryAssetId'>;
 export type LibrarySearchQuery = { terms: LibrarySearchTerms } | { ask: string };
@@ -20,6 +22,22 @@ export class LibrarySearchSession {
   askResponse = $state<AskSearchResponseDto>();
   loading = $state(false);
   nextPage = $state<number | null>(null);
+  accessGeneration = $state(0);
+  blocked = $state(false);
+  #unsubscribe = onLibraryAccessChange(
+    (change) => {
+      // Expansion cannot invalidate already-authorized results or destroy an open editor.
+      if (change === 'expanded') {
+        return;
+      }
+      if (change === 'account' || change === 'revoked') {
+        this.blocked = true;
+      }
+      this.reset();
+      this.accessGeneration++;
+    },
+    authManager.authenticated ? authManager.user.id : undefined,
+  );
   #query: LibrarySearchQuery | null = null;
   #request?: AbortController;
 
@@ -34,9 +52,15 @@ export class LibrarySearchSession {
     this.loading = false;
   }
 
+  destroy() {
+    this.#unsubscribe();
+    this.blocked = true;
+    this.reset();
+  }
+
   async loadNextPage(options: { smartSearch: boolean; language: string }) {
     const query = this.#query;
-    if (!query || !this.nextPage || this.loading) {
+    if (this.blocked || !query || !this.nextPage || this.loading) {
       return;
     }
 

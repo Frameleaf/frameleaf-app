@@ -23,7 +23,7 @@
   import { getSharedLink, handlePromiseError } from '$lib/utils';
   import type { OnUndoDelete } from '$lib/utils/actions';
   import { navigateToAsset } from '$lib/utils/asset-utils';
-  import { handleError } from '$lib/utils/handle-error';
+  import { handleError, handleErrorAsync } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
   import { InvocationTracker } from '$lib/utils/invocationTracker';
   import { SlideshowHistory } from '$lib/utils/slideshow-history';
@@ -206,9 +206,14 @@
 
   const closeEditor = async (refreshAsset = editManager.hasAppliedEdits) => {
     if (refreshAsset) {
-      const refreshedAsset = await getAssetInfo({ id: asset.id });
+      const refreshedAsset = await handleErrorAsync(
+        () => assetViewerManager.setAssetId(asset.id),
+        $t('error_retrieving_asset_information'),
+      );
+      if (!refreshedAsset) {
+        return;
+      }
       onAssetChange?.(refreshedAsset);
-      assetViewerManager.setAsset(refreshedAsset);
     }
     assetViewerManager.closeEditor();
   };

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -34,7 +36,24 @@
   // swipes to a new asset before the previous request resolved.
   let enrichmentController: AbortController | undefined;
 
+  const actionLifetime = new AbortController();
+  let actionVersion = 0;
+  const stopAccess = onLibraryAccessChange(
+    (change) => {
+      if (change === 'expanded') {
+        return;
+      }
+      actionLifetime.abort();
+      enrichmentController?.abort();
+      enrichment = undefined;
+    },
+    authManager.authenticated ? authManager.user.id : undefined,
+  );
+
   const loadEnrichment = async (assetId: string) => {
+    if (actionLifetime.signal.aborted) {
+      return;
+    }
     // Cancel any previous in-flight enrichment request — when the user
     // rapidly swipes through assets, the previous fetch should be aborted
     // rather than allowed to run to completion and consume bandwidth.
@@ -59,9 +78,11 @@
     }
   };
 
-  const refreshAsset = async () => {
-    const updatedAsset = await getAssetInfo({ id: asset.id });
-    onAssetRefresh?.(updatedAsset);
+  const refreshAsset = async (id: string, isCurrent: () => boolean) => {
+    const updatedAsset = await getAssetInfo({ id }, { signal: actionLifetime.signal });
+    if (isCurrent()) {
+      onAssetRefresh?.(updatedAsset);
+    }
   };
 
   const getHttpStatus = (error: unknown) => (isHttpError(error) ? (error.status ?? error.data?.statusCode) : undefined);
@@ -88,10 +109,13 @@
     return true;
   };
 
-  const refreshVisibleAsset = async (action: AssetImageEnrichmentAction) => {
+  const refreshVisibleAsset = async (action: AssetImageEnrichmentAction, id: string, isCurrent: () => boolean) => {
     try {
-      await refreshAsset();
+      await refreshAsset(id, isCurrent);
     } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
       if (await handleExpectedSuppressedAsset(action, error)) {
         return;
       }
@@ -101,13 +125,23 @@
   };
 
   const runAction = async (action: AssetImageEnrichmentAction) => {
+    const id = asset.id;
+    const version = ++actionVersion;
+    const isCurrent = () => !actionLifetime.signal.aborted && version === actionVersion && asset.id === id;
+    if (!isCurrent()) {
+      return;
+    }
     activeAction = action;
     try {
-      enrichment = await updateAssetImageEnrichment({
-        id: asset.id,
+      const updated = await updateAssetImageEnrichment({
+        id,
         assetImageEnrichmentActionRequestDto: { action },
       });
 
+      if (!isCurrent()) {
+        return;
+      }
+      enrichment = updated;
       const refreshActions: AssetImageEnrichmentAction[] = [
         AssetImageEnrichmentAction.ClearGeneratedDescription,
         AssetImageEnrichmentAction.ClearGeneratedTags,
@@ -117,14 +151,20 @@
         AssetImageEnrichmentAction.AcceptNsfwResult,
       ];
       if (refreshActions.includes(action)) {
-        await refreshVisibleAsset(action);
+        await refreshVisibleAsset(action, id, isCurrent);
       }
 
-      toastManager.primary($t('image_enrichment_updated'));
+      if (isCurrent()) {
+        toastManager.primary($t('image_enrichment_updated'));
+      }
     } catch (error) {
-      handleError(error, $t('errors.unable_to_update_image_enrichment'));
+      if (isCurrent()) {
+        handleError(error, $t('errors.unable_to_update_image_enrichment'));
+      }
     } finally {
-      activeAction = null;
+      if (isCurrent()) {
+        activeAction = null;
+      }
     }
   };
 
@@ -179,12 +219,19 @@
     if (canReview) {
       handlePromiseError(loadEnrichment(asset.id));
     }
+    return () => {
+      actionVersion++;
+      activeAction = null;
+      enrichmentController?.abort();
+    };
   });
 
   // Abort any in-flight enrichment fetch when the panel unmounts. Without
   // this, the request runs to completion (defeating the bandwidth-saving
   // intent of the AbortController) and writes back into a destroyed component.
   onDestroy(() => {
+    actionLifetime.abort();
+    stopAccess();
     enrichmentController?.abort();
     enrichmentController = undefined;
   });

@@ -6,7 +6,10 @@ import {
   type SearchResponseDto,
   type AskSearchResponseDto,
 } from '@immich/sdk';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { LibrarySearchSession } from './library-search-session.svelte';
+
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 vi.mock('@immich/sdk', async (original) => ({
   ...(await original<object>()),
@@ -32,10 +35,22 @@ const deferred = <T>() => {
   return { promise, resolve, reject };
 };
 
+const sessions: LibrarySearchSession[] = [];
+const createSession = () => {
+  const session = new LibrarySearchSession();
+  sessions.push(session);
+  return session;
+};
 beforeEach(() => vi.resetAllMocks());
+afterEach(() => {
+  for (const session of sessions) {
+    session.destroy();
+  }
+  sessions.length = 0;
+});
 
 it('preserves scoped filters and personal sort while owning the paging cursor', async () => {
-  const session = new LibrarySearchSession();
+  const session = createSession();
   const terms = { albumIds: ['album'], city: null, personIds: ['person'], order: AssetOrder.Asc, page: 99 };
   session.reset({ terms });
   vi.mocked(searchAssets).mockResolvedValueOnce(result('first', '2')).mockResolvedValueOnce(result('second'));
@@ -56,7 +71,7 @@ it('preserves scoped filters and personal sort while owning the paging cursor', 
 });
 
 it('aborts the old scope and ignores its late success, pagination and loading completion', async () => {
-  const session = new LibrarySearchSession();
+  const session = createSession();
   const old = deferred<SearchResponseDto>();
   const current = deferred<SearchResponseDto>();
   vi.mocked(searchAssets).mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
@@ -77,7 +92,7 @@ it('aborts the old scope and ignores its late success, pagination and loading co
 });
 
 it('shares request ownership between metadata, smart and Ask searches', async () => {
-  const session = new LibrarySearchSession();
+  const session = createSession();
   const old = deferred<SearchResponseDto>();
   vi.mocked(searchSmart).mockReturnValueOnce(old.promise);
   session.reset({ terms: { query: 'old' } });
@@ -98,7 +113,7 @@ it('shares request ownership between metadata, smart and Ask searches', async ()
 });
 
 it('discards pending evidence after disposal or access invalidation', async () => {
-  const session = new LibrarySearchSession();
+  const session = createSession();
   const pending = deferred<SearchResponseDto>();
   vi.mocked(searchAssets).mockReturnValueOnce(pending.promise);
   session.reset({ terms: { isFavorite: true } });
@@ -112,7 +127,7 @@ it('discards pending evidence after disposal or access invalidation', async () =
 });
 
 it('retains the retry page after a current failure and prevents duplicate concurrent loads', async () => {
-  const session = new LibrarySearchSession();
+  const session = createSession();
   const pending = deferred<SearchResponseDto>();
   vi.mocked(searchAssets).mockReturnValueOnce(pending.promise).mockResolvedValueOnce(result('retry'));
   session.reset({ terms: { city: 'Banff' } });
@@ -125,4 +140,32 @@ it('retains the retry page after a current failure and prevents duplicate concur
   expect(session.nextPage).toBe(1);
   await session.loadNextPage(options);
   expect(session.assets.map(({ id }) => id)).toEqual(['retry']);
+});
+
+it.each([
+  ['lock', () => eventManager.emit('SessionLocked'), false],
+  ['PIN reset', () => eventManager.emit('UserPinCodeReset'), false],
+  ['access restriction', () => eventManager.emit('SessionAccessChanged', { isElevated: false }), false],
+  ['logout', () => eventManager.emit('AuthLogout'), true],
+  ['session deletion', () => eventManager.emit('SessionDelete'), true],
+] as const)('invalidates pending search on %s, retiring revoked sessions', async (_name, change, blocked) => {
+  const session = createSession();
+  const pending = deferred<SearchResponseDto>();
+  vi.mocked(searchAssets).mockReturnValueOnce(pending.promise);
+  session.reset({ terms: { city: 'private place' } });
+  const load = session.loadNextPage(options);
+  const signal = vi.mocked(searchAssets).mock.calls[0][1]?.signal;
+  change();
+  expect(signal?.aborted).toBe(true);
+  expect(session.blocked).toBe(blocked);
+  expect(session.accessGeneration).toBe(1);
+  pending.resolve(result('private-old'));
+  await load;
+  expect(session.assets).toEqual([]);
+  expect(session.loading).toBe(false);
+  if (blocked) {
+    session.reset({ terms: { city: 'still private' } });
+    await session.loadNextPage(options);
+    expect(searchAssets).toHaveBeenCalledOnce();
+  }
 });

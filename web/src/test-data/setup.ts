@@ -1,6 +1,11 @@
 import '@testing-library/jest-dom';
 import { init } from 'svelte-i18n';
 
+afterEach(() => {
+  // Happy DOM does not replace the document when session revocation navigates away.
+  document.documentElement.style.removeProperty('display');
+});
+
 beforeAll(async () => {
   await init({ fallbackLocale: 'dev' });
   Element.prototype.animate = vi.fn().mockImplementation(function () {

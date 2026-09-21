@@ -15,7 +15,7 @@
   import { handleErrorAsync } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { type AlbumResponseDto, type AssetResponseDto, type PersonResponseDto, getAssetInfo } from '@immich/sdk';
+  import { type AlbumResponseDto, type AssetResponseDto, type PersonResponseDto } from '@immich/sdk';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -224,8 +224,13 @@
     }
 
     const restoredAsset = assets[0];
-    const asset = await getAssetInfo({ ...authManager.params, id: restoredAsset.id });
-    assetViewerManager.setAsset(asset);
+    const asset = await handleErrorAsync(
+      () => assetViewerManager.setAssetId(restoredAsset.id),
+      $t('error_retrieving_asset_information'),
+    );
+    if (!asset) {
+      return;
+    }
     await navigate({ targetRoute: 'current', assetId: restoredAsset.id });
   };
 

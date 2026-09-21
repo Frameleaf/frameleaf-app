@@ -846,14 +846,14 @@
       "version": 4
     },
     {
-      "bytes": 7953,
+      "bytes": 13742,
       "category": "development",
       "id": "61997109",
       "source": "docs/docs/developer/frameleaf-plan/FL-31-search-session.md",
-      "sourceSha256": "df8b3d3b25157c37d76f0afcef519159a5950c73a65b457f8d23562de4d7432f",
-      "title": "FL-31 production search session slice",
+      "sourceSha256": "47f98e0bb3ee3ddda8b6d681147254a31d082ca3dbb091741f8e4c0c0445e452",
+      "title": "FL-31 production search session and access boundary",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997109",
-      "version": 3
+      "version": 6
     },
     {
       "bytes": 12072,
