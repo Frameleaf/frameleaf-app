@@ -37,7 +37,7 @@
     getSearchTagsTitle,
     getSearchTypeTitle,
   } from './search-bar-utils';
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import { searchManager } from '$lib/managers/search-manager.svelte';
   import SearchButton from './SearchButton.svelte';
 
@@ -79,10 +79,10 @@
     peopleSearch.people?.filter((person) => searchManager.filter.personIds.has(person.id)) ?? [],
   );
 
-  async function removePerson(personId: string) {
-    searchManager.filter.personIds.delete(personId);
-    await tick();
+  function removePerson(personId: string) {
+    // Keep focus inside the dropdown before removing its focused chip.
     document.querySelector<HTMLElement>(`#${CSS.escape(`${id}-people`)}`)?.focus();
+    searchManager.filter.personIds.delete(personId);
   }
 
   let dateTitle = $derived(
