@@ -41,3 +41,11 @@ These are local implementation checks. Hosted exact-candidate Actions, independe
 The current Locked production route still selects legacy `visibility=locked`. Sensitive classification and tag/person suppression have separate source semantics. A future sensitive-only Locked timeline must retain legacy compatibility explicitly and avoid converting classification into relocation. The existing `suppressedOnly` query also includes configured tag/person suppression and must not silently be reused as an exact sensitive-only query.
 
 Cross-tab/device locking, remote revocation, PIN expiry/reset, open viewers/search/Trash, downloads/exports, names/facets/counts and derivative source restrictions still require production integration and end-to-end qualification. The named historical `docs/library-privacy-audit.md` and derivative-privacy source are absent from this clean baseline; their historical Confluence mirrors are evidence, not proof of delivered implementation. No UI or broad privacy-completion claim is made by this server slice.
+
+## Hosted-check follow-up
+
+PR127 at `f77249be167cc462da280b959c1290e7562edbaa` passed server lint/unit, web lint/tests, OpenAPI, SQL schema, E2E and official-container certification checks. The hosted Medium Tests job failed before test execution on a GHCR `toomanyrequests` response. Fork integration ran 1,183 tests and found one actionable failure: the generated-description cutover fixture initialized enrichment after raw SQL asset insertion but omitted the privacy backfill required for a completed cutover.
+
+The fixture now invokes the existing privacy backfill before simulating activation; production fail-closed behavior remains unchanged. The exact formerly failing 17-case file and the nine projection regressions pass together against disposable PostgreSQL (26 tests). This does not substitute for a successful hosted run of the updated head.
+
+The follow-up incorporates verified default `a3b0cae7e785e31339353ad9b0a55cfb10d03f56`, whose seven `.github` changes remove mobile CI under the user's explicit instruction. No mobile implementation or CI restoration is included.
