@@ -24,6 +24,6 @@ The host's mise 2026.5.16 cannot run the repository's newer monorepo task syntax
 
 ## Remaining acceptance
 
-The initial candidate received independent review with no P0/P1/P2 findings. The wire-contract correction requires a review recheck and new current-head GitHub Actions before this slice is ready for merge. There is no merge, publication or deployment authorization in this work. Jira remains In Progress.
+The initial candidate and wire-contract correction received independent review with no P0/P1/P2 findings; the reviewed runtime candidate is `5bbab9b44aaf9434ff77d24bcfa813d76f20666b`. The later fixture typing and approved mobile CI baseline integration do not change runtime behavior. New current-head GitHub Actions remain required before this slice is ready for merge. There is no merge, publication or deployment authorization in this work. Jira remains In Progress.
 
 Studio/project graph and binary importer APIs are absent from this accepted baseline. The nested edit-parameter transport fixture is not a substitute for testing those production APIs when their owning implementation is accepted. Do not invent new endpoints or mark their wider acceptance complete. Dart and other mobile work remain deferred by the user.
