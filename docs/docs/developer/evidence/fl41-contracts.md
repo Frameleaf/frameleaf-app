@@ -22,6 +22,10 @@ The first candidate replaced request `anyOf` with an object. Hosted Check OpenAP
 
 The host's mise 2026.5.16 cannot run the repository's newer monorepo task syntax. The declared generation/build commands were executed explicitly through `mise exec`; repository toolchain settings were not changed. Current-candidate hosted gates remain CI responsibilities. The branch incorporates default commit `a3b0cae7e785e31339353ad9b0a55cfb10d03f56`, which removes mobile CI under the user's instruction; it does not restore those gates. The existing fork integration workflow now executes the SDK transport checks after regeneration and build.
 
+## Server E2E diagnostic capture
+
+An API-test connection failure does not establish why a server exited or became unreachable. The server E2E workflow now captures timestamped Compose logs and only Docker container Name, State and RestartCount immediately after API/CLI tests, before maintenance tests can change container state. The separate `docker-diagnostics-after-api-tests.txt` artifact complements the existing later Compose logs. Collection is best-effort and runs after failed tests; it does not weaken the test result. No full container configuration, environment or host/kernel inventory is collected. This is diagnosis instrumentation, not a runtime fix or a claim that OOM caused the failure. A narrow workflow contract verifies ordering, selected fields and artifact retention.
+
 ## Remaining acceptance
 
 The initial candidate and wire-contract correction received independent review with no P0/P1/P2 findings; the reviewed runtime candidate is `5bbab9b44aaf9434ff77d24bcfa813d76f20666b`. The later fixture typing and approved mobile CI baseline integration do not change runtime behavior. New current-head GitHub Actions remain required before this slice is ready for merge. There is no merge, publication or deployment authorization in this work. Jira remains In Progress.
