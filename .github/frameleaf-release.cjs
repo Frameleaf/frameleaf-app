@@ -406,6 +406,7 @@ const BUILD_INPUTS = {
     "packages",
     "web",
     "i18n",
+    "design/frameleaf/brand-kit/frameleaf-logo-white.svg",
     "open-api",
     "package.json",
     "pnpm-lock.yaml",

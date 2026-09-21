@@ -45,7 +45,6 @@ The durable local bundle is `/Users/adamtaylor/.codex/worktrees/frameleaf-fl30-b
 
 This closes only the named local draft/navigation/access checks above. The existing header identity and main layout remain unchanged; the captures do not establish full prototype fidelity. Actual screen-reader software, other browsers, every route/deep-link family, maintenance recovery, all PIN/privacy cases, media/worker quality, collection slideshow, complete Settings utilities/Trash redesign, shared session/Browse/Work, Studio/Activity and auth/public/error branding remain open. Hosted checks, merge/publication and deployed behavior remain separate evidence. Native work is deferred and FL-30 remains In Progress.
 
-
 ## Settings overview extension — September 21, 2026
 
 The same default-off `frameleaf-shell` preference now enables `SettingsOverview.svelte` on the existing authenticated `/user-settings` route. It adds real server filesystem capacity from `getStorage`, installed version/build from `getAboutInfo`, current-session account quota/usage from `authManager`, and the existing WebSocket connection status. Personal logical usage is explicitly separate from whole-filesystem usage, which includes other accounts and non-library files. Null account usage is Unknown, and unlimited quota is distinct from zero capacity. These figures do not infer library health or recovery readiness.
@@ -59,7 +58,6 @@ The overview uses the approved scoped Theme/tokens and responsive one/three-colu
 Seven additional component tests exercise distinct metric scopes, null/unlimited account values, independent server failure/retry, actual utility destinations and administrator visibility, Trash capability, About history failure/retry and unmount cancellation. Together with the original navigation and sidebar tests, 31 focused tests pass. Svelte and TypeScript diagnostics, focused lint/format, route-inventory and committed-source documentation checks are recorded in the owner handoff. The earlier `deee52d` authenticated browser evidence applies only to the preceding navigation packet; this overview still needs independent review and fresh authenticated/browser/visual qualification.
 
 Full command-center processing, actionable issues and database/recovery readiness remain unimplemented in this packet. Full Settings/Utilities/Trash workflow design, collection slideshow, shared session/Browse/Work, Studio/Activity, public/auth/error branding, all route/access cases and actual screen-reader/cross-browser acceptance remain open. Native work is deferred. FL-30 remains In Progress; no push, hosted checks, merge, publication or deployment is claimed.
-
 
 ## Overview browser findings and keyboard/header fixes — September 21, 2026
 

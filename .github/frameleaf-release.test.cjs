@@ -602,6 +602,7 @@ test("reuse compares original inputs and ancestry, including non-obvious Docker 
     "LICENSE",
     ".dockerignore",
     "packages",
+    "design/frameleaf/brand-kit/frameleaf-logo-white.svg",
     ".github/workflows/local-multi-runner-build.yml",
   ])
     assert(calls[1].includes(input), input);

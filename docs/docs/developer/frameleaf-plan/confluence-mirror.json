@@ -836,24 +836,24 @@
       "readbackResult": "Full normalized HTML body matched current source and preserved historical content; Confluence pre/code wrapper normalized. Seven focused browser cases pass, original navigation timeout reproduced before fixture-only repair; independent review pending."
     },
     {
-      "bytes": 15131,
+      "bytes": 15129,
       "category": "development",
       "id": "61964350",
       "source": "docs/docs/developer/frameleaf-plan/FL-30-navigation.md",
-      "sourceSha256": "32b80c520a67223e4233aed1d07f062aebdf6e4324dbbd65910f9fbc057dfe73",
+      "sourceSha256": "2f7253b56785536677a0cdb4af2b907f45fa603b3fdbba679d8cdd97ac8b1ac2",
       "title": "FL-30 production navigation rollout",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61964350",
-      "version": 4
+      "version": 5
     },
     {
-      "bytes": 13742,
+      "bytes": 16219,
       "category": "development",
       "id": "61997109",
       "source": "docs/docs/developer/frameleaf-plan/FL-31-search-session.md",
-      "sourceSha256": "47f98e0bb3ee3ddda8b6d681147254a31d082ca3dbb091741f8e4c0c0445e452",
+      "sourceSha256": "85685b3b0eba4686cf52c3f51bc1c651ea22a56d6fc468bfaf699b7f041eeb96",
       "title": "FL-31 production search session and access boundary",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997109",
-      "version": 6
+      "version": 8
     },
     {
       "bytes": 12072,
@@ -866,14 +866,14 @@
       "version": 6
     },
     {
-      "bytes": 16172,
+      "bytes": 17938,
       "category": "development",
       "id": "61441023",
       "source": "docs/docs/developer/evidence/fl41-reviewed-integration.md",
-      "sourceSha256": "51d78bde003011e1230c2c2f6196e9bcfdbdb708ea03c029a8e1bc214242c1cf",
+      "sourceSha256": "d656b7790306ae01c24336f26824b277d7154b0fe8b73fbd6f616a4ffc49e24b",
       "title": "FL-41 Reviewed Web and Server Integration Evidence",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61441023",
-      "version": 13
+      "version": 14
     },
     {
       "bytes": 14450,

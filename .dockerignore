@@ -14,6 +14,7 @@
 **/build/
 
 design/
+!design/frameleaf/brand-kit/frameleaf-logo-white.svg
 docker/
 !docker/scripts
 
