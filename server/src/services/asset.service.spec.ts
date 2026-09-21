@@ -887,7 +887,7 @@ describe(AssetService.name, () => {
         format: { duration: 30 },
         videoStreams: [{ width: 1920, height: 1080, rotation: 0 }],
       } as any);
-      const edits = [
+      const edits: AssetEditActionItem[] = [
         { action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 1000, height: 600 } },
         { action: AssetEditAction.Trim, parameters: { startMs: 0, endMs: 25_000 } },
       ];
