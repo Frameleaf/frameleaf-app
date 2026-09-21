@@ -1,0 +1,13 @@
+{
+  "sourcePath": "docs/docs/developer/frameleaf-plan/fl86-distribution-rights.md",
+  "sourceSha256": "6a5949a61b42021fd9c9e99463eca7e8dfda7f1a430a41d51aeda835f88545fd",
+  "sourceBytes": 14040,
+  "pageId": "61997196",
+  "pageUrl": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997196/FL-86+Studio+artifact+attribution+and+resource+rights",
+  "pageVersion": 1,
+  "parentPageId": "61440418",
+  "verified": true,
+  "verification": "Readback source digest, counts, package gaps and unqualified acceptance markers matched; source-owned candidate mirror.",
+  "candidateBase": "4ccad254cf6665e2ebce99e7cac8c376c0cf7d4c",
+  "status": "candidate-not-qualified"
+}

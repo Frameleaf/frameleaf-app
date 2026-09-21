@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { packageAttribution, auditAttribution } from './attribution.mjs';
 import { parseJsonRejectingDuplicateKeys, validateContracts } from '../../scripts/frameleaf-studio-contracts.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -116,6 +117,7 @@ async function attest() {
   // Unexpected new inputs also invalidate the build; allow only these generated roots.
   const current = await inventory(engine, '', new Set(['node_modules', 'dist', 'frameleaf-source.json', 'frameleaf-build.json']));
   assert.deepEqual(current, source.files, 'Build modified or added adapted inputs');
+  const attribution = await packageAttribution(path.join(root, 'studio'), path.join(engine, 'dist'), engine);
   const artifacts = await inventory(path.join(engine, 'dist'));
   assert.ok(artifacts.some((file) => file.path === 'index.html'));
   assert.ok(artifacts.some((file) => file.path === 'headless.html'));
@@ -125,7 +127,7 @@ async function attest() {
     sourceSha256: configuration.sourceSha256, lockfileSha256: configuration.lockfileSha256,
     patches: configuration.patches, node: process.version, npm, platform: process.platform, arch: process.arch,
     artifactSha256: sha256(JSON.stringify(artifacts)), artifacts,
-    dependencyLicenses,
+    dependencyLicenses, attribution,
     bundledNotices: await Promise.all(['LICENSE', 'src/infrastructure/audio/THIRD_PARTY_LICENSE', 'src/infrastructure/upscale/models/NOTICE.md'].map(async (notice) => ({ path: notice, text: await readFile(path.join(engine, notice), 'utf8') }))),
     distributionApproval: false,
   };
@@ -141,7 +143,11 @@ export async function main(args) {
     await verifySnapshot(path.join(root, 'studio/vendor/freecut'), provenance.files);
     console.log(`Verified all ${provenance.files.length} immutable source files`);
   } else if (args.length === 1 && args[0] === 'attest') await attest();
-  else throw new Error('Usage: node studio/tools/engine.mjs prepare [--archive FILE] | verify | attest');
+  else if (args.length === 1 && args[0] === 'audit-attribution') {
+    await inputs();
+    console.log(await auditAttribution(path.join(root, 'studio'), path.join(root, 'studio/engine/dist'), path.join(root, 'studio/engine')));
+  }
+  else throw new Error('Usage: node studio/tools/engine.mjs prepare [--archive FILE] | verify | attest | audit-attribution');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
