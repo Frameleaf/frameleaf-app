@@ -4,7 +4,9 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   ArchiveOperationCommandDto,
+  ArchiveOperationConfirmDto,
   ArchiveOperationCreateDto,
+  ArchiveOperationPrepareDto,
   ArchiveOperationResponseDto,
 } from 'src/dtos/archive-operation.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
@@ -25,6 +27,33 @@ export class ArchiveOperationController {
     @Body() dto: ArchiveOperationCreateDto,
   ): Promise<ArchiveOperationResponseDto> {
     return this.service.create(auth, dto);
+  }
+
+  @Post('prepare')
+  @Authenticated({ permission: Permission.AssetUpdate })
+  @Endpoint({
+    summary: 'Prepare all matching owned Timeline assets',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  prepareArchiveOperation(
+    @Auth() auth: AuthDto,
+    @Body() dto: ArchiveOperationPrepareDto,
+  ): Promise<ArchiveOperationResponseDto> {
+    return this.service.prepare(auth, dto);
+  }
+
+  @Post(':id/confirm')
+  @Authenticated({ permission: Permission.AssetUpdate })
+  @Endpoint({
+    summary: 'Confirm an exact prepared archive selection',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  confirmArchiveOperation(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: ArchiveOperationConfirmDto,
+  ): Promise<ArchiveOperationResponseDto> {
+    return this.service.confirm(auth, id, dto.requestKey);
   }
 
   @Get()

@@ -887,6 +887,19 @@
       "sourceBranch": "codex/FL-32-bulk-archive",
       "sourceState": "bounded-candidate-independent-review-pending",
       "readbackResult": "Full normalized Markdown source body and SHA-256 matched live page version 2 on 2026-09-21; Undo repair recheck and browser qualification remain pending."
+    },
+    {
+      "bytes": 6985,
+      "category": "development",
+      "id": "62423078",
+      "source": "docs/docs/developer/frameleaf-plan/FL-32-matching-archive.md",
+      "sourceSha256": "95d121b68e9c75569b7d60ef915f8604da43ec72b6765af1352fb0205c024dac",
+      "title": "FL-32 prepared normal Timeline archive",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/62423078",
+      "version": 1,
+      "sourceBranch": "aj/FL-32-all-matching-archive",
+      "sourceState": "implementation-checkpoint-photos-route-integration-pending",
+      "readbackResult": "Full normalized Markdown source body and SHA-256 matched live page version 1 on 2026-09-21; production route integration and independent review remain pending."
     }
   ],
   "spaceId": "61374475",

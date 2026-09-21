@@ -1360,3 +1360,9 @@ export function withImageEnrichmentFilter<O>(
     }
   }
 }
+
+/** Preserve the timeline's visible stack representative, including an absent stack row. */
+export function withTimelineStackVisibility<DB, TB extends keyof DB, O>(qb: SelectQueryBuilder<DB, TB, O>) {
+  return qb.where(sql<boolean>`NOT EXISTS (SELECT 1 FROM stack
+    WHERE stack.id=asset."stackId" AND stack."primaryAssetId"<>asset.id)`);
+}

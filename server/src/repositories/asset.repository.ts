@@ -68,6 +68,7 @@ import {
   withSmartSearch,
   withTagId,
   withTags,
+  withTimelineStackVisibility,
 } from 'src/utils/database.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
@@ -1164,16 +1165,7 @@ export class AssetRepository {
           .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
           .$if(!!options.withStacked, (qb) =>
             qb
-              .where((eb) =>
-                eb.not(
-                  eb.exists(
-                    eb
-                      .selectFrom('stack')
-                      .whereRef('stack.id', '=', 'asset.stackId')
-                      .whereRef('stack.primaryAssetId', '!=', 'asset.id'),
-                  ),
-                ),
-              )
+              .$call(withTimelineStackVisibility)
               .leftJoinLateral(
                 (eb) =>
                   eb

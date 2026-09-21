@@ -1,0 +1,35 @@
+# FL-32 normal Timeline matching archive
+
+Status: bounded candidate, independent review and browser qualification pending. FL-32/FN-204 stays In Progress. The reviewed explicit-ID archive baseline is `57cec47081a0e811c192ac765f120427fc4e53a0`; this separate worktree is `/Users/adamtaylor/.codex/worktrees/frameleaf-fl32-all-matching`, branch `aj/FL-32-all-matching-archive`. Fresh default ancestry was verified at `0116d4778d7ce34e9bc41a7d1fed46a4cd88a466`. Root alone owns publication, hosted checks and lifecycle. Native/mobile are deferred.
+
+## Supported operation
+
+This slice adds all-matching archive for the normal library Timeline. The visible operation explicitly says **Your normal Timeline only**. Partner and shared assets never contribute to the archive count. The strict descriptor accepts only library scope, Timeline visibility, primary-stack presentation, partner-view provenance, and the existing order/orderBy/dateType values. Default sort/date values are canonicalized. Unknown fields, map/local asset filters, albums/pickers, people/tag filters, trash/locked/suppressed views, metadata/semantic/Ask search and arbitrary owner IDs are rejected rather than silently dropped.
+
+`ArchiveMatchingAction.svelte` accepts the structural shape of FL31's route-owned library query, freezes its canonical value and request UUID before asynchronous preparation, and opens the real `ArchiveOperationsModal.svelte`. It never reads loaded asset IDs as an all-matching universe. The dialog aborts/retires preparation after live source query or access restriction/account changes. Existing explicit-ID archive and synchronous unarchive behavior remain available.
+
+The real photos-route placement is an integration prerequisite owned jointly with the active FL31 route change; this note does not claim a disconnected component as a finished production caller. Root will provide the reviewed integration base before this candidate is finalized.
+
+## Persistence, confirmation and current authority
+
+`POST /archive-operations/prepare` requires a current signed-in session and stores a canonical descriptor/request identity in an owned, prepared operation. One transactional `INSERT SELECT` freezes the exact currently eligible membership. It uses the production Timeline's inner EXIF join, Timeline/nondeleted visibility, shared stack-primary predicate, current hidden-content predicate and an unconditional authenticated actor ownership predicate. The count is the number of durable item rows; bucket totals and client counts are not authority. Partner provenance is retained without expanding actor ownership. Query sort/date are frozen provenance; item publication order is not presented as timeline order.
+
+Prepared rows cannot execute: both the scheduled/startup drain and direct processing reject them, and retry/Undo require confirmation first. `POST /archive-operations/:id/confirm` verifies the same owned receipt and request identity, rejects cancelled or expired preparation, rechecks current session/elevation, and atomically marks it runnable. Confirmation never reruns the source query. Duplicate preparation/confirmation retains the same set. Operation/user/session lock ordering matches the worker. An insertion failure rolls back both membership and receipt. Long-running preparation checks session/PIN expiry again before committing.
+
+Preparations expire after 30 minutes. Reopening the action creates a new request and newly counted selection; an expired receipt is not silently refreshed. Abandoned prepared receipts remain non-runnable and can be cancelled; this slice does not claim a retention/pagination policy for operation history.
+
+The existing per-item current-user/session/preferences/privacy/asset checks remain publication authority. Newly arriving assets never join a confirmed operation; later deletions, archival or revocation yield truthful skipped/revoked outcomes. Cancellation/retry uses the durable set. Undo restores only successful, unchanged publications, preserving the reviewed partial-cancel rule that never-published items are skipped. No media or original file is removed by this operation.
+
+## Migration and compatibility
+
+New fork-only migration `0000000000120-ArchivePreparation.ts` adds four columns to the existing private operation table. Released migration110 and official migrations are unchanged. Existing explicit operations default to runnable. Matching operations keep membership in item rows instead of duplicating a large UUID array; old explicit request equality remains unchanged. OpenAPI and JavaScript SDK are generated from the new source DTOs; native clients are not generated or qualified.
+
+The down migration removes unconfirmed preparations so an older worker cannot run them, reconstructs the older UUID-array count representation for confirmed matching receipts, then drops only the new columns. Public catalog and original asset visibility are checked in the disposable database. Production rollback must stop workers and preserve receipts first; local down/up evidence is not authorization to roll back a deployed database.
+
+## Validation and remaining scope
+
+Pinned Node24.21.0/pnpm11.24.0, own frozen dependencies and actual disposable PostgreSQL14 VectorChord. Eight focused preparation checks cover: exact actor/hidden/deleted/EXIF/primary-stack membership parity with actual Timeline retrieval; 11,000 assets across months; request-key conflicts and concurrent repeated prepare/confirm; no execution before confirmation; no later membership expansion; zero count and unsupported scopes; missing/expired sessions and elevation expiry; insertion rollback; private-only down/up behavior. The existing eight archive transaction tests and seven migration-ledger tests also pass. Twenty-eight affected server unit checks cover the archive service, Timeline service and fork catalog.
+
+Mounted Svelte coverage exercises actual matching action wiring to the production modal, count-before-confirmation, receipt identity, empty-count confirmation disabling, query replacement/late-response retirement and unsupported scope disabling, plus existing explicit-ID/unarchive/reload/access tests. Server/web TypeScript and scoped lint/format are required before candidate handoff. No hosted or real-browser proof is claimed by these mounted tests.
+
+Full FN204 still requires the remaining query/scope adapters, semantic/Ask result-set definition, selection exceptions and cross-layout/view continuity, other bulk-action eligibility and recovery, scalable history/retention, browser/accessibility matrix and native acceptance. This normal-Timeline archive extension does not complete the parent requirement. GitNexus's earlier FL32 index was unreliable after an internal UTF-8 failure. A fresh worktree index completed successfully (32,204 nodes, 73,154 edges); callback-based helper calls still require direct caller review. The shared stack predicate is used only by production Timeline retrieval and archive preparation.
