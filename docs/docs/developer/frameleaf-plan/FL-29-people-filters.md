@@ -29,3 +29,17 @@ Local browser artifacts use the `frameleaf-fl29-people-` prefix beside the workt
 ## Delivery limits
 
 Keep FL-29 In Progress. Independent review, hosted checks, merge authorization and full acceptance remain open. The new helper has two real consumers, so both share the same cancellation/privacy behavior rather than preserving an unguarded modal path. No server, schema, SDK, native, FL-34 timeline, or FL-39 editor implementation is changed. Reverting this continuation restores the previous People search consumers; original assets and storage are unaffected.
+
+## Authenticated browser follow-up
+
+The original candidate `79b7f9caa40e4c08fe3c09a75927dcf2984671ea` received independent review. A subsequent Chromium check against the real combined web/server application exposed a focus-order defect absent from the isolated fixture: pressing Enter on a selected chip removed the focused element before the awaited focus restoration. The production parent interpreted its null focus-out target as leaving the dropdown and closed it. Correction `1963ffebe` focuses the existing People button before deleting the selection. The focused regression asserts an actual focus-out event directed to that button; it fails with the prior implementation and passes with the correction. All twelve People component tests pass.
+
+The authenticated application check uses combined runtime `331882bb7`, a disposable PostgreSQL/Valkey pair, two synthetic accounts and two generated nonpersonal PNG avatars. Real signup/login, PIN unlock/lock, HTTP authorization and WebSocket notifications are used; API responses and authentication are not intercepted. The fixture seeds person/face associations, thumbnail paths and active-fork configuration in its own test database, so it does not qualify face detection, cutover or background thumbnail generation.
+
+Verified behavior:
+
+- Each account receives only its own person. Even the administrator receives 404 for the other owner's thumbnail. An authorized thumbnail matches the synthetic PNG bytes and carries `private, no-cache, no-transform`.
+- Space selects the real People filter; Enter removes its chip and retains focus inside the open dropdown on the People button.
+- A server-side lock clears the protected person's name, selected chip and image from two open tabs. The locked API reports zero people and returns 404 for the protected thumbnail. No browser page errors occurred.
+
+Runnable local seed/API/browser scripts, accessibility-tree captures and logs are retained in the `frameleaf-authenticated-browser-evidence` bundle beside the worktrees. Synthetic session tokens are excluded from that bundle. This closes the named local authenticated-flow gap only; actual screen-reader software, cross-browser behavior, broad viewer/Trash/export qualification and hosted current-head checks remain open. The focus correction still requires independent review before push.
