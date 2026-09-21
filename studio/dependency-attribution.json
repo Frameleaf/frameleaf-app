@@ -107,6 +107,56 @@
       "sha256": "f7d49ea18cb7d1bd34f82e2a18511a52610eb70ab40c419429c8ee00fb64dbf2",
       "source": "src/infrastructure/audio/time-stretch.ts:2-22 at pinned Freecut revision",
       "sourceUrl": null
+    },
+    {
+      "component": "radix-ui/primitives package source",
+      "id": "radix-primitives-license",
+      "path": "notices/radix-primitives-license.txt",
+      "scope": "supplemental-package-notice",
+      "sha256": "0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138",
+      "source": "Exact npm-published gitHead; archive and registry identities retained in packageNoticeEvidence",
+      "sourceUrl": "https://raw.githubusercontent.com/radix-ui/primitives/fcef0668a5c827e5a4baac405474d75680f9a4eb/LICENSE",
+      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb"
+    },
+    {
+      "component": "JohannesKlauss/react-keymap-hook package source",
+      "id": "react-hotkeys-hook-license",
+      "path": "notices/react-hotkeys-hook-license.txt",
+      "scope": "supplemental-package-notice",
+      "sha256": "1def416e8042d3442057400f3345c3bd089476898d94b5d5ae9669b0c0d340a8",
+      "source": "Exact npm-published gitHead; archive and registry identities retained in packageNoticeEvidence",
+      "sourceUrl": "https://raw.githubusercontent.com/JohannesKlauss/react-keymap-hook/f2006c7ba118175c7cd673c13296ebfb618bbd7a/LICENSE",
+      "sourceRevision": "f2006c7ba118175c7cd673c13296ebfb618bbd7a"
+    },
+    {
+      "component": "bvaughn/react-resizable-panels package source",
+      "id": "react-resizable-panels-license",
+      "path": "notices/react-resizable-panels-license.txt",
+      "scope": "supplemental-package-notice",
+      "sha256": "8b21167f99f3c016b39473b2984ceb03b54bf796dd9a7c74fcb80cfd513fe8a8",
+      "source": "Exact npm-published gitHead; archive and registry identities retained in packageNoticeEvidence",
+      "sourceUrl": "https://raw.githubusercontent.com/bvaughn/react-resizable-panels/43a071df6bb96d54e8b81a6be0e2d453af45cc4b/LICENSE",
+      "sourceRevision": "43a071df6bb96d54e8b81a6be0e2d453af45cc4b"
+    },
+    {
+      "component": "onnxruntime-common package source",
+      "id": "onnx-common-89f8206ba4-license",
+      "path": "notices/onnx-common-89f8206ba4-license.txt",
+      "scope": "supplemental-package-notice",
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+      "source": "Full source revision in integrity-verified published package/__commit.txt; no runtime native/WASM notice qualification",
+      "sourceUrl": "https://raw.githubusercontent.com/microsoft/onnxruntime/89f8206ba4f1c22c39e0297fb55272e8ce8cd7d0/LICENSE",
+      "sourceRevision": "89f8206ba4f1c22c39e0297fb55272e8ce8cd7d0"
+    },
+    {
+      "component": "onnxruntime-common package source",
+      "id": "onnx-common-b39e144322-license",
+      "path": "notices/onnx-common-b39e144322-license.txt",
+      "scope": "supplemental-package-notice",
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+      "source": "Full source revision in integrity-verified published package/__commit.txt; no runtime native/WASM notice qualification",
+      "sourceUrl": "https://raw.githubusercontent.com/microsoft/onnxruntime/b39e14432259d5f579f34c3e338f1f70aa368f01/LICENSE",
+      "sourceRevision": "b39e14432259d5f579f34c3e338f1f70aa368f01"
     }
   ],
   "bundledNotices": [
@@ -5326,5 +5376,595 @@
   "upstreamLicense": {
     "path": "vendor/freecut/LICENSE",
     "spdx": "MIT"
-  }
+  },
+  "packageNoticeEvidence": [
+    {
+      "location": "node_modules/@img/sharp-libvips-darwin-arm64",
+      "version": "1.2.4",
+      "integrity": "sha512-zqjjo7RatFfFoP0MkQ51jfuFZBnVE2pRiaydKJ1G/rHZvnsrHAOcQALIi9sA5co5xenQdTugCvtb1cuf78Vf4g==",
+      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.2.4.tgz",
+      "sourceRevision": "20b5e899954907a3039d6e3d4c200aaa0ec52c4c",
+      "noticeIds": [],
+      "unresolved": "Native libvips and linked constituent license/NOTICE inventory is incomplete. Exact source repository LICENSE is Apache-2.0 build tooling, not the LGPL-3.0-or-later native payload license; it is not substituted.",
+      "evidence": [
+        {
+          "path": "package-notice-evidence/@img--sharp-libvips-darwin-arm64-1.2.4.json",
+          "sha256": "619ded5292a20b2e0be1df7b6899616ae48a2323856b503de9a6cbffc39d7b2e",
+          "sourceUrl": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/1.2.4"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.2.4.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/number",
+      "version": "1.1.1",
+      "integrity": "sha512-MkKCwxlXTgz6CFoJx3pCwn07GKp36+aZyu/u2Ln2VrA5DcdyCZkASEDBTd8x5whTQQL5CiYf4prXKLcgQdv29g==",
+      "resolved": "https://registry.npmjs.org/@radix-ui/number/-/number-1.1.1.tgz",
+      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
+      "noticeIds": [
+        "radix-primitives-license"
+      ],
+      "unresolved": null,
+      "evidence": [
+        {
+          "path": "package-notice-evidence/@radix-ui--number-1.1.1.json",
+          "sha256": "e875c8bb712400f19455d1091c9899a9dd3432c9e26b2e1c49a5713830b45724",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/number/1.1.1"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/number/-/number-1.1.1.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-compose-refs",
+      "version": "1.1.2",
+      "integrity": "sha512-z4eqJvfiNnFMHIIvXP3CY57y2WJs5g2v3X0zm9mEJkrkNv4rDxu+sg9Jh8EkXyeqBkB7SOcboo9dMVqhyrACIg==",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-compose-refs/-/react-compose-refs-1.1.2.tgz",
+      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
+      "noticeIds": [
+        "radix-primitives-license"
+      ],
+      "unresolved": null,
+      "evidence": [
+        {
+          "path": "package-notice-evidence/@radix-ui--react-compose-refs-1.1.2.json",
+          "sha256": "a2446f7b24a5ea03f100d759c2daefe2379e4178e5415e860289272e28934e1a",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-compose-refs/1.1.2"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-compose-refs/-/react-compose-refs-1.1.2.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-context",
+      "version": "1.1.2",
+      "integrity": "sha512-jCi/QKUM2r1Ju5a3J64TH2A5SpKAgh0LpknyqdQ4m6DCV0xJ2HG1xARRwNGPQfi1SLdLWZ1OJz6F4OMBBNiGJA==",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-context/-/react-context-1.1.2.tgz",
+      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
+      "noticeIds": [
+        "radix-primitives-license"
+      ],
+      "unresolved": null,
+      "evidence": [
+        {
+          "path": "package-notice-evidence/@radix-ui--react-context-1.1.2.json",
+          "sha256": "6fd61b601379b5524b15412f969e15ee0f417adb1309066f7d08e0de1a604991",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-context/1.1.2"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-context/-/react-context-1.1.2.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-direction",
+      "version": "1.1.1",
+      "integrity": "sha512-1UEWRX6jnOA2y4H5WczZ44gOOjTEmlqv1uNW4GAJEO5+bauCBhv8snY65Iw5/VOS/ghKN9gr2KjnLKxrsvoMVw==",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-direction/-/react-direction-1.1.1.tgz",
+      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
+      "noticeIds": [
+        "radix-primitives-license"
+      ],
+      "unresolved": null,
+      "evidence": [
+        {
+          "path": "package-notice-evidence/@radix-ui--react-direction-1.1.1.json",
+          "sha256": "312575db7a0feb75ab28b4d3b32ca125c532c93647b45e5a1b00ea4774e0c617",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-direction/1.1.1"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-direction/-/react-direction-1.1.1.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-id",
+      "version": "1.1.1",
+      "integrity": "sha512-kGkGegYIdQsOb4XjsfM97rXsiHaBwco+hFI66oO4s9LU+PLAC5oJ7khdOVFxkhsmlbpUqDAvXw11CluXP+jkHg==",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-id/-/react-id-1.1.1.tgz",
+      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
+      "noticeIds": [
+        "radix-primitives-license"
+      ],
+      "unresolved": null,
+      "evidence": [
+        {
+          "path": "package-notice-evidence/@radix-ui--react-id-1.1.1.json",
+          "sha256": "742d8093c9e3e95a97a3316b3deb560999385ccf284bd76da89d146b924aaefb",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-id/1.1.1"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-id/-/react-id-1.1.1.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-callback-ref",
+      "version": "1.1.1",
+      "integrity": "sha512-FkBMwD+qbGQeMu1cOHnuGB6x4yzPjho8ap5WtbEJ26umhgqVXbhekKUQO+hZEL1vU92a3wHwdp0HAcqAUF5iDg==",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-callback-ref/-/react-use-callback-ref-1.1.1.tgz",
+      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
+      "noticeIds": [
+        "radix-primitives-license"
+      ],
+      "unresolved": null,
+      "evidence": [
+        {
+          "path": "package-notice-evidence/@radix-ui--react-use-callback-ref-1.1.1.json",
+          "sha256": "0a546529f2c55f3ab884ab2be3bdb6fbd3c3d8ce34a5551662f5da484603731c",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-callback-ref/1.1.1"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-callback-ref/-/react-use-callback-ref-1.1.1.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-escape-keydown",
+      "version": "1.1.1",
+      "integrity": "sha512-Il0+boE7w/XebUHyBjroE+DbByORGR9KKmITzbR7MyQ4akpORYP/ZmbhAr0DG7RmmBqoOnZdy2QlvajJ2QA59g==",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-escape-keydown/-/react-use-escape-keydown-1.1.1.tgz",
+      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
+      "noticeIds": [
+        "radix-primitives-license"
+      ],
+      "unresolved": null,
+      "evidence": [
+        {
+          "path": "package-notice-evidence/@radix-ui--react-use-escape-keydown-1.1.1.json",
+          "sha256": "c95cb6d978674c6b5f2fb21773f52a0875bcc89d7ba0b88251ad99d0c1d36593",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-escape-keydown/1.1.1"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-escape-keydown/-/react-use-escape-keydown-1.1.1.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-layout-effect",
+      "version": "1.1.1",
+      "integrity": "sha512-RbJRS4UWQFkzHTTwVymMTUv8EqYhOp8dOOviLj2ugtTiXRaRQS7GLGxZTLL1jWhMeoSCf5zmcZkqTl9IiYfXcQ==",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-layout-effect/-/react-use-layout-effect-1.1.1.tgz",
+      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
+      "noticeIds": [
+        "radix-primitives-license"
+      ],
+      "unresolved": null,
+      "evidence": [
+        {
+          "path": "package-notice-evidence/@radix-ui--react-use-layout-effect-1.1.1.json",
+          "sha256": "680e00911e47a18faae7cf93c18675483730ed86a56d89c586764617d3ef904d",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-layout-effect/1.1.1"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-layout-effect/-/react-use-layout-effect-1.1.1.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-previous",
+      "version": "1.1.1",
+      "integrity": "sha512-2dHfToCj/pzca2Ck724OZ5L0EVrr3eHRNsG/b3xQJLA2hZpVCS99bLAX+hm1IHXDEnzU6by5z/5MIY794/a8NQ==",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-previous/-/react-use-previous-1.1.1.tgz",
+      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
+      "noticeIds": [
+        "radix-primitives-license"
+      ],
+      "unresolved": null,
+      "evidence": [
+        {
+          "path": "package-notice-evidence/@radix-ui--react-use-previous-1.1.1.json",
+          "sha256": "67f4e86a54423adaa295e8322b339df4128c8fc55efd407f99f61698c9f414e4",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-previous/1.1.1"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-previous/-/react-use-previous-1.1.1.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-rect",
+      "version": "1.1.1",
+      "integrity": "sha512-QTYuDesS0VtuHNNvMh+CjlKJ4LJickCMUAqjlE3+j8w+RlRpwyX3apEQKGFzbZGdo7XNG1tXa+bQqIE7HIXT2w==",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-rect/-/react-use-rect-1.1.1.tgz",
+      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
+      "noticeIds": [
+        "radix-primitives-license"
+      ],
+      "unresolved": null,
+      "evidence": [
+        {
+          "path": "package-notice-evidence/@radix-ui--react-use-rect-1.1.1.json",
+          "sha256": "e8c550260e1317bc3d072180702bdad3628edb538bdfa70f7ec0b5dc4b603345",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-rect/1.1.1"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-rect/-/react-use-rect-1.1.1.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/react-use-size",
+      "version": "1.1.1",
+      "integrity": "sha512-ewrXRDTAqAXlkl6t/fkXWNAhFX9I+CkKlw6zjEwk86RSPKwZr3xpBRso655aqYafwtnbpHLj6toFzmd6xdVptQ==",
+      "resolved": "https://registry.npmjs.org/@radix-ui/react-use-size/-/react-use-size-1.1.1.tgz",
+      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
+      "noticeIds": [
+        "radix-primitives-license"
+      ],
+      "unresolved": null,
+      "evidence": [
+        {
+          "path": "package-notice-evidence/@radix-ui--react-use-size-1.1.1.json",
+          "sha256": "f04bb6982b6f50a527edc9276e8dc5efe0658ff8870f979548a9dbc40d66d8b0",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-size/1.1.1"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/react-use-size/-/react-use-size-1.1.1.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/@radix-ui/rect",
+      "version": "1.1.1",
+      "integrity": "sha512-HPwpGIzkl28mWyZqG52jiqDJ12waP11Pa1lGoiyUkIEuMLBP0oeK/C89esbXrxsky5we7dfd8U58nm0SgAWpVw==",
+      "resolved": "https://registry.npmjs.org/@radix-ui/rect/-/rect-1.1.1.tgz",
+      "sourceRevision": "fcef0668a5c827e5a4baac405474d75680f9a4eb",
+      "noticeIds": [
+        "radix-primitives-license"
+      ],
+      "unresolved": null,
+      "evidence": [
+        {
+          "path": "package-notice-evidence/@radix-ui--rect-1.1.1.json",
+          "sha256": "7d27c80b1fa7214073631efb6690bba9da859446362573cb9b40845c7e0a7c3e",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/rect/1.1.1"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/@radix-ui/rect/-/rect-1.1.1.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/guid-typescript",
+      "version": "1.0.9",
+      "integrity": "sha512-Y8T4vYhEfwJOTbouREvG+3XDsjr8E3kIr7uf+JZ0BYloFsttiHU0WfvANVsR7TxNUJa/WpCnw/Ino/p+DeBhBQ==",
+      "resolved": "https://registry.npmjs.org/guid-typescript/-/guid-typescript-1.0.9.tgz",
+      "sourceRevision": "1870de806c3db7ba46c5b8a1387c60fc9dda9284",
+      "noticeIds": [],
+      "unresolved": "Integrity-verified published archive contains no full license/NOTICE text. Advertised immutable repository gitHead source archive and LICENSE returned HTTP 404; a generic SPDX template is not substituted.",
+      "evidence": [
+        {
+          "path": "package-notice-evidence/guid-typescript-1.0.9.json",
+          "sha256": "6378c2ba06b0a41e033140a30359ba77fbf8706e46a2c9913d9ffff318c3d23a",
+          "sourceUrl": "https://registry.npmjs.org/guid-typescript/1.0.9"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/guid-typescript/-/guid-typescript-1.0.9.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/html-parse-stringify",
+      "version": "3.0.1",
+      "integrity": "sha512-KknJ50kTInJ7qIScF3jeaFRpMpE8/lfiTdzf/twXyPBLAGrLRTmkz3AdTnKeh40X8k9L2fdYwEp/42WGXIRGcg==",
+      "resolved": "https://registry.npmjs.org/html-parse-stringify/-/html-parse-stringify-3.0.1.tgz",
+      "sourceRevision": "ce46022f537ef9b050fac592f9fcc30bf838e5ba",
+      "noticeIds": [],
+      "unresolved": "Integrity-verified published archive and exact gitHead source archive contain no full license/NOTICE text; README supplies only an MIT label.",
+      "evidence": [
+        {
+          "path": "package-notice-evidence/html-parse-stringify-3.0.1.json",
+          "sha256": "02983650726c4881367a3034c1c8bd58ef7b8b40b7f60f0ea3e9e29b63575284",
+          "sourceUrl": "https://registry.npmjs.org/html-parse-stringify/3.0.1"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/html-parse-stringify/-/html-parse-stringify-3.0.1.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/kokoro-js/node_modules/onnxruntime-common",
+      "version": "1.21.0",
+      "integrity": "sha512-Q632iLLrtCAVOTO65dh2+mNbQir/QNTVBG3h/QdZBpns7mZ0RYbLRBgGABPbpU9351AgYy7SJf1WaeVwMrBFPQ==",
+      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.21.0.tgz",
+      "sourceRevision": null,
+      "noticeIds": [],
+      "unresolved": "Integrity-verified stable package archive contains neither full notice text nor __commit.txt; published exact-version metadata has no gitHead. Immutable source-to-package license binding remains unresolved.",
+      "evidence": [
+        {
+          "path": "package-notice-evidence/onnxruntime-common-1.21.0.json",
+          "sha256": "725f86f8d21dfa245c8fc31480b71e0e3cee1645d0cfbc9b79a1ab32588a6916",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/1.21.0"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.21.0.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/kokoro-js/node_modules/onnxruntime-node",
+      "version": "1.21.0",
+      "integrity": "sha512-NeaCX6WW2L8cRCSqy3bInlo5ojjQqu2fD3D+9W5qb5irwxhEyWKXeH2vZ8W9r6VxaMPUan+4/7NDwZMtouZxEw==",
+      "resolved": "https://registry.npmjs.org/onnxruntime-node/-/onnxruntime-node-1.21.0.tgz",
+      "sourceRevision": null,
+      "noticeIds": [],
+      "unresolved": "Native/WASM bundled constituent license/NOTICE text and exact binary-to-source mapping remain unqualified. A top-level Microsoft MIT text alone cannot clear this package payload.",
+      "evidence": [
+        {
+          "path": "package-notice-evidence/onnxruntime-node-1.21.0.json",
+          "sha256": "071fff1bf360ed4194609c7008648f6d46be2576074a91d05e826044ef7f12e4",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-node/1.21.0"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-node/-/onnxruntime-node-1.21.0.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/kokoro-js/node_modules/onnxruntime-web",
+      "version": "1.22.0-dev.20250409-89f8206ba4",
+      "integrity": "sha512-0uS76OPgH0hWCPrFKlL8kYVV7ckM7t/36HfbgoFw6Nd0CZVVbQC4PkrR8mBX8LtNUFZO25IQBqV2Hx2ho3FlbQ==",
+      "resolved": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.22.0-dev.20250409-89f8206ba4.tgz",
+      "sourceRevision": null,
+      "noticeIds": [],
+      "unresolved": "Native/WASM bundled constituent license/NOTICE text and exact binary-to-source mapping remain unqualified. A top-level Microsoft MIT text alone cannot clear this package payload.",
+      "evidence": [
+        {
+          "path": "package-notice-evidence/onnxruntime-web-1.22.0-dev.20250409-89f8206ba4.json",
+          "sha256": "71a46dfe654e69ae0050e42dd2196aa012579549d1a228fd2c84809d8ca1d01d",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-web/1.22.0-dev.20250409-89f8206ba4"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.22.0-dev.20250409-89f8206ba4.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/kokoro-js/node_modules/onnxruntime-web/node_modules/onnxruntime-common",
+      "version": "1.22.0-dev.20250409-89f8206ba4",
+      "integrity": "sha512-vDJMkfCfb0b1A836rgHj+ORuZf4B4+cc2bASQtpeoJLueuFc5DuYwjIZUBrSvx/fO5IrLjLz+oTrB3pcGlhovQ==",
+      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.22.0-dev.20250409-89f8206ba4.tgz",
+      "sourceRevision": "89f8206ba4f1c22c39e0297fb55272e8ce8cd7d0",
+      "noticeIds": [
+        "onnx-common-89f8206ba4-license"
+      ],
+      "unresolved": null,
+      "evidence": [
+        {
+          "path": "package-notice-evidence/onnxruntime-common-1.22.0-dev.20250409-89f8206ba4.json",
+          "sha256": "0e9628d322f6344e2bf734282e934e944ba3bcf48dbb72b25818b927dfbb4ae7",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/1.22.0-dev.20250409-89f8206ba4"
+        },
+        {
+          "path": "package-notice-evidence/onnxruntime-common-1.22.0-dev.20250409-89f8206ba4-commit.txt",
+          "sha256": "bb657eafb10673bd409b029ede5015b75274ec360454849cc1b4f4a75653fae4",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.22.0-dev.20250409-89f8206ba4.tgz#package/__commit.txt"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.22.0-dev.20250409-89f8206ba4.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/onnxruntime-common",
+      "version": "1.24.3",
+      "integrity": "sha512-GeuPZO6U/LBJXvwdaqHbuUmoXiEdeCjWi/EG7Y1HNnDwJYuk6WUbNXpF6luSUY8yASul3cmUlLGrCCL1ZgVXqA==",
+      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.3.tgz",
+      "sourceRevision": null,
+      "noticeIds": [],
+      "unresolved": "Integrity-verified stable package archive contains neither full notice text nor __commit.txt; published exact-version metadata has no gitHead. Immutable source-to-package license binding remains unresolved.",
+      "evidence": [
+        {
+          "path": "package-notice-evidence/onnxruntime-common-1.24.3.json",
+          "sha256": "c01c20a0aa0878f74b6eca4b108a013a0f40858c7ed66261b9bb104f61c5ba74",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/1.24.3"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.3.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/onnxruntime-node",
+      "version": "1.24.3",
+      "integrity": "sha512-JH7+czbc8ALA819vlTgcV+Q214/+VjGeBHDjX81+ZCD0PCVCIFGFNtT0V4sXG/1JXypKPgScQcB3ij/hk3YnTg==",
+      "resolved": "https://registry.npmjs.org/onnxruntime-node/-/onnxruntime-node-1.24.3.tgz",
+      "sourceRevision": null,
+      "noticeIds": [],
+      "unresolved": "Native/WASM bundled constituent license/NOTICE text and exact binary-to-source mapping remain unqualified. A top-level Microsoft MIT text alone cannot clear this package payload.",
+      "evidence": [
+        {
+          "path": "package-notice-evidence/onnxruntime-node-1.24.3.json",
+          "sha256": "771348db521486078884bc9567db571cd53a803b7db237e8af12aacc2eb8fb72",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-node/1.24.3"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-node/-/onnxruntime-node-1.24.3.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/onnxruntime-web",
+      "version": "1.26.0-dev.20260410-5e55544225",
+      "integrity": "sha512-hHd9n8DzIfGSAjM4Dvslesc8i6h9HEEcl8qt7X3LfhUxMgls6FBJ32j2xrDtJjKJFEehFeJmyB/pvad1I8KS8w==",
+      "resolved": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.26.0-dev.20260410-5e55544225.tgz",
+      "sourceRevision": null,
+      "noticeIds": [],
+      "unresolved": "Native/WASM bundled constituent license/NOTICE text and exact binary-to-source mapping remain unqualified. A top-level Microsoft MIT text alone cannot clear this package payload.",
+      "evidence": [
+        {
+          "path": "package-notice-evidence/onnxruntime-web-1.26.0-dev.20260410-5e55544225.json",
+          "sha256": "5ee2131060be8181a4b72d7053fcc27ed3a89caa68265e901fecdac6ce242485",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-web/1.26.0-dev.20260410-5e55544225"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.26.0-dev.20260410-5e55544225.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/onnxruntime-web/node_modules/onnxruntime-common",
+      "version": "1.24.0-dev.20251116-b39e144322",
+      "integrity": "sha512-BOoomdHYmNRL5r4iQ4bMvsl2t0/hzVQ3OM3PHD0gxeXu1PmggqBv3puZicEUVOA3AtHHYmqZtjMj9FOfGrATTw==",
+      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.0-dev.20251116-b39e144322.tgz",
+      "sourceRevision": "b39e14432259d5f579f34c3e338f1f70aa368f01",
+      "noticeIds": [
+        "onnx-common-b39e144322-license"
+      ],
+      "unresolved": null,
+      "evidence": [
+        {
+          "path": "package-notice-evidence/onnxruntime-common-1.24.0-dev.20251116-b39e144322.json",
+          "sha256": "7fdcf29a8d48cdae809c00b6306b7472dd391af916c347248303bf5d13490f2d",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/1.24.0-dev.20251116-b39e144322"
+        },
+        {
+          "path": "package-notice-evidence/onnxruntime-common-1.24.0-dev.20251116-b39e144322-commit.txt",
+          "sha256": "812b5aa4aff9efd28801eaead7bc3fc2b0ed743501969385c17bb1f57686d091",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.0-dev.20251116-b39e144322.tgz#package/__commit.txt"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.0-dev.20251116-b39e144322.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/react-hotkeys-hook",
+      "version": "5.2.4",
+      "integrity": "sha512-BgKg+A1+TawkYluh5Bo4cTmcgMN5L29uhJbDUQdHwPX+qgXRjIPYU5kIDHyxnAwCkCBiu9V5OpB2mpyeluVF2A==",
+      "resolved": "https://registry.npmjs.org/react-hotkeys-hook/-/react-hotkeys-hook-5.2.4.tgz",
+      "sourceRevision": "f2006c7ba118175c7cd673c13296ebfb618bbd7a",
+      "noticeIds": [
+        "react-hotkeys-hook-license"
+      ],
+      "unresolved": null,
+      "evidence": [
+        {
+          "path": "package-notice-evidence/react-hotkeys-hook-5.2.4.json",
+          "sha256": "a8dfca839f9acb0ac8199ef1bd0150241c26d4c297b6271a7e9aafd2d5d6aaa7",
+          "sourceUrl": "https://registry.npmjs.org/react-hotkeys-hook/5.2.4"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/react-hotkeys-hook/-/react-hotkeys-hook-5.2.4.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/react-remove-scroll-bar",
+      "version": "2.3.8",
+      "integrity": "sha512-9r+yi9+mgU33AKcj6IbT9oRCO78WriSj6t/cF8DWBZJ9aOGPOTEDvdUDz1FwKim7QXWwmHqtdHnRJfhAxEG46Q==",
+      "resolved": "https://registry.npmjs.org/react-remove-scroll-bar/-/react-remove-scroll-bar-2.3.8.tgz",
+      "sourceRevision": "b3b1287aad81def2e2ae707274b74531b61ddbaf",
+      "noticeIds": [],
+      "unresolved": "Integrity-verified published archive contains no full license/NOTICE text. Advertised immutable repository gitHead source archive and LICENSE returned HTTP 404; a generic SPDX template is not substituted.",
+      "evidence": [
+        {
+          "path": "package-notice-evidence/react-remove-scroll-bar-2.3.8.json",
+          "sha256": "826c618ece09367334160c1ab3a272fd54f8f12e3b0a45f75b0f2660d285855a",
+          "sourceUrl": "https://registry.npmjs.org/react-remove-scroll-bar/2.3.8"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/react-remove-scroll-bar/-/react-remove-scroll-bar-2.3.8.tgz"
+        }
+      ]
+    },
+    {
+      "location": "node_modules/react-resizable-panels",
+      "version": "3.0.6",
+      "integrity": "sha512-b3qKHQ3MLqOgSS+FRYKapNkJZf5EQzuf6+RLiq1/IlTHw99YrZ2NJZLk4hQIzTnnIkRg2LUqyVinu6YWWpUYew==",
+      "resolved": "https://registry.npmjs.org/react-resizable-panels/-/react-resizable-panels-3.0.6.tgz",
+      "sourceRevision": "43a071df6bb96d54e8b81a6be0e2d453af45cc4b",
+      "noticeIds": [
+        "react-resizable-panels-license"
+      ],
+      "unresolved": null,
+      "evidence": [
+        {
+          "path": "package-notice-evidence/react-resizable-panels-3.0.6.json",
+          "sha256": "a2637b5a52addc2707a8c5b8646503d424227626d94fe1ba0a561cae5a8e3031",
+          "sourceUrl": "https://registry.npmjs.org/react-resizable-panels/3.0.6"
+        },
+        {
+          "path": "package-notice-evidence/source-receipt.json",
+          "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
+          "sourceUrl": "https://registry.npmjs.org/react-resizable-panels/-/react-resizable-panels-3.0.6.tgz"
+        }
+      ]
+    }
+  ]
 }
