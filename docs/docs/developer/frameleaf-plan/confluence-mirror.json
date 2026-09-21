@@ -844,6 +844,16 @@
       "title": "FL-30 production navigation rollout",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61964350",
       "version": 1
+    },
+    {
+      "bytes": 7953,
+      "category": "development",
+      "id": "61997109",
+      "source": "docs/docs/developer/frameleaf-plan/FL-31-search-session.md",
+      "sourceSha256": "df8b3d3b25157c37d76f0afcef519159a5950c73a65b457f8d23562de4d7432f",
+      "title": "FL-31 production search session slice",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997109",
+      "version": 3
     }
   ],
   "spaceId": "61374475",

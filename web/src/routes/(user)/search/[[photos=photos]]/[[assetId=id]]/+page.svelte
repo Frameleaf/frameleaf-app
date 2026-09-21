@@ -19,6 +19,10 @@
   import SetVisibilityAction from '$lib/components/timeline/actions/SetVisibilityAction.svelte';
   import TagAction from '$lib/components/timeline/actions/TagAction.svelte';
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
+  import {
+    LibrarySearchSession,
+    type LibrarySearchTerms as SearchTerms,
+  } from '$lib/frameleaf/library-search-session.svelte';
   import { QueryParameter } from '$lib/constants';
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -33,20 +37,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import { isAlbumsRoute, isPeopleRoute } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import {
-    type AlbumResponseDto,
-    type AssetResponseDto,
-    askSearch,
-    type AskSearchResponseDto,
-    AssetVisibility,
-    getPerson,
-    getTagById,
-    ImageEnrichmentFilter,
-    type MetadataSearchDto,
-    searchAssets,
-    searchSmart,
-    type SmartSearchDto,
-  } from '@immich/sdk';
+  import { type AssetResponseDto, getPerson, getTagById, ImageEnrichmentFilter } from '@immich/sdk';
   import { ActionButton, Button, CommandPaletteDefaultProvider, Icon, IconButton, LoadingSpinner } from '@immich/ui';
   import {
     mdiAccountMultipleOutline,
@@ -60,7 +51,7 @@
     mdiMapMarkerOutline,
     mdiSelectAll,
   } from '@mdi/js';
-  import { onMount, tick, untrack } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   const viewport: Viewport = $state({ width: 0, height: 0 });
@@ -72,19 +63,14 @@
   // manually and navigate back to that.
   let previousRoute = $state<string>(Route.explore());
 
-  let nextPage = $state(1);
-  let searchResultAlbums: AlbumResponseDto[] = $state([]);
-  let searchResultAssets: AssetResponseDto[] = $state([]);
-  let isLoading = $state(true);
+  const session = new LibrarySearchSession();
   let askQuery = $state('');
-  let askResponse = $state<AskSearchResponseDto>();
-  let askNextPage = $state<number | null>(null);
-  let isAskLoading = $state(false);
-  let askSearchRequestId = 0;
+  const askResponse = $derived(session.askResponse);
+  const isAskLoading = $derived(session.loading && !hasSearchQuery);
+  const isLoading = $derived(session.loading);
   let scrollY = $state(0);
   let scrollYHistory = 0;
 
-  type SearchTerms = MetadataSearchDto & Pick<SmartSearchDto, 'query' | 'queryAssetId'>;
   let searchQuery = $derived(page.url.searchParams.get(QueryParameter.QUERY));
   let askSearchQuery = $derived(page.url.searchParams.get(ASK_QUERY_PARAMETER) ?? '');
   let smartSearchEnabled = $derived(featureFlagsManager.value.smartSearch);
@@ -93,32 +79,13 @@
   let canUseAskSearch = $derived(featureFlagsManager.value.search && featureFlagsManager.value.smartSearch);
 
   $effect(() => {
-    // we want this to *only* be reactive on `terms`
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-    terms;
-    untrack(() => handlePromiseError(onSearchQueryUpdate()));
+    // URL query changes (including Back/Forward) update results and the editable filters together.
+    const query = terms;
+    const ask = askSearchQuery;
+    untrack(() => handlePromiseError(onSearchQueryUpdate(query, ask)));
   });
 
-  $effect(() => {
-    // we want this to *only* be reactive on `askSearchQuery` and `hasSearchQuery`
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-    askSearchQuery;
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-    hasSearchQuery;
-    untrack(() => {
-      if (hasSearchQuery) {
-        return;
-      }
-
-      if (!askSearchQuery.trim()) {
-        resetAskSearch();
-        return;
-      }
-
-      askQuery = askSearchQuery;
-      handlePromiseError(runAskSearch(askSearchQuery, { force: true }));
-    });
-  });
+  onDestroy(() => session.reset());
 
   $effect(() => {
     if (scrollY) {
@@ -152,7 +119,7 @@
 
   const onAssetDelete = (assetIds: string[]) => {
     const assetIdSet = new Set(assetIds);
-    searchResultAssets = searchResultAssets.filter((asset: AssetResponseDto) => !assetIdSet.has(asset.id));
+    session.assets = session.assets.filter((asset: AssetResponseDto) => !assetIdSet.has(asset.id));
   };
 
   const handleSetVisibility = (assetIds: string[]) => {
@@ -161,50 +128,24 @@
   };
 
   const handleSelectAll = () => {
-    assetMultiSelectManager.selectAssets(searchResultAssets.map((asset) => toTimelineAsset(asset)));
+    assetMultiSelectManager.selectAssets(session.assets.map((asset) => toTimelineAsset(asset)));
   };
 
-  async function onSearchQueryUpdate() {
-    nextPage = 1;
-    searchResultAssets = [];
-    searchResultAlbums = [];
-    resetAskSearch(false);
-    if (!hasSearchQuery) {
-      isLoading = false;
-      return;
-    }
-    await loadNextPage(true);
+  async function onSearchQueryUpdate(query = terms, ask = askSearchQuery) {
+    searchManager.setQuery(query);
+    askQuery = ask;
+    session.reset(
+      Object.keys(query).length > 0 ? { terms: query } : canUseAskSearch && ask.trim() ? { ask: ask.trim() } : null,
+    );
+    await loadNextPage();
   }
 
   // eslint-disable-next-line svelte/valid-prop-names-in-kit-pages
-  export const loadNextPage = async (force?: boolean) => {
-    if (!nextPage || (isLoading && !force)) {
-      return;
-    }
-    isLoading = true;
-
-    const searchDto: SearchTerms = {
-      page: nextPage,
-      withExif: true,
-      ...terms,
-    };
-
+  export const loadNextPage = async () => {
     try {
-      const { albums, assets } =
-        ('query' in searchDto || 'queryAssetId' in searchDto) && smartSearchEnabled
-          ? await searchSmart({
-              smartSearchDto: { visibility: AssetVisibility.Timeline, ...searchDto, language: $lang },
-            })
-          : await searchAssets({ metadataSearchDto: { visibility: AssetVisibility.Timeline, ...searchDto } });
-
-      searchResultAlbums.push(...albums.items);
-      searchResultAssets.push(...assets.items);
-
-      nextPage = Number(assets.nextPage) || 0;
+      await session.loadNextPage({ smartSearch: smartSearchEnabled, language: $lang });
     } catch (error) {
       handleError(error, $t('loading_search_results_failed'));
-    } finally {
-      isLoading = false;
     }
   };
 
@@ -315,7 +256,7 @@
 
     if (terms.isNotInAlbum) {
       const assetIdSet = new Set(assetIds);
-      searchResultAssets = searchResultAssets.filter((asset) => !assetIdSet.has(asset.id));
+      session.assets = session.assets.filter((asset) => !assetIdSet.has(asset.id));
     }
   };
 
@@ -331,21 +272,6 @@
     searchManager.setQuery(nextTerms);
   }
 
-  onMount(() => searchManager.setQuery(terms));
-
-  function resetAskSearch(clearInput = true) {
-    askSearchRequestId++;
-    askResponse = undefined;
-    askNextPage = null;
-    isAskLoading = false;
-
-    if (clearInput) {
-      askQuery = '';
-      searchResultAssets = [];
-      searchResultAlbums = [];
-    }
-  }
-
   async function updateAskSearchUrl(query: string) {
     const normalizedQuery = query.trim();
     if (!normalizedQuery || isAskLoading) {
@@ -357,63 +283,11 @@
     url.searchParams.set(ASK_QUERY_PARAMETER, normalizedQuery);
 
     if (url.href === page.url.href) {
-      await runAskSearch(normalizedQuery, { force: true });
+      await onSearchQueryUpdate();
       return;
     }
 
     await goto(url, { keepFocus: true, noScroll: true });
-  }
-
-  async function runAskSearch(query = askQuery, options: { force?: boolean; append?: boolean } = {}) {
-    const normalizedQuery = query.trim();
-    if (!normalizedQuery || (isAskLoading && !options.force) || !canUseAskSearch) {
-      return;
-    }
-
-    const requestId = ++askSearchRequestId;
-    const pageToLoad = options.append ? askNextPage : 1;
-    if (!pageToLoad) {
-      return;
-    }
-
-    isAskLoading = true;
-    askQuery = normalizedQuery;
-
-    if (!options.append) {
-      askResponse = undefined;
-      askNextPage = null;
-      searchResultAssets = [];
-      searchResultAlbums = [];
-    }
-
-    try {
-      const response = await askSearch({ askSearchDto: { query: normalizedQuery, page: pageToLoad, language: $lang } });
-      if (requestId !== askSearchRequestId) {
-        return;
-      }
-
-      askResponse = response;
-      askNextPage = Number(response.results.assets.nextPage) || null;
-      if (options.append) {
-        searchResultAlbums.push(...response.results.albums.items);
-        searchResultAssets.push(...response.results.assets.items);
-      } else {
-        searchResultAlbums = response.results.albums.items;
-        searchResultAssets = response.results.assets.items;
-      }
-    } catch (error) {
-      if (requestId === askSearchRequestId) {
-        handleError(error, $t('loading_search_results_failed'));
-      }
-    } finally {
-      if (requestId === askSearchRequestId) {
-        isAskLoading = false;
-      }
-    }
-  }
-
-  async function loadNextAskPage() {
-    await runAskSearch(askResponse?.query ?? askQuery, { append: true });
   }
 
   function onAskSubmit(event: SubmitEvent) {
@@ -538,14 +412,14 @@
           {/each}
         </div>
 
-        {#if askResponse && searchResultAssets.length > 0}
+        {#if askResponse && session.assets.length > 0}
           <GalleryViewer
-            assets={searchResultAssets}
+            assets={session.assets}
             assetInteraction={assetMultiSelectManager}
             showArchiveIcon={true}
             {viewport}
-            onReload={runAskSearch}
-            onEndReached={loadNextAskPage}
+            onReload={onSearchQueryUpdate}
+            onEndReached={loadNextPage}
             slidingWindowOffset={searchResultsElement.offsetTop}
           />
         {:else if askResponse && !isAskLoading}
@@ -558,9 +432,9 @@
           </div>
         {/if}
       </div>
-    {:else if hasSearchQuery && searchResultAssets.length > 0}
+    {:else if hasSearchQuery && session.assets.length > 0}
       <GalleryViewer
-        assets={searchResultAssets}
+        assets={session.assets}
         assetInteraction={assetMultiSelectManager}
         onEndReached={loadNextPage}
         showArchiveIcon={true}
@@ -607,7 +481,7 @@
               removeFavorite={assetMultiSelectManager.isAllFavorite}
               onFavorite={(ids, isFavorite) => {
                 for (const id of ids) {
-                  const asset = searchResultAssets.find((asset) => asset.id === id);
+                  const asset = session.assets.find((asset) => asset.id === id);
                   if (asset) {
                     asset.isFavorite = isFavorite;
                   }
@@ -630,7 +504,7 @@
               {#if authManager.preferences.tags.enabled}
                 <TagAction menuItem />
               {/if}
-              <DeleteAssets menuItem {onAssetDelete} onUndoDelete={onSearchQueryUpdate} />
+              <DeleteAssets menuItem {onAssetDelete} onUndoDelete={() => onSearchQueryUpdate()} />
               <hr />
               <ActionMenuItem action={Actions.RegenerateThumbnailJob} />
               <ActionMenuItem action={Actions.RefreshMetadataJob} />
