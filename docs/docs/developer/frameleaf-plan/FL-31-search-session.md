@@ -10,7 +10,7 @@ Baseline: `0116d4778d7ce34e9bc41a7d1fed46a4cd88a466`, freshly fetched `Frameleaf
 
 A query replacement aborts the previous request and invalidates its identity. A late success, failure or completion cannot alter the newer result collection, page cursor or loading state, even when transport cancellation is ignored. Metadata, smart and Ask searches share that owner. Concurrent pagination calls coalesce; a current failure leaves its page available for retry. The session controls page and EXIF loading rather than accepting a stale page number from a portable filter URL.
 
-The existing `query` and `ask` URL formats remain compatible. Deep links and Back/Forward query changes update the result request and the existing editable filter manager together. Opening an asset under the same search URL keeps the search request and collection. Successful page destruction aborts outstanding work; a merely attempted navigation does not discard the collection. Zero-result filter chips remain visible and removable.
+The existing `query` and `ask` URL formats remain compatible. Deep links and Back/Forward query changes update the result request and the existing editable filter manager together. Opening an asset under the same search URL keeps the search request and collection. Successful page destruction aborts outstanding work; a merely attempted navigation does not discard the collection. Zero-result filter chips remain visible and removable. Delete undo reloads the current URL query through a zero-argument wrapper: the restored `TimelineAsset[]` callback payload cannot replace the search filters.
 
 The existing selection manager, gallery viewer, scroll restoration, asset actions and quick editor remain in place. The session forwards existing viewing order in the search request and never writes shared album ordering. It introduces no new layout, storage preference, API, server migration, cloud action or rollout flag; existing search is repaired in place. New Frameleaf layouts remain outside this slice and require their planned rollout gate.
 
@@ -27,9 +27,24 @@ The existing selection manager, gallery viewer, scroll restoration, asset action
 
 ## Validation and limits
 
-Node `24.21.0`; focused web Vitest session and production-page suites: eight tests. The route suite mounts the production page and filter manager with mocked SDK, gallery and application chrome; it is not full browser, live API, accessibility, media or native qualification. Focused ESLint and Prettier apply to the four changed TypeScript/Svelte files.
+Node `24.21.0`; focused web Vitest session and production-page suites: nine tests. The route suite mounts the production page and filter manager with mocked SDK, gallery and application chrome; it is not full browser, live API, accessibility, media or native qualification. Focused ESLint and Prettier apply to the four changed TypeScript/Svelte files.
 
-The whole-web TypeScript check exposes two baseline errors in `DetailPanelImageEnrichment.spec.ts` involving generated `Status` enums. No errors remain in this slice's files. Hosted exact-candidate Actions remain the authoritative merge gate.
+The delete/undo regression mounts the production search page and deletion action, uses the real delete/restore utility and Undo toast callback, and checks that the repeated metadata request retains the URL filters. It fails with the original direct callback binding and passes with the wrapper. Gallery, chrome and SDK transport remain mocked.
+
+Dependencies are installed inside this worktree from the frozen lockfile; tests do not use another worktree's `node_modules` or SDK build. With the pinned Node `24.21.0` and pnpm `11.24.0` on PATH, reproduce from the repository root:
+
+```sh
+node --version
+pnpm --version
+pnpm install --filter immich-web... --frozen-lockfile
+pnpm --filter @immich/sdk build
+pnpm --dir web exec svelte-kit sync
+pnpm --dir web exec vitest run src/lib/frameleaf/library-search-session.svelte.spec.ts 'src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/page.svelte.spec.ts'
+```
+
+Run Vitest from the web working directory (`pnpm --dir web`), not from the repository root with a Vite root override; SvelteKit resolves its configuration from the working directory.
+
+The initial check using borrowed dependencies reported two enum errors in the unchanged `DetailPanelImageEnrichment.spec.ts`. With the isolated frozen-lockfile install and locally rebuilt SDK, the whole-web TypeScript check passes. Hosted exact-candidate Actions remain the authoritative merge gate.
 
 GitNexus indexed this exact baseline in the owned worktree. It cannot resolve the page-local Svelte functions and reports UNKNOWN risk for them; manual caller tracing covers the production route, gallery reload/pagination callbacks and search filter manager. Before commit, change detection must be run against `fork/main`; lack of indexed Svelte symbols is not zero-impact evidence.
 

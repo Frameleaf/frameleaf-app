@@ -504,7 +504,7 @@
               {#if authManager.preferences.tags.enabled}
                 <TagAction menuItem />
               {/if}
-              <DeleteAssets menuItem {onAssetDelete} onUndoDelete={onSearchQueryUpdate} />
+              <DeleteAssets menuItem {onAssetDelete} onUndoDelete={() => onSearchQueryUpdate()} />
               <hr />
               <ActionMenuItem action={Actions.RegenerateThumbnailJob} />
               <ActionMenuItem action={Actions.RefreshMetadataJob} />

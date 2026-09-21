@@ -1,8 +1,11 @@
-import { searchAssets, type SearchResponseDto } from '@immich/sdk';
+import { searchAssets, deleteAssets, restoreAssets, type SearchResponseDto } from '@immich/sdk';
+import { toastManager } from '@immich/ui';
 import { render, screen, waitFor, fireEvent } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
+import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
 import { searchManager } from '$lib/managers/search-manager.svelte';
 import { Route } from '$lib/route';
+import { timelineAssetFactory } from '@test-data/factories/asset-factory';
 import SearchPage from './+page.svelte';
 
 const navigation = vi.hoisted(() => ({ goto: vi.fn(), afterNavigate: vi.fn() }));
@@ -17,14 +20,37 @@ vi.mock('$app/state', () => ({
     return state;
   },
 }));
-vi.mock('@immich/sdk', async (original) => ({ ...(await original<object>()), searchAssets: vi.fn() }));
-vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: {} } }));
+vi.mock('@immich/sdk', async (original) => ({
+  ...(await original<object>()),
+  searchAssets: vi.fn(),
+  deleteAssets: vi.fn(),
+  restoreAssets: vi.fn(),
+}));
+vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: { trash: true } } }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
-  authManager: { authenticated: false, preferences: { tags: { enabled: false } } },
+  authManager: { authenticated: true, user: { id: 'owner' }, preferences: { tags: { enabled: false } } },
 }));
 vi.mock('$lib/components/shared-components/search-bar/SearchBar.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/shared-components/gallery-viewer/GalleryViewer.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/shared-components/ControlAppBar.svelte', () => ({ default: () => {} }));
+vi.mock('$lib/components/timeline/AssetSelectControlBar.svelte', async () => {
+  const { default: Field } = await import('@test-data/components/MockField.svelte');
+  return { default: Field };
+});
+vi.mock('$lib/components/shared-components/context-menu/ButtonContextMenu.svelte', async () => {
+  const { default: Field } = await import('@test-data/components/MockField.svelte');
+  return { default: Field };
+});
+vi.mock('@immich/ui', async (original) => {
+  const { default: IconButton } = await import('@test-data/components/MockIconButton.svelte');
+  return {
+    ...(await original<object>()),
+    IconButton,
+    ActionButton: () => {},
+    CommandPaletteDefaultProvider: () => {},
+    toastManager: { primary: vi.fn() },
+  };
+});
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 
 const empty = { assets: { items: [], nextPage: null }, albums: { items: [] } } as unknown as SearchResponseDto;
@@ -36,6 +62,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(searchAssets).mockResolvedValue(empty);
   searchManager.reset();
+  assetMultiSelectManager.clear();
 });
 
 it('restores deep-linked and browser-history filters into both results and the editable search', async () => {
@@ -87,4 +114,38 @@ it('preserves the current query when opening media and aborts requests when leav
   view.unmount();
   expect(signal?.aborted).toBe(true);
   resolve(empty);
+});
+
+it('reloads the current filtered query after deleting and undoing selected assets', async () => {
+  const asset = timelineAssetFactory.build({ id: 'asset', ownerId: 'owner' });
+  setQuery({ city: 'Banff', originalFileName: 'holiday' });
+  assetMultiSelectManager.selectAsset(asset);
+  const view = render(SearchPage);
+  await waitFor(() => expect(searchAssets).toHaveBeenCalledOnce());
+  await fireEvent.click(screen.getByRole('menuitem', { name: 'delete' }));
+  expect(deleteAssets).toHaveBeenCalledWith({ assetBulkDeleteDto: { ids: ['asset'], force: false } });
+  const toast = vi.mocked(toastManager.primary).mock.calls[0][0];
+  if (!toast || typeof toast === 'string' || typeof toast.button === 'function') {
+    throw new Error('Expected an undo toast');
+  }
+  const undo = toast.button?.onclick;
+  expect(undo).toBeTypeOf('function');
+  await undo?.();
+  await waitFor(() => expect(searchAssets).toHaveBeenCalledTimes(2));
+  expect(restoreAssets).toHaveBeenCalledWith({ bulkIdsDto: { ids: ['asset'] } });
+  expect(searchAssets).toHaveBeenLastCalledWith(
+    {
+      metadataSearchDto: {
+        city: 'Banff',
+        originalFileName: 'holiday',
+        visibility: 'timeline',
+        page: 1,
+        withExif: true,
+      },
+    },
+    expect.anything(),
+  );
+  expect(searchManager.filter.query).toBe('holiday');
+  expect(searchManager.filter.location.city).toBe('Banff');
+  view.unmount();
 });
