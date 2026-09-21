@@ -73480,7 +73480,14 @@
         },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
-        "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
+        "tests": {
+          "status": "bounded-session-regressions-parent-unqualified",
+          "evidence": [
+            "docs/docs/developer/frameleaf-plan/FL-31-search-session.md",
+            "web/src/routes/(user)/photos/[[assetId=id]]/page.svelte.spec.ts",
+            "web/src/lib/components/timeline/Timeline.spec.ts"
+          ]
+        }
       },
       "auditGap": null
     },

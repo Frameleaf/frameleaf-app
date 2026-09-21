@@ -25,7 +25,7 @@
   import { getTimes, type ScrubberListener } from '$lib/utils/timeline-util';
   import { type AlbumResponseDto, type PersonResponseDto, type UserResponseDto } from '@immich/sdk';
   import { DateTime } from 'luxon';
-  import { onDestroy, onMount, tick, type Snippet } from 'svelte';
+  import { onDestroy, onMount, tick, untrack, type Snippet } from 'svelte';
   import type { UpdatePayload } from 'vite';
 
   interface Props {
@@ -36,6 +36,8 @@
      additionally, update the page location/url with the asset as the timeline is scrolled */
     enableRouting: boolean;
     timelineManager?: TimelineManager;
+    /** False only when a route owns and destroys the supplied manager. Existing bind-only callers stay internal. */
+    manageTimelineLifecycle?: boolean;
     options?: TimelineManagerOptions;
     assetInteraction: AssetMultiSelectManager;
     removeAction?: AssetAction.UNARCHIVE | AssetAction.ARCHIVE | AssetAction.SET_VISIBILITY_TIMELINE | null;
@@ -68,6 +70,7 @@
     singleSelect = false,
     enableRouting,
     timelineManager = $bindable(),
+    manageTimelineLifecycle = true,
     options,
     assetInteraction,
     removeAction = null,
@@ -85,8 +88,12 @@
     onThumbnailClick,
   }: Props = $props();
 
-  timelineManager = new TimelineManager();
-  onDestroy(() => timelineManager.destroy());
+  // Bind-only callers may retain a destroyed default across a conditional remount: replace it as before.
+  const ownedTimeline = untrack(() =>
+    manageTimelineLifecycle || !timelineManager ? new TimelineManager() : undefined,
+  );
+  timelineManager = ownedTimeline ?? timelineManager!;
+  onDestroy(() => ownedTimeline?.destroy());
   $effect(() => options && void timelineManager.updateOptions(options));
 
   let scrollableElement: HTMLElement | undefined = $state();
@@ -119,7 +126,11 @@
   });
 
   $effect(() => {
-    timelineManager.scrollableElement = scrollableElement;
+    const manager = timelineManager;
+    manager.scrollableElement = scrollableElement;
+    return () => {
+      manager.scrollableElement = undefined;
+    };
   });
 
   const getAssetPosition = (assetId: string, timelineMonth: TimelineMonth) =>

@@ -337,14 +337,14 @@
   };
 
   const handlePreAction = (action: Action) => {
-    preAction?.(action);
+    return preAction?.(action);
   };
 
   const handleAction = async (action: Action) => {
     switch (action.type) {
       case AssetAction.DELETE:
       case AssetAction.TRASH: {
-        eventManager.emit('AssetsDelete', [asset.id]);
+        eventManager.emit('AssetsDelete', [action.asset.id]);
         break;
       }
       case AssetAction.REMOVE_ASSET_FROM_STACK: {

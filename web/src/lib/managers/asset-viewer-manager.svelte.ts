@@ -3,7 +3,9 @@ import type { ZoomImageWheelState } from '@zoom-image/core';
 import { cubicOut } from 'svelte/easing';
 import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { userPreferencesManager } from '$lib/managers/user-preferences-manager.svelte';
+import { websocketEvents } from '$lib/stores/websocket';
 import { AbortError } from '$lib/utils';
 import type { ImageLoaderStatus } from '$lib/utils/adaptive-image-loader.svelte';
 import { canCopyImageToClipboard } from '$lib/utils/asset-utils';
@@ -39,13 +41,23 @@ class AssetViewerManager extends BaseEventManager<Events> {
   #zoomState = $state(createDefaultZoomState());
   #animationFrameId: number | null = null;
   #request?: AbortController;
+  #requestAssetId?: string;
   #revoked = false;
 
   constructor() {
     super();
+    eventManager.on({
+      AssetsDelete: (ids) => {
+        for (const id of ids) {
+          this.#retireDeletedAsset(id);
+        }
+      },
+    });
+    websocketEvents.on('on_asset_delete', (id) => this.#retireDeletedAsset(id));
     onLibraryAccessChange((change) => {
       this.#request?.abort();
       this.#request = undefined;
+      this.#requestAssetId = undefined;
       if (change === 'revoked' || change === 'account') {
         this.#revoked = change === 'revoked';
       }
@@ -60,6 +72,25 @@ class AssetViewerManager extends BaseEventManager<Events> {
         this.resetPanelState();
       }
     });
+  }
+
+  #retireDeletedAsset(id: string) {
+    if (this.#requestAssetId === id) {
+      this.#request?.abort();
+      this.#request = undefined;
+      this.#requestAssetId = undefined;
+    }
+    if (this.#viewingAssetStoreState?.id !== id) {
+      return;
+    }
+    this.#viewState = false;
+    this.#viewingAssetStoreState = undefined;
+    this.imgRef = undefined;
+    this.imageLoaderStatus = undefined;
+    this.clearHighlightedFaces();
+    this.hideHiddenPeople();
+    this.closeActivityPanel();
+    this.resetPanelState();
   }
 
   imgRef = $state<HTMLImageElement | undefined>();
@@ -273,6 +304,7 @@ class AssetViewerManager extends BaseEventManager<Events> {
   setAsset(asset: AssetResponseDto) {
     this.#request?.abort();
     this.#request = undefined;
+    this.#requestAssetId = undefined;
     if (this.#revoked) {
       return;
     }
@@ -287,12 +319,14 @@ class AssetViewerManager extends BaseEventManager<Events> {
     }
     const request = new AbortController();
     this.#request = request;
+    this.#requestAssetId = id;
     try {
       const asset = await getAssetInfo({ ...authManager.params, id }, { signal: request.signal });
       if (request.signal.aborted || this.#request !== request) {
         throw new AbortError();
       }
       this.#request = undefined;
+      this.#requestAssetId = undefined;
       this.setAsset(asset);
       return asset;
     } catch (error) {
@@ -300,6 +334,7 @@ class AssetViewerManager extends BaseEventManager<Events> {
     } finally {
       if (this.#request === request) {
         this.#request = undefined;
+        this.#requestAssetId = undefined;
       }
     }
   }
@@ -308,6 +343,7 @@ class AssetViewerManager extends BaseEventManager<Events> {
     if (!show) {
       this.#request?.abort();
       this.#request = undefined;
+      this.#requestAssetId = undefined;
     }
     this.#viewState = show && !this.#revoked;
   }

@@ -69,9 +69,17 @@
     nextAsset: undefined,
   });
 
+  let cursorVersion = 0;
   const loadCloseAssets = async (currentAsset: AssetResponseDto) => {
+    const version = ++cursorVersion;
     const [nextAsset, previousAsset] = await Promise.all([getNextAsset(currentAsset), getPreviousAsset(currentAsset)]);
-
+    if (
+      version !== cursorVersion ||
+      assetViewerManager.asset?.id !== currentAsset.id ||
+      !assetViewerManager.isViewing
+    ) {
+      return;
+    }
     assetCursor = {
       current: currentAsset,
       nextAsset,
@@ -149,6 +157,10 @@
       case AssetAction.SET_VISIBILITY_TIMELINE: {
         // must update manager before performing any navigation
         timelineManager.removeAssets([action.asset.id]);
+        // Confirmation may finish after the user has already moved to another asset.
+        if (assetViewerManager.asset?.id !== action.asset.id || assetCursor.current.id !== action.asset.id) {
+          return;
+        }
 
         // find the next asset to show or close the viewer
         // eslint-disable-next-line @typescript-eslint/no-unused-expressions
@@ -253,6 +265,7 @@
   });
 
   onDestroy(() => {
+    cursorVersion++;
     assetCacheManager.invalidate();
   });
 </script>
@@ -272,7 +285,12 @@
     preAction={handlePreAction}
     onAction={(action) => {
       handleAction(action);
-      assetCacheManager.invalidate();
+      if (action.type === AssetAction.DELETE || action.type === AssetAction.TRASH) {
+        // The viewer has already advanced: do not invalidate the next asset's pending neighbors.
+        assetCacheManager.invalidateAsset(action.asset.id);
+      } else {
+        assetCacheManager.invalidate();
+      }
     }}
     onUndoDelete={handleUndoDelete}
     onRandom={handleRandom}
