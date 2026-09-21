@@ -6,7 +6,6 @@ on:
     types: [opened, synchronize, reopened, labeled, unlabeled]
     paths:
       - 'open-api/**'
-      - 'mobile/lib/utils/openapi_patching.dart'
       - '.github/workflows/check-openapi.yml'
 
 concurrency:
