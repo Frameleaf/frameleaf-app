@@ -717,17 +717,17 @@
       "version": 2
     },
     {
-      "bytes": 27254,
+      "bytes": 27655,
       "category": "development",
       "id": "61407844",
       "source": "docs/docs/developer/frameleaf-development.md",
-      "sourceSha256": "0391b118ca11dfef98396b76c353b721a8b41210a97bd5ae6e843a9ab915affe",
+      "sourceSha256": "1e855050dc9b3ba6a63a49515e0d363d1e0e301f14515107533617dd5ac4742e",
       "title": "Frameleaf Development and Delivery",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844",
-      "verification": "FL-142 local uncommitted source contract, exact source hash, original build identity versus current qualification, manual rebuild policy and preserved historical delivery checkpoints read back. This is not publication or runtime qualification.",
+      "verification": "FL-142 local review correction read back: source hash, new source revision prerequisite for manual rebuild, existing fresh/reused candidate rejection before scheduling, failed-job recovery and preserved historical delivery checkpoints. Not publication or runtime qualification.",
       "verified": true,
-      "verifiedAt": "2026-09-21T20:24:29.954Z",
-      "version": 10
+      "verifiedAt": "2026-09-21T20:31:19.757Z",
+      "version": 11
     },
     {
       "bytes": 411,
