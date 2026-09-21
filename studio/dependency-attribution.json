@@ -4954,7 +4954,7 @@
     "distributionApproval": false,
     "inventorySource": "Pinned Freecut revision and primary evidence captured 2026-09-21; runtime-generated resource instances require individual review.",
     "offlineQualification": "unqualified",
-    "runtimeEnforcement": "not-implemented",
+    "runtimeEnforcement": "default-deny in isolated engine; project revision-bound resource grants and complete user-import admission remain unqualified",
     "unknownResource": "blocked"
   },
   "runtimePackageContract": {
