@@ -49,6 +49,7 @@ RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter immic
 
 COPY ./i18n ./i18n/
 COPY ./web ./web/
+COPY ./design/frameleaf/brand-kit/frameleaf-logo-white.svg ./design/frameleaf/brand-kit/frameleaf-logo-white.svg
 
 ARG BUILD_ID
 ENV IMMICH_BUILD=${BUILD_ID}

@@ -10,12 +10,12 @@ import {
   type AssetImageEnrichmentResponseDto,
 } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import TestWrapper from '$lib/components/TestWrapper.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import DetailPanelImageEnrichment from './DetailPanelImageEnrichment.svelte';
+import DetailPanelImageEnrichmentTestWrapper from './DetailPanelImageEnrichment.test-wrapper.svelte';
 
 vi.mock('@immich/sdk', async () => {
   const sdk = await vi.importActual<typeof import('@immich/sdk')>('@immich/sdk');
@@ -165,11 +165,11 @@ it('resets the action UI on asset replacement without an older completion cleari
   );
   vi.mocked(getAssetInfo).mockResolvedValue(second);
   const componentProps = { asset: first, isOwner: true, isAdmin: true };
-  const view = render(TestWrapper, { component: DetailPanelImageEnrichment, componentProps });
+  const view = render(DetailPanelImageEnrichmentTestWrapper, componentProps);
   await fireEvent.click(await screen.findByRole('button', { name: 'mark_nsfw' }));
   const button = screen.getByRole('button', { name: 'mark_nsfw' });
   expect(button).toBeDisabled();
-  await view.rerender({ component: DetailPanelImageEnrichment, componentProps: { ...componentProps, asset: second } });
+  await view.rerender({ ...componentProps, asset: second });
   await waitFor(() => expect(button).not.toBeDisabled());
   await fireEvent.click(button);
   expect(button).toBeDisabled();

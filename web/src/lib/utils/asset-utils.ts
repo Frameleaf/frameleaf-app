@@ -410,11 +410,10 @@ export const toggleArchive = async (asset: AssetResponseDto) => {
     } else {
       toastManager.primary($t('removed_from_archive'));
     }
+    return asset;
   } catch (error) {
     handleError(error, $t('errors.unable_to_add_remove_archive', { values: { archived: asset.isArchived } }));
   }
-
-  return asset;
 };
 
 const showUndoArchiveToast = (description: string, assets: TimelineAsset[]) => {

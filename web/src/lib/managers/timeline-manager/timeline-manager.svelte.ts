@@ -104,6 +104,7 @@ export class TimelineManager extends VirtualScrollManager {
   #unsubscribes: Array<() => void> = [];
   #accessBlocked = false;
   #accessRefreshQueued = false;
+  #optionsVersion = 0;
 
   get showAssetOwners() {
     return userPreferencesManager.showAssetOwners;
@@ -305,14 +306,26 @@ export class TimelineManager extends VirtualScrollManager {
       return;
     }
 
+    const version = ++this.#optionsVersion;
+    this.#cancelMonthLoads();
+    // Publish the requested scope before yielding, including Back to the current scope.
+    this.#options = options;
     this.suspendTransitions = true;
     try {
       await this.initTask.reset();
+      if (version !== this.#optionsVersion || this.#accessBlocked) {
+        return;
+      }
       await this.#init(options);
+      if (version !== this.#optionsVersion) {
+        return;
+      }
       this.updateViewportGeometry(false);
       this.#createScrubberMonths();
     } finally {
-      this.suspendTransitions = false;
+      if (version === this.#optionsVersion) {
+        this.suspendTransitions = false;
+      }
     }
   }
 
@@ -321,14 +334,24 @@ export class TimelineManager extends VirtualScrollManager {
       return;
     }
 
+    const version = ++this.#optionsVersion;
+    this.#cancelMonthLoads();
     this.suspendTransitions = true;
     try {
       await this.initTask.reset();
+      if (version !== this.#optionsVersion || this.#accessBlocked) {
+        return;
+      }
       await this.#init(this.#options);
+      if (version !== this.#optionsVersion) {
+        return;
+      }
       this.updateViewportGeometry(false);
       this.#createScrubberMonths();
     } finally {
-      this.suspendTransitions = false;
+      if (version === this.#optionsVersion) {
+        this.suspendTransitions = false;
+      }
     }
   }
 
@@ -354,7 +377,16 @@ export class TimelineManager extends VirtualScrollManager {
     }, true);
   }
 
+  #cancelMonthLoads() {
+    for (const month of this.months) {
+      // Range/next-media loads are normally non-cancellable, but cannot outlive their scope.
+      month.loader?.cancelToken?.abort();
+      month.cancel();
+    }
+  }
+
   #handleAccessChange(change: LibraryAccessChange) {
+    this.#optionsVersion++;
     if (change === 'account' || change === 'revoked') {
       this.#accessBlocked = true;
     }

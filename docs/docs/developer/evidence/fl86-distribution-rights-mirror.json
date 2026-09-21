@@ -1,0 +1,75 @@
+{
+  "sourcePath": "docs/docs/developer/frameleaf-plan/fl86-distribution-rights.md",
+  "sourceSha256": "305fe829ca27cc8483cf5b4249750d6f210e2876d5f6ea7d12606849c7ba3348",
+  "sourceBytes": 27925,
+  "pageId": "61997196",
+  "pageUrl": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997196/FL-86+Studio+artifact+attribution+and+resource+rights",
+  "pageVersion": 5,
+  "parentPageId": "61440418",
+  "verified": true,
+  "verification": "Root full normalized HTML readback matches the complete canonical formatted source wrapper and preserved prior body, including all prior evidence, links and code blocks. Only provider-added local IDs, equivalent apostrophe entities and terminal code-block newlines are normalized.",
+  "candidateBase": "42ea135f89c6f3025a2d54e2fbd94cd457f82230",
+  "status": "reviewed-notice-candidate-not-distribution-qualified",
+  "additionalSources": [
+    {
+      "path": "studio/README.md",
+      "sha256": "b50af0548670813f9933202b08169119c3e770633ee92a25c70aa115448a8d1f",
+      "bytes": 5729
+    }
+  ],
+  "previousMirrors": [
+    {
+      "sourcePath": "docs/docs/developer/frameleaf-plan/fl86-distribution-rights.md",
+      "sourceSha256": "1475b1e315e8f8bb9c4a5453939ba8cc72d88db9b3f192aa15770bb9f0f233af",
+      "sourceBytes": 24972,
+      "pageId": "61997196",
+      "pageUrl": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997196/FL-86+Studio+artifact+attribution+and+resource+rights",
+      "pageVersion": 4,
+      "parentPageId": "61440418",
+      "verified": true,
+      "verification": "Owner full HTML readback matched all 109 normalized content blocks, 18 ordered links and both code blocks; only terminal code-block newlines were provider-trimmed. Previous source-owned body matched b349 before editing. Root integrated the independently reviewed source unchanged and verified its exact hash/bytes.",
+      "candidateBase": "b349ed856d1b92ca839a2db6c1865abbfa585f8d",
+      "status": "reviewed-notice-candidate-not-distribution-qualified",
+      "additionalSources": [
+        {
+          "path": "studio/README.md",
+          "sha256": "b50af0548670813f9933202b08169119c3e770633ee92a25c70aa115448a8d1f",
+          "bytes": 5729
+        }
+      ]
+    },
+    {
+      "sourcePath": "docs/docs/developer/frameleaf-plan/fl86-distribution-rights.md",
+      "sourceSha256": "ebc48840bb829e78d62515b9a3e35acc1af9db47999bf69023c99cd0ed026981",
+      "sourceBytes": 19771,
+      "pageId": "61997196",
+      "pageUrl": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997196/FL-86+Studio+artifact+attribution+and+resource+rights",
+      "pageVersion": 3,
+      "parentPageId": "61440418",
+      "verified": true,
+      "verification": "Full HTML readback matched all 89 normalized content blocks, 13 ordered links and both exact code blocks. Prior source-owned body verified before replacement; 49 existing local IDs retained. Markdown update was rejected without mutation; supported HTML replacement succeeded.",
+      "candidateBase": "7432c5b7f4c1052a12c6ddd361984b9fb4b95570",
+      "status": "runtime-candidate-not-qualified",
+      "additionalSources": [
+        {
+          "path": "studio/README.md",
+          "sha256": "b50af0548670813f9933202b08169119c3e770633ee92a25c70aa115448a8d1f",
+          "bytes": 5729
+        }
+      ]
+    },
+    {
+      "sourcePath": "docs/docs/developer/frameleaf-plan/fl86-distribution-rights.md",
+      "sourceSha256": "7ef3d9c35253dd367c722719e0a64a962cfe1ba4d1506a7c2ed1910865214523",
+      "sourceBytes": 14450,
+      "pageId": "61997196",
+      "pageUrl": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997196/FL-86+Studio+artifact+attribution+and+resource+rights",
+      "pageVersion": 2,
+      "parentPageId": "61440418",
+      "verified": true,
+      "verification": "Delayed update applied as version 2 at 2026-09-21T22:16:18.422Z. Independent full normalized body readback matches the complete submitted wrapper and source, including tables, qualification limits and standalone audit regression. Previous version 1 receipt was superseded; distribution approval remains false.",
+      "candidateBase": "4ccad254cf6665e2ebce99e7cac8c376c0cf7d4c",
+      "status": "candidate-not-qualified"
+    }
+  ]
+}

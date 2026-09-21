@@ -32,7 +32,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
+  import { LibraryTimelineSession } from '$lib/frameleaf/library-timeline-session.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import AlbumOptionsModal from '$lib/modals/AlbumOptionsModal.svelte';
   import { Route } from '$lib/route';
@@ -88,7 +88,16 @@
   let { slideshowState, slideshowNavigation } = slideshowStore;
   let oldAt: AssetGridRouteSearchParams | null | undefined = $state();
   let viewMode: AlbumPageViewMode = $state(AlbumPageViewMode.VIEW);
-  let timelineManager = $state<TimelineManager>() as TimelineManager;
+  const session = new LibraryTimelineSession(() =>
+    viewMode === AlbumPageViewMode.SELECT_ASSETS
+      ? {
+          scope: { kind: 'album-picker', id: albumId },
+          filters: { visibility: AssetVisibility.Timeline, withPartners: true },
+        }
+      : { scope: { kind: 'album', id: albumId }, filters: { order: album.order } },
+  );
+  const timelineManager = session.timeline;
+  onDestroy(() => session.destroy());
   let showAlbumUsers = $derived(timelineManager?.showAssetOwners ?? false);
 
   const timelineMultiSelectManager = new AssetMultiSelectManager();
@@ -227,17 +236,6 @@
     }
   });
 
-  const options = $derived.by(() => {
-    if (viewMode === AlbumPageViewMode.SELECT_ASSETS) {
-      return {
-        visibility: AssetVisibility.Timeline,
-        withPartners: true,
-        timelineAlbumId: albumId,
-      };
-    }
-    return { albumId, order: album.order };
-  });
-
   const isShared = $derived(viewMode === AlbumPageViewMode.SELECT_ASSETS ? false : album.albumUsers.length > 1);
 
   $effect(() => {
@@ -359,8 +357,9 @@
         enableRouting={viewMode === AlbumPageViewMode.SELECT_ASSETS ? false : true}
         {album}
         {albumUsers}
-        bind:timelineManager
-        {options}
+        {timelineManager}
+        options={session.options}
+        manageTimelineLifecycle={false}
         assetInteraction={currentAssetIntersection}
         {isShared}
         {isSelectionMode}

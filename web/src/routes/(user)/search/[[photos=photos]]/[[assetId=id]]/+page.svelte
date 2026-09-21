@@ -66,7 +66,6 @@
   const session = new LibrarySearchSession();
   let askQuery = $state('');
   const askResponse = $derived(session.askResponse);
-  const isAskLoading = $derived(session.loading && !hasSearchQuery);
   const isLoading = $derived(session.loading);
   let scrollY = $state(0);
   let scrollYHistory = 0;
@@ -76,6 +75,7 @@
   let smartSearchEnabled = $derived(featureFlagsManager.value.smartSearch);
   let terms = $derived<SearchTerms>(searchQuery ? JSON.parse(searchQuery) : {});
   let hasSearchQuery = $derived(Object.keys(terms).length > 0);
+  const isAskLoading = $derived(session.loading && !hasSearchQuery);
   let canUseAskSearch = $derived(featureFlagsManager.value.search && featureFlagsManager.value.smartSearch);
 
   $effect(() => {

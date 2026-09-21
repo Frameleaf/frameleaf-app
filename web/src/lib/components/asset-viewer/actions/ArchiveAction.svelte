@@ -18,12 +18,16 @@
   let { asset, onAction, preAction }: Props = $props();
 
   const onArchive = async () => {
-    if (!asset.isArchived) {
-      preAction({ type: AssetAction.ARCHIVE, asset: toTimelineAsset(asset) });
+    const target = asset;
+    if (!target.isArchived) {
+      preAction({ type: AssetAction.ARCHIVE, asset: toTimelineAsset(target) });
     }
-    const updatedAsset = await toggleArchive(asset);
+    const updatedAsset = await toggleArchive(target);
     if (updatedAsset) {
-      onAction({ type: asset.isArchived ? AssetAction.ARCHIVE : AssetAction.UNARCHIVE, asset: toTimelineAsset(asset) });
+      onAction({
+        type: updatedAsset.isArchived ? AssetAction.ARCHIVE : AssetAction.UNARCHIVE,
+        asset: toTimelineAsset(updatedAsset),
+      });
     }
   };
 </script>

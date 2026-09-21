@@ -3,11 +3,13 @@
   let {
     title,
     closeLabel,
+    returnFocus,
     open = $bindable(false),
     children,
   }: {
     title: string;
     closeLabel: string;
+    returnFocus?: HTMLElement;
     open?: boolean;
     children: Snippet;
   } = $props();
@@ -18,7 +20,7 @@
       return;
     }
 
-    const previous = document.activeElement;
+    const previous = returnFocus ?? document.activeElement;
     dialog.showModal();
     return () => {
       dialog.close();

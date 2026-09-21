@@ -4,6 +4,7 @@
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
   import ArchiveAction from '$lib/components/timeline/actions/ArchiveAction.svelte';
+  import ArchiveMatchingAction from '$lib/components/timeline/actions/ArchiveMatchingAction.svelte';
   import ChangeDate from '$lib/components/timeline/actions/ChangeDateAction.svelte';
   import ChangeDescription from '$lib/components/timeline/actions/ChangeDescriptionAction.svelte';
   import ChangeLocation from '$lib/components/timeline/actions/ChangeLocationAction.svelte';
@@ -24,7 +25,7 @@
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { memoryManager } from '$lib/managers/memory-manager.svelte';
-  import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
+  import { LibraryTimelineSession } from '$lib/frameleaf/library-timeline-session.svelte';
   import { Route } from '$lib/route';
   import { getAssetBulkActions } from '$lib/services/asset.service';
   import { getAssetMediaUrl, memoryLaneTitle } from '$lib/utils';
@@ -42,9 +43,14 @@
   import { mdiDotsVertical } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
+  import { onDestroy } from 'svelte';
 
-  let timelineManager = $state<TimelineManager>() as TimelineManager;
-  const options = { visibility: AssetVisibility.Timeline, withStacked: true, withPartners: true };
+  const session = new LibraryTimelineSession(() => ({
+    scope: { kind: 'library' },
+    filters: { visibility: AssetVisibility.Timeline, withStacked: true, withPartners: true },
+  }));
+  const timelineManager = session.timeline;
+  onDestroy(() => session.destroy());
 
   let selectedAssets = $derived(assetMultiSelectManager.assets);
   let isAssetStackSelected = $derived(selectedAssets.length === 1 && !!selectedAssets[0].stack);
@@ -99,8 +105,9 @@
 <UserPageLayout hideNavbar={assetMultiSelectManager.selectionActive} scrollbar={false}>
   <Timeline
     enableRouting={true}
-    bind:timelineManager
-    {options}
+    {timelineManager}
+    options={session.options}
+    manageTimelineLifecycle={false}
     assetInteraction={assetMultiSelectManager}
     removeAction={AssetAction.ARCHIVE}
     onEscape={handleEscape}
@@ -122,6 +129,7 @@
 
     <CreateSharedLink />
     <SelectAllAssets {timelineManager} assetInteraction={assetMultiSelectManager} />
+    <ArchiveMatchingAction query={session.query} />
     <ActionButton action={Actions.AddToAlbum} />
 
     {#if assetMultiSelectManager.isAllUserOwned}
