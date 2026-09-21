@@ -651,17 +651,17 @@
       "version": 10
     },
     {
-      "bytes": 2045,
+      "bytes": 4818,
       "category": "plan",
       "id": "61408007",
       "source": "studio/README.md",
-      "sourceSha256": "04642a8139e9784074c2c60ae1c73322f7c178e995d23e618204084c984e27d0",
+      "sourceSha256": "2af1d28381ca93b8d30c2488017c8c24ada7aef708b433e271062cb2c321a39e",
       "title": "Studio and Freecut Source Inventory",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61408007/Studio+and+Freecut+Source+Inventory",
-      "verification": "source hash marker, fetched baseline and terminal content read back after creation",
+      "verification": "Canonical source body, source hash, unmerged PR 130 receipt and preserved FL-25 historical receipt read back exactly after synchronization; supplemental delivery evidence remains page 61408162 version 3.",
       "verified": true,
-      "verifiedAt": "2026-09-20T09:33:30.000Z",
-      "version": 1
+      "verifiedAt": "2026-09-21T10:21:59.000Z",
+      "version": 2
     },
     {
       "bytes": 9292,
