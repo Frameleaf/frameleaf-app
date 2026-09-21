@@ -4,7 +4,6 @@ import { t } from 'svelte-i18n';
 import type { SvelteSet } from 'svelte/reactivity';
 import { get } from 'svelte/store';
 import { MediaType } from '$lib/constants';
-import { handleError } from '$lib/utils/handle-error';
 
 export enum SearchDatePreset {
   ThisYear,
@@ -137,16 +136,16 @@ export const getSearchMediaTitle = (mediaType: MediaType) => {
   }
 };
 
-export const getPeople = async (selected: SvelteSet<string>): Promise<PersonResponseDto[]> => {
-  const $t = get(t);
-  try {
-    const res = await getAllPeople({ withHidden: false });
-    res.people.sort((a, b) => (selected.has(a.id) ? -1 : selected.has(b.id) ? 1 : 0));
-    return res.people;
-  } catch (error) {
-    handleError(error, $t('errors.failed_to_get_people'));
+export const getPeople = async (selected: SvelteSet<string>, signal?: AbortSignal): Promise<PersonResponseDto[]> => {
+  const people: PersonResponseDto[] = [];
+  for (let page = 1; ; page++) {
+    signal?.throwIfAborted();
+    const response = await getAllPeople({ withHidden: false, page }, { signal });
+    people.push(...response.people);
+    if (!response.hasNextPage) {
+      return people.sort((a, b) => Number(selected.has(b.id)) - Number(selected.has(a.id)));
+    }
   }
-  return [];
 };
 
 export const getSearchPeopleTitle = (people: PersonResponseDto[], selected: SvelteSet<string>) => {
