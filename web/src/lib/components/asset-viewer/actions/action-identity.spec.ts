@@ -136,3 +136,47 @@ it('visibility direction follows a replacement asset before invocation', async (
   await rerender({ ...props, asset: toTimelineAsset(assetFactory.build({ visibility: AssetVisibility.Locked })) });
   expect(screen.getByRole('menuitem').textContent).toContain('move_off_locked_folder');
 });
+
+it('awaits archive navigation before starting a mutation that removes the current asset', async () => {
+  const first = assetFactory.build({ isArchived: false });
+  const navigation = deferred<void>();
+  const preAction = vi.fn(() => navigation.promise);
+  vi.mocked(updateAsset).mockResolvedValueOnce({ ...first, isArchived: true, visibility: AssetVisibility.Archive });
+  const onAction = vi.fn();
+  render(ArchiveAction, { asset: first, preAction, onAction });
+  await fireEvent.click(screen.getByRole('menuitem'));
+  await waitFor(() => expect(preAction).toHaveBeenCalled());
+  expect(updateAsset).not.toHaveBeenCalled();
+  navigation.resolve();
+  await waitFor(() => expect(onAction).toHaveBeenCalled());
+  expect(updateAsset).toHaveBeenCalledWith(expect.objectContaining({ id: first.id }));
+});
+
+it('awaits visibility navigation before starting its confirmed mutation', async () => {
+  const first = toTimelineAsset(assetFactory.build({ visibility: AssetVisibility.Timeline }));
+  const navigation = deferred<void>();
+  const preAction = vi.fn(() => navigation.promise);
+  vi.spyOn(modalManager, 'showDialog').mockResolvedValueOnce(true);
+  updateAssetsRequest.mockResolvedValueOnce(undefined);
+  const onAction = vi.fn();
+  render(SetVisibilityAction, { asset: first, preAction, onAction });
+  await fireEvent.click(screen.getByRole('menuitem'));
+  await waitFor(() => expect(preAction).toHaveBeenCalled());
+  expect(updateAssets).not.toHaveBeenCalled();
+  navigation.resolve();
+  await waitFor(() => expect(onAction).toHaveBeenCalledWith({ type: AssetAction.SET_VISIBILITY_LOCKED, asset: first }));
+});
+
+it('reports rejected archive navigation without mutating or publishing completion', async () => {
+  const error = new Error('navigation rejected');
+  const onAction = vi.fn();
+  render(ArchiveAction, {
+    asset: assetFactory.build({ isArchived: false }),
+    preAction: vi.fn().mockRejectedValueOnce(error),
+    onAction,
+  });
+  await fireEvent.click(screen.getByRole('menuitem'));
+  await waitFor(() => expect(handleError).toHaveBeenCalledWith(error, expect.any(String)));
+  expect(updateAsset).not.toHaveBeenCalled();
+  expect(onAction).not.toHaveBeenCalled();
+});

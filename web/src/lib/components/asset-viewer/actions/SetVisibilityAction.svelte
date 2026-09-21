@@ -34,7 +34,7 @@
     }
 
     try {
-      preAction({
+      await preAction({
         type: wasLocked ? AssetAction.SET_VISIBILITY_TIMELINE : AssetAction.SET_VISIBILITY_LOCKED,
         asset: target,
       });
