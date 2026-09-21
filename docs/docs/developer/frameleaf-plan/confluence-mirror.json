@@ -822,18 +822,18 @@
       "version": 2
     },
     {
-      "bytes": 21235,
+      "bytes": 25807,
       "category": "plan",
       "id": "61408340",
       "source": "docs/docs/developer/frameleaf-plan/FL-39-version-persistence.md",
-      "sourceSha256": "642f872960dca090afcf9d09f5a3fead70abc7936accaccc384e7119edacd082",
+      "sourceSha256": "ea8ea6e32dc64f8609a6109d33408fde08706766cacf825d4088f5864b3088e5",
       "title": "FL-39 Metadata-only Rotation Qualification",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61408340/FL-39+Metadata-only+Rotation+Qualification",
-      "version": 5,
-      "sourceBranch": "codex/FL-39-version-persistence",
-      "sourceState": "multi-audio-admission-review-candidate",
-      "readbackAt": "2026-09-21T13:44:24.795095+00:00",
-      "readbackResult": "Full normalized HTML body matched, including current source and all historical content; exact-candidate independent review pending."
+      "version": 8,
+      "sourceBranch": "codex/FL-39-trim-pointer",
+      "sourceState": "reviewed-trim-browser-qualification",
+      "readbackAt": "2026-09-21T21:31:46.298017+00:00",
+      "readbackResult": "Full normalized HTML body matched current source and complete historical content; exact f774 browser runtime independently approved, API-only pruning and qualification limits retained."
     },
     {
       "bytes": 8118,
