@@ -201,6 +201,7 @@ export class AuthService extends BaseService {
 
     await this.userRepository.update(auth.user.id, { pinCode: null });
     await this.sessionRepository.lockAll(auth.user.id);
+    this.websocketRepository.clientSend('on_session_lock', auth.user.id);
   }
 
   async changePinCode(auth: AuthDto, dto: PinCodeChangeDto) {
@@ -209,6 +210,8 @@ export class AuthService extends BaseService {
 
     const hashed = await this.cryptoRepository.hashBcrypt(dto.newPinCode, SALT_ROUNDS);
     await this.userRepository.update(auth.user.id, { pinCode: hashed });
+    await this.sessionRepository.lockAll(auth.user.id);
+    this.websocketRepository.clientSend('on_session_lock', auth.user.id);
   }
 
   private validatePinCode(
@@ -691,6 +694,7 @@ export class AuthService extends BaseService {
     }
 
     await this.sessionRepository.update(auth.session.id, { pinExpiresAt: null });
+    this.websocketRepository.clientSend('on_session_lock', auth.session.id);
   }
 
   private async createLoginResponse(

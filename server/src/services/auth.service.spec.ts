@@ -1590,6 +1590,13 @@ describe(AuthService.name, () => {
   });
 
   describe('lockSession', () => {
+    it('does not announce a lock before it is persisted', async () => {
+      const auth = AuthFactory.from().session().build();
+      mocks.session.update.mockRejectedValue(new Error('write failed'));
+      await expect(sut.lockSession(auth)).rejects.toThrow('write failed');
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+    });
+
     it('should clear elevated access immediately', async () => {
       const user = UserFactory.create();
       const auth = AuthFactory.from(user).session({ hasElevatedPermission: true }).build();
@@ -1598,6 +1605,7 @@ describe(AuthService.name, () => {
       await sut.lockSession(auth);
 
       expect(mocks.session.update).toHaveBeenCalledWith(auth.session!.id, { pinExpiresAt: null });
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', auth.session!.id);
     });
   });
 
@@ -1606,6 +1614,7 @@ describe(AuthService.name, () => {
       const user = UserFactory.create();
       const auth = AuthFactory.create(user);
       const dto = { pinCode: '123456', newPinCode: '012345' };
+      mocks.session.lockAll.mockResolvedValue();
 
       mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
       mocks.user.update.mockResolvedValue(user);
@@ -1615,6 +1624,8 @@ describe(AuthService.name, () => {
 
       expect(mocks.crypto.compareBcrypt).toHaveBeenCalledWith('123456', '123456 (hashed)');
       expect(mocks.user.update).toHaveBeenCalledWith(user.id, { pinCode: '012345 (hashed)' });
+      expect(mocks.session.lockAll).toHaveBeenCalledWith(user.id);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', user.id);
     });
 
     it('should fail if the PIN code does not match', async () => {
@@ -1641,6 +1652,7 @@ describe(AuthService.name, () => {
 
       expect(mocks.user.update).toHaveBeenCalledWith(user.id, { pinCode: null });
       expect(mocks.session.lockAll).toHaveBeenCalledWith(user.id);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', user.id);
     });
 
     it('should throw if the PIN code does not match', async () => {
