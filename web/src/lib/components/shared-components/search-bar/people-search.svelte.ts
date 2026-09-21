@@ -47,8 +47,8 @@ export class PeopleSearch {
         UserPinCodeReset: clear,
         AssetsMarkNsfw: clear,
         AssetsDelete: clear,
-        PersonUpdate: clear,
-        PersonThumbnailReady: clear,
+        PersonUpdate: () => this.invalidate(),
+        PersonThumbnailReady: () => this.invalidate(),
         PersonAssetDelete: clear,
         AuthLogout: revoke,
         SessionDelete: revoke,
@@ -69,12 +69,16 @@ export class PeopleSearch {
   }
 
   clear() {
+    this.invalidate();
+    searchManager.filter.personIds.clear();
+  }
+
+  invalidate() {
     this.generation++;
     this.#request?.abort();
     this.#request = undefined;
     this.people = undefined;
     this.loading = this.failed = false;
-    searchManager.filter.personIds.clear();
   }
 
   async load() {

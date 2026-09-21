@@ -159,3 +159,31 @@ it('aborts a pending people request when its consumer unmounts', async () => {
   await tick();
   expect(document.body.textContent).not.toContain('Private face');
 });
+
+it('preserves the People query during an unrelated background thumbnail refresh', async () => {
+  setup();
+  await screen.findByRole('button', { name: 'remove_person: Private face' });
+  let finish!: (value: ReturnType<typeof response>) => void;
+  vi.mocked(getAllPeople).mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  flushSync(() => eventManager.emit('PersonThumbnailReady', { id: 'unrelated-person-b' }));
+  expect(searchManager.toQuery().personIds).toEqual([person.id]);
+  expect(document.body.textContent).not.toContain('Private face');
+  await waitFor(() => expect(getAllPeople).toHaveBeenCalledTimes(2));
+  finish(response());
+  await screen.findByRole('button', { name: 'remove_person: Private face' });
+  expect(searchManager.toQuery().personIds).toEqual([person.id]);
+});
+
+it('prunes a selected person only after routine refresh proves it inaccessible', async () => {
+  setup();
+  await screen.findByRole('button', { name: 'remove_person: Private face' });
+  vi.mocked(getAllPeople).mockResolvedValueOnce(response([]));
+  flushSync(() => eventManager.emit('PersonUpdate', { ...person, isHidden: true }));
+  expect(searchManager.toQuery().personIds).toEqual([person.id]);
+  await waitFor(() => expect(searchManager.filter.personIds.size).toBe(0));
+  expect(document.body.textContent).not.toContain('Private face');
+});
