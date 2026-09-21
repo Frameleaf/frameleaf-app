@@ -1113,7 +1113,8 @@ export class MediaService extends BaseService {
       const video = rendered.videoStreams[0];
       const dimensions = this.getVideoEditDimensions(edits, asset.videoStream);
       validateVideoMaster(asset.videoStream, video, dimensions, rotationCopy?.rotation);
-      const proxyCommand = BaseConfig.create(config.ffmpeg, this.videoInterfaces).getCommand(
+      const proxyConfig = video.rotation === 0 ? config.ffmpeg : { ...config.ffmpeg, accelDecode: false };
+      const proxyCommand = BaseConfig.create(proxyConfig, this.videoInterfaces).getCommand(
         TranscodeTarget.All,
         video,
         rendered.audioStreams[0],

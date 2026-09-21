@@ -2678,9 +2678,25 @@ describe(MediaService.name, () => {
   });
 
   describe('version-owned video publication', () => {
-    it.each([true, false, 'invalid-master'].flatMap((accepted) => [false, true].map((copy) => ({ accepted, copy }))))(
-      'publishes a proxy independently from the master ($accepted, copy=$copy)',
-      async ({ accepted, copy }) => {
+    it.each(
+      [true, false, 'invalid-master'].flatMap((accepted) =>
+        [false, true].flatMap((copy) =>
+          [
+            [TranscodeHardwareAcceleration.Disabled, 'h264'],
+            [TranscodeHardwareAcceleration.Nvenc, 'h264_nvenc'],
+            [TranscodeHardwareAcceleration.Qsv, 'h264_qsv'],
+            [TranscodeHardwareAcceleration.Vaapi, 'h264_vaapi'],
+            [TranscodeHardwareAcceleration.Rkmpp, 'h264_rkmpp'],
+          ].map(([accel, codec]) => ({ accepted, copy, accel: accel as TranscodeHardwareAcceleration, codec })),
+        ),
+      ),
+    )(
+      'publishes a proxy independently from the master ($accepted, copy=$copy, accel=$accel)',
+      async ({ accepted, copy, accel, codec }) => {
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel, accelDecode: true, targetVideoCodec: VideoCodec.H264, targetResolution: '480' },
+        });
+        sut.videoInterfaces = { dri: ['renderD128'], mali: true };
         const videoStream = { ...probeStub.videoStreamH264.videoStream, width: 300, height: 200, rotation: 0 };
         const asset = {
           ...AssetFactory.create({ type: AssetType.Video }),
@@ -2695,7 +2711,7 @@ describe(MediaService.name, () => {
           ownerId: asset.ownerId,
           sourcePath: asset.originalPath,
           sourceChecksum: asset.checksum,
-          recipe: [{ action: AssetEditAction.Rotate, parameters: { angle: 180 } }],
+          recipe: [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }],
           purpose: 'save' as const,
           status: 'pending' as const,
           masterPath: null,
@@ -2710,7 +2726,12 @@ describe(MediaService.name, () => {
         mocks.media.transcode.mockResolvedValue(undefined);
         mocks.media.probe.mockResolvedValue({
           videoStreams: [
-            { ...videoStream, rotation: copy ? -180 : 0, width: accepted === 'invalid-master' ? 301 : 300 },
+            {
+              ...videoStream,
+              rotation: copy ? -90 : 0,
+              width: accepted === 'invalid-master' ? 301 : copy ? 300 : 200,
+              height: copy ? 200 : 300,
+            },
           ],
           audioStreams: [],
           format: asset.format,
@@ -2739,7 +2760,11 @@ describe(MediaService.name, () => {
         }
         if (copy) {
           expect(mocks.media.transcode.mock.calls[0][2].outputOptions).toContain('copy');
-          expect(mocks.media.transcode.mock.calls[1][2].outputOptions).not.toContain('copy');
+          const proxyCommand = mocks.media.transcode.mock.calls[1][2];
+          expect(proxyCommand.outputOptions).toContain(codec);
+          expect(proxyCommand.outputOptions).not.toContain('copy');
+          expect(proxyCommand.inputOptions).not.toContain('-noautorotate');
+          expect(proxyCommand.inputOptions).not.toContain('-hwaccel');
         }
         const master = mocks.media.transcode.mock.calls[0][1];
         const proxy = mocks.media.transcode.mock.calls[1][1];
@@ -2751,6 +2776,8 @@ describe(MediaService.name, () => {
           expect.objectContaining({
             masterPath: master,
             duration: 30_000,
+            width: 200,
+            height: 300,
             files: [expect.objectContaining({ type: AssetFileType.EncodedVideo, path: proxy })],
           }),
         );

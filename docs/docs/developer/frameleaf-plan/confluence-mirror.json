@@ -823,18 +823,18 @@
       "version": 2
     },
     {
-      "bytes": 17266,
+      "bytes": 18590,
       "category": "plan",
       "id": "61408340",
       "source": "docs/docs/developer/frameleaf-plan/FL-39-version-persistence.md",
-      "sourceSha256": "a2ac5d01b025e32ee898974a113311587692207d2958d7751d2e750b501f926f",
+      "sourceSha256": "638b25a2a824602e08ca5081d4f3442c2a261132ba8df7879d79ee18278d9372",
       "title": "FL-39 Metadata-only Rotation Qualification",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61408340/FL-39+Metadata-only+Rotation+Qualification",
-      "version": 1,
+      "version": 2,
       "sourceBranch": "codex/FL-39-metadata-rotation",
       "sourceState": "local-unpushed-candidate",
-      "readbackAt": "2026-09-21T12:22:03.874868+00:00",
-      "readbackResult": "Full whitespace-normalized body, source hash, byte count and historical receipt links matched after creation; independent review and hosted checks remain pending."
+      "readbackAt": "2026-09-21T12:28:14.585919+00:00",
+      "readbackResult": "Full normalized body, current source hash and byte count matched after hardware-proxy correction; version-1 hash and historical receipts preserved. Same-reviewer recheck remains pending."
     }
   ],
   "spaceId": "61374475",
