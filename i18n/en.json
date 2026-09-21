@@ -1540,6 +1540,8 @@
   "folders_feature_description": "Browsing the folder view for the photos and videos on the file system",
   "forgot_pin_code_question": "Forgot your PIN?",
   "forward": "Forward",
+  "frameleaf_navigation": "Frameleaf navigation",
+  "frameleaf_navigation_description": "Use the new navigation on this browser. Switch back at any time.",
   "free_up_space": "Free Up Space",
   "free_up_space_description": "Move backed-up photos and videos to your device's trash to free up space. Your copies on the server remain safe.",
   "free_up_space_settings_subtitle": "Free up device storage",

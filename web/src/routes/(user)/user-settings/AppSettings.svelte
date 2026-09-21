@@ -7,6 +7,7 @@
     alwaysLoadOriginalFile,
     alwaysLoadOriginalVideo,
     autoPlayVideo,
+    frameleafShell,
     locale,
     loopVideo,
     playVideoThumbnailOnHover,
@@ -69,6 +70,10 @@
           checked={themeManager.preference === ThemePreference.System}
           onCheckedChange={handleToggleSystemTheme}
         />
+      </Field>
+
+      <Field label={$t('frameleaf_navigation')} description={$t('frameleaf_navigation_description')}>
+        <Switch bind:checked={$frameleafShell} />
       </Field>
 
       <SettingsLanguageSelector showSettingDescription />

@@ -5,17 +5,19 @@
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { sidebarCollapsed } from '$lib/stores/preferences.store';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
-  import { Icon } from '@immich/ui';
+  import { Icon, Theme, themeManager } from '@immich/ui';
+  import '$lib/frameleaf/tokens.css';
   import { mdiMenu } from '@mdi/js';
   import { onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
     ariaLabel?: string;
+    frameleaf?: boolean;
     children?: Snippet;
   }
 
-  let { ariaLabel, children }: Props = $props();
+  let { ariaLabel, children, frameleaf = false }: Props = $props();
 
   const isHidden = $derived(!sidebarStore.isOpen && !mediaQueryManager.isFullSidebar);
   const isExpanded = $derived(sidebarStore.isOpen && !mediaQueryManager.isFullSidebar);
@@ -40,6 +42,8 @@
 <nav
   id="sidebar"
   aria-label={ariaLabel}
+  class:frameleaf
+  data-theme={frameleaf ? (themeManager.value === Theme.Dark ? 'dark' : 'light') : undefined}
   tabindex="-1"
   class="relative z-1 w-0 immich-scrollbar overflow-x-hidden overflow-y-auto bg-light pt-8 transition-all duration-200 sidebar:w-(--sidebar-width)"
   class:shadow-2xl={isExpanded}
@@ -70,10 +74,42 @@
 </nav>
 
 <style>
+  nav.frameleaf {
+    background: var(--fl-panel);
+    color: var(--fl-text);
+    border-inline-end: 1px solid var(--fl-border);
+    padding-top: 0.5rem;
+  }
+
+  .frameleaf :global(.nav-items a) {
+    border-radius: var(--fl-radius);
+    color: var(--fl-text);
+    min-height: 44px;
+  }
+
+  .frameleaf :global(.nav-items a:hover) {
+    background: var(--fl-raised);
+  }
+
+  .frameleaf :global(.nav-items a[aria-current='page']) {
+    background: var(--fl-raised);
+    color: var(--fl-accent);
+  }
+
   /* Icon-only rail: hide NavbarItem text labels and the dropdown expand/collapse
      chevron buttons. Album tree, recent albums, group headers and bottom info are
      hidden by UserSidebar itself (it owns those components). */
-  :global(#sidebar.is-collapsed .nav-items span.truncate),
+  :global(#sidebar.is-collapsed .nav-items span.truncate) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
   :global(#sidebar.is-collapsed .nav-items button) {
     display: none;
   }

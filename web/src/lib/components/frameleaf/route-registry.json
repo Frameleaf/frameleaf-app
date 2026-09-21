@@ -1,0 +1,146 @@
+{
+  "navigation": [
+    {
+      "icon": "mdiImageMultipleOutline",
+      "id": "timeline",
+      "label": "timeline",
+      "route": "photos",
+      "section": "library"
+    },
+    {
+      "icon": "mdiHeartOutline",
+      "id": "favorites",
+      "label": "favorites",
+      "route": "favorites",
+      "section": "library"
+    },
+    {
+      "gate": "recentlyAdded",
+      "icon": "mdiClockPlusOutline",
+      "id": "recentlyAdded",
+      "label": "recently_added",
+      "route": "recentlyAdded",
+      "section": "library"
+    },
+    {
+      "icon": "mdiStarOutline",
+      "id": "bestPhotos",
+      "label": "best_photos",
+      "route": "bestPhotos",
+      "section": "library"
+    },
+    {
+      "gate": "search",
+      "icon": "mdiMagnify",
+      "id": "explore",
+      "label": "explore",
+      "route": "explore",
+      "section": "library"
+    },
+    {
+      "gate": "map",
+      "icon": "mdiMapOutline",
+      "id": "map",
+      "label": "map",
+      "route": "map",
+      "section": "library"
+    },
+    {
+      "gate": "memories",
+      "icon": "mdiCardsOutline",
+      "id": "memories",
+      "label": "memories",
+      "route": "memories",
+      "section": "library"
+    },
+    {
+      "gate": "people",
+      "icon": "mdiAccountOutline",
+      "id": "people",
+      "label": "people",
+      "route": "people",
+      "section": "library"
+    },
+    {
+      "icon": "mdiArchiveArrowDownOutline",
+      "id": "archive",
+      "label": "archive",
+      "route": "archive",
+      "section": "library"
+    },
+    {
+      "icon": "mdiLockOutline",
+      "id": "locked",
+      "label": "locked_folder",
+      "route": "locked",
+      "section": "library"
+    },
+    {
+      "icon": "mdiShieldLockOutline",
+      "id": "suppressed",
+      "label": "suppressed_content",
+      "route": "suppressed",
+      "section": "library"
+    },
+    {
+      "icon": "mdiImageAlbum",
+      "id": "albums",
+      "label": "albums",
+      "route": "albums",
+      "section": "collections"
+    },
+    {
+      "gate": "tags",
+      "icon": "mdiTagMultipleOutline",
+      "id": "tags",
+      "label": "tags",
+      "route": "tags",
+      "section": "collections"
+    },
+    {
+      "gate": "folders",
+      "icon": "mdiFolderOutline",
+      "id": "folders",
+      "label": "folders",
+      "route": "folders",
+      "section": "collections"
+    },
+    {
+      "icon": "mdiAccountMultipleOutline",
+      "id": "sharing",
+      "label": "sharing",
+      "route": "sharing",
+      "section": "collections"
+    },
+    {
+      "gate": "sharedLinks",
+      "icon": "mdiLink",
+      "id": "sharedLinks",
+      "label": "shared_links",
+      "route": "sharedLinks",
+      "section": "collections"
+    },
+    {
+      "icon": "mdiCogOutline",
+      "id": "settings",
+      "label": "settings",
+      "route": "userSettings",
+      "section": "settings"
+    },
+    {
+      "icon": "mdiToolboxOutline",
+      "id": "utilities",
+      "label": "utilities",
+      "route": "utilities",
+      "section": "settings"
+    },
+    {
+      "gate": "trash",
+      "icon": "mdiTrashCanOutline",
+      "id": "trash",
+      "label": "trash",
+      "route": "trash",
+      "section": "settings"
+    }
+  ]
+}
