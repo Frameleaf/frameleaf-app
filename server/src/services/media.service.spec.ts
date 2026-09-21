@@ -2630,6 +2630,7 @@ describe(MediaService.name, () => {
         files: [],
       };
       mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+      mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(undefined);
       mocks.assetEdit.getAll.mockResolvedValue([
         { id: 'edit-id', action: AssetEditAction.Crop, parameters: { x: 2, y: 4, width: 300, height: 200 } },
       ]);
@@ -2674,6 +2675,77 @@ describe(MediaService.name, () => {
         }),
       );
     });
+  });
+
+  describe('version-owned video publication', () => {
+    it.each([true, false, 'invalid-master'])(
+      'publishes a proxy independently from the master (result=%s)',
+      async (accepted) => {
+        const videoStream = { ...probeStub.videoStreamH264.videoStream, width: 300, height: 200, rotation: 0 };
+        const asset = {
+          ...AssetFactory.create({ type: AssetType.Video }),
+          videoStream,
+          audioStream: null,
+          format: probeStub.videoStreamH264.format,
+          files: [],
+        };
+        const version = {
+          id: newUuid(),
+          assetId: asset.id,
+          ownerId: asset.ownerId,
+          sourcePath: asset.originalPath,
+          sourceChecksum: asset.checksum,
+          recipe: [{ action: AssetEditAction.Rotate, parameters: { angle: 180 } }],
+          purpose: 'save' as const,
+          status: 'pending' as const,
+          masterPath: null,
+          proxyPath: null,
+          files: [],
+          createdAt: new Date(),
+        };
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+        mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(version as any);
+        mocks.assetEdit.publishVideoVersion.mockResolvedValue(accepted === true);
+        mocks.assetEdit.failVideoVersion.mockResolvedValue(undefined);
+        mocks.media.transcode.mockResolvedValue(undefined);
+        mocks.media.probe.mockResolvedValue({
+          videoStreams: [{ ...videoStream, width: accepted === 'invalid-master' ? 301 : 300 }],
+          audioStreams: [],
+          format: asset.format,
+        });
+        mocks.storage.unlink.mockResolvedValue(undefined);
+        (sut as any).generateVideoThumbnails = () =>
+          Promise.resolve({
+            files: [],
+            thumbhash: Buffer.from('hash'),
+            fullsizeDimensions: { width: 300, height: 200 },
+          });
+        await expect(sut.handleAssetVideoEditGeneration({ id: asset.id })).resolves.toBe(
+          accepted === 'invalid-master' ? JobStatus.Failed : accepted ? JobStatus.Success : JobStatus.Skipped,
+        );
+        if (accepted === 'invalid-master') {
+          expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+          expect(mocks.assetEdit.failVideoVersion).toHaveBeenCalledWith(asset.id, version.id);
+          expect(mocks.media.transcode).toHaveBeenCalledOnce();
+          expect(mocks.storage.unlink).toHaveBeenCalledTimes(2);
+          return;
+        }
+        const master = mocks.media.transcode.mock.calls[0][1];
+        const proxy = mocks.media.transcode.mock.calls[1][1];
+        expect(mocks.media.transcode.mock.calls[0][0]).toBe(asset.originalPath);
+        expect(mocks.media.transcode.mock.calls[1][0]).toBe(master);
+        expect(master).not.toBe(proxy);
+        expect(mocks.assetEdit.publishVideoVersion).toHaveBeenCalledWith(
+          version,
+          expect.objectContaining({
+            masterPath: master,
+            files: [expect.objectContaining({ type: AssetFileType.EncodedVideo, path: proxy })],
+          }),
+        );
+        expect(mocks.storage.unlink).toHaveBeenCalledTimes(accepted ? 0 : 2);
+        expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('handleVideoConversion', () => {

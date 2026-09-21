@@ -305,3 +305,20 @@ export class AssetEditActionItemResponseDto extends createZodDto(AssetEditAction
 export class AssetEditsCreateDto extends createZodDto(AssetEditsCreateSchema) {}
 export class AssetEditsResponseDto extends createZodDto(AssetEditsResponseSchema) {}
 export type CropParameters = z.infer<typeof CropParametersSchema>;
+
+export class VideoEditVersionParamsDto extends createZodDto(z.object({ id: z.uuid(), versionId: z.uuid() })) {}
+export class VideoEditExportDto extends createZodDto(z.object({ profile: z.literal('master') })) {}
+export class VideoEditVersionResponseDto extends createZodDto(
+  z
+    .object({
+      id: z.uuid(),
+      assetId: z.uuid(),
+      purpose: z.enum(['save', 'export', 'revert']),
+      status: z.enum(['pending', 'ready', 'failed']),
+      createdAt: z.iso.datetime(),
+      isCurrent: z.boolean(),
+      isRequested: z.boolean(),
+      edits: z.array(AssetEditActionItemSchema),
+    })
+    .meta({ id: 'VideoEditVersionResponseDto' }),
+) {}
