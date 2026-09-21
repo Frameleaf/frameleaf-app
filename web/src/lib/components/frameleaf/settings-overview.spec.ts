@@ -122,3 +122,39 @@ it('does not open a pending About dialog after rollout unmounts the overview', a
   expect(show).not.toHaveBeenCalled();
   show.mockRestore();
 });
+
+it('restores the actual About trigger after the asynchronous modal closes', async () => {
+  let close!: (value: never) => void;
+  const closed = new Promise<never>((resolve) => {
+    close = resolve;
+  });
+  const show = vi.spyOn(modalManager, 'show').mockReturnValue(closed);
+  render(SettingsOverview);
+  const trigger = await screen.findByRole('button', { name: 'About' });
+  trigger.focus();
+  await fireEvent.click(trigger);
+  await waitFor(() => expect(show).toHaveBeenCalled());
+  screen.getByRole('button', { name: 'Refresh' }).focus();
+  close(undefined as never);
+  await waitFor(() => expect(trigger).toHaveFocus());
+  expect(trigger).toBeEnabled();
+  show.mockRestore();
+});
+
+it('does not restore focus into an overview that unmounted while About was open', async () => {
+  let close!: (value: never) => void;
+  const closed = new Promise<never>((resolve) => {
+    close = resolve;
+  });
+  const show = vi.spyOn(modalManager, 'show').mockReturnValue(closed);
+  const view = render(SettingsOverview);
+  const trigger = await screen.findByRole('button', { name: 'About' });
+  await fireEvent.click(trigger);
+  await waitFor(() => expect(show).toHaveBeenCalled());
+  const focus = vi.spyOn(trigger, 'focus');
+  view.unmount();
+  close(undefined as never);
+  await Promise.resolve();
+  expect(focus).not.toHaveBeenCalled();
+  show.mockRestore();
+});
