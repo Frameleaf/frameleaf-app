@@ -58,6 +58,12 @@ describe('ElevatedSessionToggle', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     setPath('/photos');
+    document.documentElement.style.removeProperty('display');
+    vi.spyOn(location, 'replace').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    document.documentElement.style.removeProperty('display');
   });
 
   it('routes locked sessions with a configured PIN to the PIN prompt', async () => {
@@ -84,7 +90,7 @@ describe('ElevatedSessionToggle', () => {
     expect(screen.getByRole('button', { name: 'lock_sensitive_content' })).toBeInTheDocument();
   });
 
-  it('locks elevated sessions and refreshes the current page state', async () => {
+  it('locks elevated sessions and conceals the old document before replacement', async () => {
     const emitSpy = vi.spyOn(eventManager, 'emit');
 
     await renderToggle(authStatus({ isElevated: true }));
@@ -95,7 +101,8 @@ describe('ElevatedSessionToggle', () => {
     expect(appMocks.goto).not.toHaveBeenCalled();
     expect(emitSpy).toHaveBeenCalledWith('SessionAccessChanged', { isElevated: false });
     expect(emitSpy).toHaveBeenCalledWith('SessionLocked');
-    expect(screen.getByRole('button', { name: 'unlock_sensitive_content' })).toBeInTheDocument();
+    expect(document.documentElement.style.display).toBe('none');
+    expect(location.replace).toHaveBeenCalledWith('/photos');
   });
 
   it.each([
@@ -110,5 +117,7 @@ describe('ElevatedSessionToggle', () => {
     await waitFor(() => expect(sdkMock.lockAuthSession).toHaveBeenCalled());
     expect(appMocks.goto).toHaveBeenCalledWith('/photos');
     expect(appMocks.invalidateAll).not.toHaveBeenCalled();
+    expect(document.documentElement.style.display).toBe('none');
+    expect(location.replace).toHaveBeenCalledWith('/photos');
   });
 });

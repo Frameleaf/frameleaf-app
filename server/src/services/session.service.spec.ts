@@ -57,6 +57,32 @@ describe('SessionService', () => {
     });
   });
 
+  it('revokes elevation in the retained session as well as other sessions on password change', async () => {
+    mocks.session.lockAll.mockResolvedValue();
+    mocks.session.invalidateAll.mockResolvedValue();
+    await sut.onAuthChangePassword({ userId: 'user-1', currentSessionId: 'session-1', invalidateSessions: true });
+    expect(mocks.session.lockAll).toHaveBeenCalledWith('user-1');
+    expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', 'user-1');
+    expect(mocks.session.invalidateAll).toHaveBeenCalledWith({ userId: 'user-1', excludeId: 'session-1' });
+  });
+
+  describe('lock', () => {
+    it('notifies only the locked session after the authorized write', async () => {
+      mocks.access.session.checkOwnerAccess.mockResolvedValue(new Set(['session-1']));
+      mocks.session.update.mockResolvedValue(SessionFactory.create());
+      await sut.lock(authStub.user1, 'session-1');
+      expect(mocks.session.update).toHaveBeenCalledWith('session-1', { pinExpiresAt: null });
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', 'session-1');
+    });
+
+    it('does not notify or write for another owner', async () => {
+      mocks.access.session.checkOwnerAccess.mockResolvedValue(new Set());
+      await expect(sut.lock(authStub.user1, 'session-1')).rejects.toThrow();
+      expect(mocks.session.update).not.toHaveBeenCalled();
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+    });
+  });
+
   describe('logoutDevice', () => {
     it('should logout the device', async () => {
       mocks.access.authDevice.checkOwnerAccess.mockResolvedValue(new Set(['token-1']));

@@ -201,6 +201,7 @@ export class AuthService extends BaseService {
 
     await this.userRepository.update(auth.user.id, { pinCode: null });
     await this.sessionRepository.lockAll(auth.user.id);
+    this.websocketRepository.clientSend('on_session_lock', auth.user.id);
   }
 
   async changePinCode(auth: AuthDto, dto: PinCodeChangeDto) {
@@ -209,6 +210,8 @@ export class AuthService extends BaseService {
 
     const hashed = await this.cryptoRepository.hashBcrypt(dto.newPinCode, SALT_ROUNDS);
     await this.userRepository.update(auth.user.id, { pinCode: hashed });
+    await this.sessionRepository.lockAll(auth.user.id);
+    this.websocketRepository.clientSend('on_session_lock', auth.user.id);
   }
 
   private validatePinCode(
@@ -627,9 +630,10 @@ export class AuthService extends BaseService {
         hasElevatedPermission = pinExpiresAt > now;
 
         if (hasElevatedPermission && now.plus({ minutes: ELEVATED_SESSION_REFRESH_THRESHOLD_MINUTES }) > pinExpiresAt) {
-          await this.sessionRepository.update(session.id, {
-            pinExpiresAt: DateTime.now().plus({ minutes: ELEVATED_SESSION_DURATION_MINUTES }).toJSDate(),
-          });
+          hasElevatedPermission = await this.sessionRepository.refreshPinExpiry(
+            session.id,
+            DateTime.now().plus({ minutes: ELEVATED_SESSION_DURATION_MINUTES }).toJSDate(),
+          );
         }
       }
 
@@ -691,6 +695,7 @@ export class AuthService extends BaseService {
     }
 
     await this.sessionRepository.update(auth.session.id, { pinExpiresAt: null });
+    this.websocketRepository.clientSend('on_session_lock', auth.session.id);
   }
 
   private async createLoginResponse(

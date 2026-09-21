@@ -12,6 +12,7 @@ import { page } from '$app/state';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
 import { isSharedLinkRoute } from '$lib/utils/navigation';
+import { revokeSessionView } from '$lib/utils/session-privacy';
 
 class AuthManager {
   isPurchased = $state(false);
@@ -43,7 +44,9 @@ class AuthManager {
 
   constructor() {
     eventManager.on({
-      SessionDelete: () => goto(Route.logout()),
+      SessionDelete: () => revokeSessionView(Route.logout()),
+      SessionLocked: () => revokeSessionView(Route.photos()),
+      UserPinCodeReset: () => revokeSessionView(Route.photos()),
     });
   }
 

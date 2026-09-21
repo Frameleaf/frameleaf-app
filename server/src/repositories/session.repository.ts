@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
@@ -92,6 +93,20 @@ export class SessionRepository {
       .where('session.id', '=', asUuid(id))
       .returningAll()
       .executeTakeFirstOrThrow();
+  }
+
+  async refreshPinExpiry(id: string, pinExpiresAt: Date): Promise<boolean> {
+    // PostgreSQL rechecks this predicate after a concurrent row update. A lock
+    // that cleared the expiry must win over an authentication snapshot.
+    const result = await this.db
+      .updateTable('session')
+      .set({ pinExpiresAt })
+      .where('id', '=', asUuid(id))
+      .where('pinExpiresAt', '>', sql<Date>`clock_timestamp()`)
+      .where((eb) => eb.or([eb('expiresAt', 'is', null), eb('expiresAt', '>', sql<Date>`clock_timestamp()`)]))
+      .returning('id')
+      .executeTakeFirst();
+    return !!result;
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })

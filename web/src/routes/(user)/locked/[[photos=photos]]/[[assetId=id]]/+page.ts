@@ -16,6 +16,7 @@ export const load = (async ({ url }) => {
   const $t = await getFormatter();
 
   return {
+    legacy: url.searchParams.get('view') === 'legacy',
     meta: {
       title: $t('locked_folder'),
     },

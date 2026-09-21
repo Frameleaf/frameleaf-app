@@ -8,6 +8,7 @@
   import ChangeLocation from '$lib/components/timeline/actions/ChangeLocationAction.svelte';
   import DeleteAssets from '$lib/components/timeline/actions/DeleteAssetsAction.svelte';
   import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
+  import MarkNsfwAction from '$lib/components/timeline/actions/MarkNsfwAction.svelte';
   import SelectAllAssets from '$lib/components/timeline/actions/SelectAllAction.svelte';
   import SetVisibilityAction from '$lib/components/timeline/actions/SetVisibilityAction.svelte';
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
@@ -29,7 +30,7 @@
   let { data }: Props = $props();
 
   let timelineManager = $state<TimelineManager>() as TimelineManager;
-  const options = { visibility: AssetVisibility.Locked };
+  const options = $derived(data.legacy ? { visibility: AssetVisibility.Locked } : { sensitiveOnly: true });
 
   const handleEscape = () => {
     if (!assetMultiSelectManager.selectionActive) {
@@ -60,30 +61,54 @@
   hideNavbar={assetMultiSelectManager.selectionActive}
   scrollbar={false}
 >
-  <Timeline
-    enableRouting={true}
-    bind:timelineManager
-    {options}
-    assetInteraction={assetMultiSelectManager}
-    onEscape={handleEscape}
-    removeAction={AssetAction.SET_VISIBILITY_TIMELINE}
-  >
-    {#snippet empty()}
-      <EmptyPlaceholder text={$t('no_locked_photos_message')} title={$t('nothing_here_yet')} class="mx-auto mt-10" />
-    {/snippet}
-  </Timeline>
+  {#snippet buttons()}
+    <nav aria-label={$t('locked_folder')} class="flex gap-4 text-sm">
+      <a
+        href={Route.locked()}
+        onclick={() => assetMultiSelectManager.clear()}
+        aria-current={data.legacy ? undefined : 'page'}>{$t('sensitive_media')}</a
+      >
+      <a
+        href={`${Route.locked()}?view=legacy`}
+        onclick={() => assetMultiSelectManager.clear()}
+        aria-current={data.legacy ? 'page' : undefined}>{$t('previously_moved_to_locked')}</a
+      >
+    </nav>
+  {/snippet}
+  {#key data.legacy}
+    <Timeline
+      enableRouting={true}
+      bind:timelineManager
+      {options}
+      assetInteraction={assetMultiSelectManager}
+      onEscape={handleEscape}
+      removeAction={data.legacy ? AssetAction.SET_VISIBILITY_TIMELINE : undefined}
+    >
+      {#snippet empty()}
+        <EmptyPlaceholder
+          text={$t(data.legacy ? 'no_locked_photos_message' : 'sensitive_timeline_message')}
+          title={$t('nothing_here_yet')}
+          class="mx-auto mt-10"
+        />
+      {/snippet}
+    </Timeline>
+  {/key}
 </UserPageLayout>
 
 <!-- Multi-selection mode app bar -->
 {#if assetMultiSelectManager.selectionActive}
   <AssetSelectControlBar>
     <SelectAllAssets withText {timelineManager} assetInteraction={assetMultiSelectManager} />
-    <SetVisibilityAction unlock onVisibilitySet={handleMoveOffLockedFolder} />
+    {#if data.legacy}
+      <SetVisibilityAction unlock onVisibilitySet={handleMoveOffLockedFolder} />
+    {:else}
+      <MarkNsfwAction markSafe />
+    {/if}
     <ButtonContextMenu icon={mdiDotsVertical} title={$t('menu')}>
       <DownloadAction menuItem />
       <ChangeDate menuItem />
       <ChangeLocation menuItem />
-      <DeleteAssets menuItem force onAssetDelete={(assetIds) => timelineManager.removeAssets(assetIds)} />
+      <DeleteAssets menuItem force={data.legacy} onAssetDelete={(assetIds) => timelineManager.removeAssets(assetIds)} />
     </ButtonContextMenu>
   </AssetSelectControlBar>
 {/if}

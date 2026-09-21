@@ -8686,7 +8686,7 @@ export function tagAssets({ id, bulkIdsDto }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, key, order, orderBy, personId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, key, order, orderBy, personId, sensitiveOnly, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     bbox?: string;
     dateType?: TimeBucketDateType;
@@ -8696,6 +8696,7 @@ export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, 
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
+    sensitiveOnly?: boolean;
     slug?: string;
     suppressedOnly?: boolean;
     tagId?: string;
@@ -8719,6 +8720,7 @@ export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, 
         order,
         orderBy,
         personId,
+        sensitiveOnly,
         slug,
         suppressedOnly,
         tagId,
@@ -8735,7 +8737,7 @@ export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, 
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed, key, order, orderBy, personId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed, key, order, orderBy, personId, sensitiveOnly, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     bbox?: string;
     dateType?: TimeBucketDateType;
@@ -8745,6 +8747,7 @@ export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed,
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
+    sensitiveOnly?: boolean;
     slug?: string;
     suppressedOnly?: boolean;
     tagId?: string;
@@ -8767,6 +8770,7 @@ export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed,
         order,
         orderBy,
         personId,
+        sensitiveOnly,
         slug,
         suppressedOnly,
         tagId,

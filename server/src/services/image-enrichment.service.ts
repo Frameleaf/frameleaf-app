@@ -207,7 +207,9 @@ export class ImageEnrichmentService extends BaseService {
     // those would compete for the same pool and deadlock under parallel
     // bulk-mark actions.
     const metadata = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
-      const m = await this.getEnrichmentMetadata(id, trx);
+      const isManualMark =
+        dto.action === AssetImageEnrichmentAction.MarkNsfw || dto.action === AssetImageEnrichmentAction.MarkSafe;
+      const m = await this.getEnrichmentMetadata(id, trx, isManualMark);
 
       switch (dto.action) {
         case AssetImageEnrichmentAction.AcceptNsfwResult: {
@@ -363,6 +365,7 @@ export class ImageEnrichmentService extends BaseService {
         const m = await this.getEnrichmentMetadata(id, trx);
         m.nsfwDetection = {
           status: 'failed',
+          review: m.nsfwDetection?.review,
           modelName: machineLearning.nsfwDetection.modelName,
           updatedAt: new Date().toISOString(),
           error: getErrorMessage(error),
@@ -381,6 +384,7 @@ export class ImageEnrichmentService extends BaseService {
       const appliedTagValues = m.nsfwDetection?.status === 'success' ? m.nsfwDetection.appliedTagValues : undefined;
       m.nsfwDetection = {
         status: 'success',
+        review: m.nsfwDetection?.review,
         modelName: machineLearning.nsfwDetection.modelName,
         updatedAt: new Date().toISOString(),
         result,
@@ -391,7 +395,7 @@ export class ImageEnrichmentService extends BaseService {
       return m;
     });
 
-    const changed = await this.applyNsfwTags(id, asset.ownerId, result, metadata);
+    const changed = await this.applyNsfwTags(id, asset.ownerId, this.getStoredNsfw(metadata)!, metadata);
     if (changed.metadata) {
       await this.persistAppliedBookkeeping(id, metadata);
     }
@@ -540,6 +544,7 @@ export class ImageEnrichmentService extends BaseService {
           const appliedTagValues = m.nsfwDetection?.status === 'success' ? m.nsfwDetection.appliedTagValues : undefined;
           m.nsfwDetection = {
             status: 'success',
+            review: m.nsfwDetection?.review,
             modelName: machineLearning.nsfwDetection.modelName,
             updatedAt: new Date().toISOString(),
             result: nsfw,
@@ -881,14 +886,18 @@ export class ImageEnrichmentService extends BaseService {
     );
   }
 
-  private async getEnrichmentMetadata(id: string, kysely?: Kysely<DB>): Promise<EnrichmentMetadata> {
+  private async getEnrichmentMetadata(
+    id: string,
+    kysely?: Kysely<DB>,
+    allowMissingPrivacy = false,
+  ): Promise<EnrichmentMetadata> {
     const database = kysely ?? this.db;
     let authoritativePrivacy: PrivacySidecar | undefined;
     if (this.db) {
       const privacyRepository = new ForkPrivacyRepository(this.db);
       if (await privacyRepository.shouldReadSidecar(database)) {
         authoritativePrivacy = await privacyRepository.get(id, database);
-        if (!authoritativePrivacy) {
+        if (!authoritativePrivacy && !allowMissingPrivacy) {
           throw new Error(`Missing fork privacy sidecar for asset ${id}`);
         }
       }
@@ -925,7 +934,8 @@ export class ImageEnrichmentService extends BaseService {
       return;
     }
     const repository = new ForkEnrichmentRepository(this.db);
-    if (!(await repository.shouldReadSidecar(database))) {
+    const sidecarOnly = await repository.shouldReadSidecar(database);
+    if (!sidecarOnly) {
       await this.assetRepository.upsertMetadata(
         id,
         [{ key: AssetMetadataKey.MlEnrichment, value: value as Record<string, unknown> }],
@@ -933,6 +943,14 @@ export class ImageEnrichmentService extends BaseService {
       );
     }
     await repository.save(id, value as Record<string, unknown>, database);
+    if (sidecarOnly) {
+      await new ForkPrivacyRepository(this.db).saveClassification(
+        id,
+        this.getEffectiveNsfw(value),
+        value.nsfwDetection?.review ?? null,
+        database,
+      );
+    }
   }
 
   private applyPrivacySidecar(metadata: EnrichmentMetadata, privacy: PrivacySidecar): EnrichmentMetadata {
