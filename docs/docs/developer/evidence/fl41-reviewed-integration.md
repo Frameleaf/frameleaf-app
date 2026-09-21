@@ -29,8 +29,12 @@ Server OpenAPI generation and oazapfts 7.5.0 regeneration are byte-identical to 
 
 All 313 existing operations remain, with five additional version operations. Existing operation fields and parameters remain identical except for optional `sensitiveOnly` query parameters on the two timeline endpoints. Existing schemas remain identical except for optional `originalVideo` on `AssetEditsResponseDto`; no existing required fields changed. This structural comparison does not replace hosted OpenAPI compatibility checks.
 
+The final receipt/golden commit `e9e61bbdb97f2605bc2aa3b73b72b9a0886b4aac` passed all 22 documentation/workflow contracts and independent consistency review. Its strict snapshot retains 517 source anchors, with 53 added tracked paths and zero removed paths relative to the FL-41 input; the validator is unchanged.
+
+Starting the installed Docker Desktop resolved the local database blocker. Using the already-cached PostgreSQL and Ryuk images, all 58 PostgreSQL tests passed across the six changed medium-test files: enrichment backfill, migration ledgers, video edit versions, authentication, image enrichment and sensitive timelines. This includes the original-bounds regression. The run used disposable test databases and did not pull registry images or change application databases.
+
 ## Remaining qualification
 
-Current-candidate GitHub Actions, combined PostgreSQL/media qualification and full authenticated application checks remain open. The original-bounds PostgreSQL regression could not run because the local Docker daemon was unavailable. Existing issue-specific limitations remain in their receipts. No mobile generator or application validation was reintroduced.
+Current-candidate GitHub Actions, broader media qualification and full authenticated application checks remain open. The previously unavailable original-bounds PostgreSQL regression is now locally verified; existing issue-specific limitations beyond that check remain in their receipts. No mobile generator or application validation was reintroduced.
 
 Issue-owned PRs and their monitoring owners remain unchanged. The assembly is unpushed, so its Smart Commit commands have no Jira ingestion receipt. FL-41 remains In Progress. Any merge/publication requires the existing explicit authorization procedure.
