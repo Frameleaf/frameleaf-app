@@ -4,6 +4,8 @@
   import { mdiClose } from '@mdi/js';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
+  import ArchiveOperationsModal from '$lib/modals/ArchiveOperationsModal.svelte';
+  import { Button, modalManager } from '@immich/ui';
 
   type Props = {
     children?: Snippet;
@@ -24,6 +26,9 @@
     </div>
   {/snippet}
   {#snippet trailing()}
+    <Button size="small" variant="ghost" onclick={() => modalManager.show(ArchiveOperationsModal, {})}
+      >{$t('archive_operations.recent')}</Button
+    >
     {@render children?.()}
   {/snippet}
 </ControlAppBar>

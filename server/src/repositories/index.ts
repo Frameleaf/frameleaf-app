@@ -1,3 +1,4 @@
+import { ArchiveOperationRepository } from 'src/repositories/archive-operation.repository.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
@@ -73,6 +74,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  ArchiveOperationRepository,
   ICloudMetadataRepository,
   ICloudRelationsRepository,
   ICloudAlbumRepository,

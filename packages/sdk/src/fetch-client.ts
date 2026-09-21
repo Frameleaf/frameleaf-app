@@ -1252,6 +1252,28 @@ export type ApiKeyUpdateDto = {
     /** List of permissions */
     permissions?: Permission[];
 };
+export type ArchiveOperationResponseDto = {
+    cancelled: boolean;
+    conflict: number;
+    count: number;
+    error: number;
+    id: string;
+    pending: number;
+    revoked: number;
+    scope: string;
+    skipped: number;
+    succeeded: number;
+    undo: boolean;
+    undone: number;
+};
+export type ArchiveOperationCreateDto = {
+    ids: string[];
+    requestKey: string;
+    scope: ArchiveOperationScope;
+};
+export type ArchiveOperationCommandDto = {
+    command: ArchiveOperationCommand;
+};
 export type AssetFileResponseDto = {
     /** Creation date */
     createdAt: string;
@@ -5477,6 +5499,61 @@ export function rotateApiKey({ id }: {
     }));
 }
 /**
+ * List recent archive operations
+ */
+export function getArchiveOperations(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ArchiveOperationResponseDto[];
+    }>("/archive-operations", {
+        ...opts
+    }));
+}
+/**
+ * Archive a frozen selection
+ */
+export function createArchiveOperation({ archiveOperationCreateDto }: {
+    archiveOperationCreateDto: ArchiveOperationCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ArchiveOperationResponseDto;
+    }>("/archive-operations", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: archiveOperationCreateDto
+    })));
+}
+/**
+ * Read an archive operation
+ */
+export function getArchiveOperation({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ArchiveOperationResponseDto;
+    }>(`/archive-operations/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Cancel, retry or undo an archive operation
+ */
+export function commandArchiveOperation({ id, archiveOperationCommandDto }: {
+    id: string;
+    archiveOperationCommandDto: ArchiveOperationCommandDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ArchiveOperationResponseDto;
+    }>(`/archive-operations/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: archiveOperationCommandDto
+    })));
+}
+/**
  * Search asset files
  */
 export function searchAssetFiles({ assetId, isEdited, isProgressive, isTransparent, $type }: {
@@ -9617,6 +9694,14 @@ export enum Permission {
     AdminSessionRead = "adminSession.read",
     AdminAuthUnlinkAll = "adminAuth.unlinkAll"
 }
+export enum ArchiveOperationScope {
+    SelectedOwnedAssets = "selected-owned-assets"
+}
+export enum ArchiveOperationCommand {
+    Cancel = "cancel",
+    Retry = "retry",
+    Undo = "undo"
+}
 export enum AssetFileType {
     Fullsize = "fullsize",
     Preview = "preview",
@@ -9840,6 +9925,7 @@ export enum QueueJobStatus {
     Paused = "paused"
 }
 export enum JobName {
+    ArchiveOperation = "ArchiveOperation",
     ICloudSync = "ICloudSync",
     ForkSchemaBackfill = "ForkSchemaBackfill",
     AssetDelete = "AssetDelete",

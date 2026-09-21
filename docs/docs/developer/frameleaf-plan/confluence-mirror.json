@@ -874,6 +874,19 @@
       "title": "FL-41 Reviewed Web and Server Integration Evidence",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61441023",
       "version": 13
+    },
+    {
+      "bytes": 8208,
+      "category": "development",
+      "id": "61800603",
+      "source": "docs/docs/developer/frameleaf-plan/FL-32-selected-archive.md",
+      "sourceSha256": "540214d394858452fdf059ca52fe2a5bbb3a91e3789a80b42eb603378e726197",
+      "title": "FL-32 selected-asset background archive",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61800603",
+      "version": 1,
+      "sourceBranch": "codex/FL-32-bulk-archive",
+      "sourceState": "bounded-candidate-independent-review-pending",
+      "readbackResult": "Full normalized Markdown source body and SHA-256 matched live page version 1 on 2026-09-21; broader parent acceptance remains open."
     }
   ],
   "spaceId": "61374475",

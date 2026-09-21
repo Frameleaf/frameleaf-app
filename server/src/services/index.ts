@@ -1,3 +1,4 @@
+import { ArchiveOperationService } from 'src/services/archive-operation.service.js';
 import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { ApiKeyService } from 'src/services/api-key.service.js';
@@ -71,6 +72,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  ArchiveOperationService,
   ICloudMetadataService,
   ICloudRelationsService,
   ICloudAlbumService,
