@@ -1810,6 +1810,7 @@
   "location_picker_longitude_hint": "Enter your longitude here",
   "lock": "Lock",
   "lock_sensitive_content": "Lock sensitive content",
+  "locked": "Locked",
   "locked_folder": "Locked Folder",
   "log_detail_title": "Log Detail",
   "log_out": "Log out",

@@ -71,7 +71,7 @@
     {
       "icon": "mdiLockOutline",
       "id": "locked",
-      "label": "locked_folder",
+      "label": "locked",
       "route": "locked",
       "section": "library"
     },

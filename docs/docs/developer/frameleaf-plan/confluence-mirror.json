@@ -821,6 +821,16 @@
       "verified": true,
       "verifiedAt": "2026-09-20T07:35:43.401Z",
       "version": 2
+    },
+    {
+      "bytes": 4413,
+      "category": "development",
+      "id": "61964350",
+      "source": "docs/docs/developer/frameleaf-plan/FL-30-navigation.md",
+      "sourceSha256": "645eb40e12435567d5b439c6e422312217f49981f9f404c48a92a3891b478498",
+      "title": "FL-30 production navigation rollout",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61964350",
+      "version": 1
     }
   ],
   "spaceId": "61374475",

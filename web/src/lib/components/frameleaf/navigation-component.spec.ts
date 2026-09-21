@@ -3,6 +3,7 @@ import { addMessages } from 'svelte-i18n';
 import { page } from '$app/state';
 import { preferencesFactory } from '$lib/../test-data/factories/preferences-factory';
 import { albumTreeDropdown, recentAlbumsDropdown } from '$lib/stores/preferences.store';
+import en from '../../../../../i18n/en.json';
 import Navigation from './Navigation.svelte';
 
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/photos') } }));
@@ -19,17 +20,7 @@ vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
 beforeEach(() => {
   albumTreeDropdown.set(false);
   recentAlbumsDropdown.set(false);
-  addMessages('dev', {
-    timeline: 'Timeline',
-    library: 'Library',
-    settings: 'Settings',
-    utilities: 'Utilities',
-    trash: 'Trash',
-    explore: 'Explore',
-    best_photos: 'Best Photos',
-    locked_folder: 'Locked',
-    albums: 'Albums',
-  });
+  addMessages('dev', en);
 });
 
 it.each([false, true])('renders real named destinations in iconOnly=%s mode', (iconOnly) => {
