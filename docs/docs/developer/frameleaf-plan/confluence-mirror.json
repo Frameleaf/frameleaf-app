@@ -874,6 +874,16 @@
       "title": "FL-41 Reviewed Web and Server Integration Evidence",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61441023",
       "version": 13
+    },
+    {
+      "bytes": 14450,
+      "category": "development",
+      "id": "61997196",
+      "source": "docs/docs/developer/frameleaf-plan/fl86-distribution-rights.md",
+      "sourceSha256": "7ef3d9c35253dd367c722719e0a64a962cfe1ba4d1506a7c2ed1910865214523",
+      "title": "FL-86 Studio artifact attribution and resource rights",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997196/FL-86+Studio+artifact+attribution+and+resource+rights",
+      "version": 2
     }
   ],
   "spaceId": "61374475",
