@@ -38,7 +38,7 @@
 
       try {
         preAction({ type: AssetAction.DELETE, asset: timelineAsset });
-        await deleteAssets({ assetBulkDeleteDto: { ids: [asset.id], force: true } });
+        await deleteAssets({ assetBulkDeleteDto: { ids: [timelineAsset.id], force: true } });
         onAction({ type: AssetAction.DELETE, asset: timelineAsset });
         toastManager.primary($t('permanently_deleted_asset'));
       } catch (error) {

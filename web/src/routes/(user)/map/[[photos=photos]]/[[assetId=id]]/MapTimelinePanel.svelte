@@ -21,7 +21,7 @@
   import Portal from '$lib/elements/Portal.svelte';
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
+  import { LibraryTimelineSession } from '$lib/frameleaf/library-timeline-session.svelte';
   import { getAssetBulkActions } from '$lib/services/asset.service';
   import { mapSettings } from '$lib/stores/preferences.store';
   import {
@@ -35,6 +35,7 @@
   import { mdiDotsVertical, mdiImageMultiple } from '@mdi/js';
   import { ceil, floor } from 'lodash-es';
   import { t } from 'svelte-i18n';
+  import { onDestroy } from 'svelte';
 
   interface Props {
     bbox: SelectionBBox;
@@ -45,7 +46,12 @@
 
   let { bbox, selectedClusterIds, assetCount, onClose }: Props = $props();
 
-  let timelineManager = $state<TimelineManager>() as TimelineManager;
+  const session = new LibraryTimelineSession(() => ({
+    scope: { kind: 'map', bbox: timelineBoundingBox },
+    filters: timelineOptions,
+  }));
+  const timelineManager = session.timeline;
+  onDestroy(() => session.destroy());
   let selectedAssets = $derived(assetMultiSelectManager.assets);
   let isAssetStackSelected = $derived(selectedAssets.length === 1 && !!selectedAssets[0].stack);
   let isLinkActionAvailable = $derived.by(() => {
@@ -82,7 +88,6 @@
   );
 
   const timelineOptions = $derived({
-    bbox: timelineBoundingBox,
     visibility: $mapSettings.withPartners
       ? AssetVisibility.Timeline
       : $mapSettings.includeArchived
@@ -94,7 +99,7 @@
   });
 
   $effect.pre(() => {
-    void timelineOptions;
+    void session.options;
     assetMultiSelectManager.clear();
   });
 </script>
@@ -112,9 +117,10 @@
 
   <div class="min-h-0 flex-1">
     <Timeline
-      bind:timelineManager
+      {timelineManager}
       enableRouting={false}
-      options={timelineOptions}
+      options={session.options}
+      manageTimelineLifecycle={false}
       onEscape={handleEscape}
       assetInteraction={assetMultiSelectManager}
       showArchiveIcon

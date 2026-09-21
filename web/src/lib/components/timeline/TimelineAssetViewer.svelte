@@ -69,9 +69,17 @@
     nextAsset: undefined,
   });
 
+  let cursorVersion = 0;
   const loadCloseAssets = async (currentAsset: AssetResponseDto) => {
+    const version = ++cursorVersion;
     const [nextAsset, previousAsset] = await Promise.all([getNextAsset(currentAsset), getPreviousAsset(currentAsset)]);
-
+    if (
+      version !== cursorVersion ||
+      assetViewerManager.asset?.id !== currentAsset.id ||
+      !assetViewerManager.isViewing
+    ) {
+      return;
+    }
     assetCursor = {
       current: currentAsset,
       nextAsset,
@@ -253,6 +261,7 @@
   });
 
   onDestroy(() => {
+    cursorVersion++;
     assetCacheManager.invalidate();
   });
 </script>
@@ -272,7 +281,12 @@
     preAction={handlePreAction}
     onAction={(action) => {
       handleAction(action);
-      assetCacheManager.invalidate();
+      if (action.type === AssetAction.DELETE || action.type === AssetAction.TRASH) {
+        // The viewer has already advanced: do not invalidate the next asset's pending neighbors.
+        assetCacheManager.invalidateAsset(action.asset.id);
+      } else {
+        assetCacheManager.invalidate();
+      }
     }}
     onUndoDelete={handleUndoDelete}
     onRandom={handleRandom}
