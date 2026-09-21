@@ -2,7 +2,7 @@
    /// Asset edit ID
    String id;
  
--  AssetEditActionItemDtoParameters parameters;
+-  AssetEditActionItemResponseDtoParameters parameters;
 +  Map<String, dynamic> parameters;
  
    @override
@@ -11,7 +11,7 @@
        return AssetEditActionItemResponseDto(
          action: AssetEditAction.fromJson(json[r'action'])!,
          id: mapValueOfType<String>(json, r'id')!,
--        parameters: AssetEditActionItemDtoParameters.fromJson(json[r'parameters'])!,
+-        parameters: AssetEditActionItemResponseDtoParameters.fromJson(json[r'parameters'])!,
 +        parameters: json[r'parameters'],
        );
      }

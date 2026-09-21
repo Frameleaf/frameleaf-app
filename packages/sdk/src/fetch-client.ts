@@ -1671,8 +1671,10 @@ export type AssetEditsResponseDto = {
 };
 export type AssetEditActionItemDto = {
     action: AssetEditAction;
-    /** List of edit actions to apply */
-    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
+    /** Parameters validated against the selected edit action */
+    parameters: {
+        [key: string]: any;
+    };
 };
 export type AssetEditsCreateDto = {
     /** List of edit actions to apply */

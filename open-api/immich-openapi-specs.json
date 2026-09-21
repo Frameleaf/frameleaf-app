@@ -24104,42 +24104,9 @@
             "$ref": "#/components/schemas/AssetEditAction"
           },
           "parameters": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CropParameters"
-              },
-              {
-                "$ref": "#/components/schemas/RotateParameters"
-              },
-              {
-                "$ref": "#/components/schemas/MirrorParameters"
-              },
-              {
-                "$ref": "#/components/schemas/TrimParameters"
-              },
-              {
-                "$ref": "#/components/schemas/StraightenParameters"
-              },
-              {
-                "$ref": "#/components/schemas/AdjustParameters"
-              },
-              {
-                "$ref": "#/components/schemas/LookParameters"
-              },
-              {
-                "$ref": "#/components/schemas/ToggleParameters"
-              },
-              {
-                "$ref": "#/components/schemas/TextOverlayParameters"
-              },
-              {
-                "$ref": "#/components/schemas/AudioParameters"
-              },
-              {
-                "$ref": "#/components/schemas/SpeedParameters"
-              }
-            ],
-            "description": "List of edit actions to apply"
+            "additionalProperties": {},
+            "description": "Parameters validated against the selected edit action",
+            "type": "object"
           }
         },
         "required": [
