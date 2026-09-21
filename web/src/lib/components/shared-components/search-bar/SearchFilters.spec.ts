@@ -46,10 +46,15 @@ it('renders a real selected face chip and removes the production query filter', 
   expect(document.querySelector(`img[src*="${CSS.escape(person.id)}"]`)).not.toBeNull();
   expect(remove.closest('[role="listbox"]')).toBeNull();
   expect(screen.getByRole('listbox', { name: 'recent_searches' })).toHaveAttribute('id', 'filters');
+  remove.focus();
+  const focusOut = vi.fn();
+  remove.addEventListener('focusout', focusOut);
   await fireEvent.click(remove);
   expect(searchManager.toQuery().personIds).toBeUndefined();
   expect(screen.queryByRole('button', { name: 'remove_person: Private face' })).toBeNull();
   expect(document.activeElement?.id).toBe('filters-people');
+  expect(focusOut).toHaveBeenCalledOnce();
+  expect(focusOut.mock.calls[0][0].relatedTarget).toBe(document.querySelector('#filters-people'));
 });
 
 it('discards a response begun before session lock, including names, counts and selected IDs', async () => {
