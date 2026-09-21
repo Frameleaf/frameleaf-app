@@ -34,7 +34,7 @@ The OpenAPI specification and TypeScript client are generated from these control
 
 The master uses software H.264 or HEVC, CRF 18 and the original raster independent of playback resolution, bitrate, hardware acceleration and tone-mapping settings. The policy preserves qualified YUV 4:2:0, 4:2:2 or 4:4:4 precision at 8/10/12 bits. Color intent is set on filter frames and validated from the rendered output. Unchanged audio is copied; edited audio does not force a stereo downmix. Dolby Vision and unsupported pixel formats fail closed before publication.
 
-A playback proxy is generated from the validated master using configured playback policy. This packet does not qualify hardware proxy fallback, every HDR codec/device combination, or photographic correctness of every existing effect on HDR material. Metadata-only rotation, web Save Version/Export/Revert controls, configurable export profiles, and end-to-end deployment acceptance remain open FL-39 work. This document is not an issue-completion claim.
+A playback proxy is generated from the validated master using configured playback policy. This packet does not qualify hardware proxy fallback, every HDR codec/device combination, or photographic correctness of every existing effect on HDR material. Metadata-only rotation, configurable export profiles, and end-to-end deployment acceptance remain open FL-39 work. This document is not an issue-completion claim.
 
 ## Local evidence
 
@@ -47,3 +47,16 @@ Validation uses disposable synthetic media and isolated PostgreSQL Testcontainer
 - SQL generation runs against a disposable database in the same public-schema-only shape used by the schema-reset CI stage. Only the expected asset-edit query artifact changes.
 
 Independent exact-candidate review and remote CI remain distinct gates. No merge or deployment is authorized by this document.
+
+
+## Web version controls follow-on
+
+The existing quick video editor now labels its save action **Save version**. Saving queues the immutable recipe and closes the editor with an accurate queued notification; it does not mistake an asset-only completion event from a separate export for completion of that save. The current successfully rendered video remains available while rendering runs.
+
+A compact Versions section lists current, pending, failed and ready history. **Export master** queues a separate export of the current saved recipe and is unavailable while there are unsaved edits or a requested render/export in progress. A ready master downloads through the authenticated streaming endpoint without buffering the entire video in browser memory. Exports never select a new playback version. Manual refresh and asset-scoped completion events update the list; no background polling loop is introduced.
+
+**Revert to original** and **Restore** of ready saved history call the corresponding server endpoints. Restoring confirms before discarding a dirty local draft. An unsuccessful history request disables mutations and exposes a retry through Refresh. Unmounting releases the event subscription and ignores obsolete list responses.
+
+This packet connects the existing editor to the reviewed persistence API; it does not replace the original design or claim full Studio implementation. The existing quick-editor preview bounds still use the displayed asset metadata. Consequently, composing a new trim longer than the currently displayed edit requires a separate original-metadata UI correction; restoring an existing longer historical recipe already works through the server endpoint. Browser/device visual qualification, localization beyond English and deployed end-to-end acceptance remain open. Native applications remain deferred.
+
+Focused component tests cover queued save/close behavior, export versus restore separation, unsaved/pending export guards, history restoration, dirty-draft cancellation, read-error recovery and event subscription ownership. Web TypeScript, Svelte diagnostics and changed-file lint are checked independently. The generated SDK enum-number shift is reflected in the existing image-enrichment fixture. The approved OpenAPI CI command correction from `83100cdaa` is applied as the exact two-file patch so mobile Dart generation remains retired without importing unrelated FL-41 changes.

@@ -512,7 +512,11 @@ jobs:
       - name: Install server dependencies
         run: pnpm --filter immich install --frozen-lockfile
       - name: Run API generation
-        run: mise run //:open-api
+        run: |
+          mise run //:plugins
+          mise run //server:build
+          mise run //server:sync-open-api
+          mise run //:open-api-typescript
       - name: Find file changes
         uses: tj-actions/verify-changed-files@a1c6acee9df209257a246f2cc6ae8cb6581c1edf
         id: verify-changed-files
