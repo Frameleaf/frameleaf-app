@@ -9,6 +9,11 @@ import { parseJsonRejectingDuplicateKeys } from '../../scripts/frameleaf-studio-
 export const AXES = ['native', 'chromium', 'firefox', 'safari', 'command', 'graph', 'preview', 'export', 'timingColor', 'authorizationFailure', 'test'];
 const CATALOG_SHA256 = '74e65893486ef0f372c66e140915b8bb98ca32bb07be668efe30514b733c748b';
 const SHA256 = /^[a-f0-9]{64}$/;
+const NON_RENDERING_ROWS = new Set([
+  'readme.projects-storage.1', 'readme.projects-storage.2', 'readme.projects-storage.3',
+  'readme.projects-storage.4', 'readme.projects-storage.5',
+  'module.projects', 'module.project-bundle', 'module.workspace-gate',
+]);
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const text = (value, label) => assert(typeof value === 'string' && value.trim(), `${label}: required text`);
 const exact = (actual, expected, label) => {
@@ -94,7 +99,7 @@ export async function validateConformance(data, root, { release = false } = {}) 
       assert(['not-tested', 'blocked', 'failed', 'deferred', 'passed', 'not-applicable'].includes(result?.status), `${label}: invalid status`);
       const notApplicable = result.status === 'not-applicable';
       if (notApplicable) {
-        assert(['preview', 'export'].includes(axis) && /^(readme\.projects-storage\.|module\.(projects|project-bundle|workspace-gate)$)/.test(row.id), `${label}: requested feature cannot be waived`);
+        assert(['preview', 'export'].includes(axis) && NON_RENDERING_ROWS.has(row.id), `${label}: requested feature cannot be waived`);
         text(result.reason, `${label}: semantic non-rendering justification`);
       }
       if (!['passed', 'not-applicable'].includes(result.status)) {

@@ -78,6 +78,19 @@ test('a measured run binds one axis, all constituent cases, exact source and act
     delete persistence.axes.preview.reason;
     await assert.rejects(validateConformance(data, temporary), /semantic non-rendering justification/);
     persistence.axes.preview = { status: 'not-tested' };
+    const mixed = data.overlay.rows.find((entry) => entry.id === 'readme.projects-storage.6');
+    const mixedFixture = data.catalog.rows.find((entry) => entry.id === mixed.id);
+    const mixedFeature = data.manifest.features.find((entry) => entry.id === mixed.id);
+    for (const axis of ['preview', 'export']) {
+      const mixedRun = {
+        ...storageRun, featureId: mixed.id, axis,
+        fixtureIds: fixtureIds(mixedFixture, 'graph'),
+        sourceReview: { paths: data.manifest.familySourceInventory[mixedFeature.category], actions: mixedFixture.actions, reviewer: 'synthetic fixture' },
+      };
+      mixed.axes[axis] = { status: 'not-applicable', reason: 'Storage coverage cannot waive the thumbnail constituent.', run: await save('mixed.json', mixedRun) };
+      await assert.rejects(validateConformance(data, temporary), /requested feature cannot be waived/);
+      mixed.axes[axis] = { status: 'not-tested' };
+    }
     for (const mutate of [
       (value) => value.fixtureIds.pop(),
       (value) => { value.axis = 'preview'; },
