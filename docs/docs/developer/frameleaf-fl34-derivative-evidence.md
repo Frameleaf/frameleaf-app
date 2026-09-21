@@ -29,3 +29,9 @@ No independent cross-asset pixel-derived provenance relationship was found. The 
 ## Scope and review
 
 Two existing production symbols change: `AssetFileAccess.checkOwnerAccess` and `checkOtherAccess`. GitNexus upstream impact reported LOW for each: one direct caller each, three and two total upstream symbols respectively, with no indexed execution processes. The canonical index is older than the continuation; PostgreSQL behavior and source tracing supplement that graph. No API schemas, migrations, mobile code or shared delivery ledgers change. Independent exact-candidate privacy review remains required before integration or publication.
+
+## Shared E2E diagnostic prerequisite
+
+PR131 at `4dacf2af999d1795621cb5f1cbf1ce7f6de39458` encountered an ARM server/CLI E2E failure in run `35604085348`, job `106346849447`. Asset deletion event waits timed out before later requests received connection refusal. Existing Compose logs did not establish a container exit cause. The shared diagnostic change from FL-41 commit `82e588e1ffc243494f9750a50cd9241110b69c23` is integrated here without the unrelated FL-41 evidence document or runtime work.
+
+The workflow now captures timestamped Compose logs and only container Name, State and RestartCount immediately after API/CLI tests, before maintenance can change state. A separate diagnostic file complements the later Compose logs. Collection runs after failure and does not weaken test outcomes. No full container configuration, environment or host/kernel inventory is collected. This is diagnostic instrumentation, not a server fix or evidence of OOM. The narrow contract verifies ordering, selected fields, artifact retention and continued absence of mobile CI.
