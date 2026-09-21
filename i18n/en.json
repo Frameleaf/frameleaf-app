@@ -1296,6 +1296,7 @@
   "editor_video_move_text": "Move text",
   "editor_video_mute": "Mute",
   "editor_video_mute_description": "Remove audio from the rendered video.",
+  "editor_video_original_metadata_error": "Unable to read the original video. Close and reopen the editor to try again.",
   "editor_video_rendering": "Rendering...",
   "editor_video_rendering_toast": "Rendering edited video...",
   "editor_video_reset_value": "Reset",

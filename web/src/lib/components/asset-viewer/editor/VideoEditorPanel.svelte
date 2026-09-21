@@ -126,6 +126,8 @@
   let selectedTool = $state<Tool>('auto');
   let isSaving = $state(false);
   let isLoading = $state(true);
+  let originalVideo = $state<{ width: number; height: number; durationMs: number }>();
+  let metadataError = $state(false);
   let isShowingConfirmDialog = $state(false);
   let hasAppliedEdits = $state(false);
   let initialEditKey = $state('');
@@ -133,8 +135,8 @@
   let cropEnabled = $state(false);
   let cropX = $state(0);
   let cropY = $state(0);
-  let cropWidth = $state(asset.width ?? 0);
-  let cropHeight = $state(asset.height ?? 0);
+  let cropWidth = $state(0);
+  let cropHeight = $state(0);
   let cropAspectRatio = $state('free');
   let rotation = $state(0);
   let straighten = $state(0);
@@ -177,13 +179,15 @@
   } | null>(null);
   let textDrag = $state<{ rect: DOMRect } | null>(null);
 
-  const durationSeconds = $derived(Math.max(0, (asset.duration ?? 0) / 1000));
-  const width = $derived(asset.width ?? 0);
-  const height = $derived(asset.height ?? 0);
+  const durationSeconds = $derived(Math.max(0, (originalVideo?.durationMs ?? 0) / 1000));
+  const width = $derived(originalVideo?.width ?? 0);
+  const height = $derived(originalVideo?.height ?? 0);
   const canUseDimensions = $derived(width > 0 && height > 0);
   const canUseTimeline = $derived(durationSeconds > 0);
   const normalizedRotation = $derived(((Number(rotation) % 360) + 360) % 360);
-  const hasUnsavedChanges = $derived(!isLoading && !hasAppliedEdits && getCurrentEditKey() !== initialEditKey);
+  const hasUnsavedChanges = $derived(
+    !!originalVideo && !isLoading && !hasAppliedEdits && getCurrentEditKey() !== initialEditKey,
+  );
   const saveButtonText = $derived($t('editor_video_save_version'));
   const previewUrl = $derived(
     getAssetMediaUrl({ id: asset.id, cacheKey: asset.thumbhash, edited: false, size: AssetMediaSize.Preview }),
@@ -246,97 +250,109 @@
   }
 
   onMount(async () => {
-    resetControls();
-    const { edits } = await getAssetEdits({ id: asset.id });
-    for (const edit of edits) {
-      const action = edit.action as string;
-      const parameters = edit.parameters as EditParameters;
+    try {
+      const { edits, originalVideo: source } = await getAssetEdits({ id: asset.id });
+      if (
+        !source ||
+        [source.width, source.height, source.durationMs].some((value) => !(Number.isFinite(value) && value > 0))
+      ) {
+        throw new Error('Original video metadata unavailable');
+      }
+      originalVideo = source;
+      resetControls();
+      for (const edit of edits) {
+        const action = edit.action as string;
+        const parameters = edit.parameters as EditParameters;
 
-      switch (action) {
-        case 'crop': {
-          cropEnabled = true;
-          cropAspectRatio = 'free';
-          cropX = getNumberParameter(parameters, 'x', cropX);
-          cropY = getNumberParameter(parameters, 'y', cropY);
-          cropWidth = getNumberParameter(parameters, 'width', cropWidth);
-          cropHeight = getNumberParameter(parameters, 'height', cropHeight);
-          clampCropToFrame();
-          break;
-        }
-        case 'rotate': {
-          rotation = getNumberParameter(parameters, 'angle', rotation);
-          break;
-        }
-        case 'straighten': {
-          straighten = getNumberParameter(parameters, 'angle', straighten);
-          break;
-        }
-        case 'mirror': {
-          mirrorHorizontal ||= parameters.axis === 'horizontal';
-          mirrorVertical ||= parameters.axis === 'vertical';
-          break;
-        }
-        case 'trim': {
-          trimStartSeconds = getNumberParameter(parameters, 'startMs', 0) / 1000;
-          trimEndSeconds = getNumberParameter(parameters, 'endMs', asset.duration ?? 0) / 1000;
-          break;
-        }
-        case 'autoEnhance': {
-          autoEnhance = getBooleanParameter(parameters, 'enabled', true);
-          break;
-        }
-        case 'stabilize': {
-          stabilize = getBooleanParameter(parameters, 'enabled', true);
-          break;
-        }
-        case 'adjust': {
-          for (const control of adjustmentControls) {
-            adjustments[control.key] = getNumberParameter(parameters, control.key, adjustments[control.key]);
+        switch (action) {
+          case 'crop': {
+            cropEnabled = true;
+            cropAspectRatio = 'free';
+            cropX = getNumberParameter(parameters, 'x', cropX);
+            cropY = getNumberParameter(parameters, 'y', cropY);
+            cropWidth = getNumberParameter(parameters, 'width', cropWidth);
+            cropHeight = getNumberParameter(parameters, 'height', cropHeight);
+            clampCropToFrame();
+            break;
           }
-          break;
-        }
-        case 'filter':
-        case 'effect': {
-          lookName = getStringParameter(parameters, 'name', lookName);
-          lookIntensity = getNumberParameter(parameters, 'intensity', lookIntensity);
-          break;
-        }
-        case 'audio': {
-          muted = getBooleanParameter(parameters, 'muted', muted);
-          volume = getNumberParameter(parameters, 'volume', volume);
-          break;
-        }
-        case 'speed': {
-          const startMs = parameters.startMs;
-          const endMs = parameters.endMs;
-          if (typeof startMs === 'number' && typeof endMs === 'number') {
-            speedMode = 'segment';
-            speedSegments = [
-              ...speedSegments,
-              createSpeedSegment(getNumberParameter(parameters, 'rate', 1), startMs / 1000, endMs / 1000),
-            ];
-          } else {
-            speedMode = 'whole';
-            speed = getNumberParameter(parameters, 'rate', speed);
+          case 'rotate': {
+            rotation = getNumberParameter(parameters, 'angle', rotation);
+            break;
           }
-          break;
-        }
-        case 'textOverlay': {
-          text = getStringParameter(parameters, 'text', text);
-          textX = getNumberParameter(parameters, 'x', textX);
-          textY = getNumberParameter(parameters, 'y', textY);
-          textStartSeconds = getNumberParameter(parameters, 'startMs', 0) / 1000;
-          textEndSeconds = getNumberParameter(parameters, 'endMs', asset.duration ?? 0) / 1000;
-          textSize = getNumberParameter(parameters, 'size', textSize);
-          textColor = getStringParameter(parameters, 'color', textColor);
-          break;
+          case 'straighten': {
+            straighten = getNumberParameter(parameters, 'angle', straighten);
+            break;
+          }
+          case 'mirror': {
+            mirrorHorizontal ||= parameters.axis === 'horizontal';
+            mirrorVertical ||= parameters.axis === 'vertical';
+            break;
+          }
+          case 'trim': {
+            trimStartSeconds = getNumberParameter(parameters, 'startMs', 0) / 1000;
+            trimEndSeconds = getNumberParameter(parameters, 'endMs', originalVideo.durationMs) / 1000;
+            break;
+          }
+          case 'autoEnhance': {
+            autoEnhance = getBooleanParameter(parameters, 'enabled', true);
+            break;
+          }
+          case 'stabilize': {
+            stabilize = getBooleanParameter(parameters, 'enabled', true);
+            break;
+          }
+          case 'adjust': {
+            for (const control of adjustmentControls) {
+              adjustments[control.key] = getNumberParameter(parameters, control.key, adjustments[control.key]);
+            }
+            break;
+          }
+          case 'filter':
+          case 'effect': {
+            lookName = getStringParameter(parameters, 'name', lookName);
+            lookIntensity = getNumberParameter(parameters, 'intensity', lookIntensity);
+            break;
+          }
+          case 'audio': {
+            muted = getBooleanParameter(parameters, 'muted', muted);
+            volume = getNumberParameter(parameters, 'volume', volume);
+            break;
+          }
+          case 'speed': {
+            const startMs = parameters.startMs;
+            const endMs = parameters.endMs;
+            if (typeof startMs === 'number' && typeof endMs === 'number') {
+              speedMode = 'segment';
+              speedSegments = [
+                ...speedSegments,
+                createSpeedSegment(getNumberParameter(parameters, 'rate', 1), startMs / 1000, endMs / 1000),
+              ];
+            } else {
+              speedMode = 'whole';
+              speed = getNumberParameter(parameters, 'rate', speed);
+            }
+            break;
+          }
+          case 'textOverlay': {
+            text = getStringParameter(parameters, 'text', text);
+            textX = getNumberParameter(parameters, 'x', textX);
+            textY = getNumberParameter(parameters, 'y', textY);
+            textStartSeconds = getNumberParameter(parameters, 'startMs', 0) / 1000;
+            textEndSeconds = getNumberParameter(parameters, 'endMs', originalVideo.durationMs) / 1000;
+            textSize = getNumberParameter(parameters, 'size', textSize);
+            textColor = getStringParameter(parameters, 'color', textColor);
+            break;
+          }
         }
       }
-    }
 
-    clampTimelineState();
-    initialEditKey = getCurrentEditKey();
-    isLoading = false;
+      clampTimelineState();
+      initialEditKey = getCurrentEditKey();
+    } catch {
+      metadataError = true;
+    } finally {
+      isLoading = false;
+    }
   });
 
   onDestroy(() => {
@@ -1015,7 +1031,7 @@
   }
 
   async function applyEdits() {
-    if (isSaving) {
+    if (isSaving || isLoading || !originalVideo) {
       return;
     }
 
@@ -1083,7 +1099,7 @@
       />
       <p class="text-lg text-immich-fg capitalize dark:text-immich-dark-fg">{$t('editor_video_edit')}</p>
     </HStack>
-    <Button shape="round" size="small" onclick={applyEdits} loading={isSaving} disabled={isLoading}>
+    <Button shape="round" size="small" onclick={applyEdits} loading={isSaving} disabled={isLoading || !originalVideo}>
       {saveButtonText}
     </Button>
   </HStack>
@@ -1092,7 +1108,7 @@
     <VideoVersionControls
       {asset}
       {hasUnsavedChanges}
-      disabled={isSaving || isLoading}
+      disabled={isSaving || isLoading || !originalVideo}
       onRestore={() => onClose(true)}
     />
   {/key}
@@ -1114,6 +1130,8 @@
   <section class="mt-4 flex-1 overflow-y-auto px-4 pb-4">
     {#if isLoading}
       <p class="text-sm text-gray-500 dark:text-gray-400">{$t('loading')}...</p>
+    {:else if metadataError}
+      <p class="text-sm text-red-400" role="alert">{$t('editor_video_original_metadata_error')}</p>
     {:else if selectedTool === 'auto'}
       <div class="space-y-3">
         <button
