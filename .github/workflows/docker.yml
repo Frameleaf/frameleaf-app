@@ -192,7 +192,8 @@ jobs:
 
   success-check-ml:
     name: Docker Build & Push ML Success
-    needs: [integration, certification, machine-learning, retag-machine-learning]
+    needs:
+      [integration, certification, machine-learning, retag-machine-learning]
     if: always()
     runs-on: ubuntu-24.04
     steps:
