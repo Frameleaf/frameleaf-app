@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { cp, mkdtemp, mkdir, writeFile, rm, symlink, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -73,6 +74,9 @@ test('artifact audit includes installed runtime package notices and rejects pack
     for (const name of ['dependency-attribution.json', 'notices', 'rights-evidence']) {
       await cp(path.join(sourceStudio, name), path.join(studio, name), { recursive: true });
     }
+    const fixtureManifest = JSON.parse(await readFile(path.join(studio, 'dependency-attribution.json'), 'utf8'));
+    fixtureManifest.packageNoticeEvidence = [];
+    await writeFile(path.join(studio, 'dependency-attribution.json'), JSON.stringify(fixtureManifest));
     const dist = path.join(directory, 'dist');
     await mkdir(dist);
     await mkdir(path.join(directory, 'node_modules/example'), { recursive: true });
@@ -121,5 +125,63 @@ test('production policy retains every blocked identity and rejects a manifest-on
     manifest.resources[0].decisions.localRuntime = 'allowed';
     await writeFile(path.join(root, 'dependency-attribution.json'), JSON.stringify(manifest));
     await assert.rejects(writeResourcePolicy(root, engine), /Unreviewed runtime approval/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('supplemental notices require exact package bindings and retained evidence; partial native evidence stays blocked', async () => {
+  const { packageAttribution, auditAttribution } = await import('./attribution.mjs');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'frameleaf-supplemental-notices-'));
+  const hash = (value) => createHash('sha256').update(value).digest('hex');
+  try {
+    const studio = path.join(root, 'studio');
+    const engine = path.join(root, 'engine');
+    const dist = path.join(root, 'dist');
+    for (const directory of [studio, dist, path.join(engine, 'node_modules/example'), path.join(engine, 'node_modules/native')]) await mkdir(directory, { recursive: true });
+    const license = 'Synthetic test copyright and license';
+    const evidence = 'Synthetic exact-version source receipt';
+    await writeFile(path.join(studio, 'license.txt'), license);
+    await writeFile(path.join(studio, 'evidence.json'), evidence);
+    const pkg = { version: '1.2.3', integrity: 'sha512-fixture', resolved: 'https://registry.npmjs.org/example/-/example-1.2.3.tgz' };
+    const lock = { packages: { '': {}, 'node_modules/example': pkg, 'node_modules/native': pkg } };
+    for (const name of ['example', 'native']) await writeFile(path.join(engine, 'node_modules', name, 'package.json'), JSON.stringify({ version: pkg.version }));
+    for (const directory of [studio, engine]) await writeFile(path.join(directory, directory === studio ? 'engine-package-lock.json' : 'package-lock.json'), JSON.stringify(lock));
+    const binding = { location: 'node_modules/example', ...pkg, noticeIds: ['supplement'], unresolved: null, evidence: [{ path: 'evidence.json', sha256: hash(evidence), sourceUrl: 'https://example.invalid/exact-version' }] };
+    const manifest = { engineRevision: 'fixture', embeddedComponents: [], dolbyTools: {}, rightsPolicy: { distributionApproval: false }, resources: [], artifactNotices: [{ id: 'supplement', path: 'license.txt', sha256: hash(license) }], packageNoticeEvidence: [binding, { ...binding, location: 'node_modules/native', unresolved: 'Native constituents remain unmapped.' }] };
+    const save = () => writeFile(path.join(studio, 'dependency-attribution.json'), JSON.stringify(manifest));
+    await save();
+    const receipt = await packageAttribution(studio, dist, engine);
+    assert.deepEqual(receipt.unresolvedPackages, ['node_modules/native']);
+    assert.equal(receipt.distributionApproval, false);
+    const output = JSON.parse(await readFile(path.join(dist, 'attribution/index.json'), 'utf8'));
+    assert.equal(output.packages[0].notices[0].file, 'supplement.txt');
+    assert.equal(output.packages[1].noticeEvidence.unresolved, 'Native constituents remain unmapped.');
+    await auditAttribution(studio, dist, engine);
+    await writeFile(path.join(dist, 'attribution/supplement.txt'), 'tampered output');
+    await assert.rejects(auditAttribution(studio, dist, engine), /notice changed/);
+    for (const field of ['version', 'integrity', 'resolved']) {
+      const original = binding[field];
+      binding[field] = 'substituted';
+      await save();
+      await assert.rejects(packageAttribution(studio, dist, engine), /Package notice binding changed/);
+      binding[field] = original;
+    }
+    binding.noticeIds = ['unknown'];
+    await save();
+    await assert.rejects(packageAttribution(studio, dist, engine), /Unknown package notice/);
+    binding.noticeIds = ['supplement'];
+    manifest.packageNoticeEvidence.push(binding);
+    await save();
+    await assert.rejects(packageAttribution(studio, dist, engine), /Duplicate package notice binding/);
+    manifest.packageNoticeEvidence.pop();
+    binding.location = 'node_modules/absent';
+    await save();
+    await assert.rejects(packageAttribution(studio, dist, engine), /Unknown package notice binding/);
+    binding.location = 'node_modules/example';
+    await save();
+    await writeFile(path.join(studio, 'evidence.json'), 'tampered evidence');
+    await assert.rejects(packageAttribution(studio, dist, engine), /Package notice evidence changed/);
+    await rm(path.join(studio, 'evidence.json'));
+    await symlink(path.join(studio, 'license.txt'), path.join(studio, 'evidence.json'));
+    await assert.rejects(packageAttribution(studio, dist, engine), /Linked attribution/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

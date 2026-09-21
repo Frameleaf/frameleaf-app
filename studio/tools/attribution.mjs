@@ -50,6 +50,25 @@ async function expectedAttribution(studio, engine) {
     const lockBytes = await regularFile(engine, 'package-lock.json');
     assert.deepEqual(lockBytes, await regularFile(studio, 'engine-package-lock.json'), 'Generated lockfile differs from pinned package authority');
     const lock = parseJsonRejectingDuplicateKeys(lockBytes.toString(), 'package-lock.json');
+    const packageEvidence = new Map();
+    for (const binding of manifest.packageNoticeEvidence ?? []) {
+      assert.ok(!packageEvidence.has(binding.location), `Duplicate package notice binding: ${binding.location}`);
+      const pkg = lock.packages[binding.location];
+      assert.ok(pkg && binding.location && pkg.dev !== true, `Unknown package notice binding: ${binding.location}`);
+      for (const field of ['version', 'integrity', 'resolved']) {
+        assert.ok(binding[field], `Missing package notice binding: ${binding.location}/${field}`);
+        assert.equal(binding[field], pkg[field], `Package notice binding changed: ${binding.location}/${field}`);
+      }
+      assert.ok(Array.isArray(binding.noticeIds) && (binding.noticeIds.length || binding.unresolved), `Missing package notice decision: ${binding.location}`);
+      assert.ok(binding.unresolved === null || (typeof binding.unresolved === 'string' && binding.unresolved.length), `Invalid package notice decision: ${binding.location}`);
+      for (const id of binding.noticeIds) assert.ok(notices.some((notice) => notice.id === id), `Unknown package notice: ${id}`);
+      assert.ok(Array.isArray(binding.evidence) && binding.evidence.length, `Missing package notice evidence: ${binding.location}`);
+      for (const evidence of binding.evidence) {
+        assert.ok(evidence.sourceUrl, `Missing package notice source: ${binding.location}`);
+        assert.equal(digest(await regularFile(studio, evidence.path)), evidence.sha256, `Package notice evidence changed: ${binding.location}`);
+      }
+      packageEvidence.set(binding.location, binding);
+    }
     for (const [location, pkg] of Object.entries(lock.packages).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
       if (!location || pkg.dev === true) continue;
       const row = { location, version: pkg.version, declaredLicense: pkg.license ?? 'UNDECLARED', integrity: pkg.integrity ?? null, notices: [], status: 'missing-notice' };
@@ -67,7 +86,16 @@ async function expectedAttribution(studio, engine) {
           payloads.set(file, bytes);
           row.notices.push({ source: `${location}/${name}`, file, sha256: digest(bytes) });
         }
+        const binding = packageEvidence.get(location);
+        if (binding) {
+          row.noticeEvidence = binding;
+          for (const id of binding.noticeIds) {
+            const notice = notices.find((notice) => notice.id === id);
+            row.notices.push({ source: notice.path, file: notice.file, sha256: notice.sha256 });
+          }
+        }
         if (row.notices.length) row.status = 'notice-files-collected';
+        if (binding?.unresolved) row.status = 'missing-notice';
       }
       packages.push(row);
     }
