@@ -5,6 +5,7 @@
   import { Alert, Label, Modal, ModalBody } from '@immich/ui';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
+  import { tick } from 'svelte';
 
   interface Props {
     onClose: () => void;
@@ -13,11 +14,19 @@
   }
 
   let { onClose, info, versions }: Props = $props();
+  let content: HTMLElement | undefined = $state();
+
+  const focusDialog = async (event: Event) => {
+    // Focusing the Close tooltip trigger makes the first Escape dismiss its tooltip.
+    event.preventDefault();
+    await tick();
+    content?.closest<HTMLElement>('[role="dialog"]')?.focus();
+  };
 </script>
 
-<Modal title={$t('about')} {onClose} focusOnOpen>
+<Modal title={$t('about')} {onClose} onOpenAutoFocus={focusDialog}>
   <ModalBody>
-    <div class="flex flex-col gap-4 sm:grid sm:grid-cols-2">
+    <div bind:this={content} class="flex flex-col gap-4 sm:grid sm:grid-cols-2">
       {#if info.sourceRef === 'main' && info.repository === 'immich-app/immich'}
         <Alert color="warning" title={$t('main_branch_warning')} class="col-span-full" size="small" />
       {/if}
