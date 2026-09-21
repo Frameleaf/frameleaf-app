@@ -822,18 +822,18 @@
       "version": 2
     },
     {
-      "bytes": 25807,
+      "bytes": 28110,
       "category": "plan",
       "id": "61408340",
       "source": "docs/docs/developer/frameleaf-plan/FL-39-version-persistence.md",
-      "sourceSha256": "ea8ea6e32dc64f8609a6109d33408fde08706766cacf825d4088f5864b3088e5",
+      "sourceSha256": "039d2a030832fad8728b7ba7ce0c374ca915b264e5926d1ad963555377992775",
       "title": "FL-39 Metadata-only Rotation Qualification",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61408340/FL-39+Metadata-only+Rotation+Qualification",
-      "version": 8,
+      "version": 9,
       "sourceBranch": "codex/FL-39-trim-pointer",
-      "sourceState": "reviewed-trim-browser-qualification",
-      "readbackAt": "2026-09-21T21:31:46.298017+00:00",
-      "readbackResult": "Full normalized HTML body matched current source and complete historical content; exact f774 browser runtime independently approved, API-only pruning and qualification limits retained."
+      "sourceState": "authenticated-ui-fixture-repair-awaiting-review",
+      "readbackAt": "2026-09-21T22:20:55.524633+00:00",
+      "readbackResult": "Full normalized HTML body matched current source and preserved historical content; Confluence pre/code wrapper normalized. Seven focused browser cases pass, original navigation timeout reproduced before fixture-only repair; independent review pending."
     },
     {
       "bytes": 15131,
