@@ -876,14 +876,14 @@
       "version": 14
     },
     {
-      "bytes": 19771,
+      "bytes": 27925,
       "category": "development",
       "id": "61997196",
       "source": "docs/docs/developer/frameleaf-plan/fl86-distribution-rights.md",
-      "sourceSha256": "ebc48840bb829e78d62515b9a3e35acc1af9db47999bf69023c99cd0ed026981",
+      "sourceSha256": "305fe829ca27cc8483cf5b4249750d6f210e2876d5f6ea7d12606849c7ba3348",
       "title": "FL-86 Studio artifact attribution and resource rights",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997196/FL-86+Studio+artifact+attribution+and+resource+rights",
-      "version": 3
+      "version": 5
     },
     {
       "bytes": 10903,
