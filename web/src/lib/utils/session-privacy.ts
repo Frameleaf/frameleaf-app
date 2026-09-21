@@ -11,12 +11,55 @@ export const revokeSessionView = (destination: string) => {
   // Keep the old document concealed if navigation fails: a reload must authorize
   // fresh results before they can be displayed again.
   document.documentElement.style.setProperty('display', 'none', 'important');
-  for (const media of document.querySelectorAll('video, audio')) {
-    (media as HTMLMediaElement).pause();
-  }
+  // Feature detection retains Firefox support, where native PiP is not exposed.
+  const exitingPictureInPicture =
+    'exitPictureInPicture' in document &&
+    // eslint-disable-next-line tscompat/tscompat, compat/compat -- Guarded by the browser PiP API feature check.
+    document.pictureInPictureElement
+      ? // eslint-disable-next-line tscompat/tscompat, compat/compat -- Guarded by the browser PiP API feature check.
+        document.exitPictureInPicture().catch(() => {})
+      : undefined;
+  const clearMedia = (root: Document | ShadowRoot) => {
+    for (const element of root.querySelectorAll('*')) {
+      if (element.shadowRoot) {
+        clearMedia(element.shadowRoot);
+      }
+      // The production HLS custom element unloads its HLS.js instance when src
+      // is removed. Its native player lives in an open shadow root.
+      if (element.localName === 'hls-video') {
+        element.removeAttribute('src');
+        element.removeAttribute('poster');
+      }
+      if (element instanceof HTMLMediaElement) {
+        try {
+          element.pause();
+          const safariVideo = element as HTMLVideoElement & { webkitSetPresentationMode?: (mode: string) => void };
+          safariVideo.webkitSetPresentationMode?.('inline');
+        } catch {
+          // A failed player API must not prevent source removal or navigation.
+        }
+        element.removeAttribute('src');
+        element.removeAttribute('poster');
+        element.srcObject = null;
+        for (const source of element.querySelectorAll('source')) {
+          source.remove();
+        }
+        try {
+          element.load();
+        } catch {
+          // Continue clearing other players and discard the document.
+        }
+      }
+    }
+  };
+  clearMedia(document);
   downloadManager.clearAll();
 
   // A SvelteKit navigation retains singleton result caches and in-flight work.
   // Replace the whole document so they cannot repopulate a locked route.
-  location.replace(destination);
+  if (exitingPictureInPicture) {
+    void exitingPictureInPicture.then(() => location.replace(destination));
+  } else {
+    location.replace(destination);
+  }
 };
