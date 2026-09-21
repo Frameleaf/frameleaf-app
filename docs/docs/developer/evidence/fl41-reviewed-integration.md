@@ -6,13 +6,13 @@ Issue: [FL-41](https://heroit.atlassian.net/browse/FL-41). This is a local quali
 
 Assembly runtime commit: `39da25a85f7789909b2400149b574368e311302b`. Default-branch baseline: `a3b0cae7e785e31339353ad9b0a55cfb10d03f56`, including removal of mobile CI. Merge parents preserve the original reviewed commits:
 
-| Issue | Reviewed input |
-| --- | --- |
-| FL-29 People filters | `79b7f9caa40e4c08fe3c09a75927dcf2984671ea` |
-| FL-34 sensitive Locked view | `aabef632a6f1b1c5390a86a6a4cae265e634778e` |
+| Issue                                    | Reviewed input                             |
+| ---------------------------------------- | ------------------------------------------ |
+| FL-29 People filters                     | `79b7f9caa40e4c08fe3c09a75927dcf2984671ea` |
+| FL-34 sensitive Locked view              | `aabef632a6f1b1c5390a86a6a4cae265e634778e` |
 | FL-39 versions and original-media bounds | `6cd128decbd9ef66f6b43c195ac3bbb582882559` |
-| FL-84 reproducible engine build | `a7882dcf7de1f087a21c93a792c2946ddac4d66d` |
-| FL-41 server/SDK validation | `83100cdaafe199658a51af5ddd3d6f009527720b` |
+| FL-84 reproducible engine build          | `a7882dcf7de1f087a21c93a792c2946ddac4d66d` |
+| FL-41 server/SDK validation              | `83100cdaafe199658a51af5ddd3d6f009527720b` |
 
 The 26/39/30/11/6 files changed exclusively by those respective inputs remain byte-identical. Shared changes preserve owner-only sensitive timelines, version APIs, original-media metadata, action-discriminated validation and the stronger no-Dart CI assertions. An independent bounded integration review approved the runtime assembly with no P0/P1/P2 findings, subject to refreshing the tracked-path golden. It did not repeat the individual feature audits.
 
@@ -66,3 +66,9 @@ Merge `00f85b4a0d923fad90d5571131a0a248fed94c43` incorporates independently appr
 ## Reviewed reduced-motion picker repair
 
 The assembly incorporates independently approved FL-29 `7b89a77182ccedbc59703dcc07a3b2e503f2ebb0`. The shared Combobox now uses the existing reactive reduced-motion preference to disable its Svelte intro, retaining 250 ms otherwise. The owner's regression fails before the fix and all nine focused tests pass afterward; ESLint and scoped Svelte checks also pass. Chromium observes the normal 250 ms introductions and no listbox animation calls under reduced motion, with ArrowDown/Enter selection working in both cases and no page errors. The merged component and regression remain byte-identical to the reviewed candidate. See [the primitives receipt](../frameleaf-plan/FL-29-web-primitives.md); these local results do not replace hosted or broader accessibility acceptance.
+
+## Reviewed delivery reconciliation after approved geometry merge
+
+Local assembly `bc6fc20e0` preserves the current issue-owned delivery ancestry: FL-29 `fc9d12d38`, FL-34 `f038c4ffc`, FL-39 `3c5c74a95`, FL-41 `82e588e1f` and FL-84 `556b4bf64`. It includes their formatting corrections, current source receipts and shared container-state diagnostics. The diagnostics capture selected Docker state and timestamped logs after API tests, before maintenance; they do not establish the cause of PR131's earlier connection failure or alter production behavior. Source identity comparisons confirm the reviewed files remain unchanged by integration. All 23 combined documentation and workflow contracts pass; inventory conflicts retain the assembly's existing strict digest.
+
+PR129 was merged under explicit authorization at `ad690ddaec4b47733fc84ea8d047849a6d490129`. Its main-branch tests and integration/official-container certification gates passed. At the latest delivery checkpoint, Docker platform builds had passed while remaining manifest/publication jobs were pending. The other issue PRs remain unmerged with fresh hosted checks pending; this local assembly is unpublished. Full image publication, deployment and wider issue acceptance are separate outcomes. All mobile work remains deferred.
