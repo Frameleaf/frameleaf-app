@@ -552,11 +552,25 @@ async function candidateImage(
   );
   return { ...image, digest: verified.digest };
 }
-async function planReuse(env = process.env) {
+async function planReuse(env = process.env, registry = new Registry(env)) {
   assert.equal(env.GITHUB_REPOSITORY, REPOSITORY);
   assert.equal(env.GITHUB_REF, `refs/heads/${MAIN}`);
   assert(SHA.test(env.GITHUB_SHA));
-  const registry = new Registry(env);
+  if (env.GITHUB_EVENT_NAME === "workflow_dispatch") {
+    // Commit tags are immutable. A manual refresh needs an unpublished source
+    // revision; reject before spending runners on digests we cannot publish.
+    for (const spec of VARIANTS) {
+      try {
+        await registry.read(spec.image, commitTag(env.GITHUB_SHA, spec));
+      } catch (error) {
+        if (error.status === 404) continue;
+        throw error;
+      }
+      throw new Error(
+        "Manual rebuild requires a new source revision: a candidate already exists for this SHA. Retry failed jobs from the original run to recover publication.",
+      );
+    }
+  }
   let manifest;
   if (env.GITHUB_EVENT_NAME === "push") {
     try {
@@ -945,6 +959,7 @@ module.exports = {
   identicalBuildInputs,
   verifyReuse,
   candidateImage,
+  planReuse,
 };
 if (require.main === module) {
   (async () => {

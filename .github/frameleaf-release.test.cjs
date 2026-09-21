@@ -693,3 +693,59 @@ test("release accepts truthful reused candidate index and rejects changed qualif
     /manifest content/,
   );
 });
+
+test("manual dispatch rejects existing fresh or reused same-SHA candidates before scheduling builds", async () => {
+  const { planReuse } = require("./frameleaf-release.cjs");
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "frameleaf-manual-"),
+  );
+  const output = path.join(directory, "outputs");
+  const env = {
+    GITHUB_REPOSITORY: "Frameleaf/frameleaf-app",
+    GITHUB_REF: "refs/heads/fork/main",
+    GITHUB_SHA: sha,
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    GITHUB_OUTPUT: output,
+  };
+  try {
+    for (const reused of [false, true]) {
+      const f = fixture();
+      if (reused)
+        f.index.annotations["org.frameleaf.qualification.revision"] =
+          "b".repeat(40);
+      await fs.writeFile(output, "");
+      await assert.rejects(
+        planReuse(
+          { ...env, GITHUB_SHA: reused ? "b".repeat(40) : sha },
+          { read: async () => f.result },
+        ),
+        /requires a new source revision/,
+      );
+      assert.equal(await fs.readFile(output, "utf8"), "");
+    }
+    const refs = [];
+    await planReuse(env, {
+      read: async (image, ref) => {
+        refs.push([image, ref]);
+        throw Object.assign(Error("Missing"), { status: 404 });
+      },
+    });
+    assert.equal(refs.length, VARIANTS.length);
+    assert.equal(
+      await fs.readFile(output, "utf8"),
+      "server=true\nserver-release=\nmachine-learning=true\nmachine-learning-release=\n",
+    );
+    await fs.writeFile(output, "");
+    await assert.rejects(
+      planReuse(env, {
+        read: async () => {
+          throw Object.assign(Error("Forbidden"), { status: 403 });
+        },
+      }),
+      /Forbidden/,
+    );
+    assert.equal(await fs.readFile(output, "utf8"), "");
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
