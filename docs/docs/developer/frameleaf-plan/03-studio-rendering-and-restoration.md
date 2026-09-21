@@ -132,7 +132,7 @@ node --test scripts/frameleaf-studio-contracts.test.mjs
 
 The validator proves internal consistency of the accepted ledgers: duplicate-key-free contract JSON; the pinned revision and archive identity; the exact ordered digest of all 2,646 provenance rows (including rows not referenced by a feature); all 2,204 family-source references across ten fixed categories; all 51 lockfile-derived package name/version/license rows; 210 unique feature rows; exact feature-to-provenance hashes; 210 planned ownership rows; and 7-epic/33-story ownership targets. It also enforces specialized/canonical backlog equivalence, the nine explicit cross-workstream prerequisite records, the reviewed workstream-guide pointers, and every feature row's explicitly not implemented/not run/not qualified state. It does not prove that a future vendor checkout, patch, build or runtime matches the ledger; that requires source reproduction and conformance evidence in its owning implementation slice.
 
-The dirty checkout's preflight, server, web, database, Python and media commands are omitted because their implementation sources and dependencies are not accepted into this clean slice. Restore them with their reviewed callers and fixtures rather than copying commands that cannot run here. A normal source or version check cannot qualify Studio, restoration, HDR or Dolby. Add a versioned conformance runner/report schema as part of `STU-102`/`STU-401`; the runner must ship with the implementation rather than being invented as existing evidence here.
+The dirty checkout's preflight, server, web, database, Python and media commands are omitted because their implementation sources and dependencies are not accepted into this clean slice. Restore them with their reviewed callers and fixtures rather than copying commands that cannot run here. A normal source or version check cannot qualify Studio, restoration, HDR or Dolby. FL-85 adds the versioned conformance validation below; execution of actual feature fixtures and worker qualification remains with their implementation owners.
 
 Run upstream tests/build/headless portable contracts only in the adapted build workspace after reproducing its pinned npm environment. Family test paths in the manifest are useful anchors but not exhaustive tests of a row. Store reproducible fixtures and machine-readable summaries; keep large media/model artifacts in approved test storage with checksums and permissions.
 
@@ -151,6 +151,29 @@ For each row record:
 7. **Evidence:** actual test command, tool/model/hardware identity, run time, artifact digests, tolerances and result per browser/native target. Upstream test existence is never a passing run. `failed`, `blocked` or `not-tested` stays a release blocker; `not-applicable` requires a specific semantic justification and cannot waive a requested feature.
 
 The supplemental modules below include all source files listed in `familySourceInventory`; the row gate must check exposed actions beyond the README. Full feature support is technically unproven until this matrix and the global HDR/Dolby/native gates pass.
+
+## Independent conformance overlay (FL-85)
+
+`studio/conformance.json` stores measured status separately from the immutable, generated manifest. It starts with all 210 IDs, their existing preservation-ledger owners, and no passing results. Native implementation is explicitly deferred to the future native applications under the current execution scope; this is independently tracked and never implies native conformance. All other axes start `not-tested`.
+
+Run with Node 24.21.0 from the repository root:
+
+```sh
+node studio/tools/conformance.mjs
+node --test studio/tools/conformance.test.mjs
+# Strict full-Studio gate: expected to fail until every required row qualifies.
+node studio/tools/conformance.mjs --release
+```
+
+The normal CI check validates the evidence contract, not product readiness. Its JSON summary reports qualified rows and `releaseQualified` separately. The strict gate rejects deferred, blocked, failed or untested axes. No engine build, upstream test suite or successful metadata check automatically updates this overlay.
+
+`studio/conformance-fixtures.json` expands README families into named constituent actions and assigns each effect, transition, blend and public command its own fixture namespace. Its reviewed byte digest is pinned in the validator so removing a constituent action cannot silently narrow acceptance. Normal and invalid cases are required for every action; every effect/transition/blend also requires animated, extreme and composed cases. Command cases additionally cover lease, revision, access, idempotence and undo; graph cases cover save, reopen, bundle and unknown fields; timing/color covers SDR, HDR, alpha, PTS, audio and temporal recovery; authorization/failure covers owner, shared, viewer, sensitive, revoked, deleted, unsupported, cancel, restart and stale-result cases. Fixture IDs are `<manifest-id>/<action>/<case>`. They identify required measurements, not implemented feature tests.
+
+Each row has independent `native`, `chromium`, `firefox`, `safari`, `command`, `graph`, `preview`, `export`, `timingColor`, `authorizationFailure` and `test` results. A passing result references a repository-relative run JSON file by path and SHA-256. The validator reads and hashes that file and its measured artifacts; it does not execute commands from evidence. A run must contain schema version 1, kind `measured-conformance`, its exact feature ID and axis, result, exit code, complete required fixture IDs, engine revision, adapted source digest, exact patch records, tested commit, actual command arguments, start/end times, target, tool, hardware, parameter domain and tolerances. Browser targets name their browser/version. Browser/native evidence identifies concrete control paths, and command evidence identifies the typed command or canonical graph operation. Preview/export/timing-color evidence records frame/time identity, input/output profiles, alpha, audio and temporal recovery.
+
+Each run also records a named source review with the complete source-family paths (or the feature's explicit source paths) and all constituent actions. This makes exposed module actions a review obligation; the initial action catalog is a minimum, not a claim that static title parsing proves every hidden control. Owners must extend the reviewed catalog when source review finds additional actions. Artifact hashes and structured run records establish traceability, not authenticity of arbitrary human-authored claims; reviewers must verify the linked actual execution. An upstream test filename by itself fails validation.
+
+Only persistence rows may justify `not-applicable` on preview/export. They still require a dedicated measured report on that axis, a specific semantic reason and every storage round-trip fixture; other axes remain independent. This cannot waive a requested rendering feature or substitute for an implementation. The included synthetic validator fixtures exercise acceptance and rejection without claiming a real browser, native, GPU, media, HDR or Dolby run. Hosted checks on the exact candidate remain authoritative for merging this validator slice.
 
 | Manifest ID                          | Pinned feature                                                                                                                                                                    | Delivery story |
 | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |

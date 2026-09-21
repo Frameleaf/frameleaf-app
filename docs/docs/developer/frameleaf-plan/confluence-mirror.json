@@ -550,17 +550,17 @@
       "version": 3
     },
     {
-      "bytes": 83723,
+      "bytes": 87819,
       "category": "plan",
       "id": "61440418",
       "source": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "sourceSha256": "bd71e6e91955dc3013f34870892f2354db8b5ecf3da5daf260c5ae4000040006",
+      "sourceSha256": "e280fd7d67723e1443907f6504214b9955f0350628191cc56b229530e0773789",
       "title": "Studio Rendering and Restoration Implementation",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440418/Studio+Rendering+and+Restoration+Implementation",
-      "verification": "source hash marker, fetched baseline and terminal content read back after update",
+      "verification": "Read back version 4, source hash, FL-85 conformance section and terminal module.workspace-gate row; historical FL-25 checkpoint retained in version 3.",
       "verified": true,
-      "verifiedAt": "2026-09-20T09:33:30.000Z",
-      "version": 3
+      "verifiedAt": "2026-09-21T20:20:43.256405Z",
+      "version": 4
     },
     {
       "bytes": 30120,
