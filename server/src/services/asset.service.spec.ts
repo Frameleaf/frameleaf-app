@@ -850,6 +850,9 @@ describe(AssetService.name, () => {
   });
 
   describe('editAsset', () => {
+    beforeEach(() => {
+      mocks.media.probe.mockResolvedValue({ format: { duration: 10 }, videoStreams: [], audioStreams: [] } as any);
+    });
     it('should enforce crop first', async () => {
       await expect(
         sut.editAsset(authStub.admin, 'asset-1', {

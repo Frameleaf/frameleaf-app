@@ -6,11 +6,15 @@ This packet adds the server persistence and API boundary for Save Version, maste
 
 Fork migration `0000000000100-VideoEditVersions` creates `immich_fork.video_edit_version` and `immich_fork.video_edit_selection`. Each version records the owning asset/user, original path and checksum, immutable recipe, purpose, status, and its master/proxy/thumbnail paths. Private composite foreign keys tie current/requested selections to a version of the same asset and owner. No foreign key attaches the private schema to public tables.
 
+Recipe validation and rendering probe the original file for its timeline duration; the published `asset.duration` is display metadata and cannot limit a later save or restore.
+
 The existing edit endpoint saves a recipe and requests a version within one database transaction. It leaves the last successfully published playback files in place while the new render runs. A render reads the original captured by the version, creates unique files for that attempt, and publishes only if the source identity and requested version still match. A stale or duplicate completion cannot overwrite current playback. Failed attempts retain the current selection and can retry their immutable recipe.
 
 The current `EncodedVideo/isEdited` asset-file contract remains a playback proxy. The separate master is retained by the version record. Publication updates current selection, proxy/thumbnail projection, dimensions, duration and thumbnail hash atomically. It does not delete prior versions' files. Reverting to the original removes the edited projection and restores the original dimensions and thumbnail hash; restoring a prior saved recipe creates a new version derived from the original.
 
 Pruning rejects requested/current versions. It removes an eligible version and queues only paths that have no remaining version or public-file reference. The shared deletion worker independently counts retained versions and handoff-archived version payloads, using its existing path-lock mechanism. Version publication takes those same path locks. Queue failure after pruning may leave unused files on disk; it cannot remove a retained file. Durable orphan reclamation is not introduced by this packet.
+
+Permanent asset removal deletes its private selection/version records in the same transaction as the public asset and returns all retained derived paths to the reference-safe FileDelete queue. Library unlink removal queues these paths too; account asset teardown releases the same private references before its existing owner-folder cleanup. Another asset or version can still retain a shared path. Matching archived version records are removed on explicit asset deletion.
 
 Writes take the fork-phase share lock and reject a running handoff or return reconciliation. Handoff orphan reconciliation archives selection rows before version rows. Archived master/source references continue to protect media from deletion.
 
@@ -37,7 +41,7 @@ A playback proxy is generated from the validated master using configured playbac
 Validation uses disposable synthetic media and isolated PostgreSQL Testcontainers; it does not touch a user library.
 
 - Focused unit suites cover existing editing/playback behavior, master/proxy separation, stale-render cleanup, API access and master downloads, quality rejection and catalog locking.
-- PostgreSQL tests cover migration up/down and exact private catalog, original identity guards, concurrent saves, compare-and-swap publication, failed-attempt retry, independent exports, current/requested flags, pruning, shared deletion protection and archived references.
+- PostgreSQL tests cover migration up/down and exact private catalog, original identity guards, concurrent saves, compare-and-swap publication, failed-attempt retry, independent exports, current/requested flags, pruning, shared deletion protection and archived references. Regression tests exercise permanent deletion with another asset retaining a master, account teardown, and restoring a 20-second version after publishing a 5-second edit of a 30-second original.
 - Existing physical-file and fork return/migration-ledger suites run alongside the new persistence tests.
 - Six real FFmpeg 8.1.1 outputs verify 4K rotation under low playback targets, even crop geometry, 10-bit PQ color/raster preservation and 5.1 audio copy/edit behavior. Copied AAC packets match their source hashes. These fixtures validate master output, not all playback hardware paths.
 - SQL generation runs against a disposable database in the same public-schema-only shape used by the schema-reset CI stage. Only the expected asset-edit query artifact changes.

@@ -2713,6 +2713,11 @@ describe(MediaService.name, () => {
           audioStreams: [],
           format: asset.format,
         });
+        mocks.media.probe.mockResolvedValueOnce({
+          videoStreams: [videoStream],
+          audioStreams: [],
+          format: { ...asset.format, duration: 30 },
+        });
         mocks.storage.unlink.mockResolvedValue(undefined);
         (sut as any).generateVideoThumbnails = () =>
           Promise.resolve({
@@ -2739,6 +2744,7 @@ describe(MediaService.name, () => {
           version,
           expect.objectContaining({
             masterPath: master,
+            duration: 30_000,
             files: [expect.objectContaining({ type: AssetFileType.EncodedVideo, path: proxy })],
           }),
         );

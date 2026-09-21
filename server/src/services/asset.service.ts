@@ -419,6 +419,7 @@ export class AssetService extends BaseService {
       assetFiles.editedThumbnailFile?.path,
       assetFiles.encodedVideoFile?.path,
       ...videoDuplicateFrameFiles.map(({ path }) => path),
+      ...(removedAsset.videoEditPaths ?? []),
     ];
 
     if (deleteOnDisk && !asset.isOffline) {
@@ -654,7 +655,10 @@ export class AssetService extends BaseService {
       throw new BadRequestException('Asset dimensions are not available for editing');
     }
 
-    if (asset.type === AssetType.Video && !getDurationMs(asset.duration)) {
+    // asset.duration describes the current render; recipes always address the original timeline.
+    const original = asset.type === AssetType.Video ? await this.mediaRepository.probe(asset.originalPath) : undefined;
+    const originalDurationMs = original ? getDurationMs(original.format.duration * 1000) : null;
+    if (asset.type === AssetType.Video && !originalDurationMs) {
       throw new BadRequestException('Video duration is not available for editing');
     }
 
@@ -671,7 +675,7 @@ export class AssetService extends BaseService {
     }
 
     if (asset.type === AssetType.Video) {
-      const durationMs = getDurationMs(asset.duration)!;
+      const durationMs = originalDurationMs!;
       const trimEdit = edits.find(
         (edit): edit is Extract<AssetEditActionItem, { action: AssetEditAction.Trim }> =>
           edit.action === AssetEditAction.Trim,

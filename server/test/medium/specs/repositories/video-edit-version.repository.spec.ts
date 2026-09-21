@@ -1,15 +1,25 @@
 import { Kysely, sql } from 'kysely';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
-import { AssetFileType, AssetType } from 'src/enum.js';
+import { AssetFileType, AssetType, JobName, JobStatus } from 'src/enum.js';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as migration from 'src/fork-schema/migrations/0000000000100-VideoEditVersions.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
+import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaRepository } from 'src/repositories/media.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
+import { AssetService } from 'src/services/asset.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
+import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let db: Kysely<DB>;
@@ -25,7 +35,7 @@ const setup = async () => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
   const { user } = await ctx.newUser();
   const { asset } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Video });
-  return { asset, sut: ctx.get(AssetEditRepository) };
+  return { asset, ctx, sut: ctx.get(AssetEditRepository) };
 };
 const recipe = [{ action: AssetEditAction.Rotate as const, parameters: { angle: 90 as const } }];
 const rendered = (assetId: string, label: string) => ({
@@ -194,4 +204,123 @@ it('retains current selection through a failed attempt and retries the same immu
   expect(await sut.publishVideoVersion(retry, rendered(asset.id, retry.id))).toBe(true);
   await sut.failVideoVersion(asset.id, retry.id);
   expect(await sut.getVideoVersion(asset.id, retry.id)).toMatchObject({ status: 'ready', recipe });
+});
+
+const versionedService = () =>
+  newMediumService(AssetService, {
+    database: db,
+    real: [
+      AssetRepository,
+      AssetJobRepository,
+      AssetEditRepository,
+      AccessRepository,
+      DuplicateRepository,
+      UserRepository,
+      MediaRepository,
+    ],
+    mock: [LoggingRepository, JobRepository, EventRepository],
+  });
+
+it('permanently deletes version state and queues all derived paths while protecting another asset reference', async () => {
+  const { sut, ctx } = versionedService();
+  ctx.getMock(JobRepository).queue.mockResolvedValue();
+  ctx.getMock(EventRepository).emit.mockResolvedValue();
+  const { user } = await ctx.newUser();
+  const { asset } = await ctx.newAsset({
+    ownerId: user.id,
+    type: AssetType.Video,
+    originalPath: '/source/delete-versioned.mp4',
+  });
+  const versions = ctx.get(AssetEditRepository);
+  await versions.replaceAll(asset.id, recipe);
+  const first = (await versions.getRequestedVideoVersion(asset.id))!;
+  await versions.publishVideoVersion(first, rendered(asset.id, first.id));
+  await versions.replaceAll(asset.id, recipe);
+  const current = (await versions.getRequestedVideoVersion(asset.id))!;
+  await versions.publishVideoVersion(current, rendered(asset.id, current.id));
+  const exported = await versions.createVideoExport(asset.id, user.id);
+  await versions.publishVideoVersion(exported, rendered(asset.id, exported.id));
+  const shared = rendered(asset.id, first.id).masterPath;
+  const { asset: alias } = await ctx.newAsset({ ownerId: user.id, originalPath: shared });
+  expect(await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).toBe(JobStatus.Success);
+  const selections =
+    await sql`SELECT * FROM immich_fork.video_edit_selection WHERE "assetId"=${asset.id}::uuid`.execute(db);
+  const history = await sql`SELECT * FROM immich_fork.video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db);
+  expect(selections.rows).toEqual([]);
+  expect(history.rows).toEqual([]);
+  const files = ctx
+    .getMock(JobRepository)
+    .queue.mock.calls.flatMap(([job]) => (job.name === JobName.FileDelete ? job.data.files : []));
+  expect(files).toEqual(
+    expect.arrayContaining([
+      asset.originalPath,
+      ...[first, current, exported].flatMap((version) => [
+        rendered(asset.id, version.id).masterPath,
+        rendered(asset.id, version.id).files[0].path,
+      ]),
+    ]),
+  );
+  const physical = ctx.get(PhysicalFileRepository);
+  for (const path of new Set(files)) {
+    const unlink = vi.fn(() => Promise.resolve());
+    expect(await physical.deleteUnreferencedPath(path!, unlink)).toMatchObject({ deleted: path !== shared });
+    expect(unlink).toHaveBeenCalledTimes(path === shared ? 0 : 1);
+  }
+  expect(await ctx.get(AssetRepository).getById(alias.id)).toBeDefined();
+});
+
+it('validates repeat saves and restores against the 30-second original after shorter renders', async () => {
+  const { sut, ctx } = versionedService();
+  ctx.getMock(JobRepository).queue.mockResolvedValue();
+  const { user } = await ctx.newUser();
+  const { asset } = await ctx.newAsset({
+    ownerId: user.id,
+    type: AssetType.Video,
+    duration: 30_000,
+    originalPath: '/source/restore-timeline.mp4',
+  });
+  await ctx.newExif({ assetId: asset.id, exifImageWidth: 1280, exifImageHeight: 720 });
+  const probe = vi
+    .spyOn(ctx.get(MediaRepository), 'probe')
+    .mockResolvedValue({ format: { duration: 30 }, videoStreams: [], audioStreams: [] } as any);
+  const auth = factory.auth({ user });
+  const versions = ctx.get(AssetEditRepository);
+  const longer = [{ action: AssetEditAction.Trim as const, parameters: { startMs: 0, endMs: 20_000 } }];
+  await sut.editAsset(auth, asset.id, { edits: longer });
+  const saved = (await versions.getRequestedVideoVersion(asset.id))!;
+  await versions.publishVideoVersion(saved, { ...rendered(asset.id, saved.id), duration: 20_000 });
+  await sut.editAsset(auth, asset.id, {
+    edits: [{ action: AssetEditAction.Trim, parameters: { startMs: 0, endMs: 5000 } }],
+  });
+  const shorter = (await versions.getRequestedVideoVersion(asset.id))!;
+  await versions.publishVideoVersion(shorter, { ...rendered(asset.id, shorter.id), duration: 5000 });
+  await sut.restoreVideoEditVersion(auth, asset.id, saved.id);
+  expect(await versions.getRequestedVideoVersion(asset.id)).toMatchObject({ recipe: longer, purpose: 'revert' });
+  await sut.editAsset(auth, asset.id, {
+    edits: [{ action: AssetEditAction.Trim, parameters: { startMs: 0, endMs: 25_000 } }],
+  });
+  await expect(
+    sut.editAsset(auth, asset.id, {
+      edits: [{ action: AssetEditAction.Trim, parameters: { startMs: 0, endMs: 31_000 } }],
+    }),
+  ).rejects.toThrow('out of bounds');
+  expect(probe).toHaveBeenCalledWith(asset.originalPath);
+});
+
+it('releases private version references during account asset teardown', async () => {
+  const { asset, ctx, sut } = await setup();
+  await sut.replaceAll(asset.id, recipe);
+  const version = (await sut.getRequestedVideoVersion(asset.id))!;
+  await sut.publishVideoVersion(version, rendered(asset.id, version.id));
+  await sql`INSERT INTO immich_fork.orphaned_records ("sourceTable","sourceKey",payload)
+    SELECT 'video_edit_version',id::text,to_jsonb(v) FROM immich_fork.video_edit_version v WHERE id=${version.id}::uuid`.execute(
+    db,
+  );
+  await ctx.get(AssetRepository).deleteAll(asset.ownerId);
+  const privateRows = await sql`SELECT 1 FROM immich_fork.video_edit_selection WHERE "assetId"=${asset.id}::uuid
+    UNION ALL SELECT 1 FROM immich_fork.video_edit_version WHERE "assetId"=${asset.id}::uuid
+    UNION ALL SELECT 1 FROM immich_fork.orphaned_records WHERE "sourceTable"='video_edit_version' AND payload->>'assetId'=${asset.id}`.execute(
+    db,
+  );
+  expect(privateRows.rows).toEqual([]);
 });

@@ -1074,29 +1074,35 @@ export class MediaService extends BaseService {
     audio: AudioStreamInfo | undefined,
     config: SystemConfig,
   ): Promise<JobStatus> {
-    const edits = version.recipe;
-    if (edits.length === 0 && version.purpose !== 'export') {
-      const published = await this.assetEditRepository.publishVideoVersion(version, {
-        files: [],
-        masterPath: null,
-        thumbhash: asset.originalPreviewPath
-          ? await this.mediaRepository.generateThumbhash(asset.originalPreviewPath, {
-              colorspace: config.image.colorspace,
-              processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
-            })
-          : null,
-        ...this.getVideoEditDimensions([], asset.videoStream),
-        duration: Math.round(asset.format.duration * 1000),
-      });
-      return published ? JobStatus.Success : JobStatus.Skipped;
-    }
     const suffix = `${version.id}_${randomUUID()}`;
     const base = this.getEditedEncodedVideoPath(asset);
     const master = `${base}.${suffix}.master.mp4`;
     const proxy = `${base}.${suffix}.proxy.mp4`;
-    const candidates = [master, proxy];
+    const candidates: string[] = [];
     let published = false;
     try {
+      const original = await this.mediaRepository.probe(version.sourcePath);
+      const sourceVideo = original.videoStreams[0];
+      if (!sourceVideo) throw new Error('Original video metadata is unavailable');
+      asset = { ...asset, videoStream: sourceVideo, format: original.format };
+      audio = original.audioStreams[0];
+      const edits = version.recipe;
+      if (edits.length === 0 && version.purpose !== 'export') {
+        published = await this.assetEditRepository.publishVideoVersion(version, {
+          files: [],
+          masterPath: null,
+          thumbhash: asset.originalPreviewPath
+            ? await this.mediaRepository.generateThumbhash(asset.originalPreviewPath, {
+                colorspace: config.image.colorspace,
+                processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
+              })
+            : null,
+          ...this.getVideoEditDimensions([], asset.videoStream),
+          duration: Math.round(asset.format.duration * 1000),
+        });
+        return published ? JobStatus.Success : JobStatus.Skipped;
+      }
+      candidates.push(master, proxy);
       const command = this.getVideoEditCommand(config.ffmpeg, edits, asset.videoStream, audio, asset.format, true);
       this.storageCore.ensureFolders(master);
       await this.mediaRepository.transcode(version.sourcePath, master, command);
