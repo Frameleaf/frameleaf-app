@@ -4769,17 +4769,18 @@
         ".github/workflows/fork-roundtrip.yml",
         ".github/workflows/check-openapi.yml",
         ".github/workflows/fork-release.yml",
-        ".github/workflows/build-mobile.yml",
         ".github/workflows/sdk.yml",
         ".github/workflows/docker.yml",
-        ".github/workflows/docs-deploy.yml"
+        ".github/workflows/docs-deploy.yml",
+        ".github/RUNNERS.md"
       ],
       "phase": 3,
       "priority": "High",
       "risks": [
         "Root verified fork/main is a literal branch name; it is not shorthand for a remote tracking ref.",
         "sdk.yml is currently manual-only and disables publication; repository transfer still does not confer authority over the @immich/sdk namespace.",
-        "PR #112 delivered the workflow slice, but admin-review bypass, merge-committer identity, GHCR visibility and runtime qualification remain separate acceptance gaps."
+        "PR #112 delivered the workflow slice, but admin-review bypass, merge-committer identity, GHCR visibility and runtime qualification remain separate acceptance gaps.",
+        "Owner retired legacy mobile CI in commit 44884c334, integrated by a3b0cae7e785e31339353ad9b0a55cfb10d03f56 on 2026-09-21. build-mobile.yml and fdroid.yml are historical references only; mobile work is deferred for replacement native apps. Current CI authority is .github/RUNNERS.md; this does not qualify native delivery."
       ],
       "sourcePhase": 3,
       "status": "delivered-with-open-qualification-gaps",
@@ -4846,18 +4847,18 @@
       "objective": "Create Frameleaf release jobs for containers, native apps and approved SDK/docs artifacts using owner credentials and qualification evidence.",
       "paths": [
         ".github/workflows/fork-release.yml",
-        ".github/workflows/build-mobile.yml",
-        ".github/workflows/fdroid.yml",
         ".github/workflows/sdk.yml",
         "mobile/ios/fastlane",
         "mobile/android/fastlane",
-        "server/src/fork-schema/supported-versions.json"
+        "server/src/fork-schema/supported-versions.json",
+        ".github/RUNNERS.md"
       ],
       "phase": 6,
       "priority": "Medium",
       "risks": [
         "Signing and publication require explicit owner-provided inputs and final reviewable artifacts.",
-        "Do not reuse rolling image tags as evidence for an exact tested commit."
+        "Do not reuse rolling image tags as evidence for an exact tested commit.",
+        "Owner retired legacy mobile CI in commit 44884c334, integrated by a3b0cae7e785e31339353ad9b0a55cfb10d03f56 on 2026-09-21. build-mobile.yml and fdroid.yml are historical references only; mobile work is deferred for replacement native apps. Current CI authority is .github/RUNNERS.md; this does not qualify native delivery."
       ],
       "sourcePhase": 6,
       "status": "planned-not-qualified",

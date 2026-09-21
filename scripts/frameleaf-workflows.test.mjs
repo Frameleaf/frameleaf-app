@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
+  existsSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -39,13 +40,7 @@ const required = {
   "Test Web": ["test.yml", "web-unit-tests", /ci-unit/],
   "Lint Web": ["test.yml", "web-lint", /pnpm lint/],
   "Medium Tests (Server)": ["test.yml", "server-medium-tests", /ci-medium/],
-  "Unit Test Mobile": ["test.yml", "mobile-unit-tests", /mobile:test/],
   "Unit Test CLI": ["test.yml", "cli-unit-tests", /ci-unit/],
-  "Run Dart Code Analysis": [
-    "static_analysis.yml",
-    "mobile-dart-analyze",
-    /dart analyze --fatal-infos/,
-  ],
   "SQL Schema Checks": ["test.yml", "sql-schema-up-to-date", /migrations:run/],
   ShellCheck: ["test.yml", "shellcheck", /ludeeus\/action-shellcheck@/],
   "Docs Build": ["docs-build.yml", "build", /pnpm build/],
@@ -73,7 +68,7 @@ const admission = (
     always: () => true,
   });
 
-test("all eleven protected check contexts execute real commands on external fork/main PRs", () => {
+test("all nine protected check contexts execute real commands on external fork/main PRs", () => {
   for (const [name, [file, id, command]] of Object.entries(required)) {
     const w = workflow(file);
     const j = w.jobs[id];
@@ -100,7 +95,7 @@ test("all eleven protected check contexts execute real commands on external fork
   }
 });
 
-test("standalone script tests and native translation codegen install their locked JavaScript dependencies first", () => {
+test("standalone script tests install their locked JavaScript dependencies first", () => {
   const scripts = workflow("test.yml").jobs["script-unit-tests"].steps;
   const install = scripts.findIndex(
     (step) =>
@@ -115,24 +110,14 @@ test("standalone script tests and native translation codegen install their locke
     assert.ok(scripts.findIndex((step) => step.run === command) > install);
   }
 
-  for (const [file, job] of [
-    ["test.yml", "mobile-unit-tests"],
-    ["static_analysis.yml", "mobile-dart-analyze"],
-  ]) {
-    const steps = workflow(file).jobs[job].steps;
-    const rootInstall = steps.findIndex(
-      (step) => step.run === "pnpm -w install --frozen-lockfile",
-    );
-    assert.ok(
-      rootInstall >= 0,
-      `${file}:${job} needs root Prettier dependencies`,
-    );
-    assert.equal(steps[rootInstall]["working-directory"], ".");
-    assert.ok(
-      steps.findIndex((step) => step.run === "mise run //mobile:codegen") >
-        rootInstall,
-    );
+});
+
+test("retired mobile workflows and jobs remain absent", () => {
+  for (const file of ["build-mobile.yml", "fdroid.yml", "static_analysis.yml"]) {
+    assert.equal(existsSync(path.join(root, ".github/workflows", file)), false);
   }
+  assert.equal(workflow("test.yml").jobs["mobile-unit-tests"], undefined);
+  assert.equal(workflow("fork-integration.yml").jobs["mobile"], undefined);
 });
 
 test("locked Java and media tools include artifact URLs and checksums for hosted platforms", () => {
@@ -178,14 +163,12 @@ test("owned workflows have no upstream service secrets, write-trigger PR executi
 test("legacy publishing and upstream mutations are inert and cannot inherit secrets", () => {
   const disabled = [
     "sdk.yml",
-    "fdroid.yml",
     "docs-deploy.yml",
     "docs-destroy.yml",
     "weblate-lock.yml",
     "merge-translations.yml",
     "prepare-release.yml",
     "draft-release.yml",
-    "build-mobile.yml",
     "backport.yml",
     "auto-close.yml",
     "close-duplicates.yml",
