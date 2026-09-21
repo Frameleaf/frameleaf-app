@@ -834,6 +834,16 @@
       "sourceState": "multi-audio-admission-review-candidate",
       "readbackAt": "2026-09-21T13:44:24.795095+00:00",
       "readbackResult": "Full normalized HTML body matched, including current source and all historical content; exact-candidate independent review pending."
+    },
+    {
+      "bytes": 4413,
+      "category": "development",
+      "id": "61964350",
+      "source": "docs/docs/developer/frameleaf-plan/FL-30-navigation.md",
+      "sourceSha256": "645eb40e12435567d5b439c6e422312217f49981f9f404c48a92a3891b478498",
+      "title": "FL-30 production navigation rollout",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61964350",
+      "version": 1
     }
   ],
   "spaceId": "61374475",
