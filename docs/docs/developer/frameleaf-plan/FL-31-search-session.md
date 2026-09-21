@@ -26,6 +26,8 @@ The viewer manager cancels superseded asset requests, close operations and acces
 
 Review follow-up to `ac6c25e3e845543b6767abbacbb528ee6f5c7afe`: DetailPanel people refresh and DetailPanelImageEnrichment refresh previously bypassed the viewer manager through retained parent callbacks. Both now guard their own component lifetime, access scope, asset identity and request generation. Restriction, account change and disposal abort/retire those continuations. Enrichment mutation completion is guarded before starting an asset refresh, invoking suppression callbacks or showing completion notifications. Normal suppression handling remains tested.
 
+A second review follow-up retires the previous asset generation's loading action immediately on asset replacement. A deferred-mutation test reuses the actual enrichment component for A then B: B's control becomes available before A finishes, A's late completion cannot clear B's newer loading action, and B's own completion restores its control. This fixes the loading-state regression without weakening stale-completion checks.
+
 The production search-route regression keeps a stateful gallery draft fixture mounted on unlock; it checks DOM identity and draft text while new search responses are held. This exercises the real route's conditional gallery lifetime, with gallery/editor internals mocked. Six actual detail-component callback regressions plus this route regression failed on the pre-fix candidate; additional tests cover mutations still pending at the access boundary and harmless same-account/unlock refresh. This is component-level evidence, not full physical editor/browser qualification.
 
 The restriction policy conservatively closes the viewer and clears selection because the existing AssetResponseDto does not identify which retained media is sensitive. Fine-grained preservation of an unaffected editor draft across restriction is not qualified by this slice. Harmless unlock and same-account refresh preservation are covered. This does not qualify every route-loader, map/picker/moment cache, face/OCR presentation store, media buffer, physical-browser event order, or server revocation behavior; those remain cross-surface acceptance work.
@@ -43,7 +45,7 @@ The restriction policy conservatively closes the viewer and clears selection bec
 
 ## Validation and limits
 
-Node `24.21.0`; focused web Vitest suites: 122 passed, one pre-existing skipped test, across eleven files. The route suite mounts the production page and filter manager with mocked SDK, gallery and application chrome; it is not full browser, live API, accessibility, media or native qualification. Focused ESLint and Prettier apply to all changed TypeScript/Svelte files; whole-web TypeScript passes.
+Node `24.21.0`; focused web Vitest suites: 123 passed, one pre-existing skipped test, across eleven files. The route suite mounts the production page and filter manager with mocked SDK, gallery and application chrome; it is not full browser, live API, accessibility, media or native qualification. Focused ESLint and Prettier apply to all changed TypeScript/Svelte files; whole-web TypeScript passes.
 
 The delete/undo regression mounts the production search page and deletion action, uses the real delete/restore utility and Undo toast callback, and checks that the repeated metadata request retains the URL filters. It fails with the original direct callback binding and passes with the wrapper. Gallery, chrome and SDK transport remain mocked.
 

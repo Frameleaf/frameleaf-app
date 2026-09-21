@@ -9,7 +9,8 @@ import {
   updateAssetImageEnrichment,
   type AssetImageEnrichmentResponseDto,
 } from '@immich/sdk';
-import { fireEvent, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import TestWrapper from '$lib/components/TestWrapper.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
@@ -150,3 +151,34 @@ it.each(['lock', 'account', 'dispose'] as const)(
     expect(onAssetSuppressed).not.toHaveBeenCalled();
   },
 );
+
+it('resets the action UI on asset replacement without an older completion clearing the newer action', async () => {
+  const first = assetFactory.build({ type: AssetTypeEnum.Image });
+  const second = assetFactory.build({ type: AssetTypeEnum.Image });
+  vi.mocked(getAssetImageEnrichment).mockImplementation(({ id }) => Promise.resolve(enrichmentFactory(id, false)));
+  const resolvers: Array<(value: AssetImageEnrichmentResponseDto) => void> = [];
+  vi.mocked(updateAssetImageEnrichment).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolvers.push(resolve);
+      }),
+  );
+  vi.mocked(getAssetInfo).mockResolvedValue(second);
+  const componentProps = { asset: first, isOwner: true, isAdmin: true };
+  const view = render(TestWrapper, { component: DetailPanelImageEnrichment, componentProps });
+  await fireEvent.click(await screen.findByRole('button', { name: 'mark_nsfw' }));
+  const button = screen.getByRole('button', { name: 'mark_nsfw' });
+  expect(button).toBeDisabled();
+  await view.rerender({ component: DetailPanelImageEnrichment, componentProps: { ...componentProps, asset: second } });
+  await waitFor(() => expect(button).not.toBeDisabled());
+  await fireEvent.click(button);
+  expect(button).toBeDisabled();
+  expect(updateAssetImageEnrichment).toHaveBeenCalledTimes(2);
+  resolvers[0](enrichmentFactory(first.id, true));
+  await new Promise((done) => setTimeout(done, 0));
+  expect(button).toBeDisabled();
+  expect(getAssetInfo).not.toHaveBeenCalled();
+  resolvers[1](enrichmentFactory(second.id, true));
+  await waitFor(() => expect(button).not.toBeDisabled());
+  expect(getAssetInfo).toHaveBeenCalledWith({ id: second.id }, expect.anything());
+});

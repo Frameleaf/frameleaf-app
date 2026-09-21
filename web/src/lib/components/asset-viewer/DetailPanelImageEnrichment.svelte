@@ -221,6 +221,7 @@
     }
     return () => {
       actionVersion++;
+      activeAction = null;
       enrichmentController?.abort();
     };
   });
