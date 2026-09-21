@@ -19,7 +19,6 @@ name: Check OpenAPI
     paths:
       - open-api/**
       - server/src/dtos/**
-      - mobile/lib/utils/openapi_patching.dart
       - .github/workflows/check-openapi.yml
 permissions:
   contents: read
