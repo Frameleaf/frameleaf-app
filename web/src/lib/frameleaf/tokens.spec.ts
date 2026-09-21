@@ -16,8 +16,10 @@ const luminance = (hex: string) => {
 describe('Frameleaf theme contract', () => {
   for (const theme of ['dark', 'light'] as const) {
     it(`matches approved ${theme} colors and readable foreground contrast`, () => {
-      const section = css.split(`[data-theme='${theme}']`)[1].split('}')[0];
-      for (const [name, value] of Object.entries(tokens[theme])) expect(section).toContain(`--fl-${name}: ${value}`);
+      const section = css.split(`[data-theme='${theme}']`)[1].split('}', 1)[0];
+      for (const [name, value] of Object.entries(tokens[theme])) {
+        expect(section).toContain(`--fl-${name}: ${value}`);
+      }
       for (const foreground of ['text', 'muted', 'accent'] as const) {
         for (const surface of ['canvas', 'panel', 'raised'] as const) {
           const pair = [luminance(tokens[theme][foreground]), luminance(tokens[theme][surface])].sort((a, b) => a - b);

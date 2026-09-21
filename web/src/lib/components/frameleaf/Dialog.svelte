@@ -14,14 +14,18 @@
   let dialog: HTMLDialogElement;
   const titleId = $props.id();
   $effect(() => {
-    if (open && !dialog.open) {
-      const previous = document.activeElement;
-      dialog.showModal();
-      return () => {
-        dialog.close();
-        if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
-      };
+    if (!open || dialog.open) {
+      return;
     }
+
+    const previous = document.activeElement;
+    dialog.showModal();
+    return () => {
+      dialog.close();
+      if (previous instanceof HTMLElement && previous.isConnected) {
+        previous.focus();
+      }
+    };
   });
 </script>
 
