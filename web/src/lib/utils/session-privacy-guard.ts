@@ -7,6 +7,7 @@ import { revokeSessionView } from '$lib/utils/session-privacy';
 export const watchSessionPrivacy = (
   isAuthenticated: () => boolean,
   onInitialStatus: (status: 'pending' | 'ready' | 'error') => void = () => {},
+  revalidatePreloadedData: () => Promise<void> = async () => {},
 ) => {
   let verified = false;
   let elevated = false;
@@ -83,6 +84,14 @@ export const watchSessionPrivacy = (
         // Other requests can extend the server deadline. A conservative full
         // reload at our last confirmed deadline reauthorizes all displayed data.
         timer = setTimeout(revoke, Math.min(remaining, 2_147_483_647));
+      }
+      if (!verified && !active) {
+        // Layout loaders can have completed while the session was elevated.
+        // Do not mount those results merely because the first status is locked.
+        await revalidatePreloadedData();
+        if (stopped || request !== generation) {
+          return;
+        }
       }
       verified = true;
       onInitialStatus('ready');

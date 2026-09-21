@@ -57,6 +57,34 @@ describe('watchSessionPrivacy', () => {
     expect(gate).toHaveBeenLastCalledWith('ready');
   });
 
+  it('does not release preloaded elevated route data when its first status is locked', async () => {
+    const gate = vi.fn();
+    const revalidate = vi.fn().mockRejectedValue(new Error('preloaded asset is no longer authorized'));
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(() => true, gate, revalidate);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(revalidate).toHaveBeenCalledOnce();
+    expect(gate).toHaveBeenLastCalledWith('error');
+    expect(gate).not.toHaveBeenCalledWith('ready');
+  });
+
+  it('waits for locked route data to be fetched again before releasing the initial gate', async () => {
+    const gate = vi.fn();
+    let finish!: () => void;
+    const reloading = new Promise<void>((resolve) => (finish = resolve));
+    vi.mocked(getAuthStatus).mockImplementationOnce(respond(status(false)));
+    guard = watchSessionPrivacy(
+      () => true,
+      gate,
+      () => reloading,
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(gate).not.toHaveBeenCalledWith('ready');
+    finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(gate).toHaveBeenLastCalledWith('ready');
+  });
+
   it('keeps initial elevated content gated if the server Date header is absent', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response('{}'));
     const gate = vi.fn();

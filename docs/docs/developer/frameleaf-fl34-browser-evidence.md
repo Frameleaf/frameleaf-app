@@ -8,7 +8,7 @@ title: FL-34 browser privacy evidence
 
 ## Behavior
 
-The root privacy guard does not mount application children until initial auth status is verified. Initial request failure or an unverifiable elevated expiry keeps those children absent and offers Retry. Public/signed-out views do not require an authenticated status request.
+The root privacy guard does not mount application children until initial auth status is verified. Initial request failure or an unverifiable elevated expiry keeps those children absent and offers Retry. Public/signed-out views do not require an authenticated status request. A first locked response also invalidates the asset/OCR/face caches, directly reauthorizes any preloaded viewer asset without browser caching, and awaits complete route-data invalidation before allowing children to mount. This prevents data fetched under prior elevation from escaping the initial gate.
 
 Elevated expiry is calculated from the existing HTTP Date header and PIN expiry, subtracting the header's whole-second rounding interval and request duration. Monotonic elapsed time and a conservative wall-elapsed deadline prevent a slow client clock or subsequent clock adjustment from extending access. Status requests bypass browser caching. Missing or malformed server time fails closed for an elevated response. Other authenticated requests may extend the server deadline; clearing at the last confirmed deadline can reload a legitimately elevated view early.
 
@@ -16,14 +16,15 @@ Revocation clears native media sources, source children, stream objects and post
 
 ## Local evidence
 
-The focused guard, clearing and existing elevation-toggle suites pass 22 tests. They include initial failure/retry, missing server Date, client-clock skew in both directions, stale status responses, expiry during stalled requests, timer suspension, shadow-player source clearing and asynchronous PiP exit ordering and account sign-out timer cleanup. Changed-file ESLint, web TypeScript and Svelte checking pass.
+The focused guard, clearing and existing elevation-toggle suites pass 24 tests. They include initial failure/retry, missing server Date, client-clock skew in both directions, stale status responses, expiry during stalled requests, timer suspension, shadow-player source clearing and asynchronous PiP exit ordering and account sign-out timer cleanup. Changed-file ESLint, web TypeScript and Svelte checking pass.
 
-A local standalone Vite harness imported the actual production guard component, privacy utilities, AuthManager/event manager and installed `hls-video-element`. Playwright 1.62.1 drove Chromium with synthetic auth responses and canvas video streams; SvelteKit navigation/environment seams were substituted. No live server, user media or account credentials were used.
+A local standalone Vite harness imported the actual production guard component, privacy utilities, AuthManager/event manager and installed `hls-video-element`. Playwright 1.62.1 drove Chromium 151.0.7922.34 with synthetic auth responses and canvas video streams; SvelteKit navigation/environment seams were substituted. No live server, user media or account credentials were used.
 
 Observed browser results on 2026-09-21:
 
 - Pending initial status: zero protected fixture nodes mounted; verified response: fixture visible.
 - Initial HTTP 503: zero protected nodes, Retry visible; successful retry: fixture visible.
+- A private asset name was loaded into the actual asset cache before the first locked status. The subsequent fresh asset request returned 403; the old cache entry was gone, zero protected nodes mounted, and Retry remained visible. The test observed three asset requests including the explicit cache-denial verification.
 - Browser clock one day behind/ahead: the server-derived four-second expiry cleared after 3,003/3,011 ms, conservatively accounting for HTTP Date precision.
 - Native and actual HLS shadow players were playing before revocation. A real Chromium native PiP window was active. Before unload, the document was hidden, both players were paused, both stream objects were null, and `document.pictureInPictureElement` was null.
 
@@ -33,4 +34,4 @@ Harness files, runner scripts and outputs are preserved locally under `/Users/ad
 
 Sensitive-only Locked timeline integration with explicit legacy compatibility remains open. End-to-end owner/cross-account, search/Trash/facet/export and derivative qualification against the complete application is still required. Safari/Firefox, actual HLS network streams, AirPlay/remote casting and operating-system screen capture were not qualified by the Chromium harness. Already downloaded or externally captured bytes cannot be recalled.
 
-GitNexus impact queries could not resolve the newer privacy helpers in the canonical index, so their risk was reported as unknown. Direct source tracing identified AuthManager and the root guard as callers; staged change detection and the actual diff are checked before commit. Independent exact-candidate review and hosted Actions are separate gates. No merge, publication or deployment is claimed.
+GitNexus impact queries could not resolve the newer privacy helpers in the canonical index, so their risk was reported as unknown. Direct source tracing identified AuthManager and the root guard as callers; staged change detection and the actual diff are checked before commit. The shared mobile-CI contract correction was cherry-picked from `c3fa970605f550b2afd7175813fe2db2c6354404`. Comparing candidate-tracked anchor paths found no additional changes: 517 anchors retain digest `421dc6ca55f04e5c9204853d72af809941d38a442f82d836bd97c5d79e1fde2c`; no validator or immutable receipt was weakened. Independent exact-candidate review and hosted Actions are separate gates. No merge, publication or deployment is claimed.
