@@ -13,13 +13,14 @@ The first candidate replaced request `anyOf` with an object. Hosted Check OpenAP
 ## Reproducible checks
 
 - `pnpm --dir server exec vitest --config test/vitest.config.mjs run src/dtos/editing.dto.spec.ts src/services/asset.service.spec.ts`: 87 tests passed, including every supported edit action, action defaults, invalid/unknown input, duplicate rules and the Nest request pipe.
+- `pnpm --filter immich check`: full server typecheck passed after explicitly typing the service-test edit fixtures against `AssetEditActionItem`; hosted jobs `106289630751` and `106288637280` had identified enum widening in three fixture uses. Runtime validation was not weakened.
 - `pnpm --filter immich build`, then `pnpm --filter immich exec node dist/bin/sync-open-api.js`: passed using Node 24.21.0 and pnpm 11.24.0.
 - `oazapfts --optimistic --argumentStyle=object --useEnumType --allSchemas open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts` and `pnpm --filter @immich/sdk build`: passed.
 - `pnpm --filter @immich/sdk test`: three checks passed for all operation exports, real generated JSON serialization/deserialization of future action names with nested arrays/expressions/nulls, and byte-preserving multipart asset upload. The transport uses injected responses; it does not claim that the server executes unsupported actions.
 - `pnpm --dir server exec eslint src/dtos/editing.dto.ts src/dtos/editing.dto.spec.ts --max-warnings 0`: passed.
 - `cd open-api && bash bin/generate-dart-sdk.sh`: unchanged source generator patches apply successfully; this does not qualify a native application.
 
-The host's mise 2026.5.16 cannot run the repository's newer monorepo task syntax. The declared generation/build commands were executed explicitly through `mise exec`; repository toolchain settings were not changed. The full `mise run //:open-api` aggregate and current-candidate hosted gates remain CI responsibilities. The existing fork integration workflow now executes the SDK transport checks after regeneration and build.
+The host's mise 2026.5.16 cannot run the repository's newer monorepo task syntax. The declared generation/build commands were executed explicitly through `mise exec`; repository toolchain settings were not changed. Current-candidate hosted gates remain CI responsibilities. The branch incorporates default commit `a3b0cae7e785e31339353ad9b0a55cfb10d03f56`, which removes mobile CI under the user's instruction; it does not restore those gates. The existing fork integration workflow now executes the SDK transport checks after regeneration and build.
 
 ## Remaining acceptance
 
