@@ -263,6 +263,11 @@
   onMount(() => {
     if (!enableRouting) {
       invisible = false;
+    } else if (initialLoadWasAssetViewer === null) {
+      // Privacy-gated routes can mount after the router's afterNavigate event.
+      // Initialize their scroll target and visibility without another navigation.
+      initialLoadWasAssetViewer = isAssetViewerRoute(page) && !hasNavigatedToOrFromAssetViewer;
+      void scrollAfterNavigate();
     }
     scrollableElement?.focus({ preventScroll: true });
   });

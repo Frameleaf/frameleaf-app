@@ -48,6 +48,17 @@ export class TimelineService extends BaseService {
   private async timeBucketChecks(auth: AuthDto, dto: TimeBucketDto) {
     requireSuppressedOnlyAccess(auth, dto.suppressedOnly);
 
+    if (dto.sensitiveOnly) {
+      requireElevatedPermission(auth);
+      if (auth.sharedLink || dto.withPartners || (dto.userId && dto.userId !== auth.user.id)) {
+        throw new BadRequestException('sensitiveOnly is only available for the current owner');
+      }
+      if (dto.suppressedOnly) {
+        throw new BadRequestException('sensitiveOnly cannot be combined with suppressedOnly');
+      }
+      dto.userId = auth.user.id;
+    }
+
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
     }

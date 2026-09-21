@@ -1058,6 +1058,70 @@
     },
     {
       "definition": "uuid|not null|||",
+      "identity": "immich_fork.video_edit_selection.assetId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.video_edit_selection.currentVersionId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.video_edit_selection.ownerId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.video_edit_selection.requestedVersionId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.video_edit_version.assetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "immich_fork.video_edit_version.createdAt"
+    },
+    {
+      "definition": "jsonb|not null|'[]'::jsonb||",
+      "identity": "immich_fork.video_edit_version.files"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.video_edit_version.id"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.video_edit_version.masterPath"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.video_edit_version.ownerId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.video_edit_version.proxyPath"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.video_edit_version.purpose"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.video_edit_version.recipe"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "immich_fork.video_edit_version.sourceChecksum"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.video_edit_version.sourcePath"
+    },
+    {
+      "definition": "text|not null|'pending'::text||",
+      "identity": "immich_fork.video_edit_version.status"
+    },
+    {
+      "definition": "uuid|not null|||",
       "identity": "public.activity.albumId"
     },
     {
@@ -3751,6 +3815,50 @@
       "identity": "immich_fork.state.state_pkey"
     },
     {
+      "definition": "FOREIGN KEY (\"currentVersionId\", \"assetId\", \"ownerId\") REFERENCES immich_fork.video_edit_version(id, \"assetId\", \"ownerId\")",
+      "identity": "immich_fork.video_edit_selection.video_edit_selection_currentVersionId_assetId_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"assetId\")",
+      "identity": "immich_fork.video_edit_selection.video_edit_selection_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"requestedVersionId\", \"assetId\", \"ownerId\") REFERENCES immich_fork.video_edit_version(id, \"assetId\", \"ownerId\")",
+      "identity": "immich_fork.video_edit_selection.video_edit_selection_requestedVersionId_assetId_ownerId_fkey"
+    },
+    {
+      "definition": "CHECK ((\"masterPath\" IS NULL) = (\"proxyPath\" IS NULL))",
+      "identity": "immich_fork.video_edit_version.video_edit_version_check"
+    },
+    {
+      "definition": "CHECK (\"masterPath\" IS NULL OR \"masterPath\" <> \"sourcePath\" AND \"proxyPath\" <> \"sourcePath\" AND \"masterPath\" <> \"proxyPath\")",
+      "identity": "immich_fork.video_edit_version.video_edit_version_check1"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(files) = 'array'::text)",
+      "identity": "immich_fork.video_edit_version.video_edit_version_files_check"
+    },
+    {
+      "definition": "UNIQUE (id, \"assetId\", \"ownerId\")",
+      "identity": "immich_fork.video_edit_version.video_edit_version_id_assetId_ownerId_key"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.video_edit_version.video_edit_version_pkey"
+    },
+    {
+      "definition": "CHECK (purpose = ANY (ARRAY['save'::text, 'export'::text, 'revert'::text]))",
+      "identity": "immich_fork.video_edit_version.video_edit_version_purpose_check"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(recipe) = 'array'::text)",
+      "identity": "immich_fork.video_edit_version.video_edit_version_recipe_check"
+    },
+    {
+      "definition": "CHECK (status = ANY (ARRAY['pending'::text, 'ready'::text, 'failed'::text]))",
+      "identity": "immich_fork.video_edit_version.video_edit_version_status_check"
+    },
+    {
       "definition": "FOREIGN KEY (\"albumId\", \"assetId\") REFERENCES album_asset(\"albumId\", \"assetId\") ON DELETE CASCADE",
       "identity": "public.activity.activity_albumId_assetId_fkey"
     },
@@ -4619,7 +4727,8 @@
     "0000000000060-SharedUpstreamPaths",
     "0000000000070-ResetAssetSyncChecksums",
     "0000000000080-MediaHealthRunOwner",
-    "0000000000090-ICloudSync"
+    "0000000000090-ICloudSync",
+    "0000000000100-VideoEditVersions"
   ],
   "functions": [
     {
@@ -6007,6 +6116,22 @@
     {
       "definition": "CREATE UNIQUE INDEX state_pkey ON immich_fork.state USING btree (id)",
       "identity": "immich_fork.state.state_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX video_edit_selection_pkey ON immich_fork.video_edit_selection USING btree (\"assetId\")",
+      "identity": "immich_fork.video_edit_selection.video_edit_selection_pkey"
+    },
+    {
+      "definition": "CREATE INDEX video_edit_version_asset_idx ON immich_fork.video_edit_version USING btree (\"assetId\", \"createdAt\" DESC)",
+      "identity": "immich_fork.video_edit_version.video_edit_version_asset_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"video_edit_version_id_assetId_ownerId_key\" ON immich_fork.video_edit_version USING btree (id, \"assetId\", \"ownerId\")",
+      "identity": "immich_fork.video_edit_version.video_edit_version_id_assetId_ownerId_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX video_edit_version_pkey ON immich_fork.video_edit_version USING btree (id)",
+      "identity": "immich_fork.video_edit_version.video_edit_version_pkey"
     },
     {
       "definition": "CREATE INDEX \"activity_albumId_assetId_idx\" ON public.activity USING btree (\"albumId\", \"assetId\")",
@@ -7434,6 +7559,14 @@
     {
       "definition": "table",
       "identity": "immich_fork.state"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.video_edit_selection"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.video_edit_version"
     },
     {
       "definition": "table",

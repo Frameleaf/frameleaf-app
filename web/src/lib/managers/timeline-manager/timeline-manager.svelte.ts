@@ -129,6 +129,11 @@ export class TimelineManager extends VirtualScrollManager {
         },
         AssetsUnarchive: (assets) => this.upsertAssets(assets),
         AssetsMarkNsfw: (ids: string[]) => this.#handleMarkNsfw(ids),
+        AssetsMarkSafe: (ids: string[]) => {
+          if (this.#options.sensitiveOnly) {
+            this.removeAssets(ids);
+          }
+        },
         SessionAccessChanged: () => void this.refresh(),
       }),
     );
@@ -403,12 +408,22 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   upsertAssets(assets: TimelineAsset[]) {
+    if (this.#options.sensitiveOnly) {
+      // Asset events do not contain authoritative sensitive classification.
+      void this.refresh();
+      return;
+    }
     const notUpdated = this.#updateAssets(assets);
     const notExcluded = notUpdated.filter((asset) => !this.isExcluded(asset));
     this.addAssetsUpsertSegments([...notExcluded]);
   }
 
   upsertAssetsFromLiveEvent(assets: TimelineAsset[]) {
+    if (this.#options.sensitiveOnly) {
+      // Asset events do not contain authoritative sensitive classification.
+      void this.refresh();
+      return;
+    }
     const notUpdated = this.#updateAssets(assets);
     const insertable = notUpdated.filter((asset) => this.canInsertAssetFromLiveEvent(asset));
     this.addAssetsUpsertSegments(insertable);
@@ -512,7 +527,7 @@ export class TimelineManager extends VirtualScrollManager {
   // view. That means NSFW hiding is enabled globally AND this view isn't the
   // suppressed/review view (which exists to surface hidden assets).
   #handleMarkNsfw(ids: string[]) {
-    if (!featureFlagsManager.value.nsfwHiding || this.#options.suppressedOnly) {
+    if (!featureFlagsManager.value.nsfwHiding || this.#options.suppressedOnly || this.#options.sensitiveOnly) {
       return;
     }
     for (const id of ids) {

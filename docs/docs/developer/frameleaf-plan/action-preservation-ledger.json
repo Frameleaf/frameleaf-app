@@ -73462,7 +73462,11 @@
             "web/src/routes/(user)/photos/[[assetId=id]]/+page.ts"
           ]
         },
-        "newUi": { "status": "not-qualified", "target": "/photos/[[assetId=id]]", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": "/photos/[[assetId=id]]",
+          "evidence": ["docs/docs/developer/frameleaf-plan/FL-30-navigation.md"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -74175,7 +74179,11 @@
             "web/src/routes/(user)/user-settings/+page.ts"
           ]
         },
-        "newUi": { "status": "not-qualified", "target": "/user-settings", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": "/user-settings",
+          "evidence": ["docs/docs/developer/frameleaf-plan/FL-30-navigation.md"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -74205,7 +74213,11 @@
           "access": "authenticated",
           "evidence": ["web/src/routes/(user)/utilities/+page.svelte", "web/src/routes/(user)/utilities/+page.ts"]
         },
-        "newUi": { "status": "not-qualified", "target": "/utilities", "evidence": ["none-qualified"] },
+        "newUi": {
+          "status": "not-qualified",
+          "target": "/utilities",
+          "evidence": ["docs/docs/developer/frameleaf-plan/FL-30-navigation.md"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }

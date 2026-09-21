@@ -65,6 +65,30 @@ export class ForkPrivacyRepository {
     return result.rows[0];
   }
 
+  /** Called with the enrichment writer's transaction and per-asset metadata lock. */
+  async saveClassification(
+    assetId: string,
+    isNsfw: boolean | undefined,
+    suppression: Record<string, unknown> | null,
+    kysely: Kysely<DB>,
+  ): Promise<void> {
+    const isManualMark = suppression?.action === 'marked-nsfw' || suppression?.action === 'marked-safe';
+    const result = await sql`
+      INSERT INTO immich_fork.asset_privacy ("assetId", "isNsfw", suppression)
+      SELECT ${assetId}::uuid, ${isNsfw ?? true}, ${suppression}::jsonb
+      WHERE ${isManualMark && isNsfw !== undefined} OR EXISTS (
+        SELECT 1 FROM immich_fork.asset_privacy WHERE "assetId" = ${assetId}::uuid
+      )
+      ON CONFLICT ("assetId") DO UPDATE
+      SET "isNsfw" = COALESCE(${isNsfw ?? null}::boolean, asset_privacy."isNsfw"),
+        suppression = EXCLUDED.suppression, "updatedAt" = now()
+      RETURNING "assetId"
+    `.execute(kysely);
+    if (result.rows.length === 0) {
+      throw new Error(`Missing fork privacy sidecar for asset ${assetId}`);
+    }
+  }
+
   async delete(assetIds: string[], kysely: Kysely<DB> = this.db): Promise<void> {
     if (assetIds.length > 0 && isForkWriteEnabled(await this.getPhase(kysely))) {
       await sql`DELETE FROM immich_fork.asset_privacy WHERE "assetId" = ANY(${assetIds}::uuid[])`.execute(kysely);

@@ -38,6 +38,30 @@ beforeAll(async () => {
 });
 
 describe(DownloadService.name, () => {
+  it('rejects a previously authorized archive plan after locking and for another administrator', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    await ctx.newExif({ assetId: asset.id, fileSizeInByte: 1000 });
+    await ctx.newMetadata({
+      assetId: asset.id,
+      key: AssetMetadataKey.MlEnrichment,
+      value: nsfwMetadata(false, { action: 'marked-nsfw', isNsfw: true }),
+    });
+    const elevated = factory.auth({ user, session: { hasElevatedPermission: true } });
+    const plan = await sut.getDownloadInfo(elevated, { assetIds: [asset.id] });
+    expect(plan.archives).toEqual([{ assetIds: [asset.id], size: 1000 }]);
+
+    const { user: administrator } = await ctx.newUser({ isAdmin: true });
+    for (const auth of [
+      { ...factory.auth({ user }), hideNsfwAssets: true },
+      factory.auth({ user: administrator, session: { hasElevatedPermission: true } }),
+    ]) {
+      await expect(sut.downloadArchive(auth, plan.archives[0])).rejects.toThrow('Not found or no');
+    }
+    expect(ctx.getMock(StorageRepository).createZipStream).not.toHaveBeenCalled();
+  });
+
   describe('getDownloadInfo', () => {
     it('should use private NSFW review state when planning album and timeline downloads', async () => {
       const { sut, ctx } = setup(await getKyselyDB());

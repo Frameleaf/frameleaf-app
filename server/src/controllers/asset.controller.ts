@@ -20,7 +20,13 @@ import {
   AssetStatsResponseDto,
   UpdateAssetDto,
 } from 'src/dtos/asset.dto.js';
-import { AssetEditsCreateDto, AssetEditsResponseDto } from 'src/dtos/editing.dto.js';
+import {
+  AssetEditsCreateDto,
+  AssetEditsResponseDto,
+  VideoEditExportDto,
+  VideoEditVersionParamsDto,
+  VideoEditVersionResponseDto,
+} from 'src/dtos/editing.dto.js';
 import { AssetOcrResponseDto } from 'src/dtos/ocr.dto.js';
 import { ApiTag, Permission, RouteKey } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
@@ -290,6 +296,46 @@ export class AssetController {
     @Body() dto: AssetEditsCreateDto,
   ): Promise<AssetEditsResponseDto> {
     return this.service.editAsset(auth, id, dto);
+  }
+
+  @Get(':id/edit-versions')
+  @Authenticated({ permission: Permission.AssetEditGet })
+  @Endpoint({ summary: 'List saved video versions', history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0') })
+  getVideoEditVersions(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<VideoEditVersionResponseDto[]> {
+    return this.service.getVideoEditVersions(auth, id);
+  }
+
+  @Post(':id/edit-versions/export')
+  @Authenticated({ permission: Permission.AssetDownload })
+  @Endpoint({
+    summary: 'Export the current video version',
+    history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
+  })
+  exportVideoEditVersion(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() _dto: VideoEditExportDto,
+  ): Promise<VideoEditVersionResponseDto> {
+    return this.service.exportVideoEditVersion(auth, id);
+  }
+
+  @Post(':id/edit-versions/:versionId/restore')
+  @Authenticated({ permission: Permission.AssetEditCreate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({ summary: 'Restore a saved video version', history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0') })
+  restoreVideoEditVersion(@Auth() auth: AuthDto, @Param() { id, versionId }: VideoEditVersionParamsDto): Promise<void> {
+    return this.service.restoreVideoEditVersion(auth, id, versionId);
+  }
+
+  @Delete(':id/edit-versions/:versionId')
+  @Authenticated({ permission: Permission.AssetEditDelete })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Prune an unselected video version',
+    history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
+  })
+  pruneVideoEditVersion(@Auth() auth: AuthDto, @Param() { id, versionId }: VideoEditVersionParamsDto): Promise<void> {
+    return this.service.pruneVideoEditVersion(auth, id, versionId);
   }
 
   @Delete(':id/edits')

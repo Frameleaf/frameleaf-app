@@ -59,6 +59,17 @@ describe(UserAdminService.name, () => {
   });
 
   describe('update', () => {
+    it.each([{ pinCode: null }, { pinCode: '654321' }, { password: 'new-password' }])(
+      'revokes only the target user elevation after a credential update: %j',
+      async (dto) => {
+        mocks.user.update.mockResolvedValue(userStub.user1);
+        mocks.session.lockAll.mockResolvedValue();
+        await sut.update(authStub.admin, userStub.user1.id, dto);
+        expect(mocks.session.lockAll).toHaveBeenCalledWith(userStub.user1.id);
+        expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', userStub.user1.id);
+      },
+    );
+
     it('should update the user', async () => {
       const update = {
         shouldChangePassword: true,
@@ -73,6 +84,8 @@ describe(UserAdminService.name, () => {
 
       expect(mocks.user.getByEmail).toHaveBeenCalledWith(update.email);
       expect(mocks.user.getByStorageLabel).toHaveBeenCalledWith(update.storageLabel);
+      expect(mocks.session.lockAll).not.toHaveBeenCalled();
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
     });
 
     it('should not set an empty string for storage label', async () => {

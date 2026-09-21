@@ -5,7 +5,7 @@
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
   import { fileUploadHandler } from '$lib/utils/file-uploader';
   import { isAlbumsRoute, isLockedFolderRoute } from '$lib/utils/navigation';
-  import { Logo } from '@immich/ui';
+  import { Logo, toastManager } from '@immich/ui';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
 
@@ -123,6 +123,11 @@
 
   const handleFiles = async (files?: FileList | File[]) => {
     if (!files) {
+      return;
+    }
+
+    if (isInLockedFolder && page.url.searchParams.get('view') !== 'legacy') {
+      toastManager.primary($t('sensitive_upload_from_library'));
       return;
     }
 

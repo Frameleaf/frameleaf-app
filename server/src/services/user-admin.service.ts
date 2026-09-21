@@ -92,6 +92,10 @@ export class UserAdminService extends BaseService {
     }
 
     const updatedUser = await this.userRepository.update(id, { ...dto, updatedAt: new Date() });
+    if (dto.password !== undefined || dto.pinCode !== undefined) {
+      await this.sessionRepository.lockAll(id);
+      this.websocketRepository.clientSend('on_session_lock', id);
+    }
 
     return mapUserAdmin(updatedUser);
   }

@@ -3,6 +3,7 @@
   import { page } from '$app/state';
   import { getPagesProvider, getSettingsProvider } from '$lib/commands';
   import DownloadPanel from './DownloadPanel.svelte';
+  import SessionPrivacyGuard from './SessionPrivacyGuard.svelte';
   import ErrorLayout from './ErrorLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import NavigationLoadingBar from './NavigationLoadingBar.svelte';
@@ -256,30 +257,32 @@
   {/if}
 </svelte:head>
 
-<TooltipProvider>
-  {#if page.data.error}
-    <ErrorLayout error={page.data.error}></ErrorLayout>
-  {:else}
-    {@render children?.()}
-  {/if}
+<SessionPrivacyGuard>
+  <TooltipProvider>
+    {#if page.data.error}
+      <ErrorLayout error={page.data.error}></ErrorLayout>
+    {:else}
+      {@render children?.()}
+    {/if}
 
-  {#if showNavigationLoadingBar}
-    <NavigationLoadingBar />
-  {/if}
+    {#if showNavigationLoadingBar}
+      <NavigationLoadingBar />
+    {/if}
 
-  <DownloadPanel />
-  <UploadPanel />
-  <ScreencastOverlay />
+    <DownloadPanel />
+    <UploadPanel />
+    <ScreencastOverlay />
 
-  <CommandPaletteProvider
-    providers={[
-      getPagesProvider($t),
-      getSettingsProvider($t),
-      defaultProvider({ name: $t('documentation'), types: ['doc', 'documentation'], actions: CORE_PAGE_COMMANDS }),
-      defaultProvider({ name: $t('support'), actions: PROJECT_SUPPORT_COMMANDS }),
-      defaultProvider({ name: 'Socials', types: ['social', 'socials'], actions: SOCIAL_COMMANDS }),
-      defaultProvider({ name: $t('mobile_app'), actions: MOBILE_APP_COMMANDS }),
-      defaultProvider({ name: 'Sites', types: ['site', 'sites'], actions: OTHER_SITE_COMMANDS }),
-    ]}
-  />
-</TooltipProvider>
+    <CommandPaletteProvider
+      providers={[
+        getPagesProvider($t),
+        getSettingsProvider($t),
+        defaultProvider({ name: $t('documentation'), types: ['doc', 'documentation'], actions: CORE_PAGE_COMMANDS }),
+        defaultProvider({ name: $t('support'), actions: PROJECT_SUPPORT_COMMANDS }),
+        defaultProvider({ name: 'Socials', types: ['social', 'socials'], actions: SOCIAL_COMMANDS }),
+        defaultProvider({ name: $t('mobile_app'), actions: MOBILE_APP_COMMANDS }),
+        defaultProvider({ name: 'Sites', types: ['site', 'sites'], actions: OTHER_SITE_COMMANDS }),
+      ]}
+    />
+  </TooltipProvider>
+</SessionPrivacyGuard>

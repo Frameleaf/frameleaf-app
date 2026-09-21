@@ -2630,6 +2630,7 @@ describe(MediaService.name, () => {
         files: [],
       };
       mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+      mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(undefined);
       mocks.assetEdit.getAll.mockResolvedValue([
         { id: 'edit-id', action: AssetEditAction.Crop, parameters: { x: 2, y: 4, width: 300, height: 200 } },
       ]);
@@ -2674,6 +2675,177 @@ describe(MediaService.name, () => {
         }),
       );
     });
+  });
+
+  describe('version-owned video publication', () => {
+    it.each(['save', 'export', 'revert'] as const)(
+      'preserves multi-audio originals through the %s path',
+      async (purpose) => {
+        const videoStream = probeStub.videoStreamH264.videoStream;
+        const asset = {
+          ...AssetFactory.create({ type: AssetType.Video }),
+          videoStream,
+          audioStream: probeStub.audioStreamAac.audioStream,
+          format: probeStub.videoStreamH264.format,
+          files: [],
+        };
+        const version = {
+          id: newUuid(),
+          assetId: asset.id,
+          ownerId: asset.ownerId,
+          sourcePath: asset.originalPath,
+          sourceChecksum: asset.checksum,
+          recipe: purpose === 'revert' ? [] : [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }],
+          purpose,
+          status: 'pending',
+          masterPath: null,
+          proxyPath: null,
+          files: [],
+          createdAt: new Date(),
+        };
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+        mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(version as any);
+        mocks.assetEdit.getVideoVersion.mockResolvedValue(version as any);
+        mocks.assetEdit.failVideoVersion.mockResolvedValue(undefined);
+        mocks.assetEdit.publishVideoVersion.mockResolvedValue(true);
+        mocks.media.probe.mockResolvedValue({
+          videoStreams: [videoStream],
+          audioStreams: [
+            { ...probeStub.audioStreamAac.audioStream!, index: 1 },
+            { ...probeStub.audioStreamAac.audioStream!, index: 2 },
+          ],
+          format: asset.format,
+        });
+        await expect(
+          sut.handleAssetVideoEditGeneration({
+            id: asset.id,
+            ...(purpose === 'export' && { versionId: version.id }),
+          }),
+        ).resolves.toBe(purpose === 'revert' ? JobStatus.Success : JobStatus.Failed);
+        expect(mocks.media.probe).toHaveBeenCalledExactlyOnceWith(asset.originalPath);
+        expect(mocks.media.transcode).not.toHaveBeenCalled();
+        if (purpose === 'revert') {
+          expect(mocks.assetEdit.failVideoVersion).not.toHaveBeenCalled();
+          expect(mocks.assetEdit.publishVideoVersion).toHaveBeenCalledExactlyOnceWith(
+            version,
+            expect.objectContaining({ files: [], masterPath: null }),
+          );
+        } else {
+          expect(mocks.assetEdit.failVideoVersion).toHaveBeenCalledExactlyOnceWith(asset.id, version.id);
+          expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+        }
+        expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+        expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(
+      [true, false, 'invalid-master'].flatMap((accepted) =>
+        [false, true].flatMap((copy) =>
+          [
+            [TranscodeHardwareAcceleration.Disabled, 'h264'],
+            [TranscodeHardwareAcceleration.Nvenc, 'h264_nvenc'],
+            [TranscodeHardwareAcceleration.Qsv, 'h264_qsv'],
+            [TranscodeHardwareAcceleration.Vaapi, 'h264_vaapi'],
+            [TranscodeHardwareAcceleration.Rkmpp, 'h264_rkmpp'],
+          ].map(([accel, codec]) => ({ accepted, copy, accel: accel as TranscodeHardwareAcceleration, codec })),
+        ),
+      ),
+    )(
+      'publishes a proxy independently from the master ($accepted, copy=$copy, accel=$accel)',
+      async ({ accepted, copy, accel, codec }) => {
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel, accelDecode: true, targetVideoCodec: VideoCodec.H264, targetResolution: '480' },
+        });
+        sut.videoInterfaces = { dri: ['renderD128'], mali: true };
+        const videoStream = { ...probeStub.videoStreamH264.videoStream, width: 300, height: 200, rotation: 0 };
+        const asset = {
+          ...AssetFactory.create({ type: AssetType.Video }),
+          videoStream,
+          audioStream: null,
+          format: probeStub.videoStreamH264.format,
+          files: [],
+        };
+        const version = {
+          id: newUuid(),
+          assetId: asset.id,
+          ownerId: asset.ownerId,
+          sourcePath: asset.originalPath,
+          sourceChecksum: asset.checksum,
+          recipe: [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }],
+          purpose: 'save' as const,
+          status: 'pending' as const,
+          masterPath: null,
+          proxyPath: null,
+          files: [],
+          createdAt: new Date(),
+        };
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+        mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(version as any);
+        mocks.assetEdit.publishVideoVersion.mockResolvedValue(accepted === true);
+        mocks.assetEdit.failVideoVersion.mockResolvedValue(undefined);
+        mocks.media.transcode.mockResolvedValue(undefined);
+        mocks.media.probe.mockResolvedValue({
+          videoStreams: [
+            {
+              ...videoStream,
+              rotation: copy ? -90 : 0,
+              width: accepted === 'invalid-master' ? 301 : copy ? 300 : 200,
+              height: copy ? 200 : 300,
+            },
+          ],
+          audioStreams: [],
+          format: asset.format,
+        });
+        mocks.media.probe.mockResolvedValueOnce({
+          videoStreams: [{ ...videoStream, hasDisplayMatrix: !copy }],
+          audioStreams: [],
+          format: { ...asset.format, duration: 30, formatName: 'mov,mp4' },
+        });
+        mocks.storage.unlink.mockResolvedValue(undefined);
+        (sut as any).generateVideoThumbnails = () =>
+          Promise.resolve({
+            files: [],
+            thumbhash: Buffer.from('hash'),
+            fullsizeDimensions: { width: 300, height: 200 },
+          });
+        await expect(sut.handleAssetVideoEditGeneration({ id: asset.id })).resolves.toBe(
+          accepted === 'invalid-master' ? JobStatus.Failed : accepted ? JobStatus.Success : JobStatus.Skipped,
+        );
+        if (accepted === 'invalid-master') {
+          expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+          expect(mocks.assetEdit.failVideoVersion).toHaveBeenCalledWith(asset.id, version.id);
+          expect(mocks.media.transcode).toHaveBeenCalledOnce();
+          expect(mocks.storage.unlink).toHaveBeenCalledTimes(2);
+          return;
+        }
+        if (copy) {
+          expect(mocks.media.transcode.mock.calls[0][2].outputOptions).toContain('copy');
+          const proxyCommand = mocks.media.transcode.mock.calls[1][2];
+          expect(proxyCommand.outputOptions).toContain(codec);
+          expect(proxyCommand.outputOptions).not.toContain('copy');
+          expect(proxyCommand.inputOptions).not.toContain('-noautorotate');
+          expect(proxyCommand.inputOptions).not.toContain('-hwaccel');
+        }
+        const master = mocks.media.transcode.mock.calls[0][1];
+        const proxy = mocks.media.transcode.mock.calls[1][1];
+        expect(mocks.media.transcode.mock.calls[0][0]).toBe(asset.originalPath);
+        expect(mocks.media.transcode.mock.calls[1][0]).toBe(master);
+        expect(master).not.toBe(proxy);
+        expect(mocks.assetEdit.publishVideoVersion).toHaveBeenCalledWith(
+          version,
+          expect.objectContaining({
+            masterPath: master,
+            duration: 30_000,
+            width: 200,
+            height: 300,
+            files: [expect.objectContaining({ type: AssetFileType.EncodedVideo, path: proxy })],
+          }),
+        );
+        expect(mocks.storage.unlink).toHaveBeenCalledTimes(accepted ? 0 : 2);
+        expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('handleVideoConversion', () => {

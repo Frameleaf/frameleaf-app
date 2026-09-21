@@ -81,7 +81,8 @@ describe('MarkNsfwAction', () => {
   it('marks selected owned assets as safe', async () => {
     const assets = [timelineAsset('asset-1', authManager.user.id), timelineAsset('asset-2', authManager.user.id)];
     const onAssetsMarkNsfw = vi.fn();
-    const unsubscribe = eventManager.on({ AssetsMarkNsfw: onAssetsMarkNsfw });
+    const onAssetsMarkSafe = vi.fn();
+    const unsubscribe = eventManager.on({ AssetsMarkNsfw: onAssetsMarkNsfw, AssetsMarkSafe: onAssetsMarkSafe });
     assetMultiSelectManager.selectAssets(assets);
 
     render(MarkNsfwAction, { menuItem: true, markSafe: true });
@@ -98,6 +99,7 @@ describe('MarkNsfwAction', () => {
       assetImageEnrichmentActionRequestDto: { action: AssetImageEnrichmentAction.MarkSafe },
     });
     expect(onAssetsMarkNsfw).not.toHaveBeenCalled();
+    expect(onAssetsMarkSafe).toHaveBeenCalledWith(assets.map(({ id }) => id));
     unsubscribe();
   });
 

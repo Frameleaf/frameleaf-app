@@ -2,9 +2,13 @@
 
 -- AssetEditRepository.replaceAll
 begin
-delete from "asset_edit"
-where
-  "assetId" = $1
+SELECT
+  phase
+FROM
+  immich_fork.state
+WHERE
+  id = 1
+FOR SHARE
 rollback
 
 -- AssetEditRepository.getAll

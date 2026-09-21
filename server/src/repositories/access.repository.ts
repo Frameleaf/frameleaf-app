@@ -342,7 +342,12 @@ class AssetFileAccess {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkOwnerAccess(userId: string, fileIds: Set<string>, hasElevatedPermission: boolean | undefined) {
+  async checkOwnerAccess(
+    userId: string,
+    fileIds: Set<string>,
+    hasElevatedPermission: boolean | undefined,
+    hideNsfwAssets?: AccessPrivacy,
+  ) {
     if (fileIds.size === 0) {
       return new Set<string>();
     }
@@ -354,6 +359,7 @@ class AssetFileAccess {
       .$if(!hasElevatedPermission, (eb) => eb.where('asset.visibility', '!=', AssetVisibility.Locked))
       .where('asset.ownerId', '=', userId)
       .where('asset_file.id', 'in', [...fileIds])
+      .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
       .execute()
       .then((files) => new Set(files.map(({ id }) => id)));
   }

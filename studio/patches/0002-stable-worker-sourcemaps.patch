@@ -1,0 +1,11 @@
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -303,6 +303,8 @@
+   },
+   worker: {
+     format: 'es',
++    // Transient Vite asset handles leak into embedded worker sources; debug against the preserved sources.
++    rolldownOptions: { output: { sourcemapExcludeSources: true } },
+   },
+   optimizeDeps: {
+     exclude: [

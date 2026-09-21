@@ -150,3 +150,6 @@ export const albumTreeDropdown = persisted<boolean>('album-tree-open', false, {}
 export const sidebarWidth = persisted<number>('sidebar-width', 256, {});
 
 export const sidebarCollapsed = persisted<boolean>('sidebar-collapsed', false, {});
+
+// Presentation only: does not change authentication, server capabilities or library state.
+export const frameleafShell = persisted<boolean>('frameleaf-shell', false, {});

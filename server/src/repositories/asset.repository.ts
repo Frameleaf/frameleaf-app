@@ -15,6 +15,7 @@ import { isEmpty, isUndefined, omitBy } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { LockableProperty, Stack } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
@@ -30,6 +31,7 @@ import {
   TimeBucketDateType,
 } from 'src/enum.js';
 import { isForkWriteEnabled } from 'src/fork-schema/authority.js';
+import { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
 import { getForkSchemaPhase } from 'src/repositories/fork-derived-results.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
@@ -119,6 +121,7 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
 }
 
 export interface TimeBucketOptions extends AssetBuilderOptions {
+  sensitiveOnly?: boolean;
   dateType?: TimeBucketDateType;
   orderBy?: AssetOrderBy;
   order?: AssetOrder;
@@ -665,6 +668,7 @@ export class AssetRepository {
       `.execute(tx);
       const assets = locked.rows;
       const ids = assets.map(({ id }) => id);
+      await this.deleteVideoEditVersions(ids, tx);
       await this.forkPrivacy.delete(ids, tx);
       await this.forkEnrichment.delete(ids, tx);
       await this.smartAlbums.deleteAssets(ids, tx);
@@ -814,7 +818,9 @@ export class AssetRepository {
 
   async remove(asset: {
     id: string;
-  }): Promise<{ originalPath: string; reservationTemporaryPath: string | null } | undefined> {
+  }): Promise<
+    { originalPath: string; reservationTemporaryPath: string | null; videoEditPaths?: string[] } | undefined
+  > {
     return this.db.transaction().execute(async (tx) => {
       const locked = await sql<{ originalPath: string; reservationTemporaryPath: string | null }>`
         SELECT
@@ -830,13 +836,42 @@ export class AssetRepository {
       if (!lockedAsset) {
         return;
       }
+      const videoEditPaths = await this.deleteVideoEditVersions([asset.id], tx);
       await this.forkPrivacy.delete([asset.id], tx);
       await this.forkEnrichment.delete([asset.id], tx);
       await this.smartAlbums.deleteAssets([asset.id], tx);
       await this.deleteForkDerivedResults([asset.id], tx);
       await tx.deleteFrom('asset').where('id', '=', asUuid(asset.id)).execute();
-      return lockedAsset;
+      return { ...lockedAsset, ...(videoEditPaths.length > 0 && { videoEditPaths }) };
     });
+  }
+
+  private async deleteVideoEditVersions(ids: string[], db: Kysely<DB>): Promise<string[]> {
+    if (ids.length === 0) return [];
+    const phase = await sql<{
+      phase: ForkSchemaPhase;
+    }>`SELECT phase FROM immich_fork.state WHERE id=1 FOR SHARE`.execute(db);
+    const retained = await sql<Pick<VideoEditVersion, 'masterPath' | 'proxyPath' | 'files'>>`
+      SELECT "masterPath", "proxyPath", files FROM immich_fork.video_edit_version WHERE "assetId"=ANY(${ids}::uuid[])
+      UNION ALL SELECT payload->>'masterPath', payload->>'proxyPath', payload->'files' FROM immich_fork.orphaned_records
+      WHERE "sourceTable"='video_edit_version' AND payload->>'assetId'=ANY(${ids}::text[])`.execute(db);
+    if (retained.rows.length === 0) return [];
+    if (!phase.rows[0] || !isForkWriteEnabled(phase.rows[0].phase)) throw new Error('video_version_inactive');
+    const handoff = await sql`SELECT 1 FROM immich_fork.migration_audit WHERE status='running'
+      AND name IN ('official-handoff-preparation','fork-return-reconciliation') LIMIT 1`.execute(db);
+    if (handoff.rows.length > 0) throw new Error('video_version_handoff');
+    await sql`DELETE FROM immich_fork.video_edit_selection WHERE "assetId"=ANY(${ids}::uuid[])`.execute(db);
+    await sql`DELETE FROM immich_fork.video_edit_version WHERE "assetId"=ANY(${ids}::uuid[])`.execute(db);
+    await sql`DELETE FROM immich_fork.orphaned_records WHERE "sourceTable" IN ('video_edit_selection','video_edit_version')
+      AND payload->>'assetId'=ANY(${ids}::text[])`.execute(db);
+    // FileDelete checks all remaining public and private references under a path lock.
+    return [
+      ...new Set(
+        retained.rows
+          .flatMap((version) => [version.masterPath, version.proxyPath, ...version.files.map((file) => file.path)])
+          .filter((path): path is string => !!path),
+      ),
+    ];
   }
 
   private async deleteForkDerivedResults(ids: string[], db: Kysely<DB>): Promise<void> {
@@ -994,6 +1029,7 @@ export class AssetRepository {
           .$if(options.visibility === undefined, withDefaultVisibility)
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
           .$call((qb) => withHiddenContentFilter(qb, options))
+          .$if(!!options.sensitiveOnly, (qb) => qb.$call(withNsfwAssets).where('asset.ownerId', '=', auth!.user.id))
           .$if(!!options.albumId, (qb) =>
             qb
               .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
@@ -1094,6 +1130,7 @@ export class AssetRepository {
           .$if(options.visibility === undefined, withDefaultVisibility)
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
           .$call((qb) => withHiddenContentFilter(qb, options))
+          .$if(!!options.sensitiveOnly, (qb) => qb.$call(withNsfwAssets).where('asset.ownerId', '=', auth!.user.id))
           .$if(!!options.bbox, (qb) => {
             const bbox = options.bbox!;
             const circle = getBoundingCircle(bbox);

@@ -550,17 +550,17 @@
       "version": 3
     },
     {
-      "bytes": 83723,
+      "bytes": 87819,
       "category": "plan",
       "id": "61440418",
       "source": "docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md",
-      "sourceSha256": "bd71e6e91955dc3013f34870892f2354db8b5ecf3da5daf260c5ae4000040006",
+      "sourceSha256": "e280fd7d67723e1443907f6504214b9955f0350628191cc56b229530e0773789",
       "title": "Studio Rendering and Restoration Implementation",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440418/Studio+Rendering+and+Restoration+Implementation",
-      "verification": "source hash marker, fetched baseline and terminal content read back after update",
+      "verification": "Read back version 4, source hash, FL-85 conformance section and terminal module.workspace-gate row; historical FL-25 checkpoint retained in version 3.",
       "verified": true,
-      "verifiedAt": "2026-09-20T09:33:30.000Z",
-      "version": 3
+      "verifiedAt": "2026-09-21T20:20:43.256405Z",
+      "version": 4
     },
     {
       "bytes": 30120,
@@ -651,17 +651,17 @@
       "version": 10
     },
     {
-      "bytes": 2045,
+      "bytes": 5217,
       "category": "plan",
       "id": "61408007",
       "source": "studio/README.md",
-      "sourceSha256": "04642a8139e9784074c2c60ae1c73322f7c178e995d23e618204084c984e27d0",
+      "sourceSha256": "30f3ba354798debd0715acd9fa10e91015a43c614553b2badbb18be84f48bf69",
       "title": "Studio and Freecut Source Inventory",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61408007/Studio+and+Freecut+Source+Inventory",
-      "verification": "source hash marker, fetched baseline and terminal content read back after creation",
+      "verification": "Canonical source body and hash, unmerged PR 130 candidate and preserved FL-25 historical receipt read back exactly after the worker source-map determinism documentation update; supplemental delivery evidence remains page 61408162 version 3.",
       "verified": true,
-      "verifiedAt": "2026-09-20T09:33:30.000Z",
-      "version": 1
+      "verifiedAt": "2026-09-21T10:54:56.000Z",
+      "version": 3
     },
     {
       "bytes": 9292,
@@ -717,18 +717,17 @@
       "version": 2
     },
     {
-      "bytes": 26181,
+      "bytes": 27655,
       "category": "development",
       "id": "61407844",
       "source": "docs/docs/developer/frameleaf-development.md",
-      "sourceCommit": "e1b7e063180bc7853775419017768f57adc5f030",
-      "sourceSha256": "b178313fd1253361a298be39a5bba575cdc26e0b548e1a6b9abe631125f19406",
+      "sourceSha256": "1e855050dc9b3ba6a63a49515e0d363d1e0e301f14515107533617dd5ac4742e",
       "title": "Frameleaf Development and Delivery",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844",
-      "verification": "Full normalized development-guide content, source hash marker, and terminal closeout text read back after removing an unrelated inventory append; source content and hash remain unchanged.",
+      "verification": "FL-142 local review correction read back: source hash, new source revision prerequisite for manual rebuild, existing fresh/reused candidate rejection before scheduling, failed-job recovery and preserved historical delivery checkpoints. Not publication or runtime qualification.",
       "verified": true,
-      "verifiedAt": "2026-09-20T13:00:37.669Z",
-      "version": 9
+      "verifiedAt": "2026-09-21T20:31:19.757Z",
+      "version": 11
     },
     {
       "bytes": 411,
@@ -821,6 +820,40 @@
       "verified": true,
       "verifiedAt": "2026-09-20T07:35:43.401Z",
       "version": 2
+    },
+    {
+      "bytes": 21235,
+      "category": "plan",
+      "id": "61408340",
+      "source": "docs/docs/developer/frameleaf-plan/FL-39-version-persistence.md",
+      "sourceSha256": "642f872960dca090afcf9d09f5a3fead70abc7936accaccc384e7119edacd082",
+      "title": "FL-39 Metadata-only Rotation Qualification",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61408340/FL-39+Metadata-only+Rotation+Qualification",
+      "version": 5,
+      "sourceBranch": "codex/FL-39-version-persistence",
+      "sourceState": "multi-audio-admission-review-candidate",
+      "readbackAt": "2026-09-21T13:44:24.795095+00:00",
+      "readbackResult": "Full normalized HTML body matched, including current source and all historical content; exact-candidate independent review pending."
+    },
+    {
+      "bytes": 8118,
+      "category": "development",
+      "id": "61964350",
+      "source": "docs/docs/developer/frameleaf-plan/FL-30-navigation.md",
+      "sourceSha256": "d581fd733da0378e984a140e4ef80e1fffc1ded1981b37c7671713cbd9d22816",
+      "title": "FL-30 production navigation rollout",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61964350",
+      "version": 2
+    },
+    {
+      "bytes": 7953,
+      "category": "development",
+      "id": "61997109",
+      "source": "docs/docs/developer/frameleaf-plan/FL-31-search-session.md",
+      "sourceSha256": "df8b3d3b25157c37d76f0afcef519159a5950c73a65b457f8d23562de4d7432f",
+      "title": "FL-31 production search session slice",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997109",
+      "version": 3
     },
     {
       "bytes": 10038,

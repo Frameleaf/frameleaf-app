@@ -40,6 +40,7 @@ export type Events = {
   AssetsUndoArchive: [TimelineAsset[]];
   AssetsDelete: [string[]];
   AssetsMarkNsfw: [string[]];
+  AssetsMarkSafe: [string[]];
   AssetEditsApplied: [string];
   AssetsTag: [string[]];
 
