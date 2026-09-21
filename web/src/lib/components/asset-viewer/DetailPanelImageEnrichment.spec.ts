@@ -10,8 +10,10 @@ import {
   type AssetImageEnrichmentResponseDto,
 } from '@immich/sdk';
 import { fireEvent, screen, waitFor } from '@testing-library/svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
+import { userAdminFactory } from '@test-data/factories/user-factory';
 import DetailPanelImageEnrichment from './DetailPanelImageEnrichment.svelte';
 
 vi.mock('@immich/sdk', async () => {
@@ -45,6 +47,8 @@ const enrichmentFactory = (assetId: string, effectiveIsNsfw: boolean): AssetImag
   },
 });
 
+afterEach(() => vi.clearAllMocks());
+
 describe('DetailPanelImageEnrichment', () => {
   afterEach(() => {
     vi.clearAllMocks();
@@ -75,7 +79,74 @@ describe('DetailPanelImageEnrichment', () => {
         assetImageEnrichmentActionRequestDto: { action: AssetImageEnrichmentAction.MarkNsfw },
       }),
     );
-    await waitFor(() => expect(getAssetInfo).toHaveBeenCalledWith({ id: asset.id }));
+    await waitFor(() =>
+      expect(getAssetInfo).toHaveBeenCalledWith(
+        { id: asset.id },
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
     expect(onAssetSuppressed).toHaveBeenCalledWith(asset);
   });
 });
+
+it.each(['lock', 'account', 'dispose'] as const)('drops an enrichment refresh callback after %s', async (change) => {
+  const asset = assetFactory.build({ type: AssetTypeEnum.Image });
+  const onAssetRefresh = vi.fn();
+  vi.mocked(getAssetImageEnrichment).mockResolvedValue(enrichmentFactory(asset.id, false));
+  vi.mocked(updateAssetImageEnrichment).mockResolvedValue(enrichmentFactory(asset.id, false));
+  let resolve!: (value: typeof asset) => void;
+  vi.mocked(getAssetInfo).mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const view = renderWithTooltips(DetailPanelImageEnrichment, { asset, isOwner: true, isAdmin: true, onAssetRefresh });
+  await fireEvent.click(await screen.findByRole('button', { name: 'mark_nsfw' }));
+  await waitFor(() => expect(getAssetInfo).toHaveBeenCalled());
+  if (change === 'lock') {
+    eventManager.emit('SessionLocked');
+  } else if (change === 'account') {
+    eventManager.emit('AuthUserLoaded', userAdminFactory.build());
+  } else {
+    view.unmount();
+  }
+  resolve(asset);
+  await new Promise((done) => setTimeout(done, 0));
+  expect(onAssetRefresh).not.toHaveBeenCalled();
+});
+
+it.each(['lock', 'account', 'dispose'] as const)(
+  'does not start a refresh after a pending enrichment mutation crosses %s',
+  async (change) => {
+    const asset = assetFactory.build({ type: AssetTypeEnum.Image });
+    vi.mocked(getAssetImageEnrichment).mockResolvedValue(enrichmentFactory(asset.id, false));
+    let resolve!: (value: AssetImageEnrichmentResponseDto) => void;
+    vi.mocked(updateAssetImageEnrichment).mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const onAssetRefresh = vi.fn();
+    const onAssetSuppressed = vi.fn();
+    const view = renderWithTooltips(DetailPanelImageEnrichment, {
+      asset,
+      isOwner: true,
+      isAdmin: true,
+      onAssetRefresh,
+      onAssetSuppressed,
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: 'mark_nsfw' }));
+    if (change === 'lock') {
+      eventManager.emit('SessionLocked');
+    } else if (change === 'account') {
+      eventManager.emit('AuthUserLoaded', userAdminFactory.build());
+    } else {
+      view.unmount();
+    }
+    resolve(enrichmentFactory(asset.id, true));
+    await new Promise((done) => setTimeout(done, 0));
+    expect(getAssetInfo).not.toHaveBeenCalled();
+    expect(onAssetRefresh).not.toHaveBeenCalled();
+    expect(onAssetSuppressed).not.toHaveBeenCalled();
+  },
+);

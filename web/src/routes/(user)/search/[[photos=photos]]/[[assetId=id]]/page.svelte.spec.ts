@@ -41,7 +41,10 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { authenticated: true, user: { id: 'owner' }, preferences: { tags: { enabled: false } } },
 }));
 vi.mock('$lib/components/shared-components/search-bar/SearchBar.svelte', () => ({ default: () => {} }));
-vi.mock('$lib/components/shared-components/gallery-viewer/GalleryViewer.svelte', () => ({ default: () => {} }));
+vi.mock('$lib/components/shared-components/gallery-viewer/GalleryViewer.svelte', async () => {
+  const { default: Component } = await import('@test-data/components/MockGalleryDraft.svelte');
+  return { default: Component };
+});
 vi.mock('$lib/components/shared-components/ControlAppBar.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/timeline/AssetSelectControlBar.svelte', async () => {
   const { default: Field } = await import('@test-data/components/MockField.svelte');
@@ -207,5 +210,22 @@ it.each([
   flushSync(() => setQuery({ city: 'Another old query' }));
   expect(searchAssets).toHaveBeenCalledOnce();
   expect(searchManager.filter.location.city).toBeUndefined();
+  view.unmount();
+});
+
+it('keeps the mounted gallery draft when access expands', async () => {
+  setQuery({ city: 'Banff' });
+  vi.mocked(searchAssets).mockResolvedValue({
+    ...empty,
+    assets: { items: [{ id: 'asset' }], nextPage: null },
+  } as unknown as SearchResponseDto);
+  const view = render(SearchPage);
+  const input = await screen.findByRole('textbox', { name: 'Pending editor draft' });
+  await fireEvent.input(input, { target: { value: 'unfinished crop note' } });
+  vi.mocked(searchAssets).mockReturnValue(new Promise(() => {}));
+  flushSync(() => eventManager.emit('SessionAccessChanged', { isElevated: true }));
+  expect(screen.getByRole('textbox', { name: 'Pending editor draft' })).toBe(input);
+  expect(input).toHaveValue('unfinished crop note');
+  expect(searchAssets).toHaveBeenCalledOnce();
   view.unmount();
 });

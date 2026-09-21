@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { goto } from '$app/navigation';
   import DetailPanelDate from '$lib/components/asset-viewer/DetailPanelDate.svelte';
   import DetailPanelDescription from '$lib/components/asset-viewer/DetailPanelDescription.svelte';
@@ -98,12 +99,44 @@
     return undefined;
   };
 
+  const refreshLifetime = new AbortController();
+  let refreshVersion = 0;
+  const stopAccess = onLibraryAccessChange(
+    (change) => {
+      if (change !== 'expanded') {
+        refreshLifetime.abort();
+      }
+    },
+    authManager.authenticated ? authManager.user.id : undefined,
+  );
+
+  $effect(() => {
+    void asset.id;
+    return () => {
+      refreshVersion++;
+    };
+  });
+
   const handleRefreshPeople = async () => {
-    const updatedAsset = await getAssetInfo({ id: asset.id });
-    onAssetUpdate?.(updatedAsset);
-    assetViewerManager.closeEditFacesPanel();
-    faceManager.clear();
-    await faceManager.getAssetFaces(asset.id);
+    const id = asset.id;
+    const version = ++refreshVersion;
+    if (refreshLifetime.signal.aborted) {
+      return;
+    }
+    try {
+      const updatedAsset = await getAssetInfo({ id }, { signal: refreshLifetime.signal });
+      if (refreshLifetime.signal.aborted || version !== refreshVersion || asset.id !== id) {
+        return;
+      }
+      onAssetUpdate?.(updatedAsset);
+      assetViewerManager.closeEditFacesPanel();
+      faceManager.clear();
+      await faceManager.getAssetFaces(id);
+    } catch (error) {
+      if (!refreshLifetime.signal.aborted && version === refreshVersion && asset.id === id) {
+        handleError(error, $t('error_retrieving_asset_information'));
+      }
+    }
   };
 
   const getAssetFolderHref = (asset: AssetResponseDto) => {
@@ -112,6 +145,8 @@
   };
 
   onDestroy(() => {
+    refreshLifetime.abort();
+    stopAccess();
     assetViewerManager.closeEditFacesPanel();
   });
 </script>

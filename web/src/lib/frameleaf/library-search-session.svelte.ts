@@ -26,6 +26,10 @@ export class LibrarySearchSession {
   blocked = $state(false);
   #unsubscribe = onLibraryAccessChange(
     (change) => {
+      // Expansion cannot invalidate already-authorized results or destroy an open editor.
+      if (change === 'expanded') {
+        return;
+      }
       if (change === 'account' || change === 'revoked') {
         this.blocked = true;
       }
