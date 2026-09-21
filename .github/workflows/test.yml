@@ -314,6 +314,18 @@ jobs:
           VITEST_DISABLE_DOCKER_SETUP: true
         run: pnpm test
         if: ${{ !cancelled() && steps.server-ready.outcome == 'success' }}
+      - name: Capture server diagnostics after API tests
+        if: always()
+        working-directory: ./e2e
+        run: |
+          {
+            date --utc --iso-8601=seconds
+            while IFS= read -r container_id; do
+              [ -n "$container_id" ] || continue
+              docker inspect --format '{{json .Name}} {{json .State}} {{json .RestartCount}}' "$container_id" || true
+            done < <(docker compose ps --all --quiet)
+            docker compose logs --no-color --timestamps || true
+          } > docker-diagnostics-after-api-tests.txt 2>&1
       - name: Run e2e tests (maintenance)
         env:
           VITEST_DISABLE_DOCKER_SETUP: true
@@ -328,7 +340,9 @@ jobs:
         if: always()
         with:
           name: e2e-server-docker-logs-${{ matrix.runner }}
-          path: e2e/docker-compose-logs.txt
+          path: |
+            e2e/docker-compose-logs.txt
+            e2e/docker-diagnostics-after-api-tests.txt
     timeout-minutes: 60
   e2e-tests-web:
     name: End-to-End Tests (Web)
