@@ -15,7 +15,7 @@
   let { onClose, info, versions }: Props = $props();
 </script>
 
-<Modal title={$t('about')} {onClose}>
+<Modal title={$t('about')} {onClose} focusOnOpen>
   <ModalBody>
     <div class="flex flex-col gap-4 sm:grid sm:grid-cols-2">
       {#if info.sourceRef === 'main' && info.repository === 'immich-app/immich'}

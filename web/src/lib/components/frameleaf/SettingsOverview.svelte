@@ -15,7 +15,7 @@
     type ServerStorageResponseDto,
   } from '@immich/sdk';
   import { modalManager, Theme as UiTheme, themeManager } from '@immich/ui';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';
   import Theme from './Theme.svelte';
 
@@ -42,8 +42,9 @@
     loading = false;
   };
 
-  const openAbout = async () => {
-    if (!about) {
+  const openAbout = async (event: MouseEvent) => {
+    const trigger = event.currentTarget;
+    if (!about || openingAbout || !(trigger instanceof HTMLButtonElement)) {
       return;
     }
     const info = about;
@@ -52,7 +53,7 @@
     try {
       const versions = await getVersionHistory();
       if (mounted) {
-        void modalManager.show(ServerAboutModal, { info, versions });
+        await modalManager.show(ServerAboutModal, { info, versions });
       }
     } catch {
       if (mounted) {
@@ -61,6 +62,10 @@
     } finally {
       if (mounted) {
         openingAbout = false;
+        await tick();
+        if (mounted && trigger.isConnected) {
+          trigger.focus();
+        }
       }
     }
   };
