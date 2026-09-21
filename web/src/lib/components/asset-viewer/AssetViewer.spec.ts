@@ -2,6 +2,7 @@ import { AssetTypeEnum, getAssetInfo, updateAsset } from '@immich/sdk';
 import { fireEvent, waitFor } from '@testing-library/svelte';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
+import { assetCacheManager } from '$lib/managers/AssetCacheManager.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { editManager } from '$lib/managers/edit/edit-manager.svelte';
@@ -12,6 +13,25 @@ import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import AssetViewer from './AssetViewer.svelte';
+
+const { socketListeners } = vi.hoisted(() => ({ socketListeners: new Map<string, (...args: unknown[]) => void>() }));
+vi.mock('socket.io-client', () => ({
+  io: () => {
+    const socket = {
+      on: (name: string, handler: (...args: unknown[]) => void) => {
+        socketListeners.set(name, handler);
+        return socket;
+      },
+      off: vi.fn(),
+    };
+    return socket;
+  },
+}));
+
+vi.mock('$lib/components/asset-viewer/VideoWrapperViewer.svelte', async () => {
+  const { default: MockText } = await import('@test-data/components/MockText.svelte');
+  return { default: MockText };
+});
 
 vi.mock('$lib/components/asset-viewer/editor/EditorPanel.svelte', async () => {
   const { default: MockViewerControls } = await import('@test-data/components/MockViewerControls.svelte');
@@ -40,6 +60,7 @@ vi.mock('@immich/sdk', async () => {
   return {
     ...sdk,
     updateAsset: vi.fn(),
+    getFaces: vi.fn().mockResolvedValue([]),
     getAssetInfo: vi.fn(),
   };
 });
@@ -52,6 +73,7 @@ describe('AssetViewer', () => {
 
   afterEach(() => {
     slideshowStore.slideshowState.set(SlideshowState.None);
+    assetCacheManager.invalidate();
     authManager.reset();
     vi.clearAllMocks();
   });
@@ -97,6 +119,42 @@ describe('AssetViewer', () => {
     expect(assetViewerManager.asset).toEqual(updated);
     expect(assetViewerManager.isShowEditor).toBe(false);
   });
+
+  it.each([true, false])(
+    'refreshes the viewer and cached asset after the queued editor unmounts (isEdited=%s)',
+    async (isEdited) => {
+      const user = userAdminFactory.build();
+      const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Video, isEdited: !isEdited });
+      const published = { ...asset, isEdited, duration: 5000, thumbhash: 'published-thumbhash' };
+      authManager.setUser(user);
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+      vi.mocked(getAssetInfo).mockResolvedValue(asset);
+      await assetCacheManager.getAsset({ id: asset.id });
+      assetViewerManager.isShowEditor = true;
+      const onAssetUpdate = vi.fn();
+      const view = renderWithTooltips(AssetViewer, {
+        cursor: { current: asset },
+        showNavigation: false,
+        onAssetUpdate,
+      });
+
+      // Queue acceptance closes the editor before media publication changes metadata.
+      await fireEvent.click(view.getByRole('button', { name: 'Save video edits' }));
+      await waitFor(() => expect(view.queryByRole('button', { name: 'Save video edits' })).not.toBeInTheDocument());
+      expect(assetViewerManager.isShowEditor).toBe(false);
+      vi.mocked(getAssetInfo).mockResolvedValue(published);
+
+      // This is the application-wide socket subscription, not an editor listener.
+      const publish = socketListeners.get('on_asset_update');
+      expect(publish).toBeDefined();
+      publish?.(published);
+      await waitFor(() => expect(onAssetUpdate).toHaveBeenCalledWith(published));
+      expect(await assetCacheManager.getAsset({ id: asset.id })).toEqual(published);
+      onAssetUpdate.mockClear();
+      publish?.({ ...published, id: 'unrelated-asset' });
+      expect(onAssetUpdate).not.toHaveBeenCalled();
+    },
+  );
 
   it.skip('updates the top bar favorite action after pressing favorite', async () => {
     const ownerId = 'owner-id';
