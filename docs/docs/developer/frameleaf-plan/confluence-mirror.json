@@ -821,6 +821,16 @@
       "verified": true,
       "verifiedAt": "2026-09-20T07:35:43.401Z",
       "version": 2
+    },
+    {
+      "bytes": 10038,
+      "category": "development",
+      "id": "61539380",
+      "source": "docs/docs/developer/frameleaf-plan/FL-29-web-primitives.md",
+      "sourceSha256": "bb2cf88793b94ae6e650ec5a99efde26914f81c9b00d32b1647626edeb14258c",
+      "title": "FL-29 web production primitives",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539380",
+      "version": 5
     }
   ],
   "spaceId": "61374475",
