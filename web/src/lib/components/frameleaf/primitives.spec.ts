@@ -1,6 +1,8 @@
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import * as transitions from 'svelte/transition';
 import { describe, expect, it, vi } from 'vitest';
 import PickerHarness from '$lib/../test-data/frameleaf/PickerHarness.svelte';
+import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
 import FilterChip from './FilterChip.svelte';
 import PersonAvatar from './PersonAvatar.svelte';
 import Status from './Status.svelte';
@@ -70,4 +72,23 @@ it('keeps nested picker themes independent and disables all picker controls', as
   expect(nested.closest<HTMLElement>('.frameleaf')?.dataset.theme).toBe('dark');
   expect(outer.matches(':disabled')).toBe(true);
   expect(screen.getByRole('button', { name: 'clear_value' }).closest('fieldset')?.disabled).toBe(true);
+});
+
+it.each([false, true])('honors reduced motion (%s) when introducing a picker', async (reducedMotion) => {
+  vi.stubGlobal('visualViewport', null);
+  const preference = vi.spyOn(mediaQueryManager, 'reducedMotion', 'get').mockReturnValue(reducedMotion);
+  const fly = vi.spyOn(transitions, 'fly');
+  try {
+    render(PickerHarness, { props: { theme: 'dark' }, intro: true });
+    await waitFor(() => expect(fly).toHaveBeenCalled());
+    expect(fly.mock.calls.every(([, options]) => options?.duration === (reducedMotion ? 0 : 250))).toBe(true);
+    const input = screen.getByRole('combobox', { name: 'Outer camera' });
+    await fireEvent.focus(input);
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect((input as HTMLInputElement).value).toBe('Camera A (12)');
+  } finally {
+    fly.mockRestore();
+    preference.mockRestore();
+  }
 });
