@@ -32,9 +32,9 @@ The OpenAPI specification and TypeScript client are generated from these control
 
 ## Master and proxy policy
 
-The master uses software H.264 or HEVC, CRF 18 and the original raster independent of playback resolution, bitrate, hardware acceleration and tone-mapping settings. The policy preserves qualified YUV 4:2:0, 4:2:2 or 4:4:4 precision at 8/10/12 bits. Color intent is set on filter frames and validated from the rendered output. Unchanged audio is copied; edited audio does not force a stereo downmix. Dolby Vision and unsupported pixel formats fail closed before publication.
+Except for the qualified metadata-only rotation path below, the master uses software H.264 or HEVC, CRF 18 and the original raster independent of playback resolution, bitrate, hardware acceleration and tone-mapping settings. The policy preserves qualified YUV 4:2:0, 4:2:2 or 4:4:4 precision at 8/10/12 bits. Color intent is set on filter frames and validated from the rendered output. Unchanged audio is copied; edited audio does not force a stereo downmix. Dolby Vision and unsupported pixel formats fail closed before publication.
 
-A playback proxy is generated from the validated master using configured playback policy. This packet does not qualify hardware proxy fallback, every HDR codec/device combination, or photographic correctness of every existing effect on HDR material. Metadata-only rotation, configurable export profiles, and end-to-end deployment acceptance remain open FL-39 work. This document is not an issue-completion claim.
+A playback proxy is generated from the validated master using configured playback policy. This packet does not qualify hardware proxy fallback, every HDR codec/device combination, or photographic correctness of every existing effect on HDR material. Metadata-only rotation is qualified only for the constrained source matrix below. Configurable export profiles and end-to-end deployment acceptance remain open FL-39 work. This document is not an issue-completion claim.
 
 ## Local evidence
 
@@ -78,3 +78,34 @@ The web editor waits for valid original bounds before initializing the saved rec
 A component regression begins with a 640×360, five-second edited asset and its saved crop/trim recipe, then composes a 25-second trim and portrait crop against the original 1920×1080, 30-second bounds. Server tests verify rotated original dimensions and reject missing streams, invalid duration and invalid raster. An existing PostgreSQL regression is extended to read original bounds after shorter publication and save a larger crop/longer trim; this run remains **unverified** because the local Docker daemon socket was unavailable. No container-runtime changes were made. Local focused results are 70 asset-service tests and 15 editor/history tests passing; server/web TypeScript and Svelte diagnostics are checked separately. OpenAPI and TypeScript clients are regenerated; native/mobile generation remains deferred.
 
 This is a local review candidate. The prior persistence and web-control mirrors remain historical receipts at their exact source hashes; this continuation needs its own mirror and independent review. No GitHub publication, merge, deployment or full FL-39 completion is claimed.
+
+
+## Metadata-only rotation follow-on
+
+This bounded continuation starts from reviewed original-bounds candidate `6cd128decbd9ef66f6b43c195ac3bbb582882559`. A saved or exported recipe containing only one 90, 180 or 270 degree clockwise rotation now stream-copies eligible original video and audio packets into its unique private MP4 master. The source must be MP4/MOV with exactly one H.264 8-bit YUV 4:2:0 video stream, BT.709 or unspecified SDR color tags, no Dolby Vision, and at most one AAC audio stream. Admission also requires a freshly probed absence of an inherited display matrix and zero source rotation.
+
+FFmpeg's counter-clockwise display rotation receives the opposite sign from the clockwise editor recipe. Validation checks the expected orientation, resulting display dimensions, source pixel format and color intent before proxy generation or publication. The existing default validator still requires baked outputs to have zero rotation. Every new revision reads the captured original, not a preceding master or playback proxy. The version transaction, source identity check, stale publication guard, reference retention, private download and cleanup boundaries are unchanged.
+
+An inherited display matrix may contain reflection or shear that the existing scalar rotation probe does not describe. Such inputs deliberately retain the baked path, including metadata-oriented portraits. Physical portrait rasters and already-baked portrait originals qualify for copying. Crop, mixed recipes, multiple tracks, other containers/codecs, high precision and HDR retain the existing baked-master policy and its explicit Dolby/pixel-format rejection. A failed remux or validation fails the version and keeps the current selection; it does not silently claim a lossy retry is packet-preserving.
+
+The playback proxy remains independently encoded from the validated master under playback resolution/codec/bitrate policy. Thumbnails use that same oriented master, and publication records display geometry rather than the unchanged coded raster. No playback setting caps the copied master.
+
+### Reproducible local qualification
+
+On September 21, 2026, macOS arm64 with Homebrew FFmpeg/ffprobe **8.1.1** and Apple clang **21.0.0** passed the following checks. Synthetic fixtures are created in isolated temporary directories and removed after the tests; no user media or database is involved.
+
+```sh
+cd server
+FRAMELEAF_FFMPEG_QUALIFY=1 pnpm exec vitest run --config test/vitest.config.mjs src/utils/video-edit.spec.ts src/utils/video-edit.ffmpeg.spec.ts src/services/media.service.spec.ts
+pnpm exec vitest run --config test/vitest.config.mjs src/repositories/media.repository.spec.ts
+pnpm exec tsc --noEmit
+```
+
+The first command passes **248 tests**, including two opt-in real-media cases. The second passes **13 tests**. Changed-file ESLint and Prettier checks pass. The real-media cases exercise the production `MediaRepository.probe` and `transcode` methods and the production rotation plan:
+
+- 3840×2160 H.264/AAC original, clockwise 90/180/270/90 recipes each derived anew from the original. Every selected video/audio packet has exactly equal SHA-256 payload hash, PTS, DTS and duration before and after remux. Decoded frame hashes equal the corresponding explicit clockwise transpose of the original, detecting sign mistakes and double rotation.
+- Independent 480-pixel-short-side playback proxies bake rotation, report zero rotation metadata and retain the expected portrait/landscape aspect. Copied masters retain their 4K coded raster.
+- A physically baked 200×300 portrait original rotates through metadata only, preserves packets and matches the reference decoded frames. A source carrying the resulting display matrix is rejected from copy admission.
+- Unit guards retain mixed crop/rotate rendering and reject copying unqualified codec, HDR, audio, matrix and multitrack combinations. Version-publication regressions cover both copied and baked masters, rejected display geometry, stale publication cleanup, original source use and separate master/proxy identities.
+
+The real-media tests are opt-in because the ordinary unit runner does not guarantee a native FFmpeg installation. They are reproducible qualification evidence, not a replacement for required hosted checks. The parent owns PostgreSQL and browser qualification; this packet does not repeat the full database suite. Hardware proxies, metadata-oriented-source packet copying, HDR packet copying, device/browser display compatibility and deployed end-to-end acceptance remain unqualified. Independent review is required before push; no push, merge or deployment is claimed.

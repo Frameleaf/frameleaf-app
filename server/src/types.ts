@@ -84,6 +84,7 @@ export interface VideoStreamInfo {
   height: number;
   width: number;
   rotation: number;
+  hasDisplayMatrix?: boolean;
   codecName: string | null;
   profile: H264Profile | HevcProfile | Av1Profile | null;
   level: number | null;

@@ -301,6 +301,7 @@ export class MediaRepository {
             frameRate: this.parseFrameRate(stream.avg_frame_rate ?? stream.r_frame_rate),
             timeBase: this.parseRational(stream.time_base)?.den ?? null,
             rotation: this.parseInt(stream.rotation),
+            hasDisplayMatrix: stream.displaymatrix !== undefined,
             bitrate: this.parseInt(stream.bit_rate),
             pixelFormat: stream.pix_fmt || 'yuv420p',
             colorPrimaries: this.parseEnum(ColorPrimaries, stream.color_primaries) ?? ColorPrimaries.Unknown,

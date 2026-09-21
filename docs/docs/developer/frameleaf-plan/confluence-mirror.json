@@ -821,6 +821,20 @@
       "verified": true,
       "verifiedAt": "2026-09-20T07:35:43.401Z",
       "version": 2
+    },
+    {
+      "bytes": 17266,
+      "category": "plan",
+      "id": "61408340",
+      "source": "docs/docs/developer/frameleaf-plan/FL-39-version-persistence.md",
+      "sourceSha256": "a2ac5d01b025e32ee898974a113311587692207d2958d7751d2e750b501f926f",
+      "title": "FL-39 Metadata-only Rotation Qualification",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61408340/FL-39+Metadata-only+Rotation+Qualification",
+      "version": 1,
+      "sourceBranch": "codex/FL-39-metadata-rotation",
+      "sourceState": "local-unpushed-candidate",
+      "readbackAt": "2026-09-21T12:22:03.874868+00:00",
+      "readbackResult": "Full whitespace-normalized body, source hash, byte count and historical receipt links matched after creation; independent review and hosted checks remain pending."
     }
   ],
   "spaceId": "61374475",

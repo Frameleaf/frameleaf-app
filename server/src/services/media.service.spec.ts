@@ -2678,9 +2678,9 @@ describe(MediaService.name, () => {
   });
 
   describe('version-owned video publication', () => {
-    it.each([true, false, 'invalid-master'])(
-      'publishes a proxy independently from the master (result=%s)',
-      async (accepted) => {
+    it.each([true, false, 'invalid-master'].flatMap((accepted) => [false, true].map((copy) => ({ accepted, copy }))))(
+      'publishes a proxy independently from the master ($accepted, copy=$copy)',
+      async ({ accepted, copy }) => {
         const videoStream = { ...probeStub.videoStreamH264.videoStream, width: 300, height: 200, rotation: 0 };
         const asset = {
           ...AssetFactory.create({ type: AssetType.Video }),
@@ -2709,14 +2709,16 @@ describe(MediaService.name, () => {
         mocks.assetEdit.failVideoVersion.mockResolvedValue(undefined);
         mocks.media.transcode.mockResolvedValue(undefined);
         mocks.media.probe.mockResolvedValue({
-          videoStreams: [{ ...videoStream, width: accepted === 'invalid-master' ? 301 : 300 }],
+          videoStreams: [
+            { ...videoStream, rotation: copy ? -180 : 0, width: accepted === 'invalid-master' ? 301 : 300 },
+          ],
           audioStreams: [],
           format: asset.format,
         });
         mocks.media.probe.mockResolvedValueOnce({
-          videoStreams: [videoStream],
+          videoStreams: [{ ...videoStream, hasDisplayMatrix: !copy }],
           audioStreams: [],
-          format: { ...asset.format, duration: 30 },
+          format: { ...asset.format, duration: 30, formatName: 'mov,mp4' },
         });
         mocks.storage.unlink.mockResolvedValue(undefined);
         (sut as any).generateVideoThumbnails = () =>
@@ -2734,6 +2736,10 @@ describe(MediaService.name, () => {
           expect(mocks.media.transcode).toHaveBeenCalledOnce();
           expect(mocks.storage.unlink).toHaveBeenCalledTimes(2);
           return;
+        }
+        if (copy) {
+          expect(mocks.media.transcode.mock.calls[0][2].outputOptions).toContain('copy');
+          expect(mocks.media.transcode.mock.calls[1][2].outputOptions).not.toContain('copy');
         }
         const master = mocks.media.transcode.mock.calls[0][1];
         const proxy = mocks.media.transcode.mock.calls[1][1];
