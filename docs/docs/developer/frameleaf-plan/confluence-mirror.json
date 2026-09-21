@@ -836,14 +836,14 @@
       "readbackResult": "Full normalized HTML body matched, including current source and all historical content; exact-candidate independent review pending."
     },
     {
-      "bytes": 8118,
+      "bytes": 11601,
       "category": "development",
       "id": "61964350",
       "source": "docs/docs/developer/frameleaf-plan/FL-30-navigation.md",
-      "sourceSha256": "d581fd733da0378e984a140e4ef80e1fffc1ded1981b37c7671713cbd9d22816",
+      "sourceSha256": "94f4f50c8cb88e9b0e6745469205ee7342c737d7a1d9f8d6dc829b7cc0f1f4ba",
       "title": "FL-30 production navigation rollout",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61964350",
-      "version": 2
+      "version": 3
     },
     {
       "bytes": 7953,

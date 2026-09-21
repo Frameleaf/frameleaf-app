@@ -1,6 +1,7 @@
 <script lang="ts">
   import FrameleafNavigation from '$lib/components/frameleaf/Navigation.svelte';
   import AlbumNavigationTree from '$lib/components/shared-components/side-bar/AlbumNavigationTree.svelte';
+  import PurchaseInfo from '$lib/components/shared-components/side-bar/PurchaseInfo.svelte';
   import BottomInfo from '$lib/components/shared-components/side-bar/BottomInfo.svelte';
   import RecentAlbums from '$lib/components/shared-components/side-bar/RecentAlbums.svelte';
   import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
@@ -183,6 +184,10 @@
   {@render children?.()}
 
   {#if !iconOnly}
-    <BottomInfo />
+    {#if $frameleafShell}
+      <div class="mt-auto"><PurchaseInfo /></div>
+    {:else}
+      <BottomInfo />
+    {/if}
   {/if}
 </Sidebar>
