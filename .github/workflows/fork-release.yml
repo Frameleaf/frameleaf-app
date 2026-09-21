@@ -1,10 +1,10 @@
 name: Frameleaf Release
 
-# The Docker workflow name identifies the certified candidate completion chain.
-# This workflow owns version/release/latest promotion; Docker creates candidates.
+# The Deploy workflow name identifies the certified candidate completion chain.
+# This workflow owns version/release/latest promotion; Deploy creates candidates.
 on:
-  workflow_run: # zizmor: ignore[dangerous-triggers] API-verified same-repo Docker run and exact current mainline SHA are required before checkout
-    workflows: ['Docker']
+  workflow_run: # zizmor: ignore[dangerous-triggers] API-verified same-repo Deploy run and exact current mainline SHA are required before checkout
+    workflows: ['Deploy']
     branches: [fork/main]
     types: [completed]
   workflow_dispatch:
