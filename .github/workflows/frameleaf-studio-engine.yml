@@ -56,13 +56,15 @@ jobs:
           npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund
           npm --prefix studio/engine run build
           node studio/tools/engine.mjs attest
-          node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; const first = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/frameleaf-build-first.json")); const second = JSON.parse(fs.readFileSync("studio/engine/frameleaf-build.json")); assert.equal(second.artifactSha256, first.artifactSha256); assert.equal(second.sourceSha256, first.sourceSha256); console.log("Reproduced", second.artifactSha256);'
+          node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; const first = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/frameleaf-build-first.json")); const second = JSON.parse(fs.readFileSync("studio/engine/frameleaf-build.json")); assert.deepEqual(second.artifacts, first.artifacts); assert.equal(second.artifactSha256, first.artifactSha256); assert.equal(second.sourceSha256, first.sourceSha256); console.log("Reproduced", second.artifactSha256);'
           node studio/tools/feature-manifest.mjs --check
       - name: Retain source, artifact and license evidence
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: frameleaf-studio-engine-provenance
           path: |
+            ${{ runner.temp }}/frameleaf-build-first.json
             studio/engine/frameleaf-source.json
             studio/engine/frameleaf-build.json
           if-no-files-found: error

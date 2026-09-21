@@ -9,7 +9,12 @@
       "path": "patches/0001-isolated-package.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "ffe6b9980e37480d13fc83c217a2742dfe611eaedc67f41114e6a126664e92d3"
+    },
+    {
+      "path": "patches/0002-stable-worker-sourcemaps.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "d61d6cdf8c235c762c8648a4f9de45e887faa7cb05403b08363e636d68f6cf23"
     }
   ],
-  "sourceSha256": "0ef133ec4386338adb17abc854dbf5a964ff20b16be76910b5dec4d35b9c0995"
+  "sourceSha256": "ea947c1f7deaea90505739a3a1152fc18f60ae5ca99fa374e5508f3111da9709"
 }
