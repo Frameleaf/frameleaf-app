@@ -689,7 +689,11 @@
 
     event.preventDefault();
     event.stopPropagation();
-    timelineDrag = { target, segmentId, rect: (event.currentTarget as HTMLElement).getBoundingClientRect() };
+    const track = (event.currentTarget as HTMLElement).closest<HTMLElement>('.timeline-track');
+    if (!track) {
+      return;
+    }
+    timelineDrag = { target, segmentId, rect: track.getBoundingClientRect() };
     handleTimelinePointerMove(event);
     addEventListener('pointermove', handleTimelinePointerMove);
     addEventListener('pointerup', stopTimelineDrag);
