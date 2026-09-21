@@ -48,7 +48,6 @@ Validation uses disposable synthetic media and isolated PostgreSQL Testcontainer
 
 Independent exact-candidate review and remote CI remain distinct gates. No merge or deployment is authorized by this document.
 
-
 ## Web version controls follow-on
 
 The existing quick video editor now labels its save action **Save version**. Saving queues the immutable recipe and closes the editor with an accurate queued notification; it does not mistake an asset-only completion event from a separate export for completion of that save. The current successfully rendered video remains available while rendering runs.
@@ -61,13 +60,11 @@ This packet connects the existing editor to the reviewed persistence API; it doe
 
 Focused component tests cover queued save/close behavior, export versus restore separation, unsaved/pending export guards, history restoration, dirty-draft cancellation, read-error recovery and event subscription ownership. Web TypeScript, Svelte diagnostics and changed-file lint are checked independently. The generated SDK enum-number shift is reflected in the existing image-enrichment fixture. The approved OpenAPI CI command correction from `83100cdaa` is applied as the exact two-file patch so mobile Dart generation remains retired without importing unrelated FL-41 changes.
 
-
 ### Completion after editor close
 
 Review of web candidate `17a843e52765c598d1b9c13b2c1e45bc6c36337b` found that the editor-owned history listener disappeared on queued close, leaving the main viewer on its pre-publication asset response. The correction keeps queued close and emits the existing application-wide `on_asset_update` notification when a ready save or revert finishes. Its payload is the actual current asset projection. The global websocket subscriber already forwards this to the matching viewer and invalidates the shared asset cache; neither depends on the editor remaining mounted.
 
 Export-only, stale pending and removed versions retain history notification behavior but do not emit a playback update. No new websocket contract, polling loop, or native-client change is needed. Job-service regressions cover publication gating. Viewer regressions close and unmount the editor before delivering the global socket event, then verify both the matching viewer callback and a fresh cache read for edited/original states; an unrelated asset event cannot update that viewer. The focused result is 37 job tests and 16 web tests passing, with one pre-existing skipped favorite-action test. Server/web TypeScript and changed-file lint pass. Independent re-review and hosted CI remain pending.
-
 
 ## Original metadata bounds follow-on
 
@@ -78,7 +75,6 @@ The web editor waits for valid original bounds before initializing the saved rec
 A component regression begins with a 640×360, five-second edited asset and its saved crop/trim recipe, then composes a 25-second trim and portrait crop against the original 1920×1080, 30-second bounds. Server tests verify rotated original dimensions and reject missing streams, invalid duration and invalid raster. The PostgreSQL regression reads original bounds after shorter publication and saves a larger crop/longer trim. The delivery checkout passes this regression together with the cutover-evidence suite: 36 tests in two isolated PostgreSQL suites. The earlier unavailable-Docker validation gap is closed. Local focused results are 70 asset-service tests and 15 editor/history tests passing; server/web TypeScript and Svelte diagnostics are checked separately. OpenAPI and TypeScript clients are regenerated; native/mobile generation remains deferred.
 
 This is a local review candidate. The prior persistence and web-control mirrors remain historical receipts at their exact source hashes; this continuation needs its own mirror and independent review. No GitHub publication, merge, deployment or full FL-39 completion is claimed.
-
 
 ## Metadata-only rotation follow-on
 
@@ -110,13 +106,11 @@ The first command passes **248 tests**, including two opt-in real-media cases. T
 
 The real-media tests are opt-in because the ordinary unit runner does not guarantee a native FFmpeg installation. They are reproducible qualification evidence, not a replacement for required hosted checks. The parent owns PostgreSQL and browser qualification; this packet does not repeat the full database suite. Hardware proxies, metadata-oriented-source packet copying, HDR packet copying, device/browser display compatibility and deployed end-to-end acceptance remain unqualified. Independent review is required before push; no push, merge or deployment is claimed.
 
-
 ### Rotated-master hardware proxy correction
 
 Independent review of `a467bef673256c317dfc8cb7da83b630a3c6902d` found that NVENC, QSV, VAAPI and RKMPP hardware decoding disable FFmpeg autorotation. The version renderer now uses software decoding whenever its master has nonzero display rotation, while preserving the configured hardware encoder. Already-baked zero-rotation masters retain the existing hardware-decode policy. This applies to the shared proxy generation path for save and export.
 
 The publication regression now spans software and all four supported hardware configurations, copied and baked masters, accepted/stale publication and invalid geometry. With clockwise 90-degree recipes it verifies portrait publication geometry, original-derived masters, enabled autorotation, absence of hardware decoding and preservation of each hardware encoder. Before the correction eight cases failed on `-noautorotate`; all 30 publication cases pass after the one-line policy change. The complete media-service suite passes **255 tests**, and changed-file ESLint, Prettier and server TypeScript pass. The earlier real-media packet/frame qualification remains unchanged. These are command-plan tests for hardware configurations, not physical GPU qualification; the same reviewer must recheck this correction before push.
-
 
 ## PR132 delivery integration
 

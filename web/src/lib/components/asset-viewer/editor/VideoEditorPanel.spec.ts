@@ -129,8 +129,11 @@ describe('VideoEditorPanel component', () => {
   });
 
   it.each(['missing', 'failed'])('blocks saving if original metadata is %s', async (failure) => {
-    if (failure === 'missing') {vi.mocked(getAssetEdits).mockResolvedValue({ assetId: asset.id, edits: [] });}
-    else {vi.mocked(getAssetEdits).mockRejectedValueOnce(new Error('unavailable'));}
+    if (failure === 'missing') {
+      vi.mocked(getAssetEdits).mockResolvedValue({ assetId: asset.id, edits: [] });
+    } else {
+      vi.mocked(getAssetEdits).mockRejectedValueOnce(new Error('unavailable'));
+    }
     const view = renderWithTooltips(VideoEditorPanel, { asset, onClose: vi.fn() });
     expect(await view.findByRole('alert')).toHaveTextContent('editor_video_original_metadata_error');
     expect(view.getByRole('button', { name: 'editor_video_save_version' })).toBeDisabled();
