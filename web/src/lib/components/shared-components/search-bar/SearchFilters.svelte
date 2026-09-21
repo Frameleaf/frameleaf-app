@@ -2,7 +2,10 @@
   import SearchHistorySection from './SearchHistorySection.svelte';
   import { t } from 'svelte-i18n';
   import { fly } from 'svelte/transition';
-  import { Button, Text } from '@immich/ui';
+  import { Button, Text, themeManager, Theme as AppTheme } from '@immich/ui';
+  import Theme from '$lib/components/frameleaf/Theme.svelte';
+  import FilterChip from '$lib/components/frameleaf/FilterChip.svelte';
+  import { PeopleSearch } from './people-search.svelte';
   import {
     mdiAccount,
     mdiCalendarBlank,
@@ -15,7 +18,7 @@
     mdiTune,
   } from '@mdi/js';
   import SearchLocationSection from './SearchLocationSection.svelte';
-  import { getAllTags, type PersonResponseDto, type TagResponseDto } from '@immich/sdk';
+  import { getAllTags, type TagResponseDto } from '@immich/sdk';
   import SearchMediaSection from './SearchMediaSection.svelte';
   import SearchCameraSection from './SearchCameraSection.svelte';
   import SearchDateSection from './SearchDateSection.svelte';
@@ -26,7 +29,6 @@
   import SearchRatingsSection from './SearchRatingsSection.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import {
-    getPeople,
     getSearchDatePreset,
     getSearchDateTitle,
     getSearchMediaTitle,
@@ -35,7 +37,7 @@
     getSearchTagsTitle,
     getSearchTypeTitle,
   } from './search-bar-utils';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { searchManager } from '$lib/managers/search-manager.svelte';
   import SearchButton from './SearchButton.svelte';
 
@@ -63,13 +65,26 @@
 
   let activeFilter = $state('type');
   let showAdvanced = $state(false);
-  let peoplePromise = $state<Promise<PersonResponseDto[]>>();
-  let people = $state<PersonResponseDto[]>();
+  const peopleSearch = new PeopleSearch(
+    () => isOpen && (activeFilter === 'people' || searchManager.filter.personIds.size > 0),
+  );
   let tagsPromise = $state<Promise<TagResponseDto[]>>();
   let tags = $state<TagResponseDto[]>();
 
   let typeTitle = $derived(getSearchTypeTitle(searchManager.filter.queryType));
-  let peopleTitle = $state<string>();
+  let peopleTitle = $derived(
+    peopleSearch.people ? getSearchPeopleTitle(peopleSearch.people, searchManager.filter.personIds) : undefined,
+  );
+  let selectedPeople = $derived(
+    peopleSearch.people?.filter((person) => searchManager.filter.personIds.has(person.id)) ?? [],
+  );
+
+  async function removePerson(personId: string) {
+    searchManager.filter.personIds.delete(personId);
+    await tick();
+    document.querySelector<HTMLElement>(`#${CSS.escape(`${id}-people`)}`)?.focus();
+  }
+
   let dateTitle = $derived(
     getSearchDateTitle(
       getSearchDatePreset(searchManager.filter.date.takenAfter, searchManager.filter.date.takenBefore),
@@ -139,25 +154,16 @@
 
   const clear = () => {
     searchManager.reset();
-    peopleTitle = tagsTitle = undefined;
+    tagsTitle = undefined;
   };
 
   onMount(() => {
-    if (searchManager.filter.personIds.size > 0 && !peoplePromise) {
-      peoplePromise = getPeople(searchManager.filter.personIds);
-      void peoplePromise.then((res) => (people = res));
+    if (!searchManager.filter.tagIds?.size || tagsPromise) {
+      return;
     }
 
-    if (searchManager.filter.tagIds?.size && !tagsPromise) {
-      tagsPromise = getAllTags();
-      void tagsPromise.then((res) => (tags = res));
-    }
-  });
-
-  $effect(() => {
-    if (people) {
-      peopleTitle = getSearchPeopleTitle(people, searchManager.filter.personIds);
-    }
+    tagsPromise = getAllTags();
+    void tagsPromise.then((res) => (tags = res));
   });
 
   $effect(() => {
@@ -187,40 +193,68 @@
   }
 </script>
 
-<div role="listbox" {id}>
+<div>
   {#if isOpen}
     <div
       transition:fly={{ y: 25, duration: 250 }}
       class="absolute z-1 max-h-[80svh] w-full overflow-y-scroll rounded-b-3xl bg-white shadow-[0_8px_20px_rgba(0,0,0,0.12)] transition-all dark:bg-immich-dark-gray dark:text-gray-300"
     >
-      <SearchHistorySection
-        bind:this={searchHistory}
-        {onSelectSearchTerm}
-        {onClearSearchTerm}
-        {onClearAllSearchTerms}
-        {onActiveSelectionChange}
-      />
+      <div role="listbox" {id} aria-label={$t('recent_searches')}>
+        <SearchHistorySection
+          bind:this={searchHistory}
+          {onSelectSearchTerm}
+          {onClearSearchTerm}
+          {onClearAllSearchTerms}
+          {onActiveSelectionChange}
+        />
+      </div>
       <div class="px-5">
         <Text class="py-5" fontWeight="medium" aria-hidden={true}>{$t('filter_by')}</Text>
         <div class="flex flex-wrap gap-2">
           {#each filters as item (item.name)}
             <SearchButton
+              id={`${id}-${item.name}`}
               active={activeFilter === item.name || Boolean(item.activeTitle())}
               leadingIcon={item.icon}
-              class={activeFilter === item.name ? 'border-2' : undefined}
+              class={activeFilter === item.name ? 'max-w-full border-2' : 'max-w-full'}
               onclick={() => (activeFilter = item.name)}
             >
-              {item.activeTitle() ?? item.title}
+              <span style="min-width: 0; overflow-wrap: anywhere">{item.activeTitle() ?? item.title}</span>
             </SearchButton>
           {/each}
         </div>
       </div>
+      {#if selectedPeople.length > 0 || peopleSearch.failed}
+        <Theme theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}>
+          <div class="flex flex-wrap gap-2 px-5 py-3" aria-label={$t('people')}>
+            {#each selectedPeople as person (person.id)}
+              <FilterChip
+                {person}
+                label={person.name || $t('unnamed_person')}
+                removeLabel={`${$t('remove_person')}: ${person.name || $t('unnamed_person')}`}
+                onRemove={() => removePerson(person.id)}
+                onUnavailable={() => peopleSearch.discard(person.id)}
+              />
+            {/each}
+            {#if peopleSearch.failed}
+              <p role="alert">{$t('errors.failed_to_get_people')}</p>
+              <Button onclick={() => peopleSearch.load()}>{$t('retry')}</Button>
+            {/if}
+          </div>
+        </Theme>
+      {/if}
       {#if activeFilter}
         <div class="px-5 pt-5">
           {#if activeFilter === 'type'}
             <SearchTextSection />
           {:else if activeFilter === 'people'}
-            <SearchPeopleSection bind:title={peopleTitle} parentPromise={peoplePromise} />
+            {#key peopleSearch.generation}
+              <SearchPeopleSection
+                people={peopleSearch.people ?? []}
+                loading={peopleSearch.loading}
+                onUnavailable={(id) => peopleSearch.discard(id)}
+              />
+            {/key}
           {:else if activeFilter === 'date'}
             <SearchDateSection />
           {:else if activeFilter === 'places'}
