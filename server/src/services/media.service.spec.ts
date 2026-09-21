@@ -2437,6 +2437,32 @@ describe(MediaService.name, () => {
     const getPlan = (ffmpeg: Partial<SystemConfig['ffmpeg']>, edits: any[]) =>
       (sut as any).getVideoEditCommandPlan({ ...defaults.ffmpeg, ...ffmpeg }, edits, videoStream, audioStream, format);
 
+    it('should preserve edited dimensions independently of playback resolution', () => {
+      const source = { ...videoStream, width: 3840, height: 2160, rotation: 0 };
+      const edits = [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }];
+      const commands = ['480', '720', '1080', 'original'].map((targetResolution) =>
+        (sut as any).getVideoEditCommand({ ...defaults.ffmpeg, targetResolution }, edits, source, audioStream, format),
+      );
+
+      for (const command of commands) {
+        expect(getFilterOption(command.outputOptions)).toBe('transpose=1');
+        expect(command).toEqual(commands[0]);
+      }
+      expect((sut as any).getVideoEditDimensions(edits, source)).toEqual({ width: 2160, height: 3840 });
+    });
+
+    it('should report the dimensions actually rendered for portrait sources and chroma-aligned crops', () => {
+      const portrait = { ...videoStream, width: 3840, height: 2160, rotation: -90 };
+      expect((sut as any).getVideoEditDimensions([], portrait)).toEqual({ width: 2160, height: 3840 });
+      const edits = [
+        { action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 1001, height: 501 } },
+        { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
+      ];
+      expect((sut as any).getVideoEditDimensions(edits, portrait)).toEqual({ width: 500, height: 1000 });
+      const command = (sut as any).getVideoEditCommand(defaults.ffmpeg, edits, portrait, audioStream, format);
+      expect(getFilterOption(command.outputOptions)).toBe('crop=1000:500:0:0,transpose=1');
+    });
+
     it('should build a complex filter graph for speed segments with audio', () => {
       const command = (sut as any).getVideoEditCommand(
         defaults.ffmpeg,
@@ -2459,8 +2485,8 @@ describe(MediaService.name, () => {
       expect(filterGraph).toContain('[0:0]trim=start=0:end=1,setpts=1*(PTS-STARTPTS)[v0]');
       expect(filterGraph).toContain('[0:0]trim=start=1:end=3,setpts=2*(PTS-STARTPTS)[v1]');
       expect(filterGraph).toContain('[0:1]atrim=start=1:end=3,asetpts=PTS-STARTPTS,atempo=0.5[a1]');
-      expect(filterGraph).toContain('concat=n=3:v=1:a=1[vconcat][aconcat]');
-      expect(filterGraph).toContain('[vconcat]scale=-2:720[vout]');
+      expect(filterGraph).toContain('concat=n=3:v=1:a=1[vout][aconcat]');
+      expect(filterGraph).not.toContain('scale=');
       expect(filterGraph).toContain('[aconcat]volume=0.75[aout]');
     });
 
@@ -2510,7 +2536,7 @@ describe(MediaService.name, () => {
       expect(plan.command.outputOptions).toEqual(
         expect.arrayContaining(['-c:v', 'h264', '-preset', 'ultrafast', '-crf', '23']),
       );
-      expect(getFilterOption(plan.command.outputOptions)).toBe('crop=300:200:2:4,scale=-2:720');
+      expect(getFilterOption(plan.command.outputOptions)).toBe('crop=300:200:2:4');
     });
 
     it.each([
@@ -2530,11 +2556,25 @@ describe(MediaService.name, () => {
       expect(plan.command.outputOptions).toEqual(expect.arrayContaining(['-c:v', codec]));
     });
 
+    it('should retain source autorotation when hardware encoding a portrait trim', () => {
+      const plan = (sut as any).getVideoEditCommandPlan(
+        { ...defaults.ffmpeg, accel: TranscodeHardwareAcceleration.Nvenc, accelDecode: true },
+        [{ action: AssetEditAction.Trim, parameters: { startMs: 1000, endMs: 3000 } }],
+        { ...videoStream, rotation: 90 },
+        audioStream,
+        format,
+      );
+      expect(plan.mode).toBe('HybridHardwareEncode');
+      expect(plan.command.inputOptions).not.toContain('-noautorotate');
+      expect(plan.command.inputOptions).not.toContain('-hwaccel');
+      expect(plan.command.outputOptions).toContain('h264_nvenc');
+    });
+
     it.each([
       [TranscodeHardwareAcceleration.Nvenc, 'h264_nvenc', 'hwupload_cuda'],
       [TranscodeHardwareAcceleration.Qsv, 'h264_qsv', 'hwupload=extra_hw_frames=64'],
       [TranscodeHardwareAcceleration.Vaapi, 'h264_vaapi', 'hwupload=extra_hw_frames=64'],
-      [TranscodeHardwareAcceleration.Rkmpp, 'h264_rkmpp', 'scale=-2:720'],
+      [TranscodeHardwareAcceleration.Rkmpp, 'h264_rkmpp', null],
     ])(
       'should disable hardware decode and keep hardware encode for CPU edit filters with %s',
       (accel, codec, upload) => {
@@ -2551,7 +2591,10 @@ describe(MediaService.name, () => {
         expect(plan.command.outputOptions).toEqual(expect.arrayContaining(['-c:v', codec]));
         expect(filter).toContain('crop=300:200:2:4');
         expect(filter).toContain('transpose=1');
-        expect(filter).toContain(upload);
+        if (upload) {
+          expect(filter).toContain(upload);
+        }
+        expect(filter).not.toContain('scale=');
       },
     );
 
