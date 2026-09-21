@@ -337,7 +337,7 @@
   };
 
   const handlePreAction = (action: Action) => {
-    preAction?.(action);
+    return preAction?.(action);
   };
 
   const handleAction = async (action: Action) => {

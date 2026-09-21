@@ -157,6 +157,10 @@
       case AssetAction.SET_VISIBILITY_TIMELINE: {
         // must update manager before performing any navigation
         timelineManager.removeAssets([action.asset.id]);
+        // Confirmation may finish after the user has already moved to another asset.
+        if (assetViewerManager.asset?.id !== action.asset.id || assetCursor.current.id !== action.asset.id) {
+          return;
+        }
 
         // find the next asset to show or close the viewer
         // eslint-disable-next-line @typescript-eslint/no-unused-expressions
