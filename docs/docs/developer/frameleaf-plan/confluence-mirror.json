@@ -319,7 +319,7 @@
       "id": "61538514",
       "source": "docs/docs/features/classification-and-culling.md",
       "sourceSha256": "6737e871fd53574c5dd00df4548c27bc3b9246f63be2c74053a16b24f22cdde2",
-      "title": "Feature Reference — Classification And Culling",
+      "title": "Feature Reference \u2014 Classification And Culling",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538514/Feature+Reference+Classification+And+Culling",
       "version": 2
     },
@@ -329,7 +329,7 @@
       "id": "61407445",
       "source": "docs/docs/features/derivative-privacy.md",
       "sourceSha256": "e56484ed9702f2c0f73fc91cd99710c19f4ff11ce059a6947644901f3b2ed391",
-      "title": "Feature Reference — Derivative Privacy",
+      "title": "Feature Reference \u2014 Derivative Privacy",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407445/Feature+Reference+Derivative+Privacy",
       "version": 2
     },
@@ -339,7 +339,7 @@
       "id": "61538534",
       "source": "docs/docs/features/descriptions-and-smart-albums.md",
       "sourceSha256": "c57ac67f4de2c974e8c64ddf85e7f2ed8776d911edc4a86322e3793b1837b4ac",
-      "title": "Feature Reference — Descriptions And Smart Albums",
+      "title": "Feature Reference \u2014 Descriptions And Smart Albums",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538534/Feature+Reference+Descriptions+And+Smart+Albums",
       "version": 2
     },
@@ -349,7 +349,7 @@
       "id": "61374947",
       "source": "docs/docs/features/documents-and-receipts.md",
       "sourceSha256": "65c6692886fc8196f87417172687c6c5d13f0f3ad8d9aa0a58084663227335f7",
-      "title": "Feature Reference — Documents And Receipts",
+      "title": "Feature Reference \u2014 Documents And Receipts",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374947/Feature+Reference+Documents+And+Receipts",
       "version": 2
     },
@@ -359,7 +359,7 @@
       "id": "61538555",
       "source": "docs/docs/features/duplicates-utility.md",
       "sourceSha256": "f02ae75889c7e3f789282aa24ac73e3137d8939ebc817f68ee7c53b57f328689",
-      "title": "Feature Reference — Duplicates Utility",
+      "title": "Feature Reference \u2014 Duplicates Utility",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538555/Feature+Reference+Duplicates+Utility",
       "version": 2
     },
@@ -369,7 +369,7 @@
       "id": "61440234",
       "source": "docs/docs/features/enrichment-workspace.md",
       "sourceSha256": "c085331d0fc8e248873202457d8fe3a88f49559ef0a93a318d37025f08e23749",
-      "title": "Feature Reference — Enrichment Workspace",
+      "title": "Feature Reference \u2014 Enrichment Workspace",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440234/Feature+Reference+Enrichment+Workspace",
       "version": 2
     },
@@ -379,7 +379,7 @@
       "id": "61440256",
       "source": "docs/docs/features/face-review.md",
       "sourceSha256": "ee31ec43309ddbcab21cea323a009318088cd144590444d512bb719affd3baa2",
-      "title": "Feature Reference — Face Review",
+      "title": "Feature Reference \u2014 Face Review",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440256/Feature+Reference+Face+Review",
       "version": 2
     },
@@ -389,7 +389,7 @@
       "id": "61440280",
       "source": "docs/docs/features/fork-privacy-suite.md",
       "sourceSha256": "dd9f4a8bae7d1b24cfaea4d80e4c931c16680ccdf1f52e89b10cec40ec390f52",
-      "title": "Feature Reference — Fork Privacy Suite",
+      "title": "Feature Reference \u2014 Fork Privacy Suite",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440280/Feature+Reference+Fork+Privacy+Suite",
       "version": 2
     },
@@ -399,7 +399,7 @@
       "id": "61538579",
       "source": "docs/docs/features/google-photos-import.md",
       "sourceSha256": "af4d0989e7aca0308d9339a6d07320d4776aff858bf05de9eac89b613749b19e",
-      "title": "Feature Reference — Google Photos Import",
+      "title": "Feature Reference \u2014 Google Photos Import",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538579/Feature+Reference+Google+Photos+Import",
       "version": 2
     },
@@ -409,7 +409,7 @@
       "id": "61374970",
       "source": "docs/docs/features/image-enrichment.md",
       "sourceSha256": "18f9267fcd625956c8e8ae532221552530d099e5cd7cb50e7a1511c5cf398042",
-      "title": "Feature Reference — Image Enrichment",
+      "title": "Feature Reference \u2014 Image Enrichment",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374970/Feature+Reference+Image+Enrichment",
       "version": 2
     },
@@ -419,7 +419,7 @@
       "id": "61407465",
       "source": "docs/docs/features/individual-pets.md",
       "sourceSha256": "891cbf77b32938bb87efa3f73032280add21ee6ce7c2695dcc26b2d73753be73",
-      "title": "Feature Reference — Individual Pets",
+      "title": "Feature Reference \u2014 Individual Pets",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407465/Feature+Reference+Individual+Pets",
       "version": 2
     },
@@ -429,7 +429,7 @@
       "id": "61407493",
       "source": "docs/docs/features/library-care.md",
       "sourceSha256": "e82e0d76f6070afdc42d5499e37d6a493bcf9fc5f7b8786921cc23abfd12ae6e",
-      "title": "Feature Reference — Library Care",
+      "title": "Feature Reference \u2014 Library Care",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407493/Feature+Reference+Library+Care",
       "version": 2
     },
@@ -439,7 +439,7 @@
       "id": "61440302",
       "source": "docs/docs/features/memory-stories.md",
       "sourceSha256": "024c794c138109f18b75f9a25afe15f16500df6cdf6b9b051109f5f3391c627f",
-      "title": "Feature Reference — Memory Stories",
+      "title": "Feature Reference \u2014 Memory Stories",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440302/Feature+Reference+Memory+Stories",
       "version": 2
     },
@@ -449,7 +449,7 @@
       "id": "61538603",
       "source": "docs/docs/features/photo-tools.md",
       "sourceSha256": "2745d9633453353e22e016d07df15bc591e1d54cafb5779b3693ff6c47592120",
-      "title": "Feature Reference — Photo Tools",
+      "title": "Feature Reference \u2014 Photo Tools",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538603/Feature+Reference+Photo+Tools",
       "version": 2
     },
@@ -459,7 +459,7 @@
       "id": "61374992",
       "source": "docs/docs/features/preservation.md",
       "sourceSha256": "f2e650f9cfef0a19806545da5a474715397abc29b5096cfe42b7e022f40eedaa",
-      "title": "Feature Reference — Preservation",
+      "title": "Feature Reference \u2014 Preservation",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374992/Feature+Reference+Preservation",
       "version": 2
     },
@@ -469,7 +469,7 @@
       "id": "61440324",
       "source": "docs/docs/features/shared-spaces.md",
       "sourceSha256": "7d586462c0824793f7301690f9eefd9801c3d0bb8829f089cc5f8b5c0fb33577",
-      "title": "Feature Reference — Shared Spaces",
+      "title": "Feature Reference \u2014 Shared Spaces",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440324/Feature+Reference+Shared+Spaces",
       "version": 2
     },
@@ -479,7 +479,7 @@
       "id": "61440346",
       "source": "docs/docs/features/unified-discovery.md",
       "sourceSha256": "25f48c93763b6807ae113231fa1b3cc329a79af65faf49fbf77729e2ce22a830",
-      "title": "Feature Reference — Unified Discovery",
+      "title": "Feature Reference \u2014 Unified Discovery",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440346/Feature+Reference+Unified+Discovery",
       "version": 2
     },
@@ -489,7 +489,7 @@
       "id": "61440372",
       "source": "docs/docs/features/video-editing.md",
       "sourceSha256": "1ee7195e5c88e34f3271e8d7d0ee7e5a9a02fd960cf878f279ac987a070e3c4c",
-      "title": "Feature Reference — Video Editing",
+      "title": "Feature Reference \u2014 Video Editing",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440372/Feature+Reference+Video+Editing",
       "version": 2
     },
@@ -499,7 +499,7 @@
       "id": "61375014",
       "source": "docs/docs/features/video-restoration.md",
       "sourceSha256": "7235d56179452083b049ac36400bac3512d80f5d209c6ea8f78648f300d446f3",
-      "title": "Feature Reference — Video Restoration",
+      "title": "Feature Reference \u2014 Video Restoration",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61375014/Feature+Reference+Video+Restoration",
       "version": 2
     },
@@ -509,7 +509,7 @@
       "id": "61440396",
       "source": "docs/docs/features/switching-between-fork-and-official.md",
       "sourceSha256": "dd9fb1160783cff514ac1b7232d089eaf49af7f821a500ccbbd439364959d238",
-      "title": "Feature Reference — Switching Between Fork And Official",
+      "title": "Feature Reference \u2014 Switching Between Fork And Official",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440396/Feature+Reference+Switching+Between+Fork+And+Official",
       "version": 2
     },
@@ -519,7 +519,7 @@
       "id": "61538631",
       "source": "docs/docs/features/revert-to-upstream.md",
       "sourceSha256": "1e76c46e9a56042353fd1dd51a749af2fe182dcb7aee22b95a1a37a24584b83d",
-      "title": "Feature Reference — Revert To Upstream",
+      "title": "Feature Reference \u2014 Revert To Upstream",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538631/Feature+Reference+Revert+To+Upstream",
       "version": 2
     },
@@ -836,14 +836,14 @@
       "readbackResult": "Full normalized HTML body matched current source and complete historical content; exact f774 browser runtime independently approved, API-only pruning and qualification limits retained."
     },
     {
-      "bytes": 11601,
+      "bytes": 15131,
       "category": "development",
       "id": "61964350",
       "source": "docs/docs/developer/frameleaf-plan/FL-30-navigation.md",
-      "sourceSha256": "94f4f50c8cb88e9b0e6745469205ee7342c737d7a1d9f8d6dc829b7cc0f1f4ba",
+      "sourceSha256": "32b80c520a67223e4233aed1d07f062aebdf6e4324dbbd65910f9fbc057dfe73",
       "title": "FL-30 production navigation rollout",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61964350",
-      "version": 3
+      "version": 4
     },
     {
       "bytes": 7953,
