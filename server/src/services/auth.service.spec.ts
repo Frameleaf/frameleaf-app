@@ -651,7 +651,7 @@ describe(AuthService.name, () => {
       };
 
       mocks.session.getByToken.mockResolvedValue(sessionWithToken);
-      mocks.session.update.mockResolvedValue(session);
+      mocks.session.refreshPinExpiry.mockResolvedValue(true);
 
       await expect(
         sut.authenticate({
@@ -668,9 +668,7 @@ describe(AuthService.name, () => {
         }),
       );
 
-      expect(mocks.session.update).toHaveBeenCalledWith(session.id, {
-        pinExpiresAt: new Date('2026-05-08T13:00:00.000Z'),
-      });
+      expect(mocks.session.refreshPinExpiry).toHaveBeenCalledWith(session.id, new Date('2026-05-08T13:00:00.000Z'));
       vi.useRealTimers();
     });
 

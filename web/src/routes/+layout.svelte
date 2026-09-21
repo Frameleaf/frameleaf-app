@@ -3,6 +3,7 @@
   import { page } from '$app/state';
   import { getPagesProvider, getSettingsProvider } from '$lib/commands';
   import DownloadPanel from './DownloadPanel.svelte';
+  import SessionPrivacyGuard from './SessionPrivacyGuard.svelte';
   import ErrorLayout from './ErrorLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import NavigationLoadingBar from './NavigationLoadingBar.svelte';
@@ -230,6 +231,7 @@
   };
 </script>
 
+<SessionPrivacyGuard />
 <OnEvents {onWebsocketConnect} />
 
 <VersionAnnouncement />
