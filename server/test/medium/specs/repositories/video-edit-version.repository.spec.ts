@@ -280,9 +280,11 @@ it('validates repeat saves and restores against the 30-second original after sho
     originalPath: '/source/restore-timeline.mp4',
   });
   await ctx.newExif({ assetId: asset.id, exifImageWidth: 1280, exifImageHeight: 720 });
-  const probe = vi
-    .spyOn(ctx.get(MediaRepository), 'probe')
-    .mockResolvedValue({ format: { duration: 30 }, videoStreams: [], audioStreams: [] } as any);
+  const probe = vi.spyOn(ctx.get(MediaRepository), 'probe').mockResolvedValue({
+    format: { duration: 30 },
+    videoStreams: [{ width: 1280, height: 720, rotation: 0 }],
+    audioStreams: [],
+  } as any);
   const auth = factory.auth({ user });
   const versions = ctx.get(AssetEditRepository);
   const longer = [{ action: AssetEditAction.Trim as const, parameters: { startMs: 0, endMs: 20_000 } }];
@@ -294,6 +296,22 @@ it('validates repeat saves and restores against the 30-second original after sho
   });
   const shorter = (await versions.getRequestedVideoVersion(asset.id))!;
   await versions.publishVideoVersion(shorter, { ...rendered(asset.id, shorter.id), duration: 5000 });
+  const editResponse = await sut.getAssetEdits(auth, asset.id);
+  expect(editResponse.originalVideo).toEqual({
+    width: 1280,
+    height: 720,
+    durationMs: 30_000,
+  });
+  await sut.editAsset(auth, asset.id, {
+    edits: [
+      { action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 1000, height: 600 } },
+      { action: AssetEditAction.Trim, parameters: { startMs: 0, endMs: 25_000 } },
+    ],
+  });
+  expect((await versions.getRequestedVideoVersion(asset.id))!.recipe).toEqual([
+    { action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 1000, height: 600 } },
+    { action: AssetEditAction.Trim, parameters: { startMs: 0, endMs: 25_000 } },
+  ]);
   await sut.restoreVideoEditVersion(auth, asset.id, saved.id);
   expect(await versions.getRequestedVideoVersion(asset.id)).toMatchObject({ recipe: longer, purpose: 'revert' });
   await sut.editAsset(auth, asset.id, {

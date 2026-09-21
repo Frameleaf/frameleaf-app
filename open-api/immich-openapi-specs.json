@@ -24545,6 +24545,35 @@
               "$ref": "#/components/schemas/AssetEditActionItemResponseDto"
             },
             "type": "array"
+          },
+          "originalVideo": {
+            "description": "Original video display raster and timeline, independent of the current edited version",
+            "properties": {
+              "durationMs": {
+                "exclusiveMinimum": true,
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "height": {
+                "exclusiveMinimum": true,
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "width": {
+                "exclusiveMinimum": true,
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "width",
+              "height",
+              "durationMs"
+            ],
+            "type": "object"
           }
         },
         "required": [

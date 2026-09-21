@@ -600,12 +600,32 @@ export class AssetService extends BaseService {
 
   async getAssetEdits(auth: AuthDto, id: string): Promise<AssetEditsResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
+    const asset = await this.assetRepository.getById(id);
+    if (!asset) throw new BadRequestException('Asset not found');
+    const originalVideo =
+      asset.type === AssetType.Video ? await this.getOriginalVideoMetadata(asset.originalPath) : undefined;
     const edits = await this.assetEditRepository.getAll(id);
 
-    return {
-      assetId: id,
-      edits,
-    };
+    return { assetId: id, edits, ...(originalVideo && { originalVideo }) };
+  }
+
+  private async getOriginalVideoMetadata(path: string): Promise<NonNullable<AssetEditsResponseDto['originalVideo']>> {
+    const source = await this.mediaRepository.probe(path);
+    const video = source.videoStreams[0];
+    const durationMs = getDurationMs(Math.round(source.format.duration * 1000));
+    if (
+      !video ||
+      !Number.isSafeInteger(video.width) ||
+      video.width <= 0 ||
+      !Number.isSafeInteger(video.height) ||
+      video.height <= 0 ||
+      !durationMs ||
+      !Number.isFinite(video.rotation)
+    ) {
+      throw new BadRequestException('Original video metadata is not available for editing');
+    }
+    const rotated = Math.abs(video.rotation) === 90;
+    return { width: rotated ? video.height : video.width, height: rotated ? video.width : video.height, durationMs };
   }
 
   async editAsset(
@@ -650,17 +670,14 @@ export class AssetService extends BaseService {
       throw new BadRequestException('Editing SVG images is not supported');
     }
 
-    const { width: assetWidth, height: assetHeight } = getDimensions(asset);
+    const originalVideo =
+      asset.type === AssetType.Video ? await this.getOriginalVideoMetadata(asset.originalPath) : undefined;
+    const { width: assetWidth, height: assetHeight } = originalVideo ?? getDimensions(asset);
     if (!assetWidth || !assetHeight) {
       throw new BadRequestException('Asset dimensions are not available for editing');
     }
 
-    // asset.duration describes the current render; recipes always address the original timeline.
-    const original = asset.type === AssetType.Video ? await this.mediaRepository.probe(asset.originalPath) : undefined;
-    const originalDurationMs = original ? getDurationMs(original.format.duration * 1000) : null;
-    if (asset.type === AssetType.Video && !originalDurationMs) {
-      throw new BadRequestException('Video duration is not available for editing');
-    }
+    const originalDurationMs = originalVideo?.durationMs ?? null;
 
     const crop = edits.find((e) => e.action === AssetEditAction.Crop);
     if (crop) {

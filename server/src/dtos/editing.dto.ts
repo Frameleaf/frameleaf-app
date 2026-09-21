@@ -297,6 +297,14 @@ const AssetEditActionItemResponseSchema = AssetEditActionItemSchema.extend({
 const AssetEditsResponseSchema = z
   .object({
     assetId: z.uuidv4().describe('Asset ID these edits belong to'),
+    originalVideo: z
+      .object({
+        width: z.number().int().positive(),
+        height: z.number().int().positive(),
+        durationMs: z.number().int().positive(),
+      })
+      .optional()
+      .describe('Original video display raster and timeline, independent of the current edited version'),
     edits: z.array(AssetEditActionItemResponseSchema).describe('List of edit actions applied to the asset'),
   })
   .meta({ id: 'AssetEditsResponseDto' });

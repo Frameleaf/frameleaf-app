@@ -1686,6 +1686,12 @@ export type AssetEditsResponseDto = {
     assetId: string;
     /** List of edit actions applied to the asset */
     edits: AssetEditActionItemResponseDto[];
+    /** Original video display raster and timeline, independent of the current edited version */
+    originalVideo?: {
+        durationMs: number;
+        height: number;
+        width: number;
+    };
 };
 export type AssetEditsCreateDto = {
     /** List of edit actions to apply */

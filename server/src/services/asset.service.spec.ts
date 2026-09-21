@@ -849,9 +849,75 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('original video edit metadata', () => {
+    beforeEach(() => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.getById.mockResolvedValue({
+        type: AssetType.Video,
+        duration: 5000,
+        originalPath: '/original.mp4',
+      } as any);
+      mocks.assetEdit.getAll.mockResolvedValue([]);
+    });
+
+    it('returns the rotated original raster and timeline instead of current render metadata', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: -90 }],
+      } as any);
+      await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).resolves.toMatchObject({
+        originalVideo: { width: 1080, height: 1920, durationMs: 30_000 },
+      });
+      expect(mocks.media.probe).toHaveBeenCalledWith('/original.mp4');
+    });
+
+    it('validates a larger crop and longer trim against the original instead of edited metadata', async () => {
+      mocks.asset.getForEdit.mockResolvedValue({
+        type: AssetType.Video,
+        duration: 5000,
+        originalPath: '/original.mp4',
+        originalFileName: 'original.mp4',
+        livePhotoVideoId: null,
+        exifImageWidth: 640,
+        exifImageHeight: 360,
+        orientation: null,
+        projectionType: null,
+      });
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 30 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: 0 }],
+      } as any);
+      const edits = [
+        { action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 1000, height: 600 } },
+        { action: AssetEditAction.Trim, parameters: { startMs: 0, endMs: 25_000 } },
+      ];
+      mocks.assetEdit.replaceAll.mockResolvedValue([]);
+      await expect(sut.editAsset(authStub.admin, 'asset-1', { edits })).resolves.toMatchObject({ assetId: 'asset-1' });
+      expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', edits, 'save');
+      await expect(
+        sut.editAsset(authStub.admin, 'asset-1', {
+          edits: [{ action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 1922, height: 1080 } }],
+        }),
+      ).rejects.toThrow('Crop parameters are out of bounds');
+    });
+
+    it.each([
+      { format: { duration: 30 }, videoStreams: [] },
+      { format: { duration: NaN }, videoStreams: [{ width: 1920, height: 1080, rotation: 0 }] },
+      { format: { duration: 30 }, videoStreams: [{ width: 0, height: 1080, rotation: 0 }] },
+    ])('rejects unavailable original metadata instead of using displayed bounds: %j', async (source) => {
+      mocks.media.probe.mockResolvedValue(source as any);
+      await expect(sut.getAssetEdits(authStub.admin, 'asset-1')).rejects.toThrow('Original video metadata');
+    });
+  });
+
   describe('editAsset', () => {
     beforeEach(() => {
-      mocks.media.probe.mockResolvedValue({ format: { duration: 10 }, videoStreams: [], audioStreams: [] } as any);
+      mocks.media.probe.mockResolvedValue({
+        format: { duration: 10 },
+        videoStreams: [{ width: 1920, height: 1080, rotation: 0 }],
+        audioStreams: [],
+      } as any);
     });
     it('should enforce crop first', async () => {
       await expect(
