@@ -1073,7 +1073,7 @@ export class MediaService extends BaseService {
     audioStream: AudioStreamInfo | undefined,
     format: VideoFormat,
   ): VideoEditCommandPlan {
-    const hasCpuVideoFilters = this.hasCpuVideoEditFilters(edits);
+    const hasCpuVideoFilters = this.hasCpuVideoEditFilters(edits) || videoStream.rotation !== 0;
     const planConfig =
       config.accel === TranscodeHardwareAcceleration.Disabled || !hasCpuVideoFilters
         ? config
@@ -1179,9 +1179,16 @@ export class MediaService extends BaseService {
   ): TranscodeCommand {
     const videoFilters: string[] = [];
     const audioFilters: string[] = [];
-    const transcodeConfig = BaseConfig.create(config, this.videoInterfaces) as BaseConfig;
+    const transcodeConfig = BaseConfig.create(
+      { ...config, targetResolution: 'original' },
+      this.videoInterfaces,
+    ) as BaseConfig;
     const inputOptions = [...transcodeConfig.getBaseInputOptions(videoStream, format)];
-    const transcodeFilters = transcodeConfig.getFilterOptions(videoStream);
+    const transcodeFilters = transcodeConfig.getFilterOptions({
+      ...videoStream,
+      ...this.getVideoEditDimensions(edits, videoStream),
+      rotation: 0,
+    });
 
     const trim = edits.find((edit) => edit.action === AssetEditAction.Trim);
     const speedEdits = edits.filter(isEditAction(AssetEditAction.Speed));
@@ -1506,10 +1513,14 @@ export class MediaService extends BaseService {
     let width = videoStream.width;
     let height = videoStream.height;
 
+    if (Math.abs(videoStream.rotation) === 90) {
+      [width, height] = [height, width];
+    }
+
     const crop = edits.find((edit) => edit.action === AssetEditAction.Crop);
     if (crop) {
-      width = crop.parameters.width;
-      height = crop.parameters.height;
+      width = this.toEvenDimension(crop.parameters.width);
+      height = this.toEvenDimension(crop.parameters.height);
     }
 
     const rotate = edits.find((edit) => edit.action === AssetEditAction.Rotate);
