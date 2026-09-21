@@ -49,3 +49,24 @@ it('opens modal and restores focus to its invoker when closed', async () => {
   expect(document.activeElement).toBe(opener);
   expect(screen.queryByRole('dialog')).toBeNull();
 });
+
+it('keeps nested picker themes independent and disables all picker controls', async () => {
+  vi.stubGlobal('visualViewport', null);
+  const { default: PickerHarness } = await import('$lib/../test-data/frameleaf/PickerHarness.svelte');
+  const { rerender } = render(PickerHarness, { theme: 'dark' });
+  const outer = screen.getByRole('combobox', { name: 'Outer camera' });
+  const nested = screen.getByRole('combobox', { name: 'Nested camera' });
+  expect(outer.closest('.frameleaf')?.getAttribute('data-theme')).toBe('dark');
+  expect(nested.closest('.frameleaf')?.getAttribute('data-theme')).toBe('light');
+  await fireEvent.focus(outer);
+  expect(screen.getAllByRole('option').map((option) => option.textContent?.trim())).toEqual([
+    'Camera A (12)',
+    'Camera B (8)',
+  ]);
+  await fireEvent.click(screen.getByRole('option', { name: 'Camera A (12)' }));
+  await rerender({ theme: 'light', disabled: true });
+  expect(outer.closest('.frameleaf')?.getAttribute('data-theme')).toBe('light');
+  expect(nested.closest('.frameleaf')?.getAttribute('data-theme')).toBe('dark');
+  expect(outer.matches(':disabled')).toBe(true);
+  expect(screen.getByRole('button', { name: 'clear_value' }).closest('fieldset')?.disabled).toBe(true);
+});
