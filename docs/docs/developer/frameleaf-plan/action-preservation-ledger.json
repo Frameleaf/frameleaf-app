@@ -69293,16 +69293,27 @@
         "newUi": {
           "status": "Missing/partial",
           "target": "Photos/timeline and bulk actions",
-          "evidence": ["none-qualified"]
+          "evidence": ["none-qualified", "docs/docs/developer/frameleaf-plan/FL-32-selected-archive.md"]
         },
-        "api": { "status": "explicit-mapping-required", "evidence": ["none-qualified"] },
+        "api": {
+          "status": "explicit-mapping-required",
+          "evidence": ["none-qualified", "server/src/controllers/archive-operation.controller.ts"]
+        },
         "native": { "status": "explicit-mapping-required", "evidence": ["none-qualified"] },
-        "tests": { "status": "explicit-evidence-required", "evidence": ["none-qualified"] }
+        "tests": {
+          "status": "explicit-evidence-required",
+          "evidence": [
+            "none-qualified",
+            "server/test/medium/specs/archive-operation.spec.ts",
+            "web/src/lib/modals/ArchiveOperationsModal.spec.ts",
+            "web/src/lib/components/timeline/actions/ArchiveAction.spec.ts"
+          ]
+        }
       },
       "auditGap": {
         "mapped": true,
         "issue": { "planId": "LIB-001", "jiraKey": "FL-33", "url": "https://heroit.atlassian.net/browse/FL-33" },
-        "boundary": "Individual callbacks do not establish a durable multi-item operation."
+        "boundary": "FL-32 adds a bounded durable selected-ID background archive candidate. Full all-matching, other bulk actions, browser qualification and native acceptance remain open; see FL-32-selected-archive.md."
       }
     },
     {

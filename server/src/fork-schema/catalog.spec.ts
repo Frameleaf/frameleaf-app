@@ -91,11 +91,16 @@ describe('catalog manifests', () => {
     );
     // 97 public (v3.1.0 + cluster_group, cluster_group_request, person_group,
     // person_group_audit, workflow_log from the post-certified residue) + fork tables, including seven iCloud tables
-    expect(getCatalogTableLocks(fork)).toHaveLength(116);
+    expect(getCatalogTableLocks(fork)).toHaveLength(118);
     expect(getCatalogTableLocks(fork)).toEqual(
-      expect.arrayContaining(['immich_fork.video_edit_version', 'immich_fork.video_edit_selection']),
+      expect.arrayContaining([
+        'immich_fork.archive_operation',
+        'immich_fork.archive_operation_item',
+        'immich_fork.video_edit_version',
+        'immich_fork.video_edit_selection',
+      ]),
     );
-    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(100);
+    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(102);
   });
 
   it('records the steady-state geodata primary index rebuilt by the runtime importer', () => {

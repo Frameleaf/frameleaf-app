@@ -3,8 +3,9 @@
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import type { OnArchive } from '$lib/utils/actions';
   import { archiveAssets } from '$lib/utils/asset-utils';
+  import ArchiveOperationsModal from '$lib/modals/ArchiveOperationsModal.svelte';
   import { AssetVisibility } from '@immich/sdk';
-  import { IconButton } from '@immich/ui';
+  import { IconButton, modalManager } from '@immich/ui';
   import { mdiArchiveArrowDownOutline, mdiArchiveArrowUpOutline, mdiTimerSand } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
@@ -24,6 +25,10 @@
   const handleArchive = async () => {
     const visibility = unarchive ? AssetVisibility.Timeline : AssetVisibility.Archive;
     const assets = assetMultiSelectManager.getOwnedAssets().filter((asset) => asset.visibility !== visibility);
+    if (!unarchive) {
+      await modalManager.show(ArchiveOperationsModal, { ids: assets.map(({ id }) => id) });
+      return;
+    }
     loading = true;
     const ids = await archiveAssets(assets, visibility as AssetVisibility);
     if (ids) {

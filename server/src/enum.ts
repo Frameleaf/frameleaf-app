@@ -953,6 +953,7 @@ export enum QueueJobStatus {
 export const QueueJobStatusSchema = z.enum(QueueJobStatus).describe('Queue job status').meta({ id: 'QueueJobStatus' });
 
 export enum JobName {
+  ArchiveOperation = 'ArchiveOperation',
   ICloudSync = 'ICloudSync',
   ForkSchemaBackfill = 'ForkSchemaBackfill',
 

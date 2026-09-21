@@ -884,6 +884,19 @@
       "title": "FL-86 Studio artifact attribution and resource rights",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997196/FL-86+Studio+artifact+attribution+and+resource+rights",
       "version": 2
+    },
+    {
+      "bytes": 9003,
+      "category": "development",
+      "id": "61800603",
+      "source": "docs/docs/developer/frameleaf-plan/FL-32-selected-archive.md",
+      "sourceSha256": "3cc88119a6f37a088997b4c77dc0703025097ad4d61f51f90ceeb773e3d604e9",
+      "title": "FL-32 selected-asset background archive",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61800603",
+      "version": 2,
+      "sourceBranch": "codex/FL-32-bulk-archive",
+      "sourceState": "bounded-candidate-independent-review-pending",
+      "readbackResult": "Full normalized Markdown source body and SHA-256 matched live page version 2 on 2026-09-21; Undo repair recheck and browser qualification remain pending."
     }
   ],
   "spaceId": "61374475",

@@ -1,3 +1,4 @@
+import { ArchiveOperationController } from 'src/controllers/archive-operation.controller.js';
 import { ActivityController } from 'src/controllers/activity.controller.js';
 import { AlbumController } from 'src/controllers/album.controller.js';
 import { ApiKeyController } from 'src/controllers/api-key.controller.js';
@@ -51,6 +52,7 @@ import { ViewController } from 'src/controllers/view.controller.js';
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  ArchiveOperationController,
   ICloudSyncController,
   ApiKeyController,
   ActivityController,
