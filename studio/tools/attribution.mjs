@@ -47,7 +47,9 @@ async function expectedAttribution(studio, engine) {
   }
   const packages = [];
   if (engine) {
-    const lock = await readJson(path.join(engine, 'package-lock.json'));
+    const lockBytes = await regularFile(engine, 'package-lock.json');
+    assert.deepEqual(lockBytes, await regularFile(studio, 'engine-package-lock.json'), 'Generated lockfile differs from pinned package authority');
+    const lock = parseJsonRejectingDuplicateKeys(lockBytes.toString(), 'package-lock.json');
     for (const [location, pkg] of Object.entries(lock.packages).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
       if (!location || pkg.dev === true) continue;
       const row = { location, version: pkg.version, declaredLicense: pkg.license ?? 'UNDECLARED', integrity: pkg.integrity ?? null, notices: [], status: 'missing-notice' };

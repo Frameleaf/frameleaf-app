@@ -6,8 +6,10 @@
   "pageUrl": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997196/FL-86+Studio+artifact+attribution+and+resource+rights",
   "pageVersion": 1,
   "parentPageId": "61440418",
-  "verified": true,
-  "verification": "Readback source digest, counts, package gaps and unqualified acceptance markers matched; source-owned candidate mirror.",
+  "verified": false,
+  "verification": "Reviewer-fix mirror update returned HTTP 504; subsequent readback remains page version 1 with the previous source digest. Current source mirror is pending; previous version remains verified only for its recorded sourceSha256.",
   "candidateBase": "4ccad254cf6665e2ebce99e7cac8c376c0cf7d4c",
-  "status": "candidate-not-qualified"
+  "status": "candidate-not-qualified-mirror-update-pending",
+  "pendingSourceSha256": "7ef3d9c35253dd367c722719e0a64a962cfe1ba4d1506a7c2ed1910865214523",
+  "pendingSourceBytes": 14450
 }

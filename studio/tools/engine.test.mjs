@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm, symlink, readFile } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, writeFile, rm, symlink, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -65,12 +65,21 @@ test('artifact notices are distributed and independently audited against trusted
 test('artifact audit includes installed runtime package notices and rejects package/version or output substitution', async () => {
   const { packageAttribution, auditAttribution } = await import('./attribution.mjs');
   const directory = await mkdtemp(path.join(os.tmpdir(), 'frameleaf-package-notices-'));
-  const studio = path.resolve(import.meta.dirname, '..');
+  const sourceStudio = path.resolve(import.meta.dirname, '..');
+  const studio = path.join(directory, 'studio');
   try {
+    await mkdir(studio);
+    for (const name of ['dependency-attribution.json', 'notices', 'rights-evidence']) {
+      await cp(path.join(sourceStudio, name), path.join(studio, name), { recursive: true });
+    }
     const dist = path.join(directory, 'dist');
     await mkdir(dist);
     await mkdir(path.join(directory, 'node_modules/example'), { recursive: true });
-    await writeFile(path.join(directory, 'package-lock.json'), JSON.stringify({ packages: { '': {}, 'node_modules/example': { version: '1.2.3', license: 'MIT' } } }));
+    const lock = { packages: { '': {}, 'node_modules/example': { version: '1.2.3', license: 'MIT' }, 'node_modules/missing-notice': { version: '1.0.0' } } };
+    await writeFile(path.join(directory, 'package-lock.json'), JSON.stringify(lock));
+    await writeFile(path.join(studio, 'engine-package-lock.json'), JSON.stringify(lock));
+    await mkdir(path.join(directory, 'node_modules/missing-notice'), { recursive: true });
+    await writeFile(path.join(directory, 'node_modules/missing-notice/package.json'), JSON.stringify({ version: '1.0.0' }));
     await writeFile(path.join(directory, 'node_modules/example/package.json'), JSON.stringify({ version: '1.2.3' }));
     await writeFile(path.join(directory, 'node_modules/example/LICENSE'), 'Package copyright and license');
     await packageAttribution(studio, dist, directory);
@@ -83,5 +92,14 @@ test('artifact audit includes installed runtime package notices and rejects pack
     await assert.rejects(auditAttribution(studio, dist, directory), /Linked attribution/);
     await writeFile(path.join(directory, 'node_modules/example/package.json'), JSON.stringify({ version: '9.9.9' }));
     await assert.rejects(packageAttribution(studio, dist, directory), /Package version changed/);
+    await writeFile(path.join(directory, 'node_modules/example/package.json'), JSON.stringify({ version: '1.2.3' }));
+    const receipt = await packageAttribution(studio, dist, directory);
+    assert.deepEqual(receipt.unresolvedPackages, ['node_modules/missing-notice']);
+    // Matching edits must not hide an installed package with no collected notice.
+    delete lock.packages['node_modules/missing-notice'];
+    await writeFile(path.join(directory, 'package-lock.json'), JSON.stringify(lock));
+    output.packages = output.packages.filter(({ location }) => location !== 'node_modules/missing-notice');
+    await writeFile(path.join(dist, 'attribution/index.json'), JSON.stringify(output));
+    await assert.rejects(auditAttribution(studio, dist, directory), /Generated lockfile differs from pinned package authority/);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
