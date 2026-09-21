@@ -3,8 +3,7 @@
 All workflow jobs use GitHub-hosted runners. Linux jobs use Ubuntu 24.04;
 container builds use native `ubuntu-24.04` (AMD64) and
 `ubuntu-24.04-arm` (ARM64), without QEMU. Windows CLI tests use
-`windows-latest`; iOS uses `macos-26` with the existing mobile-change
-and signing-secret gates restored.
+`windows-latest`.
 
 Repository admission guards, immutable action pins, release ancestry checks,
 and container-cache publication restrictions remain in place. Only the fork

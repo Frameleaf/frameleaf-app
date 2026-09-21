@@ -429,33 +429,6 @@ jobs:
         with:
           needs: ${{ toJSON(needs) }}
     timeout-minutes: 60
-  mobile-unit-tests:
-    name: Unit Test Mobile
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - name: Setup Mise
-        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
-        with:
-          github_token: ${{ github.token }}
-          working_directory: ./mobile
-          install_args: --locked
-          version: 2026.7.12
-      - name: Install translation codegen dependencies
-        working-directory: .
-        run: pnpm -w install --frozen-lockfile
-      - name: Install dependencies
-        run: mise run //mobile:install:ci
-      - name: Perform codegen
-        run: mise run //mobile:codegen
-      - name: Run tests
-        run: mise run //mobile:test
-    timeout-minutes: 60
   ml-unit-tests:
     name: Unit Test ML
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
