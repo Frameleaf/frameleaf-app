@@ -102,8 +102,11 @@
         return;
       }
 
-      if (action === AssetImageEnrichmentAction.MarkNsfw && succeeded.length > 0) {
-        eventManager.emit('AssetsMarkNsfw', succeeded);
+      if (succeeded.length > 0) {
+        eventManager.emit(
+          action === AssetImageEnrichmentAction.MarkNsfw ? 'AssetsMarkNsfw' : 'AssetsMarkSafe',
+          succeeded,
+        );
       }
 
       if (succeeded.length > 0) {

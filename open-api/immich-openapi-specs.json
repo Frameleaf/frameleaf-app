@@ -17939,6 +17939,15 @@
             }
           },
           {
+            "name": "sensitiveOnly",
+            "required": false,
+            "in": "query",
+            "description": "Return only the current owner’s sensitive assets. Requires an elevated session.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "slug",
             "required": false,
             "in": "query",
@@ -18153,6 +18162,15 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
+            }
+          },
+          {
+            "name": "sensitiveOnly",
+            "required": false,
+            "in": "query",
+            "description": "Return only the current owner’s sensitive assets. Requires an elevated session.",
+            "schema": {
+              "type": "boolean"
             }
           },
           {

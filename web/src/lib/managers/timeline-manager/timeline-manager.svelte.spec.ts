@@ -670,6 +670,32 @@ describe('TimelineManager', () => {
     });
   });
 
+  describe('sensitive-only timeline events', () => {
+    it.each(['upsertAssets', 'upsertAssetsFromLiveEvent'] as const)(
+      'requeries rather than inserting unclassified data through %s',
+      async (method) => {
+        const manager = new TimelineManager();
+        sdkMock.getTimeBuckets.mockResolvedValue([]);
+        await manager.updateOptions({ sensitiveOnly: true });
+        const refresh = vi.spyOn(manager, 'refresh').mockResolvedValue();
+        manager[method]([timelineAssetFactory.build()]);
+        expect(refresh).toHaveBeenCalledOnce();
+        expect(manager.assetCount).toBe(0);
+        manager.destroy();
+      },
+    );
+
+    it('removes an unmarked asset without invoking visibility relocation', async () => {
+      const manager = new TimelineManager();
+      sdkMock.getTimeBuckets.mockResolvedValue([]);
+      await manager.updateOptions({ sensitiveOnly: true });
+      const remove = vi.spyOn(manager, 'removeAssets');
+      eventManager.emit('AssetsMarkSafe', ['sensitive-id']);
+      expect(remove).toHaveBeenCalledWith(['sensitive-id']);
+      manager.destroy();
+    });
+  });
+
   describe('firstAsset', () => {
     let timelineManager: TimelineManager;
 

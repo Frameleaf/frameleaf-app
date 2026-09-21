@@ -119,6 +119,7 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
 }
 
 export interface TimeBucketOptions extends AssetBuilderOptions {
+  sensitiveOnly?: boolean;
   dateType?: TimeBucketDateType;
   orderBy?: AssetOrderBy;
   order?: AssetOrder;
@@ -994,6 +995,7 @@ export class AssetRepository {
           .$if(options.visibility === undefined, withDefaultVisibility)
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
           .$call((qb) => withHiddenContentFilter(qb, options))
+          .$if(!!options.sensitiveOnly, (qb) => qb.$call(withNsfwAssets).where('asset.ownerId', '=', auth!.user.id))
           .$if(!!options.albumId, (qb) =>
             qb
               .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
@@ -1094,6 +1096,7 @@ export class AssetRepository {
           .$if(options.visibility === undefined, withDefaultVisibility)
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
           .$call((qb) => withHiddenContentFilter(qb, options))
+          .$if(!!options.sensitiveOnly, (qb) => qb.$call(withNsfwAssets).where('asset.ownerId', '=', auth!.user.id))
           .$if(!!options.bbox, (qb) => {
             const bbox = options.bbox!;
             const circle = getBoundingCircle(bbox);

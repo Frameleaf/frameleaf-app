@@ -27,6 +27,9 @@ const TimeBucketQueryBaseSchema = z
     dateType: TimeBucketDateTypeSchema.optional().describe(
       'Date source for timeline bucket grouping. Defaults to taken date.',
     ),
+    sensitiveOnly: stringToBool
+      .optional()
+      .describe('Return only the current owner’s sensitive assets. Requires an elevated session.'),
     suppressedOnly: stringToBool.optional().describe('Return only suppressed content. Requires an elevated session.'),
     orderBy: AssetOrderBySchema.optional().describe(
       'Date to group and order assets by (takenAt for date taken, createdAt for date added to Immich)',
