@@ -1,3 +1,4 @@
+import type { AuthStatusResponseDto } from '@immich/sdk';
 import { BrowserContext } from '@playwright/test';
 import { playwrightHost } from 'src/../playwright.config.js';
 
@@ -10,6 +11,15 @@ export const setupBaseMockApiRoutes = async (context: BrowserContext, adminUserI
       path: '/',
     },
   ]);
+  // This fixture represents a signed-in, non-elevated session. The privacy
+  // guard verifies it separately from the mocked user and preferences.
+  await context.route('**/api/auth/status', async (route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      json: { isElevated: false, password: true, pinCode: false } satisfies AuthStatusResponseDto,
+    });
+  });
   await context.route('**/api/users/me', async (route) => {
     return route.fulfill({
       status: 200,

@@ -1,5 +1,15 @@
 # FL-39 edited video versions and publication
 
+## Shared authenticated UI fixture repair (FL-34 / FL-41, 2026-09-21)
+
+PR133 head `7d004a138cf9633c8357ac71dcd741307fddce76` timed out in both web UI jobs at the asset-viewer thumbnail wait. The URL assertion was correct. The shared UI fixture mocked the authenticated cookie, user and preferences but omitted `GET /api/auth/status`; the production privacy guard therefore received an unauthorized response and correctly withheld protected content. The relevant guard, base fixture and thumbnail helper are byte-identical between that failed head and reviewed integration base `9a729f04e2103010c68615516be644bb503a6698`.
+
+The fixture now supplies the typed non-elevated status of its synthetic signed-in user. No production guard, media URL, visibility assertion, retry count, timeout, API/schema, native application or image-build workflow changes. Manual caller tracing covers timeline, search, memory, direct asset-viewer tests and the shared asset-viewer fixture used by OCR, face, stack and broken-asset tests. GitNexus does not resolve these test-hook callback edges; its low indexed impact is not a zero-caller claim.
+
+On the integration base, the original next-button test reproduced the exact 30-second timeout and asset URL before the repair, then passed in 2.6 seconds after it. Four unchanged next/previous button/keyboard navigation tests pass. Three browser regressions verify non-elevated status and a visible viewer, an unauthorized status retaining the hidden viewer, and absence of the authentication cookie redirecting to login. A request outside browser route interception still receives HTTP 401: the fixture does not create backend authority.
+
+This bounded reproduction used fresh worktree-local frozen dependencies (Node 24.21.0, pnpm 11.24.0), Chromium, the real Vite application and existing synthetic UI routes, with an isolated localhost HTTP 401 responder for unmocked requests. It is fixture/guard/navigation evidence, not a fresh production server or full 104-test CI run. The original CI head was compared at the relevant source boundary, not rebuilt as a second complete application. Prior authenticated video lifecycle evidence and its HDR, hardware/device, native and deployment limits remain unchanged. No GitHub rerun, push or polling was performed for this repair.
+
 This packet adds the server persistence and API boundary for Save Version, master Export, and Revert. It continues the reviewed geometry change at `357453c747c96ac244b9252870354ed4a518dcd3` and incorporates the approved mobile-CI retirement at `a3b0cae7e785e31339353ad9b0a55cfb10d03f56` and its workflow-contract correction. The separate `65266cf4db954f8f516684b9d640cd1ef514a646` quality experiment remains an unpushed recovery checkpoint; its unsafe playback identity is not carried forward.
 
 ## Persistence and file ownership
