@@ -651,17 +651,17 @@
       "version": 10
     },
     {
-      "bytes": 5217,
+      "bytes": 5729,
       "category": "plan",
       "id": "61408007",
       "source": "studio/README.md",
-      "sourceSha256": "30f3ba354798debd0715acd9fa10e91015a43c614553b2badbb18be84f48bf69",
+      "sourceSha256": "b50af0548670813f9933202b08169119c3e770633ee92a25c70aa115448a8d1f",
       "title": "Studio and Freecut Source Inventory",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61408007/Studio+and+Freecut+Source+Inventory",
-      "verification": "Canonical source body and hash, unmerged PR 130 candidate and preserved FL-25 historical receipt read back exactly after the worker source-map determinism documentation update; supplemental delivery evidence remains page 61408162 version 3.",
+      "verification": "Full normalized HTML readback matched current canonical source wrapper and complete prior body after reviewed FL-86 default-deny admission; source SHA and bytes verified. Earlier FL-25 receipt and delivery history retained; broad Studio and rights qualification remain open.",
       "verified": true,
-      "verifiedAt": "2026-09-21T10:54:56.000Z",
-      "version": 3
+      "verifiedAt": "2026-09-21T23:18:00.000Z",
+      "version": 4
     },
     {
       "bytes": 9292,
@@ -876,27 +876,27 @@
       "version": 14
     },
     {
-      "bytes": 14450,
+      "bytes": 19771,
       "category": "development",
       "id": "61997196",
       "source": "docs/docs/developer/frameleaf-plan/fl86-distribution-rights.md",
-      "sourceSha256": "7ef3d9c35253dd367c722719e0a64a962cfe1ba4d1506a7c2ed1910865214523",
+      "sourceSha256": "ebc48840bb829e78d62515b9a3e35acc1af9db47999bf69023c99cd0ed026981",
       "title": "FL-86 Studio artifact attribution and resource rights",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997196/FL-86+Studio+artifact+attribution+and+resource+rights",
-      "version": 2
+      "version": 3
     },
     {
-      "bytes": 9003,
+      "bytes": 10903,
       "category": "development",
       "id": "61800603",
       "source": "docs/docs/developer/frameleaf-plan/FL-32-selected-archive.md",
-      "sourceSha256": "3cc88119a6f37a088997b4c77dc0703025097ad4d61f51f90ceeb773e3d604e9",
+      "sourceSha256": "f6bf3a97d3d7908176068d61ac63a2f35d0678fcf724a4a7cacf48942eb48d6b",
       "title": "FL-32 selected-asset background archive",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61800603",
-      "version": 2,
+      "version": 3,
       "sourceBranch": "codex/FL-32-bulk-archive",
-      "sourceState": "bounded-candidate-independent-review-pending",
-      "readbackResult": "Full normalized Markdown source body and SHA-256 matched live page version 2 on 2026-09-21; Undo repair recheck and browser qualification remain pending."
+      "sourceState": "reviewed-browser-qualified-bounded-candidate",
+      "readbackResult": "Full normalized source and history body matched live version 3 on 2026-09-21. Selected-ID candidate approved with actual PostgreSQL and authenticated browser evidence; all-matching and full FN204 remain open."
     }
   ],
   "spaceId": "61374475",
