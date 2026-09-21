@@ -1102,6 +1102,9 @@ export class MediaService extends BaseService {
         });
         return published ? JobStatus.Success : JobStatus.Skipped;
       }
+      if (original.audioStreams.length > 1) {
+        throw new Error('Edited masters with multiple audio tracks are not qualified');
+      }
       candidates.push(master, proxy);
       const rotationCopy = getVideoRotationCopyPlan(edits, original);
       const command =
