@@ -1,8 +1,17 @@
-import { searchAssets, deleteAssets, restoreAssets, type SearchResponseDto } from '@immich/sdk';
+import {
+  searchAssets,
+  deleteAssets,
+  restoreAssets,
+  getPerson,
+  type PersonResponseDto,
+  type SearchResponseDto,
+} from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import { render, screen, waitFor, fireEvent } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { searchManager } from '$lib/managers/search-manager.svelte';
 import { Route } from '$lib/route';
 import { timelineAssetFactory } from '@test-data/factories/asset-factory';
@@ -25,6 +34,7 @@ vi.mock('@immich/sdk', async (original) => ({
   searchAssets: vi.fn(),
   deleteAssets: vi.fn(),
   restoreAssets: vi.fn(),
+  getPerson: vi.fn(),
 }));
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: { trash: true } } }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
@@ -60,6 +70,7 @@ const setQuery = (terms: Parameters<typeof Route.search>[0]) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  authManager.user.id = 'owner';
   vi.mocked(searchAssets).mockResolvedValue(empty);
   searchManager.reset();
   assetMultiSelectManager.clear();
@@ -147,5 +158,54 @@ it('reloads the current filtered query after deleting and undoing selected asset
   );
   expect(searchManager.filter.query).toBe('holiday');
   expect(searchManager.filter.location.city).toBe('Banff');
+  view.unmount();
+});
+
+it.each([
+  ['lock', () => eventManager.emit('SessionLocked')],
+  ['PIN reset', () => eventManager.emit('UserPinCodeReset')],
+  ['access restriction', () => eventManager.emit('SessionAccessChanged', { isElevated: false })],
+] as const)('revalidates the query and discards late person-chip evidence on %s', async (_name, restrict) => {
+  let resolvePerson!: (person: PersonResponseDto) => void;
+  vi.mocked(getPerson)
+    .mockReturnValueOnce(
+      new Promise((done) => {
+        resolvePerson = done;
+      }),
+    )
+    .mockRejectedValue(new Error('person no longer accessible'));
+  setQuery({ personIds: ['private-person'], city: 'Banff' });
+  const view = render(SearchPage);
+  await waitFor(() => expect(getPerson).toHaveBeenCalledOnce());
+  flushSync(restrict);
+  await waitFor(() => expect(searchAssets).toHaveBeenCalledTimes(2));
+  expect(searchManager.filter.location.city).toBe('Banff');
+  resolvePerson({ id: 'private-person', name: 'Private old person' } as PersonResponseDto);
+  await waitFor(() => expect(getPerson).toHaveBeenCalledTimes(2));
+  expect(screen.queryByText('Private old person')).toBeNull();
+  expect(screen.getAllByRole('button', { name: 'remove_filter' })).toHaveLength(2);
+  view.unmount();
+});
+
+it.each([
+  ['logout', () => eventManager.emit('AuthLogout')],
+  ['session deletion', () => eventManager.emit('SessionDelete')],
+  [
+    'account change',
+    () => {
+      authManager.user.id = 'other-owner';
+      eventManager.emit('AuthUserLoaded', authManager.user);
+    },
+  ],
+] as const)('hides old-account query evidence and blocks reloads after %s', async (_name, revoke) => {
+  setQuery({ city: 'Private city' });
+  const view = render(SearchPage);
+  await waitFor(() => expect(searchAssets).toHaveBeenCalledOnce());
+  expect(screen.getByText('Private city')).toBeInTheDocument();
+  flushSync(revoke);
+  expect(screen.queryByText('Private city')).toBeNull();
+  flushSync(() => setQuery({ city: 'Another old query' }));
+  expect(searchAssets).toHaveBeenCalledOnce();
+  expect(searchManager.filter.location.city).toBeUndefined();
   view.unmount();
 });

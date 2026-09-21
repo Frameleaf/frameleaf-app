@@ -82,10 +82,11 @@
     // URL query changes (including Back/Forward) update results and the editable filters together.
     const query = terms;
     const ask = askSearchQuery;
+    void session.accessGeneration;
     untrack(() => handlePromiseError(onSearchQueryUpdate(query, ask)));
   });
 
-  onDestroy(() => session.reset());
+  onDestroy(() => session.destroy());
 
   $effect(() => {
     if (scrollY) {
@@ -132,6 +133,10 @@
   };
 
   async function onSearchQueryUpdate(query = terms, ask = askSearchQuery) {
+    if (session.blocked) {
+      searchManager.reset();
+      return;
+    }
     searchManager.setQuery(query);
     askQuery = ask;
     session.reset(
@@ -308,55 +313,61 @@
 
 <OnEvents {onAlbumAddAssets} />
 
-{#if hasSearchQuery}
-  <section
-    id="search-chips"
-    class="mt-24 flex w-full flex-wrap place-content-center place-items-center gap-5 px-24 text-center"
-  >
-    {#each getObjectKeys(terms) as searchKey (searchKey)}
-      {@const value = terms[searchKey]}
-      <div class="flex place-content-center place-items-center items-stretch text-xs">
-        <div
-          class="flex items-center justify-center rounded-s-full bg-immich-primary px-4 py-2 text-white dark:bg-immich-dark-primary dark:text-black"
-        >
-          {getHumanReadableSearchKey(searchKey as keyof SearchTerms)}
-        </div>
-
-        {#if value !== true}
-          <div class="bg-gray-300 px-4 py-2 dark:bg-gray-800 dark:text-white">
-            {#if (searchKey === 'takenAfter' || searchKey === 'takenBefore') && typeof value === 'string'}
-              {getHumanReadableDate(value)}
-            {:else if searchKey === 'personIds' && Array.isArray(value)}
-              {#await getPersonName(value) then personName}
-                {personName}
-              {/await}
-            {:else if searchKey === 'tagIds' && (Array.isArray(value) || value === null)}
-              {#await getTagNames(value) then tagNames}
-                {tagNames}
-              {/await}
-            {:else if searchKey === 'rating'}
-              {$t('rating_count', { values: { count: value ?? 0 } })}
-            {:else if searchKey === 'imageEnrichment' && typeof value === 'string'}
-              {getHumanReadableImageEnrichmentFilter(value)}
-            {:else if value === null || value === ''}
-              {$t('unknown')}
-            {:else}
-              {value}
-            {/if}
+{#if hasSearchQuery && !session.blocked}
+  {#key session.accessGeneration}
+    <section
+      id="search-chips"
+      class="mt-24 flex w-full flex-wrap place-content-center place-items-center gap-5 px-24 text-center"
+    >
+      {#each getObjectKeys(terms) as searchKey (searchKey)}
+        {@const value = terms[searchKey]}
+        <div class="flex place-content-center place-items-center items-stretch text-xs">
+          <div
+            class="flex items-center justify-center rounded-s-full bg-immich-primary px-4 py-2 text-white dark:bg-immich-dark-primary dark:text-black"
+          >
+            {getHumanReadableSearchKey(searchKey as keyof SearchTerms)}
           </div>
-        {/if}
-        <button
-          type="button"
-          class="flex items-center justify-center rounded-e-full bg-gray-300 px-3 text-gray-700 transition hover:text-immich-primary dark:bg-gray-800 dark:text-white dark:hover:text-immich-dark-primary"
-          aria-label={$t('remove_filter')}
-          title={$t('remove_filter')}
-          onclick={() => removeFilter(searchKey as keyof SearchTerms)}
-        >
-          <Icon icon={mdiClose} size="16" />
-        </button>
-      </div>
-    {/each}
-  </section>
+
+          {#if value !== true}
+            <div class="bg-gray-300 px-4 py-2 dark:bg-gray-800 dark:text-white">
+              {#if (searchKey === 'takenAfter' || searchKey === 'takenBefore') && typeof value === 'string'}
+                {getHumanReadableDate(value)}
+              {:else if searchKey === 'personIds' && Array.isArray(value)}
+                {#await getPersonName(value) then personName}
+                  {personName}
+                {:catch}
+                  {$t('unknown')}
+                {/await}
+              {:else if searchKey === 'tagIds' && (Array.isArray(value) || value === null)}
+                {#await getTagNames(value) then tagNames}
+                  {tagNames}
+                {:catch}
+                  {$t('unknown')}
+                {/await}
+              {:else if searchKey === 'rating'}
+                {$t('rating_count', { values: { count: value ?? 0 } })}
+              {:else if searchKey === 'imageEnrichment' && typeof value === 'string'}
+                {getHumanReadableImageEnrichmentFilter(value)}
+              {:else if value === null || value === ''}
+                {$t('unknown')}
+              {:else}
+                {value}
+              {/if}
+            </div>
+          {/if}
+          <button
+            type="button"
+            class="flex items-center justify-center rounded-e-full bg-gray-300 px-3 text-gray-700 transition hover:text-immich-primary dark:bg-gray-800 dark:text-white dark:hover:text-immich-dark-primary"
+            aria-label={$t('remove_filter')}
+            title={$t('remove_filter')}
+            onclick={() => removeFilter(searchKey as keyof SearchTerms)}
+          >
+            <Icon icon={mdiClose} size="16" />
+          </button>
+        </div>
+      {/each}
+    </section>
+  {/key}
 {/if}
 
 <section
@@ -366,7 +377,7 @@
   bind:this={searchResultsElement}
 >
   <section id="search-content">
-    {#if !hasSearchQuery && canUseAskSearch}
+    {#if !hasSearchQuery && canUseAskSearch && !session.blocked}
       <div class="mx-auto mt-24 flex w-full max-w-5xl flex-col gap-8 px-6 text-gray-700 dark:text-gray-200">
         <form class="mx-auto flex w-full max-w-3xl gap-2" onsubmit={onAskSubmit}>
           <label for="ask-search-input" class="sr-only">{$t('search_your_photos')}</label>
@@ -442,7 +453,7 @@
         onReload={onSearchQueryUpdate}
         slidingWindowOffset={searchResultsElement.offsetTop}
       />
-    {:else if hasSearchQuery && !isLoading}
+    {:else if hasSearchQuery && !isLoading && !session.blocked}
       <div class="flex min-h-[calc(66vh-11rem)] w-full place-content-center items-center dark:text-white">
         <div class="flex flex-col content-center items-center text-center">
           <Icon icon={mdiImageOffOutline} size="3.5em" />

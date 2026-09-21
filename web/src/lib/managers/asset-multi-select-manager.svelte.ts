@@ -1,5 +1,6 @@
 import { AssetVisibility } from '@immich/sdk';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -35,9 +36,19 @@ export class AssetMultiSelectManager {
 
   constructor(options?: AssetMultiSelectOptions) {
     const { resetOnNavigate = false } = options ?? {};
-    if (resetOnNavigate) {
-      this.#unsubscribe = eventManager.on({ AppNavigate: () => this.clear() });
-    }
+    const stopAccess = onLibraryAccessChange(
+      (change) => {
+        if (change !== 'expanded') {
+          this.clear();
+        }
+      },
+      authManager.authenticated ? authManager.user.id : undefined,
+    );
+    const stopNavigation = resetOnNavigate ? eventManager.on({ AppNavigate: () => this.clear() }) : undefined;
+    this.#unsubscribe = () => {
+      stopAccess();
+      stopNavigation?.();
+    };
   }
 
   destroy() {

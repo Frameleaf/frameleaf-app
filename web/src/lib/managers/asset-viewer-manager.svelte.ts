@@ -1,8 +1,10 @@
 import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
 import type { ZoomImageWheelState } from '@zoom-image/core';
 import { cubicOut } from 'svelte/easing';
+import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { userPreferencesManager } from '$lib/managers/user-preferences-manager.svelte';
+import { AbortError } from '$lib/utils';
 import type { ImageLoaderStatus } from '$lib/utils/adaptive-image-loader.svelte';
 import { canCopyImageToClipboard } from '$lib/utils/asset-utils';
 import { BaseEventManager } from '$lib/utils/base-event-manager.svelte';
@@ -36,6 +38,29 @@ export type Events = {
 class AssetViewerManager extends BaseEventManager<Events> {
   #zoomState = $state(createDefaultZoomState());
   #animationFrameId: number | null = null;
+  #request?: AbortController;
+  #revoked = false;
+
+  constructor() {
+    super();
+    onLibraryAccessChange((change) => {
+      this.#request?.abort();
+      this.#request = undefined;
+      if (change === 'revoked' || change === 'account') {
+        this.#revoked = change === 'revoked';
+      }
+      if (change !== 'expanded') {
+        this.#viewState = false;
+        this.#viewingAssetStoreState = undefined;
+        this.imgRef = undefined;
+        this.imageLoaderStatus = undefined;
+        this.clearHighlightedFaces();
+        this.hideHiddenPeople();
+        this.closeActivityPanel();
+        this.resetPanelState();
+      }
+    });
+  }
 
   imgRef = $state<HTMLImageElement | undefined>();
   imageLoaderStatus = $state<ImageLoaderStatus | undefined>();
@@ -246,18 +271,45 @@ class AssetViewerManager extends BaseEventManager<Events> {
   }
 
   setAsset(asset: AssetResponseDto) {
+    this.#request?.abort();
+    this.#request = undefined;
+    if (this.#revoked) {
+      return;
+    }
     this.#viewingAssetStoreState = asset;
     this.#viewState = true;
   }
 
   async setAssetId(id: string): Promise<AssetResponseDto> {
-    const asset = await getAssetInfo({ ...authManager.params, id });
-    this.setAsset(asset);
-    return asset;
+    this.#request?.abort();
+    if (this.#revoked) {
+      throw new AbortError();
+    }
+    const request = new AbortController();
+    this.#request = request;
+    try {
+      const asset = await getAssetInfo({ ...authManager.params, id }, { signal: request.signal });
+      if (request.signal.aborted || this.#request !== request) {
+        throw new AbortError();
+      }
+      this.#request = undefined;
+      this.setAsset(asset);
+      return asset;
+    } catch (error) {
+      throw request.signal.aborted ? new AbortError() : error;
+    } finally {
+      if (this.#request === request) {
+        this.#request = undefined;
+      }
+    }
   }
 
   showAssetViewer(show: boolean) {
-    this.#viewState = show;
+    if (!show) {
+      this.#request?.abort();
+      this.#request = undefined;
+    }
+    this.#viewState = show && !this.#revoked;
   }
 }
 

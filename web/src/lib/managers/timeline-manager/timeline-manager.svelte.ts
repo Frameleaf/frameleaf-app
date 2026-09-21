@@ -1,6 +1,7 @@
 import { AssetOrder, getAssetInfo, getTimeBuckets, TimeBucketDateType, type AssetResponseDto } from '@immich/sdk';
 import { clamp, isEqual } from 'lodash-es';
 import { SvelteDate, SvelteSet } from 'svelte/reactivity';
+import { onLibraryAccessChange, type LibraryAccessChange } from '$lib/frameleaf/library-access';
 import { VirtualScrollManager } from '$lib/managers/VirtualScrollManager/VirtualScrollManager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -101,6 +102,8 @@ export class TimelineManager extends VirtualScrollManager {
   #updatingViewportProximities = false;
   #scrollableElement: HTMLElement | undefined = $state();
   #unsubscribes: Array<() => void> = [];
+  #accessBlocked = false;
+  #accessRefreshQueued = false;
 
   get showAssetOwners() {
     return userPreferencesManager.showAssetOwners;
@@ -129,8 +132,11 @@ export class TimelineManager extends VirtualScrollManager {
         },
         AssetsUnarchive: (assets) => this.upsertAssets(assets),
         AssetsMarkNsfw: (ids: string[]) => this.#handleMarkNsfw(ids),
-        SessionAccessChanged: () => void this.refresh(),
       }),
+      onLibraryAccessChange(
+        (change) => this.#handleAccessChange(change),
+        authManager.authenticated ? authManager.user.id : undefined,
+      ),
     );
   }
 
@@ -259,11 +265,17 @@ export class TimelineManager extends VirtualScrollManager {
     }
   }
 
-  async #initializeTimelineMonths() {
-    const timebuckets = await getTimeBuckets({
-      ...authManager.params,
-      ...this.#options,
-    });
+  async #initializeTimelineMonths(signal: AbortSignal) {
+    const timebuckets = await getTimeBuckets(
+      {
+        ...authManager.params,
+        ...this.#options,
+      },
+      { signal },
+    );
+    if (signal.aborted || this.#accessBlocked) {
+      return;
+    }
 
     this.months = timebuckets.map((timeBucket) => {
       const date = new SvelteDate(timeBucket.timeBucket);
@@ -300,7 +312,7 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   async refresh() {
-    if (this.#options === TimelineManager.#INIT_OPTIONS || this.#options.deferInit) {
+    if (this.#accessBlocked || this.#options === TimelineManager.#INIT_OPTIONS || this.#options.deferInit) {
       return;
     }
 
@@ -316,21 +328,55 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   async #init(options: TimelineManagerOptions) {
+    if (this.#accessBlocked) {
+      return;
+    }
     this.isInitialized = false;
     this.months = [];
     this.albumAssets.clear();
     // The server re-applies its NSFW filter on reload, so drop the locally
     // tracked ids to avoid hiding assets that may since have been marked safe.
     this.#nsfwHiddenAssetIds.clear();
-    await this.initTask.execute(async () => {
+    await this.initTask.execute(async (signal) => {
       this.#options = options;
-      await this.#initializeTimelineMonths();
+      try {
+        await this.#initializeTimelineMonths(signal);
+      } catch (error) {
+        if (!signal.aborted) {
+          throw error;
+        }
+      }
     }, true);
   }
 
-  public override destroy() {
+  #handleAccessChange(change: LibraryAccessChange) {
+    if (change === 'account' || change === 'revoked') {
+      this.#accessBlocked = true;
+    }
+    this.initTask.cancel();
     this.disconnect();
     this.isInitialized = false;
+    for (const month of this.months) {
+      // Access revocation also cancels loads needed by a range/next-asset operation.
+      month.loader?.cancelToken?.abort();
+      month.cancel();
+      month.timelineDays = [];
+    }
+    this.months = [];
+    this.scrubberMonths = [];
+    this.scrubberTimelineHeight = 0;
+    this.albumAssets.clear();
+    if (!this.#accessBlocked && !this.#accessRefreshQueued) {
+      this.#accessRefreshQueued = true;
+      queueMicrotask(() => {
+        this.#accessRefreshQueued = false;
+        void this.refresh();
+      });
+    }
+  }
+
+  public override destroy() {
+    this.#handleAccessChange('revoked');
 
     for (const unsubscribe of this.#unsubscribes) {
       unsubscribe();
@@ -340,6 +386,9 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   async updateViewport(viewport: Viewport) {
+    if (this.#accessBlocked) {
+      return;
+    }
     if (viewport.height === 0 && viewport.width === 0) {
       return;
     }
@@ -394,7 +443,13 @@ export class TimelineManager extends VirtualScrollManager {
     }
 
     const executionStatus = await timelineMonth.loader?.execute(async (signal: AbortSignal) => {
-      await loadFromTimeBuckets(this, timelineMonth, this.#options, signal);
+      try {
+        await loadFromTimeBuckets(this, timelineMonth, this.#options, signal);
+      } catch (error) {
+        if (!signal.aborted) {
+          throw error;
+        }
+      }
     }, cancelable);
     if (executionStatus === 'LOADED') {
       updateGeometry(this, timelineMonth, { invalidateHeight: false });
@@ -403,12 +458,18 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   upsertAssets(assets: TimelineAsset[]) {
+    if (this.#accessBlocked) {
+      return;
+    }
     const notUpdated = this.#updateAssets(assets);
     const notExcluded = notUpdated.filter((asset) => !this.isExcluded(asset));
     this.addAssetsUpsertSegments([...notExcluded]);
   }
 
   upsertAssetsFromLiveEvent(assets: TimelineAsset[]) {
+    if (this.#accessBlocked) {
+      return;
+    }
     const notUpdated = this.#updateAssets(assets);
     const insertable = notUpdated.filter((asset) => this.canInsertAssetFromLiveEvent(asset));
     this.addAssetsUpsertSegments(insertable);
