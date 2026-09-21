@@ -62,6 +62,35 @@ describe('VideoEditorPanel component', () => {
     vi.clearAllMocks();
   });
 
+  it.each([
+    { handle: 'editor_video_trim_end', clientX: 300, startMs: 1000, endMs: 20_000 },
+    { handle: 'editor_video_trim_start', clientX: 150, startMs: 5000, endMs: 25_000 },
+    { handle: 'editor_video_trim_start', clientX: 0, startMs: 0, endMs: 25_000 },
+    { handle: 'editor_video_trim_end', clientX: 500, startMs: 1000, endMs: 30_000 },
+  ])('saves track-relative trim coordinates for $handle at $clientX', async ({ handle, clientX, startMs, endMs }) => {
+    vi.mocked(getAssetEdits).mockResolvedValue({
+      assetId: asset.id,
+      edits: [{ id: 'original-trim', action: AssetEditAction.Trim, parameters: { startMs: 1000, endMs: 25_000 } }],
+      originalVideo: { width: 1920, height: 1080, durationMs: 30_000 },
+    });
+    const view = renderWithTooltips(VideoEditorPanel, { asset, onClose: vi.fn() });
+    await fireEvent.click(await view.findByRole('button', { name: 'editor_video_trim' }));
+    const track = view.getByRole('group', { name: 'editor_video_trim' });
+    vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({ ...rect(300, 16), x: 100, left: 100, right: 400 });
+    const control = view.getByRole('button', { name: handle });
+    vi.spyOn(control, 'getBoundingClientRect').mockReturnValue({ ...rect(12, 24), x: 350, left: 350, right: 362 });
+    await fireEvent.pointerDown(control, { clientX: 356 });
+    await fireEvent.pointerMove(globalThis as unknown as Window, { clientX });
+    await fireEvent.pointerUp(globalThis as unknown as Window);
+    await fireEvent.click(view.getByRole('button', { name: 'editor_video_save_version' }));
+    await waitFor(() =>
+      expect(editAsset).toHaveBeenCalledWith({
+        id: asset.id,
+        assetEditsCreateDto: { edits: [{ action: AssetEditAction.Trim, parameters: { startMs, endMs } }] },
+      }),
+    );
+  });
+
   it('shows the focused video editor tools', async () => {
     const { findByRole } = renderWithTooltips(VideoEditorPanel, { asset, onClose: vi.fn() });
 
@@ -110,7 +139,7 @@ describe('VideoEditorPanel component', () => {
     const view = renderWithTooltips(VideoEditorPanel, { asset: current, onClose: vi.fn() });
     await fireEvent.click(await view.findByRole('button', { name: 'editor_video_trim' }));
     const end = await view.findByLabelText('editor_video_trim_end');
-    vi.spyOn(end, 'getBoundingClientRect').mockReturnValue(rect(300, 44));
+    vi.spyOn(end.closest('.timeline-track')!, 'getBoundingClientRect').mockReturnValue(rect(300, 44));
     await fireEvent.pointerDown(end, { clientX: 250, clientY: 22 });
     await fireEvent.click(view.getByRole('button', { name: 'crop' }));
     await fireEvent.click(view.getByRole('button', { name: /9:16/ }));
@@ -146,7 +175,7 @@ describe('VideoEditorPanel component', () => {
 
     await fireEvent.click(await findByRole('button', { name: 'editor_video_trim' }));
     const endHandle = getByLabelText('editor_video_trim_end');
-    vi.spyOn(endHandle, 'getBoundingClientRect').mockReturnValue(rect(200, 44));
+    vi.spyOn(endHandle.closest('.timeline-track')!, 'getBoundingClientRect').mockReturnValue(rect(200, 44));
 
     await fireEvent.pointerDown(endHandle, { clientX: 100, clientY: 22 });
     await fireEvent.click(getByRole('button', { name: 'editor_video_save_version' }));
