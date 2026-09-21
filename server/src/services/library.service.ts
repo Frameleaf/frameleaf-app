@@ -687,7 +687,10 @@ export class LibraryService extends BaseService {
     for (const assetPath of job.paths) {
       const asset = await this.assetRepository.getByLibraryIdAndOriginalPath(job.libraryId, assetPath);
       if (asset) {
-        await this.assetRepository.remove(asset);
+        const removed = await this.assetRepository.remove(asset);
+        if (removed?.videoEditPaths?.length) {
+          await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: removed.videoEditPaths } });
+        }
       }
     }
 

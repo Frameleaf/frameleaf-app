@@ -11,6 +11,7 @@ vi.mock('@immich/sdk', async () => {
     ...sdk,
     editAsset: vi.fn(),
     getAssetEdits: vi.fn(),
+    getVideoEditVersions: vi.fn().mockResolvedValue([]),
     removeAssetEdits: vi.fn(),
   };
 });
@@ -23,7 +24,7 @@ vi.mock('$lib/managers/event-manager.svelte', () => ({
 }));
 
 vi.mock('$lib/stores/websocket', () => ({
-  waitForWebsocketEvent: vi.fn().mockResolvedValue(undefined),
+  websocketEvents: { on: vi.fn().mockReturnValue(() => {}) },
 }));
 
 const rect = (width: number, height: number): DOMRect => ({
@@ -66,14 +67,15 @@ describe('VideoEditorPanel component', () => {
     expect(await findByRole('button', { name: 'editor_video_trim' })).toBeInTheDocument();
   });
 
-  it('uses preset crop controls and emits computed crop parameters', async () => {
-    const { findByRole, getByRole, queryByText } = renderWithTooltips(VideoEditorPanel, { asset, onClose: vi.fn() });
+  it('queues a version and closes without waiting for an unrelated render event', async () => {
+    const onClose = vi.fn();
+    const { findByRole, getByRole, queryByText } = renderWithTooltips(VideoEditorPanel, { asset, onClose });
 
     await fireEvent.click(await findByRole('button', { name: 'crop' }));
     expect(queryByText('Crop values')).not.toBeInTheDocument();
 
     await fireEvent.click(getByRole('button', { name: /9:16/ }));
-    await fireEvent.click(getByRole('button', { name: 'save' }));
+    await fireEvent.click(getByRole('button', { name: 'editor_video_save_version' }));
 
     await waitFor(() =>
       expect(editAsset).toHaveBeenCalledWith({
@@ -88,6 +90,7 @@ describe('VideoEditorPanel component', () => {
         },
       }),
     );
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith(true));
   });
 
   it('uses trim handles instead of time inputs', async () => {
@@ -98,7 +101,7 @@ describe('VideoEditorPanel component', () => {
     vi.spyOn(endHandle, 'getBoundingClientRect').mockReturnValue(rect(200, 44));
 
     await fireEvent.pointerDown(endHandle, { clientX: 100, clientY: 22 });
-    await fireEvent.click(getByRole('button', { name: 'save' }));
+    await fireEvent.click(getByRole('button', { name: 'editor_video_save_version' }));
 
     await waitFor(() =>
       expect(editAsset).toHaveBeenCalledWith({
@@ -123,7 +126,7 @@ describe('VideoEditorPanel component', () => {
     vi.spyOn(preview, 'getBoundingClientRect').mockReturnValue(rect(200, 100));
 
     await fireEvent.pointerDown(getByLabelText('editor_video_move_text'), { clientX: 160, clientY: 25 });
-    await fireEvent.click(getByRole('button', { name: 'save' }));
+    await fireEvent.click(getByRole('button', { name: 'editor_video_save_version' }));
 
     await waitFor(() =>
       expect(editAsset).toHaveBeenCalledWith({

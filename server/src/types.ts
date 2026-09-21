@@ -375,7 +375,7 @@ export type JobItem =
   // Transcoding
   | { name: JobName.AssetEncodeVideoQueueAll; data: IBaseJob }
   | { name: JobName.AssetEncodeVideo; data: IEntityJob }
-  | { name: JobName.AssetVideoEditGeneration; data: IEntityJob }
+  | { name: JobName.AssetVideoEditGeneration; data: IEntityJob & { versionId?: string } }
 
   // Thumbnails
   | { name: JobName.AssetGenerateThumbnailsQueueAll; data: IBaseJob }

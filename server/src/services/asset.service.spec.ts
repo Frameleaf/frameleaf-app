@@ -812,7 +812,47 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('video version operations', () => {
+    it('does not expose history without edit access', async () => {
+      await expect(sut.getVideoEditVersions(authStub.admin, 'asset-1')).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.assetEdit.listVideoVersions).not.toHaveBeenCalled();
+    });
+
+    it('queues only the export version and hides internal paths from the response', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.assetEdit.createVideoExport.mockResolvedValue({
+        id: 'version-1',
+        assetId: 'asset-1',
+        purpose: 'export',
+        status: 'pending',
+        createdAt: new Date('2026-01-01'),
+        recipe: [],
+        sourcePath: '/private/original',
+      } as any);
+      mocks.job.queue.mockResolvedValue(undefined);
+      const result = await sut.exportVideoEditVersion(authStub.admin, 'asset-1');
+      expect(result).not.toHaveProperty('sourcePath');
+      expect(mocks.assetEdit.createVideoExport).toHaveBeenCalledWith('asset-1', authStub.admin.user.id);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetVideoEditGeneration,
+        data: { id: 'asset-1', versionId: 'version-1' },
+      });
+    });
+
+    it('rejects a ready version owned by a different user before restoring its recipe', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.assetEdit.getVideoVersion.mockResolvedValue({ ownerId: 'other', status: 'ready', recipe: [] } as any);
+      await expect(sut.restoreVideoEditVersion(authStub.admin, 'asset-1', 'version-1')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
+    });
+  });
+
   describe('editAsset', () => {
+    beforeEach(() => {
+      mocks.media.probe.mockResolvedValue({ format: { duration: 10 }, videoStreams: [], audioStreams: [] } as any);
+    });
     it('should enforce crop first', async () => {
       await expect(
         sut.editAsset(authStub.admin, 'asset-1', {
@@ -856,7 +896,7 @@ describe(AssetService.name, () => {
         edits: [{ id: 'edit-1', ...edit }],
       });
 
-      expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', [edit]);
+      expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', [edit], 'save');
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.AssetVideoEditGeneration,
         data: { id: 'asset-1' },

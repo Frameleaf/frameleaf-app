@@ -4,8 +4,8 @@ import {
   getAssetImageEnrichment,
   getAssetInfo,
   isHttpError,
-  Status,
-  Status2,
+  Status2 as DescriptionStatus,
+  Status3 as NsfwStatus,
   updateAssetImageEnrichment,
   type AssetImageEnrichmentResponseDto,
 } from '@immich/sdk';
@@ -28,12 +28,12 @@ vi.mock('@immich/sdk', async () => {
 const enrichmentFactory = (assetId: string, effectiveIsNsfw: boolean): AssetImageEnrichmentResponseDto => ({
   assetId,
   description: {
-    status: Status.Missing,
+    status: DescriptionStatus.Missing,
     appliedDescription: false,
     appliedTags: false,
   },
   nsfwDetection: {
-    status: Status2.Success,
+    status: NsfwStatus.Success,
     effectiveIsNsfw,
     isNsfw: effectiveIsNsfw,
     score: effectiveIsNsfw ? 1 : 0,

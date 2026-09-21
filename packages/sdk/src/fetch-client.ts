@@ -1656,6 +1656,24 @@ export type SpeedParameters = {
     /** Speed segment start time in milliseconds */
     startMs?: number;
 };
+export type AssetEditActionItemDto = {
+    action: AssetEditAction;
+    /** List of edit actions to apply */
+    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
+};
+export type VideoEditVersionResponseDto = {
+    assetId: string;
+    createdAt: string;
+    edits: AssetEditActionItemDto[];
+    id: string;
+    isCurrent: boolean;
+    isRequested: boolean;
+    purpose: Purpose;
+    status: Status;
+};
+export type VideoEditExportDto = {
+    profile: Profile;
+};
 export type AssetEditActionItemResponseDto = {
     action: AssetEditAction;
     /** Asset edit ID */
@@ -1668,11 +1686,6 @@ export type AssetEditsResponseDto = {
     assetId: string;
     /** List of edit actions applied to the asset */
     edits: AssetEditActionItemResponseDto[];
-};
-export type AssetEditActionItemDto = {
-    action: AssetEditAction;
-    /** List of edit actions to apply */
-    parameters: CropParameters | RotateParameters | MirrorParameters | TrimParameters | StraightenParameters | AdjustParameters | LookParameters | ToggleParameters | TextOverlayParameters | AudioParameters | SpeedParameters;
 };
 export type AssetEditsCreateDto = {
     /** List of edit actions to apply */
@@ -1695,7 +1708,7 @@ export type ImageDescriptionEnrichmentResponseDto = {
     }[];
     /** Machine-readable reason when status === "skipped" */
     skipReason?: string;
-    status: Status;
+    status: Status2;
     tags?: string[];
     updatedAt?: string;
     visibleText?: string[];
@@ -1719,7 +1732,7 @@ export type NsfwDetectionEnrichmentResponseDto = {
     modelName?: string;
     review?: ImageEnrichmentReview;
     score?: number;
-    status: Status2;
+    status: Status3;
     updatedAt?: string;
 };
 export type AssetImageEnrichmentResponseDto = {
@@ -2816,7 +2829,7 @@ export type RunPodStateDto = {
     podId?: string;
     pricePerHour?: number;
     runningSince?: string;
-    status: Status3;
+    status: Status4;
     stoppedAt?: string;
     templateId?: string;
     unhealthySince?: string;
@@ -5686,6 +5699,73 @@ export function updateAsset({ id, updateAssetDto }: {
         method: "PUT",
         body: updateAssetDto
     })));
+}
+/**
+ * List saved video versions
+ */
+export function getVideoEditVersions({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: VideoEditVersionResponseDto[];
+    }>(`/assets/${encodeURIComponent(id)}/edit-versions`, {
+        ...opts
+    }));
+}
+/**
+ * Export the current video version
+ */
+export function exportVideoEditVersion({ id, videoEditExportDto }: {
+    id: string;
+    videoEditExportDto: VideoEditExportDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: VideoEditVersionResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/edit-versions/export`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: videoEditExportDto
+    })));
+}
+/**
+ * Prune an unselected video version
+ */
+export function pruneVideoEditVersion({ id, versionId }: {
+    id: string;
+    versionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/edit-versions/${encodeURIComponent(versionId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Download a video version master
+ */
+export function downloadVideoEditVersion({ id, versionId }: {
+    id: string;
+    versionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/assets/${encodeURIComponent(id)}/edit-versions/${encodeURIComponent(versionId)}/download`, {
+        ...opts
+    }));
+}
+/**
+ * Restore a saved video version
+ */
+export function restoreVideoEditVersion({ id, versionId }: {
+    id: string;
+    versionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/edit-versions/${encodeURIComponent(versionId)}/restore`, {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Remove edits from an existing asset
@@ -9581,7 +9661,20 @@ export enum MirrorAxis {
     Horizontal = "horizontal",
     Vertical = "vertical"
 }
+export enum Purpose {
+    Save = "save",
+    Export = "export",
+    Revert = "revert"
+}
 export enum Status {
+    Pending = "pending",
+    Ready = "ready",
+    Failed = "failed"
+}
+export enum Profile {
+    Master = "master"
+}
+export enum Status2 {
     Missing = "missing",
     Success = "success",
     Failed = "failed",
@@ -9592,7 +9685,7 @@ export enum Action {
     MarkedSafe = "marked-safe",
     MarkedNsfw = "marked-nsfw"
 }
-export enum Status2 {
+export enum Status3 {
     Missing = "missing",
     Success = "success",
     Failed = "failed"
@@ -9826,7 +9919,7 @@ export enum JobName {
     IntegrityDeleteReportType = "IntegrityDeleteReportType",
     IntegrityDeleteReports = "IntegrityDeleteReports"
 }
-export enum Status3 {
+export enum Status4 {
     Idle = "idle",
     Provisioning = "provisioning",
     Starting = "starting",

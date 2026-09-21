@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { BoundingBox } from 'src/repositories/machine-learning.repository.js';
@@ -40,6 +41,7 @@ import {
   VideoCodec,
   VideoContainer,
 } from 'src/enum.js';
+import { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
@@ -50,6 +52,7 @@ import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { getOutputDimensions } from 'src/utils/transform.js';
+import { getVideoMasterConfig, validateVideoMaster } from 'src/utils/video-edit.js';
 
 interface UpsertFileOptions {
   assetId: string;
@@ -70,6 +73,7 @@ type ExistingAssetFile = Omit<AssetFile, 'physicalFileId'> & {
 type ThumbnailAsset = NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>>;
 
 type VideoThumbnailAsset = ThumbnailPathEntity & {
+  originalPreviewPath?: string;
   originalPath: string;
   videoStream: VideoStreamInfo;
   format: VideoFormat;
@@ -762,7 +766,13 @@ export class MediaService extends BaseService {
   private async generateVideoThumbnails(
     asset: VideoThumbnailAsset,
     { ffmpeg, image }: SystemConfig,
-    options: { sourcePath?: string; isEdited?: boolean; fullsizeDimensions?: ImageDimensions } = {},
+    options: {
+      sourcePath?: string;
+      isEdited?: boolean;
+      fullsizeDimensions?: ImageDimensions;
+      pathSuffix?: string;
+      candidates?: string[];
+    } = {},
   ) {
     const sourcePath = options.sourcePath ?? asset.originalPath;
     const isEdited = options.isEdited ?? false;
@@ -780,6 +790,13 @@ export class MediaService extends BaseService {
       isProgressive: false,
       isTransparent: false,
     });
+    if (options.pathSuffix) {
+      for (const file of [previewFile, thumbnailFile]) {
+        const parsed = path.parse(file.path);
+        file.path = path.join(parsed.dir, `${parsed.name}_${options.pathSuffix}${parsed.ext}`);
+      }
+    }
+    options.candidates?.push(previewFile.path, thumbnailFile.path);
     this.storageCore.ensureFolders(previewFile.path);
 
     const { videoStream, format } = asset;
@@ -937,7 +954,7 @@ export class MediaService extends BaseService {
   }
 
   @OnJob({ name: JobName.AssetVideoEditGeneration, queue: QueueName.VideoConversion })
-  async handleAssetVideoEditGeneration({ id }: JobOf<JobName.AssetVideoEditGeneration>): Promise<JobStatus> {
+  async handleAssetVideoEditGeneration({ id, versionId }: JobOf<JobName.AssetVideoEditGeneration>): Promise<JobStatus> {
     const asset = await this.assetJobRepository.getForVideoConversion(id);
     if (!asset) {
       return JobStatus.Failed;
@@ -951,6 +968,7 @@ export class MediaService extends BaseService {
     }
 
     const thumbnailAsset = {
+      originalPreviewPath: asset.files.find((file) => file.type === AssetFileType.Preview && !file.isEdited)?.path,
       id: asset.id,
       ownerId: asset.ownerId,
       originalPath: asset.originalPath,
@@ -958,6 +976,15 @@ export class MediaService extends BaseService {
       format,
     };
     const config = await this.getConfig({ withCache: true });
+    const version = versionId
+      ? await this.assetEditRepository.getVideoVersion(id, versionId)
+      : await this.assetEditRepository.getRequestedVideoVersion(id);
+    if (versionId && !version) return JobStatus.Skipped;
+    if (version) {
+      return version.status === 'ready'
+        ? JobStatus.Skipped
+        : this.renderVideoVersion(version, thumbnailAsset, audioStream, config);
+    }
     const edits = (await this.assetEditRepository.getAll(id)) as AssetEditActionItem[];
     const editedFiles = this.toExistingAssetFiles(asset.files.filter((file) => file.isEdited));
 
@@ -1041,6 +1068,114 @@ export class MediaService extends BaseService {
     return JobStatus.Success;
   }
 
+  private async renderVideoVersion(
+    version: VideoEditVersion,
+    asset: VideoThumbnailAsset,
+    audio: AudioStreamInfo | undefined,
+    config: SystemConfig,
+  ): Promise<JobStatus> {
+    const suffix = `${version.id}_${randomUUID()}`;
+    const base = this.getEditedEncodedVideoPath(asset);
+    const master = `${base}.${suffix}.master.mp4`;
+    const proxy = `${base}.${suffix}.proxy.mp4`;
+    const candidates: string[] = [];
+    let published = false;
+    try {
+      const original = await this.mediaRepository.probe(version.sourcePath);
+      const sourceVideo = original.videoStreams[0];
+      if (!sourceVideo) throw new Error('Original video metadata is unavailable');
+      asset = { ...asset, videoStream: sourceVideo, format: original.format };
+      audio = original.audioStreams[0];
+      const edits = version.recipe;
+      if (edits.length === 0 && version.purpose !== 'export') {
+        published = await this.assetEditRepository.publishVideoVersion(version, {
+          files: [],
+          masterPath: null,
+          thumbhash: asset.originalPreviewPath
+            ? await this.mediaRepository.generateThumbhash(asset.originalPreviewPath, {
+                colorspace: config.image.colorspace,
+                processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
+              })
+            : null,
+          ...this.getVideoEditDimensions([], asset.videoStream),
+          duration: Math.round(asset.format.duration * 1000),
+        });
+        return published ? JobStatus.Success : JobStatus.Skipped;
+      }
+      candidates.push(master, proxy);
+      const command = this.getVideoEditCommand(config.ffmpeg, edits, asset.videoStream, audio, asset.format, true);
+      this.storageCore.ensureFolders(master);
+      await this.mediaRepository.transcode(version.sourcePath, master, command);
+      const rendered = await this.mediaRepository.probe(master);
+      const video = rendered.videoStreams[0];
+      const dimensions = this.getVideoEditDimensions(edits, asset.videoStream);
+      validateVideoMaster(asset.videoStream, video, dimensions);
+      const proxyCommand = BaseConfig.create(config.ffmpeg, this.videoInterfaces).getCommand(
+        TranscodeTarget.All,
+        video,
+        rendered.audioStreams[0],
+        rendered.format,
+      );
+      await this.mediaRepository.transcode(master, proxy, proxyCommand);
+      const preview = await this.mediaRepository.probe(proxy);
+      if (!preview.videoStreams[0]?.width || !preview.videoStreams[0]?.height)
+        throw new Error('video_version_proxy_invalid');
+      if (version.purpose === 'export') {
+        published = await this.assetEditRepository.publishVideoVersion(version, {
+          masterPath: master,
+          files: [
+            {
+              assetId: version.assetId,
+              type: AssetFileType.EncodedVideo,
+              path: proxy,
+              isEdited: true,
+              isProgressive: false,
+              isTransparent: false,
+            },
+          ],
+          ...dimensions,
+          duration: this.getVideoEditDurationMs(edits, asset.format),
+        });
+        return published ? JobStatus.Success : JobStatus.Skipped;
+      }
+      const generated = await this.generateVideoThumbnails(
+        { ...asset, videoStream: video, format: rendered.format },
+        config,
+        {
+          sourcePath: master,
+          isEdited: true,
+          fullsizeDimensions: dimensions,
+          pathSuffix: suffix,
+          candidates,
+        },
+      );
+      published = await this.assetEditRepository.publishVideoVersion(version, {
+        masterPath: master,
+        files: [
+          {
+            assetId: version.assetId,
+            type: AssetFileType.EncodedVideo,
+            path: proxy,
+            isEdited: true,
+            isProgressive: false,
+            isTransparent: false,
+          },
+          ...generated.files,
+        ],
+        ...dimensions,
+        duration: this.getVideoEditDurationMs(edits, asset.format),
+        thumbhash: generated.thumbhash,
+      });
+      return published ? JobStatus.Success : JobStatus.Skipped;
+    } catch (error: any) {
+      this.logger.error(`Video version render failed: ${error?.message ?? error}`);
+      await this.assetEditRepository.failVideoVersion(version.assetId, version.id);
+      return JobStatus.Failed;
+    } finally {
+      if (!published) await Promise.all(candidates.map((candidate) => this.storageRepository.unlink(candidate)));
+    }
+  }
+
   private isVideoThumbnailFile(type: AssetFileType) {
     return [AssetFileType.Preview, AssetFileType.Thumbnail].includes(type);
   }
@@ -1073,7 +1208,7 @@ export class MediaService extends BaseService {
     audioStream: AudioStreamInfo | undefined,
     format: VideoFormat,
   ): VideoEditCommandPlan {
-    const hasCpuVideoFilters = this.hasCpuVideoEditFilters(edits);
+    const hasCpuVideoFilters = this.hasCpuVideoEditFilters(edits) || videoStream.rotation !== 0;
     const planConfig =
       config.accel === TranscodeHardwareAcceleration.Disabled || !hasCpuVideoFilters
         ? config
@@ -1176,12 +1311,20 @@ export class MediaService extends BaseService {
     videoStream: VideoStreamInfo,
     audioStream: AudioStreamInfo | undefined,
     format: VideoFormat,
+    master = false,
   ): TranscodeCommand {
     const videoFilters: string[] = [];
     const audioFilters: string[] = [];
-    const transcodeConfig = BaseConfig.create(config, this.videoInterfaces) as BaseConfig;
+    const transcodeConfig = BaseConfig.create(
+      master ? getVideoMasterConfig(config, videoStream) : { ...config, targetResolution: 'original' },
+      this.videoInterfaces,
+    ) as BaseConfig;
     const inputOptions = [...transcodeConfig.getBaseInputOptions(videoStream, format)];
-    const transcodeFilters = transcodeConfig.getFilterOptions(videoStream);
+    const transcodeFilters = transcodeConfig.getFilterOptions({
+      ...videoStream,
+      ...this.getVideoEditDimensions(edits, videoStream),
+      rotation: 0,
+    });
 
     const trim = edits.find((edit) => edit.action === AssetEditAction.Trim);
     const speedEdits = edits.filter(isEditAction(AssetEditAction.Speed));
@@ -1264,7 +1407,11 @@ export class MediaService extends BaseService {
       videoFilters.push(this.getTextOverlayFilter(overlay.parameters, timeline));
     }
 
-    videoFilters.push(...transcodeFilters);
+    if (master) {
+      videoFilters.push(
+        `setparams=color_primaries=${videoStream.colorPrimaries}:color_trc=${videoStream.colorTransfer}:colorspace=${videoStream.colorMatrix}`,
+      );
+    } else videoFilters.push(...transcodeFilters);
 
     const audioEdit = edits.find((edit) => edit.action === AssetEditAction.Audio);
     const muted = !!audioEdit?.parameters.muted;
@@ -1273,8 +1420,31 @@ export class MediaService extends BaseService {
     }
 
     let outputOptions = [
-      ...transcodeConfig.getBaseOutputOptions(TranscodeTarget.All, videoStream, muted ? undefined : audioStream),
+      ...transcodeConfig.getBaseOutputOptions(
+        master ? TranscodeTarget.Video : TranscodeTarget.All,
+        videoStream,
+        muted ? undefined : audioStream,
+      ),
     ];
+
+    if (master) {
+      outputOptions[outputOptions.indexOf('-c:v') + 1] =
+        getVideoMasterConfig(config, videoStream).targetVideoCodec === VideoCodec.Hevc ? 'libx265' : 'libx264';
+      if (!muted && (audioFilters.length > 0 || speedSegments.length > 0))
+        outputOptions[outputOptions.indexOf('-c:a') + 1] = 'aac';
+      outputOptions.push(
+        '-pix_fmt',
+        videoStream.pixelFormat,
+        '-color_primaries',
+        String(videoStream.colorPrimaries),
+        '-colorspace',
+        String(videoStream.colorMatrix),
+        '-color_trc',
+        String(videoStream.colorTransfer),
+        '-fps_mode',
+        'passthrough',
+      );
+    }
 
     if (speedSegments.length > 0) {
       const { filters, maps } = this.getSegmentedSpeedFilterGraph(
@@ -1506,10 +1676,14 @@ export class MediaService extends BaseService {
     let width = videoStream.width;
     let height = videoStream.height;
 
+    if (Math.abs(videoStream.rotation) === 90) {
+      [width, height] = [height, width];
+    }
+
     const crop = edits.find((edit) => edit.action === AssetEditAction.Crop);
     if (crop) {
-      width = crop.parameters.width;
-      height = crop.parameters.height;
+      width = this.toEvenDimension(crop.parameters.width);
+      height = this.toEvenDimension(crop.parameters.height);
     }
 
     const rotate = edits.find((edit) => edit.action === AssetEditAction.Rotate);

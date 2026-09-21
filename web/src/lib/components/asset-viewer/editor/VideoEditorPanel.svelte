@@ -1,7 +1,7 @@
 <script lang="ts">
   import { shortcuts } from '$lib/actions/shortcut';
   import { eventManager } from '$lib/managers/event-manager.svelte';
-  import { waitForWebsocketEvent } from '$lib/stores/websocket';
+  import VideoVersionControls from './VideoVersionControls.svelte';
   import { getAssetMediaUrl } from '$lib/utils';
   import {
     AssetMediaSize,
@@ -125,7 +125,6 @@
 
   let selectedTool = $state<Tool>('auto');
   let isSaving = $state(false);
-  let isRendering = $state(false);
   let isLoading = $state(true);
   let isShowingConfirmDialog = $state(false);
   let hasAppliedEdits = $state(false);
@@ -185,7 +184,7 @@
   const canUseTimeline = $derived(durationSeconds > 0);
   const normalizedRotation = $derived(((Number(rotation) % 360) + 360) % 360);
   const hasUnsavedChanges = $derived(!isLoading && !hasAppliedEdits && getCurrentEditKey() !== initialEditKey);
-  const saveButtonText = $derived(isRendering ? $t('editor_video_rendering') : $t('save'));
+  const saveButtonText = $derived($t('editor_video_save_version'));
   const previewUrl = $derived(
     getAssetMediaUrl({ id: asset.id, cacheKey: asset.thumbhash, edited: false, size: AssetMediaSize.Preview }),
   );
@@ -1021,37 +1020,19 @@
     }
 
     isSaving = true;
-    isRendering = false;
-
     try {
       const edits = buildEdits();
-      const editCompleted =
-        edits.length > 0
-          ? waitForWebsocketEvent('AssetEditReadyV2', (event) => event.asset.id === asset.id, 600_000)
-          : undefined;
-
       await (edits.length === 0
         ? removeAssetEdits({ id: asset.id })
         : editAsset({ id: asset.id, assetEditsCreateDto: { edits } }));
-
       eventManager.emit('AssetEditsApplied', asset.id);
-
-      if (editCompleted) {
-        isRendering = true;
-        toastManager.primary($t('editor_video_rendering_toast'));
-
-        await editCompleted;
-        eventManager.emit('AssetEditsApplied', asset.id);
-      }
-
-      toastManager.primary($t('editor_edits_applied_success'));
+      toastManager.primary($t('editor_video_version_queued'));
       hasAppliedEdits = true;
       onClose(true);
     } catch (error) {
       toastManager.danger(error instanceof Error ? error.message : $t('editor_edits_applied_error'));
     } finally {
       isSaving = false;
-      isRendering = false;
     }
   }
 
@@ -1107,6 +1088,15 @@
     </Button>
   </HStack>
 
+  {#key asset.id}
+    <VideoVersionControls
+      {asset}
+      {hasUnsavedChanges}
+      disabled={isSaving || isLoading}
+      onRestore={() => onClose(true)}
+    />
+  {/key}
+
   <nav class="mt-4 flex gap-1 overflow-x-auto px-2 pb-1" aria-label={$t('editor_video_tools')}>
     {#each tools as tool (tool.id)}
       <button
@@ -1120,12 +1110,6 @@
       </button>
     {/each}
   </nav>
-
-  {#if isRendering}
-    <div class="mx-4 mt-4 rounded-md border border-immich-primary/40 bg-immich-primary/10 px-3 py-2 text-sm">
-      {$t('editor_video_rendering_toast')}
-    </div>
-  {/if}
 
   <section class="mt-4 flex-1 overflow-y-auto px-4 pb-4">
     {#if isLoading}
