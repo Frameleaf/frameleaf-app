@@ -18,7 +18,7 @@ test.describe('User Administration', () => {
     // Navigate to user management page and verify title and header
     await page.goto(`/admin/users`);
     await expect(page).toHaveTitle(/User Management/);
-    await expect(page.getByText('User Management')).toBeVisible();
+    await expect(page.getByText('User Management', { exact: true })).toBeVisible();
   });
 
   test('create user', async ({ context, page }) => {
