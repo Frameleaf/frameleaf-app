@@ -14,7 +14,12 @@
       "path": "patches/0002-stable-worker-sourcemaps.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "d61d6cdf8c235c762c8648a4f9de45e887faa7cb05403b08363e636d68f6cf23"
+    },
+    {
+      "path": "patches/0003-deferred-profiler-dom-guard.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "b70496aa09a662ea2c321f2b0ea90bfd450d2411b239cc9924bcf56169adc973"
     }
   ],
-  "sourceSha256": "ea947c1f7deaea90505739a3a1152fc18f60ae5ca99fa374e5508f3111da9709"
+  "sourceSha256": "673f7dc4b985aeb1c13b478ed6bb9ca00ba543c765e8820074ea29618d5003b2"
 }
