@@ -61,6 +61,20 @@ pnpm --dir web exec vitest run src/lib/frameleaf/library-access.svelte.spec.ts s
 pnpm --dir web exec tsc --noEmit
 ```
 
+### Semantic checking follow-up
+
+On published baseline `7432c5b7f4c1052a12c6ddd361984b9fb4b95570`, full `svelte-check --tsconfig ./tsconfig.json` reproduced four errors not covered by the earlier standalone TypeScript check: the generic TestWrapper lost the required enrichment props at the test renderer boundary, and the search page declared its Ask loading derived before its query-presence dependency. The repair uses a small test wrapper whose props come from the real enrichment component and declares the derived values in dependency order. No casts, declaration shims, compiler suppressions or relaxed checks are added.
+
+The isolated `codex/FL-31-semantic-checks` candidate uses its own frozen-lockfile dependencies and SDK build with Node `24.21.0` and pnpm `11.24.0`. Full semantic checking passes with zero errors and the same 76 existing warnings; plain TypeScript passes; the enrichment, production search route and search-session suites pass 29 tests. Earlier broader slice results above are historical evidence, not a repeated full-suite claim for this small repair.
+
+```sh
+pnpm --dir web exec svelte-check --tsconfig ./tsconfig.json
+pnpm --dir web exec tsc --noEmit
+pnpm --dir web exec vitest run src/lib/components/asset-viewer/DetailPanelImageEnrichment.spec.ts 'src/routes/(user)/search/[[photos=photos]]/[[assetId=id]]/page.svelte.spec.ts' src/lib/frameleaf/library-search-session.svelte.spec.ts
+```
+
+GitNexus indexed the assigned baseline in the isolated worktree. The Svelte-local declarations remain unindexed (UNKNOWN impact), so manual tracing covers the Ask controls/submission and the actual enrichment A-to-B rerender regression. This repair does not change access/session behavior, deferred native scope or the remaining acceptance ledger.
+
 Run Vitest from the web working directory (`pnpm --dir web`), not from the repository root with a Vite root override; SvelteKit resolves its configuration from the working directory.
 
 The initial check using borrowed dependencies reported two enum errors in the unchanged `DetailPanelImageEnrichment.spec.ts`. With the isolated frozen-lockfile install and locally rebuilt SDK, the whole-web TypeScript check passes. Hosted exact-candidate Actions remain the authoritative merge gate.
