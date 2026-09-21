@@ -1,19 +1,17 @@
---- asset_edit_action_item_dto.dart
-+++ asset_edit_action_item_dto.dart
-@@ -20,7 +20,7 @@
+@@ -20,7 +20,7 @@ class AssetEditActionItemDto {
+   /// Type of edit action to perform
    AssetEditAction action;
  
-   /// Parameters validated against the selected edit action
--  Map<String, Object> parameters;
+-  AssetEditActionItemDtoParameters parameters;
 +  Map<String, dynamic> parameters;
  
    @override
    bool operator ==(Object other) => identical(this, other) || other is AssetEditActionItemDto &&
-@@ -53,7 +53,7 @@
+@@ -53,7 +53,7 @@ class AssetEditActionItemDto {
  
        return AssetEditActionItemDto(
          action: AssetEditAction.fromJson(json[r'action'])!,
--        parameters: mapCastOfType<String, Object>(json, r'parameters')!,
+-        parameters: AssetEditActionItemDtoParameters.fromJson(json[r'parameters'])!,
 +        parameters: json[r'parameters'],
        );
      }

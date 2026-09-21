@@ -6,9 +6,9 @@ Issue: [FL-41](https://heroit.atlassian.net/browse/FL-41). Accepted source basel
 
 The asset-edit DTO previously parsed parameters through an untagged union before checking the action. An earlier all-optional parameter schema could strip unrelated keys: valid speed edits failed validation, audio volume/mute settings became an empty object, and action defaults were skipped. Request validation now selects the existing discriminated action schema before parsing the parameters. Invalid ranges, unsupported actions and duplicate actions remain rejected. The Nest validation pipe uses the runtime DTO import.
 
-The generated request contract keeps the existing action enum and accepts an opaque parameter object, which the server validates against that action. Every response schema, schema name, required-key list and all 313 operations remain unchanged against the exact baseline. The OpenAPI specification and JavaScript client were regenerated from the DTO; generated sources were not hand-edited.
+The published request contract retains its original parameter `anyOf` alternatives and action enum. Runtime parsing first preserves the raw parameter object, then validates it against the selected action. Source metadata derives the documented alternatives from the existing parameter schemas; it does not relax runtime validation. After source regeneration, the entire OpenAPI specification and JavaScript client are byte-for-byte identical to the accepted baseline, including all 313 operations, response schemas and required fields.
 
-Two existing Dart generator patches were adjusted only to match the new generated request-map and response-parameter type names. They preserve the previous dynamic-map behavior and keep the existing generation gate reproducible. This is maintenance required by the server contract change, not mobile implementation. Mobile features, native compilation, unknown-action support and device qualification are deferred by the user's September 21 instruction.
+The first candidate replaced request `anyOf` with an object. Hosted Check OpenAPI run `35585248253`, job `106286958932`, rejected that schema change. The corrected candidate restores the exact existing wire contract without suppressing the check or adding a compatibility-exception label. Both Dart generator patches are also restored byte-for-byte to baseline; there are no mobile changes. Mobile implementation, native compilation, unknown-action support and device qualification remain deferred by the user's September 21 instruction.
 
 ## Reproducible checks
 
@@ -17,12 +17,12 @@ Two existing Dart generator patches were adjusted only to match the new generate
 - `oazapfts --optimistic --argumentStyle=object --useEnumType --allSchemas open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts` and `pnpm --filter @immich/sdk build`: passed.
 - `pnpm --filter @immich/sdk test`: three checks passed for all operation exports, real generated JSON serialization/deserialization of future action names with nested arrays/expressions/nulls, and byte-preserving multipart asset upload. The transport uses injected responses; it does not claim that the server executes unsupported actions.
 - `pnpm --dir server exec eslint src/dtos/editing.dto.ts src/dtos/editing.dto.spec.ts --max-warnings 0`: passed.
-- `cd open-api && bash bin/generate-dart-sdk.sh`: source generator patches apply successfully; this does not qualify a native application.
+- `cd open-api && bash bin/generate-dart-sdk.sh`: unchanged source generator patches apply successfully; this does not qualify a native application.
 
 The host's mise 2026.5.16 cannot run the repository's newer monorepo task syntax. The declared generation/build commands were executed explicitly through `mise exec`; repository toolchain settings were not changed. The full `mise run //:open-api` aggregate and current-candidate hosted gates remain CI responsibilities. The existing fork integration workflow now executes the SDK transport checks after regeneration and build.
 
 ## Remaining acceptance
 
-Independent review and current-head GitHub Actions remain required before this slice is ready for merge. There is no merge, publication or deployment authorization in this work. Jira remains In Progress.
+The initial candidate received independent review with no P0/P1/P2 findings. The wire-contract correction requires a review recheck and new current-head GitHub Actions before this slice is ready for merge. There is no merge, publication or deployment authorization in this work. Jira remains In Progress.
 
 Studio/project graph and binary importer APIs are absent from this accepted baseline. The nested edit-parameter transport fixture is not a substitute for testing those production APIs when their owning implementation is accepted. Do not invent new endpoints or mark their wider acceptance complete. Dart and other mobile work remain deferred by the user.

@@ -213,7 +213,16 @@ const AssetEditParametersSchema = z
 const AssetEditActionItemSchema = z
   .object({
     action: AssetEditActionSchema,
-    parameters: z.record(z.string(), z.unknown()).describe('Parameters validated against the selected edit action'),
+    parameters: z.record(z.string(), z.unknown()).meta({
+      // Keep the existing wire contract while deferring parsing to the action discriminator.
+      type: undefined,
+      additionalProperties: undefined,
+      propertyNames: undefined,
+      description: AssetEditParametersSchema.description,
+      anyOf: AssetEditParametersSchema.options.map((schema) => ({
+        $ref: `#/components/schemas/${schema.meta()!.id}`,
+      })),
+    }),
   })
   .pipe(__AssetEditActionItemSchema)
   .meta({ id: 'AssetEditActionItemDto' });
