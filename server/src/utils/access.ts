@@ -212,7 +212,12 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
     }
 
     case Permission.AssetFileDownload: {
-      return access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      return access.assetFile.checkOwnerAccess(
+        auth.user.id,
+        ids,
+        auth.session?.hasElevatedPermission,
+        accessPrivacy(auth),
+      );
     }
 
     case Permission.AssetView: {
@@ -255,7 +260,12 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
 
     case Permission.AssetFileRead:
     case Permission.AssetFileDelete: {
-      return await access.assetFile.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+      return await access.assetFile.checkOwnerAccess(
+        auth.user.id,
+        ids,
+        auth.session?.hasElevatedPermission,
+        accessPrivacy(auth),
+      );
     }
 
     case Permission.AlbumRead: {
