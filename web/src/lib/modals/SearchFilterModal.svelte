@@ -5,6 +5,7 @@
   import SearchImageEnrichmentSection from '$lib/components/shared-components/search-bar/SearchImageEnrichmentSection.svelte';
   import SearchLocationSection from '$lib/components/shared-components/search-bar/SearchLocationSection.svelte';
   import SearchMediaSection from '$lib/components/shared-components/search-bar/SearchMediaSection.svelte';
+  import { PeopleSearch } from '$lib/components/shared-components/search-bar/people-search.svelte';
   import SearchPeopleSection from '$lib/components/shared-components/search-bar/SearchPeopleSection.svelte';
   import SearchRatingsSection from '$lib/components/shared-components/search-bar/SearchRatingsSection.svelte';
   import SearchTagsSection from '$lib/components/shared-components/search-bar/SearchTagsSection.svelte';
@@ -27,6 +28,7 @@
   const formId = generateId();
 
   searchManager.setQuery(searchQuery);
+  const peopleSearch = new PeopleSearch(() => true);
 
   function storeQueryType(type: string) {
     localStorage.setItem('searchQueryType', type);
@@ -49,7 +51,17 @@
     <form id={formId} autocomplete="off" {onsubmit} {onreset}>
       <div class="flex flex-col gap-5 pb-10" tabindex="-1">
         <!-- PEOPLE -->
-        <SearchPeopleSection title={undefined} parentPromise={undefined} />
+        {#key peopleSearch.generation}
+          <SearchPeopleSection
+            people={peopleSearch.people ?? []}
+            loading={peopleSearch.loading}
+            onUnavailable={(id) => peopleSearch.discard(id)}
+          />
+        {/key}
+        {#if peopleSearch.failed}
+          <p role="alert">{$t('errors.failed_to_get_people')}</p>
+          <Button onclick={() => peopleSearch.load()}>{$t('retry')}</Button>
+        {/if}
 
         <!-- TEXT -->
         <SearchTextSection />

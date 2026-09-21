@@ -3,13 +3,23 @@
   import { getPeopleThumbnailUrl } from '$lib/utils';
   import type { PersonResponseDto } from '@immich/sdk';
   /** Pass only currently authorized evidence. Clear on lock, account change or revocation. */
-  let { person }: { person?: PersonResponseDto } = $props();
+  let { person, onUnavailable }: { person?: PersonResponseDto; onUnavailable?: () => void } = $props();
 </script>
 
 {#if person}
   {#key person.id + person.updatedAt}
     <span class="avatar" aria-hidden="true">
-      <ImageThumbnail url={getPeopleThumbnailUrl(person)} altText="" widthStyle="100%" circle />
+      <ImageThumbnail
+        url={getPeopleThumbnailUrl(person)}
+        altText=""
+        widthStyle="100%"
+        circle
+        onComplete={(errored) => {
+          if (errored) {
+            onUnavailable?.();
+          }
+        }}
+      />
     </span>
   {/key}
 {/if}

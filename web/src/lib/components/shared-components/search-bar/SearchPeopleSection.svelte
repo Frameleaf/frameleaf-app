@@ -1,6 +1,5 @@
 <script lang="ts">
   import ImageThumbnail from '$lib/components/assets/thumbnail/ImageThumbnail.svelte';
-  import { getPeople, getSearchPeopleTitle } from './search-bar-utils';
   import SingleGridRow from '$lib/components/shared-components/SingleGridRow.svelte';
   import SearchBar from '$lib/elements/SearchBar.svelte';
   import { getPeopleThumbnailUrl } from '$lib/utils';
@@ -11,27 +10,24 @@
   import { searchManager } from '$lib/managers/search-manager.svelte';
 
   interface Props {
-    title: string | undefined;
-    parentPromise: Promise<PersonResponseDto[]> | undefined;
+    people: PersonResponseDto[];
+    loading: boolean;
+    onUnavailable: (personId: string) => void;
   }
 
-  // eslint-disable-next-line no-useless-assignment
-  let { title = $bindable(), parentPromise }: Props = $props();
+  let { people, loading, onUnavailable }: Props = $props();
 
   let selectedPeople = $derived(searchManager.filter.personIds);
-  let peoplePromise = parentPromise ?? getPeople(selectedPeople);
   let showAllPeople = $state(false);
   let name = $state('');
   let numberOfPeople = $state(1);
 
-  function togglePersonSelection(id: string, people: PersonResponseDto[]) {
+  function togglePersonSelection(id: string) {
     if (selectedPeople.has(id)) {
       selectedPeople.delete(id);
     } else {
       selectedPeople.add(id);
     }
-
-    title = getSearchPeopleTitle(people, selectedPeople);
   }
 
   const filterPeople = (list: PersonResponseDto[], name: string) => {
@@ -40,11 +36,11 @@
   };
 </script>
 
-{#await peoplePromise}
+{#if loading}
   <div id="spinner" class="-mb-4 flex h-54 items-center justify-center">
     <LoadingSpinner size="large" />
   </div>
-{:then people}
+{:else}
   {#if people && people.length > 0}
     {@const peopleList = showAllPeople
       ? filterPeople(people, name)
@@ -62,14 +58,21 @@
           <button
             type="button"
             class="flex flex-col items-center rounded-3xl border-none p-0 transition-all"
-            onclick={() => togglePersonSelection(person.id, people)}
+            aria-pressed={selectedPeople.has(person.id)}
+            aria-label={person.name || $t('unnamed_person')}
+            onclick={() => togglePersonSelection(person.id)}
           >
             <div class="relative w-full">
               <ImageThumbnail
                 circle
                 shadow
                 url={getPeopleThumbnailUrl(person)}
-                altText={person.name}
+                altText=""
+                onComplete={(errored) => {
+                  if (errored) {
+                    onUnavailable(person.id);
+                  }
+                }}
                 widthStyle="100%"
               />
               {#if selectedPeople.has(person.id)}
@@ -80,7 +83,7 @@
                 </div>
               {/if}
             </div>
-            <p class="mt-2 line-clamp-2 text-sm font-medium dark:text-white">{person.name}</p>
+            <p class="mt-2 line-clamp-2 text-sm font-medium dark:text-white">{person.name || $t('unnamed_person')}</p>
           </button>
         {/each}
       </SingleGridRow>
@@ -101,5 +104,7 @@
         </div>
       {/if}
     </div>
+  {:else}
+    <Text>{$t('search_no_people')}</Text>
   {/if}
-{/await}
+{/if}
