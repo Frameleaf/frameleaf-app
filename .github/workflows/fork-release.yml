@@ -2,7 +2,7 @@ name: Fork Release
 
 on:
   workflow_run:
-    workflows: ['Docker']
+    workflows: ['Deploy']
     branches: [fork/main]
     types: [completed]
   workflow_dispatch:
@@ -96,9 +96,11 @@ jobs:
           NEXT_N=$(( ${LAST_N:-0} + 1 ))
           TAG="${PREFIX}${NEXT_N}"
           PREV_TAG="${PREFIX}${LAST_N}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "prev_tag=${LAST_N:+$PREV_TAG}" >> "$GITHUB_OUTPUT"
-          echo "upstream=$UPSTREAM_VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "tag=$TAG"
+            echo "prev_tag=${LAST_N:+$PREV_TAG}"
+            echo "upstream=$UPSTREAM_VERSION"
+          } >> "$GITHUB_OUTPUT"
           echo "Computed tag: $TAG (upstream v$UPSTREAM_VERSION, prev: ${PREV_TAG:-none})"
 
       - name: Login to GHCR

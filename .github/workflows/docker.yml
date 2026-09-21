@@ -1,12 +1,11 @@
-name: Docker
+name: Deploy
 
 on:
   workflow_dispatch:
   push:
     branches: [main, fork/main, 'release/*']
+    tags: ['v*']
   pull_request:
-  release:
-    types: [published]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -49,24 +48,25 @@ jobs:
           force-filters: |
             - '.github/workflows/docker.yml'
             - '.github/workflows/local-multi-runner-build.yml'
-          force-events: 'workflow_dispatch,release'
+          force-events: 'workflow_dispatch'
 
       - name: Determine release scope
         id: scope
-        if: ${{ github.event_name == 'release' }}
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          TAG: ${{ github.event.release.tag_name }}
-          PRERELEASE: ${{ github.event.release.prerelease }}
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ contains(github.ref_name, '-rc.') }}
         run: |
           overall=$(gh api "repos/${REPO}/releases/latest" --jq '.tag_name' 2>/dev/null || true)
 
           releases=$(gh api "repos/${REPO}/releases" --paginate --slurp | jq 'flatten | map(select(.draft | not))')
-          in_line=$(jq -r --argjson pre "${PRERELEASE}" '.[] | select(.prerelease == $pre) | .tag_name' <<< "${releases}" \
+          in_line=$({ jq -r --argjson pre "${PRERELEASE}" '.[] | select(.prerelease == $pre) | .tag_name' <<< "${releases}"; echo "${TAG}"; } \
             | grep -E "^${TAG%%.*}\." | sort --version-sort | tail -1)
+          newest=$(printf '%s\n%s\n' "${overall}" "${TAG}" | grep -E '^v' | sort --version-sort | tail -1)
 
-          echo "highest-overall=$([[ "${TAG}" == "${overall}" ]] && echo true || echo false)" | tee -a "$GITHUB_OUTPUT"
+          echo "highest-overall=$([[ "${PRERELEASE}" != "true" && "${TAG}" == "${newest}" ]] && echo true || echo false)" | tee -a "$GITHUB_OUTPUT"
           echo "highest-in-line=$([[ "${TAG}" == "${in_line}" ]] && echo true || echo false)" | tee -a "$GITHUB_OUTPUT"
 
   retag_ml:
@@ -119,10 +119,17 @@ jobs:
         env:
           REGISTRY_NAME: 'ghcr.io'
           REPOSITORY: ${{ github.repository_owner }}/${{ matrix.image }}
-          TAG_OLD: ${{ github.ref_name == 'fork/main' && 'fork-main' || 'main' }}${{ matrix.suffixes }}
+          REF_NAME: ${{ github.ref_name }}
+          REF: ${{ github.ref }}
+          SUFFIX: ${{ matrix.suffixes }}
           TAG_PR: ${{ github.event.number == 0 && github.ref_name || format('pr-{0}', github.event.number) }}${{ matrix.suffixes }}
           TAG_COMMIT: commit-${{ github.event_name != 'pull_request' && github.sha || github.event.pull_request.head.sha }}${{ matrix.suffixes }}
         run: |
+          if [[ "${REF}" == refs/tags/v* ]]; then
+            TAG_OLD="${REF_NAME%%.*}$([[ "${REF_NAME}" == *-rc.* ]] && echo -rc)${SUFFIX}"
+          else
+            TAG_OLD="$([[ "${REF_NAME}" == "fork/main" ]] && echo fork-main || echo main)${SUFFIX}"
+          fi
           TAG_PR="${TAG_PR//\//-}"
           docker buildx imagetools create -t "${REGISTRY_NAME}/${REPOSITORY}:${TAG_PR}" "${REGISTRY_NAME}/${REPOSITORY}:${TAG_OLD}"
           docker buildx imagetools create -t "${REGISTRY_NAME}/${REPOSITORY}:${TAG_COMMIT}" "${REGISTRY_NAME}/${REPOSITORY}:${TAG_OLD}"
@@ -147,10 +154,16 @@ jobs:
         env:
           REGISTRY_NAME: 'ghcr.io'
           REPOSITORY: ${{ github.repository_owner }}/immich-server
-          TAG_OLD: ${{ github.ref_name == 'fork/main' && 'fork-main' || 'main' }}
+          REF_NAME: ${{ github.ref_name }}
+          REF: ${{ github.ref }}
           TAG_PR: ${{ github.event.number == 0 && github.ref_name || format('pr-{0}', github.event.number) }}
           TAG_COMMIT: commit-${{ github.event_name != 'pull_request' && github.sha || github.event.pull_request.head.sha }}
         run: |
+          if [[ "${REF}" == refs/tags/v* ]]; then
+            TAG_OLD="${REF_NAME%%.*}$([[ "${REF_NAME}" == *-rc.* ]] && echo -rc)"
+          else
+            TAG_OLD="$([[ "${REF_NAME}" == "fork/main" ]] && echo fork-main || echo main)"
+          fi
           TAG_PR="${TAG_PR//\//-}"
           docker buildx imagetools create -t "${REGISTRY_NAME}/${REPOSITORY}:${TAG_PR}" "${REGISTRY_NAME}/${REPOSITORY}:${TAG_OLD}"
           docker buildx imagetools create -t "${REGISTRY_NAME}/${REPOSITORY}:${TAG_COMMIT}" "${REGISTRY_NAME}/${REPOSITORY}:${TAG_OLD}"
@@ -181,8 +194,8 @@ jobs:
         type=sha,format=long,prefix=commit-
         type=semver,pattern={{version}},prefix=v
         type=semver,pattern={{major}},prefix=v,enable=${{ needs.pre-job.outputs.highest-in-line == 'true' }}
-        type=match,pattern=v(\d+),group=1,prefix=v,suffix=-rc,enable=${{ github.event.release.prerelease == true && needs.pre-job.outputs.highest-in-line == 'true' }}
-        type=raw,value=release,enable=${{ github.event_name == 'release' && github.event.release.prerelease == false && needs.pre-job.outputs.highest-overall == 'true' }}
+        type=match,pattern=v(\d+),group=1,prefix=v,suffix=-rc,enable=${{ startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-rc.') && needs.pre-job.outputs.highest-in-line == 'true' }}
+        type=raw,value=release,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-rc.') && needs.pre-job.outputs.highest-overall == 'true' }}
       build-args: |
         DEVICE=${{ matrix.device }}
 
@@ -207,8 +220,9 @@ jobs:
 
   mirror:
     name: Mirror to Docker Hub
-    needs: [pre-job, machine-learning, server]
-    if: ${{ github.event_name == 'release' && github.event.release.prerelease == false }}
+    needs: [pre-job, machine-learning, server, retag_ml, retag_server]
+    if: >-
+      ${{ always() && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-rc.') && (needs.machine-learning.result == 'success' || needs.retag_ml.result == 'success') && (needs.server.result == 'success' || needs.retag_server.result == 'success') }}
     permissions:
       packages: read
     runs-on: ubuntu-latest
@@ -263,7 +277,7 @@ jobs:
       packages: write
     runs-on: ubuntu-24.04
     if: >-
-      ${{ github.repository == 'adamtaylor152/immich' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (always() && (github.event_name != 'release' || needs.pre-job.outputs.highest-overall == 'true') && github.event_name != 'pull_request' && (github.event_name == 'release' || github.ref_name == 'main' || github.ref_name == 'fork/main') && (needs.server.result == 'success' || needs.retag_server.result == 'success')) }}
+      ${{ github.repository == 'adamtaylor152/immich' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (always() && (!startsWith(github.ref, 'refs/tags/v') || needs.pre-job.outputs.highest-overall == 'true') && github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref_name == 'main' || github.ref_name == 'fork/main') && (needs.server.result == 'success' || needs.retag_server.result == 'success')) }}
     steps:
       - name: Login to GitHub Container Registry
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
@@ -288,7 +302,7 @@ jobs:
       packages: write
     runs-on: ubuntu-24.04
     if: >-
-      ${{ github.repository == 'adamtaylor152/immich' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (always() && (github.event_name != 'release' || needs.pre-job.outputs.highest-overall == 'true') && github.event_name != 'pull_request' && (github.event_name == 'release' || github.ref_name == 'main' || github.ref_name == 'fork/main') && (needs.machine-learning.result == 'success' || needs.retag_ml.result == 'success')) }}
+      ${{ github.repository == 'adamtaylor152/immich' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (always() && (!startsWith(github.ref, 'refs/tags/v') || needs.pre-job.outputs.highest-overall == 'true') && github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref_name == 'main' || github.ref_name == 'fork/main') && (needs.machine-learning.result == 'success' || needs.retag_ml.result == 'success')) }}
     steps:
       - name: Login to GitHub Container Registry
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
