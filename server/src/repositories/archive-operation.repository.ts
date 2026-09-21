@@ -123,6 +123,9 @@ export class ArchiveOperationRepository {
           WHERE "operationId"=${id}::uuid AND status IN ('error','revoked')
           AND (${!undo} OR "publishedUpdateId" IS NOT NULL)`.execute(tx);
       } else if (command === 'undo') {
+        // Cancelled archive items that never published have nothing to restore.
+        await sql`UPDATE immich_fork.archive_operation_item SET status='skipped'
+          WHERE "operationId"=${id}::uuid AND status='pending' AND "publishedUpdateId" IS NULL`.execute(tx);
         await sql`UPDATE immich_fork.archive_operation_item SET status='pending'
           WHERE "operationId"=${id}::uuid AND status='succeeded'`.execute(tx);
       }

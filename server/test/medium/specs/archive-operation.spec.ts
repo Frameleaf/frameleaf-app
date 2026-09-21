@@ -73,6 +73,30 @@ describe('durable selected-asset archive', () => {
     expect(await reloaded.get(auth.user.id, operation)).toMatchObject({ succeeded: 2, pending: 0 });
   });
 
+  it('undo after partial cancellation skips never-published items and drains', async () => {
+    const selected = [await asset(), await asset()];
+    const operation = await submit(selected);
+    await repo.processNext(operation, false);
+    await repo.command(auth, operation, 'cancel');
+    expect(await repo.get(auth.user.id, operation)).toMatchObject({ succeeded: 1, pending: 1 });
+    await repo.command(auth, operation, 'undo');
+    while (await repo.processNext(operation, false)) {
+      /* restore only the published item */
+    }
+    expect(await repo.get(auth.user.id, operation)).toMatchObject({
+      undone: 1,
+      skipped: 1,
+      conflict: 0,
+      pending: 0,
+      succeeded: 0,
+    });
+    expect(await repo.pending()).not.toContain(operation);
+    expect(await Promise.all(selected.map((id) => visibility(id)))).toEqual([
+      AssetVisibility.Timeline,
+      AssetVisibility.Timeline,
+    ]);
+  });
+
   it('rechecks mixed ownership, sensitive content and revoked sessions', async () => {
     const { result: other } = await context.newUser();
     const foreign = await asset({ ownerId: other.id });
