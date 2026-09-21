@@ -109,15 +109,27 @@ test("standalone script tests install their locked JavaScript dependencies first
   ]) {
     assert.ok(scripts.findIndex((step) => step.run === command) > install);
   }
-
 });
 
 test("retired mobile workflows and jobs remain absent", () => {
-  for (const file of ["build-mobile.yml", "fdroid.yml", "static_analysis.yml"]) {
+  for (const file of [
+    "build-mobile.yml",
+    "fdroid.yml",
+    "static_analysis.yml",
+  ]) {
     assert.equal(existsSync(path.join(root, ".github/workflows", file)), false);
   }
   assert.equal(workflow("test.yml").jobs["mobile-unit-tests"], undefined);
   assert.equal(workflow("fork-integration.yml").jobs["mobile"], undefined);
+  const apiGeneration = workflow("test.yml").jobs[
+    "generated-api-up-to-date"
+  ].steps.find((step) => step.name === "Run API generation").run;
+  assert.doesNotMatch(
+    apiGeneration,
+    /open-api-dart|generate-dart|\/\/:open-api(?:\s|$)/u,
+  );
+  assert.match(apiGeneration, /\/\/server:sync-open-api/u);
+  assert.match(apiGeneration, /\/\/:open-api-typescript/u);
 });
 
 test("locked Java and media tools include artifact URLs and checksums for hosted platforms", () => {
