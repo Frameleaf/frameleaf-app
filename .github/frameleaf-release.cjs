@@ -395,7 +395,246 @@ async function verifyImage(
     digest: index.digest,
     platforms: [...platforms.keys()].sort(),
     sourceCommit: sha,
+    buildSourceCommit: sha,
+    buildDigest: index.digest,
   };
+}
+// Keep the original build identity. Qualification may advance without rebuilding.
+const BUILD_INPUTS = {
+  "frameleaf-server": [
+    "server",
+    "packages",
+    "web",
+    "i18n",
+    "open-api",
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    ".pnpmfile.cjs",
+    "mise.toml",
+    "mise.lock",
+    "LICENSE",
+    ".dockerignore",
+  ],
+  "frameleaf-machine-learning": ["machine-learning"],
+};
+function identicalBuildInputs(
+  spec,
+  built,
+  qualified,
+  git = (...args) => execFileSync("git", args),
+) {
+  assert(SHA.test(built) && SHA.test(qualified), "Invalid reuse source SHA");
+  git("merge-base", "--is-ancestor", built, qualified);
+  const inputs = [
+    ...BUILD_INPUTS[spec.image],
+    ".gitattributes",
+    ".github/frameleaf-release.cjs",
+    ".github/workflows/docker.yml",
+    ".github/workflows/local-multi-runner-build.yml",
+  ];
+  assert.equal(
+    git("diff", "--name-only", built, qualified, "--", ...inputs)
+      .toString()
+      .trim(),
+    "",
+    "Image build inputs changed",
+  );
+}
+async function releaseEvidence(tag = "latest") {
+  const record = await github(
+    tag === "latest"
+      ? "releases/latest"
+      : `releases/tags/${encodeURIComponent(tag)}`,
+  );
+  assert(
+    !record.draft && !record.prerelease,
+    "Reuse requires a published stable release",
+  );
+  assert(
+    /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d+$/.test(record.tag_name),
+    "Invalid reuse release tag",
+  );
+  const asset = record.assets?.find((a) => a.name === "release-manifest.json");
+  assert(Number.isSafeInteger(asset?.id), "Missing release manifest");
+  const manifest = await github(`releases/assets/${asset.id}`, {
+    headers: { Accept: "application/octet-stream" },
+  });
+  assert.equal(manifest.repository, REPOSITORY, "Foreign reuse repository");
+  assert.equal(manifest.tag, record.tag_name, "Reuse release tag differs");
+  assert.equal(
+    manifest.sourceCommit,
+    record.target_commitish,
+    "Reuse release source differs",
+  );
+  const run = new RegExp(`^${SOURCE}/actions/runs/([0-9]+)$`).exec(
+    manifest.certifiedBuildRun,
+  );
+  assert(
+    run &&
+      trustedRun(await github(`actions/runs/${run[1]}`), manifest.sourceCommit),
+    "Reuse release run is not trusted",
+  );
+  return manifest;
+}
+async function verifyReuse(
+  registry,
+  spec,
+  sha,
+  manifest,
+  checkInputs = identicalBuildInputs,
+) {
+  assert.equal(manifest.repository, REPOSITORY, "Foreign reuse repository");
+  assert(SHA.test(manifest.sourceCommit), "Invalid qualified source");
+  checkInputs(spec, manifest.sourceCommit, sha);
+  const records = manifest.images?.filter(
+    (r) => r.image === imageName(spec) && r.suffix === spec.suffix,
+  );
+  assert.equal(records?.length, 1, "Missing or duplicate reuse variant");
+  const prior = records[0];
+  assert.equal(
+    prior.sourceCommit,
+    manifest.sourceCommit,
+    "Reuse image qualification differs",
+  );
+  const built = prior.buildSourceCommit || prior.sourceCommit;
+  const digest = prior.buildDigest || prior.digest;
+  assert(DIGEST.test(digest), "Invalid reusable digest");
+  checkInputs(spec, built, sha);
+  const image = await verifyImage(registry, spec, built, digest);
+  assert.equal(image.digest, digest, "Reuse digest differs");
+  return {
+    ...image,
+    sourceCommit: sha,
+    buildSourceCommit: built,
+    buildDigest: digest,
+    reusedFromRelease: manifest.tag,
+  };
+}
+async function candidateImage(
+  registry,
+  spec,
+  sha,
+  evidence = releaseEvidence,
+  checkInputs = identicalBuildInputs,
+) {
+  const index = await registry.read(spec.image, commitTag(sha, spec));
+  const tag = index.json.annotations?.["org.frameleaf.qualification.release"];
+  if (!tag) return verifyImage(registry, spec, sha, index.digest);
+  const image = await verifyReuse(
+    registry,
+    spec,
+    sha,
+    await evidence(tag),
+    checkInputs,
+  );
+  assert.equal(
+    index.json.annotations["org.frameleaf.qualification.revision"],
+    sha,
+    "Wrong qualification revision",
+  );
+  assert.equal(
+    index.json.annotations["org.frameleaf.build.digest"],
+    image.buildDigest,
+    "Wrong original build digest",
+  );
+  const original = await registry.read(spec.image, image.buildDigest);
+  assert.deepEqual(
+    index.json.manifests,
+    original.json.manifests,
+    "Reused manifest content differs",
+  );
+  const verified = await verifyImage(
+    registry,
+    spec,
+    image.buildSourceCommit,
+    index.digest,
+  );
+  return { ...image, digest: verified.digest };
+}
+async function planReuse(env = process.env, registry = new Registry(env)) {
+  assert.equal(env.GITHUB_REPOSITORY, REPOSITORY);
+  assert.equal(env.GITHUB_REF, `refs/heads/${MAIN}`);
+  assert(SHA.test(env.GITHUB_SHA));
+  if (env.GITHUB_EVENT_NAME === "workflow_dispatch") {
+    // Commit tags are immutable. A manual refresh needs an unpublished source
+    // revision; reject before spending runners on digests we cannot publish.
+    for (const spec of VARIANTS) {
+      try {
+        await registry.read(spec.image, commitTag(env.GITHUB_SHA, spec));
+      } catch (error) {
+        if (error.status === 404) continue;
+        throw error;
+      }
+      throw new Error(
+        "Manual rebuild requires a new source revision: a candidate already exists for this SHA. Retry failed jobs from the original run to recover publication.",
+      );
+    }
+  }
+  let manifest;
+  if (env.GITHUB_EVENT_NAME === "push") {
+    try {
+      manifest = await releaseEvidence();
+    } catch (error) {
+      console.log(`Build required: ${error.message}`);
+    }
+  }
+  for (const image of Object.keys(BUILD_INPUTS)) {
+    let reuse = false;
+    if (manifest) {
+      try {
+        for (const spec of VARIANTS.filter((v) => v.image === image))
+          await verifyReuse(registry, spec, env.GITHUB_SHA, manifest);
+        reuse = true;
+      } catch (error) {
+        console.log(`${image}: build required: ${error.message}`);
+      }
+    }
+    const key = image.replace("frameleaf-", "");
+    await fs.appendFile(
+      env.GITHUB_OUTPUT,
+      `${key}=${!reuse}\n${key}-release=${reuse ? manifest.tag : ""}\n`,
+    );
+  }
+}
+async function reuseCandidate(env = process.env) {
+  assert.equal(env.GITHUB_REPOSITORY, REPOSITORY);
+  assert.equal(env.GITHUB_REF, `refs/heads/${MAIN}`);
+  assert.equal(env.GITHUB_EVENT_NAME, "push");
+  const spec = variant(env.IMAGE, env.SUFFIX);
+  assert(/^frameleaf-v/.test(env.REUSE_RELEASE || ""), "Missing reuse release");
+  const registry = new Registry(env);
+  const image = await verifyReuse(
+    registry,
+    spec,
+    env.GITHUB_SHA,
+    await releaseEvidence(env.REUSE_RELEASE),
+  );
+  const ref = commitTag(env.GITHUB_SHA, spec);
+  let exists = true;
+  try {
+    await registry.read(spec.image, ref);
+  } catch (error) {
+    if (error.status !== 404) throw error;
+    exists = false;
+  }
+  if (!exists)
+    docker(
+      "create",
+      "--annotation",
+      `index:org.frameleaf.qualification.revision=${env.GITHUB_SHA}`,
+      "--annotation",
+      `index:org.frameleaf.qualification.release=${env.REUSE_RELEASE}`,
+      "--annotation",
+      `index:org.frameleaf.build.digest=${image.buildDigest}`,
+      "--tag",
+      `${image.image}:${ref}`,
+      `${image.image}@${image.buildDigest}`,
+    );
+  const verified = await candidateImage(registry, spec, env.GITHUB_SHA);
+  if (await currentMainline(env.GITHUB_SHA))
+    await tagImage(registry, spec, verified, "edge");
+  console.log(JSON.stringify(verified));
 }
 async function github(endpoint, options = {}) {
   const response = await fetch(
@@ -610,7 +849,7 @@ async function release(env = process.env) {
   const images = [];
   // Verify every source before creating any release or floating image alias.
   for (const spec of VARIANTS)
-    images.push(await verifyImage(registry, spec, env.SOURCE_SHA));
+    images.push(await candidateImage(registry, spec, env.SOURCE_SHA));
   const version = JSON.parse(await fs.readFile("server/package.json")).version;
   const releases = await listAll("releases");
   const refs = await github("git/matching-refs/tags/frameleaf-v");
@@ -625,7 +864,7 @@ async function release(env = process.env) {
       "Release tag targets another commit",
     );
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     repository: REPOSITORY,
     sourceCommit: env.SOURCE_SHA,
     tag,
@@ -717,6 +956,10 @@ module.exports = {
   checkedResponse,
   Registry,
   reserveAndStage,
+  identicalBuildInputs,
+  verifyReuse,
+  candidateImage,
+  planReuse,
 };
 if (require.main === module) {
   (async () => {
@@ -728,6 +971,8 @@ if (require.main === module) {
       );
     } else if (process.argv[2] === "merge-candidate") await mergeCandidate();
     else if (process.argv[2] === "release") await release();
+    else if (process.argv[2] === "plan-reuse") await planReuse();
+    else if (process.argv[2] === "reuse-candidate") await reuseCandidate();
     else throw new Error("Expected build-matrix, merge-candidate or release");
   })().catch((error) => {
     console.error(error.message);

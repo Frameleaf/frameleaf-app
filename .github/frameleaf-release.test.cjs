@@ -509,3 +509,243 @@ test("reserved release mismatch and existing version conflicts never overwrite a
     /different content/,
   );
 });
+
+test("qualified unchanged reuse retains immutable build source and rejects altered evidence", async () => {
+  const { verifyReuse } = require("./frameleaf-release.cjs");
+  const f = fixture();
+  f.entries.set(f.result.digest, f.result);
+  const qualified = "b".repeat(40);
+  const manifest = {
+    repository: "Frameleaf/frameleaf-app",
+    tag: "frameleaf-v3.2.0-1",
+    sourceCommit: sha,
+    images: [
+      {
+        image: "ghcr.io/frameleaf/frameleaf-server",
+        suffix: "",
+        sourceCommit: sha,
+        digest: f.result.digest,
+      },
+    ],
+  };
+  const inputs = [];
+  const result = await verifyReuse(
+    f.registry,
+    VARIANTS[0],
+    qualified,
+    manifest,
+    (_spec, built, current) => inputs.push([built, current]),
+  );
+  assert.equal(result.sourceCommit, qualified);
+  assert.equal(result.buildSourceCommit, sha);
+  assert.equal(result.buildDigest, f.result.digest);
+  assert.equal(f.index.annotations["org.opencontainers.image.revision"], sha);
+  assert.deepEqual(inputs, [
+    [sha, qualified],
+    [sha, qualified],
+  ]);
+  await assert.rejects(
+    verifyReuse(f.registry, VARIANTS[0], qualified, manifest, () => {
+      throw Error("Image build inputs changed");
+    }),
+    /inputs changed/,
+  );
+  for (const mutate of [
+    (m) => {
+      m.repository = "foreign/app";
+    },
+    (m) => {
+      m.images[0].sourceCommit = qualified;
+    },
+    (m) => {
+      m.images.push(m.images[0]);
+    },
+    (m) => {
+      m.images[0].buildDigest = "latest";
+    },
+    (m) => {
+      m.images[0].buildSourceCommit = qualified;
+    },
+  ]) {
+    const invalid = clone(manifest);
+    mutate(invalid);
+    await assert.rejects(
+      verifyReuse(f.registry, VARIANTS[0], qualified, invalid, () => {}),
+    );
+  }
+  const config = [...f.entries.values()].find((e) => e.json.config?.Labels);
+  config.json.config.Labels["org.opencontainers.image.source"] =
+    "https://github.com/foreign/app";
+  await assert.rejects(
+    verifyReuse(f.registry, VARIANTS[0], qualified, manifest, () => {}),
+    /source repository/,
+  );
+});
+
+test("reuse compares original inputs and ancestry, including non-obvious Docker inputs", () => {
+  const { identicalBuildInputs } = require("./frameleaf-release.cjs");
+  const calls = [];
+  identicalBuildInputs(VARIANTS[0], sha, "b".repeat(40), (...args) => {
+    calls.push(args);
+    return Buffer.from("");
+  });
+  assert.deepEqual(calls[0], [
+    "merge-base",
+    "--is-ancestor",
+    sha,
+    "b".repeat(40),
+  ]);
+  for (const input of [
+    ".pnpmfile.cjs",
+    "mise.toml",
+    "mise.lock",
+    "LICENSE",
+    ".dockerignore",
+    "packages",
+    ".github/workflows/local-multi-runner-build.yml",
+  ])
+    assert(calls[1].includes(input), input);
+  assert.throws(
+    () =>
+      identicalBuildInputs(VARIANTS[0], sha, "b".repeat(40), (...args) => {
+        if (args[0] === "merge-base") throw Error("Non-ancestor stale source");
+        return Buffer.from("");
+      }),
+    /Non-ancestor/,
+  );
+  assert.throws(
+    () =>
+      identicalBuildInputs(VARIANTS[0], sha, "b".repeat(40), (...args) =>
+        Buffer.from(args[0] === "diff" ? "server/Dockerfile" : ""),
+      ),
+    /inputs changed/,
+  );
+});
+
+test("release accepts truthful reused candidate index and rejects changed qualification or children", async () => {
+  const { candidateImage } = require("./frameleaf-release.cjs");
+  const f = fixture();
+  f.entries.set(f.result.digest, f.result);
+  const qualified = "b".repeat(40);
+  const manifest = {
+    repository: "Frameleaf/frameleaf-app",
+    tag: "frameleaf-v3.2.0-1",
+    sourceCommit: sha,
+    images: [
+      {
+        image: "ghcr.io/frameleaf/frameleaf-server",
+        suffix: "",
+        sourceCommit: sha,
+        digest: f.result.digest,
+      },
+    ],
+  };
+  const index = clone(f.index);
+  Object.assign(index.annotations, {
+    "org.frameleaf.qualification.release": manifest.tag,
+    "org.frameleaf.qualification.revision": qualified,
+    "org.frameleaf.build.digest": f.result.digest,
+  });
+  const candidate = {
+    json: index,
+    digest: hash(JSON.stringify(index)),
+    size: JSON.stringify(index).length,
+  };
+  f.entries.set(candidate.digest, candidate);
+  const registry = {
+    read: async (image, reference) =>
+      reference === `commit-${qualified}`
+        ? candidate
+        : f.registry.read(image, reference),
+  };
+  const result = await candidateImage(
+    registry,
+    VARIANTS[0],
+    qualified,
+    async () => manifest,
+    () => {},
+  );
+  assert.equal(result.digest, candidate.digest);
+  assert.equal(result.buildDigest, f.result.digest);
+  assert.equal(result.buildSourceCommit, sha);
+  assert.equal(result.sourceCommit, qualified);
+  index.annotations["org.frameleaf.qualification.revision"] = sha;
+  await assert.rejects(
+    candidateImage(
+      registry,
+      VARIANTS[0],
+      qualified,
+      async () => manifest,
+      () => {},
+    ),
+    /qualification revision/,
+  );
+  index.annotations["org.frameleaf.qualification.revision"] = qualified;
+  index.manifests.pop();
+  await assert.rejects(
+    candidateImage(
+      registry,
+      VARIANTS[0],
+      qualified,
+      async () => manifest,
+      () => {},
+    ),
+    /manifest content/,
+  );
+});
+
+test("manual dispatch rejects existing fresh or reused same-SHA candidates before scheduling builds", async () => {
+  const { planReuse } = require("./frameleaf-release.cjs");
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "frameleaf-manual-"),
+  );
+  const output = path.join(directory, "outputs");
+  const env = {
+    GITHUB_REPOSITORY: "Frameleaf/frameleaf-app",
+    GITHUB_REF: "refs/heads/fork/main",
+    GITHUB_SHA: sha,
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    GITHUB_OUTPUT: output,
+  };
+  try {
+    for (const reused of [false, true]) {
+      const f = fixture();
+      if (reused)
+        f.index.annotations["org.frameleaf.qualification.revision"] =
+          "b".repeat(40);
+      await fs.writeFile(output, "");
+      await assert.rejects(
+        planReuse(
+          { ...env, GITHUB_SHA: reused ? "b".repeat(40) : sha },
+          { read: async () => f.result },
+        ),
+        /requires a new source revision/,
+      );
+      assert.equal(await fs.readFile(output, "utf8"), "");
+    }
+    const refs = [];
+    await planReuse(env, {
+      read: async (image, ref) => {
+        refs.push([image, ref]);
+        throw Object.assign(Error("Missing"), { status: 404 });
+      },
+    });
+    assert.equal(refs.length, VARIANTS.length);
+    assert.equal(
+      await fs.readFile(output, "utf8"),
+      "server=true\nserver-release=\nmachine-learning=true\nmachine-learning-release=\n",
+    );
+    await fs.writeFile(output, "");
+    await assert.rejects(
+      planReuse(env, {
+        read: async () => {
+          throw Object.assign(Error("Forbidden"), { status: 403 });
+        },
+      }),
+      /Forbidden/,
+    );
+    assert.equal(await fs.readFile(output, "utf8"), "");
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
