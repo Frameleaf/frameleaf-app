@@ -52,7 +52,7 @@ import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { getOutputDimensions } from 'src/utils/transform.js';
-import { getVideoMasterConfig, validateVideoMaster } from 'src/utils/video-edit.js';
+import { getVideoMasterConfig, getVideoRotationCopyPlan, validateVideoMaster } from 'src/utils/video-edit.js';
 
 interface UpsertFileOptions {
   assetId: string;
@@ -1103,14 +1103,18 @@ export class MediaService extends BaseService {
         return published ? JobStatus.Success : JobStatus.Skipped;
       }
       candidates.push(master, proxy);
-      const command = this.getVideoEditCommand(config.ffmpeg, edits, asset.videoStream, audio, asset.format, true);
+      const rotationCopy = getVideoRotationCopyPlan(edits, original);
+      const command =
+        rotationCopy?.command ??
+        this.getVideoEditCommand(config.ffmpeg, edits, asset.videoStream, audio, asset.format, true);
       this.storageCore.ensureFolders(master);
       await this.mediaRepository.transcode(version.sourcePath, master, command);
       const rendered = await this.mediaRepository.probe(master);
       const video = rendered.videoStreams[0];
       const dimensions = this.getVideoEditDimensions(edits, asset.videoStream);
-      validateVideoMaster(asset.videoStream, video, dimensions);
-      const proxyCommand = BaseConfig.create(config.ffmpeg, this.videoInterfaces).getCommand(
+      validateVideoMaster(asset.videoStream, video, dimensions, rotationCopy?.rotation);
+      const proxyConfig = video.rotation === 0 ? config.ffmpeg : { ...config.ffmpeg, accelDecode: false };
+      const proxyCommand = BaseConfig.create(proxyConfig, this.videoInterfaces).getCommand(
         TranscodeTarget.All,
         video,
         rendered.audioStreams[0],
