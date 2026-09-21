@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { inventory, licenses, verifySnapshot } from './engine.mjs';
+import { writeResourcePolicy } from './resource-policy.mjs';
 
 test('snapshot gate rejects mutations, extra files, missing files and symlinks', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'frameleaf-snapshot-'));
@@ -102,4 +103,23 @@ test('artifact audit includes installed runtime package notices and rejects pack
     await writeFile(path.join(dist, 'attribution/index.json'), JSON.stringify(output));
     await assert.rejects(auditAttribution(studio, dist, directory), /Generated lockfile differs from pinned package authority/);
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('production policy retains every blocked identity and rejects a manifest-only approval', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'frameleaf-runtime-policy-'));
+  try {
+    const studio = path.resolve(import.meta.dirname, '..');
+    await cp(path.join(studio, 'runtime'), path.join(root, 'runtime'), { recursive: true });
+    const manifest = JSON.parse(await readFile(path.join(studio, 'dependency-attribution.json'), 'utf8'));
+    await writeFile(path.join(root, 'dependency-attribution.json'), JSON.stringify(manifest));
+    const engine = path.join(root, 'engine');
+    await writeResourcePolicy(root, engine);
+    const actual = JSON.parse(await readFile(path.join(engine, 'src/shared/utils/resource-policy.json'), 'utf8'));
+    assert.deepEqual(Object.keys(actual), manifest.resources.map(({ id }) => id));
+    assert.equal(Object.keys(actual).length, 210);
+    assert.deepEqual(await readFile(path.join(engine, 'src/shared/utils/resource-policy.json')), await readFile(path.join(engine, 'public/moss-tts/resource-policy.json')));
+    manifest.resources[0].decisions.localRuntime = 'allowed';
+    await writeFile(path.join(root, 'dependency-attribution.json'), JSON.stringify(manifest));
+    await assert.rejects(writeResourcePolicy(root, engine), /Unreviewed runtime approval/);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

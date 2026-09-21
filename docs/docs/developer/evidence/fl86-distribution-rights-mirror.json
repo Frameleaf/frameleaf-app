@@ -1,13 +1,35 @@
 {
   "sourcePath": "docs/docs/developer/frameleaf-plan/fl86-distribution-rights.md",
-  "sourceSha256": "7ef3d9c35253dd367c722719e0a64a962cfe1ba4d1506a7c2ed1910865214523",
-  "sourceBytes": 14450,
+  "sourceSha256": "ebc48840bb829e78d62515b9a3e35acc1af9db47999bf69023c99cd0ed026981",
+  "sourceBytes": 19771,
   "pageId": "61997196",
   "pageUrl": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997196/FL-86+Studio+artifact+attribution+and+resource+rights",
-  "pageVersion": 2,
+  "pageVersion": 3,
   "parentPageId": "61440418",
   "verified": true,
-  "verification": "Delayed update applied as version 2 at 2026-09-21T22:16:18.422Z. Independent full normalized body readback matches the complete submitted wrapper and source, including tables, qualification limits and standalone audit regression. Previous version 1 receipt was superseded; distribution approval remains false.",
-  "candidateBase": "4ccad254cf6665e2ebce99e7cac8c376c0cf7d4c",
-  "status": "candidate-not-qualified"
+  "verification": "Full HTML readback matched all 89 normalized content blocks, 13 ordered links and both exact code blocks. Prior source-owned body verified before replacement; 49 existing local IDs retained. Markdown update was rejected without mutation; supported HTML replacement succeeded.",
+  "candidateBase": "7432c5b7f4c1052a12c6ddd361984b9fb4b95570",
+  "status": "runtime-candidate-not-qualified",
+  "additionalSources": [
+    {
+      "path": "studio/README.md",
+      "sha256": "b50af0548670813f9933202b08169119c3e770633ee92a25c70aa115448a8d1f",
+      "bytes": 5729
+    }
+  ],
+  "previousMirrors": [
+    {
+      "sourcePath": "docs/docs/developer/frameleaf-plan/fl86-distribution-rights.md",
+      "sourceSha256": "7ef3d9c35253dd367c722719e0a64a962cfe1ba4d1506a7c2ed1910865214523",
+      "sourceBytes": 14450,
+      "pageId": "61997196",
+      "pageUrl": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997196/FL-86+Studio+artifact+attribution+and+resource+rights",
+      "pageVersion": 2,
+      "parentPageId": "61440418",
+      "verified": true,
+      "verification": "Delayed update applied as version 2 at 2026-09-21T22:16:18.422Z. Independent full normalized body readback matches the complete submitted wrapper and source, including tables, qualification limits and standalone audit regression. Previous version 1 receipt was superseded; distribution approval remains false.",
+      "candidateBase": "4ccad254cf6665e2ebce99e7cac8c376c0cf7d4c",
+      "status": "candidate-not-qualified"
+    }
+  ]
 }

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { writeResourcePolicy } from './resource-policy.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -92,6 +93,7 @@ async function prepare(archivePath) {
       execFileSync('git', ['apply', `--directory=${path.relative(root, generated)}`, path.join(studio, patch.path)], { cwd: root });
     }
     await cp(path.join(studio, 'engine-package-lock.json'), path.join(generated, 'package-lock.json'));
+    await writeResourcePolicy(studio, generated);
     const source = await inventory(generated);
     const sourceSha256 = sha256(JSON.stringify(source));
     assert.equal(sourceSha256, configuration.sourceSha256, 'Adapted source digest mismatch');
