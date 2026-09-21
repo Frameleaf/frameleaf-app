@@ -86,7 +86,12 @@ assert(
   !docker.on.pull_request && !docker.on.release,
   "Candidate publishing must not run on PR/release events",
 );
-for (const name of ["server", "machine-learning"])
+for (const name of [
+  "server",
+  "machine-learning",
+  "retag-server",
+  "retag-machine-learning",
+])
   assert.deepEqual(
     docker.jobs[name].needs,
     ["changes", "integration", "certification"],
