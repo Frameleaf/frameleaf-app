@@ -378,7 +378,10 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
     ).rejects.toThrow('rollback original-official lock probe');
 
     expect(observedLocks).toEqual(report.tableEvidence.map(({ table }) => table).toSorted());
-    expect(observedLocks).toHaveLength(100);
+    expect(observedLocks).toHaveLength(102);
+    expect(observedLocks).toEqual(
+      expect.arrayContaining(['immich_fork.archive_operation', 'immich_fork.archive_operation_item']),
+    );
   });
 
   it.each([
