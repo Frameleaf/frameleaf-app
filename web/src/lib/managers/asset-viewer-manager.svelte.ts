@@ -51,6 +51,12 @@ class AssetViewerManager extends BaseEventManager<Events> {
   isShowActivityPanel = $state(false);
   isPlayingMotionPhoto = $state(false);
   isShowEditor = $state(false);
+  /**
+   * FL-35: a panorama opens in the photo-sphere viewer. When the viewer offers "Fit
+   * panorama" the user is asking to see the flat equirectangular frame instead, which the
+   * ordinary photo viewer renders. Reset on every asset change.
+   */
+  #isPanoramaFlattened = $state(false);
   #isFaceEditMode = $state(false);
   #isEditFacesPanelOpen = $state(false);
   #viewingAssetStoreState = $state<AssetResponseDto>();
@@ -219,6 +225,19 @@ class AssetViewerManager extends BaseEventManager<Events> {
     this.closeEditor();
     this.closeFaceEditMode();
     this.closeEditFacesPanel();
+    this.resetPanoramaView();
+  }
+
+  get isPanoramaFlattened() {
+    return this.#isPanoramaFlattened;
+  }
+
+  togglePanoramaView() {
+    this.#isPanoramaFlattened = !this.#isPanoramaFlattened;
+  }
+
+  resetPanoramaView() {
+    this.#isPanoramaFlattened = false;
   }
 
   get highlightedFaces() {

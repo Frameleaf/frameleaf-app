@@ -7,8 +7,13 @@
   import PreviousAssetAction from '$lib/components/asset-viewer/actions/PreviousAssetAction.svelte';
   import AssetViewerNavBar from '$lib/components/asset-viewer/AssetViewerNavBar.svelte';
   import { preloadManager } from '$lib/components/asset-viewer/PreloadManager.svelte';
+  import ViewerFilmstrip from '$lib/components/frameleaf/ViewerFilmstrip.svelte';
+  import ViewerOfflineBanner from '$lib/components/frameleaf/ViewerOfflineBanner.svelte';
+  import ViewerStackStrip from '$lib/components/frameleaf/ViewerStackStrip.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
-  import { AssetAction, ProjectionType } from '$lib/constants';
+  import { AssetAction } from '$lib/constants';
+  import { isPanorama } from '$lib/frameleaf/viewer-media';
+  import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import { activityManager } from '$lib/managers/activity-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -42,7 +47,6 @@
   import type { SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
   import { fly } from 'svelte/transition';
-  import Thumbnail from '../assets/thumbnail/Thumbnail.svelte';
   import ActivityStatus from './ActivityStatus.svelte';
   import ActivityViewer from './ActivityViewer.svelte';
   import DetailPanel from './DetailPanel.svelte';
@@ -76,6 +80,11 @@
     onUndoDelete?: OnUndoDelete;
     onClose?: (assetId: string) => void;
     onRandom?: () => Promise<{ id: string } | undefined>;
+    /**
+     * FL-35: the neighbours the caller already holds, for the filmstrip. The viewer never
+     * loads a list of its own, so a caller that cannot supply one simply has no filmstrip.
+     */
+    filmstripAssets?: TimelineAsset[];
   }
 
   let {
@@ -93,6 +102,7 @@
     onUndoDelete,
     onClose,
     onRandom,
+    filmstripAssets = [],
   }: Props = $props();
 
   const {
@@ -103,8 +113,6 @@
     slideshowRepeat,
     slideshowAutoplay,
   } = slideshowStore;
-  const stackThumbnailSize = 60;
-  const stackSelectedThumbnailSize = 65;
 
   let previewStackedAsset: AssetResponseDto | undefined = $state();
   let stack: StackResponseDto | null = $state(null);
@@ -327,10 +335,6 @@
     }
   };
 
-  const handleStackedAssetMouseEvent = (isMouseOver: boolean, stackedAsset: AssetResponseDto) => {
-    previewStackedAsset = isMouseOver ? stackedAsset : undefined;
-  };
-
   const handlePreAction = (action: Action) => {
     preAction?.(action);
   };
@@ -402,6 +406,8 @@
   };
 
   const refresh = async () => {
+    // FL-35: a panorama always opens looking around again after a navigation.
+    assetViewerManager.resetPanoramaView();
     await refreshStack();
     ocrManager.clear();
     faceManager.clear();
@@ -446,10 +452,8 @@
     if (assetViewerManager.isPlayingMotionPhoto && asset.livePhotoVideoId) {
       return 'LiveVideoViewer';
     }
-    if (
-      asset.exifInfo?.projectionType === ProjectionType.EQUIRECTANGULAR ||
-      (asset.originalPath && asset.originalPath.toLowerCase().endsWith('.insp'))
-    ) {
+    // FL-35: a panorama looks around by default; "Fit panorama" shows the flat frame.
+    if (isPanorama(asset) && !assetViewerManager.isPanoramaFlattened) {
       return 'ImagePanaramaViewer';
     }
     if (assetViewerManager.isShowEditor && editManager.selectedTool?.type === EditToolType.Transform) {
@@ -478,6 +482,18 @@
       $slideshowState === SlideshowState.None &&
       assetViewerManager.isShowDetailPanel &&
       !assetViewerManager.isShowEditor,
+  );
+
+  /**
+   * FL-35: the filmstrip is a client preference, needs a real list of neighbours, and
+   * stays out of the way of the slideshow, the editor and the stack strip.
+   */
+  const showFilmstripStrip = $derived(
+    $showFilmstrip &&
+      filmstripAssets.length > 1 &&
+      $slideshowState === SlideshowState.None &&
+      !assetViewerManager.isShowEditor &&
+      !(stack && withStacked),
   );
 
   const onSwipe = (event: SwipeCustomEvent) => {
@@ -528,6 +544,8 @@
         onClose={onClose ? () => onClose(stack?.primaryAssetId ?? asset.id) : undefined}
         {isPlayingOriginalVideo}
         {setPlayOriginalVideo}
+        canNavigateCollection={!!(nextAsset || previousAsset)}
+        canShowFilmstrip={filmstripAssets.length > 1}
       />
     </div>
   {/if}
@@ -600,6 +618,13 @@
       />
     {/if}
 
+    <!-- FL-35: the original file is missing from its library; offer the relink route. -->
+    {#if asset.isOffline && $slideshowState === SlideshowState.None && !assetViewerManager.isShowEditor}
+      <div class="pointer-events-none absolute inset-x-0 top-16 z-10 px-4 pt-2">
+        <ViewerOfflineBanner {asset} />
+      </div>
+    {/if}
+
     {#if showActivityStatus}
       <div class="absolute inset-e-0 bottom-0 me-8 mb-20">
         <ActivityStatus
@@ -640,6 +665,11 @@
       translate="yes"
     >
       {#if showDetailPanel}
+        <!--
+          FL-35 stops at the viewer's media sources, navigation and actions. The panel's
+          inline metadata edits and enrichment card are FL-36, and the people and face
+          edits are FL-38; both continue to live inside DetailPanel.
+        -->
         <DetailPanel {asset} currentAlbum={album} {onAssetUpdate} {onAssetSuppressed} />
       {:else if assetViewerManager.isShowEditor}
         <EditorPanel {asset} onClose={closeEditor} />
@@ -647,39 +677,31 @@
     </div>
   {/if}
 
+  <!-- FL-35: the stack strip carries keep-this and set-primary beside the members. -->
   {#if stack && withStacked && !assetViewerManager.isShowEditor && $slideshowState === SlideshowState.None}
-    {@const stackedAssets = stack.assets}
     <div id="stack-slideshow" class="absolute bottom-0 col-span-4 col-start-1 w-fit max-w-full">
-      <div class="no-wrap horizontal-scrollbar relative flex flex-row overflow-x-auto overflow-y-hidden">
-        {#each stackedAssets as stackedAsset (stackedAsset.id)}
-          <div
-            class={['relative inline-block px-1 pb-2 transition-all']}
-            style:bottom={stackedAsset.id === asset.id ? '0' : '-10px'}
-          >
-            <Thumbnail
-              imageClass={stackedAsset.id === asset.id ? 'border-2 border-white' : 'brightness-70'}
-              brokenAssetClass="text-xs"
-              asset={toTimelineAsset(stackedAsset)}
-              onClick={() => {
-                cursor = { ...cursor, current: stackedAsset };
-                notifyAssetUpdate?.(stackedAsset);
-                previewStackedAsset = undefined;
-              }}
-              onMouseEvent={({ isMouseOver }) => handleStackedAssetMouseEvent(isMouseOver, stackedAsset)}
-              readonly
-              thumbnailSize={stackedAsset.id === asset.id ? stackSelectedThumbnailSize : stackThumbnailSize}
-              showStackedIcon={false}
-              disableLinkMouseOver
-            />
+      <ViewerStackStrip
+        {stack}
+        {asset}
+        onAction={handleAction}
+        onSelect={(stackedAsset) => {
+          cursor = { ...cursor, current: stackedAsset };
+          notifyAssetUpdate?.(stackedAsset);
+          previewStackedAsset = undefined;
+        }}
+        onPreview={(stackedAsset) => (previewStackedAsset = stackedAsset)}
+      />
+    </div>
+  {/if}
 
-            {#if stackedAsset.id === asset.id}
-              <div class="flex w-full place-content-center place-items-center">
-                <div class="mt-0.5 flex size-2 rounded-full bg-white"></div>
-              </div>
-            {/if}
-          </div>
-        {/each}
-      </div>
+  <!-- FL-35: the filmstrip, shown only when the caller supplied the neighbours. -->
+  {#if showFilmstripStrip}
+    <div class="absolute inset-x-0 bottom-0 col-span-4 col-start-1">
+      <ViewerFilmstrip
+        assets={filmstripAssets}
+        currentAssetId={asset.id}
+        onSelect={(selected) => handlePromiseError(navigate({ targetRoute: 'current', assetId: selected.id }))}
+      />
     </div>
   {/if}
 
@@ -704,28 +726,5 @@
 <style>
   #immich-asset-viewer {
     contain: layout;
-  }
-
-  .horizontal-scrollbar::-webkit-scrollbar {
-    width: 8px;
-    height: 10px;
-  }
-
-  /* Track */
-  .horizontal-scrollbar::-webkit-scrollbar-track {
-    background: #000000;
-    border-radius: 16px;
-  }
-
-  /* Handle */
-  .horizontal-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(159, 159, 159, 0.408);
-    border-radius: 16px;
-  }
-
-  /* Handle on hover */
-  .horizontal-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #adcbfa;
-    border-radius: 16px;
   }
 </style>
