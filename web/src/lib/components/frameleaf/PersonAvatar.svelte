@@ -2,13 +2,21 @@
   import ImageThumbnail from '$lib/components/assets/thumbnail/ImageThumbnail.svelte';
   import { getPeopleThumbnailUrl } from '$lib/utils';
   import type { PersonResponseDto } from '@immich/sdk';
-  /** Pass only currently authorized evidence. Clear on lock, account change or revocation. */
-  let { person, onUnavailable }: { person?: PersonResponseDto; onUnavailable?: () => void } = $props();
+  /**
+   * Pass only currently authorized evidence. Clear on lock, account change or revocation.
+   * `size` defaults to the 24px chip/picker size; the People grid and person page pass a
+   * larger value for the face photograph, per the September 22 revision.
+   */
+  let {
+    person,
+    size = 24,
+    onUnavailable,
+  }: { person?: PersonResponseDto; size?: number; onUnavailable?: () => void } = $props();
 </script>
 
 {#if person}
   {#key person.id + person.updatedAt}
-    <span class="avatar" aria-hidden="true">
+    <span class="avatar" style:width="{size}px" style:height="{size}px" aria-hidden="true">
       <ImageThumbnail
         url={getPeopleThumbnailUrl(person)}
         altText=""
@@ -27,8 +35,6 @@
 <style>
   .avatar {
     display: inline-flex;
-    width: 1.5rem;
-    height: 1.5rem;
     overflow: hidden;
     border-radius: 50%;
     flex-shrink: 0;
