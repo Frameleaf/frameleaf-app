@@ -3,6 +3,7 @@
   import SettingCombobox from './SettingCombobox.svelte';
   import SettingsLanguageSelector from '$lib/components/shared-components/settings/SettingsLanguageSelector.svelte';
   import { fallbackLocale, locales } from '$lib/constants';
+  import { frameleafShell } from '$lib/frameleaf/rollout';
   import {
     alwaysLoadOriginalFile,
     alwaysLoadOriginalVideo,
@@ -69,6 +70,13 @@
           checked={themeManager.preference === ThemePreference.System}
           onCheckedChange={handleToggleSystemTheme}
         />
+      </Field>
+
+      <!-- Frameleaf shell rollout (FL-30): a display preference for this browser. It
+           changes the navigation only, never the library, and can be switched back at
+           any time without losing anything. -->
+      <Field label={$t('frameleaf_shell')} description={$t('frameleaf_shell_description')}>
+        <Switch bind:checked={$frameleafShell} />
       </Field>
 
       <SettingsLanguageSelector showSettingDescription />
