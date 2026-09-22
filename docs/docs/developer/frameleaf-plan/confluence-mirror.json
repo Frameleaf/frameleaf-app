@@ -846,14 +846,14 @@
       "version": 5
     },
     {
-      "bytes": 22808,
+      "bytes": 26510,
       "category": "development",
       "id": "61997109",
       "source": "docs/docs/developer/frameleaf-plan/FL-31-search-session.md",
-      "sourceSha256": "de632e33afe17e981f319376c62cc279c3c2be33b6c87ec6ac40e0817b4299c5",
+      "sourceSha256": "07bda73965c22f15315ae3a1593afc9e5e654a6da4df3320a3ef692da873590c",
       "title": "FL-31 production search session and access boundary",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997109",
-      "version": 10
+      "version": 11
     },
     {
       "bytes": 14103,
@@ -876,14 +876,14 @@
       "version": 15
     },
     {
-      "bytes": 27925,
+      "bytes": 33014,
       "category": "development",
       "id": "61997196",
       "source": "docs/docs/developer/frameleaf-plan/fl86-distribution-rights.md",
-      "sourceSha256": "305fe829ca27cc8483cf5b4249750d6f210e2876d5f6ea7d12606849c7ba3348",
+      "sourceSha256": "1ccec63b8b5baabcfd769f5516ce458a156a863b5a38db0fbac23a7b1f655dab",
       "title": "FL-86 Studio artifact attribution and resource rights",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997196/FL-86+Studio+artifact+attribution+and+resource+rights",
-      "version": 5
+      "version": 6
     },
     {
       "bytes": 10903,
