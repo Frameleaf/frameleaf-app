@@ -10924,7 +10924,7 @@
         "x-immich-state": "Deprecated"
       },
       "put": {
-        "description": "Specify whether a partner's assets should appear in the user's timeline.",
+        "description": "Specify whether a partner's assets should appear in the user's timeline (inTimeline), or, as the sharing user, whether that partner may see the locations of shared assets (shareLocation). Exactly one field per request.",
         "operationId": "updatePartner",
         "parameters": [
           {
@@ -30596,6 +30596,10 @@
           "profileImagePath": {
             "description": "Profile image path",
             "type": "string"
+          },
+          "shareLocation": {
+            "description": "Sharer allows this partner to see asset locations",
+            "type": "boolean"
           }
         },
         "required": [
@@ -30613,11 +30617,12 @@
           "inTimeline": {
             "description": "Show partner assets in timeline",
             "type": "boolean"
+          },
+          "shareLocation": {
+            "description": "Share asset locations with this partner; only the sharing user can change it",
+            "type": "boolean"
           }
         },
-        "required": [
-          "inTimeline"
-        ],
         "type": "object"
       },
       "PeopleResponse": {

@@ -1,7 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 import { AssetVisibility, TimeBucketDateType } from 'src/enum.js';
 import { TimelineService } from 'src/services/timeline.service.js';
+import { PartnerFactory } from 'test/factories/partner.factory.js';
+import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { getForPartner } from 'test/mappers.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(TimelineService.name, () => {
@@ -10,6 +13,7 @@ describe(TimelineService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(TimelineService));
+    mocks.partner.getAll.mockResolvedValue([]);
   });
 
   describe('getTimeBuckets', () => {
@@ -142,6 +146,76 @@ describe(TimelineService.name, () => {
           withPartners: true,
           userIds: [authStub.admin.user.id],
         },
+        authStub.admin,
+      );
+    });
+
+    it('should null location columns of partners who hide their locations from the viewer', async () => {
+      const hiding = UserFactory.create();
+      const sharing = UserFactory.create();
+      const me = authStub.admin.user.id;
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: '[]' });
+      mocks.partner.getAll.mockResolvedValue([
+        getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(hiding).sharedWith({ id: me }).build()),
+        getForPartner(PartnerFactory.from({ shareLocation: true }).sharedBy(sharing).sharedWith({ id: me }).build()),
+      ]);
+
+      await sut.getTimeBucket(authStub.admin, {
+        timeBucket: 'bucket',
+        visibility: AssetVisibility.Timeline,
+        userId: me,
+        withPartners: true,
+      });
+
+      expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
+        'bucket',
+        expect.objectContaining({
+          // both partners stay in the timeline; only the hiding partner's location columns are nulled
+          userIds: [me, hiding.id, sharing.id],
+          locationHiddenOwnerIds: [hiding.id],
+        }),
+        authStub.admin,
+      );
+    });
+
+    it('should leave partners who hide their locations out of a bounding-box (map) timeline', async () => {
+      const hiding = UserFactory.create();
+      const sharing = UserFactory.create();
+      const me = authStub.admin.user.id;
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: '[]' });
+      mocks.partner.getAll.mockResolvedValue([
+        getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(hiding).sharedWith({ id: me }).build()),
+        getForPartner(PartnerFactory.from({ shareLocation: true }).sharedBy(sharing).sharedWith({ id: me }).build()),
+      ]);
+
+      await sut.getTimeBucket(authStub.admin, {
+        timeBucket: 'bucket',
+        visibility: AssetVisibility.Timeline,
+        userId: me,
+        withPartners: true,
+        bbox: { west: -115, south: 50, east: -113, north: 52 },
+      });
+
+      expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
+        'bucket',
+        expect.objectContaining({ userIds: [me, sharing.id] }),
+        authStub.admin,
+      );
+    });
+
+    it("should not look up partners for the viewer's own timeline", async () => {
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: '[]' });
+
+      await sut.getTimeBucket(authStub.admin, {
+        timeBucket: 'bucket',
+        visibility: AssetVisibility.Timeline,
+        userId: authStub.admin.user.id,
+      });
+
+      expect(mocks.partner.getAll).not.toHaveBeenCalled();
+      expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
+        'bucket',
+        expect.not.objectContaining({ locationHiddenOwnerIds: expect.anything() }),
         authStub.admin,
       );
     });
