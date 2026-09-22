@@ -58,6 +58,19 @@ export const applyLockedVisibilityPolicy = (auth: AuthDto, filter: SearchFilter)
   return { ...filter, visibility: { ne: AssetVisibility.Locked } };
 };
 
+const LOCATION_FIELDS = ['city', 'state', 'country'] as const;
+
+/**
+ * Whether any branch narrows by place. Matching on a partner's place names would reveal locations the
+ * partner hides, so such searches leave those partners out of the searched universe (FL-54).
+ */
+export const filterUsesLocation = (filter: SearchFilter): boolean =>
+  filterBranches(filter).some((branch) => LOCATION_FIELDS.some((field) => branch[field] !== undefined));
+
+/** The flat (deprecated) search DTOs carry the same three place fields at the top level. */
+export const usesLocationFilter = (dto: { city?: string | null; state?: string | null; country?: string | null }) =>
+  LOCATION_FIELDS.some((field) => dto[field] !== undefined);
+
 export const collectFilterIds = (filter: SearchFilter, field: IdsFilterField): string[] => {
   const ids = new Set<string>();
 

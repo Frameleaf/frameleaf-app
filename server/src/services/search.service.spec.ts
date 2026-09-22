@@ -6,9 +6,10 @@ import { AssetVisibility, Permission } from 'src/enum.js';
 import { SearchService } from 'src/services/search.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
+import { PartnerFactory } from 'test/factories/partner.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
-import { getForAsset } from 'test/mappers.js';
+import { getForAsset, getForPartner } from 'test/mappers.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -126,6 +127,24 @@ describe(SearchService.name, () => {
         sut.getSearchSuggestions(authStub.user1, { includeNull: false, type: SearchSuggestionType.COUNTRY }),
       ).resolves.toEqual(['USA']);
       expect(mocks.search.getCountries).toHaveBeenCalledWith([authStub.user1.user.id], {});
+    });
+
+    it('should leave partners who hide their locations out of place suggestions only', async () => {
+      const me = authStub.user1.user.id;
+      const hiding = PartnerFactory.create({ sharedWithId: me, inTimeline: true, shareLocation: false });
+      const sharing = PartnerFactory.create({ sharedWithId: me, inTimeline: true, shareLocation: true });
+      mocks.partner.getAll.mockResolvedValue([getForPartner(hiding), getForPartner(sharing)]);
+      mocks.search.getCities.mockResolvedValue(['Calgary']);
+      mocks.search.getCameraMakes.mockResolvedValue(['Canon']);
+
+      await sut.getSearchSuggestions(authStub.user1, { includeNull: false, type: SearchSuggestionType.CITY });
+      expect(mocks.search.getCities).toHaveBeenCalledWith([me, sharing.sharedById], expect.anything());
+
+      await sut.getSearchSuggestions(authStub.user1, { includeNull: false, type: SearchSuggestionType.CAMERA_MAKE });
+      expect(mocks.search.getCameraMakes).toHaveBeenCalledWith(
+        [me, hiding.sharedById, sharing.sharedById],
+        expect.anything(),
+      );
     });
 
     it('should exclude NSFW assets from suggestions when privacy hiding is active', async () => {
