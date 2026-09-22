@@ -17,11 +17,15 @@
   import { page } from '$app/state';
   import LibraryTimeline from '$lib/components/frameleaf/LibraryTimeline.svelte';
   import ResultsToolbar from '$lib/components/frameleaf/ResultsToolbar.svelte';
+  import SelectionBar from '$lib/components/frameleaf/SelectionBar.svelte';
   import ShortcutsHelp from '$lib/components/frameleaf/ShortcutsHelp.svelte';
   import ShowMore from '$lib/components/frameleaf/ShowMore.svelte';
   import type { DiscoveryDestination, DiscoveryFilterSection } from '$lib/components/discovery/query';
+  import type { BulkAsset, BulkActionContext, BulkActionId } from '$lib/frameleaf/bulk-actions';
+  import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
+  import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
   import { librarySession, type LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
-  import type { LibraryGrouping } from '$lib/frameleaf/library-session';
+  import type { LibraryGrouping, LibrarySessionAction } from '$lib/frameleaf/library-session';
   import { matchLibraryShortcut, type LibraryShortcut } from '$lib/frameleaf/library-shortcuts';
   import {
     assetMultiSelectManager,
@@ -31,6 +35,7 @@
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import type { TimelineAsset, TimelineManagerOptions } from '$lib/managers/timeline-manager/types';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
+  import { AssetVisibility } from '@immich/sdk';
   import { onDestroy, type Snippet } from 'svelte';
 
   type Props = {
@@ -65,7 +70,11 @@
     children?: Snippet;
     /** Extra results-toolbar controls (sort, grouping, view). */
     toolbar?: Snippet;
-    /** FL-32: the floating selection bar and its bulk actions. */
+    /** Album, shared-link and trash context for the bulk actions (FL-32). */
+    bulkContext?: Omit<BulkActionContext, 'assets' | 'count' | 'currentUserId' | 'snapshot'>;
+    tagOptions?: { id: string; name: string }[];
+    albumOptions?: { id: string; name: string; count?: number }[];
+    /** Replaces the Frameleaf selection bar, for a page that needs its own. */
     selectionBar?: Snippet;
     /** FL-35: the viewer, opened from the session's open asset. */
     viewer?: Snippet;
@@ -88,6 +97,9 @@
     loading = false,
     enableRouting = false,
     multiSelect = assetMultiSelectManager,
+    bulkContext,
+    tagOptions = [],
+    albumOptions = [],
     shell,
     children,
     toolbar,
@@ -144,6 +156,74 @@
       }
     }
   });
+
+  /* ---------------------------------------------------------------------- */
+  /* Bulk actions (FL-32), bound to this session                             */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Everything the selection bar runs goes through one controller, and every session change it
+   * makes comes back through here — including `mutated`, which is also what tells the timeline to
+   * drop the assets that just left the page.
+   */
+  const dispatch = (action: LibrarySessionAction) => {
+    if (action.type === 'mutated' && action.removedIds.length > 0) {
+      manager.removeAssets(action.removedIds);
+    }
+    session.dispatch(action);
+  };
+
+  const currentUserId = $derived(authManager.authenticated ? authManager.user.id : undefined);
+
+  const bulk = new BulkController({
+    dispatch,
+    context: () => ({
+      currentUserId: authManager.authenticated ? authManager.user.id : undefined,
+      ownerById: Object.fromEntries(
+        session.selection.map((id) => [id, findAsset(id)?.ownerId]).filter(([, owner]) => !!owner) as [
+          string,
+          string,
+        ][],
+      ),
+    }),
+  });
+
+  const toBulk = (asset: TimelineAsset): BulkAsset => ({
+    id: asset.id,
+    ownerId: asset.ownerId,
+    isVideo: asset.isVideo,
+    isFavorite: asset.isFavorite,
+    isArchived: asset.visibility === AssetVisibility.Archive,
+    isTrashed: asset.isTrashed,
+    isLivePhoto: !!asset.livePhotoVideoId,
+    stackId: asset.stack?.id ?? null,
+  });
+
+  // A snapshot selection covers items that are not loaded, so the bar is told what it may offer.
+  const snapshot = $derived(session.session.selectionSnapshot);
+  const selectedAssets = $derived(
+    snapshot
+      ? []
+      : session.selection.map((id) => findAsset(id)).filter((asset): asset is TimelineAsset => !!asset).map(toBulk),
+  );
+
+  const runBulk = (id: BulkActionId, payload?: BulkPayload) => {
+    if (snapshot) {
+      // Frozen at submit: editing the filter afterwards cannot change what the operation touches.
+      void bulk.runMatching(id, snapshot, { payload, submittedTotal: session.total });
+      session.clearSelection();
+      return;
+    }
+    void bulk.run(id, [...session.selection], payload);
+  };
+
+  const selectAllMatching = async () => {
+    const total = await bulk.count(session.state);
+    session.dispatch({ type: 'selection', ids: loadedIds(), allMatching: true });
+    if (total !== null) {
+      session.applyTotal(total, session.revision);
+    }
+  };
 
   const focusedId = () => session.session.scrollAnchor ?? session.selection.at(-1) ?? null;
 
@@ -288,8 +368,29 @@
     {/if}
   </div>
 
-  {#if selecting}
-    {@render selectionBar?.()}
+  {#if selectionBar}
+    {#if selecting}
+      {@render selectionBar()}
+    {/if}
+  {:else}
+    <!-- FL-32's bar, bound to this session: one selection, one place an action is run. -->
+    <SelectionBar
+      count={session.selection.length}
+      total={session.total}
+      assets={selectedAssets}
+      context={{ ...bulkContext, currentUserId, snapshot: !!snapshot }}
+      {tagOptions}
+      {albumOptions}
+      operations={session.session.operations}
+      undoLabel={bulk.undo?.label}
+      onAction={runBulk}
+      onUndo={() => void bulk.undo?.run()}
+      onClear={() => session.clearSelection()}
+      onSelectAllMatching={() => void selectAllMatching()}
+      onCancelOperation={(requestId) => bulk.cancel(requestId)}
+      onRetryOperation={(operation) => void bulk.retry(operation)}
+      onDismissOperation={(requestId) => bulk.dismiss(requestId)}
+    />
   {/if}
   <!-- The viewer decides for itself when it is open; it is the owner of that surface (FL-35). -->
   {@render viewer?.()}
