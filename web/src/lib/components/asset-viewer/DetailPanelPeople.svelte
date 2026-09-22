@@ -1,5 +1,6 @@
 <script lang="ts">
   import ImageThumbnail from '$lib/components/assets/thumbnail/ImageThumbnail.svelte';
+  import PersonFaceActions from '$lib/components/frameleaf/PersonFaceActions.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
@@ -16,9 +17,15 @@
     asset: AssetResponseDto;
     isOwner: boolean;
     previousRoute: string;
+    /**
+     * FL-38: re-reads the asset and its faces from the server after an inline reassign,
+     * create-person, remove or hide action lands. `DetailPanel.svelte` passes its existing
+     * `handleRefreshPeople`, the same refresh the full "Edit people" panel already uses.
+     */
+    onFacesChanged: () => void | Promise<void>;
   };
 
-  const { asset, isOwner, previousRoute }: Props = $props();
+  const { asset, isOwner, previousRoute, onFacesChanged }: Props = $props();
 
   const people = $derived(Array.from(faceManager.people));
   const visiblePeople = $derived(
@@ -104,33 +111,41 @@
     <div class="mt-2 grid {visiblePeople.length <= 6 ? 'grid-cols-3 gap-3' : 'grid-cols-4 gap-2'}">
       {#each visiblePeople as person (person.id)}
         {@const personFaces = faceManager.facesByPersonId.get(person.id) ?? []}
+        {@const primaryFace = personFaces[0]}
         {@const isHighlighted = personFaces.some((f) => assetViewerManager.highlightedFaces.some((b) => b.id === f.id))}
-        <a
-          class="group outline-none"
-          href={Route.viewPerson(person, { previousRoute })}
-          onfocus={() => assetViewerManager.setHighlightedFaces(personFaces)}
-          onblur={() => assetViewerManager.clearHighlightedFaces()}
-          onpointerenter={() => assetViewerManager.setHighlightedFaces(personFaces)}
-          onpointerleave={() => assetViewerManager.clearHighlightedFaces()}
-        >
-          <ImageThumbnail
-            curve
-            shadow
-            url={getPeopleThumbnailUrl(person)}
-            altText={person.name}
-            title={person.name}
-            widthStyle="100%"
-            hidden={person.isHidden}
-            highlighted={isHighlighted}
-            class="outline-offset-2 outline-immich-primary group-focus-visible:outline-2 dark:outline-immich-dark-primary"
-          />
-          <p class="mt-1 truncate font-medium" title={person.name}>{person.name}</p>
-          {#if person.birthDate && person.formattedAge}
-            <p class="font-light {visiblePeople.length > 6 ? 'text-xs' : ''}" title={person.formattedBirthDate!}>
-              {person.formattedAge}
-            </p>
+        <div class="relative">
+          <a
+            class="group outline-none"
+            href={Route.viewPerson(person, { previousRoute })}
+            onfocus={() => assetViewerManager.setHighlightedFaces(personFaces)}
+            onblur={() => assetViewerManager.clearHighlightedFaces()}
+            onpointerenter={() => assetViewerManager.setHighlightedFaces(personFaces)}
+            onpointerleave={() => assetViewerManager.clearHighlightedFaces()}
+          >
+            <ImageThumbnail
+              curve
+              shadow
+              url={getPeopleThumbnailUrl(person)}
+              altText={person.name}
+              title={person.name}
+              widthStyle="100%"
+              hidden={person.isHidden}
+              highlighted={isHighlighted}
+              class="outline-offset-2 outline-immich-primary group-focus-visible:outline-2 dark:outline-immich-dark-primary"
+            />
+            <p class="mt-1 truncate font-medium" title={person.name}>{person.name}</p>
+            {#if person.birthDate && person.formattedAge}
+              <p class="font-light {visiblePeople.length > 6 ? 'text-xs' : ''}" title={person.formattedBirthDate!}>
+                {person.formattedAge}
+              </p>
+            {/if}
+          </a>
+          {#if isOwner && primaryFace}
+            <div class="absolute -inset-e-1 -top-1">
+              <PersonFaceActions {person} face={primaryFace} {previousRoute} {onFacesChanged} />
+            </div>
           {/if}
-        </a>
+        </div>
       {/each}
     </div>
   </section>
