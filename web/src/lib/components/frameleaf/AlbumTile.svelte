@@ -1,0 +1,235 @@
+<script lang="ts">
+  import AlbumAvatarStack from '$lib/components/frameleaf/AlbumAvatarStack.svelte';
+  import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
+  import { defaultIconFor, monthSpan, othersOf } from '$lib/frameleaf/album-directory';
+  import { Route } from '$lib/route';
+  import { getAssetMediaUrl } from '$lib/utils';
+  import { setAlbumDragData } from '$lib/utils/album-drag';
+  import { AlbumKind, AssetMediaSize, type AlbumResponseDto } from '@immich/sdk';
+  import { Icon } from '@immich/ui';
+  import { mdiAccountMultipleOutline, mdiAutoFix } from '@mdi/js';
+  import type { Snippet } from 'svelte';
+  import { locale, t } from 'svelte-i18n';
+
+  /**
+   * Square album tile (grid) or row (list): cover, name, count and who else
+   * can see it; a small mark for smart albums and shared spaces. The menu is
+   * passed in as `actions` so the tile stays free of page behaviour.
+   */
+  interface Props {
+    album: AlbumResponseDto;
+    currentUserId: string;
+    layout?: 'grid' | 'list';
+    /** The owner may drag an album onto a collection shelf; touch uses Move to… */
+    draggable?: boolean;
+    dragging?: boolean;
+    onDragStart?: (album: AlbumResponseDto) => void;
+    onDragEnd?: () => void;
+    actions?: Snippet;
+  }
+
+  let {
+    album,
+    currentUserId,
+    layout = 'grid',
+    draggable = false,
+    dragging = false,
+    onDragStart,
+    onDragEnd,
+    actions,
+  }: Props = $props();
+
+  const name = $derived(album.albumName || $t('unnamed_album'));
+  const href = $derived(Route.viewAlbum({ id: album.id }));
+  const cover = $derived(
+    album.albumThumbnailAssetId
+      ? getAssetMediaUrl({ id: album.albumThumbnailAssetId, size: AssetMediaSize.Thumbnail })
+      : null,
+  );
+  const others = $derived(othersOf(album, currentUserId));
+  const meta = $derived(
+    [
+      $t('frameleaf_albums_items', { values: { count: album.assetCount } }),
+      monthSpan(album.startDate, album.endDate, $locale ?? undefined),
+    ]
+      .filter(Boolean)
+      .join(' · '),
+  );
+
+  const handleDragStart = (event: DragEvent) => {
+    if (!draggable) {
+      event.preventDefault();
+      return;
+    }
+    setAlbumDragData(event, album.id);
+    onDragStart?.(album);
+  };
+</script>
+
+<article
+  class="tile {layout}"
+  class:dragging
+  aria-label={name}
+  {draggable}
+  ondragstart={handleDragStart}
+  ondragend={() => onDragEnd?.()}
+>
+  <a class="cover" {href} aria-label={$t('frameleaf_albums_open', { values: { name } })}>
+    {#if cover}
+      <img src={cover} alt="" loading="lazy" draggable="false" />
+    {:else}
+      <span class="cover-empty" aria-hidden="true">
+        <AlbumIcon name={album.icon ?? defaultIconFor(album.kind)} size={layout === 'grid' ? '30' : '20'} />
+      </span>
+    {/if}
+    {#if album.isSmart}
+      <span class="mark" title={$t('frameleaf_albums_smart_mark')} aria-hidden="true">
+        <Icon icon={mdiAutoFix} size="13" />
+      </span>
+    {/if}
+    {#if album.kind === AlbumKind.Space}
+      <span class="mark space" title={$t('frameleaf_albums_space_mark')} aria-hidden="true">
+        <Icon icon={mdiAccountMultipleOutline} size="13" />
+      </span>
+    {/if}
+  </a>
+  <div class="text">
+    <a class="name" {href}>{name}</a>
+    <div class="meta">
+      <small>{meta}</small>
+      <AlbumAvatarStack users={others} />
+    </div>
+  </div>
+  {#if actions}
+    <div class="actions">{@render actions()}</div>
+  {/if}
+</article>
+
+<style>
+  .tile {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 0;
+    color: var(--fl-text);
+    border-radius: 10px;
+  }
+  .tile.dragging {
+    opacity: 0.45;
+  }
+  .tile[draggable='true'] {
+    cursor: grab;
+  }
+  .cover {
+    position: relative;
+    display: block;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border-radius: 10px;
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+  }
+  .cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .cover-empty {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    color: var(--fl-muted);
+  }
+  .mark {
+    position: absolute;
+    top: 0.375rem;
+    inset-inline-start: 0.375rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.375rem;
+    height: 1.375rem;
+    border-radius: 50%;
+    background: rgb(0 0 0 / 55%);
+    color: #fff;
+  }
+  .mark.space {
+    inset-inline-start: auto;
+    inset-inline-end: 0.375rem;
+  }
+  .text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 0;
+  }
+  .name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: inherit;
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .name:hover {
+    text-decoration: underline;
+  }
+  .meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--fl-muted);
+  }
+  .meta small {
+    font-size: inherit;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .actions {
+    position: absolute;
+    top: 0.25rem;
+    inset-inline-end: 0.25rem;
+    opacity: 0;
+    transition: opacity 120ms;
+  }
+  .tile:hover .actions,
+  .tile:focus-within .actions {
+    opacity: 1;
+  }
+  .tile.list {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.375rem 0.5rem;
+    border-bottom: 1px solid var(--fl-border);
+    border-radius: 0;
+  }
+  .tile.list .cover {
+    flex: 0 0 3rem;
+    width: 3rem;
+    border-radius: var(--fl-radius);
+  }
+  .tile.list .text {
+    flex: 1;
+  }
+  .tile.list .meta {
+    justify-content: flex-start;
+  }
+  .tile.list .actions {
+    position: static;
+    opacity: 1;
+  }
+  @media (pointer: coarse) {
+    .actions {
+      opacity: 1;
+    }
+  }
+</style>

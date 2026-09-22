@@ -4,8 +4,10 @@ import {
   addUsersToAlbum,
   AlbumUserRole,
   BulkIdErrorReason,
+  createAlbum,
   deleteAlbum,
   getAlbumDescendantCount,
+  moveAlbumToCollection,
   removeUserFromAlbum,
   updateAlbumInfo,
   updateAlbumUser,
@@ -13,6 +15,7 @@ import {
   type AlbumsAddAssetsResponseDto,
   type AssetResponseDto,
   type BulkIdResponseDto,
+  type CreateAlbumDto,
   type UpdateAlbumDto,
   type UserResponseDto,
 } from '@immich/sdk';
@@ -258,6 +261,36 @@ export const handleUpdateAlbum = async ({ id }: { id: string }, dto: UpdateAlbum
     return true;
   } catch (error) {
     handleError(error, $t('errors.unable_to_update_album_info'));
+  }
+};
+
+/**
+ * Move an album into a collection, or out of one (`collectionId: null`) so it
+ * stands on its own. The server enforces the one-level rule and ownership; the
+ * caller decides whether to refresh the directory.
+ */
+export const handleMoveAlbumToCollection = async (album: AlbumResponseDto, collectionId: string | null) => {
+  const $t = await getFormatter();
+
+  try {
+    const response = await moveAlbumToCollection({ id: album.id, moveAlbumDto: { collectionId } });
+    eventManager.emit('AlbumUpdate', response);
+    return response;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_update_album_info'));
+  }
+};
+
+/** Create an album, a collection or a shared space from the Albums page. */
+export const handleCreateAlbumEntry = async (dto: CreateAlbumDto) => {
+  const $t = await getFormatter();
+
+  try {
+    const album = await createAlbum({ createAlbumDto: dto });
+    eventManager.emit('AlbumCreate', album);
+    return album;
+  } catch (error) {
+    handleError(error, $t('errors.failed_to_create_album'));
   }
 };
 
