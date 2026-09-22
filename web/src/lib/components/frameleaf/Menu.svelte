@@ -9,6 +9,10 @@
    * popup imperatively so the container carries only its ARIA role and no handlers, and the
    * open animation uses the shared motion tokens, which the token sheet already clamps
    * under prefers-reduced-motion.
+   *
+   * Activating an item closes the popup and returns focus to the trigger, unless that
+   * MenuItem was given `keepOpen` (FL-38: a "Reassign…" command that swaps the popup's
+   * content for a search field rather than completing immediately).
    */
   let {
     label,
@@ -100,7 +104,7 @@
 
     const onClick = (event: MouseEvent) => {
       const item = (event.target as HTMLElement | null)?.closest('[role^="menuitem"]');
-      if (!item || item.getAttribute('aria-disabled') === 'true') {
+      if (!item || item.getAttribute('aria-disabled') === 'true' || item.getAttribute('data-keep-open') === 'true') {
         return;
       }
       // The item's own handler has already run in the target phase.

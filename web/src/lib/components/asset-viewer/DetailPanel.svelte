@@ -163,7 +163,7 @@
       {onAssetSuppressed}
     />
     <DetailPanelRating {asset} {isOwner} />
-    <DetailPanelPeople {asset} {isOwner} {previousRoute} />
+    <DetailPanelPeople {asset} {isOwner} {previousRoute} onFacesChanged={handleRefreshPeople} />
 
     <div class="p-4">
       {#if asset.exifInfo}
