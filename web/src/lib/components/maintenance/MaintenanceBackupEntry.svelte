@@ -2,8 +2,7 @@
   import MaintenanceRestoreConfirmDialog from '$lib/components/frameleaf/MaintenanceRestoreConfirmDialog.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { BackupFileStatus } from '$lib/constants';
-  import { frameleafShell } from '$lib/frameleaf/rollout';
-  import { getDatabaseBackupActions, handleRestoreDatabaseBackup } from '$lib/services/database-backups.service';
+  import { getDatabaseBackupActions } from '$lib/services/database-backups.service';
   import { locale } from '$lib/stores/preferences.store';
   import { getBytesWithUnit } from '$lib/utils/byte-units';
   import { Button, Card, CardBody, ContextMenuButton, HStack, Icon, Stack, Text } from '@immich/ui';
@@ -57,11 +56,8 @@
   }
 
   function onRestoreClick() {
-    if ($frameleafShell) {
-      restoreConfirmOpen = true;
-      return;
-    }
-    void handleRestoreDatabaseBackup(filename);
+    // Restoring is destructive, so the typed confirmation dialog is the only path.
+    restoreConfirmOpen = true;
   }
 </script>
 
@@ -134,6 +130,8 @@
   </CardBody>
 </Card>
 
-{#if $frameleafShell}
-  <MaintenanceRestoreConfirmDialog {filename} bind:open={restoreConfirmOpen} onClose={() => (restoreConfirmOpen = false)} />
-{/if}
+<MaintenanceRestoreConfirmDialog
+  {filename}
+  bind:open={restoreConfirmOpen}
+  onClose={() => (restoreConfirmOpen = false)}
+/>

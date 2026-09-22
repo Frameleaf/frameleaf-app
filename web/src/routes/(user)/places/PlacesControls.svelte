@@ -1,6 +1,5 @@
 <script lang="ts">
   import SearchBar from '$lib/elements/SearchBar.svelte';
-  import { frameleafShell } from '$lib/frameleaf/rollout';
   import { PlacesGroupBy, placesViewSettings } from '$lib/stores/preferences.store';
   import { collapseAllPlacesGroups, expandAllPlacesGroups } from '$lib/utils/places-utils';
   import { IconButton, Select } from '@immich/ui';
@@ -18,9 +17,8 @@
   let options = $derived([
     { value: PlacesGroupBy.None, label: $t('group_no') },
     { value: PlacesGroupBy.Country, label: $t('group_country') },
-    // Frameleaf (FL-51): country-and-state grouping from the design revision. Offered only
-    // under the Frameleaf shell so the legacy Places page keeps its existing two choices.
-    ...($frameleafShell ? [{ value: PlacesGroupBy.CountryState, label: $t('frameleaf_places_group_country_state') }] : []),
+    // Frameleaf (FL-51): country-and-state grouping from the design revision.
+    { value: PlacesGroupBy.CountryState, label: $t('frameleaf_places_group_country_state') },
   ]);
 </script>
 

@@ -8,32 +8,19 @@
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
   import Timeline from '$lib/components/timeline/Timeline.svelte';
   import '$lib/frameleaf/tokens.css';
-  import { frameleafShell } from '$lib/frameleaf/rollout';
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { handleDownloadAlbum } from '$lib/services/album.service';
-  import { getGlobalActions } from '$lib/services/app.service';
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
-  import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { AlbumResponseDto, SharedLinkResponseDto } from '@immich/sdk';
-  import {
-    ActionButton,
-    Icon,
-    IconButton as ImmichIconButton,
-    Logo,
-    Theme as AppTheme,
-    themeManager,
-  } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
   import { mdiDownload, mdiFileImagePlusOutline, mdiPresentationPlay } from '@mdi/js';
   import { t } from 'svelte-i18n';
-  import ControlAppBar from '../shared-components/ControlAppBar.svelte';
-  import ThemeButton from '../shared-components/ThemeButton.svelte';
-  import AlbumSummary from './AlbumSummary.svelte';
 
   interface Props {
     sharedLink: SharedLinkResponseDto;
@@ -69,9 +56,7 @@
     }
   };
 
-  const { Cast } = $derived(getGlobalActions($t));
-
-  // FL-56: own layout, no LibraryRail/TopBar/account menu in either branch below.
+  // FL-56: own layout, no LibraryRail/TopBar/account menu.
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 </script>
 
@@ -92,36 +77,16 @@
 >
   <Timeline enableRouting={true} {album} bind:timelineManager {options} assetInteraction={assetMultiSelectManager}>
     <section class="px-2 pt-8 md:px-0 md:pt-24">
-      {#if $frameleafShell}
-        <!-- Frameleaf shell rollout (FL-30/FL-56): the public album's own title block,
-             ported from the design template's PublicViewer.jsx `pv-title`. -->
-        <div class="pv-album-title">
-          <h1>{album.albumName}</h1>
-          <span class="pv-album-meta">
-            {$t('frameleaf_sharing.individual_items', { values: { count: album.assetCount } })}
-          </span>
-        </div>
-        {#if album.description}
-          <p class="pv-album-description">{album.description}</p>
-        {/if}
-      {:else}
-        <!-- ALBUM TITLE -->
-        <h1 class="text-2xl text-primary transition-all outline-none md:text-4xl lg:text-6xl">
-          {album.albumName}
-        </h1>
-
-        {#if album.assetCount > 0}
-          <AlbumSummary {album} />
-        {/if}
-
-        <!-- ALBUM DESCRIPTION -->
-        {#if album.description}
-          <p
-            class="mt-6 mb-12 w-full pb-2 text-start text-base font-medium whitespace-pre-line text-black dark:text-gray-300"
-          >
-            {album.description}
-          </p>
-        {/if}
+      <!-- FL-56: the public album's own title block, ported from the design template's
+           PublicViewer.jsx `pv-title`. -->
+      <div class="pv-album-title">
+        <h1>{album.albumName}</h1>
+        <span class="pv-album-meta">
+          {$t('frameleaf_sharing.individual_items', { values: { count: album.assetCount } })}
+        </span>
+      </div>
+      {#if album.description}
+        <p class="pv-album-description">{album.description}</p>
       {/if}
     </section>
   </Timeline>
@@ -135,8 +100,8 @@
         <DownloadAction filename={album.albumName} />
       {/if}
     </AssetSelectControlBar>
-  {:else if $frameleafShell}
-    <!-- Frameleaf shell rollout (FL-30/FL-56): own brand, no LibraryRail/TopBar/account menu. -->
+  {:else}
+    <!-- FL-56: the public viewer has its own brand, no LibraryRail/TopBar/account menu. -->
     <div class="frameleaf pv-header" data-theme={appTheme}>
       <a class="pv-brand" href="/" data-sveltekit-preload-data="hover">
         <Brand />
@@ -160,52 +125,6 @@
         {/if}
       </div>
     </div>
-  {:else}
-    <ControlAppBar>
-      {#snippet leading()}
-        <a data-sveltekit-preload-data="hover" class="ms-4" href="/">
-          <Logo variant={mediaQueryManager.maxMd ? 'icon' : 'inline'} class="min-w-10" />
-        </a>
-      {/snippet}
-
-      {#snippet trailing()}
-        <ActionButton action={Cast} />
-
-        {#if sharedLink.allowUpload}
-          <ImmichIconButton
-            shape="round"
-            color="secondary"
-            variant="ghost"
-            aria-label={$t('add_photos')}
-            onclick={() => openFileUploadDialog({ albumId: album.id })}
-            icon={mdiFileImagePlusOutline}
-          />
-        {/if}
-
-        {#if album.assetCount > 0 && sharedLink.allowDownload}
-          <ImmichIconButton
-            shape="round"
-            variant="ghost"
-            color="secondary"
-            aria-label={$t('slideshow')}
-            onclick={handleStartSlideshow}
-            icon={mdiPresentationPlay}
-          />
-          <ImmichIconButton
-            shape="round"
-            color="secondary"
-            variant="ghost"
-            aria-label={$t('download')}
-            onclick={() => handleDownloadAlbum(album)}
-            icon={mdiDownload}
-          />
-        {/if}
-        {#if sharedLink.showMetadata && featureFlagsManager.value.map}
-          <AlbumMap {album} />
-        {/if}
-        <ThemeButton />
-      {/snippet}
-    </ControlAppBar>
   {/if}
 </header>
 
