@@ -1,4 +1,6 @@
 <script lang="ts">
+  import '$lib/frameleaf/tokens.css';
+  import { Theme as AppTheme, themeManager } from '@immich/ui';
   import type { Snippet } from 'svelte';
   let {
     title,
@@ -13,6 +15,14 @@
   } = $props();
   let dialog: HTMLDialogElement;
   const titleId = $props.id();
+
+  // Every caller renders this dialog through `showModal()`, which the browser promotes to
+  // the top layer. CSS custom properties still inherit through the ordinary DOM ancestry
+  // there, but a caller mounted outside the Frameleaf shell (a public link, a route that
+  // has not been ported) has no `.frameleaf[data-theme]` ancestor to inherit from, so the
+  // token scope is applied here directly rather than assumed from the caller's tree.
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
+
   $effect(() => {
     if (!open || dialog.open) {
       return;
@@ -29,7 +39,13 @@
   });
 </script>
 
-<dialog bind:this={dialog} aria-labelledby={titleId} onclose={() => (open = false)}>
+<dialog
+  bind:this={dialog}
+  class="frameleaf"
+  data-theme={appTheme}
+  aria-labelledby={titleId}
+  onclose={() => (open = false)}
+>
   <header>
     <h2 id={titleId}>{title}</h2>
     <button type="button" aria-label={closeLabel} onclick={() => (open = false)}>×</button>

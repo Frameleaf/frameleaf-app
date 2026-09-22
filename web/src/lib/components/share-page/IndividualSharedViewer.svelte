@@ -1,10 +1,14 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import type { Action } from '$lib/components/asset-viewer/actions/action';
+  import Brand from '$lib/components/frameleaf/Brand.svelte';
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
   import RemoveFromSharedLink from '$lib/components/timeline/actions/RemoveFromSharedLinkAction.svelte';
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
   import { AssetAction } from '$lib/constants';
+  import '$lib/frameleaf/tokens.css';
+  import { frameleafShell } from '$lib/frameleaf/rollout';
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import type { Viewport } from '$lib/managers/timeline-manager/types';
@@ -17,7 +21,14 @@
   import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { getAssetInfo, type AssetResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
-  import { IconButton, Logo, toastManager } from '@immich/ui';
+  import {
+    Icon,
+    IconButton as ImmichIconButton,
+    Logo,
+    Theme as AppTheme,
+    themeManager,
+    toastManager,
+  } from '@immich/ui';
   import { mdiDownload, mdiFileImagePlusOutline, mdiSelectAll } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import ControlAppBar from '../shared-components/ControlAppBar.svelte';
@@ -89,17 +100,25 @@
       // no default
     }
   };
+
+  // FL-56: own layout, no LibraryRail/TopBar/account menu in either branch below.
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 </script>
 
 {#if sharedLink?.allowUpload || assets.length > 1}
-  <main class="isolate mx-4 mt-24 mb-40" bind:clientHeight={viewport.height} bind:clientWidth={viewport.width}>
+  <main
+    class="frameleaf isolate mx-4 mt-24 mb-40"
+    data-theme={appTheme}
+    bind:clientHeight={viewport.height}
+    bind:clientWidth={viewport.width}
+  >
     <GalleryViewer {assets} assetInteraction={assetMultiSelectManager} {viewport} allowDeletion={false} />
   </main>
 
   <header class="fixed inset-s-0 top-0 w-full">
     {#if assetMultiSelectManager.selectionActive}
       <AssetSelectControlBar>
-        <IconButton
+        <ImmichIconButton
           shape="round"
           color="secondary"
           variant="ghost"
@@ -114,6 +133,25 @@
           <RemoveFromSharedLink bind:sharedLink />
         {/if}
       </AssetSelectControlBar>
+    {:else if $frameleafShell}
+      <!-- Frameleaf shell rollout (FL-30/FL-56): own brand, no LibraryRail/TopBar/account menu. -->
+      <div class="frameleaf pv-header" data-theme={appTheme}>
+        <a class="pv-brand" href="/" data-sveltekit-preload-data="hover">
+          <Brand />
+        </a>
+        <div class="pv-actions">
+          {#if sharedLink?.allowUpload}
+            <IconButton label={$t('add_photos')} onclick={() => handleUploadAssets()}>
+              <Icon icon={mdiFileImagePlusOutline} size="1.25em" aria-hidden={true} />
+            </IconButton>
+          {/if}
+          {#if sharedLink?.allowDownload}
+            <IconButton label={$t('download')} onclick={downloadAssets}>
+              <Icon icon={mdiDownload} size="1.25em" aria-hidden={true} />
+            </IconButton>
+          {/if}
+        </div>
+      </div>
     {:else}
       <ControlAppBar>
         {#snippet leading()}
@@ -124,7 +162,7 @@
 
         {#snippet trailing()}
           {#if sharedLink?.allowUpload}
-            <IconButton
+            <ImmichIconButton
               shape="round"
               color="secondary"
               variant="ghost"
@@ -135,7 +173,7 @@
           {/if}
 
           {#if sharedLink?.allowDownload}
-            <IconButton
+            <ImmichIconButton
               shape="round"
               color="secondary"
               variant="ghost"
@@ -169,3 +207,25 @@
     {/await}
   {/await}
 {/if}
+
+<style>
+  .pv-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: color-mix(in srgb, var(--fl-canvas), transparent 12%);
+    border-bottom: 1px solid var(--fl-border);
+    backdrop-filter: blur(6px);
+  }
+  .pv-brand {
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+  .pv-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+</style>

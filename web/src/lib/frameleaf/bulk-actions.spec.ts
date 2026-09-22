@@ -1,0 +1,159 @@
+import { AssetTypeEnum, AssetVisibility, type AssetResponseDto } from '@immich/sdk';
+import { describe, expect, it } from 'vitest';
+import {
+  bulkActionById,
+  bulkActions,
+  livePhotoPair,
+  menuBulkActions,
+  primaryBulkActions,
+  selectedStackIds,
+  toBulkAsset,
+  type BulkAsset,
+} from '$lib/frameleaf/bulk-actions';
+
+const photo = (id: string, extra: Partial<BulkAsset> = {}): BulkAsset => ({ id, isVideo: false, ...extra });
+const video = (id: string, extra: Partial<BulkAsset> = {}): BulkAsset => ({ id, isVideo: true, ...extra });
+
+const available = (context: Parameters<typeof bulkActions>[0]) =>
+  bulkActions(context)
+    .filter((action) => action.available)
+    .map((action) => action.id);
+
+describe('bulk action descriptors', () => {
+  it('offers nothing while nothing is selected', () => {
+    expect(available({})).toEqual([]);
+  });
+
+  it('carries the complete bulk set for a live selection', () => {
+    const ids = available({ assets: [photo('a'), video('b')] });
+    for (const id of [
+      'favorite',
+      'add-to-album',
+      'create-shared-link',
+      'download',
+      'delete',
+      'stack',
+      'tag',
+      'change-date',
+      'change-description',
+      'change-location',
+      'archive',
+      'mark-sensitive',
+      'unmark-sensitive',
+      'refresh-thumbnails',
+      'refresh-metadata',
+      'refresh-faces',
+      'refresh-encoded',
+    ]) {
+      expect(ids).toContain(id);
+    }
+    // Trash-only actions stay out of a live selection.
+    expect(ids).not.toContain('restore');
+    expect(ids).not.toContain('delete-permanently');
+  });
+
+  it('replaces the live actions with restore and permanent delete in the trash', () => {
+    const ids = available({ assets: [photo('a')], trash: true });
+    expect(ids).toEqual(expect.arrayContaining(['restore', 'delete-permanently', 'download']));
+    expect(ids).not.toContain('delete');
+    expect(ids).not.toContain('favorite');
+    expect(ids).not.toContain('archive');
+  });
+
+  it('offers only the direction that applies for favorite and archive', () => {
+    const favorited = bulkActionById(bulkActions({ assets: [photo('a', { isFavorite: true })] }));
+    expect(favorited.favorite?.available).toBe(false);
+    expect(favorited.unfavorite?.available).toBe(true);
+
+    const archived = bulkActionById(bulkActions({ assets: [photo('a', { isArchived: true })] }));
+    expect(archived.archive?.available).toBe(false);
+    expect(archived.unarchive?.available).toBe(true);
+  });
+
+  it('withholds the actions that need the individual items from a snapshot selection', () => {
+    const ids = available({ count: 4000, snapshot: true });
+    expect(ids).toEqual(expect.arrayContaining(['favorite', 'archive', 'tag', 'delete', 'mark-sensitive']));
+    for (const id of ['stack', 'unstack', 'link-live-photo', 'unlink-live-photo', 'set-album-cover']) {
+      expect(ids).not.toContain(id);
+    }
+  });
+
+  it('enables the album actions only inside an album, and the cover only for one item', () => {
+    expect(available({ assets: [photo('a')] })).not.toContain('remove-from-album');
+    const inAlbum = bulkActions({ assets: [photo('a')], albumId: 'album-1' });
+    expect(bulkActionById(inAlbum)['remove-from-album']?.albumId).toBe('album-1');
+    expect(bulkActionById(inAlbum)['set-album-cover']?.available).toBe(true);
+    expect(
+      bulkActionById(bulkActions({ assets: [photo('a'), photo('b')], albumId: 'album-1' }))['set-album-cover']
+        ?.available,
+    ).toBe(false);
+  });
+
+  it('links a Live Photo only for exactly one still and one video', () => {
+    expect(livePhotoPair([photo('a'), video('b')])).toEqual({ photoId: 'a', videoId: 'b' });
+    expect(livePhotoPair([photo('a'), video('b'), video('c')])).toBeNull();
+    expect(livePhotoPair([photo('a', { isLivePhoto: true }), video('b')])).toBeNull();
+  });
+
+  it('collects the distinct stacks a selection spans', () => {
+    const assets = [photo('a', { stackId: 's1' }), photo('b', { stackId: 's1' }), photo('c')];
+    expect(selectedStackIds(assets)).toEqual(['s1']);
+  });
+
+  it('stacks only two or more items', () => {
+    expect(available({ assets: [photo('a')] })).not.toContain('stack');
+    expect(available({ assets: [photo('a'), photo('b')] })).toContain('stack');
+  });
+
+  it('offers re-encoding only when the selection holds a video', () => {
+    expect(available({ assets: [photo('a')] })).not.toContain('refresh-encoded');
+    expect(available({ assets: [photo('a'), video('b')] })).toContain('refresh-encoded');
+    // A snapshot cannot inspect the items, so the job is offered and the server decides.
+    expect(available({ count: 10, snapshot: true })).toContain('refresh-encoded');
+  });
+
+  it('draws the primary buttons and never repeats them in the menu', () => {
+    const actions = bulkActions({ assets: [photo('a', { isFavorite: true }), photo('b')], albumId: 'album-1' });
+    const primary = primaryBulkActions(actions, false).map((action) => action.id);
+    expect(primary).toEqual(['favorite', 'add-to-album', 'create-shared-link', 'download', 'delete']);
+
+    const menu = menuBulkActions(actions, false);
+    const menuIds = menu.flatMap((group) => group.items.map((item) => item.id));
+    expect(menu.map((group) => group.id)).toEqual(['organize', 'visibility', 'album', 'jobs']);
+    // The menu holds only the non-primary groups, exactly as the prototype's More menu does.
+    expect(menuIds).not.toContain('unfavorite');
+    for (const id of primary) {
+      expect(menuIds).not.toContain(id);
+    }
+  });
+
+  it('collapses favorite to its removal when nothing can be favorited', () => {
+    const actions = bulkActions({ assets: [photo('a', { isFavorite: true })] });
+    expect(primaryBulkActions(actions, false)[0].id).toBe('unfavorite');
+  });
+
+  it('narrows the production asset DTO to what a descriptor reads', () => {
+    const asset = {
+      id: 'a',
+      ownerId: 'user-1',
+      type: AssetTypeEnum.Video,
+      isFavorite: true,
+      isArchived: false,
+      isTrashed: false,
+      visibility: AssetVisibility.Archive,
+      livePhotoVideoId: null,
+      stack: { id: 'stack-1', assetCount: 2, primaryAssetId: 'a' },
+    } as unknown as AssetResponseDto;
+    expect(toBulkAsset(asset)).toEqual({
+      id: 'a',
+      ownerId: 'user-1',
+      isVideo: true,
+      isFavorite: true,
+      // Archived visibility counts even when the deprecated flag disagrees.
+      isArchived: true,
+      isTrashed: false,
+      isLivePhoto: false,
+      stackId: 'stack-1',
+    });
+  });
+});
