@@ -24,6 +24,10 @@
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
   import Timeline from '$lib/components/timeline/Timeline.svelte';
   import { PersonPageViewMode, QueryParameter, SessionStorageKey } from '$lib/constants';
+  import FrameleafMenu from '$lib/components/frameleaf/Menu.svelte';
+  import FrameleafMenuItem from '$lib/components/frameleaf/MenuItem.svelte';
+  import FrameleafPersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
+  import { frameleafShell } from '$lib/frameleaf/rollout';
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
@@ -42,6 +46,7 @@
     ActionButton,
     CommandPaletteDefaultProvider,
     ContextMenuButton,
+    Icon,
     LoadingSpinner,
     modalManager,
     toastManager,
@@ -322,6 +327,14 @@
       viewMode = PersonPageViewMode.MERGE_PEOPLE;
     },
   };
+
+  const FixIncorrectMatch: ActionItem = {
+    title: $t('fix_incorrect_match'),
+    icon: mdiAccountMultipleCheckOutline,
+    // Same trigger as the existing selection-bar "Fix incorrect match" menu option: select
+    // the mis-tagged photos first, then reassign them with the existing UnmergeFaceSelector.
+    onAction: () => handleReassignAssets(),
+  };
 </script>
 
 <OnEvents
@@ -381,14 +394,18 @@
                   title={$t('edit_name')}
                   onclick={() => (isEditingName = true)}
                 >
-                  <ImageThumbnail
-                    circle
-                    shadow
-                    url={thumbnailData}
-                    altText={person.name}
-                    widthStyle="3.375rem"
-                    heightStyle="3.375rem"
-                  />
+                  {#if $frameleafShell}
+                    <FrameleafPersonAvatar {person} size={72} />
+                  {:else}
+                    <ImageThumbnail
+                      circle
+                      shadow
+                      url={thumbnailData}
+                      altText={person.name}
+                      widthStyle="3.375rem"
+                      heightStyle="3.375rem"
+                    />
+                  {/if}
                   <div class="flex flex-col justify-center px-4 text-start text-primary">
                     <p class="w-40 truncate font-medium sm:w-72">{person.name || $t('add_a_name')}</p>
                     <p class="text-sm text-gray-500 dark:text-gray-400">
@@ -415,6 +432,29 @@
               </div>
             {/if}
           </section>
+          {#if $frameleafShell && !isEditingName}
+            <div class="frameleaf-person-actions" role="toolbar" aria-label={$t('frameleaf_people_person_actions', { values: { name: person.name || $t('add_a_name') } })}>
+              <FrameleafMenu label={$t('show_person_options')} align="start">
+                {#snippet trigger()}
+                  <Icon icon={mdiDotsVertical} size="18" />
+                {/snippet}
+                <FrameleafMenuItem onSelect={SelectFeaturePhoto.onAction}>{$t('select_featured_photo')}</FrameleafMenuItem>
+                <FrameleafMenuItem onSelect={Merge.onAction}>{$t('merge_people')}</FrameleafMenuItem>
+                <FrameleafMenuItem onSelect={FixIncorrectMatch.onAction}>{$t('fix_incorrect_match')}</FrameleafMenuItem>
+                <FrameleafMenuItem onSelect={SetDateOfBirth.onAction}>{$t('set_date_of_birth')}</FrameleafMenuItem>
+                {#if person.isHidden}
+                  <FrameleafMenuItem onSelect={ShowPerson.onAction}>{$t('unhide_person')}</FrameleafMenuItem>
+                {:else}
+                  <FrameleafMenuItem onSelect={HidePerson.onAction}>{$t('hide_person')}</FrameleafMenuItem>
+                {/if}
+                {#if person.isFavorite}
+                  <FrameleafMenuItem onSelect={Unfavorite.onAction}>{$t('unfavorite')}</FrameleafMenuItem>
+                {:else}
+                  <FrameleafMenuItem onSelect={Favorite.onAction}>{$t('to_favorite')}</FrameleafMenuItem>
+                {/if}
+              </FrameleafMenu>
+            </div>
+          {/if}
           {#if isEditingName}
             <div class="absolute z-1 w-64 sm:w-96">
               {#if isSearchingPeople}
@@ -504,7 +544,7 @@
       <ControlAppBar backIcon={mdiArrowLeft} onClose={() => goto(previousRoute)}>
         {#snippet trailing()}
           <ContextMenuButton
-            items={[SelectFeaturePhoto, HidePerson, ShowPerson, SetDateOfBirth, Merge, Favorite, Unfavorite]}
+            items={[SelectFeaturePhoto, Merge, FixIncorrectMatch, HidePerson, ShowPerson, SetDateOfBirth, Favorite, Unfavorite]}
             aria-label={$t('open')}
           />
         {/snippet}
@@ -533,3 +573,9 @@
 {#if viewMode === PersonPageViewMode.MERGE_PEOPLE}
   <MergeFaceSelector {person} onBack={handleGoBack} onMerge={handleMerge} />
 {/if}
+
+<style>
+  .frameleaf-person-actions {
+    margin-top: 0.5rem;
+  }
+</style>
