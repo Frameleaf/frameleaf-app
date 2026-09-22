@@ -1,3 +1,4 @@
+import type { MetadataSearchDto, SmartSearchDto } from '@immich/sdk';
 import type { TimelineManagerOptions } from '$lib/managers/timeline-manager/types';
 
 /** Supported production scopes; a picker targets an album but queries the library. */
@@ -7,11 +8,40 @@ export type LibraryTimelineScope =
   | { kind: 'album-picker'; id: string }
   | { kind: 'map'; bbox: string };
 
-export type LibraryTimelineQuery = {
-  scope: LibraryTimelineScope;
-  // Keep the complete existing endpoint contract, including date/order/privacy and local asset filters.
-  filters: Omit<TimelineManagerOptions, 'albumId' | 'timelineAlbumId' | 'bbox'>;
-};
+export type LibrarySearchTerms = MetadataSearchDto & Pick<SmartSearchDto, 'query' | 'queryAssetId'>;
+
+/** Endpoint-specific variants retain their real paging/filter contracts instead of converting scopes. */
+export type LibraryQuery =
+  | {
+      scope: LibraryTimelineScope;
+      filters: Omit<TimelineManagerOptions, 'albumId' | 'timelineAlbumId' | 'bbox'>;
+    }
+  | {
+      scope: { kind: 'search' };
+      search: { kind: 'metadata' | 'smart'; terms: LibrarySearchTerms } | { kind: 'ask'; query: string };
+    };
+
+export type LibrarySearchQuery = Extract<LibraryQuery, { scope: { kind: 'search' } }>;
+export type LibraryTimelineQuery = Exclude<LibraryQuery, LibrarySearchQuery>;
+
+/** Adapt the existing portable URL terms without dropping any supported structured filters. */
+export function librarySearchQuery({
+  terms,
+  ask,
+  smartSearch,
+  askSearch,
+}: {
+  terms: LibrarySearchTerms;
+  ask: string;
+  smartSearch: boolean;
+  askSearch: boolean;
+}): LibrarySearchQuery | null {
+  if (Object.keys(terms).length > 0) {
+    const kind = smartSearch && ('query' in terms || 'queryAssetId' in terms) ? 'smart' : 'metadata';
+    return { scope: { kind: 'search' }, search: { kind, terms } };
+  }
+  return askSearch && ask.trim() ? { scope: { kind: 'search' }, search: { kind: 'ask', query: ask.trim() } } : null;
+}
 
 export function libraryTimelineOptions({ scope, filters }: LibraryTimelineQuery): TimelineManagerOptions {
   switch (scope.kind) {
