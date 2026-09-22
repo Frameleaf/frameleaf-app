@@ -1,6 +1,8 @@
 <script lang="ts">
+  import '$lib/frameleaf/tokens.css';
+  import { frameleafShell } from '$lib/frameleaf/rollout';
   import { languageManager } from '$lib/managers/language-manager.svelte';
-  import { Button, Icon } from '@immich/ui';
+  import { Button, Icon, Theme as AppTheme, themeManager } from '@immich/ui';
   import { mdiArrowLeft, mdiArrowRight, mdiCheck } from '@mdi/js';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -27,11 +29,26 @@
     onNext,
     onPrevious,
   }: Props = $props();
+
+  // Frameleaf shell rollout (FL-30/FL-80): restyles the card only, every step's own
+  // content and the next/previous contract below are unchanged in either state.
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 </script>
 
 <div
   id="onboarding-card"
-  class="flex w-full max-w-4xl flex-col gap-4 rounded-3xl border-2 border-gray-500 bg-gray-50 p-8 text-black dark:border-gray-700 dark:bg-immich-dark-gray dark:text-immich-dark-fg"
+  class="flex w-full max-w-4xl flex-col gap-4 p-8"
+  class:frameleaf={$frameleafShell}
+  class:fl-onboarding-card={$frameleafShell}
+  class:rounded-3xl={!$frameleafShell}
+  class:border-2={!$frameleafShell}
+  class:border-gray-500={!$frameleafShell}
+  class:bg-gray-50={!$frameleafShell}
+  class:text-black={!$frameleafShell}
+  class:dark:border-gray-700={!$frameleafShell}
+  class:dark:bg-immich-dark-gray={!$frameleafShell}
+  class:dark:text-immich-dark-fg={!$frameleafShell}
+  data-theme={$frameleafShell ? appTheme : undefined}
   in:fade={{ duration: 250 }}
 >
   {#if title || icon}
@@ -81,3 +98,13 @@
     </div>
   </div>
 </div>
+
+<style>
+  .fl-onboarding-card {
+    color: var(--fl-text);
+    background: var(--fl-panel);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-dialog);
+    box-shadow: var(--fl-shadow-2);
+  }
+</style>
