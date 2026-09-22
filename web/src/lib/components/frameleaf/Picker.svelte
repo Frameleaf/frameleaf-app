@@ -36,7 +36,7 @@
   .picker :global([role='combobox']) {
     background: var(--fl-raised);
     border: 1px solid var(--fl-muted);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
     caret-color: var(--fl-accent);
     box-shadow: none;
   }
@@ -47,7 +47,7 @@
   .picker :global([role='listbox']) {
     background: var(--fl-panel);
     border-color: var(--fl-muted);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-control);
   }
   .picker :global([role='option']) {
     background: var(--fl-panel);
