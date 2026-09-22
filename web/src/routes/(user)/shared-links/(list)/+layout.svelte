@@ -4,8 +4,10 @@
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import SharedLinkCard from './SharedLinkCard.svelte';
+  import SharedLinkList from '$lib/components/frameleaf/SharedLinkList.svelte';
   import { type SharedLinkTab } from '$lib/constants';
   import GroupTab from '$lib/elements/GroupTab.svelte';
+  import { frameleafShell } from '$lib/frameleaf/rollout';
   import { Route } from '$lib/route';
   import { getAllSharedLinks, SharedLinkType, type SharedLinkResponseDto } from '@immich/sdk';
   import { Container } from '@immich/ui';
@@ -27,7 +29,11 @@
   };
 
   onMount(async () => {
-    await refresh();
+    // Frameleaf shell rollout (FL-30/FL-54): SharedLinkList.svelte owns its own list and
+    // refresh below, so this legacy fetch only needs to run for the legacy body.
+    if (!$frameleafShell) {
+      await refresh();
+    }
   });
 
   const filterMap: Record<SharedLinkTab, string> = {
@@ -67,36 +73,47 @@
   };
 </script>
 
-<OnEvents {onSharedLinkUpdate} {onSharedLinkDelete} />
-
-<UserPageLayout title={data.meta.title}>
-  {#snippet buttons()}
-    <div class="hidden h-10 xl:block">
-      <GroupTab
-        label={$t('show_shared_links')}
-        {filters}
-        {labels}
-        selected={selectedTab}
-        onSelect={(value) => goto(Route.sharedLinks({ filter: value as SharedLinkTab }))}
-      />
-    </div>
-  {/snippet}
-
-  <Container center size="medium">
-    {#if sharedLinks.length === 0}
-      <div
-        class="flex place-content-center place-items-center rounded-lg bg-gray-100 p-12 dark:bg-immich-dark-gray dark:text-immich-gray"
-      >
-        <p>{$t('you_dont_have_any_shared_links')}</p>
-      </div>
-    {:else}
-      <div class="flex flex-col gap-2">
-        {#each filteredSharedLinks as sharedLink (sharedLink.id)}
-          <SharedLinkCard {sharedLink} />
-        {/each}
-      </div>
-    {/if}
-
+{#if $frameleafShell}
+  <!-- Frameleaf shell rollout (FL-30/FL-54): SharedLinkList.svelte is a full screen with its
+       own heading, tabs, search and create/edit dialogs, so the legacy title/tab buttons and
+       list below are skipped rather than duplicated. The rail and top bar still come from
+       UserPageLayout -> NavigationBar/UserSidebar, which already branch on this flag. -->
+  <UserPageLayout>
+    <SharedLinkList />
     {@render children?.()}
-  </Container>
-</UserPageLayout>
+  </UserPageLayout>
+{:else}
+  <OnEvents {onSharedLinkUpdate} {onSharedLinkDelete} />
+
+  <UserPageLayout title={data.meta.title}>
+    {#snippet buttons()}
+      <div class="hidden h-10 xl:block">
+        <GroupTab
+          label={$t('show_shared_links')}
+          {filters}
+          {labels}
+          selected={selectedTab}
+          onSelect={(value) => goto(Route.sharedLinks({ filter: value as SharedLinkTab }))}
+        />
+      </div>
+    {/snippet}
+
+    <Container center size="medium">
+      {#if sharedLinks.length === 0}
+        <div
+          class="flex place-content-center place-items-center rounded-lg bg-gray-100 p-12 dark:bg-immich-dark-gray dark:text-immich-gray"
+        >
+          <p>{$t('you_dont_have_any_shared_links')}</p>
+        </div>
+      {:else}
+        <div class="flex flex-col gap-2">
+          {#each filteredSharedLinks as sharedLink (sharedLink.id)}
+            <SharedLinkCard {sharedLink} />
+          {/each}
+        </div>
+      {/if}
+
+      {@render children?.()}
+    </Container>
+  </UserPageLayout>
+{/if}
