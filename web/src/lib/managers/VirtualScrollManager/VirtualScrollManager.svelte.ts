@@ -4,6 +4,12 @@ type LayoutOptions = {
   headerHeight: number;
   rowHeight: number;
   gap: number;
+  /**
+   * Frameleaf (FL-33): lay groups out with the filling justified algorithm, so the last row of a
+   * day group spans the timeline instead of trailing off. Off by default; the Frameleaf library
+   * layouts turn it on.
+   */
+  fillRowWidth: boolean;
 };
 export abstract class VirtualScrollManager {
   topSectionHeight = $state(0);
@@ -22,6 +28,7 @@ export abstract class VirtualScrollManager {
   #rowHeight = $state(235);
   #headerHeight = $state(48);
   #gap = $state(12);
+  #fillRowWidth = $state(false);
   #scrolling = $state(false);
   #suspendTransitions = $state(false);
   #resetScrolling = debounce(() => (this.#scrolling = false), 1000);
@@ -31,6 +38,7 @@ export abstract class VirtualScrollManager {
     heightTolerance: 0.5,
     rowHeight: this.#rowHeight,
     rowWidth: Math.floor(this.viewportWidth),
+    fillRowWidth: this.#fillRowWidth,
   });
 
   constructor() {
@@ -90,6 +98,18 @@ export abstract class VirtualScrollManager {
     return this.#rowHeight;
   }
 
+  #setFillRowWidth(value: boolean) {
+    if (this.#fillRowWidth === value) {
+      return false;
+    }
+    this.#fillRowWidth = value;
+    return true;
+  }
+
+  get fillRowWidth() {
+    return this.#fillRowWidth;
+  }
+
   set scrolling(value: boolean) {
     this.#scrolling = value;
     if (value) {
@@ -142,12 +162,17 @@ export abstract class VirtualScrollManager {
 
   protected updateViewportGeometry(_: boolean) {}
 
-  setLayoutOptions({ headerHeight = 48, rowHeight = 235, gap = 12 }: Partial<LayoutOptions> = {}) {
-    let changed = false;
-    changed ||= this.#setHeaderHeight(headerHeight);
-    changed ||= this.#setGap(gap);
-    changed ||= this.#setRowHeight(rowHeight);
-    if (changed) {
+  setLayoutOptions({ headerHeight = 48, rowHeight = 235, gap = 12, fillRowWidth = false }: Partial<LayoutOptions> = {}) {
+    // Note: every setter must run. `||=` short-circuits, so the first option that reported a change
+    // used to stop the rest from being applied at all — switching to the mobile layout set the
+    // header height and silently kept the desktop row height.
+    const changes = [
+      this.#setHeaderHeight(headerHeight),
+      this.#setGap(gap),
+      this.#setRowHeight(rowHeight),
+      this.#setFillRowWidth(fillRowWidth),
+    ];
+    if (changes.includes(true)) {
       this.refreshLayout();
     }
   }
