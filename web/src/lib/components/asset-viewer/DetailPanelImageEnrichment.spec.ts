@@ -67,7 +67,7 @@ describe('DetailPanelImageEnrichment', () => {
       onAssetSuppressed,
     });
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'mark_nsfw' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_info_mark_sensitive' }));
 
     await waitFor(() =>
       expect(updateAssetImageEnrichment).toHaveBeenCalledWith({
