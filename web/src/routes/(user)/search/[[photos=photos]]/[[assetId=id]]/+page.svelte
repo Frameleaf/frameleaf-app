@@ -19,10 +19,8 @@
   import SetVisibilityAction from '$lib/components/timeline/actions/SetVisibilityAction.svelte';
   import TagAction from '$lib/components/timeline/actions/TagAction.svelte';
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
-  import {
-    LibrarySearchSession,
-    type LibrarySearchTerms as SearchTerms,
-  } from '$lib/frameleaf/library-search-session.svelte';
+  import { LibrarySearchSession } from '$lib/frameleaf/library-search-session.svelte';
+  import { librarySearchQuery, type LibrarySearchTerms as SearchTerms } from '$lib/frameleaf/library-session';
   import { QueryParameter } from '$lib/constants';
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -77,13 +75,22 @@
   let hasSearchQuery = $derived(Object.keys(terms).length > 0);
   const isAskLoading = $derived(session.loading && !hasSearchQuery);
   let canUseAskSearch = $derived(featureFlagsManager.value.search && featureFlagsManager.value.smartSearch);
+  const routeQuery = $derived(
+    librarySearchQuery({
+      terms,
+      ask: askSearchQuery,
+      smartSearch: smartSearchEnabled,
+      askSearch: canUseAskSearch,
+    }),
+  );
 
+  // Capability changes can rebuild an equivalent descriptor; do not tear down its mounted gallery.
+  const routeQueryKey = $derived(JSON.stringify(routeQuery));
   $effect(() => {
     // URL query changes (including Back/Forward) update results and the editable filters together.
-    const query = terms;
-    const ask = askSearchQuery;
+    void routeQueryKey;
     void session.accessGeneration;
-    untrack(() => handlePromiseError(onSearchQueryUpdate(query, ask)));
+    untrack(() => handlePromiseError(onSearchQueryUpdate(routeQuery)));
   });
 
   onDestroy(() => session.destroy());
@@ -132,23 +139,21 @@
     assetMultiSelectManager.selectAssets(session.assets.map((asset) => toTimelineAsset(asset)));
   };
 
-  async function onSearchQueryUpdate(query = terms, ask = askSearchQuery) {
+  async function onSearchQueryUpdate(query = routeQuery) {
     if (session.blocked) {
       searchManager.reset();
       return;
     }
-    searchManager.setQuery(query);
-    askQuery = ask;
-    session.reset(
-      Object.keys(query).length > 0 ? { terms: query } : canUseAskSearch && ask.trim() ? { ask: ask.trim() } : null,
-    );
+    searchManager.setQuery(query && query.search.kind !== 'ask' ? query.search.terms : {});
+    askQuery = askSearchQuery;
+    session.reset(query);
     await loadNextPage();
   }
 
   // eslint-disable-next-line svelte/valid-prop-names-in-kit-pages
   export const loadNextPage = async () => {
     try {
-      await session.loadNextPage({ smartSearch: smartSearchEnabled, language: $lang });
+      await session.loadNextPage({ language: $lang });
     } catch (error) {
       handleError(error, $t('loading_search_results_failed'));
     }

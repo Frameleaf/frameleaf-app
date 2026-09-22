@@ -6,14 +6,10 @@ import {
   type AlbumResponseDto,
   type AskSearchResponseDto,
   type AssetResponseDto,
-  type MetadataSearchDto,
-  type SmartSearchDto,
 } from '@immich/sdk';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { onLibraryAccessChange } from './library-access';
-
-export type LibrarySearchTerms = MetadataSearchDto & Pick<SmartSearchDto, 'query' | 'queryAssetId'>;
-export type LibrarySearchQuery = { terms: LibrarySearchTerms } | { ask: string };
+import type { LibrarySearchQuery } from './library-session';
 
 /** One route-owned result set. Neither queries nor private assets are persisted to device storage. */
 export class LibrarySearchSession {
@@ -22,6 +18,7 @@ export class LibrarySearchSession {
   askResponse = $state<AskSearchResponseDto>();
   loading = $state(false);
   nextPage = $state<number | null>(null);
+  nextCursor = $state<string | null>(null);
   accessGeneration = $state(0);
   blocked = $state(false);
   #unsubscribe = onLibraryAccessChange(
@@ -49,6 +46,7 @@ export class LibrarySearchSession {
     this.albums = [];
     this.askResponse = undefined;
     this.nextPage = query ? 1 : null;
+    this.nextCursor = null;
     this.loading = false;
   }
 
@@ -58,9 +56,9 @@ export class LibrarySearchSession {
     this.reset();
   }
 
-  async loadNextPage(options: { smartSearch: boolean; language: string }) {
+  async loadNextPage(options: { language: string }) {
     const query = this.#query;
-    if (this.blocked || !query || !this.nextPage || this.loading) {
+    if (this.blocked || !query || (!this.nextPage && !this.nextCursor) || this.loading) {
       return;
     }
 
@@ -70,16 +68,22 @@ export class LibrarySearchSession {
     try {
       let response;
       let askResponse: AskSearchResponseDto | undefined;
-      if ('ask' in query) {
+      const search = query.search;
+      if (search.kind === 'ask') {
         askResponse = await askSearch(
-          { askSearchDto: { query: query.ask, page: this.nextPage, language: options.language } },
+          { askSearchDto: { query: search.query, page: this.nextPage ?? 1, language: options.language } },
           { signal: request.signal },
         );
         response = askResponse.results;
       } else {
-        const searchDto = { visibility: AssetVisibility.Timeline, ...query.terms, page: this.nextPage, withExif: true };
+        // The API rejects deprecated page/visibility fields alongside its structured filter shape.
+        const structured =
+          search.terms.filter !== undefined || search.terms.orderBy !== undefined || search.terms.cursor !== undefined;
+        const searchDto = structured
+          ? { ...search.terms, ...(this.nextCursor && { cursor: this.nextCursor }), withExif: true }
+          : { visibility: AssetVisibility.Timeline, ...search.terms, page: this.nextPage ?? 1, withExif: true };
         response =
-          ('query' in searchDto || 'queryAssetId' in searchDto) && options.smartSearch
+          search.kind === 'smart'
             ? await searchSmart(
                 { smartSearchDto: { ...searchDto, language: options.language } },
                 { signal: request.signal },
@@ -95,6 +99,7 @@ export class LibrarySearchSession {
       this.albums.push(...response.albums.items);
       this.askResponse = askResponse;
       this.nextPage = Number(response.assets.nextPage) || null;
+      this.nextCursor = response.assets.nextCursor ?? null;
     } catch (error) {
       if (this.#request === request) {
         throw error;

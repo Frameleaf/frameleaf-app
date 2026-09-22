@@ -8,6 +8,7 @@ import {
 } from '@immich/sdk';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { LibrarySearchSession } from './library-search-session.svelte';
+import { librarySearchQuery, type LibrarySearchTerms } from './library-session';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
@@ -18,12 +19,14 @@ vi.mock('@immich/sdk', async (original) => ({
   searchSmart: vi.fn(),
 }));
 
-const result = (id: string, nextPage: string | null = null) =>
+const result = (id: string, nextPage: string | null = null, nextCursor: string | null = null) =>
   ({
     albums: { items: [] },
-    assets: { items: [{ id }], nextPage },
+    assets: { items: [{ id }], nextPage, nextCursor },
   }) as unknown as SearchResponseDto;
-const options = { smartSearch: true, language: 'en' };
+const options = { language: 'en' };
+const structured = (terms: LibrarySearchTerms) =>
+  librarySearchQuery({ terms, ask: '', smartSearch: true, askSearch: true });
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
@@ -52,7 +55,7 @@ afterEach(() => {
 it('preserves scoped filters and personal sort while owning the paging cursor', async () => {
   const session = createSession();
   const terms = { albumIds: ['album'], city: null, personIds: ['person'], order: AssetOrder.Asc, page: 99 };
-  session.reset({ terms });
+  session.reset(structured(terms));
   vi.mocked(searchAssets).mockResolvedValueOnce(result('first', '2')).mockResolvedValueOnce(result('second'));
   await session.loadNextPage(options);
   await session.loadNextPage(options);
@@ -75,16 +78,17 @@ it('aborts the old scope and ignores its late success, pagination and loading co
   const old = deferred<SearchResponseDto>();
   const current = deferred<SearchResponseDto>();
   vi.mocked(searchAssets).mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
-  session.reset({ terms: { albumIds: ['old'] } });
+  session.reset(structured({ albumIds: ['old'] }));
   const oldLoad = session.loadNextPage(options);
   const signal = vi.mocked(searchAssets).mock.calls[0][1]?.signal;
-  session.reset({ terms: { albumIds: ['new'] } });
+  session.reset(structured({ albumIds: ['new'] }));
   const newLoad = session.loadNextPage(options);
-  old.resolve(result('private-old', '9'));
+  old.resolve(result('private-old', '9', 'obsolete-cursor'));
   await oldLoad;
   expect(signal?.aborted).toBe(true);
   expect(session.assets).toEqual([]);
   expect(session.nextPage).toBe(1);
+  expect(session.nextCursor).toBeNull();
   expect(session.loading).toBe(true);
   current.resolve(result('new'));
   await newLoad;
@@ -95,7 +99,7 @@ it('shares request ownership between metadata, smart and Ask searches', async ()
   const session = createSession();
   const old = deferred<SearchResponseDto>();
   vi.mocked(searchSmart).mockReturnValueOnce(old.promise);
-  session.reset({ terms: { query: 'old' } });
+  session.reset(structured({ query: 'old' }));
   const oldLoad = session.loadNextPage(options);
   const response = {
     query: 'new',
@@ -104,7 +108,7 @@ it('shares request ownership between metadata, smart and Ask searches', async ()
     explanation: 'new',
   } as unknown as AskSearchResponseDto;
   vi.mocked(askSearch).mockResolvedValueOnce(response);
-  session.reset({ ask: 'new' });
+  session.reset(librarySearchQuery({ terms: {}, ask: 'new', smartSearch: true, askSearch: true }));
   await session.loadNextPage(options);
   old.reject(new Error('obsolete failure'));
   await expect(oldLoad).resolves.toBeUndefined();
@@ -116,13 +120,14 @@ it('discards pending evidence after disposal or access invalidation', async () =
   const session = createSession();
   const pending = deferred<SearchResponseDto>();
   vi.mocked(searchAssets).mockReturnValueOnce(pending.promise);
-  session.reset({ terms: { isFavorite: true } });
+  session.reset(structured({ isFavorite: true }));
   const load = session.loadNextPage(options);
   session.reset();
   pending.resolve(result('revoked'));
   await load;
   expect(session.assets).toEqual([]);
   expect(session.nextPage).toBeNull();
+  expect(session.nextCursor).toBeNull();
   expect(session.loading).toBe(false);
 });
 
@@ -130,7 +135,7 @@ it('retains the retry page after a current failure and prevents duplicate concur
   const session = createSession();
   const pending = deferred<SearchResponseDto>();
   vi.mocked(searchAssets).mockReturnValueOnce(pending.promise).mockResolvedValueOnce(result('retry'));
-  session.reset({ terms: { city: 'Banff' } });
+  session.reset(structured({ city: 'Banff' }));
   const load = session.loadNextPage(options);
   await session.loadNextPage(options);
   expect(searchAssets).toHaveBeenCalledOnce();
@@ -152,7 +157,7 @@ it.each([
   const session = createSession();
   const pending = deferred<SearchResponseDto>();
   vi.mocked(searchAssets).mockReturnValueOnce(pending.promise);
-  session.reset({ terms: { city: 'private place' } });
+  session.reset(structured({ city: 'private place' }));
   const load = session.loadNextPage(options);
   const signal = vi.mocked(searchAssets).mock.calls[0][1]?.signal;
   change();
@@ -164,8 +169,29 @@ it.each([
   expect(session.assets).toEqual([]);
   expect(session.loading).toBe(false);
   if (blocked) {
-    session.reset({ terms: { city: 'still private' } });
+    session.reset(structured({ city: 'still private' }));
     await session.loadNextPage(options);
     expect(searchAssets).toHaveBeenCalledOnce();
   }
+});
+
+it('retires an in-flight structured cursor page when access is restricted', async () => {
+  const session = createSession();
+  const pending = deferred<SearchResponseDto>();
+  session.reset(structured({ filter: { city: { eq: 'private place' } } }));
+  vi.mocked(searchAssets)
+    .mockResolvedValueOnce(result('first', null, 'page-two'))
+    .mockReturnValueOnce(pending.promise);
+  await session.loadNextPage(options);
+  expect(session.nextCursor).toBe('page-two');
+  const load = session.loadNextPage(options);
+  const signal = vi.mocked(searchAssets).mock.calls[1][1]?.signal;
+  eventManager.emit('SessionLocked');
+  expect(signal?.aborted).toBe(true);
+  expect(session.nextCursor).toBeNull();
+  pending.resolve(result('private-late', null, 'page-three'));
+  await load;
+  expect(session.assets).toEqual([]);
+  expect(session.nextCursor).toBeNull();
+  expect(session.nextPage).toBeNull();
 });
