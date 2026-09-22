@@ -24,8 +24,8 @@
   /**
    * Frameleaf library rail (FL-30).
    *
-   * Replaces the navigation in `UserSidebar` while the Frameleaf shell rollout flag is
-   * on. It reuses the production sidebar container, so the mobile overlay, the focus
+   * The navigation `UserSidebar` renders. It reuses the production sidebar container, so
+   * the mobile overlay, the focus
    * trap, the resize handle and the remembered collapse preference keep working; only
    * the contents are the Frameleaf ones. Destinations come from
    * `$lib/frameleaf/navigation`, the album and collection shape from

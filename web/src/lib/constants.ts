@@ -299,12 +299,6 @@ export enum ProgressBarStatus {
   Paused = 'paused',
 }
 
-export enum ToggleVisibility {
-  HIDE_ALL = 'hide-all',
-  HIDE_UNNANEMD = 'hide-unnamed',
-  SHOW_ALL = 'show-all',
-}
-
 export enum BackupFileStatus {
   OK,
   DifferentVersion,

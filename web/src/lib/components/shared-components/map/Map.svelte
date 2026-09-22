@@ -11,7 +11,6 @@
 <script lang="ts">
   import { afterNavigate } from '$app/navigation';
   import OnEvents from '$lib/components/OnEvents.svelte';
-  import { frameleafShell } from '$lib/frameleaf/rollout';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import MapSettingsModal from '$lib/modals/MapSettingsModal.svelte';
@@ -501,7 +500,7 @@
         </MarkerLayer>
       </GeoJSON>
 
-      {#if $frameleafShell && onClusterSelect && !viewportGridActive && !simplified && viewMovedSinceQuery}
+      {#if onClusterSelect && !viewportGridActive && !simplified && viewMovedSinceQuery}
         <!-- Frameleaf (FL-51): explicit "Search this area" affordance from `MapView.jsx`'s
              `changed` overlay. It appears only after a real pan/zoom (see `handleMoveEnd`)
              and runs the same bounds query as the toolbar toggle above, so it never widens

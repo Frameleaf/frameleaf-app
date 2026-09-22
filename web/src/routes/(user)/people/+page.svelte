@@ -2,8 +2,6 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { scrollMemory } from '$lib/actions/scroll-memory';
-  import { shortcut } from '$lib/actions/shortcut';
-  import PeopleCard from './PeopleCard.svelte';
   import PeopleInfiniteScroll from './PeopleInfiniteScroll.svelte';
   import SearchPeople from '$lib/components/faces-page/PeopleSearch.svelte';
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
@@ -11,7 +9,6 @@
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { QueryParameter, SessionStorageKey } from '$lib/constants';
-  import { frameleafShell } from '$lib/frameleaf/rollout';
   import PersonMergeSuggestionModal from '$lib/modals/PersonMergeSuggestionModal.svelte';
   import { Route } from '$lib/route';
   import { getPersonActions } from '$lib/services/person.service';
@@ -165,26 +162,6 @@
     }
   };
 
-  const handleHidePerson = async (detail: PersonResponseDto) => {
-    try {
-      const updatedPerson = await updatePerson({
-        id: detail.id,
-        personUpdateDto: { isHidden: true },
-      });
-
-      people = people.map((person: PersonResponseDto) => {
-        if (person.id === updatedPerson.id) {
-          return updatedPerson;
-        }
-        return person;
-      });
-
-      toastManager.primary($t('changed_visibility_successfully'));
-    } catch (error) {
-      handleError(error, $t('errors.unable_to_hide_person'));
-    }
-  };
-
   const handleToggleHidden = async (detail: PersonResponseDto) => {
     try {
       const updatedPerson = await updatePerson({
@@ -230,14 +207,11 @@
 
   let people = $derived(data.people.people);
 
-  let visiblePeople = $derived(people.filter((people) => !people.isHidden));
   let countVisiblePeople = $derived(searchName ? searchedPeopleLocal.length : data.people.total - data.people.hidden);
-  let showPeople = $derived(searchName ? searchedPeopleLocal : visiblePeople);
 
-  // Frameleaf People grid (FL-37): a "show hidden" toggle over the same `people` list the
-  // legacy grid uses. The search endpoint never returns hidden people (production does not
-  // pass `withHidden` to it), so a hidden person stays out of the grid while a search is
-  // active; this mirrors the legacy grid's existing search behaviour.
+  // People grid (FL-37): a "show hidden" toggle over the `people` list. The search endpoint
+  // never returns hidden people (production does not pass `withHidden` to it), so a hidden
+  // person stays out of the grid while a search is active.
   let showHiddenFrameleaf = $state(false);
   let editingIdFrameleaf: string | undefined = $state();
   let frameleafBase = $derived(searchName ? searchedPeopleLocal : people);
@@ -245,11 +219,6 @@
     frameleafBase.filter((person) => showHiddenFrameleaf || !person.isHidden),
   );
   let frameleafHiddenCount = $derived(people.filter((person) => person.isHidden).length);
-
-  const onNameChangeInputFocus = (person: PersonResponseDto) => {
-    editingPerson = person;
-    newName = person.name;
-  };
 
   const onNameChangeSubmit = async (name: string, targetPerson: PersonResponseDto) => {
     try {
@@ -281,12 +250,6 @@
       await updateName(targetPerson.id, name);
     } catch (error) {
       handleError(error, $t('errors.unable_to_save_name'));
-    }
-  };
-
-  const onNameChangeInputUpdate = (event: Event) => {
-    if (event.target) {
-      newName = (event.target as HTMLInputElement).value;
     }
   };
 
@@ -358,15 +321,13 @@
             />
           </div>
         </div>
-        {#if $frameleafShell}
-          <FrameleafButton
-            variant={showHiddenFrameleaf ? 'primary' : 'default'}
-            pressed={showHiddenFrameleaf}
-            onclick={() => (showHiddenFrameleaf = !showHiddenFrameleaf)}
-          >
-            {showHiddenFrameleaf ? $t('frameleaf_people_hide_hidden') : $t('frameleaf_people_show_hidden')}
-          </FrameleafButton>
-        {/if}
+        <FrameleafButton
+          variant={showHiddenFrameleaf ? 'primary' : 'default'}
+          pressed={showHiddenFrameleaf}
+          onclick={() => (showHiddenFrameleaf = !showHiddenFrameleaf)}
+        >
+          {showHiddenFrameleaf ? $t('frameleaf_people_hide_hidden') : $t('frameleaf_people_show_hidden')}
+        </FrameleafButton>
         <Button
           leadingIcon={mdiEyeOutline}
           onclick={() => goto('/people/manage')}
@@ -378,70 +339,33 @@
     {/if}
   {/snippet}
 
-  {#if $frameleafShell}
-    {#if frameleafCards.length > 0}
-      <p class="frameleaf-people-summary">
-        {$t('frameleaf_people_summary', {
-          values: { count: frameleafCards.length, hidden: frameleafHiddenCount },
-        })}
-      </p>
-      <div class="frameleaf-people-grid">
-        <PeopleInfiniteScroll people={frameleafCards} hasNextPage={!!nextPage && !searchName} {loadNextPage}>
-          {#snippet children({ person })}
-            <PersonCard
-              {person}
-              editing={editingIdFrameleaf === person.id}
-              onOpen={() => goto(Route.viewPerson(person, { previousRoute: Route.people() }))}
-              onStartRename={() => (editingIdFrameleaf = person.id)}
-              onCommitRename={async (name) => {
-                editingIdFrameleaf = undefined;
-                await onNameChangeSubmit(name, person);
-              }}
-              onCancelRename={() => (editingIdFrameleaf = undefined)}
-              onToggleFavorite={() => handleToggleFavorite(person)}
-              onToggleHide={() => handleToggleHidden(person)}
-              onMerge={() => handleMergePeople(person)}
-              onSetBirthday={() => getPersonActions($t, person).SetDateOfBirth.onAction()}
-            />
-          {/snippet}
-        </PeopleInfiniteScroll>
-      </div>
-    {:else}
-      <div class="flex min-h-[calc(66vh-11rem)] w-full place-content-center items-center dark:text-white">
-        <div class="flex flex-col content-center items-center text-center">
-          <Icon icon={mdiAccountOff} size="3.5em" />
-          <p class="mt-5 line-clamp-2 max-w-lg overflow-hidden text-3xl font-medium">
-            {$t(searchName ? 'search_no_people_named' : 'search_no_people', { values: { name: searchName } })}
-          </p>
-        </div>
-      </div>
-    {/if}
-  {:else if countVisiblePeople > 0 && (!searchName || searchedPeopleLocal.length > 0)}
-    <PeopleInfiniteScroll people={showPeople} hasNextPage={!!nextPage && !searchName} {loadNextPage}>
-      {#snippet children({ person })}
-        <div
-          class="rounded-xl border-2 border-transparent p-2 transition-all hover:border-immich-primary/50 hover:bg-gray-200 hover:shadow-sm hover:dark:border-immich-dark-primary/25 dark:hover:bg-immich-dark-primary/20"
-        >
-          <PeopleCard
+  {#if frameleafCards.length > 0}
+    <p class="frameleaf-people-summary">
+      {$t('frameleaf_people_summary', {
+        values: { count: frameleafCards.length, hidden: frameleafHiddenCount },
+      })}
+    </p>
+    <div class="frameleaf-people-grid">
+      <PeopleInfiniteScroll people={frameleafCards} hasNextPage={!!nextPage && !searchName} {loadNextPage}>
+        {#snippet children({ person })}
+          <PersonCard
             {person}
-            onMergePeople={() => handleMergePeople(person)}
-            onHidePerson={() => handleHidePerson(person)}
+            editing={editingIdFrameleaf === person.id}
+            onOpen={() => goto(Route.viewPerson(person, { previousRoute: Route.people() }))}
+            onStartRename={() => (editingIdFrameleaf = person.id)}
+            onCommitRename={async (name) => {
+              editingIdFrameleaf = undefined;
+              await onNameChangeSubmit(name, person);
+            }}
+            onCancelRename={() => (editingIdFrameleaf = undefined)}
             onToggleFavorite={() => handleToggleFavorite(person)}
+            onToggleHide={() => handleToggleHidden(person)}
+            onMerge={() => handleMergePeople(person)}
+            onSetBirthday={() => getPersonActions($t, person).SetDateOfBirth.onAction()}
           />
-
-          <input
-            type="text"
-            class="mt-2 w-full rounded-2xl border-gray-100 bg-white py-2 text-center text-sm text-primary placeholder-gray-400 dark:border-gray-900 dark:bg-immich-dark-gray"
-            value={person.name}
-            placeholder={$t('add_a_name')}
-            use:shortcut={{ shortcut: { key: 'Enter' }, onShortcut: (e) => e.currentTarget.blur() }}
-            onfocusin={() => onNameChangeInputFocus(person)}
-            onfocusout={() => onNameChangeSubmit(newName, person)}
-            oninput={(event) => onNameChangeInputUpdate(event)}
-          />
-        </div>
-      {/snippet}
-    </PeopleInfiniteScroll>
+        {/snippet}
+      </PeopleInfiniteScroll>
+    </div>
   {:else}
     <div class="flex min-h-[calc(66vh-11rem)] w-full place-content-center items-center dark:text-white">
       <div class="flex flex-col content-center items-center text-center">
