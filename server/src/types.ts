@@ -363,7 +363,6 @@ export interface JobCounts {
 }
 
 export type JobItem =
-  | { name: JobName.ArchiveOperation; data: { id: string } }
   | { name: JobName.ICloudSync; data: IEntityJob }
   // Fork schema migration
   | { name: JobName.ForkSchemaBackfill; data: IForkSchemaBackfillJob }

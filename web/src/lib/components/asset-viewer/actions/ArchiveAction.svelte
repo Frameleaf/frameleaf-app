@@ -4,6 +4,7 @@
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
   import { AssetAction } from '$lib/constants';
   import { toggleArchive } from '$lib/utils/asset-utils';
+  import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import type { AssetResponseDto } from '@immich/sdk';
   import { mdiArchiveArrowDownOutline, mdiArchiveArrowUpOutline } from '@mdi/js';
@@ -20,7 +21,12 @@
   const onArchive = async () => {
     const target = asset;
     if (!target.isArchived) {
-      preAction({ type: AssetAction.ARCHIVE, asset: toTimelineAsset(target) });
+      try {
+        await preAction({ type: AssetAction.ARCHIVE, asset: toTimelineAsset(target) });
+      } catch (error) {
+        handleError(error, $t('errors.unable_to_add_remove_archive', { values: { archived: target.isArchived } }));
+        return;
+      }
     }
     const updatedAsset = await toggleArchive(target);
     if (updatedAsset) {

@@ -866,14 +866,14 @@
       "version": 7
     },
     {
-      "bytes": 17938,
+      "bytes": 23116,
       "category": "development",
       "id": "61441023",
       "source": "docs/docs/developer/evidence/fl41-reviewed-integration.md",
-      "sourceSha256": "d656b7790306ae01c24336f26824b277d7154b0fe8b73fbd6f616a4ffc49e24b",
+      "sourceSha256": "275411a5d74754fd2a7faab08dd2819bc2b7b87cb830cb3805db3dcf111cf3b2",
       "title": "FL-41 Reviewed Web and Server Integration Evidence",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61441023",
-      "version": 14
+      "version": 15
     },
     {
       "bytes": 27925,
@@ -886,30 +886,30 @@
       "version": 5
     },
     {
-      "bytes": 10903,
+      "bytes": 12861,
       "category": "development",
       "id": "61800603",
       "source": "docs/docs/developer/frameleaf-plan/FL-32-selected-archive.md",
-      "sourceSha256": "f6bf3a97d3d7908176068d61ac63a2f35d0678fcf724a4a7cacf48942eb48d6b",
+      "sourceSha256": "f5886ad16617e6deb804f56b0b420631650cefe6b6fe3dc192a4bab751945fb8",
       "title": "FL-32 selected-asset background archive",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61800603",
-      "version": 3,
-      "sourceBranch": "codex/FL-32-bulk-archive",
-      "sourceState": "reviewed-browser-qualified-bounded-candidate",
-      "readbackResult": "Full normalized source and history body matched live version 3 on 2026-09-21. Selected-ID candidate approved with actual PostgreSQL and authenticated browser evidence; all-matching and full FN204 remain open."
+      "version": 4,
+      "sourceBranch": "aj/FL-32-archive-drain-compatibility",
+      "sourceState": "compatibility-repair-independent-review-pending",
+      "readbackResult": "Full normalized current source plus retained prior history matched live page version 4 on 2026-09-21; 39 focused checks pass. Independent review and runtime qualification of direct durable drain remain pending; earlier browser receipts retain their exact runtime scope."
     },
     {
-      "bytes": 10127,
+      "bytes": 11498,
       "category": "development",
       "id": "62423078",
       "source": "docs/docs/developer/frameleaf-plan/FL-32-matching-archive.md",
-      "sourceSha256": "02b7b30c4d18b8b522b23dfa88174f6dd38d0cae818658bda5755a399e522e88",
+      "sourceSha256": "49c69c519ce6a785aaab626d7cee1352738f819b43a1983a7c8f0d56b511c6d6",
       "title": "FL-32 prepared normal Timeline archive",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/62423078",
-      "version": 3,
+      "version": 4,
       "sourceBranch": "aj/FL-32-all-matching-archive",
-      "sourceState": "reviewed-browser-qualified-bounded-candidate",
-      "readbackResult": "Full normalized Markdown source body and SHA-256 matched live page version 3 on 2026-09-21; exact b6e6d227 runtime independently approved and authenticated browser-qualified. Full FN204 and later queue compatibility repair qualification remain open."
+      "sourceState": "direct-drain-integration-review-and-browser-pending",
+      "readbackResult": "Full normalized Markdown source body and SHA-256 matched live page version 4 on 2026-09-21; prior b6e6d227 matching proof and reviewed23c31 selected-ID drain proof retained with exact scope. Combined matching-runtime review/browser pending."
     }
   ],
   "spaceId": "61374475",
