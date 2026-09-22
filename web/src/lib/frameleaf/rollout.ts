@@ -15,7 +15,11 @@ import { persisted } from 'svelte-persisted-store';
  */
 export const FRAMELEAF_SHELL_STORAGE_KEY = 'frameleaf-shell';
 
-/** Default off: the legacy shell stays the served experience until rollout. */
-export const FRAMELEAF_SHELL_DEFAULT = false;
+/**
+ * Default on: the Frameleaf shell is the served experience. Switching the App Settings
+ * toggle off is still a full, immediate revert to the legacy navigation below — the flag
+ * only chooses which chrome renders, so it never migrates or discards server-side data.
+ */
+export const FRAMELEAF_SHELL_DEFAULT = true;
 
 export const frameleafShell = persisted<boolean>(FRAMELEAF_SHELL_STORAGE_KEY, FRAMELEAF_SHELL_DEFAULT, {});

@@ -9,30 +9,30 @@ describe('Frameleaf shell rollout flag', () => {
     localStorage.clear();
   });
 
-  it('serves the legacy shell until a browser opts in', async () => {
-    const { frameleafShell } = await import('$lib/frameleaf/rollout');
-
-    expect(get(frameleafShell)).toBe(false);
-  });
-
-  it('reads an opted-in browser from its own storage key', async () => {
-    const { FRAMELEAF_SHELL_STORAGE_KEY } = await import('$lib/frameleaf/rollout');
-    localStorage.setItem(FRAMELEAF_SHELL_STORAGE_KEY, 'true');
-    vi.resetModules();
-
+  it('serves the Frameleaf shell until a browser opts out', async () => {
     const { frameleafShell } = await import('$lib/frameleaf/rollout');
 
     expect(get(frameleafShell)).toBe(true);
   });
 
-  it('reverts to the legacy shell when the preference is turned off again', async () => {
+  it('reads an opted-out browser from its own storage key', async () => {
+    const { FRAMELEAF_SHELL_STORAGE_KEY } = await import('$lib/frameleaf/rollout');
+    localStorage.setItem(FRAMELEAF_SHELL_STORAGE_KEY, 'false');
+    vi.resetModules();
+
+    const { frameleafShell } = await import('$lib/frameleaf/rollout');
+
+    expect(get(frameleafShell)).toBe(false);
+  });
+
+  it('reverts to the Frameleaf shell when the preference is turned on again', async () => {
     const { FRAMELEAF_SHELL_STORAGE_KEY, frameleafShell } = await import('$lib/frameleaf/rollout');
 
-    frameleafShell.set(true);
-    expect(localStorage.getItem(FRAMELEAF_SHELL_STORAGE_KEY)).toBe('true');
-
     frameleafShell.set(false);
-    expect(get(frameleafShell)).toBe(false);
     expect(localStorage.getItem(FRAMELEAF_SHELL_STORAGE_KEY)).toBe('false');
+
+    frameleafShell.set(true);
+    expect(get(frameleafShell)).toBe(true);
+    expect(localStorage.getItem(FRAMELEAF_SHELL_STORAGE_KEY)).toBe('true');
   });
 });
