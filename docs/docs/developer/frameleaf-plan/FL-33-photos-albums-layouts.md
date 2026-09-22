@@ -28,3 +28,7 @@ Evidence lives in the local `frameleaf-fl33-browser-evidence-20260921` bundle: d
 ## Remaining acceptance
 
 Keep FL-33 In Progress. Independent exact-candidate review, hosted current-head gates, full Search/Memory/Spaces layouts, exhaustive action/privacy/error matrices, production-scale libraries, screen-reader and cross-browser qualification remain open. Native/mobile work is explicitly deferred. Broad Studio remains gated separately. The existing editor Reset behavior is demonstrated, not a new undo stack or full Studio qualification. The full-screen viewer hides the library controls; the cross-tab device-preference test proves retained media/editor instances without inventing an additional viewer toolbar. No fetch-all path or unsupported Spaces backend was added.
+
+## Independent review and integration
+
+Independent review approved exact candidate `e5de571e8c753bcfdb0c9337ecd078fce8ed0266` with no actionable P0–P2 findings; its runtime remains `dba7e6691c92251afbf8fa4747f2b2d7d72e1220`. The reviewer traced retained managers/viewer subtrees, geometry, anchor retirement and browser evidence, and independently passed eight focused layout/component tests. Root integrated it as `4fc7323e6`, preserving the additive FL-32 matching Archive action. The combined layout, Photos, archive modal and real Gallery/Timeline deletion suites pass all 28 tests; whole-web TypeScript and Svelte checks pass with zero errors or warnings. This resolves the independent-review item above; hosted and broader acceptance remain open.

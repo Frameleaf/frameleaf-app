@@ -866,14 +866,15 @@
       "version": 7
     },
     {
-      "bytes": 23116,
+      "bytes": 28031,
       "category": "development",
       "id": "61441023",
       "source": "docs/docs/developer/evidence/fl41-reviewed-integration.md",
-      "sourceSha256": "275411a5d74754fd2a7faab08dd2819bc2b7b87cb830cb3805db3dcf111cf3b2",
+      "sourceSha256": "baea0a0f248a60942f33d985eaefae4fda4553f7ac1745911254249b4804416a",
       "title": "FL-41 Reviewed Web and Server Integration Evidence",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61441023",
-      "version": 15
+      "version": 16,
+      "readbackResult": "Complete normalized current source and preserved history matched live version 16 on 2026-09-22. Combined layouts/archive/deletion pass 28 tests and whole-web types/Svelte; exact new-head hosted gates remain pending."
     },
     {
       "bytes": 33014,
@@ -886,17 +887,17 @@
       "version": 6
     },
     {
-      "bytes": 12861,
+      "bytes": 13957,
       "category": "development",
       "id": "61800603",
       "source": "docs/docs/developer/frameleaf-plan/FL-32-selected-archive.md",
-      "sourceSha256": "f5886ad16617e6deb804f56b0b420631650cefe6b6fe3dc192a4bab751945fb8",
+      "sourceSha256": "82de78e8f70cbf336a6b890ec2516e6807af34aa52d4e068180cfbf4413b45ae",
       "title": "FL-32 selected-asset background archive",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61800603",
-      "version": 4,
-      "sourceBranch": "aj/FL-32-archive-drain-compatibility",
-      "sourceState": "compatibility-repair-independent-review-pending",
-      "readbackResult": "Full normalized current source plus retained prior history matched live page version 4 on 2026-09-21; 39 focused checks pass. Independent review and runtime qualification of direct durable drain remain pending; earlier browser receipts retain their exact runtime scope."
+      "version": 5,
+      "sourceBranch": "codex/FL-29-primitives-qualification",
+      "sourceState": "reviewed-compatible-drain-browser-qualified",
+      "readbackResult": "Complete normalized source and preserved prior history matched live version 5 on 2026-09-22. Exact 23c31 runtime independently approved and real browser recovery, retry and Undo qualified; hosted integration and full FN204 remain open."
     },
     {
       "bytes": 13819,
@@ -910,6 +911,19 @@
       "sourceBranch": "aj/FL-32-all-matching-archive",
       "sourceState": "independently-approved-exact-runtime-browser-qualified",
       "readbackResult": "Full normalized Markdown source body and SHA-256 matched live page version 5 on 2026-09-21; exact6a538 combined runtime independently approved and authenticated browser-qualified. Prior exact runtime proofs retained; full FN204 remains open."
+    },
+    {
+      "bytes": 6414,
+      "category": "development",
+      "id": "62390309",
+      "source": "docs/docs/developer/frameleaf-plan/FL-33-photos-albums-layouts.md",
+      "sourceSha256": "9f123442af8dd200dee4202ecd5c4a04534942e779b837a24e663577a822a247",
+      "title": "FL-33 Photos and Albums layout qualification",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/62390309",
+      "version": 1,
+      "sourceBranch": "codex/FL-29-primitives-qualification",
+      "sourceState": "reviewed-photos-albums-layouts-browser-qualified",
+      "readbackResult": "Complete normalized page matched exact repository source and qualification summary on 2026-09-22. Candidate e5de571 independently approved; runtime dba7e66 authenticated browser qualified. Full FL33 and hosted gates remain open."
     }
   ],
   "spaceId": "61374475",
