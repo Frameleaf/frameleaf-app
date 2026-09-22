@@ -1,11 +1,12 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import PinCells from '$lib/components/frameleaf/PinCells.svelte';
   import AuthPageLayout from '$lib/components/layouts/AuthPageLayout.svelte';
   import PinCodeCreateForm from '$lib/components/user-settings-page/PinCodeCreateForm.svelte';
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
   import { unlockAuthSession } from '@immich/sdk';
-  import { Button, Icon, PinInput } from '@immich/ui';
+  import { Button, Icon } from '@immich/ui';
   import { mdiLockOpenVariantOutline, mdiLockOutline, mdiLockSmart } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
@@ -24,6 +25,7 @@
 
   const handleUnlockSession = async (code: string) => {
     try {
+      isBadPinCode = false;
       await unlockAuthSession({ sessionUnlockDto: { pinCode: code } });
 
       isVerified = true;
@@ -34,6 +36,8 @@
     } catch (error) {
       handleError(error, $t('wrong_pin_code'));
       isBadPinCode = true;
+      // The rejected code never lingers client side; the field resets for a fresh attempt.
+      pinCode = '';
     }
   };
 </script>
@@ -52,9 +56,19 @@
           </div>
         {/if}
 
-        <p class="text-center text-sm" style="text-wrap: pretty;">{$t('enter_your_pin_code_subtitle')}</p>
+        <p class="text-center text-sm" id="pin-prompt-hint" style="text-wrap: pretty;">
+          {$t('enter_your_pin_code_subtitle')}
+        </p>
 
-        <PinInput password autofocus bind:value={pinCode} onComplete={handleUnlockSession} />
+        <PinCells
+          bind:value={pinCode}
+          autofocus
+          error={isBadPinCode}
+          disabled={isVerified}
+          label={$t('enter_your_pin_code_subtitle')}
+          describedBy="pin-prompt-hint"
+          oncomplete={handleUnlockSession}
+        />
       {:else}
         <div class="text-primary">
           <Icon icon={mdiLockSmart} size="64" />
