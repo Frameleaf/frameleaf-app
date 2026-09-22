@@ -6,17 +6,16 @@
   import DetailPanelLocation from '$lib/components/asset-viewer/DetailPanelLocation.svelte';
   import DetailPanelRating from '$lib/components/asset-viewer/DetailPanelStarRating.svelte';
   import DetailPanelTags from '$lib/components/asset-viewer/DetailPanelTags.svelte';
+  import ViewerDetailRows from '$lib/components/frameleaf/ViewerDetailRows.svelte';
   import { timeToLoadTheMap } from '$lib/constants';
+  import type { DescriptionSource } from '$lib/frameleaf/info-panel';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
-  import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
-  import { delay, getDimensions } from '$lib/utils/asset-utils';
-  import { getByteUnitString } from '$lib/utils/byte-units';
+  import { delay } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { getParentPath } from '$lib/utils/tree-utils';
   import {
     AssetMediaSize,
     getAllAlbums,
@@ -24,11 +23,10 @@
     type AlbumResponseDto,
     type AssetResponseDto,
   } from '@immich/sdk';
-  import { Icon, IconButton, Link, LoadingSpinner, Text } from '@immich/ui';
-  import { mdiCamera, mdiCameraIris, mdiClose, mdiImageOutline, mdiInformationOutline } from '@mdi/js';
+  import { IconButton, Link, LoadingSpinner, Text } from '@immich/ui';
+  import { mdiClose } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
-  import { slide } from 'svelte/transition';
   import PersonSidePanel from '../faces-page/PersonSidePanel.svelte';
   import OnEvents from '../OnEvents.svelte';
   import UserAvatar from '../shared-components/UserAvatar.svelte';
@@ -58,6 +56,12 @@
   );
   let previousId: string | undefined = $state();
   let previousRoute = $derived(currentAlbum?.id ? Route.viewAlbum(currentAlbum) : Route.photos());
+  /**
+   * FL-36: where the stored description came from, reported by the enrichment card so the
+   * editor above can badge it without a second request. Reset per asset, because a
+   * provenance carried over from the previous item would be a lie about this one.
+   */
+  let descriptionSource = $state<DescriptionSource>('none');
 
   const refreshAlbums = async () => {
     if (authManager.isSharedLink) {
@@ -85,18 +89,9 @@
     }
 
     assetViewerManager.closeEditFacesPanel();
+    descriptionSource = 'none';
     previousId = asset.id;
   });
-
-  const getMegapixel = (width: number, height: number): number | undefined => {
-    const megapixel = Math.round((height * width) / 1_000_000);
-
-    if (megapixel) {
-      return megapixel;
-    }
-
-    return undefined;
-  };
 
   const handleRefreshPeople = async () => {
     const updatedAsset = await getAssetInfo({ id: asset.id });
@@ -104,11 +99,6 @@
     assetViewerManager.closeEditFacesPanel();
     faceManager.clear();
     await faceManager.getAssetFaces(asset.id);
-  };
-
-  const getAssetFolderHref = (asset: AssetResponseDto) => {
-    // Remove the last part of the path to get the parent path
-    return Route.folders({ path: getParentPath(asset.originalPath) });
   };
 
   onDestroy(() => {
@@ -154,139 +144,48 @@
       </section>
     {/if}
 
-    <DetailPanelDescription {asset} {isOwner} />
+    <DetailPanelDescription
+      {asset}
+      {isOwner}
+      source={descriptionSource}
+      onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
+    />
     <DetailPanelImageEnrichment
       {asset}
       {isOwner}
       isAdmin={authManager.authenticated && authManager.user.isAdmin}
       onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
       {onAssetSuppressed}
+      onDescriptionReview={(review) => (descriptionSource = review?.source ?? 'none')}
     />
-    <DetailPanelRating {asset} {isOwner} />
+    <DetailPanelRating {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
     <DetailPanelPeople {asset} {isOwner} {previousRoute} />
 
+    <!-- FL-36: the design's Captured section carries the date, the timezone and the place. -->
     <div class="p-4">
-      {#if asset.exifInfo}
-        <div class="flex h-10 w-full items-center justify-between text-sm">
-          <Text size="small" color="muted">{$t('details')}</Text>
-        </div>
-      {:else}
+      <div class="flex h-10 w-full items-center justify-between text-sm">
+        <Text size="small" color="muted">{$t('frameleaf_info_captured')}</Text>
+      </div>
+
+      {#if !asset.exifInfo}
         <Text size="small" color="muted">{$t('no_exif_info_available')}</Text>
       {/if}
 
-      <DetailPanelDate {asset} />
+      <DetailPanelDate {asset} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
 
-      <div class="flex gap-4 py-4">
-        <div><Icon icon={mdiImageOutline} size="24" /></div>
-
-        <div>
-          <p class="flex place-items-center gap-2 break-all whitespace-pre-wrap">
-            {asset.originalFileName}
-            {#if isOwner}
-              <IconButton
-                icon={mdiInformationOutline}
-                aria-label={$t('show_file_location')}
-                size="small"
-                shape="round"
-                color="secondary"
-                variant="ghost"
-                onclick={() => assetViewerManager.toggleAssetPath()}
-              />
-            {/if}
-          </p>
-          {#if assetViewerManager.isShowAssetPath}
-            <p class="pb-2 text-xs break-all opacity-50 hover:text-primary" transition:slide={{ duration: 250 }}>
-              <!-- eslint-disable-next-line svelte/no-navigation-without-resolve this is supposed to be treated as an absolute/external link -->
-              <a href={getAssetFolderHref(asset)} title={$t('go_to_folder')} class="whitespace-pre-wrap">
-                {asset.originalPath}
-              </a>
-            </p>
-          {/if}
-          {#if (asset.exifInfo?.exifImageHeight && asset.exifInfo.exifImageWidth) || asset.exifInfo?.fileSizeInByte}
-            <div class="flex gap-2 text-sm">
-              {#if asset.exifInfo?.exifImageHeight && asset.exifInfo.exifImageWidth}
-                {#if getMegapixel(asset.exifInfo.exifImageHeight, asset.exifInfo.exifImageWidth)}
-                  <p>
-                    {getMegapixel(asset.exifInfo.exifImageHeight, asset.exifInfo.exifImageWidth)} MP
-                  </p>
-                {/if}
-                {@const { width, height } = getDimensions(asset.exifInfo)}
-                <p>{width} × {height}</p>
-              {/if}
-              {#if asset.exifInfo?.fileSizeInByte}
-                <p>{getByteUnitString(asset.exifInfo.fileSizeInByte, $locale)}</p>
-              {/if}
-            </div>
-          {/if}
-        </div>
-      </div>
-
-      {#if asset.exifInfo?.make || asset.exifInfo?.model || asset.exifInfo?.exposureTime || asset.exifInfo?.iso}
-        <div class="flex gap-4 py-4">
-          <div><Icon icon={mdiCamera} size="24" /></div>
-
-          <div>
-            {#if asset.exifInfo?.make || asset.exifInfo?.model}
-              <p>
-                <a
-                  href={Route.search({
-                    make: asset.exifInfo?.make ?? undefined,
-                    model: asset.exifInfo?.model ?? undefined,
-                  })}
-                  title="{$t('search_for')} {asset.exifInfo.make || ''} {asset.exifInfo.model || ''}"
-                  class="hover:text-primary"
-                >
-                  {asset.exifInfo.make || ''}
-                  {asset.exifInfo.model || ''}
-                </a>
-              </p>
-            {/if}
-
-            <div class="flex gap-2 text-sm">
-              {#if asset.exifInfo.exposureTime}
-                <p>{`${asset.exifInfo.exposureTime} s`}</p>
-              {/if}
-
-              {#if asset.exifInfo.iso}
-                <p>{`ISO ${asset.exifInfo.iso}`}</p>
-              {/if}
-            </div>
-          </div>
-        </div>
-      {/if}
-
-      {#if asset.exifInfo?.lensModel || asset.exifInfo?.fNumber || asset.exifInfo?.focalLength}
-        <div class="flex gap-4 py-4">
-          <div><Icon icon={mdiCameraIris} size="24" /></div>
-
-          <div>
-            {#if asset.exifInfo?.lensModel}
-              <p>
-                <a
-                  href={Route.search({ lensModel: asset.exifInfo.lensModel })}
-                  title="{$t('search_for')} {asset.exifInfo.lensModel}"
-                  class="line-clamp-1 hover:text-primary"
-                >
-                  {asset.exifInfo.lensModel}
-                </a>
-              </p>
-            {/if}
-
-            <div class="flex gap-2 text-sm">
-              {#if asset.exifInfo?.fNumber}
-                <p>ƒ/{asset.exifInfo.fNumber.toLocaleString($locale)}</p>
-              {/if}
-
-              {#if asset.exifInfo.focalLength}
-                <p>{`${asset.exifInfo.focalLength.toLocaleString($locale)} mm`}</p>
-              {/if}
-            </div>
-          </div>
-        </div>
-      {/if}
-
-      <DetailPanelLocation {isOwner} {asset} />
+      <DetailPanelLocation {isOwner} {asset} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
     </div>
+
+    <!--
+      FL-36: the file, path, image, camera, lens, exposure, video and checksum rows the design
+      puts under Details. `infoDetailRows` decides which of them this asset can fill and keeps
+      the path and the checksum owner-only.
+    -->
+    <ViewerDetailRows {asset} {isOwner} />
+
+    {#if authManager.authenticated && authManager.preferences.tags.enabled}
+      <DetailPanelTags {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
+    {/if}
   </section>
 
   {#if latlng && featureFlagsManager.value.map}
@@ -386,11 +285,7 @@
     {/if}
   {/await}
 
-  {#if authManager.authenticated && authManager.preferences.tags.enabled}
-    <section class="relative px-2 pb-12 dark:bg-immich-dark-bg dark:text-immich-dark-fg">
-      <DetailPanelTags {asset} {isOwner} />
-    </section>
-  {/if}
+  <div class="pb-12"></div>
 {/if}
 
 {#if assetViewerManager.isEditFacesPanelOpen}

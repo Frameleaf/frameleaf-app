@@ -17,6 +17,10 @@
  * which own `DetailPanelImageEnrichment.svelte` and `DetailPanelPeople.svelte`. When those
  * land, add their ids to `VIEWER_ACTIONS` and a group here only if the design puts them in
  * the More menu rather than in the panel.
+ *
+ * FL-36 has landed and adds no id: the design keeps accept, clear and rerun inside the
+ * enrichment card, where the score and the review state they act on are visible. The menu's
+ * existing `mark-sensitive` and `unmark-sensitive` remain the only sensitivity entries here.
  */
 
 /** Every action the Frameleaf viewer menu can offer. Mirrors the prototype's `VIEWER_ACTIONS`. */
