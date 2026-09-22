@@ -17,6 +17,13 @@ export function LibraryRail({
   onSettings,
   onTool,
   onTrash,
+  collectionsTree = [],
+  onCollection,
+  onCollections,
+  onSharedLinks,
+  onPartner,
+  onScreen,
+  onBuy,
 }) {
   const toggleLabel = collapsed ? "Expand navigation" : "Collapse navigation";
   const link = (
@@ -73,17 +80,36 @@ export function LibraryRail({
         ].map(([title, icon]) => link(title, icon, () => navigate(title)))}
 
         <div className="nav-heading">
-          <span className="rail-label">Collections</span>
+          <button
+            type="button"
+            className="rail-heading-link rail-label"
+            onClick={onCollections}
+          >
+            Albums
+          </button>
+          <button
+            type="button"
+            className="button"
+            aria-label="New album"
+            title="New album"
+            onClick={onSave}
+          >
+            <Icon name="mdiPlus" size={16} />
+          </button>
         </div>
-        {link("Create collection", "mdiPlus", onSave, { active: false })}
-        {link("Family", "mdiFolderMultipleOutline", () => navigate("Family"))}
-        {[
-          ["Summer in the Rockies", "mdiWhiteBalanceSunny"],
-          ["Winter 2026", "mdiCalendarRange"],
-          ["Everyday", "mdiCameraOutline"],
-        ].map(([title, icon]) =>
-          link(title, icon, () => navigate(title), { nested: true }),
-        )}
+        {link("All albums", "mdiImageAlbum", onCollections, {
+          active: screen === "collections",
+        })}
+        {collectionsTree
+          .filter(({ collection: item }) => item.kind !== "space")
+          .map(({ collection: item, depth }) =>
+            link(item.name, item.icon || "mdiFolderOutline", () => onCollection?.(item), {
+              nested: depth > 0,
+              active:
+                (screen === "library" || screen === "person") &&
+                collection === item.name,
+            }),
+          )}
         {presets.map((item) => (
           <React.Fragment key={item.id}>
             {link(
@@ -98,16 +124,31 @@ export function LibraryRail({
             )}
           </React.Fragment>
         ))}
+        {link("Shared links", "mdiLinkVariant", onSharedLinks, {
+          active: screen === "shared-links",
+        })}
 
         <div className="nav-heading">
-          <span className="rail-label">Shared Spaces</span>
+          <span className="rail-label">Shared spaces</span>
         </div>
-        {link(
-          "Family Space",
-          "mdiAccountMultipleOutline",
-          () => navigate("Family Space"),
-          { label: "Family" },
-        )}
+        {collectionsTree
+          .filter(({ collection: item }) => item.kind === "space")
+          .map(({ collection: item }) =>
+            link(item.name, item.icon || "mdiAccountMultipleOutline", () => onCollection?.(item), {
+              active: screen === "library" && collection === item.name,
+              label: item.name.replace(/ Space$/, ""),
+            }),
+          )}
+        {!collectionsTree.some(({ collection: item }) => item.kind === "space") &&
+          link(
+            "Family Space",
+            "mdiAccountMultipleOutline",
+            () => navigate("Family Space"),
+            { label: "Family" },
+          )}
+        {link("Jamie's library", "mdiAccountOutline", onPartner, {
+          active: screen === "partner",
+        })}
 
         <div className="nav-heading">
           <span className="rail-label">Explore</span>
@@ -119,21 +160,32 @@ export function LibraryRail({
           { active: screen === "explore" },
         )}
         {link("People", "mdiAccountOutline", openPeople, {
-          active: screen === "people",
+          active: ["people", "person", "people-manage"].includes(screen),
         })}
-        {[
-          ["Pets", "mdiPawOutline"],
-          ["Places", "mdiMapOutline"],
-          ["Memories", "mdiHistory"],
-          ["Documents", "mdiTextBoxSearchOutline"],
-        ].map(([title, icon]) => link(title, icon, () => openExplore(title)))}
+        {link("Pets", "mdiPawOutline", () => openExplore("Pets"))}
+        {link("Memories", "mdiHistory", () => onScreen?.("memories"), {
+          active: screen === "memories",
+        })}
+        {link("Places", "mdiMapMarkerMultipleOutline", () => onScreen?.("places"), {
+          active: screen === "places",
+        })}
+        {link("Map", "mdiMapOutline", () => onScreen?.("map"), {
+          active: screen === "map",
+        })}
+        {link("Tags", "mdiTagMultipleOutline", () => onScreen?.("tags"), {
+          active: screen === "tags",
+        })}
+        {link("Folders", "mdiFolderMultipleOutline", () => onScreen?.("folders"), {
+          active: screen === "folders",
+        })}
+        {link("Documents", "mdiTextBoxSearchOutline", () =>
+          openExplore("Documents"),
+        )}
+
         <div className="nav-heading">
           <span className="rail-label">Tools</span>
         </div>
-        {[["Workflows", "mdiTuneVariant", "workflows"]].map(
-          ([title, icon, section]) =>
-            link(title, icon, () => onTool?.(section)),
-        )}
+        {link("Workflows", "mdiTuneVariant", () => onTool?.("workflows"))}
         {link("Trash", "mdiDeleteOutline", onTrash)}
       </nav>
       <div className="sidebar-bottom">
@@ -142,6 +194,9 @@ export function LibraryRail({
         })}
         {link("Settings", "mdiCogOutline", onSettings, {
           active: screen === "admin",
+        })}
+        {link("Support Frameleaf", "mdiHandHeartOutline", onBuy, {
+          active: screen === "buy",
         })}
       </div>
     </aside>

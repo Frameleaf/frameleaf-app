@@ -1,3 +1,14 @@
+import {
+  ASPECT_IDS,
+  DEVELOP_PARAMS,
+  PRESET_IDS,
+  SPEEDS,
+  TEXT_POSITIONS,
+  clampParam,
+  developDefaults,
+  normalizeRect,
+} from "./develop.mjs";
+
 const object = (value) =>
   !!value && typeof value === "object" && !Array.isArray(value);
 const text = (value, fallback = "", limit = 4096) =>
@@ -6,19 +17,44 @@ const number = (value, fallback, min, max) =>
   Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
 const choice = (value, choices, fallback) =>
   choices.includes(value) ? value : fallback;
+/**
+ * Videos carry a real duration (a video without one keeps the legacy 24 s
+ * sample length). Photos have no timeline at all, so their duration is 0.
+ */
 export const durationFor = (asset) =>
   Number.isFinite(asset?.duration) && asset.duration > 0
     ? Math.max(0.1, asset.duration)
-    : 24;
+    : asset?.type === "video"
+      ? 24
+      : 0;
+export const hasTimeline = (asset) => durationFor(asset) > 0;
+
+export const EDIT_VERSION = 2;
+export const CROP_ASPECTS = ASPECT_IDS;
+const boolean = (value) => value === true;
+const COLOR = /^#[0-9a-f]{6}$/i;
+const FULL_RECT = Object.freeze({ x: 0, y: 0, w: 1, h: 1 });
+
 export const initialEdit = {
+  version: EDIT_VERSION,
   rotation: 0,
-  exposure: 0,
-  saturation: 100,
+  ...developDefaults(),
   volume: 100,
   start: 0,
   end: 24,
   trim: "precise",
   crop: "Original",
+  cropRect: { ...FULL_RECT },
+  straighten: 0,
+  flipH: false,
+  flipV: false,
+  preset: "Original",
+  presetStrength: 100,
+  speed: 1,
+  speedSegments: [],
+  textOverlays: [],
+  stabilize: false,
+  autoEnhance: false,
   title: "Summer in the Rockies",
   animation: "Fade in",
   caption: "",
@@ -30,23 +66,81 @@ export const initialEdit = {
   exportColor: "Preserve source",
 };
 
+const normalizeSegments = (items, start, end) =>
+  (Array.isArray(items) ? items : [])
+    .filter(object)
+    .slice(0, 20)
+    .flatMap((item) => {
+      const from = number(item.start, NaN, start, end);
+      const to = number(item.end, NaN, start, end);
+      if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from)
+        return [];
+      return [
+        {
+          start: from,
+          end: to,
+          speed: choice(item.speed, SPEEDS, 2),
+        },
+      ];
+    })
+    .sort((a, b) => a.start - b.start);
+
+const normalizeOverlays = (items, duration) =>
+  (Array.isArray(items) ? items : [])
+    .filter(object)
+    .slice(0, 20)
+    .map((item, index) => {
+      const start = number(item.start, 0, 0, duration);
+      return {
+        id: text(String(item.id ?? `text-${index + 1}`), `text-${index + 1}`, 64),
+        text: text(item.text, "", 200),
+        position: choice(item.position, TEXT_POSITIONS, "bottom"),
+        start,
+        end: number(item.end, duration, start, duration),
+        fontSize: Math.round(number(item.fontSize, 32, 12, 96)),
+        color: COLOR.test(item.color) ? item.color.toLowerCase() : "#ffffff",
+        shadow: item.shadow !== false,
+      };
+    });
+
 export function normalizeEdit(candidate, asset) {
   const value = object(candidate) ? candidate : {};
   const duration = durationFor(asset);
-  const start = number(value.start, 0, 0, Math.max(0, duration - 0.1));
+  const timeline = duration > 0;
+  const start = timeline
+    ? number(value.start, 0, 0, Math.max(0, duration - 0.1))
+    : 0;
+  const end = timeline ? number(value.end, duration, start + 0.1, duration) : 0;
+  // Version 1 drafts stored saturation as a 0–150 percentage; centre it.
+  const legacy = value.version !== EDIT_VERSION;
+  const develop = Object.fromEntries(
+    DEVELOP_PARAMS.map((item) => {
+      let raw = value[item.id];
+      if (item.id === "saturation" && legacy && Number.isFinite(raw))
+        raw = raw - 100;
+      return [item.id, clampParam(item.id, raw)];
+    }),
+  );
   return {
-    rotation: number(value.rotation, 0, 0, 360) % 360,
-    exposure: number(value.exposure, 0, -2, 2),
-    saturation: number(value.saturation, 100, 0, 150),
+    version: EDIT_VERSION,
+    rotation: (Math.round(number(value.rotation, 0, 0, 360) / 90) * 90) % 360,
+    ...develop,
     volume: number(value.volume, 100, 0, 150),
     start,
-    end: number(value.end, duration, start + 0.1, duration),
+    end,
     trim: choice(value.trim, ["precise", "fast"], "precise"),
-    crop: choice(
-      value.crop,
-      ["Original", "16:9", "9:16", "1:1", "4:3"],
-      "Original",
-    ),
+    crop: choice(value.crop, ASPECT_IDS, "Original"),
+    cropRect: normalizeRect(value.cropRect),
+    straighten: number(value.straighten, 0, -45, 45),
+    flipH: boolean(value.flipH),
+    flipV: boolean(value.flipV),
+    preset: choice(value.preset, PRESET_IDS, "Original"),
+    presetStrength: Math.round(number(value.presetStrength, 100, 0, 100)),
+    speed: choice(value.speed, SPEEDS, 1),
+    speedSegments: timeline ? normalizeSegments(value.speedSegments, start, end) : [],
+    textOverlays: normalizeOverlays(value.textOverlays, duration),
+    stabilize: boolean(value.stabilize),
+    autoEnhance: boolean(value.autoEnhance),
     title: text(value.title, initialEdit.title),
     animation: choice(
       value.animation,
@@ -206,7 +300,7 @@ export function parseSavedPrototype(raw, assets, readView) {
       id: text(String(item.id)),
       kind: text(item.kind, "Export"),
       name: text(item.name, "Sample media"),
-      destination: item.destination === "runpod" ? "runpod" : "local",
+      destination: choice(item.destination, ["local", "lan", "runpod"], "local"),
       simulated: true,
       status: choice(
         item.status,
@@ -218,10 +312,25 @@ export function parseSavedPrototype(raw, assets, readView) {
           "paused",
           "completed",
           "cancelled",
+          "failed",
         ],
         "paused",
       ),
       progress: number(item.progress, 0, 0, 100),
+      ...(typeof item.error === "string" ? { error: text(item.error, "", 400) } : {}),
+      ...(item.preview === true ? { preview: true } : {}),
+      ...(object(item.estimate)
+        ? {
+            estimate: {
+              seconds: number(item.estimate.seconds, 0, 0, 1e7),
+              sizeBytes: number(item.estimate.sizeBytes, 0, 0, 1e13),
+              ...(object(item.estimate.cloudCost)
+                ? { cloudCost: structuredClone(item.estimate.cloudCost) }
+                : {}),
+            },
+          }
+        : {}),
+      ...(object(item.settings) ? { settings: structuredClone(item.settings) } : {}),
       snapshot:
         object(item.snapshot) && ids.has(item.snapshot.assetId)
           ? {
@@ -250,7 +359,7 @@ export function parseSavedPrototype(raw, assets, readView) {
         ),
       ]),
     ),
-    layout: choice(saved.layout, ["timeline", "browse", "work"], "work"),
+    layout: choice(saved.layout, ["timeline", "browse", "work"], "browse"),
     railCollapsed: saved.railCollapsed === true,
     searchBy: choice(
       saved.searchBy,

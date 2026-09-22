@@ -27,6 +27,10 @@ The design is dark-first with charcoal surfaces, fine separators, compact typogr
 
 Sample media, names, quantities, hardware and job states are fictional. Search resolves curated sample data; the Studio/restoration preview does not render edited outputs or run AI. Account/PIN/sharing controls do not provide production authorization. A responsive tablet web page is not native Flutter Studio. The template is not complete feature parity, a migration baseline for the rest of the application, or release qualification.
 
+## September 22, 2026 template revision
+
+The template was revised in place to carry the full feature set the parity audit found missing and the polish directions from the product review: a media-aware full-screen editor with a develop module, a working Studio timeline, the complete viewer action set with in-place information editing, justified timeline and selection bar, an Albums page that groups albums into collections, shared links and a public viewer, people management, map, places, tags, folders and memories, authentication and system screens, upload and download panels, a command palette, and a Maintenance settings area. `template/README.md` lists the new source map and the revised interaction requirements record the decisions. The React source remains design evidence for the Svelte and Flutter ports, and the same production boundaries apply.
+
 ## Production handoff
 
 Read the [implementation plan](https://heroit.atlassian.net/wiki/spaces/FR/pages/61538319), [agent execution guide](https://heroit.atlassian.net/wiki/spaces/FR/pages/61407516), and [development/delivery guide](https://heroit.atlassian.net/wiki/spaces/FR/pages/61407844), plus the assigned issue's action-level acceptance. Existing screen/settings/native/Freecut inventories remain the preservation contract. Missing prototype workflows must be implemented rather than removed from scope.
