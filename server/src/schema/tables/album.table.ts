@@ -1,4 +1,5 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   DeleteDateColumn,
@@ -11,7 +12,7 @@ import {
 } from '@immich/sql-tools';
 import type { Generated, Timestamp } from '@immich/sql-tools';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
-import { AssetOrder } from 'src/enum.js';
+import { AlbumKind, AssetOrder } from 'src/enum.js';
 import { album_parent_cycle_check } from 'src/schema/functions.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 
@@ -34,6 +35,12 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
 // Partial indexes backing the "siblings in display order" queries (1779900000000).
 @Index({ name: 'album_parent_sort_idx', columns: ['parentId', 'sortOrder'], where: '("parentId" IS NOT NULL)' })
 @Index({ name: 'album_root_sort_idx', columns: ['sortOrder'], where: '("parentId" IS NULL)' })
+// Mirrors the CHECK created in migration 2100000000080. The constraint comparer
+// strips parens before comparing, so the postgres-normalized expression matches.
+@Check({
+  name: 'album_kind_check',
+  expression: `kind = ANY (ARRAY['album'::text, 'collection'::text, 'space'::text])`,
+})
 export class AlbumTable {
   @PrimaryGeneratedColumn()
   id!: Generated<string>;
@@ -67,6 +74,10 @@ export class AlbumTable {
 
   @Column({ type: 'double precision', nullable: true, default: null })
   sortOrder!: number | null;
+
+  /** album holds photos; collection groups albums one level deep; space is a shared top-level library. */
+  @Column({ type: 'text', default: AlbumKind.Album })
+  kind!: Generated<AlbumKind>;
 
   @UpdateDateColumn()
   updatedAt!: Generated<Timestamp>;
