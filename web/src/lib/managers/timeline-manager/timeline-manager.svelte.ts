@@ -50,6 +50,8 @@ type ViewportTopMonthIntersection = {
   monthBottomViewportRatio: number;
 };
 export class TimelineManager extends VirtualScrollManager {
+  /** Opt-in presentation only; loading, grouping and access contracts remain unchanged. */
+  libraryLayout: import('$lib/frameleaf/library-layout').LibraryLayout | undefined = $state();
   override bottomSectionHeight = $state(60);
 
   override bodySectionHeight = $derived.by(() => {

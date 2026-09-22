@@ -153,3 +153,11 @@ export const sidebarCollapsed = persisted<boolean>('sidebar-collapsed', false, {
 
 // Presentation only: does not change authentication, server capabilities or library state.
 export const frameleafShell = persisted<boolean>('frameleaf-shell', false, {});
+
+// Device-local presentation choices. Never carry query, selection or account evidence.
+export const libraryLayout = persisted<import('$lib/frameleaf/library-layout').LibraryLayout>(
+  'frameleaf-library-layout',
+  'timeline',
+  {},
+);
+export const libraryInspectorCollapsed = persisted<boolean>('frameleaf-library-inspector-collapsed', false, {});

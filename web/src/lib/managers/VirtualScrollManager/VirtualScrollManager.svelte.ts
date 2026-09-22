@@ -144,9 +144,9 @@ export abstract class VirtualScrollManager {
 
   setLayoutOptions({ headerHeight = 48, rowHeight = 235, gap = 12 }: Partial<LayoutOptions> = {}) {
     let changed = false;
-    changed ||= this.#setHeaderHeight(headerHeight);
-    changed ||= this.#setGap(gap);
-    changed ||= this.#setRowHeight(rowHeight);
+    changed = this.#setHeaderHeight(headerHeight) || changed;
+    changed = this.#setGap(gap) || changed;
+    changed = this.#setRowHeight(rowHeight) || changed;
     if (changed) {
       this.refreshLayout();
     }

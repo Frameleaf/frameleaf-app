@@ -104,6 +104,7 @@
 
 <UserPageLayout hideNavbar={assetMultiSelectManager.selectionActive} scrollbar={false}>
   <Timeline
+    libraryLayoutsEnabled
     enableRouting={true}
     {timelineManager}
     options={session.options}
