@@ -23,14 +23,16 @@
 </span>
 
 <style>
+  /* Shares the pill shape and secondary type size of the general Chip primitive. */
   .chip {
     display: inline-flex;
     max-width: 100%;
     align-items: center;
     gap: 0.375rem;
     padding-inline-start: 0.5rem;
+    font-size: var(--fl-font-small);
     border: 1px solid var(--fl-accent);
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-pill);
     background: var(--fl-raised);
     color: var(--fl-text);
   }
@@ -44,6 +46,6 @@
     color: inherit;
     border: 0;
     min-width: 44px;
-    border-radius: var(--fl-radius);
+    border-radius: var(--fl-radius-pill);
   }
 </style>

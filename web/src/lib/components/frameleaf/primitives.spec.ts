@@ -92,3 +92,149 @@ it.each([false, true])('honors reduced motion (%s) when introducing a picker', a
     preference.mockRestore();
   }
 });
+
+const menuHarness = async () => (await import('$lib/../test-data/frameleaf/MenuHarness.svelte')).default;
+const controlsHarness = async () => (await import('$lib/../test-data/frameleaf/ControlsHarness.svelte')).default;
+const activeText = () => document.activeElement?.textContent?.trim();
+
+describe('Frameleaf menu', () => {
+  it('opens from the keyboard, roves focus and activates a command', async () => {
+    const onSelect = vi.fn();
+    render(await menuHarness(), { onSelect });
+    const trigger = screen.getByRole('button', { name: 'Filter' });
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('menu')).toBeNull();
+
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    const menu = screen.getByRole('menu', { name: 'Filter' });
+    expect(trigger.getAttribute('aria-controls')).toBe(menu.id);
+    // The first item takes focus, so the menu is usable without a pointer.
+    expect(activeText()).toBe('People');
+
+    await fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    expect(activeText()).toBe('Date');
+    await fireEvent.keyDown(menu, { key: 'End' });
+    expect(activeText()).toBe('Hidden people');
+    // Wrapping keeps both ends reachable from either direction.
+    await fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    expect(activeText()).toBe('People');
+    await fireEvent.keyDown(menu, { key: 'ArrowUp' });
+    expect(activeText()).toBe('Hidden people');
+    await fireEvent.keyDown(menu, { key: 'Home' });
+    expect(activeText()).toBe('People');
+
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Date' }));
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(onSelect).toHaveBeenCalledWith('date');
+    // Activating a command closes the menu and hands focus back to the trigger.
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('opens on the last command with ArrowUp and returns focus on Escape', async () => {
+    render(await menuHarness(), {});
+    const trigger = screen.getByRole('button', { name: 'Filter' });
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'ArrowUp' });
+    expect(activeText()).toBe('Hidden people');
+
+    await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('ignores a disabled command and leaves the menu open', async () => {
+    const onSelect = vi.fn();
+    render(await menuHarness(), { onSelect });
+    await fireEvent.click(screen.getByRole('button', { name: 'Filter' }));
+    const places = screen.getByRole('menuitem', { name: 'Places' });
+    // aria-disabled keeps the item focusable, so the guard has to live in the handlers.
+    expect(places.getAttribute('aria-disabled')).toBe('true');
+    await fireEvent.click(places);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.getByRole('menu')).toBeTruthy();
+  });
+
+  it('reports a checkable command through aria-checked rather than colour', async () => {
+    const Harness = await menuHarness();
+    render(Harness, {});
+    await fireEvent.click(screen.getByRole('button', { name: 'Filter' }));
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Hidden people' }).getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Hidden people' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Filter' }));
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Hidden people' }).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('closes when a pointer press lands outside it', async () => {
+    render(await menuHarness(), {});
+    await fireEvent.click(screen.getByRole('button', { name: 'Filter' }));
+    expect(screen.getByRole('menu')).toBeTruthy();
+    await fireEvent.pointerDown(screen.getByRole('button', { name: 'After menu' }));
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+});
+
+describe('Frameleaf controls', () => {
+  it('names an icon-only button and reports its pressed state', async () => {
+    render(await controlsHarness(), {});
+    const favorite = screen.getByRole('button', { name: 'Favorite' });
+    expect(favorite.getAttribute('aria-pressed')).toBe('false');
+    // The icon is hidden from assistive technology, so the label is the only name.
+    expect(favorite.querySelector('span')?.getAttribute('aria-hidden')).toBe('true');
+    await fireEvent.click(favorite);
+    expect(favorite.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('announces a badge by its meaning, never by its colour or bare count', async () => {
+    const { container } = render(await controlsHarness(), {});
+    const badge = container.querySelector('.badge');
+    expect(badge?.querySelector('[aria-hidden="true"]')?.textContent).toBe('3');
+    expect(badge?.querySelector('.sr-only')?.textContent).toBe('3 filters active');
+  });
+
+  it('keeps exactly one segment pressed and reports the change', async () => {
+    const onAction = vi.fn();
+    render(await controlsHarness(), { onAction });
+    const group = screen.getByRole('group', { name: 'Media type' });
+    const pressed = () =>
+      [...group.querySelectorAll('button')].filter((segment) => segment.getAttribute('aria-pressed') === 'true');
+    expect(pressed()).toHaveLength(1);
+    expect(pressed()[0]).toBe(screen.getByRole('button', { name: 'All' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Photos' }));
+    expect(pressed()).toHaveLength(1);
+    expect(pressed()[0]).toBe(screen.getByRole('button', { name: 'Photos' }));
+    expect(onAction).toHaveBeenCalledWith('media:photo');
+  });
+
+  it('operates the switch by role and states on and off in text', async () => {
+    const onAction = vi.fn();
+    render(await controlsHarness(), { onAction });
+    const toggle = screen.getByRole('switch', { name: 'Include archived' });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(toggle.textContent?.trim()).toBe('Off');
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(toggle.textContent?.trim()).toBe('On');
+    expect(onAction).toHaveBeenCalledWith('archived:true');
+  });
+
+  it('disables controls from one caller flag while keeping their state legible', async () => {
+    render(await controlsHarness(), { disabled: true });
+    const toggle = screen.getByRole('switch', { name: 'Include archived' });
+    expect((toggle as HTMLButtonElement).disabled).toBe(true);
+    // A disabled control still has to say which state it is in.
+    expect(toggle.textContent?.trim()).toBe('Off');
+    expect((screen.getByRole('button', { name: 'Create album' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Videos' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'All' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('removes a chip through a control that names what it removes', async () => {
+    render(await controlsHarness(), {});
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove year 2026' }));
+    expect(screen.queryByRole('button', { name: 'Remove year 2026' })).toBeNull();
+  });
+});
