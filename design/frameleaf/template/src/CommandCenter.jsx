@@ -16,6 +16,7 @@ import { ProtectedContent } from "./ProtectedContent";
 import { SharingAccess } from "./SharingAccess";
 import { TrashManager } from "./TrashManager";
 import { UtilitiesManager } from "./UtilitiesManager";
+import { Maintenance } from "./Maintenance";
 import {
   accountPreferencesToSettings,
   settingsToAccountPreferencesPatch,
@@ -733,10 +734,8 @@ export function CommandCenter({
                 </p>
                 <h1>
                   {search
-                    ? "Find your way"
-                    : area === "overview"
-                      ? "Your library, under control."
-                      : selectedSection?.title || current.title}
+                    ? "Search results"
+                    : selectedSection?.title || current.title}
                 </h1>
                 <p>
                   {search
@@ -922,6 +921,9 @@ export function CommandCenter({
                             onNavigate={navigate}
                           />
                         </>
+                      )}
+                      {area === "maintenance" && (
+                        <Maintenance section={section.id} onNavigate={navigate} />
                       )}
                       {area === "utilities" && (
                         <UtilitiesManager
@@ -1769,7 +1771,7 @@ function Overview({
         <section className="cc-panel cc-growth">
           <div className="cc-panel-title">
             <div>
-              <h2>A growing collection</h2>
+              <h2>Library growth</h2>
               <p>Last 12 months</p>
             </div>
             <button onClick={() => navigate("analytics")}>
@@ -1815,7 +1817,7 @@ function Overview({
         <section className="cc-panel">
           <div className="cc-panel-title">
             <div>
-              <h2>Every byte, accounted for</h2>
+              <h2>Storage</h2>
               <p>Photo archive · library filesystem</p>
             </div>
             <button onClick={() => navigate("storage")}>
@@ -1866,7 +1868,7 @@ function Overview({
         <section className="cc-panel">
           <div className="cc-panel-title">
             <div>
-              <h2>Processing, with purpose</h2>
+              <h2>Processing</h2>
               <p>Illustrative workload snapshot</p>
             </div>
             <button onClick={() => navigate("processing", "queues")}>
@@ -2541,7 +2543,7 @@ function ChangeHistory({ changes, onNavigate }) {
     return (
       <div className="cc-empty">
         <Icon name="mdiHistory" size={36} />
-        <h2>A clear record of every change</h2>
+        <h2>No changes yet</h2>
         <p>
           Review and save a setting to start your device’s history. Values,
           scope, and time stay together.

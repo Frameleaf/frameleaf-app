@@ -8,6 +8,30 @@
   --fl-accent: #22c55e;
   --fl-accent-text: #072211;
   --fl-radius: 4px;
+  --fl-accent-soft: color-mix(in srgb, var(--fl-accent), transparent 86%);
+  --fl-teal: #0ea5a0;
+  --fl-blue: #3b82f6;
+  --fl-warning: #e4bd69;
+  --fl-danger: #ef5350;
+  --fl-radius-control: 6px;
+  --fl-radius-card: 10px;
+  --fl-radius-pill: 999px;
+  --fl-motion-fast: 120ms;
+  --fl-motion: 180ms;
+  --fl-motion-slow: 240ms;
+  --fl-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --fl-font-size: 14px;
+  --fl-font-small: 12px;
+  --fl-font-micro: 11px;
+  --fl-shadow-1: 0 2px 8px #0004;
+  --fl-shadow-2: 0 14px 44px #0007;
+  --fl-viewer-canvas: #08090b;
+  --fl-viewer-panel: #17181a;
+  --fl-viewer-raised: #25272b;
+  --fl-viewer-border: #ffffff14;
+  --fl-viewer-text: #f1f1f2;
+  --fl-viewer-muted: #979ba2;
+  --fl-viewer-focus: #a5d4ef;
   color: var(--fl-text);
   background: var(--fl-canvas);
   color-scheme: dark;
@@ -27,6 +51,10 @@
   --fl-muted: #53636d;
   --fl-accent: #157b40;
   --fl-accent-text: #fff;
+  --fl-warning: #886100;
+  --fl-danger: #c62828;
+  --fl-shadow-1: 0 2px 8px #0002;
+  --fl-shadow-2: 0 14px 44px #0003;
   color-scheme: light;
 }
 .frameleaf :focus-visible {

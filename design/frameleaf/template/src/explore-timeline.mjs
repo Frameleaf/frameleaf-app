@@ -253,3 +253,48 @@ export function exploreSections(input, people = []) {
     ],
   };
 }
+/** Calendar month id ("YYYY-MM") for an asset, or null when undated. */
+export const assetMonthId = (asset) => captureDate(asset)?.month ?? null;
+/**
+ * Scrubber model: months and years positioned along a 0..1 track in proportion
+ * to how many items they hold, in the same order as the timeline groups.
+ */
+export function timelineScrubber(assets, order = "desc") {
+  const months = timelineMonths(assets, order);
+  const total = months.reduce((sum, month) => sum + month.count, 0);
+  let offset = 0;
+  const marks = months.map((month) => {
+    const start = total ? offset / total : 0;
+    offset += month.count;
+    const end = total ? offset / total : 0;
+    return { ...month, start, end, center: (start + end) / 2 };
+  });
+  const years = [];
+  for (const month of marks) {
+    const last = years.at(-1);
+    if (!last || last.year !== month.year)
+      years.push({
+        year: month.year,
+        start: month.start,
+        end: month.end,
+        center: 0,
+        count: 0,
+        firstAssetId: month.firstAssetId,
+      });
+    const year = years.at(-1);
+    year.end = month.end;
+    year.count += month.count;
+    year.center = (year.start + year.end) / 2;
+  }
+  return { total, months: marks, years };
+}
+/** The month covering a 0..1 track position (clamped), or null when empty. */
+export function scrubberMonthAt(scrubber, fraction) {
+  const months = scrubber?.months || [];
+  if (!months.length) return null;
+  const value = Math.min(1, Math.max(0, Number(fraction) || 0));
+  return (
+    months.find((month) => value >= month.start && value < month.end) ||
+    months.at(-1)
+  );
+}

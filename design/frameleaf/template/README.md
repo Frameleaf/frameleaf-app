@@ -18,7 +18,7 @@ pnpm build
 pnpm preview --port 4174
 ```
 
-`build` produces local static files in `dist/`; it does not publish. `test` runs the 18 existing portable state/data test files captured with this package. Original DOM tests and repository-contract audits remain with the original prototype because they inspect production source files or installed web dependencies. This portable suite does not substitute for those checks, browser review or production acceptance.
+`build` produces local static files in `dist/`; it does not publish. `test` runs the portable state, data and happy-dom interaction test files in `tests/`. Run both through the GitHub Actions workflow (`frameleaf-design.yml`) rather than on a small local machine: the suites start a Vite server per DOM test and are memory hungry. Original DOM tests and repository-contract audits remain with the original prototype because they inspect production source files or installed web dependencies. This portable suite does not substitute for those checks, browser review or production acceptance.
 
 ## Review path
 
@@ -37,6 +37,12 @@ Read [the interaction contract](../INTERACTION-REQUIREMENTS.md) for the latest d
 | Settings and analytics | `CommandCenter.jsx`, `settings-catalog.mjs`, `settings-coverage.mjs`, `SettingsAnalytics.jsx` |
 | Users, workers, jobs and utilities | `AccountsLibraries.jsx`, `WorkerManager.jsx`, `JobsManager.jsx`, `UtilitiesManager.jsx`, `DuplicateReview.jsx`, `TrashManager.jsx` |
 | Portable source snapshots | `src/reference/`: library session, discovery query, theme CSS and plugin method manifest |
+| Editing surfaces | `Editor.jsx` + `develop.mjs` (full-screen quick editor, develop module, presets, crop), `Studio.jsx` + `studio-project.mjs` (multitrack timeline, colour, audio, captions, restoration), `Activity.jsx` |
+| Timeline, tiles and selection | `TimelineLibrary.jsx` + `justified-layout.mjs`, `AssetTile.jsx`, `SelectionBar.jsx` + `selection.mjs`, `ShortcutsHelp.jsx` + `shortcuts.mjs` |
+| Albums, collections and sharing | `Collections.jsx` (Albums page), `AlbumCard.jsx`, `CollectionHeader.jsx`, `ActivityPanel.jsx`, `collections-data.mjs`, `SharedLinks.jsx`, `SharedLinkForm.jsx`, `PublicViewer.jsx`, `PartnerLibrary.jsx`, `QrCode.jsx` + `qr.mjs`, `shared-links-data.mjs` |
+| People | `People.jsx`, `PersonDetail.jsx`, `ManagePeople.jsx`, `people-data.mjs` |
+| Discovery | `MapView.jsx`, `Places.jsx`, `Tags.jsx`, `Folders.jsx`, `Memories.jsx`, `MemoryPlayer.jsx`, `discovery-data.mjs` |
+| System and account | `AuthScreens.jsx`, `SystemPanels.jsx`, `UploadPanel.jsx`, `system-data.mjs`, `CommandPalette.jsx` + `command-palette.mjs`, `Maintenance.jsx` + `maintenance-data.mjs` |
 
 Source-path strings in the coverage catalog identify production inspection anchors; they are not live imports and do not prove those features exist in a clean checkout. The discovery snapshot retains a type-only SDK reference which Vite erases; this template does not advertise standalone production SDK typechecking.
 

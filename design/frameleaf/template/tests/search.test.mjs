@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  descriptionStatus,
+  descriptionStatuses,
   normalizeSearchQuery,
+  pageSummary,
+  paginate,
   resolveSamplePhrase,
   sampleFacets,
   searchChips,
   searchSampleAssets,
   sampleSearchModeDescriptions,
+  sensitiveStatus,
+  sensitiveStatuses,
+  statusLabels,
 } from "../src/search.mjs";
 
 const people = [
@@ -455,4 +462,148 @@ test("unrecognized text and Unicode outside recognized phrases are retained rath
   );
   assert.equal(unicode.query.text, "🌲");
   assert.deepEqual(unicode.query.filter.personIds, { all: ["Jamie"] });
+});
+
+const enriched = [
+  {
+    id: "gen",
+    description: "A turquoise lake",
+    enrichment: {
+      description: { status: "generated", model: "local" },
+      sensitive: { status: "reviewed", score: 0.02 },
+    },
+  },
+  {
+    id: "manual",
+    description: "Our campsite",
+    enrichment: {
+      description: { status: "manual" },
+      sensitive: { status: "needs-review", score: 0.61 },
+    },
+  },
+  {
+    id: "missing",
+    description: "",
+    enrichment: { sensitive: { status: "overridden", score: 0.4 } },
+  },
+  {
+    id: "failed",
+    description: "",
+    enrichment: {
+      description: { status: "failed" },
+      sensitive: { status: "needs_review" },
+    },
+  },
+  { id: "plain", description: "Typed by hand" },
+];
+const enrichedSearch = (filter) =>
+  searchSampleAssets(enriched, { filter, text: "" }).map((asset) => asset.id);
+
+test("description and sensitivity status derive from enrichment and fail closed on unknown values", () => {
+  assert.equal(descriptionStatus(enriched[0]), "generated");
+  assert.equal(descriptionStatus(enriched[1]), "manual");
+  assert.equal(descriptionStatus(enriched[2]), "missing");
+  assert.equal(descriptionStatus(enriched[3]), "failed");
+  assert.equal(descriptionStatus(enriched[4]), "manual");
+  assert.equal(sensitiveStatus(enriched[3]), "needs-review");
+  assert.equal(sensitiveStatus(enriched[4]), null);
+  assert.deepEqual(enrichedSearch({ descriptionStatus: { eq: "missing" } }), [
+    "missing",
+  ]);
+  assert.deepEqual(enrichedSearch({ descriptionStatus: { eq: "failed" } }), [
+    "failed",
+  ]);
+  assert.deepEqual(
+    enrichedSearch({ descriptionStatus: { in: ["generated", "manual"] } }),
+    ["gen", "manual", "plain"],
+  );
+  assert.deepEqual(
+    enrichedSearch({ sensitiveStatus: { eq: "needs-review" } }),
+    ["manual", "failed"],
+  );
+  // Like other metadata, an asset with no review record is "not reviewed".
+  assert.deepEqual(enrichedSearch({ sensitiveStatus: { ne: "reviewed" } }), [
+    "manual",
+    "missing",
+    "failed",
+    "plain",
+  ]);
+  assert.deepEqual(enrichedSearch({ sensitiveStatus: { eq: "unknown" } }), []);
+  assert.deepEqual(enrichedSearch({ descriptionStatus: { eq: true } }), []);
+  assert.deepEqual(descriptionStatuses, [
+    "generated",
+    "manual",
+    "missing",
+    "failed",
+  ]);
+  assert.deepEqual(sensitiveStatuses, ["reviewed", "needs-review", "overridden"]);
+});
+
+test("enrichment facets list the full vocabulary in a fixed order with readable chips", () => {
+  const facets = sampleFacets(enriched, { filter: {} }, options);
+  assert.deepEqual(
+    facets.descriptionStatus.map(({ value, count }) => [value, count]),
+    [
+      ["generated", 1],
+      ["manual", 2],
+      ["missing", 1],
+      ["failed", 1],
+    ],
+  );
+  assert.deepEqual(
+    facets.sensitiveStatus.map(({ value, label, count }) => [
+      value,
+      label,
+      count,
+    ]),
+    [
+      ["reviewed", "Reviewed", 1],
+      ["needs-review", "Needs review", 2],
+      ["overridden", "Overridden", 1],
+    ],
+  );
+  const chips = searchChips(
+    {
+      filter: {
+        descriptionStatus: { eq: "missing" },
+        sensitiveStatus: { eq: "needs-review" },
+      },
+    },
+    options,
+  );
+  assert.deepEqual(
+    chips.map((chip) => chip.label),
+    ["Description: No description", "Sensitivity: Needs review"],
+  );
+  assert.equal(statusLabels.descriptionStatus.failed, "Generation failed");
+});
+
+test("pagination clamps pages, exposes cumulative slices and summarizes in plain words", () => {
+  const items = Array.from({ length: 130 }, (_, index) => index);
+  const first = paginate(items, 1, 60);
+  assert.deepEqual(
+    [first.start, first.end, first.total, first.pageCount, first.hasMore],
+    [1, 60, 130, 3, true],
+  );
+  assert.equal(first.items.length, 60);
+  assert.equal(first.visible.length, 60);
+  const last = paginate(items, 9, 60);
+  assert.deepEqual([last.page, last.start, last.end, last.hasMore], [3, 121, 130, false]);
+  assert.equal(last.items.length, 10);
+  assert.equal(last.visible.length, 130);
+  assert.equal(last.remaining, 0);
+  assert.equal(pageSummary(first), "Showing 1–60 of 130 items");
+  assert.equal(
+    pageSummary(paginate(items, 2, 60), { cumulative: true, noun: "photos" }),
+    "Showing 120 of 130 photos",
+  );
+  assert.equal(pageSummary(last), "Showing all 130 items");
+  assert.equal(pageSummary(paginate([], 1, 60)), "No items");
+  assert.equal(
+    pageSummary(paginate([1], 1, 60), { noun: "results" }),
+    "Showing all 1 result",
+  );
+  const weird = paginate("not-a-list", 0, -5);
+  assert.deepEqual([weird.total, weird.page, weird.pageSize, weird.start], [0, 1, 60, 0]);
+  assert.equal(paginate(items, 1.5, 0).items.length, 60);
 });

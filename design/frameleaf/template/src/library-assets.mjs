@@ -3,7 +3,9 @@ import { classifyLocked } from "./locked-content.mjs";
 import { parseUtilities, utilityStorageKey } from "./utilities-data.mjs";
 
 export const libraryAssetsKey = "frameleaf:library-assets:v1";
-const albums = ["family", "summer-rockies", "everyday", "winter-2026"];
+/** Any collection id shaped like a slug; the collections model is the authority for existence. */
+const albumId = (value) =>
+  typeof value === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(value);
 const recipients = ["Jamie", "Emma"];
 const visibilities = ["timeline", "archive", "locked"];
 const booleans = [
@@ -12,7 +14,30 @@ const booleans = [
   "isSuppressed",
   "isSensitive",
   "isNsfw",
+  "isEdited",
 ];
+const texts = {
+  description: 4096,
+  takenAt: 40,
+  date: 10,
+  city: 120,
+  state: 120,
+  country: 120,
+  stackId: 64,
+  coverAlbumId: 64,
+};
+const numbers = { latitude: [-90, 90], longitude: [-180, 180] };
+const lists = { tagIds: 64 };
+const plainText = (value, limit) =>
+  typeof value === "string" &&
+  value.length <= limit &&
+  !/[\u0000-\u001f]/.test(value);
+const finiteIn = (value, [min, max]) =>
+  typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
+const tagList = (value, limit) =>
+  Array.isArray(value) &&
+  value.length <= limit &&
+  value.every((id) => plainText(id, 64) && id.trim());
 const record = (value) =>
   value &&
   typeof value === "object" &&
@@ -50,12 +75,19 @@ export function parseLibraryAssets(raw) {
           next[key] = field(entry, key);
       if (visibilities.includes(field(entry, "visibility")))
         next.visibility = field(entry, "visibility");
-      for (const [key, choices] of [
-        ["albumIds", albums],
-        ["sharedWith", recipients],
-      ])
-        if (Array.isArray(field(entry, key)))
-          next[key] = selection(field(entry, key), choices);
+      for (const [key, limit] of Object.entries(texts))
+        if (plainText(field(entry, key), limit)) next[key] = field(entry, key);
+        else if (key === "stackId" && field(entry, key) === null)
+          next.stackId = null;
+      for (const [key, range] of Object.entries(numbers))
+        if (finiteIn(field(entry, key), range)) next[key] = field(entry, key);
+      for (const [key, limit] of Object.entries(lists))
+        if (tagList(field(entry, key), limit))
+          next[key] = [...new Set(field(entry, key).map((id) => id.trim()))];
+      if (Array.isArray(field(entry, "albumIds")))
+        next.albumIds = [...new Set(field(entry, "albumIds").filter(albumId))];
+      if (Array.isArray(field(entry, "sharedWith")))
+        next.sharedWith = selection(field(entry, "sharedWith"), recipients);
       return [[asset.id, next]];
     }),
   );
@@ -69,9 +101,14 @@ export function mergeLibraryAssets(overrides, utilities) {
     const trash = utilities?.rows?.find(
       (row) => row.id === `library-${asset.id}`,
     );
+    const override = valid[asset.id] || {};
     return {
       ...asset,
-      ...valid[asset.id],
+      ...override,
+      ...(override.tagIds ? { tags: override.tagIds } : {}),
+      ...(override.date && !override.takenAt
+        ? { takenAt: `${override.date}T${(asset.takenAt || "T07:14:00").split("T")[1]}` }
+        : {}),
       ...(["Trashed", "Deleted"].includes(trash?.status)
         ? { status: trash.status, deletedAt: trash.deletedAt }
         : {}),
@@ -88,12 +125,18 @@ function validPatch(patch) {
       result[key] = value;
     else if (key === "visibility" && ["timeline", "archive"].includes(value))
       result[key] = value;
+    else if (key in texts && (plainText(value, texts[key]) || (key === "stackId" && value === null)))
+      result[key] = value;
+    else if (key in numbers && finiteIn(value, numbers[key]))
+      result[key] = value;
+    else if (key in lists && tagList(value, lists[key]))
+      result[key] = [...new Set(value.map((id) => id.trim()))];
+    else if (key === "albumIds" && Array.isArray(value) && value.every(albumId))
+      result[key] = [...new Set(value)];
     else if (
-      ["albumIds", "sharedWith"].includes(key) &&
+      key === "sharedWith" &&
       Array.isArray(value) &&
-      value.every((id) =>
-        (key === "albumIds" ? albums : recipients).includes(id),
-      )
+      value.every((id) => recipients.includes(id))
     )
       result[key] = [...new Set(value)];
     else
@@ -168,4 +211,31 @@ export function trashLibraryAsset(
   };
   storage.setItem(utilityStorageKey, JSON.stringify(next));
   return next;
+}
+
+/** Apply one validated patch to many owned assets in a single storage write; returns the new overrides. */
+export function changeLibraryAssets(
+  ids,
+  patch,
+  actorId = "taylor",
+  storage = localStorage,
+) {
+  const state = parseUtilities(storage.getItem(utilityStorageKey));
+  const change = validPatch(patch);
+  const current = readLibraryAssets(storage);
+  const next = { ...current };
+  const changed = [];
+  for (const id of [...new Set(ids)]) {
+    const { asset } = requireLiveAsset(id, actorId, state);
+    const result = { ...current[id], ...change };
+    if (change.sharedWith?.length && classifyLocked({ ...asset, ...result }))
+      throw Error("Remove the Sensitive mark before sharing this item.");
+    next[id] = result;
+    changed.push(id);
+  }
+  storage.setItem(
+    libraryAssetsKey,
+    JSON.stringify({ version: 1, assets: next }),
+  );
+  return { overrides: next, changed };
 }

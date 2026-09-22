@@ -1936,3 +1936,25 @@
 .jobs-manager .jm-concurrency-row, .jobs-manager .jm-manual-list label, .jobs-manager .jm-confirm { flex-direction:row; margin-bottom:0; }
 .jobs-manager .jm-concurrency-row { text-align:left; }
 .jobs-manager .jm-manual-list input[type=radio], .jobs-manager .jm-confirm input[type=checkbox] { width:16px; height:16px; }
+
+/* Account detail: one-time temporary password */
+.resource-issued .resource-secret {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+}
+.resource-issued code {
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  user-select: all;
+}
+.resource-issued footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--fl-border);
+}

@@ -257,6 +257,28 @@ test("rail preference and search history preserve search modes and criteria acro
   assert.equal(read({ searchBy: "unknown" }).searchBy, "semantic");
 });
 
+test("library layout defaults to Browse and only accepts known layouts", () => {
+  assert.equal(read({}).layout, "browse");
+  assert.equal(read({ layout: "sideways" }).layout, "browse");
+  assert.equal(read({ layout: "work" }).layout, "work");
+  assert.equal(read({ layout: "timeline" }).layout, "timeline");
+});
+
+test("photos have no timeline while videos keep their real duration", () => {
+  const photo = { id: "p", name: "Photo.jpg", type: "photo", duration: 0 };
+  const clip = { id: "v", name: "Clip.mov", type: "video" };
+  assert.equal(normalizeEdit(initialEdit, photo).end, 0);
+  assert.equal(normalizeEdit({ start: 5, end: 9 }, photo).start, 0);
+  assert.equal(normalizeEdit(initialEdit, clip).end, 24);
+  assert.equal(normalizeEdit(initialEdit, assets[1]).end, 15);
+  const saved = parseSavedPrototype(
+    JSON.stringify({ openAssetId: "p", playbackPosition: 12 }),
+    [photo, assets[0]],
+    readView,
+  );
+  assert.equal(saved.playbackPosition, 0);
+});
+
 test("authoritative search URLs cannot inherit unrelated snapshot membership or names", () => {
   const saved = { view, collection: "Saved selection", snapshotIds: ["1"] };
   assert.deepEqual(

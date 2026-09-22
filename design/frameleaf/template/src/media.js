@@ -1,3 +1,66 @@
+const cityCoordinates = {
+  Banff: [51.1784, -115.5708],
+  'Lake Louise': [51.4254, -116.1773],
+  Jasper: [52.8737, -118.0814],
+};
+const sceneCity = {
+  'trail-sign': 'Lake Louise',
+  lake: 'Lake Louise',
+  hiking: 'Banff',
+  campfire: 'Banff',
+  portrait: 'Lake Louise',
+  forest: 'Jasper',
+  cabin: 'Jasper',
+  flowers: 'Banff',
+  dog: 'Banff',
+  creek: 'Banff',
+  kayak: 'Lake Louise',
+  summit: 'Banff',
+  elk: 'Jasper',
+};
+/** Fictional capture facts so viewer, map, filters and editors have realistic metadata. */
+function assetFacts(scene, type, i) {
+  const apple = type === 'video' || i % 3 === 0;
+  const [lat, lng] = cityCoordinates[sceneCity[scene]];
+  const jitter = ((i * 7919) % 100) / 1000 - 0.05;
+  const panorama = scene === 'summit';
+  return {
+    width: type === 'video' ? 3840 : panorama ? 12000 : apple ? 4032 : 6000,
+    height: type === 'video' ? 2160 : panorama ? 3000 : apple ? 3024 : 4000,
+    latitude: Number((lat + jitter).toFixed(5)),
+    longitude: Number((lng + jitter * 1.4).toFixed(5)),
+    fNumber: type === 'video' ? 1.8 : [2.8, 4, 5.6, 8][i % 4],
+    exposureTime: type === 'video' ? '1/60' : ['1/500', '1/250', '1/1000', '1/125'][i % 4],
+    iso: type === 'video' ? 200 : [100, 100, 200, 400][i % 4],
+    focalLength: apple ? 24 : [24, 35, 50, 70][i % 4],
+    frameRate: type === 'video' ? 29.97 : undefined,
+    fileSizeInBytes:
+      type === 'video'
+        ? 118_000_000 + i * 21_500_000
+        : panorama
+          ? 48_300_000
+          : 8_400_000 + (i % 7) * 2_150_000,
+    libraryId: 'upload-taylor',
+    checksum: `sha1-${(0x9a3f10 + i * 7919).toString(16)}`,
+    ...(panorama ? { isPanorama: true } : {}),
+    ...([3, 9].includes(i)
+      ? { isLivePhoto: true, livePhotoVideo: '/media/lake-demo.mp4' }
+      : {}),
+    ...([2, 10].includes(i) ? { stackId: 'lake-stack', stackPrimary: i === 2 } : {}),
+    ...(i === 16 ? { isOffline: true } : {}),
+    enrichment: {
+      description: {
+        status: i % 4 === 1 ? 'manual' : 'generated',
+        model: 'Florence-2 · local',
+        confidence: Number((0.82 + (i % 5) * 0.03).toFixed(2)),
+      },
+      sensitive: {
+        status: i === 19 ? 'needs-review' : 'reviewed',
+        score: i === 19 ? 0.61 : Number(((i % 6) * 0.01).toFixed(2)),
+      },
+    },
+  };
+}
 const samples = [
   ['lake', 'Lake morning.mov', 'video', 24, 3, ['Jamie']],
   ['hiking', 'Hiking with Jamie.jpg', 'photo', 0, 3, ['Jamie', 'Taylor']],
@@ -29,6 +92,7 @@ const samples = [
   ['trail-sign', 'Trailhead directions.jpg', 'photo', 0, 0, []],
 ].map(([image, name, type, duration, rating, people], i) => ({
   id: String(i + 1),
+  ...assetFacts(image, type, i),
   image: `/media/${image}.png`,
   name,
   type,
