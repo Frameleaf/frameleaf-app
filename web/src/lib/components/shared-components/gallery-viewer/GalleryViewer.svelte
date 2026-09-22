@@ -285,16 +285,31 @@
     }
   };
 
+  const handlePreAction = async (action: Action) => {
+    if (action.type !== AssetAction.DELETE && action.type !== AssetAction.TRASH) {
+      return;
+    }
+    // Confirmation may finish after the user has opened a different asset.
+    if (assetViewerManager.asset?.id !== action.asset.id) {
+      return;
+    }
+    // AssetsDelete retires the current manager asset before onAction runs.
+    // Complete navigation first so the event cannot destroy the neighbor cursor.
+    await navigateToAsset(assetCursor.nextAsset ?? assetCursor.previousAsset);
+  };
+
   const handleAction = async (action: Action) => {
     switch (action.type) {
       case AssetAction.ARCHIVE:
       case AssetAction.DELETE:
       case AssetAction.TRASH: {
-        const nextAsset = assetCursor.nextAsset ?? assetCursor.previousAsset;
-        assets.splice(
-          assets.findIndex((currentAsset) => currentAsset.id === action.asset.id),
-          1,
-        );
+        const nextAsset =
+          action.type === AssetAction.ARCHIVE ? (assetCursor.nextAsset ?? assetCursor.previousAsset) : undefined;
+        const index = assets.findIndex((currentAsset) => currentAsset.id === action.asset.id);
+        if (index === -1) {
+          return;
+        }
+        assets.splice(index, 1);
         if (assets.length === 0) {
           return await goto(Route.photos());
         }
@@ -388,6 +403,7 @@
     {#await import('$lib/components/asset-viewer/AssetViewer.svelte') then { default: AssetViewer }}
       <AssetViewer
         cursor={assetCursor}
+        preAction={handlePreAction}
         onAction={handleAction}
         onRandom={handleRandom}
         onAssetChange={updateCurrentAsset}
