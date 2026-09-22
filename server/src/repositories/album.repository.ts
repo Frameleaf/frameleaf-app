@@ -459,6 +459,20 @@ export class AlbumRepository {
     return new Set(rows.map((r) => r.id_descendant));
   }
 
+  /** Direct children only (albums whose parent is `id`), in display order. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getChildIds(id: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('album')
+      .select('id')
+      .where('parentId', '=', id)
+      .where('deletedAt', 'is', null)
+      .orderBy('sortOrder', sql`asc nulls last`)
+      .orderBy('createdAt', 'desc')
+      .execute();
+    return rows.map((row) => row.id);
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   async getAncestorIds(id: string): Promise<string[]> {
     const rows = await this.db

@@ -17,6 +17,10 @@
       "identity": "immich_fork.album_metadata.icon"
     },
     {
+      "definition": "text|not null|'album'::text||",
+      "identity": "immich_fork.album_metadata.kind"
+    },
+    {
       "definition": "uuid|nullable|||",
       "identity": "immich_fork.album_metadata.parentId"
     },
@@ -1227,6 +1231,10 @@
     {
       "definition": "boolean|not null|true||",
       "identity": "public.album.isActivityEnabled"
+    },
+    {
+      "definition": "text|not null|'album'::text||",
+      "identity": "public.album.kind"
     },
     {
       "definition": "character varying|not null|'desc'::character varying||",
@@ -3423,6 +3431,10 @@
       "identity": "immich_fork.album_closure.album_closure_pkey"
     },
     {
+      "definition": "CHECK (kind = ANY (ARRAY['album'::text, 'collection'::text, 'space'::text]))",
+      "identity": "immich_fork.album_metadata.album_metadata_kind_check"
+    },
+    {
       "definition": "PRIMARY KEY (\"albumId\")",
       "identity": "immich_fork.album_metadata.album_metadata_pkey"
     },
@@ -3829,6 +3841,10 @@
     {
       "definition": "FOREIGN KEY (\"albumThumbnailAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
       "identity": "public.album.album_albumThumbnailAssetId_fkey"
+    },
+    {
+      "definition": "CHECK (kind = ANY (ARRAY['album'::text, 'collection'::text, 'space'::text]))",
+      "identity": "public.album.album_kind_check"
     },
     {
       "definition": "FOREIGN KEY (\"parentId\") REFERENCES album(id) ON DELETE CASCADE",
@@ -4619,7 +4635,8 @@
     "0000000000060-SharedUpstreamPaths",
     "0000000000070-ResetAssetSyncChecksums",
     "0000000000080-MediaHealthRunOwner",
-    "0000000000090-ICloudSync"
+    "0000000000090-ICloudSync",
+    "0000000000100-AlbumKind"
   ],
   "functions": [
     {

@@ -1,25 +1,31 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { ALBUM_ICON_GROUPS, MDI_ICON_CATALOGUE_VERSION, MDI_ICON_NAMES } from 'src/constants/album-icons.js';
 import {
   AddUsersDto,
   AlbumDescendantCountResponseDto,
+  AlbumIconCatalogueResponseDto,
   AlbumResponseDto,
   AlbumStatisticsResponseDto,
+  AlbumTreeResponseDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
   CreateAlbumDto,
   GetAlbumInfoDto,
   GetAlbumsDto,
   MapAlbumDto,
+  MoveAlbumDto,
   UpdateAlbumDto,
   UpdateAlbumUserDto,
+  asAlbumKind,
   mapAlbum,
 } from 'src/dtos/album.dto.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { MapMarkerResponseDto } from 'src/dtos/map.dto.js';
-import { AlbumUserRole, Permission } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, Permission } from 'src/enum.js';
 import { AlbumAssetCount, AlbumInfoOptions } from 'src/repositories/album.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { buildAlbumTree } from 'src/utils/album-tree.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
@@ -65,15 +71,61 @@ export class AlbumService extends BaseService {
     }
     albums = await this.hideNsfwAlbumThumbnails(auth, albums, privacyOptions, albumMetadata);
 
-    return albums.map((album) => ({
+    return albums.map((album) => this.toListItem(album, albumMetadata));
+  }
+
+  /**
+   * The album directory: collections with their albums, albums on their own,
+   * and shared spaces, for everything the requesting user owns or is shared
+   * with. Access is the same membership rule as `getAll`; partner and shared
+   * link rules are unchanged (neither grants album listing).
+   */
+  async getTree(auth: AuthDto): Promise<AlbumTreeResponseDto> {
+    await this.albumRepository.updateThumbnails();
+
+    const privacyOptions = this.nsfwOptions(auth);
+    let albums: MapAlbumDto[] = await this.albumRepository.getAll(auth.user.id, {});
+    if (albums.length === 0) {
+      return buildAlbumTree([]);
+    }
+
+    const ids = albums.map((album) => album.id);
+    const [results, smartBackedIds] = await Promise.all([
+      this.albumRepository.getMetadataForIds(ids, privacyOptions),
+      this.smartAlbumRepository.getSmartBackedAlbumIds(ids),
+    ]);
+    const albumMetadata: Record<string, AlbumAssetCount> = {};
+    for (const metadata of results) {
+      albumMetadata[metadata.albumId] = metadata;
+    }
+    albums = await this.hideNsfwAlbumThumbnails(auth, albums, privacyOptions, albumMetadata);
+
+    return buildAlbumTree(
+      albums.map((album) => ({ ...this.toListItem(album, albumMetadata), isSmart: smartBackedIds.has(album.id) })),
+    );
+  }
+
+  /** The icon catalogue as data: every valid name plus the categorised suggested set. */
+  getIconCatalogue(): AlbumIconCatalogueResponseDto {
+    return {
+      version: MDI_ICON_CATALOGUE_VERSION,
+      names: [...MDI_ICON_NAMES],
+      suggested: ALBUM_ICON_GROUPS.map((group) => ({
+        label: group.label,
+        icons: group.icons.map(({ name, label }) => ({ name, label })),
+      })),
+    };
+  }
+
+  private toListItem(album: MapAlbumDto, albumMetadata: Record<string, AlbumAssetCount>): AlbumResponseDto {
+    return {
       ...mapAlbum(album),
-      sharedLinks: undefined,
       startDate: asDateTimeString(albumMetadata[album.id]?.startDate ?? undefined),
       endDate: asDateTimeString(albumMetadata[album.id]?.endDate ?? undefined),
       assetCount: albumMetadata[album.id]?.assetCount ?? 0,
       // lastModifiedAssetTimestamp is only used in mobile app, please remove if not need
       lastModifiedAssetTimestamp: asDateTimeString(albumMetadata[album.id]?.lastModifiedAssetTimestamp ?? undefined),
-    }));
+    };
   }
 
   async get(auth: AuthDto, id: string, { suppressedOnly }: GetAlbumInfoDto = {}): Promise<AlbumResponseDto> {
@@ -123,9 +175,14 @@ export class AlbumService extends BaseService {
       }
     }
 
+    const kind = dto.kind ?? AlbumKind.Album;
     if (dto.parentId) {
-      // Nesting modifies the parent's structure, so require AlbumUpdate (owner-only).
+      if (kind !== AlbumKind.Album) {
+        throw new BadRequestException('Collections and shared spaces stay at the top level');
+      }
+      // Nesting changes the collection, so require AlbumUpdate on it (owner or editor).
       await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [dto.parentId] });
+      await this.requireCollection(auth, dto.parentId);
     }
 
     const allowedAssetIdsSet = await this.checkAccess({
@@ -145,6 +202,7 @@ export class AlbumService extends BaseService {
         order: getPreferences(userMetadata).albums.defaultAssetOrder,
         parentId: dto.parentId ?? null,
         icon: dto.icon ?? null,
+        kind,
       },
       assetIds,
       [{ userId: auth.user.id, role: AlbumUserRole.Owner }, ...albumUsers],
@@ -171,8 +229,8 @@ export class AlbumService extends BaseService {
       }
     }
 
-    if (dto.parentId !== undefined) {
-      await this.validateAndReparent(auth, album.id, dto.parentId);
+    if (dto.parentId !== undefined && dto.parentId !== album.parentId) {
+      await this.validateAndReparent(auth, album, dto.parentId);
     }
 
     const updatedAlbum = await this.albumRepository.update(
@@ -204,23 +262,70 @@ export class AlbumService extends BaseService {
     return { count };
   }
 
-  private async validateAndReparent(auth: AuthDto, id: string, newParentId: string | null): Promise<void> {
-    if (newParentId === id) {
+  /** Move an album into a collection, or out of one (`collectionId: null`) so it stands on its own. */
+  async moveToCollection(auth: AuthDto, id: string, dto: MoveAlbumDto): Promise<AlbumResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [id] });
+    const album = await this.findOrFail(id, auth, { withAssets: false });
+    if (album.parentId !== dto.collectionId) {
+      await this.validateAndReparent(auth, album, dto.collectionId);
+    }
+    return this.get(auth, id);
+  }
+
+  /**
+   * One level of nesting: only an album moves, only into a collection, and only
+   * its owner reorganises it (parentId is a single stored value, so an editor
+   * of a shared album must not rewrite the owner's organisation). The
+   * destination needs AlbumUpdate (owner or editor of the collection).
+   */
+  private async validateAndReparent(
+    auth: AuthDto,
+    album: { id: string; kind: string; albumUsers: { role: AlbumUserRole; user: { id: string } }[] },
+    newParentId: string | null,
+  ): Promise<void> {
+    if (newParentId === album.id) {
       throw new BadRequestException('An album cannot be its own parent');
     }
 
+    if (asAlbumKind(album.kind) !== AlbumKind.Album) {
+      throw new BadRequestException('Collections and shared spaces stay at the top level');
+    }
+
+    const owner = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner);
+    if (owner?.user.id !== auth.user.id) {
+      throw new BadRequestException('Only the album owner can move it');
+    }
+
     if (newParentId !== null) {
-      // Owner-only nesting: require AlbumUpdate on the proposed new parent.
       await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [newParentId] });
+      await this.requireCollection(auth, newParentId);
     }
 
     // The descendant/cycle check runs inside reparent's transaction (atomic with
     // the parent update) to avoid a TOCTOU race between concurrent reparents.
-    await this.albumRepository.reparent(id, newParentId);
+    await this.albumRepository.reparent(album.id, newParentId);
   }
 
+  private async requireCollection(auth: AuthDto, id: string): Promise<void> {
+    const parent = await this.findOrFail(id, auth, { withAssets: false });
+    if (asAlbumKind(parent.kind) !== AlbumKind.Collection) {
+      throw new BadRequestException('Albums nest only inside a collection');
+    }
+  }
+
+  /**
+   * Deleting a collection leaves its albums standing on their own; deleting an
+   * album keeps every original file in the library. Nested legacy albums under
+   * a plain album still follow the existing cascade.
+   */
   async delete(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AlbumDelete, ids: [id] });
+    const album = await this.findOrFail(id, auth, { withAssets: false });
+    if (asAlbumKind(album.kind) === AlbumKind.Collection) {
+      for (const childId of await this.albumRepository.getChildIds(id)) {
+        await this.albumRepository.reparent(childId, null);
+      }
+    }
     await this.albumRepository.delete(id);
   }
 
