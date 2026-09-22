@@ -1,0 +1,162 @@
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { init, register, waitLocale } from 'svelte-i18n';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import SelectionBar from '$lib/components/frameleaf/SelectionBar.svelte';
+import type { BulkAsset } from '$lib/frameleaf/bulk-actions';
+
+/**
+ * The bar's contract with the library view: it never calls an endpoint, it hands an action and a
+ * payload to `onAction`, and it keeps the complete bulk set reachable by keyboard.
+ */
+describe('Frameleaf selection bar', () => {
+  const onAction = vi.fn();
+  const onClear = vi.fn();
+  const onSelectAllMatching = vi.fn();
+
+  const photo = (id: string, extra: Partial<BulkAsset> = {}): BulkAsset => ({ id, isVideo: false, ...extra });
+
+  const mount = (props: Record<string, unknown> = {}) =>
+    render(SelectionBar, {
+      props: { count: 2, assets: [photo('a'), photo('b')], onAction, onClear, ...props },
+    });
+
+  beforeAll(async () => {
+    await init({ fallbackLocale: 'en-US' });
+    register('en-US', () => import('$i18n/en.json'));
+    await waitLocale('en-US');
+  });
+
+  beforeEach(() => vi.resetAllMocks());
+
+  it('stays inert while nothing is selected', () => {
+    mount({ count: 0, assets: [] });
+    expect(screen.getByRole('region', { name: 'Selected items', hidden: true })).toHaveAttribute('inert');
+  });
+
+  it('announces the count and deselects', async () => {
+    mount();
+    expect(screen.getByText('2 selected')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: /Deselect All/i }));
+    expect(onClear).toHaveBeenCalledOnce();
+  });
+
+  it('offers everything matching only when more matches than are selected', async () => {
+    const { rerender } = render(SelectionBar, {
+      props: { count: 2, assets: [photo('a'), photo('b')], total: 2, onAction, onClear, onSelectAllMatching },
+    });
+    expect(screen.queryByRole('button', { name: /Select all/i })).not.toBeInTheDocument();
+
+    await rerender({ total: 4200 });
+    await fireEvent.click(screen.getByRole('button', { name: 'Select all 4,200' }));
+    expect(onSelectAllMatching).toHaveBeenCalledOnce();
+  });
+
+  it('dispatches a plain action without opening anything', async () => {
+    mount();
+    await fireEvent.click(screen.getByRole('button', { name: 'Favorite' }));
+    expect(onAction).toHaveBeenCalledWith('favorite');
+  });
+
+  it('collects a payload before dispatching an action that needs one', async () => {
+    mount();
+    await fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Change description' }));
+    expect(onAction).not.toHaveBeenCalled();
+
+    const description = screen.getByRole('textbox');
+    await fireEvent.input(description, { target: { value: '  Lake day  ' } });
+    await fireEvent.submit(description.closest('form')!);
+    expect(onAction).toHaveBeenCalledWith('change-description', { description: 'Lake day' });
+  });
+
+  it('groups the rest of the bulk set in the More menu, including both sensitive actions', async () => {
+    mount();
+    await fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    const expected = ['Stack', 'Tag', 'Change date', 'Archive', 'Mark Sensitive', 'Unmark Sensitive'];
+    for (const name of [...expected, 'Refresh metadata']) {
+      expect(screen.getByRole('menuitem', { name })).toBeInTheDocument();
+    }
+  });
+
+  it('carries the stack ids Unstack needs, which only the bar knows', async () => {
+    render(SelectionBar, {
+      props: {
+        count: 2,
+        assets: [photo('a', { stackId: 'stack-1' }), photo('b', { stackId: 'stack-1' })],
+        onAction,
+        onClear,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Unstack' }));
+    expect(onAction).toHaveBeenCalledWith('unstack', { stackIds: ['stack-1'] });
+  });
+
+  it('confirms a permanent delete and never a reversible one', async () => {
+    mount({ context: { trash: true } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
+    expect(onAction).not.toHaveBeenCalled();
+
+    const confirm = screen.getByRole('dialog');
+    expect(within(confirm).getByText(/cannot be undone/i)).toBeInTheDocument();
+    await fireEvent.submit(within(confirm).getByRole('button', { name: 'Delete permanently' }).closest('form')!);
+    expect(onAction).toHaveBeenCalledWith('delete-permanently', undefined);
+
+    vi.resetAllMocks();
+    mount();
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(onAction).toHaveBeenCalledWith('delete');
+  });
+
+  it('reports a running operation and offers to cancel it', async () => {
+    const onCancelOperation = vi.fn();
+    mount({
+      operations: [
+        {
+          requestId: 'request-1',
+          action: 'archive',
+          scope: { version: 1, scope: { kind: 'library' } },
+          status: 'running',
+          submittedTotal: 4200,
+          processed: 500,
+          total: 4200,
+          succeeded: 0,
+          failed: 0,
+          skipped: 0,
+          failures: [],
+          truncated: false,
+          startedAt: 0,
+        },
+      ],
+      onCancelOperation,
+    });
+    expect(screen.getByText('500 of 4,200 done')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onCancelOperation).toHaveBeenCalledWith('request-1');
+  });
+
+  it('lists the items a finished operation could not change', () => {
+    mount({
+      operations: [
+        {
+          requestId: 'request-2',
+          action: 'archive',
+          scope: { version: 1, scope: { kind: 'album' } },
+          status: 'completed',
+          submittedTotal: 3,
+          processed: 3,
+          total: 3,
+          succeeded: 2,
+          failed: 1,
+          skipped: 0,
+          failures: [{ id: 'asset-9', reasonKey: 'frameleaf_bulk_reason_no_permission' }],
+          truncated: false,
+          startedAt: 0,
+        },
+      ],
+    });
+    expect(screen.getByText('1 item did not change')).toBeInTheDocument();
+    expect(screen.getByText('asset-9')).toBeInTheDocument();
+    expect(screen.getByText('You cannot change this one')).toBeInTheDocument();
+  });
+});
