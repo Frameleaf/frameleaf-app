@@ -146,8 +146,6 @@ export const autoPlayVideo = persisted<boolean>('auto-play-video', true, {});
 
 export const alwaysLoadOriginalVideo = persisted<boolean>('always-load-original-video', false, {});
 
-export const recentAlbumsDropdown = persisted<boolean>('recent-albums-open', true, {});
-
 export const albumTreeDropdown = persisted<boolean>('album-tree-open', false, {});
 
 // Primary sidebar width (px) when expanded, and whether it is collapsed to an icon-only rail.
