@@ -45,12 +45,32 @@ export class PartnerService extends BaseService {
       .map((partner) => this.mapPartner(partner, direction));
   }
 
-  async update(auth: AuthDto, sharedById: string, dto: PartnerUpdateDto): Promise<PartnerResponseDto> {
-    await this.requireAccess({ auth, permission: Permission.PartnerUpdate, ids: [sharedById] });
-    const partnerId: PartnerIds = { sharedById, sharedWithId: auth.user.id };
+  async update(auth: AuthDto, partnerUserId: string, dto: PartnerUpdateDto): Promise<PartnerResponseDto> {
+    const hasInTimeline = dto.inTimeline !== undefined;
+    const hasShareLocation = dto.shareLocation !== undefined;
+    if (hasInTimeline === hasShareLocation) {
+      throw new BadRequestException('Specify exactly one of inTimeline or shareLocation');
+    }
 
-    const entity = await this.partnerRepository.update(partnerId, { inTimeline: dto.inTimeline });
-    return this.mapPartner(entity, PartnerDirection.SharedWith);
+    if (hasInTimeline) {
+      // recipient preference: the partner identified by `:id` shares with me
+      await this.requireAccess({ auth, permission: Permission.PartnerUpdate, ids: [partnerUserId] });
+      const partnerId: PartnerIds = { sharedById: partnerUserId, sharedWithId: auth.user.id };
+
+      const entity = await this.partnerRepository.update(partnerId, { inTimeline: dto.inTimeline });
+      return this.mapPartner(entity, PartnerDirection.SharedWith);
+    }
+
+    // sharer setting: I share with the partner identified by `:id`; only the row owned by the caller
+    // as `sharedById` can be changed, so the recipient can never grant themselves location access
+    const partnerId: PartnerIds = { sharedById: auth.user.id, sharedWithId: partnerUserId };
+    const partner = await this.partnerRepository.get(partnerId);
+    if (!partner) {
+      throw new BadRequestException('Partner not found');
+    }
+
+    const entity = await this.partnerRepository.update(partnerId, { shareLocation: dto.shareLocation });
+    return this.mapPartner(entity, PartnerDirection.SharedBy);
   }
 
   private mapPartner(partner: Partner, direction: PartnerDirection): PartnerResponseDto {
@@ -58,6 +78,6 @@ export class PartnerService extends BaseService {
     const sharedUser = direction === PartnerDirection.SharedBy ? partner.sharedWith : partner.sharedBy;
     const user = mapUser(sharedUser);
 
-    return { ...user, inTimeline: partner.inTimeline };
+    return { ...user, inTimeline: partner.inTimeline, shareLocation: partner.shareLocation };
   }
 }
