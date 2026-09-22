@@ -28237,7 +28237,6 @@
       "JobName": {
         "description": "Job name",
         "enum": [
-          "ArchiveOperation",
           "ICloudSync",
           "ForkSchemaBackfill",
           "AssetDelete",

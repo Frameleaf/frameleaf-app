@@ -886,17 +886,17 @@
       "version": 5
     },
     {
-      "bytes": 10903,
+      "bytes": 12861,
       "category": "development",
       "id": "61800603",
       "source": "docs/docs/developer/frameleaf-plan/FL-32-selected-archive.md",
-      "sourceSha256": "f6bf3a97d3d7908176068d61ac63a2f35d0678fcf724a4a7cacf48942eb48d6b",
+      "sourceSha256": "f5886ad16617e6deb804f56b0b420631650cefe6b6fe3dc192a4bab751945fb8",
       "title": "FL-32 selected-asset background archive",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61800603",
-      "version": 3,
-      "sourceBranch": "codex/FL-32-bulk-archive",
-      "sourceState": "reviewed-browser-qualified-bounded-candidate",
-      "readbackResult": "Full normalized source and history body matched live version 3 on 2026-09-21. Selected-ID candidate approved with actual PostgreSQL and authenticated browser evidence; all-matching and full FN204 remain open."
+      "version": 4,
+      "sourceBranch": "aj/FL-32-archive-drain-compatibility",
+      "sourceState": "compatibility-repair-independent-review-pending",
+      "readbackResult": "Full normalized current source plus retained prior history matched live page version 4 on 2026-09-21; 39 focused checks pass. Independent review and runtime qualification of direct durable drain remain pending; earlier browser receipts retain their exact runtime scope."
     }
   ],
   "spaceId": "61374475",
