@@ -4,7 +4,7 @@
   import { OpenQueryParam } from '$lib/constants';
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
-  import { removePartner, updatePartner, type PartnerResponseDto } from '@immich/sdk';
+  import { getPartners, PartnerDirection, removePartner, updatePartner, type PartnerResponseDto } from '@immich/sdk';
   import { toastManager } from '@immich/ui';
   import { t } from 'svelte-i18n';
 
@@ -21,7 +21,34 @@
   let confirmOpen = $state(false);
   let updating = $state(false);
 
+  /**
+   * The relation in the other direction: me sharing my library with this partner. Location sharing is
+   * the sharer's setting, so it is only offered here when that relation exists, and it is stored on
+   * that relation rather than on the one being browsed.
+   */
+  let sharedBack: PartnerResponseDto | undefined = $state();
+  let sharedBackLoaded = $state(false);
+  let shareLocation = $state(true);
+  let locationUpdating = $state(false);
+
   const possessive = $derived(/s$/i.test(partner.name.trim()) ? `${partner.name}’` : `${partner.name}’s`);
+
+  const loadSharedBack = async (partnerId: string) => {
+    sharedBackLoaded = false;
+    try {
+      const mine = await getPartners({ direction: PartnerDirection.SharedBy });
+      sharedBack = mine.find((candidate) => candidate.id === partnerId);
+      shareLocation = sharedBack?.shareLocation ?? true;
+    } catch (error) {
+      handleError(error, $t('errors.something_went_wrong'));
+    } finally {
+      sharedBackLoaded = true;
+    }
+  };
+
+  $effect(() => {
+    void loadSharedBack(partner.id);
+  });
 
   const toggleInTimeline = async (checked: boolean) => {
     updating = true;
@@ -36,6 +63,26 @@
       handleError(error, $t('errors.unable_to_change_partner_permission'));
     } finally {
       updating = false;
+    }
+  };
+
+  const toggleShareLocation = async (checked: boolean) => {
+    locationUpdating = true;
+    const previous = shareLocation;
+    shareLocation = checked;
+    try {
+      sharedBack = await updatePartner({ id: partner.id, partnerUpdateDto: { shareLocation: checked } });
+      shareLocation = sharedBack.shareLocation ?? checked;
+      toastManager.primary(
+        $t(checked ? 'frameleaf_sharing.location_shown_notice' : 'frameleaf_sharing.location_hidden_notice', {
+          values: { name: partner.name },
+        }),
+      );
+    } catch (error) {
+      shareLocation = previous;
+      handleError(error, $t('errors.unable_to_change_partner_permission'));
+    } finally {
+      locationUpdating = false;
     }
   };
 
@@ -63,20 +110,46 @@
     </div>
   </div>
 
-  <label class="ph-toggle">
-    <span>
-      <strong>{$t('show_in_timeline')}</strong>
-      <small>{$t('show_in_timeline_setting_description')}</small>
-    </span>
-    <input
-      type="checkbox"
-      role="switch"
-      aria-label={$t('show_in_timeline')}
-      checked={partner.inTimeline}
-      disabled={updating}
-      onchange={(event) => toggleInTimeline(event.currentTarget.checked)}
-    />
-  </label>
+  <div class="ph-toggles">
+    <label class="ph-toggle">
+      <span>
+        <strong>{$t('show_in_timeline')}</strong>
+        <small>{$t('show_in_timeline_setting_description')}</small>
+      </span>
+      <input
+        type="checkbox"
+        role="switch"
+        aria-label={$t('show_in_timeline')}
+        checked={partner.inTimeline}
+        disabled={updating}
+        onchange={(event) => toggleInTimeline(event.currentTarget.checked)}
+      />
+    </label>
+
+    {#if sharedBack}
+      <label class="ph-toggle">
+        <span>
+          <strong>{$t('frameleaf_sharing.share_location_title')}</strong>
+          <small>{$t('frameleaf_sharing.share_location_description', { values: { name: partner.name } })}</small>
+          {#if !shareLocation}
+            <small class="ph-note" role="status">
+              {$t('frameleaf_sharing.location_already_seen', { values: { name: partner.name } })}
+            </small>
+          {/if}
+        </span>
+        <input
+          type="checkbox"
+          role="switch"
+          aria-label={$t('frameleaf_sharing.share_location_title')}
+          checked={shareLocation}
+          disabled={locationUpdating}
+          onchange={(event) => toggleShareLocation(event.currentTarget.checked)}
+        />
+      </label>
+    {:else if sharedBackLoaded}
+      <p class="ph-hint">{$t('frameleaf_sharing.location_not_sharing_back', { values: { name: partner.name } })}</p>
+    {/if}
+  </div>
 
   <div class="ph-actions">
     <a href={Route.userSettings({ isOpen: OpenQueryParam.SHARING })}>{$t('frameleaf_sharing.sharing_settings')}</a>
@@ -118,14 +191,27 @@
     color: var(--fl-muted);
     font-size: 0.8125rem;
   }
+  .ph-toggles {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-inline-start: auto;
+  }
   .ph-toggle {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin-inline-start: auto;
   }
   .ph-toggle small {
     display: block;
+    color: var(--fl-muted);
+    font-size: 0.75rem;
+  }
+  .ph-toggle .ph-note {
+    color: var(--fl-text);
+    margin-top: 0.125rem;
+  }
+  .ph-hint {
     color: var(--fl-muted);
     font-size: 0.75rem;
   }

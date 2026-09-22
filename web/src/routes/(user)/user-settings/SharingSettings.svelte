@@ -36,6 +36,8 @@
     sharedByMe: boolean;
     sharedWithMe: boolean;
     inTimeline: boolean;
+    /** my setting towards this partner; meaningful only when `sharedByMe` */
+    shareLocation: boolean;
   };
 
   let clusterGroupId: string = $state('');
@@ -154,6 +156,7 @@
           sharedByMe: true,
           sharedWithMe: false,
           inTimeline: candidate.inTimeline ?? false,
+          shareLocation: candidate.shareLocation ?? true,
         },
       ];
     }
@@ -169,6 +172,7 @@
             sharedByMe: false,
             sharedWithMe: true,
             inTimeline: candidate.inTimeline ?? false,
+            shareLocation: true,
           },
         ];
       } else {
@@ -221,6 +225,16 @@
       partner.inTimeline = inTimeline;
     } catch (error) {
       handleError(error, $t('errors.unable_to_update_timeline_display_status'));
+    }
+  };
+
+  const handleShareLocationChanged = async (partner: PartnerSharing, shareLocation: boolean) => {
+    try {
+      await updatePartner({ id: partner.user.id, partnerUpdateDto: { shareLocation } });
+      partner.shareLocation = shareLocation;
+    } catch (error) {
+      partner.shareLocation = !shareLocation;
+      handleError(error, $t('errors.unable_to_change_partner_permission'));
     }
   };
 
@@ -369,11 +383,22 @@
                 <Icon icon={mdiCheck} />
                 {$t('partner_can_access_assets')}
               </li>
-              <li class="flex place-items-center gap-2 py-1">
-                <Icon icon={mdiCheck} />
-                {$t('partner_can_access_location')}
-              </li>
             </ul>
+
+            <!-- location sharing is on by default; the sharer turns it off per partner -->
+            <div class="mt-3">
+              <SettingSwitch
+                title={$t('frameleaf_sharing.share_location_title')}
+                subtitle={$t('frameleaf_sharing.share_location_description', { values: { name: partner.user.name } })}
+                bind:checked={partner.shareLocation}
+                onToggle={(isChecked) => handleShareLocationChanged(partner, isChecked)}
+              />
+              {#if !partner.shareLocation}
+                <Text size="tiny" color="muted" class="mt-2">
+                  {$t('frameleaf_sharing.location_already_seen', { values: { name: partner.user.name } })}
+                </Text>
+              {/if}
+            </div>
           {/if}
 
           <!-- this user is sharing assets with me -->
