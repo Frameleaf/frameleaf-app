@@ -11,6 +11,7 @@ export type AlbumMetadataSidecar = {
   parentId: string | null;
   icon: string | null;
   sortOrder: number | null;
+  kind: string;
 };
 
 export type AlbumClosureSidecar = { ancestorId: string; descendantId: string };
@@ -52,7 +53,7 @@ export class ForkAlbumMetadataRepository {
   }
 
   async applyReadMetadata<
-    T extends { id: string; icon: string | null; parentId: string | null; sortOrder: number | null },
+    T extends { id: string; icon: string | null; parentId: string | null; sortOrder: number | null; kind: string },
   >(rows: T[], kysely: Kysely<DB> = this.db): Promise<T[]> {
     if (rows.length === 0 || !(await this.shouldReadSidecar(kysely))) {
       return rows;
@@ -67,7 +68,13 @@ export class ForkAlbumMetadataRepository {
       if (!sidecar) {
         throw new Error(`Missing fork album metadata sidecar for album ${row.id}`);
       }
-      return { ...row, parentId: sidecar.parentId, icon: sidecar.icon, sortOrder: sidecar.sortOrder };
+      return {
+        ...row,
+        parentId: sidecar.parentId,
+        icon: sidecar.icon,
+        sortOrder: sidecar.sortOrder,
+        kind: sidecar.kind,
+      };
     });
   }
 
@@ -97,7 +104,8 @@ export class ForkAlbumMetadataRepository {
         id::text AS "albumId",
         "parentId"::text AS "parentId",
         icon,
-        "sortOrder"
+        "sortOrder",
+        kind
       FROM album
       WHERE id = ANY(${ids}::uuid[])
       ORDER BY id::text
@@ -111,13 +119,14 @@ export class ForkAlbumMetadataRepository {
     `.execute(kysely);
     for (const row of legacy.rows) {
       await sql`
-        INSERT INTO immich_fork.album_metadata ("albumId", "parentId", icon, "sortOrder")
-        VALUES (${row.albumId}::uuid, ${row.parentId}::uuid, ${row.icon}, ${row.sortOrder})
+        INSERT INTO immich_fork.album_metadata ("albumId", "parentId", icon, "sortOrder", kind)
+        VALUES (${row.albumId}::uuid, ${row.parentId}::uuid, ${row.icon}, ${row.sortOrder}, ${row.kind})
         ON CONFLICT ("albumId") DO UPDATE
         SET
           "parentId" = EXCLUDED."parentId",
           icon = EXCLUDED.icon,
           "sortOrder" = EXCLUDED."sortOrder",
+          kind = EXCLUDED.kind,
           "updatedAt" = now()
       `.execute(kysely);
     }
@@ -142,7 +151,7 @@ export class ForkAlbumMetadataRepository {
 
   private async getMany(ids: string[], kysely: Kysely<DB>): Promise<AlbumMetadataSidecar[]> {
     const result = await sql<AlbumMetadataSidecar>`
-      SELECT "albumId"::text AS "albumId", "parentId"::text AS "parentId", icon, "sortOrder"
+      SELECT "albumId"::text AS "albumId", "parentId"::text AS "parentId", icon, "sortOrder", kind
       FROM immich_fork.album_metadata
       WHERE "albumId" = ANY(${ids}::uuid[])
       ORDER BY "albumId"::text
