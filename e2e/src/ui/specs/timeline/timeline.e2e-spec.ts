@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import { DateTime } from 'luxon';
 import {
   Changes,
@@ -560,6 +560,52 @@ test.describe('Timeline', () => {
       await thumbnailUtils.expectInViewport(page, assetToTrash.id);
     });
   });
+  const archiveSelectedAsset = async (page: Page, assetId: string) => {
+    const receipt = {
+      id: faker.string.uuid(),
+      scope: 'selected-owned-assets',
+      count: 1,
+      cancelled: false,
+      undo: false,
+      pending: 1,
+      succeeded: 0,
+      skipped: 0,
+      revoked: 0,
+      error: 0,
+      undone: 0,
+      conflict: 0,
+    };
+    let submitted = false;
+    await page.route('**/api/archive-operations', async (route, request) => {
+      if (request.method() === 'POST') {
+        submitted = true;
+        return route.fulfill({ status: 201, json: receipt });
+      }
+      if (submitted) {
+        changes.assetArchivals.push(assetId);
+        receipt.pending = 0;
+        receipt.succeeded = 1;
+      }
+      return route.fulfill({ json: submitted ? [receipt] : [] });
+    });
+    const archive = page.waitForRequest(
+      (request) => request.url().endsWith('/api/archive-operations') && request.method() === 'POST',
+    );
+    await page.getByRole('menuitem').getByText('Archive', { exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Archive operations' });
+    await dialog.getByRole('button', { name: 'Archive 1 selected assets' }).click();
+    const request = await archive;
+    expect(request.postDataJSON()).toEqual({
+      scope: 'selected-owned-assets',
+      ids: [assetId],
+      requestKey: expect.stringMatching(/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i),
+    });
+    await expect(dialog.getByLabel('Archive result')).toContainText('0 archived · 1 pending');
+    await dialog.getByRole('button', { name: 'Refresh results' }).click();
+    await expect(dialog.getByLabel('Archive result')).toContainText('1 archived · 0 pending');
+    await dialog.getByRole('button', { name: 'Reload library' }).click();
+    await timelineUtils.waitForTimelineLoad(page);
+  };
   test.describe('/archive', () => {
     test('open /photos, archive photo, open /archive, unarchive', async ({ page }) => {
       await pageUtils.openPhotosPage(page);
@@ -567,21 +613,7 @@ test.describe('Timeline', () => {
       await thumbnailUtils.withAssetId(page, assetToArchive.id).hover();
       await thumbnailUtils.selectButton(page, assetToArchive.id).click();
       await page.getByLabel('Menu').click();
-      const archive = pageRoutePromise(page, '**/api/assets', async (route, request) => {
-        const requestJson = request.postDataJSON();
-        if (requestJson.visibility !== 'archive') {
-          return await route.continue();
-        }
-        await route.fulfill({
-          status: 204,
-        });
-        changes.assetArchivals.push(...requestJson.ids);
-      });
-      await page.getByRole('menuitem').getByText('Archive').click();
-      await expect(archive).resolves.toEqual({
-        visibility: 'archive',
-        ids: [assetToArchive.id],
-      });
+      await archiveSelectedAsset(page, assetToArchive.id);
       await expect(thumbnailUtils.withAssetId(page, assetToArchive.id)).toHaveCount(0);
       await page.getByRole('link').getByText('Archive').click();
       await thumbnailUtils.expectInViewport(page, assetToArchive.id);
@@ -660,21 +692,7 @@ test.describe('Timeline', () => {
       await thumbnailUtils.withAssetId(page, assetToArchive.id).hover();
       await thumbnailUtils.selectButton(page, assetToArchive.id).click();
       await page.getByLabel('Menu').click();
-      const archive = pageRoutePromise(page, '**/api/assets', async (route, request) => {
-        const requestJson = request.postDataJSON();
-        if (requestJson.visibility !== 'archive') {
-          return await route.continue();
-        }
-        changes.assetArchivals.push(...requestJson.ids);
-        await route.fulfill({
-          status: 204,
-        });
-      });
-      await page.getByRole('menuitem').getByText('Archive').click();
-      await expect(archive).resolves.toEqual({
-        visibility: 'archive',
-        ids: [assetToArchive.id],
-      });
+      await archiveSelectedAsset(page, assetToArchive.id);
       await thumbnailUtils.expectThumbnailIsArchive(page, assetToArchive.id);
       await page.locator('#control-bar').getByLabel('Close').click();
       await page.getByRole('link').getByText('Archive').click();
