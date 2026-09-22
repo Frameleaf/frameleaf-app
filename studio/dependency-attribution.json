@@ -157,6 +157,26 @@
       "source": "Full source revision in integrity-verified published package/__commit.txt; no runtime native/WASM notice qualification",
       "sourceUrl": "https://raw.githubusercontent.com/microsoft/onnxruntime/b39e14432259d5f579f34c3e338f1f70aa368f01/LICENSE",
       "sourceRevision": "b39e14432259d5f579f34c3e338f1f70aa368f01"
+    },
+    {
+      "component": "onnxruntime-common 1.21.0 package source",
+      "id": "onnx-common-1-21-0-license",
+      "path": "notices/onnx-common-1-21-0-license.txt",
+      "scope": "supplemental-package-notice",
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+      "source": "Official exact-version release commit; all 21 shipped TypeScript files and package.json match the integrity-verified npm archive byte-for-byte.",
+      "sourceUrl": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/LICENSE",
+      "sourceRevision": "e0b66cad282043d4377cea5269083f17771b6dfc"
+    },
+    {
+      "component": "onnxruntime-common 1.24.3 package source",
+      "id": "onnx-common-1-24-3-license",
+      "path": "notices/onnx-common-1-24-3-license.txt",
+      "scope": "supplemental-package-notice",
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+      "source": "Official exact-version release commit; all 21 shipped TypeScript files and package.json match the integrity-verified npm archive byte-for-byte.",
+      "sourceUrl": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/LICENSE",
+      "sourceRevision": "3a728b75062256951b6e19ce718907cf1a1d4cf0"
     }
   ],
   "bundledNotices": [
@@ -5682,7 +5702,7 @@
       "resolved": "https://registry.npmjs.org/guid-typescript/-/guid-typescript-1.0.9.tgz",
       "sourceRevision": "1870de806c3db7ba46c5b8a1387c60fc9dda9284",
       "noticeIds": [],
-      "unresolved": "Integrity-verified published archive contains no full license/NOTICE text. Advertised immutable repository gitHead source archive and LICENSE returned HTTP 404; a generic SPDX template is not substituted.",
+      "unresolved": "Verified package archive contains no full license text or copyright header. Authoritative repository redirect resolves to snico-dev/guid-typescript, but its advertised immutable gitHead and LICENSE still return HTTP 404; exact-version source notice remains unavailable.",
       "evidence": [
         {
           "path": "package-notice-evidence/guid-typescript-1.0.9.json",
@@ -5693,6 +5713,16 @@
           "path": "package-notice-evidence/source-receipt.json",
           "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
           "sourceUrl": "https://registry.npmjs.org/guid-typescript/-/guid-typescript-1.0.9.tgz"
+        },
+        {
+          "path": "package-notice-evidence/onnx-stable-source-bindings.json",
+          "sha256": "7af37336ccd55dd7a9633b564bda90b3361f2ceca3e7f140a9f9cd0f32c7bcc7",
+          "sourceUrl": "https://registry.npmjs.org/guid-typescript/-/guid-typescript-1.0.9.tgz"
+        },
+        {
+          "path": "package-notice-evidence/guid-repository.json",
+          "sha256": "62c5ce55ffb93f107bd79e8f02e85f938ac02f0340a08d944dfd848811420cdf",
+          "sourceUrl": "https://api.github.com/repos/NicolasDeveloper/guid-typescript"
         }
       ]
     },
@@ -5714,6 +5744,11 @@
           "path": "package-notice-evidence/source-receipt.json",
           "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
           "sourceUrl": "https://registry.npmjs.org/html-parse-stringify/-/html-parse-stringify-3.0.1.tgz"
+        },
+        {
+          "path": "package-notice-evidence/onnx-stable-source-bindings.json",
+          "sha256": "7af37336ccd55dd7a9633b564bda90b3361f2ceca3e7f140a9f9cd0f32c7bcc7",
+          "sourceUrl": "https://registry.npmjs.org/html-parse-stringify/-/html-parse-stringify-3.0.1.tgz"
         }
       ]
     },
@@ -5722,9 +5757,11 @@
       "version": "1.21.0",
       "integrity": "sha512-Q632iLLrtCAVOTO65dh2+mNbQir/QNTVBG3h/QdZBpns7mZ0RYbLRBgGABPbpU9351AgYy7SJf1WaeVwMrBFPQ==",
       "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.21.0.tgz",
-      "sourceRevision": null,
-      "noticeIds": [],
-      "unresolved": "Integrity-verified stable package archive contains neither full notice text nor __commit.txt; published exact-version metadata has no gitHead. Immutable source-to-package license binding remains unresolved.",
+      "sourceRevision": "e0b66cad282043d4377cea5269083f17771b6dfc",
+      "noticeIds": [
+        "onnx-common-1-21-0-license"
+      ],
+      "unresolved": null,
       "evidence": [
         {
           "path": "package-notice-evidence/onnxruntime-common-1.21.0.json",
@@ -5735,6 +5772,21 @@
           "path": "package-notice-evidence/source-receipt.json",
           "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
           "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.21.0.tgz"
+        },
+        {
+          "path": "package-notice-evidence/onnx-1.21.0-ref.json",
+          "sha256": "b1d29768c97011dd604a6ea9c22f564907e1dce72289e2fd7a89198a3d0721bc",
+          "sourceUrl": "https://api.github.com/repos/microsoft/onnxruntime/git/ref/tags/v1.21.0"
+        },
+        {
+          "path": "package-notice-evidence/onnx-stable-source-bindings.json",
+          "sha256": "7af37336ccd55dd7a9633b564bda90b3361f2ceca3e7f140a9f9cd0f32c7bcc7",
+          "sourceUrl": "https://github.com/microsoft/onnxruntime/tree/e0b66cad282043d4377cea5269083f17771b6dfc/js/common"
+        },
+        {
+          "path": "package-notice-evidence/onnx-1.21.0-tag.json",
+          "sha256": "f9468cb1b7016db5d4811fcf0f39ea95c571b948a8112ec1ea0789d00715ed93",
+          "sourceUrl": "https://api.github.com/repos/microsoft/onnxruntime/git/tags/6d69a05a6b391997b34311b3df9b32b05af02764"
         }
       ]
     },
@@ -5813,9 +5865,11 @@
       "version": "1.24.3",
       "integrity": "sha512-GeuPZO6U/LBJXvwdaqHbuUmoXiEdeCjWi/EG7Y1HNnDwJYuk6WUbNXpF6luSUY8yASul3cmUlLGrCCL1ZgVXqA==",
       "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.3.tgz",
-      "sourceRevision": null,
-      "noticeIds": [],
-      "unresolved": "Integrity-verified stable package archive contains neither full notice text nor __commit.txt; published exact-version metadata has no gitHead. Immutable source-to-package license binding remains unresolved.",
+      "sourceRevision": "3a728b75062256951b6e19ce718907cf1a1d4cf0",
+      "noticeIds": [
+        "onnx-common-1-24-3-license"
+      ],
+      "unresolved": null,
       "evidence": [
         {
           "path": "package-notice-evidence/onnxruntime-common-1.24.3.json",
@@ -5826,6 +5880,16 @@
           "path": "package-notice-evidence/source-receipt.json",
           "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
           "sourceUrl": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.3.tgz"
+        },
+        {
+          "path": "package-notice-evidence/onnx-1.24.3-ref.json",
+          "sha256": "a7161f54e7d681ce946e8443c27365a2e7b3530c8abc1b7f57fd011a131e0e58",
+          "sourceUrl": "https://api.github.com/repos/microsoft/onnxruntime/git/ref/tags/v1.24.3"
+        },
+        {
+          "path": "package-notice-evidence/onnx-stable-source-bindings.json",
+          "sha256": "7af37336ccd55dd7a9633b564bda90b3361f2ceca3e7f140a9f9cd0f32c7bcc7",
+          "sourceUrl": "https://github.com/microsoft/onnxruntime/tree/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common"
         }
       ]
     },
@@ -5929,7 +5993,7 @@
       "resolved": "https://registry.npmjs.org/react-remove-scroll-bar/-/react-remove-scroll-bar-2.3.8.tgz",
       "sourceRevision": "b3b1287aad81def2e2ae707274b74531b61ddbaf",
       "noticeIds": [],
-      "unresolved": "Integrity-verified published archive contains no full license/NOTICE text. Advertised immutable repository gitHead source archive and LICENSE returned HTTP 404; a generic SPDX template is not substituted.",
+      "unresolved": "Verified 2.3.8 archive contains no full license text or copyright header. Advertised gitHead is unavailable through the official Git API; official tag inventory has no 2.3.8 tag (latest listed v2.3.7). No different-version notice is substituted.",
       "evidence": [
         {
           "path": "package-notice-evidence/react-remove-scroll-bar-2.3.8.json",
@@ -5940,6 +6004,16 @@
           "path": "package-notice-evidence/source-receipt.json",
           "sha256": "2c793e21f6abd32725865d3e3d6014d2a59a5bff168c3991de7b1f074f29f1ca",
           "sourceUrl": "https://registry.npmjs.org/react-remove-scroll-bar/-/react-remove-scroll-bar-2.3.8.tgz"
+        },
+        {
+          "path": "package-notice-evidence/onnx-stable-source-bindings.json",
+          "sha256": "7af37336ccd55dd7a9633b564bda90b3361f2ceca3e7f140a9f9cd0f32c7bcc7",
+          "sourceUrl": "https://registry.npmjs.org/react-remove-scroll-bar/-/react-remove-scroll-bar-2.3.8.tgz"
+        },
+        {
+          "path": "package-notice-evidence/scrollbar-tags.json",
+          "sha256": "46ec48063569e3984564952edaf91b52ed7aa38812279e4588e61743f8392d7a",
+          "sourceUrl": "https://api.github.com/repos/theKashey/react-remove-scroll-bar/git/matching-refs/tags/"
         }
       ]
     },
