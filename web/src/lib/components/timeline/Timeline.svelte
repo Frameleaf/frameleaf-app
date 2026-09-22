@@ -1,6 +1,17 @@
 <script lang="ts">
   import { afterNavigate, beforeNavigate } from '$app/navigation';
   import { page } from '$app/state';
+  import '$lib/frameleaf/tokens.css';
+  import LibraryLayoutControls from '$lib/components/frameleaf/LibraryLayoutControls.svelte';
+  import LibraryWorkInspector from '$lib/components/frameleaf/LibraryWorkInspector.svelte';
+  import {
+    captureLibraryAnchor,
+    restoreLibraryAnchor,
+    normalizeLibraryLayout,
+    type LibraryLayout,
+  } from '$lib/frameleaf/library-layout';
+  import { frameleafShell, libraryLayout, libraryInspectorCollapsed } from '$lib/stores/preferences.store';
+  import { Theme as UiTheme, themeManager } from '@immich/ui';
   import Thumbnail from '$lib/components/assets/thumbnail/Thumbnail.svelte';
   import Month from '$lib/components/timeline/Month.svelte';
   import Scrubber from '$lib/components/timeline/Scrubber.svelte';
@@ -29,6 +40,7 @@
   import type { UpdatePayload } from 'vite';
 
   interface Props {
+    libraryLayoutsEnabled?: boolean;
     isSelectionMode?: boolean;
     singleSelect?: boolean;
     /** `true` if this asset grid is responds to navigation events; if `true`, then look at the
@@ -66,6 +78,7 @@
   }
 
   let {
+    libraryLayoutsEnabled = false,
     isSelectionMode = false,
     singleSelect = false,
     enableRouting,
@@ -112,17 +125,34 @@
   const maxMd = $derived(mediaQueryManager.maxMd);
   const usingMobileDevice = $derived(mediaQueryManager.pointerCoarse);
 
+  const libraryPresentation = $derived(libraryLayoutsEnabled && $frameleafShell);
+  const presentation = $derived(normalizeLibraryLayout($libraryLayout));
+  let presentationVersion = 0;
+  const changePresentation = async (next?: LibraryLayout) => {
+    const version = ++presentationVersion;
+    const anchor = captureLibraryAnchor(timelineManager);
+    if (next) {
+      libraryLayout.set(next);
+    } else {
+      libraryInspectorCollapsed.set(!$libraryInspectorCollapsed);
+    }
+    await tick();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    if (version === presentationVersion) {
+      restoreLibraryAnchor(timelineManager, anchor);
+    }
+  };
+
   $effect(() => {
-    const layoutOptions = maxMd
-      ? {
-          rowHeight: 100,
-          headerHeight: 32,
-        }
-      : {
-          rowHeight: 235,
-          headerHeight: 48,
-        };
-    timelineManager.setLayoutOptions(layoutOptions);
+    const mode = libraryPresentation ? presentation : undefined;
+    timelineManager.libraryLayout = mode;
+    timelineManager.setLayoutOptions({
+      rowHeight: mode === 'browse' ? (maxMd ? 100 : 160) : mode === 'work' ? (maxMd ? 100 : 130) : maxMd ? 100 : 235,
+      headerHeight: maxMd ? 32 : 48,
+      gap: mode ? 8 : 12,
+    });
+    // A change in presentation can require new geometry even when dimensions match.
+    untrack(() => timelineManager.refreshLayout());
   });
 
   $effect(() => {
@@ -592,142 +622,168 @@
   {onEscape}
 />
 
-{#if timelineManager.months.length > 0}
-  <Scrubber
-    {timelineManager}
-    height={timelineManager.viewportHeight}
-    timelineTopOffset={timelineManager.topSectionHeight}
-    timelineBottomOffset={timelineManager.bottomSectionHeight}
-    {timelineScrollPercent}
-    {viewportTopMonthScrollPercent}
-    {viewportTopMonth}
-    {onScrub}
-    bind:scrubberWidth
-    onScrubKeyDown={(evt) => {
-      evt.preventDefault();
-      let amount = keyboardManager.shift ? 500 : 50;
-      if (evt.key === 'ArrowUp') {
-        amount = -amount;
-        if (keyboardManager.shift) {
-          scrollableElement?.scrollBy({ top: amount, behavior: 'smooth' });
-        }
-      } else if (evt.key === 'ArrowDown') {
-        scrollableElement?.scrollBy({ top: amount, behavior: 'smooth' });
-      }
-    }}
-  />
-{/if}
-
-<!-- Right margin MUST be equal to the width of scrubber -->
-<section
-  id="asset-grid"
-  class={['h-full scrollbar-hidden overflow-y-auto outline-none', { 'm-0': isEmpty }, { 'ms-0': !isEmpty }]}
-  style:margin-inline-end={(usingMobileDevice ? 0 : scrubberWidth) + 'px'}
-  tabindex="-1"
-  bind:clientHeight={timelineManager.viewportHeight}
-  bind:clientWidth={timelineManager.viewportWidth}
-  bind:this={scrollableElement}
-  onscroll={() => (handleTimelineScroll(), timelineManager.updateSlidingWindow(), updateIsScrolling())}
+<div
+  class:frameleaf={libraryPresentation}
+  class="library-presentation"
+  data-theme={themeManager.value === UiTheme.Dark ? 'dark' : 'light'}
+  data-layout={libraryPresentation ? presentation : undefined}
 >
-  <section
-    bind:this={timelineElement}
-    id="virtual-timeline"
-    class:invisible
-    style:height={timelineManager.totalViewerHeight + 'px'}
-  >
-    <section
-      bind:clientHeight={timelineManager.topSectionHeight}
-      class:invisible
-      style:position="absolute"
-      style:left="0"
-      style:right="0"
-    >
-      {@render children?.()}
-      {#if isEmpty}
-        <!-- (optional) empty placeholder -->
-        {@render empty?.()}
+  {#if libraryPresentation}
+    <LibraryLayoutControls
+      layout={presentation}
+      collapsed={$libraryInspectorCollapsed}
+      onchange={(next) => void changePresentation(next)}
+      ontoggle={() => void changePresentation()}
+    />
+  {/if}
+  <div class="library-content">
+    <div class="library-grid">
+      {#if timelineManager.months.length > 0}
+        <Scrubber
+          {timelineManager}
+          height={timelineManager.viewportHeight}
+          timelineTopOffset={timelineManager.topSectionHeight}
+          timelineBottomOffset={timelineManager.bottomSectionHeight}
+          {timelineScrollPercent}
+          {viewportTopMonthScrollPercent}
+          {viewportTopMonth}
+          {onScrub}
+          bind:scrubberWidth
+          onScrubKeyDown={(evt) => {
+            evt.preventDefault();
+            let amount = keyboardManager.shift ? 500 : 50;
+            if (evt.key === 'ArrowUp') {
+              amount = -amount;
+              if (keyboardManager.shift) {
+                scrollableElement?.scrollBy({ top: amount, behavior: 'smooth' });
+              }
+            } else if (evt.key === 'ArrowDown') {
+              scrollableElement?.scrollBy({ top: amount, behavior: 'smooth' });
+            }
+          }}
+        />
       {/if}
-    </section>
 
-    {#each timelineManager.months as timelineMonth (timelineMonth.viewId)}
-      {@const isInOrNearViewport = timelineMonth.isInOrNearViewport}
-      {@const absoluteHeight = timelineMonth.top}
-
-      {#if !timelineMonth.isLoaded}
-        <div
-          style:height={timelineMonth.height + 'px'}
-          style:position="absolute"
-          style:transform={`translate3d(0,${absoluteHeight}px,0)`}
-          style:width="100%"
+      <!-- Right margin MUST be equal to the width of scrubber -->
+      <section
+        id="asset-grid"
+        class={['h-full scrollbar-hidden overflow-y-auto outline-none', { 'm-0': isEmpty }, { 'ms-0': !isEmpty }]}
+        style:margin-inline-end={(usingMobileDevice ? 0 : scrubberWidth) + 'px'}
+        tabindex="-1"
+        bind:clientHeight={timelineManager.viewportHeight}
+        bind:clientWidth={timelineManager.viewportWidth}
+        bind:this={scrollableElement}
+        onscroll={() => (handleTimelineScroll(), timelineManager.updateSlidingWindow(), updateIsScrolling())}
+      >
+        <section
+          bind:this={timelineElement}
+          id="virtual-timeline"
+          class:invisible
+          style:height={timelineManager.totalViewerHeight + 'px'}
         >
-          <Skeleton {invisible} height={timelineMonth.height} title={timelineMonth.title} />
-        </div>
-      {:else if isInOrNearViewport}
-        <div
-          class="timeline-month"
-          style:height={timelineMonth.height + 'px'}
-          style:position="absolute"
-          style:transform={`translate3d(0,${absoluteHeight}px,0)`}
-          style:width="100%"
-        >
-          <Month
-            {assetInteraction}
-            {customThumbnailLayout}
-            {singleSelect}
-            {timelineMonth}
-            manager={timelineManager}
-            onTimelineDaySelect={handleGroupSelect}
+          <section
+            bind:clientHeight={timelineManager.topSectionHeight}
+            class:invisible
+            style:position="absolute"
+            style:left="0"
+            style:right="0"
           >
-            {#snippet thumbnail({ asset, position, timelineDay, groupIndex })}
-              {@const isAssetSelectionCandidate = assetInteraction.hasSelectionCandidate(asset.id)}
-              {@const isAssetSelected =
-                assetInteraction.hasSelectedAsset(asset.id) || timelineManager.albumAssets.has(asset.id)}
-              {@const isAssetDisabled = timelineManager.albumAssets.has(asset.id)}
-              <Thumbnail
-                showStackedIcon={withStacked}
-                {showArchiveIcon}
-                {asset}
-                {albumUsers}
-                {groupIndex}
-                onClick={(asset) => {
-                  if (typeof onThumbnailClick === 'function') {
-                    onThumbnailClick(asset, timelineManager, timelineDay, _onClick);
-                  } else {
-                    _onClick(timelineManager, timelineDay.getAssets(), timelineDay.groupTitle, asset);
-                  }
-                }}
-                onSelect={() => {
-                  if (isSelectionMode || assetInteraction.selectionActive) {
-                    assetSelectHandler(timelineManager, asset, timelineDay.getAssets(), timelineDay.groupTitle);
-                    return;
-                  }
-                  void onSelectAssets(asset);
-                }}
-                onMouseEvent={() => handleSelectAssetCandidates(asset)}
-                onPreview={isSelectionMode || assetInteraction.selectionActive
-                  ? (asset) => void navigate({ targetRoute: 'current', assetId: asset.id })
-                  : undefined}
-                selected={isAssetSelected}
-                selectionCandidate={isAssetSelectionCandidate}
-                disabled={isAssetDisabled}
-                thumbnailWidth={position.width}
-                thumbnailHeight={position.height}
-              />
-            {/snippet}
-          </Month>
-        </div>
-      {/if}
-    {/each}
-    <!-- spacer for leadout -->
-    <div
-      style:height={timelineManager.bottomSectionHeight + 'px'}
-      style:position="absolute"
-      style:left="0"
-      style:right="0"
-      style:transform={`translate3d(0,${timelineManager.topSectionHeight + timelineManager.bodySectionHeight}px,0)`}
-    ></div>
-  </section>
-</section>
+            {@render children?.()}
+            {#if isEmpty}
+              <!-- (optional) empty placeholder -->
+              {@render empty?.()}
+            {/if}
+          </section>
+
+          {#each timelineManager.months as timelineMonth (timelineMonth.viewId)}
+            {@const isInOrNearViewport = timelineMonth.isInOrNearViewport}
+            {@const absoluteHeight = timelineMonth.top}
+
+            {#if !timelineMonth.isLoaded}
+              <div
+                style:height={timelineMonth.height + 'px'}
+                style:position="absolute"
+                style:transform={`translate3d(0,${absoluteHeight}px,0)`}
+                style:width="100%"
+              >
+                <Skeleton {invisible} height={timelineMonth.height} title={timelineMonth.title} />
+              </div>
+            {:else if isInOrNearViewport}
+              <div
+                class="timeline-month"
+                style:height={timelineMonth.height + 'px'}
+                style:position="absolute"
+                style:transform={`translate3d(0,${absoluteHeight}px,0)`}
+                style:width="100%"
+              >
+                <Month
+                  {assetInteraction}
+                  {customThumbnailLayout}
+                  {singleSelect}
+                  {timelineMonth}
+                  manager={timelineManager}
+                  onTimelineDaySelect={handleGroupSelect}
+                >
+                  {#snippet thumbnail({ asset, position, timelineDay, groupIndex })}
+                    {@const isAssetSelectionCandidate = assetInteraction.hasSelectionCandidate(asset.id)}
+                    {@const isAssetSelected =
+                      assetInteraction.hasSelectedAsset(asset.id) || timelineManager.albumAssets.has(asset.id)}
+                    {@const isAssetDisabled = timelineManager.albumAssets.has(asset.id)}
+                    <Thumbnail
+                      showStackedIcon={withStacked}
+                      {showArchiveIcon}
+                      {asset}
+                      {albumUsers}
+                      {groupIndex}
+                      onClick={(asset) => {
+                        if (typeof onThumbnailClick === 'function') {
+                          onThumbnailClick(asset, timelineManager, timelineDay, _onClick);
+                        } else {
+                          _onClick(timelineManager, timelineDay.getAssets(), timelineDay.groupTitle, asset);
+                        }
+                      }}
+                      onSelect={() => {
+                        if (isSelectionMode || assetInteraction.selectionActive) {
+                          assetSelectHandler(timelineManager, asset, timelineDay.getAssets(), timelineDay.groupTitle);
+                          return;
+                        }
+                        void onSelectAssets(asset);
+                      }}
+                      onMouseEvent={() => handleSelectAssetCandidates(asset)}
+                      onPreview={isSelectionMode || assetInteraction.selectionActive
+                        ? (asset) => void navigate({ targetRoute: 'current', assetId: asset.id })
+                        : undefined}
+                      selected={isAssetSelected}
+                      selectionCandidate={isAssetSelectionCandidate}
+                      disabled={isAssetDisabled}
+                      thumbnailWidth={position.width}
+                      thumbnailHeight={position.height}
+                    />
+                  {/snippet}
+                </Month>
+              </div>
+            {/if}
+          {/each}
+          <!-- spacer for leadout -->
+          <div
+            style:height={timelineManager.bottomSectionHeight + 'px'}
+            style:position="absolute"
+            style:left="0"
+            style:right="0"
+            style:transform={`translate3d(0,${timelineManager.topSectionHeight + timelineManager.bodySectionHeight}px,0)`}
+          ></div>
+        </section>
+      </section>
+    </div>
+    {#if libraryPresentation && presentation === 'work' && !$libraryInspectorCollapsed}
+      <LibraryWorkInspector
+        assets={assetInteraction.assets}
+        count={timelineManager.assetCount}
+        onopen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
+      />
+    {/if}
+  </div>
+</div>
 
 <Portal target="body">
   {#if assetViewerManager.isViewing}
@@ -736,6 +792,29 @@
 </Portal>
 
 <style>
+  .library-presentation {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .library-content {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+  .library-grid {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+  @media (max-width: 767px) {
+    .library-content {
+      flex-direction: column;
+    }
+  }
+
   #asset-grid {
     contain: strict;
     scrollbar-width: none;

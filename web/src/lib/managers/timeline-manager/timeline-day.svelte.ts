@@ -1,5 +1,6 @@
 import { AssetOrder, TimeBucketDateType } from '@immich/sdk';
 import { SvelteSet } from 'svelte/reactivity';
+import { contactSheetPositions } from '$lib/frameleaf/library-layout';
 import type { CommonLayoutOptions, CommonPosition } from '$lib/utils/layout-utils';
 import { getJustifiedLayoutFromAssets } from '$lib/utils/layout-utils';
 import { getOrderingDate, plainDateTimeCompare } from '$lib/utils/timeline-util';
@@ -171,11 +172,32 @@ export class TimelineDay {
     }
     const assets = this.viewerAssets.map((viewerAsset) => viewerAsset.asset!);
     const geometry = getJustifiedLayoutFromAssets(assets, options);
-    this.width = geometry.containerWidth;
-    this.height = assets.length === 0 ? 0 : geometry.containerHeight;
-    // TODO: lazily get positions instead of loading them all here
+    const presentation = this.timelineMonth.timelineManager.libraryLayout;
+    let positions = assets.map((_, index) => geometry.getPosition(index));
+    if (presentation === 'browse' || presentation === 'work') {
+      positions = contactSheetPositions(assets.length, options);
+    } else if (
+      presentation === 'timeline' &&
+      geometry.containerWidth > 0 &&
+      geometry.containerWidth < options.rowWidth
+    ) {
+      // A short day fills the photo area rather than sharing its row with a different date.
+      const scale = options.rowWidth / geometry.containerWidth;
+      positions = positions.map(({ top, left, width, height }) => ({
+        top: top * scale,
+        left: left * scale,
+        width: width * scale,
+        height: height * scale,
+      }));
+    }
+    this.width = presentation ? options.rowWidth : geometry.containerWidth;
+    let presentationHeight = 0;
+    for (const position of positions) {
+      presentationHeight = Math.max(presentationHeight, position.top + position.height);
+    }
+    this.height = assets.length === 0 ? 0 : presentation ? presentationHeight : geometry.containerHeight;
     for (let i = 0; i < this.viewerAssets.length; i++) {
-      this.viewerAssets[i].position = geometry.getPosition(i);
+      this.viewerAssets[i].position = positions[i];
     }
     this.updateAssetBoundaries();
   }

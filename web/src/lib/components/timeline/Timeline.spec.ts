@@ -1,7 +1,8 @@
-import { waitFor } from '@testing-library/svelte';
+import { fireEvent, waitFor } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { AssetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
 import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
+import { frameleafShell, libraryLayout, libraryInspectorCollapsed } from '$lib/stores/preferences.store';
 import { fromISODateTimeUTCToObject } from '$lib/utils/timeline-util';
 import { renderWithTooltips } from '$tests/helpers';
 import { timelineAssetFactory, toResponseDto } from '@test-data/factories/asset-factory';
@@ -107,4 +108,41 @@ describe('Timeline delayed mounting', () => {
     });
     await waitFor(() => expect(container.querySelector('#virtual-timeline')).not.toHaveClass('invisible'));
   });
+});
+
+it('switches real borrowed presentation without destroying the manager or clearing selected media', async () => {
+  frameleafShell.set(true);
+  libraryLayout.set('timeline');
+  libraryInspectorCollapsed.set(false);
+  sdkMock.getTimeBuckets.mockResolvedValue([]);
+  const manager = new TimelineManager();
+  const selection = new AssetMultiSelectManager();
+  const asset = timelineAssetFactory.build({ city: 'Synthetic City', isVideo: false });
+  selection.selectAsset(asset);
+  const destroy = vi.spyOn(manager, 'destroy');
+  const view = renderWithTooltips(Timeline, {
+    enableRouting: false,
+    timelineManager: manager,
+    manageTimelineLifecycle: false,
+    libraryLayoutsEnabled: true,
+    assetInteraction: selection,
+  });
+  await fireEvent.click(view.getByRole('button', { name: 'Browse' }));
+  await waitFor(() => expect(manager.libraryLayout).toBe('browse'));
+  expect(view.queryByRole('complementary', { name: 'Selection inspector' })).not.toBeInTheDocument();
+  await fireEvent.click(view.getByRole('button', { name: 'Work' }));
+  expect(view.getByRole('complementary', { name: 'Selection inspector' })).toHaveTextContent('Synthetic City');
+  await fireEvent.click(view.getByRole('button', { name: 'Hide inspector' }));
+  expect(view.queryByRole('complementary', { name: 'Selection inspector' })).not.toBeInTheDocument();
+  expect(manager.libraryLayout).toBe('work');
+  expect(selection.assets).toEqual([asset]);
+  frameleafShell.set(false);
+  await waitFor(() => expect(view.queryByRole('group', { name: 'Library layout' })).not.toBeInTheDocument());
+  expect(manager.libraryLayout).toBeUndefined();
+  expect(destroy).not.toHaveBeenCalled();
+  view.unmount();
+  selection.destroy();
+  manager.destroy();
+  libraryLayout.set('timeline');
+  libraryInspectorCollapsed.set(false);
 });
