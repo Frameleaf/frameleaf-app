@@ -666,9 +666,11 @@
     >
       {#if showDetailPanel}
         <!--
-          FL-35 stops at the viewer's media sources, navigation and actions. The panel's
-          inline metadata edits and enrichment card are FL-36, and the people and face
-          edits are FL-38; both continue to live inside DetailPanel.
+          FL-35 stops at the viewer's media sources, navigation and actions. FL-36 rebuilt
+          the panel itself — the inline description, date and timezone, location, tag and
+          rating edits, the enrichment card and the file, path and checksum details — in
+          place, so there is no second panel and no opt-in switch between them. The people
+          and face edits are FL-38 and continue to live inside DetailPanel.
         -->
         <DetailPanel {asset} currentAlbum={album} {onAssetUpdate} {onAssetSuppressed} />
       {:else if assetViewerManager.isShowEditor}
