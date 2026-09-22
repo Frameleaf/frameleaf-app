@@ -331,6 +331,12 @@
     }
   });
 
+  /**
+   * FL-35: the viewer's filmstrip shows the same authorized list this gallery navigates,
+   * so it can never reach an asset the grid itself would not open.
+   */
+  const filmstripAssets = $derived(navigationAssets.map((asset) => toTimelineAsset(asset)));
+
   const assetCursor = $derived<AssetCursor>({
     current: assetViewerManager.asset!,
     nextAsset: getNextAsset(navigationAssets, assetViewerManager.asset),
@@ -402,6 +408,7 @@
           assetViewerManager.showAssetViewer(false);
           handlePromiseError(navigate({ targetRoute: 'current', assetId: null }));
         }}
+        {filmstripAssets}
       />
     {/await}
   </Portal>
