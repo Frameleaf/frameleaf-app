@@ -40,6 +40,7 @@ import {
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
+import { applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
 import {
   getAssetFiles,
   getDimensions,
@@ -139,7 +140,11 @@ export class AssetService extends BaseService {
       return mapAsset(asset, { stripMetadata: true, withStack: true, auth });
     }
 
-    const data = mapAsset(asset, { withStack: true, auth });
+    // a sharer who hides locations from this viewer never hands over coordinates or place names
+    const [data] = await applyPartnerLocationPolicy([mapAsset(asset, { withStack: true, auth })], {
+      userId: auth.user.id,
+      repository: this.partnerRepository,
+    });
 
     if (auth.sharedLink) {
       delete data.owner;
