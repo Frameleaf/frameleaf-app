@@ -2,7 +2,12 @@ import { UnauthorizedException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import { SearchFilter, isAlbumConfined, isFullyAlbumConfined } from 'src/dtos/search.dto.js';
 import { AssetVisibility } from 'src/enum.js';
-import { applyLockedVisibilityPolicy, collectFilterIds } from 'src/utils/search-filter.js';
+import {
+  applyLockedVisibilityPolicy,
+  collectFilterIds,
+  filterUsesLocation,
+  usesLocationFilter,
+} from 'src/utils/search-filter.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 
 const elevatedAuth = () => AuthFactory.from().session({ hasElevatedPermission: true }).build();
@@ -82,6 +87,27 @@ describe(collectFilterIds.name, () => {
     const personId = '00000000-0000-4000-8000-00000000000b';
     const filter = { albumIds: { any: [albumId] }, personIds: { any: [personId] } };
     expect(collectFilterIds(filter, 'personIds')).toEqual([personId]);
+  });
+});
+
+describe(filterUsesLocation.name, () => {
+  it('should detect a place condition on the top level or in any branch', () => {
+    expect(filterUsesLocation({ city: { eq: 'Oslo' } })).toBe(true);
+    expect(filterUsesLocation({ or: [{ isFavorite: { eq: true } }, { country: { eq: 'Norway' } }] })).toBe(true);
+    expect(filterUsesLocation({ state: { eq: null } })).toBe(true);
+  });
+
+  it('should ignore filters without a place condition', () => {
+    expect(filterUsesLocation({})).toBe(false);
+    expect(filterUsesLocation({ isFavorite: { eq: true }, or: [{ make: { eq: 'Canon' } }] })).toBe(false);
+  });
+});
+
+describe(usesLocationFilter.name, () => {
+  it('should treat explicit null place filters as location queries too', () => {
+    expect(usesLocationFilter({ city: 'Oslo' })).toBe(true);
+    expect(usesLocationFilter({ country: null })).toBe(true);
+    expect(usesLocationFilter({})).toBe(false);
   });
 });
 
