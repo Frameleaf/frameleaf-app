@@ -87,6 +87,19 @@
     }
   });
 
+  /**
+   * FL-35: the filmstrip shows the loaded month around the open asset. It reads only what
+   * the timeline manager already holds — it never loads a bucket of its own — so an empty
+   * or not-yet-loaded month simply means no filmstrip.
+   */
+  const filmstripAssets = $derived.by<TimelineAsset[]>(() => {
+    const current = assetCursor.current;
+    if (!current) {
+      return [];
+    }
+    return timelineManager.getTimelineMonthByAssetId(current.id)?.getAssets() ?? [];
+  });
+
   const handleRandom = async () => {
     const randomAsset = await timelineManager.getRandomAsset();
     if (!randomAsset) {
@@ -273,5 +286,6 @@
     onRandom={handleRandom}
     onAssetSuppressed={handleAssetSuppressed}
     onClose={handleClose}
+    {filmstripAssets}
   />
 {/await}
