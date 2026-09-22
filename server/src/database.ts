@@ -212,6 +212,7 @@ export type Partner = {
   updatedAt: Date;
   updateId: string;
   inTimeline: boolean;
+  shareLocation: boolean;
 };
 
 export type Place = {
