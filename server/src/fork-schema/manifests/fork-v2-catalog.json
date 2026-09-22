@@ -61,12 +61,28 @@
       "identity": "immich_fork.archive_operation.createdAt"
     },
     {
+      "definition": "jsonb|nullable|||",
+      "identity": "immich_fork.archive_operation.descriptor"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.archive_operation.expiresAt"
+    },
+    {
       "definition": "uuid|not null|gen_random_uuid()||",
       "identity": "immich_fork.archive_operation.id"
     },
     {
       "definition": "uuid|not null|||",
       "identity": "immich_fork.archive_operation.ownerId"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "immich_fork.archive_operation.prepared"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "immich_fork.archive_operation.preparedElevated"
     },
     {
       "definition": "uuid|not null|||",
@@ -4805,7 +4821,8 @@
     "0000000000080-MediaHealthRunOwner",
     "0000000000090-ICloudSync",
     "0000000000100-VideoEditVersions",
-    "0000000000110-ArchiveOperations"
+    "0000000000110-ArchiveOperations",
+    "0000000000120-ArchivePreparation"
   ],
   "functions": [
     {

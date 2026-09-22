@@ -1259,6 +1259,8 @@ export type ArchiveOperationResponseDto = {
     error: number;
     id: string;
     pending: number;
+    prepared: boolean;
+    requestKey: string;
     revoked: number;
     scope: string;
     skipped: number;
@@ -1271,8 +1273,27 @@ export type ArchiveOperationCreateDto = {
     requestKey: string;
     scope: ArchiveOperationScope;
 };
+export type ArchiveOperationPrepareDto = {
+    query: {
+        filters: {
+            dateType?: TimeBucketDateType;
+            order?: AssetOrder;
+            orderBy?: AssetOrderBy;
+            visibility: ArchiveTimelineVisibility;
+            withPartners: boolean;
+            withStacked: true;
+        };
+        scope: {
+            kind: ArchiveTimelineScope;
+        };
+    };
+    requestKey: string;
+};
 export type ArchiveOperationCommandDto = {
     command: ArchiveOperationCommand;
+};
+export type ArchiveOperationConfirmDto = {
+    requestKey: string;
 };
 export type AssetFileResponseDto = {
     /** Creation date */
@@ -5525,6 +5546,21 @@ export function createArchiveOperation({ archiveOperationCreateDto }: {
     })));
 }
 /**
+ * Prepare all matching owned Timeline assets
+ */
+export function prepareArchiveOperation({ archiveOperationPrepareDto }: {
+    archiveOperationPrepareDto: ArchiveOperationPrepareDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ArchiveOperationResponseDto;
+    }>("/archive-operations/prepare", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: archiveOperationPrepareDto
+    })));
+}
+/**
  * Read an archive operation
  */
 export function getArchiveOperation({ id }: {
@@ -5551,6 +5587,22 @@ export function commandArchiveOperation({ id, archiveOperationCommandDto }: {
         ...opts,
         method: "POST",
         body: archiveOperationCommandDto
+    })));
+}
+/**
+ * Confirm an exact prepared archive selection
+ */
+export function confirmArchiveOperation({ id, archiveOperationConfirmDto }: {
+    id: string;
+    archiveOperationConfirmDto: ArchiveOperationConfirmDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ArchiveOperationResponseDto;
+    }>(`/archive-operations/${encodeURIComponent(id)}/confirm`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: archiveOperationConfirmDto
     })));
 }
 /**
@@ -9697,6 +9749,20 @@ export enum Permission {
 export enum ArchiveOperationScope {
     SelectedOwnedAssets = "selected-owned-assets"
 }
+export enum TimeBucketDateType {
+    Added = "added",
+    Taken = "taken"
+}
+export enum AssetOrderBy {
+    TakenAt = "takenAt",
+    CreatedAt = "createdAt"
+}
+export enum ArchiveTimelineVisibility {
+    Timeline = "timeline"
+}
+export enum ArchiveTimelineScope {
+    Library = "library"
+}
 export enum ArchiveOperationCommand {
     Cancel = "cancel",
     Retry = "retry",
@@ -10159,14 +10225,6 @@ export enum Kind {
     Food = "food",
     Pets = "pets",
     Nature = "nature"
-}
-export enum TimeBucketDateType {
-    Added = "added",
-    Taken = "taken"
-}
-export enum AssetOrderBy {
-    TakenAt = "takenAt",
-    CreatedAt = "createdAt"
 }
 export enum WorkflowResult {
     Completed = "completed",

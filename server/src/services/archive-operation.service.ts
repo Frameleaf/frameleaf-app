@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { OnEvent } from 'src/decorators.js';
-import { ArchiveOperationCreateDto } from 'src/dtos/archive-operation.dto.js';
+import { ArchiveOperationCreateDto, ArchiveOperationPrepareDto } from 'src/dtos/archive-operation.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ImmichWorker } from 'src/enum.js';
 import { ArchiveOperationRepository } from 'src/repositories/archive-operation.repository.js';
@@ -79,6 +79,29 @@ export class ArchiveOperationService {
         this.logger.warn(`Archive operation ${id} deferred; durable work remains pending`);
       }
     }
+  }
+
+  private async includeNsfw() {
+    const config = await getConfig(
+      {
+        configRepo: this.configRepo,
+        metadataRepo: this.metadataRepo,
+        forkSchemaRepo: this.forkSchemaRepo,
+        logger: this.logger,
+      },
+      { withCache: false },
+    );
+    return isNsfwHidingEnabled(config.machineLearning);
+  }
+
+  async prepare(auth: AuthDto, dto: ArchiveOperationPrepareDto) {
+    const id = await this.repository.prepare(auth, dto, await this.includeNsfw());
+    return this.repository.get(auth.user.id, id);
+  }
+
+  async confirm(auth: AuthDto, id: string, requestKey: string) {
+    await this.repository.confirm(auth, id, requestKey, await this.includeNsfw());
+    return this.repository.get(auth.user.id, id);
   }
 
   async create(auth: AuthDto, dto: ArchiveOperationCreateDto) {

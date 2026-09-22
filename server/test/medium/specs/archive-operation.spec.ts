@@ -5,6 +5,7 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetVisibility } from 'src/enum.js';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import * as migration from 'src/fork-schema/migrations/0000000000110-ArchiveOperations.js';
+import * as preparationMigration from 'src/fork-schema/migrations/0000000000120-ArchivePreparation.js';
 import { ArchiveOperationRepository } from 'src/repositories/archive-operation.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -217,6 +218,7 @@ describe('durable selected-asset archive', () => {
     expect(after.tables.some(({ identity }) => identity.startsWith('immich_fork.archive_operation'))).toBe(false);
     expect(await visibility(original)).toBe(AssetVisibility.Timeline);
     await migration.up(db);
+    await preparationMigration.up(db);
     expect(await submit([original])).toBeTruthy();
   });
 });

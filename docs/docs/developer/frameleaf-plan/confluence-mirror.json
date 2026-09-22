@@ -897,6 +897,19 @@
       "sourceBranch": "aj/FL-32-archive-drain-compatibility",
       "sourceState": "compatibility-repair-independent-review-pending",
       "readbackResult": "Full normalized current source plus retained prior history matched live page version 4 on 2026-09-21; 39 focused checks pass. Independent review and runtime qualification of direct durable drain remain pending; earlier browser receipts retain their exact runtime scope."
+    },
+    {
+      "bytes": 13819,
+      "category": "development",
+      "id": "62423078",
+      "source": "docs/docs/developer/frameleaf-plan/FL-32-matching-archive.md",
+      "sourceSha256": "b81da8d647303cb0529c277ce13383068d5077ec8d051665f49fca043f52d1d7",
+      "title": "FL-32 prepared normal Timeline archive",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/62423078",
+      "version": 5,
+      "sourceBranch": "aj/FL-32-all-matching-archive",
+      "sourceState": "independently-approved-exact-runtime-browser-qualified",
+      "readbackResult": "Full normalized Markdown source body and SHA-256 matched live page version 5 on 2026-09-21; exact6a538 combined runtime independently approved and authenticated browser-qualified. Prior exact runtime proofs retained; full FN204 remains open."
     }
   ],
   "spaceId": "61374475",

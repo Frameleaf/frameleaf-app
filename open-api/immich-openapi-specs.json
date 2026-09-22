@@ -3636,6 +3636,61 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/archive-operations/prepare": {
+      "post": {
+        "operationId": "prepareArchiveOperation",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchiveOperationPrepareDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveOperationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Prepare all matching owned Timeline assets",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/archive-operations/{id}": {
       "get": {
         "operationId": "getArchiveOperation",
@@ -3739,6 +3794,72 @@
           }
         ],
         "summary": "Cancel, retry or undo an archive operation",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/archive-operations/{id}/confirm": {
+      "post": {
+        "operationId": "confirmArchiveOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchiveOperationConfirmDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveOperationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Confirm an exact prepared archive selection",
         "tags": [
           "Assets"
         ],
@@ -23452,6 +23573,20 @@
         ],
         "type": "object"
       },
+      "ArchiveOperationConfirmDto": {
+        "additionalProperties": false,
+        "properties": {
+          "requestKey": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestKey"
+        ],
+        "type": "object"
+      },
       "ArchiveOperationCreateDto": {
         "properties": {
           "ids": {
@@ -23477,6 +23612,78 @@
           "ids",
           "requestKey",
           "scope"
+        ],
+        "type": "object"
+      },
+      "ArchiveOperationPrepareDto": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "additionalProperties": false,
+            "properties": {
+              "filters": {
+                "additionalProperties": false,
+                "properties": {
+                  "dateType": {
+                    "$ref": "#/components/schemas/TimeBucketDateType",
+                    "default": "taken"
+                  },
+                  "order": {
+                    "$ref": "#/components/schemas/AssetOrder",
+                    "default": "desc"
+                  },
+                  "orderBy": {
+                    "$ref": "#/components/schemas/AssetOrderBy",
+                    "default": "takenAt"
+                  },
+                  "visibility": {
+                    "$ref": "#/components/schemas/ArchiveTimelineVisibility"
+                  },
+                  "withPartners": {
+                    "type": "boolean"
+                  },
+                  "withStacked": {
+                    "enum": [
+                      true
+                    ],
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "visibility",
+                  "withStacked",
+                  "withPartners"
+                ],
+                "type": "object"
+              },
+              "scope": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "$ref": "#/components/schemas/ArchiveTimelineScope"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "scope",
+              "filters"
+            ],
+            "type": "object"
+          },
+          "requestKey": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "requestKey"
         ],
         "type": "object"
       },
@@ -23509,6 +23716,14 @@
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "prepared": {
+            "type": "boolean"
+          },
+          "requestKey": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
           },
           "revoked": {
             "maximum": 9007199254740991,
@@ -23544,6 +23759,8 @@
           "error",
           "id",
           "pending",
+          "prepared",
+          "requestKey",
           "revoked",
           "scope",
           "skipped",
@@ -23556,6 +23773,18 @@
       "ArchiveOperationScope": {
         "enum": [
           "selected-owned-assets"
+        ],
+        "type": "string"
+      },
+      "ArchiveTimelineScope": {
+        "enum": [
+          "library"
+        ],
+        "type": "string"
+      },
+      "ArchiveTimelineVisibility": {
+        "enum": [
+          "timeline"
         ],
         "type": "string"
       },

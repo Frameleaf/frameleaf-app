@@ -866,10 +866,17 @@
   "archive_operations": {
     "cancel": "Cancel remaining",
     "cancelled": "Cancelled. Completed changes remain; pending assets were not changed.",
+    "confirm": "Confirm archive",
     "continuity": "Changing filters does not change a submitted selection. Refresh to check progress; results remain available after reload.",
     "counts": "{succeeded} archived · {pending} pending · {skipped} skipped · {revoked} no longer accessible · {error} failed · {undone} restored · {conflict} changed since archive",
     "empty": "No recent archive operations.",
     "error": "The request could not be completed. Refresh the results or retry.",
+    "matching_action": "Archive all matching from your library",
+
+    "matching_count": "{count} matching assets · Your normal Timeline only",
+    "matching_scope": "All matching assets from your library’s normal Timeline. Shared and partner assets are excluded.",
+    "prepare": "Count all matching assets",
+    "prepared": "This selection is frozen. Nothing will change until you confirm. Confirm within 30 minutes or prepare a new selection.",
     "recent": "Recent archives",
     "refresh": "Refresh results",
     "reload": "Reload library",

@@ -1,3 +1,4 @@
+import { ArchiveTimelineScope, ArchiveTimelineVisibility } from '@immich/sdk';
 import { type ArchiveOperationResponseDto } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
@@ -11,6 +12,8 @@ import ArchiveOperationsModal from './ArchiveOperationsModal.svelte';
 
 const receipt = {
   id: 'operation',
+  requestKey: 'recorded-request',
+  prepared: false,
   scope: 'selected-owned-assets',
   count: 1,
   cancelled: false,
@@ -79,4 +82,67 @@ it('retires late responses on a lock event and aborts the transport', async () =
   resolve([receipt]);
   await Promise.resolve();
   expect(screen.queryByText('1 selected assets · Your library')).not.toBeInTheDocument();
+});
+
+const matchingQuery = () => ({
+  scope: { kind: ArchiveTimelineScope.Library },
+  filters: {
+    visibility: ArchiveTimelineVisibility.Timeline,
+    withStacked: true as const,
+    withPartners: true,
+  },
+});
+it('prepares a server count before confirmation and confirms only that receipt', async () => {
+  const prepared = {
+    ...receipt,
+    id: 'snapshot',
+    scope: 'matching-owned-timeline',
+    count: 11_000,
+    pending: 11_000,
+    prepared: true,
+  };
+  sdkMock.prepareArchiveOperation.mockResolvedValue(prepared);
+  sdkMock.confirmArchiveOperation.mockResolvedValue({ ...prepared, prepared: false });
+  render(ArchiveOperationsModal, { matchingQuery, onClose: vi.fn() });
+  expect(sdkMock.confirmArchiveOperation).not.toHaveBeenCalled();
+  const confirm = await screen.findByRole('button', { name: 'Confirm archive' });
+  await waitFor(() => expect(confirm).not.toBeDisabled());
+  expect(screen.getByText('11000 matching assets · Your normal Timeline only')).toBeVisible();
+  await fireEvent.click(confirm);
+  await waitFor(() =>
+    expect(sdkMock.confirmArchiveOperation).toHaveBeenCalledWith(
+      { id: 'snapshot', archiveOperationConfirmDto: { requestKey: 'recorded-request' } },
+      expect.anything(),
+    ),
+  );
+  expect(sdkMock.createArchiveOperation).not.toHaveBeenCalled();
+});
+it('disables confirmation for an empty prepared set', async () => {
+  sdkMock.prepareArchiveOperation.mockResolvedValue({ ...receipt, prepared: true, count: 0, pending: 0 });
+  render(ArchiveOperationsModal, { matchingQuery, onClose: vi.fn() });
+  expect(await screen.findByRole('button', { name: 'Confirm archive' })).toBeDisabled();
+});
+it.each([false, true])('retires pending preparation when the source query changes (%s)', async (unsupported) => {
+  let resolve!: (value: typeof receipt) => void;
+  sdkMock.prepareArchiveOperation.mockReturnValue(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const onClose = vi.fn();
+  const view = render(ArchiveOperationsModal, { matchingQuery, onClose });
+  await waitFor(() => expect(sdkMock.prepareArchiveOperation).toHaveBeenCalled());
+  await view.rerender({
+    matchingQuery: () => {
+      if (unsupported) {
+        throw new Error('unsupported scope');
+      }
+      return { ...matchingQuery(), filters: { ...matchingQuery().filters, withPartners: false } };
+    },
+    onClose,
+  });
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(sdkMock.prepareArchiveOperation.mock.calls[0][1]?.signal?.aborted).toBe(true);
+  resolve({ ...receipt, prepared: true });
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Confirm archive' })).toBeNull());
 });
