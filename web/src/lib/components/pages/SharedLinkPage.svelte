@@ -1,15 +1,19 @@
 <script lang="ts">
   import AlbumViewer from '$lib/components/album-page/AlbumViewer.svelte';
+  import Brand from '$lib/components/frameleaf/Brand.svelte';
+  import Button from '$lib/components/frameleaf/Button.svelte';
   import IndividualSharedViewer from '$lib/components/share-page/IndividualSharedViewer.svelte';
   import ControlAppBar from '$lib/components/shared-components/ControlAppBar.svelte';
   import ThemeButton from '$lib/components/shared-components/ThemeButton.svelte';
+  import '$lib/frameleaf/tokens.css';
+  import { frameleafShell } from '$lib/frameleaf/rollout';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { setSharedLink } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
   import { sharedLinkLogin, SharedLinkType, type AssetResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
-  import { Button, Logo, PasswordInput } from '@immich/ui';
+  import { Button as ImmichButton, Logo, PasswordInput, Theme as AppTheme, themeManager } from '@immich/ui';
   import { onDestroy, tick } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -67,6 +71,10 @@
   onDestroy(() => {
     setSharedLink(undefined);
   });
+
+  // FL-56: own layout, no LibraryRail/TopBar/account menu in either branch below — a public
+  // visitor never sees private navigation regardless of the shell rollout flag.
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 </script>
 
 <svelte:head>
@@ -74,35 +82,58 @@
   <meta name="description" content={description} />
 </svelte:head>
 {#if passwordRequired}
-  <main
-    class="relative h-dvh overflow-hidden px-6 pt-(--navbar-height) max-md:pt-(--navbar-height-md) sm:px-12 md:px-24 lg:px-40"
-  >
-    <div class="mt-20 flex flex-col items-center justify-center">
-      <div class="text-2xl font-bold text-primary">{$t('password_required')}</div>
-      <div class="mt-4 text-lg text-primary">
-        {$t('sharing_enter_password')}
+  {#if $frameleafShell}
+    <main class="frameleaf pv-password-shell" data-theme={appTheme}>
+      <a class="pv-brand" href="/" data-sveltekit-preload-data="hover">
+        <Brand />
+      </a>
+      <form class="pv-password-card" novalidate {onsubmit}>
+        <h1>{$t('frameleaf_public_password_title')}</h1>
+        <p>{$t('frameleaf_public_password_body')}</p>
+        <label class="pv-password-field">
+          <span class="sr-only">{$t('password')}</span>
+          <input
+            type="password"
+            autocomplete="off"
+            placeholder={$t('password')}
+            aria-label={$t('password')}
+            bind:value={password}
+          />
+        </label>
+        <Button type="submit" variant="primary">{$t('submit')}</Button>
+      </form>
+    </main>
+  {:else}
+    <main
+      class="relative h-dvh overflow-hidden px-6 pt-(--navbar-height) max-md:pt-(--navbar-height-md) sm:px-12 md:px-24 lg:px-40"
+    >
+      <div class="mt-20 flex flex-col items-center justify-center">
+        <div class="text-2xl font-bold text-primary">{$t('password_required')}</div>
+        <div class="mt-4 text-lg text-primary">
+          {$t('sharing_enter_password')}
+        </div>
+        <div class="mt-4">
+          <form class="flex gap-x-2" novalidate {onsubmit}>
+            <PasswordInput autocomplete="off" bind:value={password} placeholder="Password" />
+            <ImmichButton type="submit">{$t('submit')}</ImmichButton>
+          </form>
+        </div>
       </div>
-      <div class="mt-4">
-        <form class="flex gap-x-2" novalidate {onsubmit}>
-          <PasswordInput autocomplete="off" bind:value={password} placeholder="Password" />
-          <Button type="submit">{$t('submit')}</Button>
-        </form>
-      </div>
-    </div>
-  </main>
-  <header>
-    <ControlAppBar>
-      {#snippet leading()}
-        <a data-sveltekit-preload-data="hover" class="ms-4" href="/">
-          <Logo variant="inline" />
-        </a>
-      {/snippet}
+    </main>
+    <header>
+      <ControlAppBar>
+        {#snippet leading()}
+          <a data-sveltekit-preload-data="hover" class="ms-4" href="/">
+            <Logo variant="inline" />
+          </a>
+        {/snippet}
 
-      {#snippet trailing()}
-        <ThemeButton />
-      {/snippet}
-    </ControlAppBar>
-  </header>
+        {#snippet trailing()}
+          <ThemeButton />
+        {/snippet}
+      </ControlAppBar>
+    </header>
+  {/if}
 {/if}
 
 {#if !passwordRequired && sharedLink?.type === SharedLinkType.Album}
@@ -113,3 +144,51 @@
     <IndividualSharedViewer {sharedLink} {isOwned} />
   </div>
 {/if}
+
+<style>
+  .pv-password-shell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    min-height: 100dvh;
+    padding: 1.5rem;
+    color: var(--fl-text);
+    background: var(--fl-canvas);
+  }
+  .pv-brand {
+    display: inline-flex;
+  }
+  .pv-password-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    width: min(24rem, 100%);
+    padding: 1.5rem;
+    text-align: center;
+    background: var(--fl-panel);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+    box-shadow: var(--fl-shadow-1);
+  }
+  .pv-password-card h1 {
+    font-size: 1.25rem;
+  }
+  .pv-password-card p {
+    color: var(--fl-muted);
+    font-size: 0.875rem;
+  }
+  .pv-password-field {
+    width: 100%;
+  }
+  .pv-password-field input {
+    width: 100%;
+    color: var(--fl-text);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    padding: 0.5rem 0.75rem;
+  }
+</style>
