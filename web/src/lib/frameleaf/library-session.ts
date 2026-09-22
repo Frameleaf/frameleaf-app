@@ -4,6 +4,7 @@ import {
   type DiscoveryFilterSection,
   type DiscoveryQuery,
 } from '$lib/components/discovery/query';
+import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
 
 /**
  * The one library session every Frameleaf view shares.
@@ -64,6 +65,45 @@ export type LibraryDraft = {
   redo: unknown[][];
 };
 
+/**
+ * A bulk operation submitted against a frozen view state (FL-32).
+ *
+ * The record is what the UI shows while the work runs and what a retry resumes from. `scope` is a
+ * deep copy taken at submit: editing the filter afterwards changes the session, never a running
+ * operation. `requestId` is the idempotency key — a retry of the failed items reuses it so the
+ * operation stays one thing in the activity list rather than becoming several.
+ */
+export type BulkOperationStatus = 'resolving' | 'running' | 'completed' | 'cancelled' | 'failed';
+
+export type BulkOperationRecord = {
+  requestId: string;
+  action: BulkActionId;
+  scope: LibraryViewState;
+  status: BulkOperationStatus;
+  /** The matching count shown to the user when they submitted, before anything ran. */
+  submittedTotal: number | null;
+  /** Items the server has answered for. */
+  processed: number;
+  /** Items in the operation once the matching set is resolved. */
+  total: number | null;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  /** Per-item failures, bounded so a large operation cannot grow the session without limit. */
+  failures: { id: string; reasonKey?: string; message?: string }[];
+  /** True when the matching set was larger than the client's bound and was cut short. */
+  truncated: boolean;
+  startedAt: number;
+  finishedAt?: number;
+  /** i18n key when the operation could not start at all. */
+  errorKey?: string;
+};
+
+/** Failures kept per operation; the count above stays exact. */
+export const BULK_OPERATION_FAILURE_LIMIT = 100;
+/** Operations kept on the session; older finished ones fall off. */
+export const BULK_OPERATION_HISTORY_LIMIT = 20;
+
 export type LibrarySession = {
   /** Device-local, never portable. */
   layout: LibraryLayout;
@@ -88,6 +128,11 @@ export type LibrarySession = {
    * issued under; a response whose revision is stale must be dropped rather than applied.
    */
   revision: number;
+  /**
+   * Background bulk operations, newest first. Each carries its own frozen scope, so it is
+   * unaffected by anything the session does afterwards. Never persisted across reloads.
+   */
+  operations: BulkOperationRecord[];
 };
 
 export type LibrarySessionAction =
@@ -108,7 +153,35 @@ export type LibrarySessionAction =
   | { type: 'show-more' }
   | { type: 'page'; page: number }
   | { type: 'filter-section'; section: DiscoveryFilterSection | null }
-  | { type: 'mutated'; removedIds: string[] };
+  | { type: 'mutated'; removedIds: string[] }
+  /* FL-32, additive: background bulk operations over a scope-bound snapshot. */
+  | {
+      type: 'operation-start';
+      requestId: string;
+      action: BulkActionId;
+      /** Omitted for a selected-id operation, which is bound by its ids rather than a scope. */
+      scope?: LibraryViewState;
+      submittedTotal?: number | null;
+    }
+  | {
+      type: 'operation-progress';
+      requestId: string;
+      processed?: number;
+      total?: number | null;
+      status?: Extract<BulkOperationStatus, 'resolving' | 'running'>;
+    }
+  | {
+      type: 'operation-finish';
+      requestId: string;
+      succeeded: number;
+      failed: number;
+      skipped: number;
+      failures?: BulkOperationRecord['failures'];
+      cancelled?: boolean;
+      truncated?: boolean;
+      errorKey?: string;
+    }
+  | { type: 'operation-dismiss'; requestId: string };
 
 export const createLibrarySession = (): LibrarySession => ({
   layout: DEFAULT_LIBRARY_LAYOUT,
@@ -127,6 +200,7 @@ export const createLibrarySession = (): LibrarySession => ({
   page: 1,
   filterSection: null,
   revision: 0,
+  operations: [],
 });
 
 /* -------------------------------------------------------------------------- */
@@ -225,6 +299,23 @@ const withSelection = (session: LibrarySession, selection: string[], anchorId: s
   anchorId,
   selectionSnapshot: undefined,
 });
+
+const patchOperation = (
+  session: LibrarySession,
+  requestId: string,
+  patch: (operation: BulkOperationRecord) => BulkOperationRecord,
+): LibrarySession => {
+  let changed = false;
+  const operations = session.operations.map((operation) => {
+    if (operation.requestId !== requestId) {
+      return operation;
+    }
+    const next = patch(operation);
+    changed ||= next !== operation;
+    return next;
+  });
+  return changed ? { ...session, operations } : session;
+};
 
 /**
  * Presentation switches never rebuild the collection, the selection or the editor draft: a
@@ -339,8 +430,93 @@ export const reduceLibrarySession = (session: LibrarySession, action: LibrarySes
         draft: session.draft && removed.has(session.draft.assetId) ? null : session.draft,
       };
     }
+    /* FL-32: background bulk operations. They own a frozen copy of the view state, so nothing the
+       session does after submit can change what a running operation acts on. */
+    case 'operation-start': {
+      if (session.operations.some((operation) => operation.requestId === action.requestId)) {
+        // A retry reuses the request key; the existing record is resumed, not duplicated.
+        return patchOperation(session, action.requestId, (operation) => ({
+          ...operation,
+          status: 'resolving',
+          finishedAt: undefined,
+          errorKey: undefined,
+        }));
+      }
+      const record: BulkOperationRecord = {
+        requestId: action.requestId,
+        action: action.action,
+        scope: structuredClone(action.scope ?? session.state),
+        status: 'resolving',
+        submittedTotal: action.submittedTotal ?? null,
+        processed: 0,
+        total: action.submittedTotal ?? null,
+        succeeded: 0,
+        failed: 0,
+        skipped: 0,
+        failures: [],
+        truncated: false,
+        startedAt: Date.now(),
+      };
+      return {
+        ...session,
+        operations: [record, ...session.operations].slice(0, BULK_OPERATION_HISTORY_LIMIT),
+      };
+    }
+    case 'operation-progress': {
+      return patchOperation(session, action.requestId, (operation) =>
+        operation.status === 'completed' || operation.status === 'cancelled' || operation.status === 'failed'
+          ? operation
+          : {
+              ...operation,
+              status: action.status ?? 'running',
+              processed: Number.isInteger(action.processed) ? (action.processed as number) : operation.processed,
+              total: action.total === undefined ? operation.total : action.total,
+            },
+      );
+    }
+    case 'operation-finish': {
+      return patchOperation(session, action.requestId, (operation) => ({
+        ...operation,
+        status: action.errorKey ? 'failed' : action.cancelled ? 'cancelled' : 'completed',
+        processed: action.succeeded + action.failed + action.skipped,
+        succeeded: action.succeeded,
+        failed: action.failed,
+        skipped: action.skipped,
+        failures: (action.failures ?? []).slice(0, BULK_OPERATION_FAILURE_LIMIT),
+        truncated: action.truncated ?? operation.truncated,
+        finishedAt: Date.now(),
+        ...(action.errorKey ? { errorKey: action.errorKey } : {}),
+      }));
+    }
+    case 'operation-dismiss': {
+      const operations = session.operations.filter((operation) => operation.requestId !== action.requestId);
+      return operations.length === session.operations.length ? session : { ...session, operations };
+    }
   }
 };
+
+/** Operations still doing work. Used to keep the progress strip and its cancel control on screen. */
+export const activeOperations = (session: LibrarySession): BulkOperationRecord[] =>
+  session.operations.filter((operation) => operation.status === 'resolving' || operation.status === 'running');
+
+/**
+ * True when a "select everything matching" snapshot still describes the session's current scope
+ * and query. FL-31 clears the snapshot on a scope change; this also catches the case where the
+ * query moved on while the snapshot was still on screen, so the bar can offer the stale snapshot's
+ * count honestly or drop back to the resolved ids.
+ */
+export const isSnapshotCurrent = (session: LibrarySession): boolean =>
+  !!session.selectionSnapshot &&
+  sameValue(session.selectionSnapshot.scope, session.state.scope) &&
+  sameValue(session.selectionSnapshot.query, session.state.query);
+
+/**
+ * The view state a bulk operation must be submitted against: the snapshot when the user asked for
+ * everything matching, and otherwise the live state. Always a deep copy, so the caller cannot hand
+ * a running operation a reference the session will mutate.
+ */
+export const operationScope = (session: LibrarySession): LibraryViewState =>
+  structuredClone(session.selectionSnapshot ?? session.state);
 
 /** True when a response issued at `revision` still describes the session's current result set. */
 export const isCurrentResult = (session: LibrarySession, revision: number) => session.revision === revision;
