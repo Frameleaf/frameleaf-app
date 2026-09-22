@@ -4,14 +4,20 @@
   import SharedLinkForm from './SharedLinkForm.svelte';
   import QrCode from './QrCode.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
+  import '$lib/frameleaf/tokens.css';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { asUrl } from '$lib/services/shared-link.service';
   import { copyToClipboard } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { getAllAlbums, getAllSharedLinks, removeSharedLink, SharedLinkType, type AlbumResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import { Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
+
+  // Mounted directly as route content (no Frameleaf ancestor supplies the token scope), so
+  // the class and theme attribute are applied on this component's own root, matching the
+  // pattern LibraryRail.svelte and TopBar.svelte use for their own root elements.
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 
   const TABS: { id: 'all' | 'album' | 'individual'; label: () => string }[] = [
     { id: 'all', label: () => $t('all') },
@@ -149,7 +155,7 @@
 
 <OnEvents {onSharedLinkCreate} {onSharedLinkUpdate} {onSharedLinkDelete} />
 
-<section class="sl-screen" aria-labelledby="sl-heading">
+<section class="frameleaf sl-screen" data-theme={appTheme} aria-labelledby="sl-heading">
   <header class="sl-head">
     <div>
       <h1 id="sl-heading">{$t('shared_links')}</h1>
