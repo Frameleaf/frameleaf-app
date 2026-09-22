@@ -9,7 +9,8 @@
   section {
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-panel-radius);
+    /* The revision sets cards and panels at 10px. */
+    border-radius: var(--fl-radius-card);
     min-width: 0;
     padding: 1rem;
   }
