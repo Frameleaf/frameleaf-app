@@ -1552,8 +1552,12 @@
   "frameleaf_locked_content": "Locked content",
   "frameleaf_locked_hidden": "Hidden until you unlock",
   "frameleaf_locked_revealed": "Revealed for this session",
+  "frameleaf_map_search_this_area": "Search this area",
   "frameleaf_open_locked": "Open Locked",
   "frameleaf_open_locked_hint": "Asks for your PIN first",
+  "frameleaf_places_group_country_state": "Group by country and state",
+  "frameleaf_places_unknown_state": "Other",
+  "frameleaf_places_view_on_map": "Show on map",
   "frameleaf_shared_spaces": "Shared spaces",
   "frameleaf_sharing": {
     "create_public_link": "Create public link",

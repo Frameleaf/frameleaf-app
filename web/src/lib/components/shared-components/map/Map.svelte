@@ -11,6 +11,7 @@
 <script lang="ts">
   import { afterNavigate } from '$app/navigation';
   import OnEvents from '$lib/components/OnEvents.svelte';
+  import { frameleafShell } from '$lib/frameleaf/rollout';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import MapSettingsModal from '$lib/modals/MapSettingsModal.svelte';
@@ -18,7 +19,7 @@
   import { getAssetMediaUrl, handlePromiseError } from '$lib/utils';
   import { getMapMarkers, type MapMarkerResponseDto } from '@immich/sdk';
   import { Alert, Container, Icon, modalManager, Text, Theme, themeManager } from '@immich/ui';
-  import { mdiCog, mdiImageMultiple, mdiMap, mdiMapMarker } from '@mdi/js';
+  import { mdiCog, mdiImageMultiple, mdiMagnify, mdiMap, mdiMapMarker } from '@mdi/js';
   import type { Feature, GeoJsonProperties, Geometry, Point } from 'geojson';
   import { isEqual, omit } from 'lodash-es';
   import { DateTime, Duration } from 'luxon';
@@ -109,6 +110,12 @@
   let map: Map | undefined = $state();
   let marker: Marker | null = null;
   let abortController: AbortController;
+  // Frameleaf (FL-51): tracks whether the visible viewport has moved, by user gesture,
+  // since the last bounds query. Drives the "Search this area" overlay from
+  // `MapView.jsx`'s `changed` state; only user-originated moves count (`e.originalEvent`
+  // is unset for programmatic moves like the initial fitBounds or a `center`/`zoom` jump),
+  // so the button never appears before anyone has actually panned or zoomed.
+  let viewMovedSinceQuery = $state(false);
 
   const mapTheme = $derived($mapSettings.allowDarkMode ? themeManager.value : Theme.Light);
   const styleUrl = $derived(
@@ -356,10 +363,21 @@
     onClusterSelect(visibleIds, bbox);
   };
 
-  const handleMoveEnd = () => {
+  const handleMoveEnd = (event: { originalEvent?: unknown }) => {
     if (viewportGridActive && !assetViewerManager.isViewing) {
       handleViewportSelect();
+      return;
     }
+    // A real drag/zoom/keyboard gesture (as opposed to a programmatic fitBounds or
+    // center/zoom jump) leaves the last query's bounds stale.
+    if (event.originalEvent) {
+      viewMovedSinceQuery = true;
+    }
+  };
+
+  const handleSearchThisArea = () => {
+    handleViewportSelect();
+    viewMovedSinceQuery = false;
   };
 
   const onAssetsChanged = async () => {
@@ -399,7 +417,7 @@
           {#if onClusterSelect}
             <Control position="top-left">
               <ControlGroup>
-                <ControlButton onclick={() => (viewportGridActive ? onViewportClose?.() : handleViewportSelect())}>
+                <ControlButton onclick={() => (viewportGridActive ? onViewportClose?.() : handleSearchThisArea())}>
                   <Icon title={$t('show_photos_in_area')} icon={mdiImageMultiple} size="70%" class="text-black/80" />
                 </ControlButton>
               </ControlGroup>
@@ -482,6 +500,23 @@
           {/snippet}
         </MarkerLayer>
       </GeoJSON>
+
+      {#if $frameleafShell && onClusterSelect && !viewportGridActive && !simplified && viewMovedSinceQuery}
+        <!-- Frameleaf (FL-51): explicit "Search this area" affordance from `MapView.jsx`'s
+             `changed` overlay. It appears only after a real pan/zoom (see `handleMoveEnd`)
+             and runs the same bounds query as the toolbar toggle above, so it never widens
+             what that query already returns. -->
+        <div class="pointer-events-none absolute inset-x-0 top-4 z-10 flex justify-center">
+          <button
+            type="button"
+            class="pointer-events-auto flex items-center gap-2 rounded-full bg-immich-primary px-4 py-2 text-sm font-medium text-white shadow-lg transition-colors hover:bg-immich-dark-primary"
+            onclick={handleSearchThisArea}
+          >
+            <Icon icon={mdiMagnify} size="18" />
+            {$t('frameleaf_map_search_this_area')}
+          </button>
+        </div>
+      {/if}
     {/snippet}
   </MapLibre>
 
