@@ -123,6 +123,10 @@ export const albumViewSettings = persisted<AlbumViewSettings>('album-view-settin
 export enum PlacesGroupBy {
   None = 'None',
   Country = 'Country',
+  // Frameleaf (FL-51): country, then state, matching the September 22, 2026 design
+  // revision's Places grouping. Kept as its own value (not a variant of Country) so a
+  // saved preference from before this story still round-trips through the same enum.
+  CountryState = 'CountryState',
 }
 
 export const placesViewSettings = persisted<PlacesViewSettings>('places-view-settings', {
