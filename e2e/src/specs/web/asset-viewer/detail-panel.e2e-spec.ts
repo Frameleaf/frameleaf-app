@@ -86,6 +86,39 @@ test.describe('Detail Panel', () => {
     await expect(textarea).toHaveValue('new description');
   });
 
+  // FL-36: the information panel's Details list. The path and the checksum are storage facts
+  // about the owner's own library, so they are absent for anyone else rather than shown empty.
+  test.describe('Details', () => {
+    test('shows the file, path and checksum rows to the owner', async ({ context, page }) => {
+      await utils.setAuthCookies(context, admin.accessToken);
+      await page.goto(`/photos/${asset.id}`);
+      await page.waitForSelector('#immich-asset-viewer');
+
+      await page.getByRole('button', { name: 'Info' }).click();
+      const details = page.getByTestId('frameleaf-info-details');
+
+      await expect(details.getByText('Filename', { exact: true })).toBeVisible();
+      await expect(details.getByText('Path', { exact: true })).toBeVisible();
+      await expect(details.getByText('Checksum', { exact: true })).toBeVisible();
+    });
+
+    test('omits the path and the checksum for a shared-link visitor', async ({ page }) => {
+      const sharedLink = await utils.createSharedLink(admin.accessToken, {
+        type: SharedLinkType.Individual,
+        assetIds: [asset.id],
+      });
+      await page.goto(`/share/${sharedLink.key}/photos/${asset.id}`);
+      await page.waitForSelector('#immich-asset-viewer');
+
+      await page.getByRole('button', { name: 'Info' }).click();
+      const details = page.getByTestId('frameleaf-info-details');
+
+      await expect(details.getByText('Filename', { exact: true })).toBeVisible();
+      await expect(details.getByText('Path', { exact: true })).toHaveCount(0);
+      await expect(details.getByText('Checksum', { exact: true })).toHaveCount(0);
+    });
+  });
+
   test.describe('Date editor', () => {
     test('displays inferred asset timezone', async ({ context, page }) => {
       const test = {

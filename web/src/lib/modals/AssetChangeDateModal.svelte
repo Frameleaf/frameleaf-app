@@ -16,9 +16,23 @@
     timezoneInput?: boolean;
     asset: TimelineAsset;
     onClose: (success: boolean) => void;
+    /**
+     * FL-36: the information panel reports a failed inline edit next to the control that
+     * failed and offers the recovery that can work, so it needs the error itself and not
+     * just `onClose(false)`, which also means "cancelled". Optional, so every other caller
+     * keeps the previous behaviour of a toast alone.
+     */
+    onError?: (error: unknown) => void;
   }
 
-  let { initialDate = DateTime.now(), initialTimeZone, timezoneInput = true, asset, onClose }: Props = $props();
+  let {
+    initialDate = DateTime.now(),
+    initialTimeZone,
+    timezoneInput = true,
+    asset,
+    onClose,
+    onError,
+  }: Props = $props();
 
   let selectedDate = $state(initialDate.toFormat("yyyy-MM-dd'T'HH:mm:ss.SSS"));
   const timezones = $derived(getTimezones(selectedDate));
@@ -38,6 +52,7 @@
       onClose(true);
     } catch (error) {
       handleError(error, $t('errors.unable_to_change_date'));
+      onError?.(error);
       onClose(false);
     }
   };
