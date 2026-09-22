@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { shortcut } from '$lib/actions/shortcut';
+  import { shortcut, shortcuts } from '$lib/actions/shortcut';
   import ImageThumbnail from '$lib/components/assets/thumbnail/ImageThumbnail.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import FaceCreateTagModal from '$lib/modals/CreateFaceModal.svelte';
@@ -224,6 +224,64 @@
     faceBoxPosition = { left: faceBox.left, top: faceBox.top, width: faceBox.width, height: faceBox.height };
   };
 
+  // FL-38: a keyboard alternative to dragging the region with a mouse, per
+  // design/frameleaf/INTERACTION-REQUIREMENTS.md ("keyboard/numeric alternatives to
+  // drawing"). Arrow keys move the region, Shift+arrow moves it further, and +/- resize it
+  // from its top-left corner. All in canvas pixels, same units fabric already works in.
+  const FACE_NUDGE_STEP = 4;
+  const FACE_NUDGE_STEP_LARGE = 20;
+  const FACE_RESIZE_STEP = 8;
+  const MIN_FACE_DIMENSION = 24;
+
+  const nudgeFace = (dx: number, dy: number) => {
+    if (!faceRect || !canvas) {
+      return;
+    }
+    faceRect.set({
+      left: (faceRect.left ?? 0) + dx,
+      top: (faceRect.top ?? 0) + dy,
+    });
+    faceRect.setCoords();
+    canvas.requestRenderAll();
+    positionFaceSelector();
+  };
+
+  const resizeFace = (delta: number) => {
+    if (!faceRect || !canvas) {
+      return;
+    }
+    const bounds = faceRect.getBoundingRect();
+    faceRect.set({
+      width: Math.max(MIN_FACE_DIMENSION, bounds.width + delta),
+      height: Math.max(MIN_FACE_DIMENSION, bounds.height + delta),
+      scaleX: 1,
+      scaleY: 1,
+    });
+    faceRect.setCoords();
+    canvas.requestRenderAll();
+    positionFaceSelector();
+  };
+
+  const faceRegionShortcuts = [
+    { key: 'ArrowUp', dx: 0, dy: -FACE_NUDGE_STEP },
+    { key: 'ArrowDown', dx: 0, dy: FACE_NUDGE_STEP },
+    { key: 'ArrowLeft', dx: -FACE_NUDGE_STEP, dy: 0 },
+    { key: 'ArrowRight', dx: FACE_NUDGE_STEP, dy: 0 },
+  ].flatMap(({ key, dx, dy }) => [
+    { shortcut: { key }, ignoreInputFields: true, preventDefault: true, onShortcut: () => nudgeFace(dx, dy) },
+    {
+      shortcut: { key, shift: true },
+      ignoreInputFields: true,
+      preventDefault: true,
+      onShortcut: () => nudgeFace((dx / FACE_NUDGE_STEP) * FACE_NUDGE_STEP_LARGE, (dy / FACE_NUDGE_STEP) * FACE_NUDGE_STEP_LARGE),
+    },
+  ]);
+  faceRegionShortcuts.push(
+    { shortcut: { key: '=' }, ignoreInputFields: true, preventDefault: true, onShortcut: () => resizeFace(FACE_RESIZE_STEP) },
+    { shortcut: { key: '+' }, ignoreInputFields: true, preventDefault: true, onShortcut: () => resizeFace(FACE_RESIZE_STEP) },
+    { shortcut: { key: '-' }, ignoreInputFields: true, preventDefault: true, onShortcut: () => resizeFace(-FACE_RESIZE_STEP) },
+  );
+
   $effect(() => {
     const rect = faceRect;
     const cvs = canvas;
@@ -363,7 +421,10 @@
   });
 </script>
 
-<svelte:document use:shortcut={{ shortcut: { key: 'Escape' }, onShortcut: onClose, ignoreInputFields: false }} />
+<svelte:document
+  use:shortcut={{ shortcut: { key: 'Escape' }, onShortcut: onClose, ignoreInputFields: false }}
+  use:shortcuts={faceRegionShortcuts}
+/>
 
 <div
   id="face-editor-data"
@@ -382,6 +443,7 @@
     class="absolute inset-s-[calc(50%-125px)] top-[calc(50%-250px)] w-62.5 max-w-62.5 rounded-xl border border-gray-200 bg-white px-2 py-4 backdrop-blur-sm transition-[top,left] duration-200 ease-out dark:border-gray-800 dark:bg-immich-dark-gray dark:text-immich-dark-fg"
   >
     <p class="text-center text-sm">{$t('select_person_to_tag')}</p>
+    <p class="mt-1 text-center text-xs text-gray-500 dark:text-gray-400">{$t('frameleaf_faces_keyboard_hint')}</p>
 
     <div class="relative my-3">
       <Input placeholder={$t('search_people')} bind:value={searchTerm} bind:ref={searchInputEl} size="tiny" />
