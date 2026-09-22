@@ -5,14 +5,17 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   AddUsersDto,
   AlbumDescendantCountResponseDto,
+  AlbumIconCatalogueResponseDto,
   AlbumResponseDto,
   AlbumStatisticsResponseDto,
+  AlbumTreeResponseDto,
   AlbumUserParamDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
   CreateAlbumDto,
   GetAlbumInfoDto,
   GetAlbumsDto,
+  MoveAlbumDto,
   UpdateAlbumDto,
   UpdateAlbumUserDto,
 } from 'src/dtos/album.dto.js';
@@ -59,6 +62,30 @@ export class AlbumController {
   })
   getAlbumStatistics(@Auth() auth: AuthDto): Promise<AlbumStatisticsResponseDto> {
     return this.service.getStatistics(auth);
+  }
+
+  @Get('tree')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'Retrieve the album directory',
+    description:
+      'Collections with their albums, albums that stand on their own, and shared spaces, for everything the authenticated user owns or is shared with. Albums nest one level deep inside collections only; collections and shared spaces are always top level.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getAlbumTree(@Auth() auth: AuthDto): Promise<AlbumTreeResponseDto> {
+    return this.service.getTree(auth);
+  }
+
+  @Get('icons')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'Retrieve the album icon catalogue',
+    description:
+      'Every Material Design Icons name an album or collection may use, plus the categorised suggested set shown first in icon choosers. Served as data so clients never bundle the catalogue.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getAlbumIconCatalogue(): AlbumIconCatalogueResponseDto {
+    return this.service.getIconCatalogue();
   }
 
   @Authenticated({ permission: Permission.AlbumRead, sharedLink: true })
@@ -129,6 +156,22 @@ export class AlbumController {
     @Param() { id }: UUIDParamDto,
   ): Promise<AlbumDescendantCountResponseDto> {
     return this.service.getDescendantCount(auth, id);
+  }
+
+  @Put(':id/collection')
+  @Authenticated({ permission: Permission.AlbumUpdate })
+  @Endpoint({
+    summary: 'Move an album into or out of a collection',
+    description:
+      'Move an album into a collection, or send null to take it out so it stands on its own. Only the album owner can move it; the destination must be a collection the user can edit. Collections and shared spaces cannot be moved.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  moveAlbumToCollection(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: MoveAlbumDto,
+  ): Promise<AlbumResponseDto> {
+    return this.service.moveToCollection(auth, id, dto);
   }
 
   @Put(':id/assets')

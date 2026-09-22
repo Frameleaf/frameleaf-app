@@ -128,6 +128,26 @@ export class SmartAlbumRepository {
     return new Map(rows.map((r) => [r.kind, r.id]));
   }
 
+  /**
+   * Which of `albumIds` are backed by a smart album rule (and therefore filled
+   * automatically). Read from the authoritative side for the current phase.
+   */
+  async getSmartBackedAlbumIds(albumIds: string[]): Promise<Set<string>> {
+    if (albumIds.length === 0) {
+      return new Set();
+    }
+    if (await this.shouldReadSidecar()) {
+      const result = await sql<{
+        albumId: string;
+      }>`SELECT "albumId"::text AS "albumId" FROM immich_fork.smart_album_rule WHERE "albumId" = ANY(${albumIds}::uuid[])`.execute(
+        this.db,
+      );
+      return new Set(result.rows.map((row) => row.albumId));
+    }
+    const rows = await this.db.selectFrom('smart_album').select('albumId').where('albumId', 'in', albumIds).execute();
+    return new Set(rows.map((row) => row.albumId));
+  }
+
   async isExcluded(smartAlbumId: string, assetId: string): Promise<boolean> {
     if (await this.shouldReadSidecar()) {
       const result =
