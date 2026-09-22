@@ -1554,6 +1554,11 @@
   "frameleaf_locked_revealed": "Revealed for this session",
   "frameleaf_open_locked": "Open Locked",
   "frameleaf_open_locked_hint": "Asks for your PIN first",
+  "frameleaf_public_go_home": "Go to Frameleaf",
+  "frameleaf_public_password_body": "Enter the password from the person who shared this to continue.",
+  "frameleaf_public_password_title": "This share is protected",
+  "frameleaf_public_unavailable_body": "It may have been removed, revoked, or the address is incomplete.",
+  "frameleaf_public_unavailable_title": "This link is not available",
   "frameleaf_shared_spaces": "Shared spaces",
   "frameleaf_sharing": {
     "create_public_link": "Create public link",
