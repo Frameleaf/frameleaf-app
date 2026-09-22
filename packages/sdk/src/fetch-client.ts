@@ -9925,7 +9925,6 @@ export enum QueueJobStatus {
     Paused = "paused"
 }
 export enum JobName {
-    ArchiveOperation = "ArchiveOperation",
     ICloudSync = "ICloudSync",
     ForkSchemaBackfill = "ForkSchemaBackfill",
     AssetDelete = "AssetDelete",
