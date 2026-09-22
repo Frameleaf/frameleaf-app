@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "./App";
+import { Icon } from "./Icon";
 import { PersonAvatar } from "./People";
 import { SearchableSelect } from "./SearchableSelect";
 import {
@@ -7,13 +8,23 @@ import {
   captureDateHasCustomCondition,
   customConditionValue,
   equalityControlValue,
+  flagToggleActive,
   moveSetGroup,
   ratingConditionForValue,
   ratingControlValue,
   setGroupLabels,
+  statusConditionForValue,
+  statusControlValue,
+  toggleFlagCondition,
   updateCaptureDate,
   updateSetGroup,
 } from "./filter-state.mjs";
+import {
+  descriptionStatuses,
+  sensitiveStatuses,
+  statusLabels,
+} from "./search.mjs";
+import "./filter-panel.css";
 
 function MultiFilter({ field, label, items, condition, setCondition, people }) {
   const [term, setTerm] = useState("");
@@ -234,6 +245,63 @@ export function FilterPanel({
       </label>
     );
   };
+  const statusGroup = (field, label, statuses) => {
+    const value = statusControlValue(filter[field], statuses);
+    const name = `filter-${field}`;
+    const counts = Object.fromEntries(
+      (facets[field] || []).map((item) => [item.value, item.count]),
+    );
+    return (
+      <div
+        className="filter-status-options"
+        role="radiogroup"
+        aria-label={label}
+      >
+        {value === customConditionValue && (
+          <p className="muted filter-section-help">Custom condition (see chip)</p>
+        )}
+        {[["", "Any"], ...statuses.map((status) => [status, statusLabels[field][status]])].map(
+          ([option, text]) => (
+            <label
+              key={option || "any"}
+              className={value === option ? "is-selected" : ""}
+            >
+              <input
+                type="radio"
+                name={name}
+                value={option}
+                checked={value === option}
+                onChange={() => {
+                  const next = statusConditionForValue(option, statuses);
+                  if (next !== undefined) setCondition(field, next);
+                }}
+              />
+              <span>{text}</span>
+              {option && <small>{counts[option] ?? 0}</small>}
+            </label>
+          ),
+        )}
+      </div>
+    );
+  };
+  const quickToggle = (field, label, icon) => {
+    const active = flagToggleActive(filter[field], false);
+    const count = facets[field]?.find((item) => item.value === "false")?.count;
+    return (
+      <button
+        type="button"
+        key={field}
+        aria-pressed={active}
+        onClick={() =>
+          setCondition(field, toggleFlagCondition(filter[field], false))
+        }
+      >
+        <Icon name={icon} />
+        {label}
+        {Number.isInteger(count) && <small>{count}</small>}
+      </button>
+    );
+  };
   return (
     <aside className="filter-panel" aria-label="Library filters" ref={panel}>
       <div className="filter-panel-header">
@@ -388,8 +456,28 @@ export function FilterPanel({
             ["lensModel", "Lens"],
           ].map(([field, label]) => selectFacet(field, label))}
         </section>
-        <section className="filter-section">
+        <section className="filter-section" data-section="text">
+          <h3>Text & descriptions</h3>
+          <p className="filter-section-help">
+            Generated descriptions come from image enrichment; manual ones
+            were written by a person.
+          </p>
+          {statusGroup("descriptionStatus", "Description", descriptionStatuses)}
+        </section>
+        <section className="filter-section" data-section="sensitivity">
+          <h3>Sensitivity review</h3>
+          <p className="filter-section-help">
+            Items flagged by detection wait for a review; overridden items keep
+            a person’s decision.
+          </p>
+          {statusGroup("sensitiveStatus", "Review status", sensitiveStatuses)}
+        </section>
+        <section className="filter-section" data-section="status">
           <h3>Library status</h3>
+          <div className="filter-toggles" aria-label="Quick status filters">
+            {quickToggle("hasAlbums", "Not in any album", "mdiImageAlbum")}
+            {quickToggle("hasTags", "Untagged", "mdiTagOutline")}
+          </div>
           {selectFacet("visibility", "Visibility")}
           {[
             ["hasPeople", "Has people"],

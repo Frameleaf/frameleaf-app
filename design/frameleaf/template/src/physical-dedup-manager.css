@@ -106,3 +106,316 @@
     width: 100%;
   }
 }
+
+/* ---- toolbar: scope, retained account and the primary action (no second title) ---- */
+.pd-toolbar {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 4px 0 8px;
+}
+.pd-toolbar > label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pd-toolbar > label > span,
+.pd-toolbar .pd-retained > span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fl-muted, #8b969f);
+}
+.pd-toolbar .pd-retained {
+  padding: 0;
+  min-height: 35px;
+}
+.pd-toolbar-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.pd-empty {
+  padding: 44px 20px;
+}
+.pd-plan-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pd-view {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--fl-radius-pill);
+  background: var(--fl-raised);
+}
+.pd-view button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--fl-radius-pill);
+  background: none;
+  color: var(--fl-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.pd-view button[aria-pressed="true"] {
+  background: var(--fl-panel);
+  color: var(--fl-text);
+  box-shadow: var(--fl-shadow-1);
+}
+
+/* ---- matching media: one group per retained original ---- */
+.pd-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.pd-group {
+  display: grid;
+  grid-template-columns: minmax(200px, 224px) 32px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-card);
+  background: var(--fl-panel);
+}
+.pd-group.skipped {
+  opacity: 0.85;
+}
+.pd-retained-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.pd-retained-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.pd-retained-text strong {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pd-retained-text small {
+  font-size: var(--fl-font-small);
+  color: var(--fl-muted);
+}
+.pd-retained-text .pd-references {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fl-teal);
+}
+.pd-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 5px;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: var(--fl-radius-pill);
+  background: var(--fl-raised);
+  color: var(--fl-muted);
+  font-size: var(--fl-font-micro);
+  font-weight: 600;
+}
+.pd-badge.retained {
+  background: color-mix(in srgb, var(--fl-accent), transparent 85%);
+  color: var(--fl-accent);
+}
+.pd-link {
+  display: grid;
+  place-items: center;
+  min-height: 72px;
+  color: var(--fl-muted);
+}
+.pd-copies {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+}
+.pd-copy {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--fl-raised);
+}
+.pd-copy.skipped {
+  opacity: 0.72;
+}
+.pd-copy-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.pd-copy-text strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.pd-copy-text small {
+  font-size: var(--fl-font-small);
+  color: var(--fl-muted);
+  overflow-wrap: anywhere;
+}
+.pd-decision {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  font-size: var(--fl-font-small);
+  font-weight: 600;
+}
+.pd-decision.eligible {
+  color: var(--jm-green);
+}
+.pd-decision.skipped {
+  color: var(--fl-muted);
+}
+.pd-thumb {
+  position: relative;
+  display: block;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--fl-raised);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fl-text), transparent 90%);
+}
+.pd-thumb.retained {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+}
+.pd-thumb.copy {
+  width: 72px;
+  height: 72px;
+}
+.pd-thumb.cell {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+}
+.pd-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.pd-thumb.unavailable img {
+  filter: grayscale(1) brightness(0.45);
+}
+.pd-thumb-kind {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: color-mix(in srgb, #0b0f12, transparent 30%);
+  color: #fff;
+}
+.pd-thumb-unavailable {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: #f3f5f6;
+  font-size: var(--fl-font-micro);
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.pd-evidence {
+  margin-top: 4px;
+  max-width: none;
+}
+.pd-evidence summary {
+  font-size: var(--fl-font-micro);
+  color: var(--fl-muted);
+  cursor: pointer;
+}
+.pd-evidence dl {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+}
+.pd-evidence dl div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pd-evidence dt {
+  font-size: var(--fl-font-micro);
+  font-weight: 600;
+  color: var(--fl-muted);
+}
+.pd-evidence dd {
+  margin: 0;
+}
+.pd-evidence code {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.pd-cell-media {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pd-cell-media > span {
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .pd-group {
+    grid-template-columns: 1fr;
+  }
+  .pd-link {
+    min-height: 24px;
+    transform: rotate(90deg);
+  }
+  .pd-retained-side {
+    flex-direction: row;
+  }
+  .pd-thumb.retained {
+    width: 120px;
+    aspect-ratio: 1;
+  }
+}
+@media (max-width: 700px) {
+  .pd-toolbar-actions {
+    width: 100%;
+  }
+  .pd-toolbar-actions .button {
+    width: 100%;
+    justify-content: center;
+  }
+  .pd-copies {
+    grid-template-columns: 1fr;
+  }
+  .pd-plan-tools {
+    flex-wrap: wrap;
+  }
+}

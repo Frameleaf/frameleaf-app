@@ -414,3 +414,46 @@ test("integral worker and prompt counts reject fractions while GPU rates and dur
   assert.equal(validateSetting(byId.advancedVideoProfileRate, "0.75"), "");
   assert.equal(validateSetting(byId.advancedVideoProfileRuntime, "1.5"), "");
 });
+
+test("the maintenance area is indexed with its sections and plain-language keywords", () => {
+  const area = settingsAreas.find((item) => item.id === "maintenance");
+  assert.ok(area);
+  assert.equal(area.group, "Your server");
+  assert.equal(area.icon, "mdiWrenchOutline");
+  assert.deepEqual(
+    settingsSections.maintenance.map((section) => section.id),
+    ["mode", "backups", "integrity"],
+  );
+  for (const section of settingsSections.maintenance) {
+    assert.equal(section.module, "Maintenance");
+    assert.deepEqual(section.fields, []);
+    assert.ok(
+      settingsIndex.some(
+        (entry) => entry.area === "maintenance" && entry.section === section.id,
+      ),
+    );
+  }
+  for (const [query, section] of [
+    ["restore backup", "backups"],
+    ["maintenance page", "mode"],
+    ["orphaned csv", "integrity"],
+    ["checksum", "integrity"],
+  ])
+    assert.ok(
+      findSettings(query).some(
+        (entry) => entry.area === "maintenance" && entry.section === section,
+      ),
+      query,
+    );
+});
+
+test("area headlines are plain names with one-sentence subtitles", () => {
+  for (const area of settingsAreas) {
+    assert.doesNotMatch(area.title, /[.!]$/, area.id);
+    assert.ok(area.title.length <= 24, area.id);
+    assert.match(area.description, /^[A-Z].*\.$/, area.id);
+    assert.doesNotMatch(area.description, /!/, area.id);
+    assert.equal(area.description.split(/\.\s/).length, 1, area.id);
+  }
+  assert.equal(settingsAreas.find((area) => area.id === "care").title, "Library care");
+});

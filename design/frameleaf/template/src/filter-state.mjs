@@ -126,3 +126,26 @@ export function captureDateHasCustomCondition(condition) {
     );
   });
 }
+
+// Quick toggles ("Not in any album", "Untagged") set one boolean equality and
+// clear it again; any other condition on the field is left to the chip.
+export function flagToggleActive(condition, value) {
+  return isOnly(condition, "eq") && condition.eq === value;
+}
+export function toggleFlagCondition(condition, value) {
+  if (typeof value !== "boolean") return condition;
+  return flagToggleActive(condition, value) ? null : { eq: value };
+}
+
+// Enrichment status selects (description / sensitivity review) accept one of a
+// fixed vocabulary; anything else is shown as a custom condition.
+export function statusControlValue(condition, statuses) {
+  return equalityControlValue(
+    condition,
+    (value) => typeof value === "string" && statuses.includes(value),
+  );
+}
+export function statusConditionForValue(value, statuses) {
+  if (value === "") return null;
+  return statuses.includes(value) ? { eq: value } : undefined;
+}

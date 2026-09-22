@@ -61,35 +61,35 @@ export const settingsAreas = [
     title: "Overview",
     icon: "mdiViewDashboardOutline",
     group: "Command center",
-    description: "A clear view of your home for photos.",
+    description: "Status, storage and what needs attention.",
   },
   {
     id: "analytics",
     title: "Library analytics",
     icon: "mdiChartTimelineVariant",
     group: "Command center",
-    description: "The story of your collection, in numbers.",
+    description: "Growth, storage and activity across accounts and libraries.",
   },
   {
     id: "storage",
     title: "Storage & originals",
     icon: "mdiHarddisk",
     group: "Your library",
-    description: "Know where everything lives. Keep originals intact.",
+    description: "Volumes, folder layout, retention and originals.",
   },
   {
     id: "backup",
     title: "Import & protection",
     icon: "mdiBackupRestore",
     group: "Your library",
-    description: "Bring memories in, and make sure you can get them back.",
+    description: "Imports, database backups and preservation exports.",
   },
   {
     id: "intelligence",
     title: "Search & intelligence",
     icon: "mdiImageSearchOutline",
     group: "Your library",
-    description: "Teach your library how to understand photos and videos.",
+    description: "Search, descriptions, recognition and smart albums.",
   },
   {
     id: "editing",
@@ -97,21 +97,21 @@ export const settingsAreas = [
     icon: "mdiMovieOpenOutline",
     group: "Your library",
     description:
-      "Separate original quality, edited masters, and fast playback.",
+      "Image output, video playback and editing masters.",
   },
   {
     id: "sharing",
     title: "People & sharing",
     icon: "mdiAccountMultipleOutline",
     group: "Your library",
-    description: "A shared library with clear ownership and boundaries.",
+    description: "Partners, Spaces, public links and sharing boundaries.",
   },
   {
     id: "care",
-    title: "Library Care",
+    title: "Library care",
     icon: "mdiShieldCheckOutline",
     group: "Your library",
-    description: "Repair, reconcile, and verify with evidence.",
+    description: "Health checks, repairs and duplicate handling.",
   },
   {
     id: "processing",
@@ -119,35 +119,42 @@ export const settingsAreas = [
     icon: "mdiDesktopTowerMonitor",
     group: "Your server",
     description:
-      "Choose endpoints and inspect the requirements of each workload.",
+      "Workers, queues, schedules and cloud processing.",
   },
   {
     id: "security",
     title: "Access & security",
     icon: "mdiShieldLockOutline",
     group: "Your server",
-    description: "Manage accounts, sign-in, devices, and private media.",
+    description: "Sign-in methods, locked content, devices and API access.",
   },
   {
     id: "notifications",
     title: "Notifications",
     icon: "mdiBellOutline",
     group: "Your server",
-    description: "Useful signals when something needs you.",
+    description: "Alerts, email delivery and message templates.",
   },
   {
     id: "server",
     title: "Server & updates",
     icon: "mdiServerOutline",
     group: "Your server",
-    description: "Identity, connectivity, diagnostics, and compatibility.",
+    description: "Server name, updates, logs, maps and branding.",
+  },
+  {
+    id: "maintenance",
+    title: "Maintenance",
+    icon: "mdiWrenchOutline",
+    group: "Your server",
+    description: "Maintenance mode, database backups and integrity checks.",
   },
   {
     id: "preferences",
     title: "Your preferences",
     icon: "mdiAccountOutline",
     group: "Personal",
-    description: "Make Frameleaf feel right on your devices.",
+    description: "Appearance, layout, playback and account access.",
   },
   {
     id: "users",
@@ -183,7 +190,7 @@ export const settingsAreas = [
     title: "Change history",
     icon: "mdiHistory",
     group: "Personal",
-    description: "See exactly what you changed, and when.",
+    description: "Every settings change saved on this device, with time and values.",
   },
 ];
 
@@ -1686,6 +1693,46 @@ settingsSections.server.push(
   ),
 );
 
+settingsSections.maintenance = [
+  section(
+    "mode",
+    "Maintenance mode",
+    "Pause access for everyone except administrators while you work on the server.",
+    [],
+    {
+      scope: "server",
+      module: "Maintenance",
+      icon: "mdiWrenchOutline",
+      keywords: "maintenance page downtime read-only offline start end",
+    },
+  ),
+  section(
+    "backups",
+    "Database backups",
+    "Create, download, restore and remove database backups.",
+    [],
+    {
+      scope: "server",
+      module: "Maintenance",
+      icon: "mdiDatabaseOutline",
+      keywords: "backup restore snapshot download delete migrations recovery",
+    },
+  ),
+  section(
+    "integrity",
+    "Integrity checks",
+    "Verify checksums, orphaned files, thumbnails and sidecars, then review the reports.",
+    [],
+    {
+      scope: "server",
+      module: "Maintenance",
+      icon: "mdiShieldCheckOutline",
+      keywords:
+        "integrity check checksum orphan orphaned missing thumbnail sidecar report csv verify",
+    },
+  ),
+];
+
 function moveField(id, area, sectionId) {
   const destination = settingsSections[area].find(
     (section) => section.id === sectionId,
@@ -2160,7 +2207,7 @@ export const settingsIndex = settingsAreas
       title: section.title,
       description: section.description,
       search:
-        `${area.title} ${section.title} ${section.description} ${section.fields.map((f) => `${f.label} ${f.help}`).join(" ")}`.toLowerCase(),
+        `${area.title} ${section.title} ${section.description} ${section.keywords || ""} ${section.fields.map((f) => `${f.label} ${f.help}`).join(" ")}`.toLowerCase(),
     })),
   );
 export function findSettings(query) {
