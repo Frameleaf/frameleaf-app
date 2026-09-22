@@ -6,11 +6,15 @@
   import PeopleCard from './PeopleCard.svelte';
   import PeopleInfiniteScroll from './PeopleInfiniteScroll.svelte';
   import SearchPeople from '$lib/components/faces-page/PeopleSearch.svelte';
+  import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
+  import PersonCard from '$lib/components/frameleaf/people/PersonCard.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { QueryParameter, SessionStorageKey } from '$lib/constants';
+  import { frameleafShell } from '$lib/frameleaf/rollout';
   import PersonMergeSuggestionModal from '$lib/modals/PersonMergeSuggestionModal.svelte';
   import { Route } from '$lib/route';
+  import { getPersonActions } from '$lib/services/person.service';
   import { locale } from '$lib/stores/preferences.store';
   import { websocketEvents } from '$lib/stores/websocket';
   import { normalizeSearchString } from '$lib/utils/string-utils';
@@ -181,6 +185,21 @@
     }
   };
 
+  const handleToggleHidden = async (detail: PersonResponseDto) => {
+    try {
+      const updatedPerson = await updatePerson({
+        id: detail.id,
+        personUpdateDto: { isHidden: !detail.isHidden },
+      });
+
+      people = people.map((person: PersonResponseDto) => (person.id === updatedPerson.id ? updatedPerson : person));
+
+      toastManager.primary($t('changed_visibility_successfully'));
+    } catch (error) {
+      handleError(error, $t('errors.unable_to_hide_person'));
+    }
+  };
+
   const handleToggleFavorite = async (detail: PersonResponseDto) => {
     try {
       const updatedPerson = await updatePerson({
@@ -214,6 +233,18 @@
   let visiblePeople = $derived(people.filter((people) => !people.isHidden));
   let countVisiblePeople = $derived(searchName ? searchedPeopleLocal.length : data.people.total - data.people.hidden);
   let showPeople = $derived(searchName ? searchedPeopleLocal : visiblePeople);
+
+  // Frameleaf People grid (FL-37): a "show hidden" toggle over the same `people` list the
+  // legacy grid uses. The search endpoint never returns hidden people (production does not
+  // pass `withHidden` to it), so a hidden person stays out of the grid while a search is
+  // active; this mirrors the legacy grid's existing search behaviour.
+  let showHiddenFrameleaf = $state(false);
+  let editingIdFrameleaf: string | undefined = $state();
+  let frameleafBase = $derived(searchName ? searchedPeopleLocal : people);
+  let frameleafCards = $derived(
+    frameleafBase.filter((person) => showHiddenFrameleaf || !person.isHidden),
+  );
+  let frameleafHiddenCount = $derived(people.filter((person) => person.isHidden).length);
 
   const onNameChangeInputFocus = (person: PersonResponseDto) => {
     editingPerson = person;
@@ -327,6 +358,15 @@
             />
           </div>
         </div>
+        {#if $frameleafShell}
+          <FrameleafButton
+            variant={showHiddenFrameleaf ? 'primary' : 'default'}
+            pressed={showHiddenFrameleaf}
+            onclick={() => (showHiddenFrameleaf = !showHiddenFrameleaf)}
+          >
+            {showHiddenFrameleaf ? $t('frameleaf_people_hide_hidden') : $t('frameleaf_people_show_hidden')}
+          </FrameleafButton>
+        {/if}
         <Button
           leadingIcon={mdiEyeOutline}
           onclick={() => goto('/people/manage')}
@@ -338,7 +378,45 @@
     {/if}
   {/snippet}
 
-  {#if countVisiblePeople > 0 && (!searchName || searchedPeopleLocal.length > 0)}
+  {#if $frameleafShell}
+    {#if frameleafCards.length > 0}
+      <p class="frameleaf-people-summary">
+        {$t('frameleaf_people_summary', {
+          values: { count: frameleafCards.length, hidden: frameleafHiddenCount },
+        })}
+      </p>
+      <div class="frameleaf-people-grid">
+        <PeopleInfiniteScroll people={frameleafCards} hasNextPage={!!nextPage && !searchName} {loadNextPage}>
+          {#snippet children({ person })}
+            <PersonCard
+              {person}
+              editing={editingIdFrameleaf === person.id}
+              onOpen={() => goto(Route.viewPerson(person, { previousRoute: Route.people() }))}
+              onStartRename={() => (editingIdFrameleaf = person.id)}
+              onCommitRename={async (name) => {
+                editingIdFrameleaf = undefined;
+                await onNameChangeSubmit(name, person);
+              }}
+              onCancelRename={() => (editingIdFrameleaf = undefined)}
+              onToggleFavorite={() => handleToggleFavorite(person)}
+              onToggleHide={() => handleToggleHidden(person)}
+              onMerge={() => handleMergePeople(person)}
+              onSetBirthday={() => getPersonActions($t, person).SetDateOfBirth.onAction()}
+            />
+          {/snippet}
+        </PeopleInfiniteScroll>
+      </div>
+    {:else}
+      <div class="flex min-h-[calc(66vh-11rem)] w-full place-content-center items-center dark:text-white">
+        <div class="flex flex-col content-center items-center text-center">
+          <Icon icon={mdiAccountOff} size="3.5em" />
+          <p class="mt-5 line-clamp-2 max-w-lg overflow-hidden text-3xl font-medium">
+            {$t(searchName ? 'search_no_people_named' : 'search_no_people', { values: { name: searchName } })}
+          </p>
+        </div>
+      </div>
+    {/if}
+  {:else if countVisiblePeople > 0 && (!searchName || searchedPeopleLocal.length > 0)}
     <PeopleInfiniteScroll people={showPeople} hasNextPage={!!nextPage && !searchName} {loadNextPage}>
       {#snippet children({ person })}
         <div
@@ -375,3 +453,14 @@
     </div>
   {/if}
 </UserPageLayout>
+
+<style>
+  .frameleaf-people-summary {
+    padding: 0 0.5rem 0.5rem;
+    font-size: var(--fl-font-small);
+    color: var(--fl-muted);
+  }
+  .frameleaf-people-grid {
+    padding: 0 0.5rem 2rem;
+  }
+</style>
