@@ -1,6 +1,8 @@
 <script lang="ts">
+  import MaintenanceRestoreConfirmDialog from '$lib/components/frameleaf/MaintenanceRestoreConfirmDialog.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { BackupFileStatus } from '$lib/constants';
+  import { frameleafShell } from '$lib/frameleaf/rollout';
   import { getDatabaseBackupActions, handleRestoreDatabaseBackup } from '$lib/services/database-backups.service';
   import { locale } from '$lib/stores/preferences.store';
   import { getBytesWithUnit } from '$lib/utils/byte-units';
@@ -46,11 +48,20 @@
   const { Download, Delete } = $derived(getDatabaseBackupActions($t, filename));
 
   let isDeleting = $state(false);
+  let restoreConfirmOpen = $state(false);
 
   function onBackupDeleteStatus(event: { filename: string; isDeleting: boolean }) {
     if (event.filename === filename) {
       isDeleting = event.isDeleting;
     }
+  }
+
+  function onRestoreClick() {
+    if ($frameleafShell) {
+      restoreConfirmOpen = true;
+      return;
+    }
+    void handleRestoreDatabaseBackup(filename);
   }
 </script>
 
@@ -83,9 +94,7 @@
         </HStack>
 
         <HStack gap={1}>
-          <Button size="small" onclick={() => handleRestoreDatabaseBackup(filename)} disabled={isDeleting}
-            >{$t('restore')}</Button
-          >
+          <Button size="small" onclick={onRestoreClick} disabled={isDeleting}>{$t('restore')}</Button>
           <ContextMenuButton
             disabled={isDeleting}
             position="top-right"
@@ -124,3 +133,7 @@
     </Stack>
   </CardBody>
 </Card>
+
+{#if $frameleafShell}
+  <MaintenanceRestoreConfirmDialog {filename} bind:open={restoreConfirmOpen} onClose={() => (restoreConfirmOpen = false)} />
+{/if}
