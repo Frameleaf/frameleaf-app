@@ -1,32 +1,20 @@
 <script lang="ts">
-  import ActionMenuItem from '$lib/components/ActionMenuItem.svelte';
   import type { OnAction, PreAction } from '$lib/components/asset-viewer/actions/action';
-  import AddToStackAction from '$lib/components/asset-viewer/actions/AddToStackAction.svelte';
-  import ArchiveAction from '$lib/components/asset-viewer/actions/ArchiveAction.svelte';
   import DeleteAction from '$lib/components/asset-viewer/actions/DeleteAction.svelte';
-  import KeepThisDeleteOthersAction from '$lib/components/asset-viewer/actions/KeepThisDeleteOthers.svelte';
   import RatingAction from '$lib/components/asset-viewer/actions/RatingAction.svelte';
-  import RemoveAssetFromStack from '$lib/components/asset-viewer/actions/RemoveAssetFromStack.svelte';
-  import RestoreAction from '$lib/components/asset-viewer/actions/RestoreAction.svelte';
-  import SetFeaturedPhotoAction from '$lib/components/asset-viewer/actions/SetPersonFeaturedAction.svelte';
-  import SetStackPrimaryAsset from '$lib/components/asset-viewer/actions/SetStackPrimaryAsset.svelte';
-  import SetVisibilityAction from '$lib/components/asset-viewer/actions/SetVisibilityAction.svelte';
-  import UnstackAction from '$lib/components/asset-viewer/actions/UnstackAction.svelte';
+  import ViewerMoreMenu from '$lib/components/frameleaf/ViewerMoreMenu.svelte';
+  import ViewerTitle from '$lib/components/frameleaf/ViewerTitle.svelte';
   import LoadingDots from '$lib/components/LoadingDots.svelte';
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
-  import MarkNsfwAction from '$lib/components/timeline/actions/MarkNsfwAction.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { languageManager } from '$lib/managers/language-manager.svelte';
-  import { getAlbumAssetActions } from '$lib/services/album.service';
   import { getGlobalActions } from '$lib/services/app.service';
   import { getAssetActions } from '$lib/services/asset.service';
   import { getSharedLink, withoutIcons } from '$lib/utils';
   import type { OnUndoDelete } from '$lib/utils/actions';
-  import { toTimelineAsset } from '$lib/utils/timeline-util';
   import {
     AssetTypeEnum,
-    AssetVisibility,
     type AlbumResponseDto,
     type AssetResponseDto,
     type PersonResponseDto,
@@ -47,6 +35,10 @@
     onClose?: () => void;
     isPlayingOriginalVideo: boolean;
     setPlayOriginalVideo: (value: boolean) => void;
+    /** FL-35: the viewer has a neighbour, so the slideshow and filmstrip are meaningful. */
+    canNavigateCollection?: boolean;
+    /** FL-35: the caller supplied a real list of neighbours for the filmstrip. */
+    canShowFilmstrip?: boolean;
   }
 
   let {
@@ -60,10 +52,11 @@
     onClose,
     isPlayingOriginalVideo = false,
     setPlayOriginalVideo,
+    canNavigateCollection = false,
+    canShowFilmstrip = false,
   }: Props = $props();
 
   const isOwner = $derived(authManager.authenticated && asset.ownerId === authManager.user.id);
-  const isLocked = $derived(asset.visibility === AssetVisibility.Locked);
 
   const { Cast } = $derived(getGlobalActions($t));
 
@@ -86,13 +79,21 @@
   const sharedLink = getSharedLink();
 </script>
 
-<CommandPaletteDefaultProvider name={$t('assets')} actions={withoutIcons([Close, Cast, ...Object.values(Actions)])} />
+<CommandPaletteDefaultProvider
+  name={$t('assets')}
+  actions={withoutIcons([Close, Cast, PlayOriginalVideo, ...Object.values(Actions)])}
+/>
 
 <div
-  class="flex h-16 place-items-center justify-between bg-linear-to-b from-black/40 px-3 drop-shadow-[0_0_1px_rgba(0,0,0,0.4)] transition-transform duration-200"
+  class="flex h-16 place-items-center justify-between gap-3 bg-linear-to-b from-black/40 px-3 drop-shadow-[0_0_1px_rgba(0,0,0,0.4)] transition-transform duration-200"
 >
-  <div class="dark">
-    <ActionButton action={Close} />
+  <div class="flex min-w-0 flex-1 items-center gap-2">
+    <div class="dark shrink-0">
+      <ActionButton action={Close} />
+    </div>
+
+    <!-- FL-35: file name with the short EXIF line underneath. -->
+    <ViewerTitle {asset} />
   </div>
 
   <div
@@ -133,65 +134,22 @@
 
     {#if !sharedLink}
       <ButtonContextMenu direction="left" align="top-right" color="secondary" title={$t('more')} icon={mdiDotsVertical}>
-        <ActionMenuItem action={Actions.PlaySlideshow} />
-
-        <ActionMenuItem action={Actions.Download} />
-        <ActionMenuItem action={Actions.DownloadOriginal} />
-
-        {#if !isLocked && asset.isTrashed}
-          <RestoreAction {asset} {onAction} />
-        {/if}
-
-        <ActionMenuItem action={Actions.AddToAlbum} />
-        <ActionMenuItem action={Actions.RemoveFromAlbum} />
-
-        {#if isOwner}
-          <AddToStackAction {asset} {stack} {onAction} />
-          {#if stack}
-            <UnstackAction {stack} {onAction} />
-            <KeepThisDeleteOthersAction {stack} {asset} {onAction} />
-            {#if stack?.primaryAssetId !== asset.id}
-              <SetStackPrimaryAsset {stack} {asset} {onAction} />
-              {#if stack?.assets?.length > 2}
-                <RemoveAssetFromStack {asset} {stack} {onAction} />
-              {/if}
-            {/if}
-          {/if}
-        {/if}
-        {#if album}
-          {@const { SetCover } = getAlbumAssetActions($t, album, asset)}
-          <ActionMenuItem action={SetCover} />
-        {/if}
-        {#if person}
-          <SetFeaturedPhotoAction {asset} {person} {onAction} />
-        {/if}
-
-        <ActionMenuItem action={Actions.SetProfilePicture} />
-
-        {#if isOwner && !isLocked}
-          <ArchiveAction {asset} {onAction} {preAction} />
-        {/if}
-        <ActionMenuItem action={Actions.ViewInTimeline} />
-        <ActionMenuItem action={Actions.ViewSimilar} />
-
-        {#if !asset.isTrashed && isOwner}
-          <SetVisibilityAction asset={toTimelineAsset(asset)} {onAction} {preAction} />
-        {/if}
-
-        {#if !asset.isTrashed && isOwner}
-          <MarkNsfwAction menuItem assetIds={[asset.id]} clearSelection={false} />
-          <MarkNsfwAction menuItem markSafe assetIds={[asset.id]} clearSelection={false} />
-        {/if}
-
-        <ActionMenuItem action={PlayOriginalVideo} />
-
-        {#if isOwner}
-          <hr />
-          <ActionMenuItem action={Actions.RefreshFacesJob} />
-          <ActionMenuItem action={Actions.RefreshMetadataJob} />
-          <ActionMenuItem action={Actions.RegenerateThumbnailJob} />
-          <ActionMenuItem action={Actions.TranscodeVideoJob} />
-        {/if}
+        <!--
+          FL-35: the complete grouped menu (Download, Organize, Stack, Set as, Go to, Jobs,
+          Viewer). Every entry maps to an existing asset action and a group that has no
+          supported entry in this context is not rendered at all.
+        -->
+        <ViewerMoreMenu
+          {asset}
+          {album}
+          {person}
+          {stack}
+          {preAction}
+          {onAction}
+          {canNavigateCollection}
+          {canShowFilmstrip}
+          playOriginalVideo={PlayOriginalVideo}
+        />
       </ButtonContextMenu>
     {/if}
   </div>

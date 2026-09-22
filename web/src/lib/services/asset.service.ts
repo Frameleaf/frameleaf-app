@@ -22,6 +22,8 @@ import {
   mdiDownload,
   mdiDownloadBox,
   mdiFaceRecognition,
+  mdiFilmstrip,
+  mdiFolderOpenOutline,
   mdiHeadSyncOutline,
   mdiHeart,
   mdiHeartOutline,
@@ -31,8 +33,11 @@ import {
   mdiInformationOutline,
   mdiMagnifyMinusOutline,
   mdiMagnifyPlusOutline,
+  mdiMapMarkerOutline,
   mdiMotionPauseOutline,
   mdiMotionPlayOutline,
+  mdiPanorama,
+  mdiPanoramaVariantOutline,
   mdiPlus,
   mdiPresentationPlay,
   mdiShareVariantOutline,
@@ -40,8 +45,12 @@ import {
   mdiTune,
 } from '@mdi/js';
 import type { MessageFormatter } from 'svelte-i18n';
+import { get } from 'svelte/store';
 import { goto } from '$app/navigation';
 import { ProjectionType } from '$lib/constants';
+import { folderOf } from '$lib/frameleaf/viewer-headline';
+import { isPanorama } from '$lib/frameleaf/viewer-media';
+import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
 import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -309,6 +318,61 @@ export const getAssetActions = (
     onAction: () => goto(Route.search({ queryAssetId: asset.stackPrimaryAssetId ?? asset.id })),
   };
 
+  /**
+   * FL-35: "View on map" from the viewer's Go to group. The map route centres on the
+   * asset's own coordinates, so it is hidden when the asset has none.
+   */
+  const ViewOnMap: ActionItem = {
+    title: $t('frameleaf_viewer_view_on_map'),
+    icon: mdiMapMarkerOutline,
+    $if: () =>
+      typeof asset.exifInfo?.latitude === 'number' &&
+      typeof asset.exifInfo?.longitude === 'number' &&
+      asset.visibility !== AssetVisibility.Locked,
+    onAction: () =>
+      goto(Route.map({ zoom: 14, lat: asset.exifInfo!.latitude!, lng: asset.exifInfo!.longitude! })),
+  };
+
+  /**
+   * FL-35: "Show in folder". Also the relink target of the offline banner — it takes the
+   * owner to the folder the original was last recorded in so the library path can be fixed.
+   */
+  const ShowInFolder: ActionItem = {
+    title: $t('frameleaf_viewer_show_in_folder'),
+    icon: mdiFolderOpenOutline,
+    $if: () =>
+      isOwner &&
+      !sharedLink &&
+      authManager.authenticated &&
+      authManager.preferences.folders.enabled &&
+      !!folderOf(asset.originalPath),
+    onAction: () => goto(Route.folders({ path: folderOf(asset.originalPath) ?? undefined })),
+  };
+
+  /**
+   * FL-35: the filmstrip is a client-only viewer preference; the viewer renders it only
+   * when its caller supplied a real list of neighbours.
+   */
+  const ToggleFilmstrip: ActionItem = {
+    title: get(showFilmstrip) ? $t('frameleaf_viewer_hide_filmstrip') : $t('frameleaf_viewer_show_filmstrip'),
+    icon: mdiFilmstrip,
+    onAction: () => showFilmstrip.update((value) => !value),
+    shortcuts: [{ key: 'f', shift: true }],
+  };
+
+  /**
+   * FL-35: a panorama opens in the photo-sphere viewer. This switches between looking
+   * around it and seeing the flat frame, and is hidden for anything that is not a panorama.
+   */
+  const PanoramaLookAround: ActionItem = {
+    title: assetViewerManager.isPanoramaFlattened
+      ? $t('frameleaf_viewer_look_around_panorama')
+      : $t('frameleaf_viewer_fit_panorama'),
+    icon: assetViewerManager.isPanoramaFlattened ? mdiPanorama : mdiPanoramaVariantOutline,
+    $if: () => isPanorama(asset),
+    onAction: () => assetViewerManager.togglePanoramaView(),
+  };
+
   const RefreshFacesJob: ActionItem = {
     title: $t('refresh_faces'),
     icon: mdiHeadSyncOutline,
@@ -357,6 +421,10 @@ export const getAssetActions = (
     SetProfilePicture,
     ViewInTimeline,
     ViewSimilar,
+    ViewOnMap,
+    ShowInFolder,
+    ToggleFilmstrip,
+    PanoramaLookAround,
     RefreshFacesJob,
     RefreshMetadataJob,
     RegenerateThumbnailJob,
