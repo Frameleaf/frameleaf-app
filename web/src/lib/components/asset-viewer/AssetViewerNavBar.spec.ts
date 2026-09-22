@@ -122,4 +122,119 @@ describe('AssetViewerNavBar component', () => {
       expect(assetViewerManager.isShowEditor).toBe(true);
     });
   });
+
+  describe('FL-35 grouped More menu and EXIF line', () => {
+    const signIn = (ownerId: string) => {
+      authManager.setUser(userAdminFactory.build({ id: ownerId }));
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+    };
+
+    it('heads each group it renders and drops the ones with nothing to offer', () => {
+      const ownerId = 'id-of-the-user';
+      signIn(ownerId);
+      const asset = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Image });
+
+      const { getByText, queryByText, queryByRole } = renderWithTooltips(AssetViewerNavBar, {
+        asset,
+        ...additionalProps,
+      });
+
+      expect(getByText('frameleaf_viewer_group_download')).toBeInTheDocument();
+      expect(getByText('frameleaf_viewer_group_organize')).toBeInTheDocument();
+      expect(getByText('frameleaf_viewer_group_stack')).toBeInTheDocument();
+      expect(getByText('frameleaf_viewer_group_go_to')).toBeInTheDocument();
+      expect(getByText('frameleaf_viewer_group_jobs')).toBeInTheDocument();
+      // "Set as" survives on the profile picture alone.
+      expect(getByText('frameleaf_viewer_group_set_as')).toBeInTheDocument();
+
+      // Not opened from an album or a person page, so neither target is offered.
+      expect(queryByRole('menuitem', { name: 'set_as_album_cover' })).not.toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'set_as_featured_photo' })).not.toBeInTheDocument();
+      expect(queryByText('frameleaf_viewer_group_trash')).not.toBeInTheDocument();
+    });
+
+    it('offers Trash instead of the organizing groups for a trashed asset', () => {
+      const ownerId = 'id-of-the-user';
+      signIn(ownerId);
+      const asset = assetFactory.build({ ownerId, isTrashed: true, type: AssetTypeEnum.Image });
+
+      const { getByText, queryByText } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+
+      expect(getByText('frameleaf_viewer_group_trash')).toBeInTheDocument();
+      expect(queryByText('frameleaf_viewer_group_organize')).not.toBeInTheDocument();
+      expect(queryByText('frameleaf_viewer_group_stack')).not.toBeInTheDocument();
+      expect(queryByText('frameleaf_viewer_group_jobs')).not.toBeInTheDocument();
+    });
+
+    it('drops the Jobs group entirely for an asset the user does not own', () => {
+      signIn('id-of-the-user');
+      const asset = assetFactory.build({ ownerId: 'someone-else', isTrashed: false, type: AssetTypeEnum.Image });
+
+      const { queryByText } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+
+      expect(queryByText('frameleaf_viewer_group_jobs')).not.toBeInTheDocument();
+      expect(queryByText('frameleaf_viewer_group_stack')).not.toBeInTheDocument();
+    });
+
+    it('offers the encoded-video job for video and the face job for a still', () => {
+      const ownerId = 'id-of-the-user';
+      signIn(ownerId);
+
+      const video = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Video });
+      const rendered = renderWithTooltips(AssetViewerNavBar, { asset: video, ...additionalProps });
+      expect(rendered.getByRole('menuitem', { name: 'refresh_encoded_videos' })).toBeInTheDocument();
+      expect(rendered.queryByRole('menuitem', { name: 'refresh_faces' })).not.toBeInTheDocument();
+      rendered.unmount();
+
+      const still = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Image });
+      const { getByRole, queryByRole } = renderWithTooltips(AssetViewerNavBar, { asset: still, ...additionalProps });
+      expect(getByRole('menuitem', { name: 'refresh_faces' })).toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'refresh_encoded_videos' })).not.toBeInTheDocument();
+    });
+
+    it('shows the EXIF line under the file name', () => {
+      const ownerId = 'id-of-the-user';
+      signIn(ownerId);
+      const asset = assetFactory.build({
+        ownerId,
+        isTrashed: false,
+        type: AssetTypeEnum.Image,
+        originalFileName: 'DSCF1234.RAF',
+        width: 6000,
+        height: 4000,
+        exifInfo: {
+          make: 'Fujifilm',
+          model: 'X-T5',
+          iso: 400,
+          exifImageWidth: 6000,
+          exifImageHeight: 4000,
+          fileSizeInByte: 24_500_000,
+        },
+      });
+
+      const { getByTestId } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+
+      const line = getByTestId('viewer-exif-line').textContent ?? '';
+      expect(line).toContain('Fujifilm X-T5');
+      expect(line).toContain('ISO 400');
+      expect(line).toContain('24.5 MB');
+    });
+
+    it('leaves out the EXIF line when the asset carries no metadata', () => {
+      const ownerId = 'id-of-the-user';
+      signIn(ownerId);
+      const asset = assetFactory.build({
+        ownerId,
+        isTrashed: false,
+        type: AssetTypeEnum.Image,
+        width: null,
+        height: null,
+        duration: null,
+        exifInfo: undefined,
+      });
+
+      const { queryByTestId } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      expect(queryByTestId('viewer-exif-line')).not.toBeInTheDocument();
+    });
+  });
 });
