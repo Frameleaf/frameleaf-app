@@ -2,11 +2,16 @@
   import Dialog from './Dialog.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { OpenQueryParam } from '$lib/constants';
+  import '$lib/frameleaf/tokens.css';
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
   import { removePartner, updatePartner, type PartnerResponseDto } from '@immich/sdk';
-  import { toastManager } from '@immich/ui';
+  import { Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
   import { t } from 'svelte-i18n';
+
+  // Mounted directly on the partner timeline route, above a full-bleed Timeline that has
+  // no Frameleaf ancestor of its own — see SharedLinkList.svelte for the same pattern.
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 
   let {
     partner = $bindable(),
@@ -54,7 +59,11 @@
   };
 </script>
 
-<section class="ph-header" aria-label={$t('frameleaf_sharing.library_heading', { values: { possessive } })}>
+<section
+  class="frameleaf ph-header"
+  data-theme={appTheme}
+  aria-label={$t('frameleaf_sharing.library_heading', { values: { possessive } })}
+>
   <div class="ph-identity">
     <UserAvatar user={partner} size="lg" />
     <div class="ph-copy">
