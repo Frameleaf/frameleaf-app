@@ -159,7 +159,7 @@
       onDescriptionReview={(review) => (descriptionSource = review?.source ?? 'none')}
     />
     <DetailPanelRating {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
-    <DetailPanelPeople {asset} {isOwner} {previousRoute} />
+    <DetailPanelPeople {asset} {isOwner} {previousRoute} onFacesChanged={handleRefreshPeople} />
 
     <!-- FL-36: the design's Captured section carries the date, the timezone and the place. -->
     <div class="p-4">

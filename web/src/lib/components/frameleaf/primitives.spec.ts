@@ -175,6 +175,25 @@ describe('Frameleaf menu', () => {
     await fireEvent.pointerDown(screen.getByRole('button', { name: 'After menu' }));
     expect(screen.queryByRole('menu')).toBeNull();
   });
+
+  it('keeps a keepOpen item open so it can swap in a follow-up view (FL-38)', async () => {
+    const onSelect = vi.fn();
+    render(await menuHarness(), { onSelect });
+    await fireEvent.click(screen.getByRole('button', { name: 'Filter' }));
+    expect(screen.getByRole('menuitem', { name: 'People' })).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'More…' }));
+    expect(onSelect).toHaveBeenCalledWith('more');
+    // The popup itself stays open and its content swapped, rather than closing.
+    expect(screen.getByRole('menu')).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: 'People' })).toBeNull();
+    expect(screen.getByRole('menuitem', { name: 'Detail view' })).toBeTruthy();
+
+    // An ordinary item inside that follow-up view still closes the popup as normal.
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Detail view' }));
+    expect(onSelect).toHaveBeenCalledWith('detail-choice');
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
 });
 
 describe('Frameleaf controls', () => {
