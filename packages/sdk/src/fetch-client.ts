@@ -2640,6 +2640,8 @@ export type PartnerResponseDto = {
     profileChangedAt: string;
     /** Profile image path */
     profileImagePath: string;
+    /** Sharer allows this partner to see asset locations */
+    shareLocation?: boolean;
 };
 export type PartnerCreateDto = {
     /** User ID to share with */
@@ -2647,7 +2649,9 @@ export type PartnerCreateDto = {
 };
 export type PartnerUpdateDto = {
     /** Show partner assets in timeline */
-    inTimeline: boolean;
+    inTimeline?: boolean;
+    /** Share asset locations with this partner; only the sharing user can change it */
+    shareLocation?: boolean;
 };
 export type PeopleResponseDto = {
     /** Whether there are more pages */

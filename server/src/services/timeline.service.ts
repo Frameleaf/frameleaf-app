@@ -7,6 +7,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getPrivacyQueryOptions, requireSuppressedOnlyAccess } from 'src/utils/hidden-content.js';
+import { getLocationHiddenPartnerIds } from 'src/utils/partner-location.js';
 
 @Injectable()
 export class TimelineService extends BaseService {
@@ -37,12 +38,27 @@ export class TimelineService extends BaseService {
           userId: auth.user.id,
           repository: this.partnerRepository,
           timelineEnabled: true,
+          // a bounding box is itself a location query, so partners who hide their locations stay out of it
+          locationSharedOnly: !!dto.bbox,
         });
         userIds.push(...partnerIds);
       }
     }
 
-    return { ...options, ...getPrivacyQueryOptions(auth, suppressedOnly), userIds };
+    // FL-54: other people's assets can appear here through partners, albums or people; owners who hide
+    // their locations from this viewer get their location columns nulled in the bucket SQL
+    const canSeeOthersAssets =
+      dto.withPartners || !!dto.albumId || !!dto.personId || (!!userId && userId !== auth.user.id);
+    const locationHiddenOwnerIds = canSeeOthersAssets
+      ? [...(await getLocationHiddenPartnerIds({ userId: auth.user.id, repository: this.partnerRepository }))]
+      : [];
+
+    return {
+      ...options,
+      ...getPrivacyQueryOptions(auth, suppressedOnly),
+      userIds,
+      ...(locationHiddenOwnerIds.length > 0 ? { locationHiddenOwnerIds } : {}),
+    };
   }
 
   private async timeBucketChecks(auth: AuthDto, dto: TimeBucketDto) {
