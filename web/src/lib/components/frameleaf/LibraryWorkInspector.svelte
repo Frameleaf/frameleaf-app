@@ -20,7 +20,9 @@
       {#if asset.isFavorite}<dt>Favorite</dt>
         <dd>Yes</dd>{/if}
       {#if asset.isVideo && asset.duration !== null}<dt>Duration</dt>
-        <dd>{Math.floor(asset.duration / 60)}:{String(Math.floor(asset.duration % 60)).padStart(2, '0')}</dd>{/if}
+        <dd>
+          {Math.floor(asset.duration / 60_000)}:{String(Math.floor((asset.duration / 1000) % 60)).padStart(2, '0')}
+        </dd>{/if}
     </dl>
     <button type="button" onclick={() => onopen(asset)}>Open media</button>
   {:else if assets.length > 1}

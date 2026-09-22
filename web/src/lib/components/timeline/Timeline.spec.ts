@@ -117,7 +117,7 @@ it('switches real borrowed presentation without destroying the manager or cleari
   sdkMock.getTimeBuckets.mockResolvedValue([]);
   const manager = new TimelineManager();
   const selection = new AssetMultiSelectManager();
-  const asset = timelineAssetFactory.build({ city: 'Synthetic City', isVideo: false });
+  const asset = timelineAssetFactory.build({ city: 'Synthetic City', isVideo: true, duration: 12_000 });
   selection.selectAsset(asset);
   const destroy = vi.spyOn(manager, 'destroy');
   const view = renderWithTooltips(Timeline, {
@@ -132,6 +132,7 @@ it('switches real borrowed presentation without destroying the manager or cleari
   expect(view.queryByRole('complementary', { name: 'Selection inspector' })).not.toBeInTheDocument();
   await fireEvent.click(view.getByRole('button', { name: 'Work' }));
   expect(view.getByRole('complementary', { name: 'Selection inspector' })).toHaveTextContent('Synthetic City');
+  expect(view.getByRole('complementary', { name: 'Selection inspector' })).toHaveTextContent('0:12');
   await fireEvent.click(view.getByRole('button', { name: 'Hide inspector' }));
   expect(view.queryByRole('complementary', { name: 'Selection inspector' })).not.toBeInTheDocument();
   expect(manager.libraryLayout).toBe('work');
