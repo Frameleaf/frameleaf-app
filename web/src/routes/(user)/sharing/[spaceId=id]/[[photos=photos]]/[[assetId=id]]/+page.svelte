@@ -89,7 +89,6 @@
       space={data.space}
       members={data.members}
       albums={data.albums}
-      spaces={data.spaces}
       linkedAlbums={data.linkedAlbums}
       people={data.people}
       newSince={data.newSince}

@@ -113,15 +113,6 @@
   const editableCollections = $derived(
     tree.collections.map(({ collection }) => collection).filter((collection) => canEdit(collection, currentUserId)),
   );
-  const albumOptions = $derived(
-    [
-      ...tree.albums,
-      ...tree.collections.flatMap(({ albums }) => albums),
-      ...tree.spaces,
-    ]
-      .filter((entry) => canEdit(entry, currentUserId))
-      .map((entry) => ({ id: entry.id, name: entry.albumName || $t('unnamed_album'), count: entry.assetCount })),
-  );
 
   /* ------------------------------------------------------------------ */
   /* Collection photos: the union of its albums                          */
@@ -435,7 +426,6 @@
               {bulkContext}
               downloadFileName={albumDownloadFileName}
               {tagOptions}
-              {albumOptions}
               onEndReached={loadMoreCollectionAssets}
               onRemoved={handleMutated}
               onSelectAll={selectEverythingInCollection}
@@ -466,7 +456,6 @@
           {bulkContext}
           downloadFileName={albumDownloadFileName}
           {tagOptions}
-          {albumOptions}
           onMutated={handleMutated}
           onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
         >

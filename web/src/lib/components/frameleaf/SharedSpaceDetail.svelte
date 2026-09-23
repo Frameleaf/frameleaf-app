@@ -14,7 +14,6 @@
   import SharedSpaceTimeline from '$lib/components/frameleaf/SharedSpaceTimeline.svelte';
   import SpaceMediaComments from '$lib/components/frameleaf/SpaceMediaComments.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
-  import { canEdit } from '$lib/frameleaf/album-directory';
   import { SpacePhotoSet } from '$lib/frameleaf/space-photos.svelte';
   import { shouldPageForViewer, spaceAssetHref, spaceViewerList } from '$lib/frameleaf/space-viewer';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -80,8 +79,6 @@
     members: SharedSpaceMemberResponseDto[];
     /** Albums the signed-in person can read, offered as bulk-add sources and to link. */
     albums?: AlbumResponseDto[];
-    /** Shared spaces the signed-in person is in, offered as bulk "add to album" targets. */
-    spaces?: AlbumResponseDto[];
     linkedAlbums?: SharedSpaceAlbumResponseDto[];
     people?: SharedSpacePeopleResponseDto;
     newSince?: SharedSpaceNewResponseDto | null;
@@ -95,7 +92,6 @@
     space,
     members,
     albums = [],
-    spaces = [],
     linkedAlbums = [],
     people = { linked: [], candidates: [] },
     newSince = null,
@@ -154,13 +150,6 @@
   let newInfo = $derived<SharedSpaceNewResponseDto | null>(newSince);
   let showingNew = $state(false);
   const timelineFilter = $derived(newSinceFilter(newInfo, showingNew));
-
-  /** Albums and spaces a bulk "add to album" may target: the ones this member may add to. */
-  const albumOptions = $derived(
-    [...albums, ...spaces]
-      .filter((entry) => canEdit(entry, currentUserId))
-      .map((entry) => ({ id: entry.id, name: entry.albumName || $t('unnamed_album'), count: entry.assetCount })),
-  );
 
   /* ------------------------------------------------------------------ */
   /* The space's photos and its own viewer                              */
@@ -337,7 +326,6 @@
           {space}
           {photos}
           filter={timelineFilter}
-          {albumOptions}
           onOpen={(asset) => void openAsset(asset.id)}
           onChanged={onRefresh}
         />

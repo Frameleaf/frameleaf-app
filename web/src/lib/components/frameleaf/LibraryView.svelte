@@ -99,7 +99,6 @@
     /** Assets a bulk action removed from the page, for a host that keeps counts of its own. */
     onMutated?: (removedIds: string[]) => void;
     tagOptions?: { id: string; name: string }[];
-    albumOptions?: { id: string; name: string; count?: number }[];
     /** Replaces the Frameleaf selection bar, for a page that needs its own. */
     selectionBar?: Snippet;
     /**
@@ -146,7 +145,6 @@
     beforeAction,
     onMutated,
     tagOptions = [],
-    albumOptions = [],
     shell,
     children,
     toolbar,
@@ -536,7 +534,6 @@
         assets={selectedAssets}
         context={{ ...bulkContext, currentUserId, snapshot: !!snapshot }}
         {tagOptions}
-        {albumOptions}
         operations={session.session.operations}
         undoLabel={bulk.undo?.label}
         onAction={runBulk}

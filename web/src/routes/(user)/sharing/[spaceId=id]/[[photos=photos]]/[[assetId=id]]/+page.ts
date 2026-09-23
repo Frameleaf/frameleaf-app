@@ -20,7 +20,7 @@ import type { PageLoad } from './$types';
  * the album endpoints; `getSharedSpaceMembers` adds the invitations nobody has
  * answered, which are not memberships and so are not on the album. The tree
  * supplies the albums offered as sources for "add everything matching" and as
- * albums to link, and the spaces a bulk "add to album" may target.
+ * albums to link. A bulk "add to album" loads its own destinations.
  *
  * The panels' own data — linked albums, people and what is new since the
  * member's last visit — comes from the shared space endpoints, each of which
@@ -72,7 +72,6 @@ export const load = (async ({ params, url, depends }) => {
     space,
     members,
     albums: [...tree.albums, ...tree.collections.flatMap((collection) => collection.albums)],
-    spaces: tree.spaces,
     linkedAlbums,
     people,
     newSince,
