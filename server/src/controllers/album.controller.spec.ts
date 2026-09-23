@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { AlbumController } from 'src/controllers/album.controller.js';
 import { AlbumService } from 'src/services/album.service.js';
+import { AuthFactory } from 'test/factories/auth.factory.js';
 import { factory } from 'test/small.factory.js';
 import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
 
@@ -38,11 +39,14 @@ describe(AlbumController.name, () => {
 
   describe('GET /albums/tree', () => {
     it('should return the album directory for the authenticated user', async () => {
+      // The harness authenticates nobody unless told to, so hand it a session to pass through.
+      const auth = AuthFactory.create();
+      ctx.authenticate.mockResolvedValue(auth);
       service.getTree.mockResolvedValue({ collections: [], albums: [], spaces: [] });
       const { status, body } = await request(ctx.getHttpServer()).get('/albums/tree');
       expect(status).toEqual(200);
       expect(body).toEqual({ collections: [], albums: [], spaces: [] });
-      expect(service.getTree).toHaveBeenCalledWith(expect.objectContaining({ user: expect.anything() }));
+      expect(service.getTree).toHaveBeenCalledWith(auth);
     });
   });
 
@@ -99,12 +103,15 @@ describe(AlbumController.name, () => {
 
     it('should pass a null destination through to take the album out of its collection', async () => {
       const id = factory.uuid();
+      // The harness authenticates nobody unless told to, so hand it a session to pass through.
+      const auth = AuthFactory.create();
+      ctx.authenticate.mockResolvedValue(auth);
       service.moveToCollection.mockResolvedValue({ id } as never);
       const { status } = await request(ctx.getHttpServer())
         .put(`/albums/${id}/collection`)
         .send({ collectionId: null });
       expect(status).toEqual(200);
-      expect(service.moveToCollection).toHaveBeenCalledWith(expect.anything(), id, { collectionId: null });
+      expect(service.moveToCollection).toHaveBeenCalledWith(auth, id, { collectionId: null });
     });
   });
 });

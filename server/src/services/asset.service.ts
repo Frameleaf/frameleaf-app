@@ -345,6 +345,9 @@ export class AssetService extends BaseService {
     reason: AssetLockReason,
     { pushedByCaller = [] }: { pushedByCaller?: string[] } = {},
   ): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
     const locked = await this.assetRepository.lock(ids, reason, auth.user.id);
     if (locked.length > 0) {
       await this.afterAssetsLocked(locked);
