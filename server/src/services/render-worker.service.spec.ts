@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import {
   MediaOperationDestination,
   MediaOperationKind,
@@ -313,6 +313,32 @@ describe(RenderWorkerService.name, () => {
       const audit = vi.mocked(workers.recordAudit).mock.calls[0][0];
       expect(JSON.stringify(audit)).not.toContain(response.enrolmentSecret);
     });
+
+    it.each([
+      MediaOperationKind.Bulk,
+      MediaOperationKind.StudioBundleExport,
+      MediaOperationKind.EnrichmentPlan,
+      MediaOperationKind.MediaHealth,
+      MediaOperationKind.ICloudSync,
+      MediaOperationKind.TakeoutImport,
+      MediaOperationKind.PhysicalDeduplication,
+    ])('refuses to enrol a worker for %s, whatever its destination (FL-73)', async (kind) => {
+      await expect(
+        sut.create(authStub.admin, {
+          name: 'Local box',
+          destination: MediaOperationDestination.Local,
+          kinds: [MediaOperationKind.StudioExport, kind],
+        } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(workers.createWorker).not.toHaveBeenCalled();
+    });
+
+    it('refuses to re-scope a worker to a server-side kind (FL-73)', async () => {
+      await expect(
+        sut.update(authStub.admin, workerA.id, { kinds: [MediaOperationKind.TakeoutImport] } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(workers.updateWorker).not.toHaveBeenCalled();
+    });
   });
 
   describe('admit', () => {
@@ -404,6 +430,19 @@ describe(RenderWorkerService.name, () => {
       const audits = vi.mocked(workers.recordAudit).mock.calls.map(([entry]) => JSON.stringify(entry));
       expect(audits.some((entry) => entry.includes(session.sessionToken))).toBe(false);
       expect(audits.some((entry) => entry.includes('secret-a'))).toBe(false);
+    });
+
+    it('scopes the session to renders only, even for a worker enrolled with a server-side kind (FL-73)', async () => {
+      const legacy = workerStub({ kinds: [MediaOperationKind.QuickEdit, MediaOperationKind.Bulk] as never });
+      vi.mocked(workers.getWorkerBySecret).mockResolvedValue(legacy);
+      vi.mocked(workers.createSession).mockImplementation((dto) => Promise.resolve(dto as never));
+
+      const session = await sut.admit(admission as never);
+
+      expect(session.scopes).toEqual([MediaOperationKind.QuickEdit]);
+      expect(workers.createSession).toHaveBeenCalledWith(
+        expect.objectContaining({ scopes: [MediaOperationKind.QuickEdit] }),
+      );
     });
   });
 
