@@ -1,13 +1,27 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { join, parse } from 'node:path';
 import type { JobOf, PhysicalDeduplicationMigrationState } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
+import {
+  PHYSICAL_DEDUPLICATION_PREVIEW_LIMIT,
+  PhysicalDeduplicationCopyState,
+  PhysicalDeduplicationPlanDto,
+  PhysicalDeduplicationPreviewRequestDto,
+  PhysicalDeduplicationPreviewResponseDto,
+  PhysicalDeduplicationRetainedState,
+} from 'src/dtos/physical-deduplication.dto.js';
 import {
   AssetFileType,
+  AssetType,
   DatabaseLock,
   JobName,
   JobStatus,
+  Permission,
+  PhysicalDeduplicationDecision,
+  PhysicalDeduplicationPlanMode,
+  PhysicalDeduplicationSkipReason,
   PhysicalFileType,
   QueueName,
   StorageFolder,
@@ -24,23 +38,47 @@ const generatedFileTypes = new Set([
   AssetFileType.EncodedVideo,
 ]);
 
+const asAssetType = (type: string): AssetType =>
+  Object.values(AssetType).includes(type as AssetType) ? (type as AssetType) : AssetType.Other;
+
+/**
+ * Physical deduplication (FL-71).
+ *
+ * The dry run is a preview: it may retain originals in an account chosen on the page and may
+ * review a single account's copies. It never changes files. Applying always uses the saved
+ * `physicalDeduplication.masterUserId`, requires the feature to be enabled, and refuses when the
+ * last preview was produced for a different retained account.
+ */
 @Injectable()
 export class PhysicalDeduplicationService extends BaseService {
   @OnJob({ name: JobName.PhysicalDeduplicationMigrationDryRun, queue: QueueName.StorageTemplateMigration })
-  async handleDryRun(_: JobOf<JobName.PhysicalDeduplicationMigrationDryRun>): Promise<JobStatus> {
+  async handleDryRun(job: JobOf<JobName.PhysicalDeduplicationMigrationDryRun>): Promise<JobStatus> {
     const state = await this.forkSchemaRepository.getState();
     if (state.phase === 'inactive' || state.phase === 'failed') {
       this.logger.warn(`Physical deduplication skipped in fork-schema ${state.phase} phase`);
       return JobStatus.Skipped;
     }
+
     const { physicalDeduplication } = await this.getConfig({ withCache: true });
-    if (!physicalDeduplication.enabled || !physicalDeduplication.masterUserId) {
-      this.logger.warn('Physical deduplication dry run skipped: feature is disabled or no master user is configured');
+    const masterUserId = job?.masterUserId ?? physicalDeduplication.masterUserId;
+    if (!masterUserId) {
+      this.logger.warn('Physical deduplication dry run skipped: no retained account was chosen or saved');
+      return JobStatus.Skipped;
+    }
+
+    if (!(await this.isActiveUser(masterUserId))) {
+      this.logger.warn('Physical deduplication dry run skipped: the retained account does not exist or is deleted');
+      return JobStatus.Skipped;
+    }
+
+    const scopeUserId = job?.scopeUserId ?? null;
+    if (scopeUserId && !(await this.isActiveUser(scopeUserId))) {
+      this.logger.warn('Physical deduplication dry run skipped: the scoped account does not exist or is deleted');
       return JobStatus.Skipped;
     }
 
     await this.databaseRepository.withLock(DatabaseLock.StorageTemplateMigration, async () => {
-      const summary = await this.runMigration('dry-run', physicalDeduplication.masterUserId!);
+      const summary = await this.runMigration('dry-run', masterUserId, scopeUserId);
       await this.systemMetadataRepository.set(SystemMetadataKey.PhysicalDeduplicationMigration, summary);
     });
 
@@ -62,23 +100,125 @@ export class PhysicalDeduplicationService extends BaseService {
 
     const lastRun = await this.systemMetadataRepository.get(SystemMetadataKey.PhysicalDeduplicationMigration);
     if (lastRun?.mode !== 'dry-run' || lastRun.masterUserId !== physicalDeduplication.masterUserId) {
-      this.logger.warn('Physical deduplication apply requires a successful dry run first');
+      this.logger.warn(
+        'Physical deduplication apply refused: it requires a preview prepared for the saved retained account',
+      );
       return JobStatus.Failed;
     }
 
+    // The applied run covers exactly what the reviewed preview covered.
+    const scopeUserId = lastRun.scopeUserId ?? null;
+
     await this.databaseRepository.withLock(DatabaseLock.StorageTemplateMigration, async () => {
-      const summary = await this.runMigration('apply', physicalDeduplication.masterUserId!);
+      const summary = await this.runMigration('apply', physicalDeduplication.masterUserId!, scopeUserId);
       await this.systemMetadataRepository.set(SystemMetadataKey.PhysicalDeduplicationMigration, summary);
     });
 
     return JobStatus.Success;
   }
 
-  private async runMigration(mode: MigrationSummary['mode'], masterUserId: string): Promise<MigrationSummary> {
+  /** Queue a preview. Validation happens here so the page gets an immediate answer; the job re-checks. */
+  async requestPreview(dto: PhysicalDeduplicationPreviewRequestDto): Promise<void> {
+    const { physicalDeduplication } = await this.getConfig({ withCache: false });
+    const masterUserId = dto.masterUserId ?? physicalDeduplication.masterUserId;
+    if (!masterUserId) {
+      throw new BadRequestException('Choose an account to retain originals in before preparing a preview');
+    }
+
+    if (!(await this.isActiveUser(masterUserId))) {
+      throw new BadRequestException('The retained account does not exist');
+    }
+
+    if (dto.scopeUserId && !(await this.isActiveUser(dto.scopeUserId))) {
+      throw new BadRequestException('The scoped account does not exist');
+    }
+
+    if (dto.scopeUserId === masterUserId) {
+      throw new BadRequestException('The scoped account cannot be the retained account');
+    }
+
+    await this.jobRepository.queue({
+      name: JobName.PhysicalDeduplicationMigrationDryRun,
+      data: { masterUserId, scopeUserId: dto.scopeUserId },
+    });
+  }
+
+  /**
+   * The latest plan for the requesting administrator. Owner names come from the user table;
+   * `canView` is the requester's own `AssetRead` access, re-evaluated on every read, so the
+   * response never widens what the administrator may already open.
+   */
+  async getPreview(auth: AuthDto): Promise<PhysicalDeduplicationPreviewResponseDto> {
+    const { physicalDeduplication } = await this.getConfig({ withCache: false });
+    const counts = await this.jobRepository.getJobCounts(QueueName.StorageTemplateMigration);
+    const running = counts.active + counts.waiting + counts.delayed + counts.paused > 0;
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.PhysicalDeduplicationMigration);
+
+    const response: PhysicalDeduplicationPreviewResponseDto = {
+      plan: null,
+      savedMasterUserId: physicalDeduplication.masterUserId ?? null,
+      enabled: physicalDeduplication.enabled,
+      running,
+    };
+
+    if (!state) {
+      return response;
+    }
+
+    const retained = state.retained ?? [];
+    const copies = state.copies ?? [];
+    const users = await this.userRepository.getList({ withDeleted: true });
+    const nameOf = (userId: string) => users.find((user) => user.id === userId)?.name ?? userId;
+    const viewable = await this.checkAccess({
+      auth,
+      permission: Permission.AssetRead,
+      ids: [...retained.map((item) => item.assetId), ...copies.map((item) => item.assetId)],
+    });
+
+    const plan: PhysicalDeduplicationPlanDto = {
+      mode: state.mode === 'apply' ? PhysicalDeduplicationPlanMode.Apply : PhysicalDeduplicationPlanMode.DryRun,
+      ranAt: state.ranAt,
+      masterUserId: state.masterUserId,
+      masterUserName: nameOf(state.masterUserId),
+      scopeUserId: state.scopeUserId ?? null,
+      scopeUserName: state.scopeUserId ? nameOf(state.scopeUserId) : null,
+      eligibleAssets: state.eligibleAssets,
+      linkedAssets: state.linkedAssets,
+      skippedExternal: state.skippedExternal,
+      skippedMissingMaster: state.skippedMissingMaster,
+      reclaimableBytes: state.reclaimableBytes,
+      deletedBytes: state.deletedBytes,
+      retained: retained.map((item) => ({
+        ...item,
+        ownerName: nameOf(item.ownerId),
+        canView: viewable.has(item.assetId),
+      })),
+      copies: copies.map((item) => ({
+        ...item,
+        ownerName: nameOf(item.ownerId),
+        canView: viewable.has(item.assetId),
+      })),
+      copiesTruncated: state.copiesTruncated ?? false,
+    };
+
+    return { ...response, plan };
+  }
+
+  private async isActiveUser(userId: string) {
+    const user = await this.userRepository.get(userId, {});
+    return !!user && !user.deletedAt;
+  }
+
+  private async runMigration(
+    mode: MigrationSummary['mode'],
+    masterUserId: string,
+    scopeUserId: string | null,
+  ): Promise<MigrationSummary> {
     const summary: MigrationSummary = {
       mode,
       ranAt: new Date().toISOString(),
       masterUserId,
+      scopeUserId,
       eligibleAssets: 0,
       linkedAssets: 0,
       skippedExternal: 0,
@@ -86,16 +226,41 @@ export class PhysicalDeduplicationService extends BaseService {
       reclaimableBytes: 0,
       deletedBytes: 0,
       samples: [],
+      retained: [],
+      copies: [],
+      copiesTruncated: false,
     };
+    const retainedById = new Map<string, PhysicalDeduplicationRetainedState>();
+    const sharesByRetained = new Map<string, number>();
 
     for await (const candidate of this.physicalFileRepository.getMigrationCandidates(masterUserId)) {
+      if (scopeUserId && candidate.ownerId !== scopeUserId) {
+        continue;
+      }
+
+      const copy: PhysicalDeduplicationCopyState = {
+        assetId: candidate.id,
+        ownerId: candidate.ownerId,
+        originalFileName: candidate.originalFileName,
+        originalPath: candidate.originalPath,
+        type: asAssetType(candidate.type),
+        sizeInBytes: Number(candidate.sizeInBytes ?? 0),
+        checksum: candidate.checksum.toString('hex'),
+        retainedAssetId: null,
+        checksumMatch: false,
+        decision: PhysicalDeduplicationDecision.Skip,
+        reason: null,
+      };
+
       if (candidate.isExternal || candidate.libraryId || candidate.isOffline) {
         summary.skippedExternal++;
+        this.addCopy(summary, { ...copy, reason: PhysicalDeduplicationSkipReason.ExternalLibrary });
         continue;
       }
 
       if (!candidate.sizeInBytes) {
         summary.skippedMissingMaster++;
+        this.addCopy(summary, { ...copy, reason: PhysicalDeduplicationSkipReason.MissingSize });
         continue;
       }
 
@@ -106,17 +271,47 @@ export class PhysicalDeduplicationService extends BaseService {
       );
       if (!master) {
         summary.skippedMissingMaster++;
+        this.addCopy(summary, { ...copy, reason: PhysicalDeduplicationSkipReason.NoRetainedMatch });
+        continue;
+      }
+
+      copy.retainedAssetId = master.id;
+      copy.checksumMatch = true;
+
+      if (!retainedById.has(master.id)) {
+        const referencesBefore = master.physicalOriginalFileId
+          ? await this.physicalFileRepository.countOriginalReferences(master.physicalOriginalFileId)
+          : 1;
+        retainedById.set(master.id, {
+          assetId: master.id,
+          ownerId: masterUserId,
+          originalFileName: master.originalFileName,
+          originalPath: master.originalPath,
+          type: asAssetType(master.type),
+          sizeInBytes: Number(master.sizeInBytes ?? 0),
+          checksum: master.checksum.toString('hex'),
+          referencesBefore: Math.max(referencesBefore, 1),
+          referencesAfter: Math.max(referencesBefore, 1),
+        });
+      }
+
+      // A copy that already points at the retained original has nothing left to reclaim.
+      if (candidate.physicalOriginalFileId && candidate.physicalOriginalFileId === master.physicalOriginalFileId) {
+        this.addCopy(summary, { ...copy, reason: PhysicalDeduplicationSkipReason.AlreadyShared });
         continue;
       }
 
       summary.eligibleAssets++;
       summary.reclaimableBytes += Number(candidate.sizeInBytes);
       this.addSample(summary, candidate.originalPath);
+      sharesByRetained.set(master.id, (sharesByRetained.get(master.id) ?? 0) + 1);
+      this.addCopy(summary, { ...copy, decision: PhysicalDeduplicationDecision.Share });
 
       if (mode === 'apply') {
         const physicalFile = await this.physicalFileRepository.ensureOriginalPhysicalFile(master.id);
         if (!physicalFile) {
           summary.skippedMissingMaster++;
+          this.markSkipped(summary, copy.assetId, PhysicalDeduplicationSkipReason.RetainedFileMissing);
           continue;
         }
 
@@ -129,6 +324,7 @@ export class PhysicalDeduplicationService extends BaseService {
             `Physical deduplication: master file missing on disk for ${physicalFile.path}; refusing to delete duplicate ${candidate.originalPath}`,
           );
           summary.skippedMissingMaster++;
+          this.markSkipped(summary, copy.assetId, PhysicalDeduplicationSkipReason.RetainedFileMissing);
           continue;
         }
 
@@ -150,10 +346,31 @@ export class PhysicalDeduplicationService extends BaseService {
       });
     }
 
+    for (const retained of retainedById.values()) {
+      retained.referencesAfter = retained.referencesBefore + (sharesByRetained.get(retained.assetId) ?? 0);
+    }
+    summary.retained = [...retainedById.values()];
+
     this.logger.log(
       `Physical deduplication ${mode} complete: ${summary.eligibleAssets} eligible, ${summary.linkedAssets} linked, ${summary.reclaimableBytes} reclaimable bytes`,
     );
     return summary;
+  }
+
+  private addCopy(summary: MigrationSummary, copy: PhysicalDeduplicationCopyState) {
+    if (summary.copies!.length < PHYSICAL_DEDUPLICATION_PREVIEW_LIMIT) {
+      summary.copies!.push(copy);
+    } else {
+      summary.copiesTruncated = true;
+    }
+  }
+
+  private markSkipped(summary: MigrationSummary, assetId: string, reason: PhysicalDeduplicationSkipReason) {
+    const copy = summary.copies!.find((item) => item.assetId === assetId);
+    if (copy) {
+      copy.decision = PhysicalDeduplicationDecision.Skip;
+      copy.reason = reason;
+    }
   }
 
   private async migrateGeneratedFiles({
