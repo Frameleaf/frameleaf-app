@@ -14,7 +14,10 @@ import {
 const NOW = new Date('2026-09-22T12:00:00.000Z');
 const minutesAgo = (minutes: number) => new Date(NOW.getTime() - minutes * 60_000);
 
-const sessionInput = (overrides: Partial<SessionAdmissionInput['worker']> = {}, report: Partial<SessionAdmissionInput['report']> = {}) =>
+const sessionInput = (
+  overrides: Partial<SessionAdmissionInput['worker']> = {},
+  report: Partial<SessionAdmissionInput['report']> = {},
+) =>
   ({
     worker: {
       revoked: false,
@@ -56,7 +59,9 @@ describe(evaluateSessionAdmission.name, () => {
   it('refuses a replayed report: the same timestamp as the last one accepted', () => {
     const accepted = minutesAgo(5);
     expect(
-      evaluateSessionAdmission(sessionInput({ lastConformanceReportedAt: accepted }, { conformanceReportedAt: accepted })),
+      evaluateSessionAdmission(
+        sessionInput({ lastConformanceReportedAt: accepted }, { conformanceReportedAt: accepted }),
+      ),
     ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.ConformanceReplayed });
   });
 
@@ -312,7 +317,13 @@ describe(evaluateRunningLimits.name, () => {
 
 describe('input grants', () => {
   const binding = { claimToken: 'claim-a', sessionTokenHash: Buffer.from('session-a') };
-  const payload = { operationId: 'op-1', inputId: 'source', assetId: 'asset-1', expiresAt: NOW.getTime() + 60_000 };
+  const payload = {
+    operationId: 'op-1',
+    inputId: 'source',
+    resourceId: 'asset-1',
+    token: null,
+    expiresAt: NOW.getTime() + 60_000,
+  };
 
   it('verifies a grant against the operation, claim and session it was minted for', () => {
     const grant = signInputGrant(payload, binding);
@@ -355,10 +366,31 @@ describe('input grants', () => {
   it('rejects a grant whose payload was edited after signing', () => {
     const grant = signInputGrant(payload, binding);
     const [, signature] = grant.split('.');
-    const forged = Buffer.from(JSON.stringify({ ...payload, assetId: 'asset-2' })).toString('base64url');
+    const forged = Buffer.from(JSON.stringify({ ...payload, resourceId: 'asset-2' })).toString('base64url');
     expect(verifyInputGrant(`${forged}.${signature}`, { operationId: 'op-1', binding, now: NOW })).toEqual({
       valid: false,
       reason: 'signature',
+    });
+  });
+
+  it('carries an FL-90 read grant opaquely and rejects a payload without the token field', () => {
+    const studio = { ...payload, inputId: 'font:inter', resourceId: 'inter', token: 'fl90-jwt' };
+    const grant = signInputGrant(studio, binding);
+    expect(verifyInputGrant(grant, { operationId: 'op-1', binding, now: NOW })).toEqual({
+      valid: true,
+      payload: studio,
+    });
+
+    const withoutToken = {
+      operationId: payload.operationId,
+      inputId: payload.inputId,
+      resourceId: payload.resourceId,
+      expiresAt: payload.expiresAt,
+    };
+    const legacy = signInputGrant(withoutToken as never, binding);
+    expect(verifyInputGrant(legacy, { operationId: 'op-1', binding, now: NOW })).toEqual({
+      valid: false,
+      reason: 'malformed',
     });
   });
 

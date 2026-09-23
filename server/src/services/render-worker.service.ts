@@ -113,7 +113,11 @@ const limitsOf = (row: {
 });
 
 /** The instance default when no administrator has set one yet. */
-const DEFAULT_INSTANCE_LIMITS: RenderLimits = { maxConcurrentOperations: 2, maxWallClockMs: null, maxOutputBytes: null };
+const DEFAULT_INSTANCE_LIMITS: RenderLimits = {
+  maxConcurrentOperations: 2,
+  maxWallClockMs: null,
+  maxOutputBytes: null,
+};
 
 const mapWorker = (worker: RenderWorker, activeOperations: number): RenderWorkerDto => ({
   id: worker.id,
@@ -407,7 +411,11 @@ export class RenderWorkerService {
         conformanceMaxAgeMs: worker.conformanceMaxAgeMs,
         lastConformanceReportedAt: worker.lastConformanceReportedAt ? new Date(worker.lastConformanceReportedAt) : null,
       },
-      report: { engineDigest: dto.engineDigest, conformanceReportedAt: reportedAt, softwareRenderer: dto.softwareRenderer },
+      report: {
+        engineDigest: dto.engineDigest,
+        conformanceReportedAt: reportedAt,
+        softwareRenderer: dto.softwareRenderer,
+      },
       now,
     });
 
@@ -1189,7 +1197,11 @@ export class RenderWorkerService {
       event: RenderWorkerAuditEvent.LimitExceeded,
       reason: decision.reason,
       operationId: operation.id,
-      detail: { outputBytes: String(outputBytes), maxOutputBytes: limits.maxOutputBytes, maxWallClockMs: limits.maxWallClockMs },
+      detail: {
+        outputBytes: String(outputBytes),
+        maxOutputBytes: limits.maxOutputBytes,
+        maxWallClockMs: limits.maxWallClockMs,
+      },
     });
     this.logger.warn(`Media operation ${operation.id} stopped on worker ${workerId}: ${decision.reason}`);
 

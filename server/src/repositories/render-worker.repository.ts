@@ -222,7 +222,11 @@ export class RenderWorkerRepository {
   }
 
   /** Create or replace the ceilings for the instance default or one account. */
-  async upsertLimit(subject: string, userId: string | null, limit: RenderWorkerLimitUpsert): Promise<RenderWorkerLimit> {
+  async upsertLimit(
+    subject: string,
+    userId: string | null,
+    limit: RenderWorkerLimitUpsert,
+  ): Promise<RenderWorkerLimit> {
     return (await this.db
       .insertInto('render_worker_limit')
       .values({ subject, userId, ...limit })
