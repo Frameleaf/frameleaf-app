@@ -79,6 +79,40 @@ describe('SystemConfigDraftStore (FL-66)', () => {
     expect(onUpdated).toHaveBeenCalledWith(saved);
   });
 
+  it('keeps edits made while a save is on its way', async () => {
+    const store = createStore();
+    store.draft.trash.days = 10;
+    let answer: (value: AdminConfigRevisionResponseDto) => void = () => {};
+    save.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+
+    const saving = store.save();
+    await vi.waitFor(() => expect(save).toHaveBeenCalled());
+    store.draft.ffmpeg.crf = 28;
+    answer(current(adminConfigWith((config) => (config.trash.days = 10)), 'r2'));
+    await saving;
+
+    expect(store.revision).toBe('r2');
+    expect(store.changes).toEqual([{ path: 'ffmpeg.crf', before: 23, after: 28 }]);
+  });
+
+  it('never follows a load that a save overtook', async () => {
+    const store = createStore();
+    let answerLoad: (value: AdminConfigRevisionResponseDto) => void = () => {};
+    load.mockReturnValue(new Promise((resolve) => (answerLoad = resolve)));
+    const refreshing = store.refresh();
+
+    store.draft.trash.days = 10;
+    save.mockResolvedValue(current(adminConfigWith((config) => (config.trash.days = 10)), 'r2'));
+    await store.save();
+
+    // The load read the settings before the save; its answer is older than what the draft has.
+    answerLoad(current(adminConfigFixture(), 'r1'));
+    await refreshing;
+
+    expect(store.revision).toBe('r2');
+    expect(store.baseline.trash.days).toBe(10);
+  });
+
   it('keeps the draft when a save fails for another reason', async () => {
     const store = createStore();
     store.draft.trash.days = 10;
@@ -298,6 +332,35 @@ describe('SystemConfigDraftStore (FL-66)', () => {
       expect(after.stale).toBe(true);
       expect(after.conflicts).toEqual([{ path: 'trash.days', before: 30, mine: 10, theirs: 60 }]);
       expect(after.draft.trash.days).toBe(10);
+    });
+
+    it('still finds a recovered conflict after another reload or an unrelated save elsewhere', () => {
+      const first = createStore();
+      first.draft.trash.days = 10;
+      first.persistJournal();
+
+      const changedElsewhere = adminConfigWith((config) => (config.trash.days = 60));
+      const second = createStore(current(changedElsewhere, 'r2'));
+      second.recover();
+      second.persistJournal();
+
+      const third = createStore(current(changedElsewhere, 'r2'));
+      third.recover();
+      expect(third.stale).toBe(true);
+      expect(third.conflicts.map(({ path }) => path)).toEqual(['trash.days']);
+
+      // Another administrator saves something unrelated: the conflict is still there.
+      third.follow(
+        current(
+          adminConfigWith((config) => {
+            config.trash.days = 60;
+            config.ffmpeg.crf = 30;
+          }),
+          'r3',
+        ),
+      );
+      expect(third.stale).toBe(true);
+      expect(third.conflicts).toEqual([{ path: 'trash.days', before: 30, mine: 10, theirs: 60 }]);
     });
 
     it('clears the journal once the draft is saved or discarded', async () => {

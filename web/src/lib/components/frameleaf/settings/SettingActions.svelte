@@ -2,10 +2,9 @@
   /**
    * The page tools of one settings section (FL-66), the template's `.cc-page-tools`. Every page
    * edits one settings draft and the settings bar saves them together, so a page no longer saves
-   * on its own: "Reset this page" puts the section's defaults into the draft for review.
-   *
-   * `onBeforeSave` (a confirmation or a fix-up) runs before any save that changes one of `keys`;
-   * resolving false stops that save and keeps the draft.
+   * on its own: "Reset this page" puts the section's defaults into the draft for review. Checks
+   * that must run before a save are registered by the settings page, so they run whichever area
+   * is open.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
@@ -15,20 +14,11 @@
   type Props = {
     disabled?: boolean;
     keys: Array<keyof AdminConfigDto>;
-    onBeforeSave?: () => boolean | Promise<boolean>;
   };
 
-  let { disabled, keys, onBeforeSave }: Props = $props();
+  let { disabled, keys }: Props = $props();
 
   const settingsDraft = getSystemConfigDraft();
-
-  $effect(() => {
-    const beforeSave = onBeforeSave;
-    if (!settingsDraft || !beforeSave) {
-      return;
-    }
-    return settingsDraft.registerGuard({ keys, beforeSave: () => beforeSave() });
-  });
 
   const resetPage = () => settingsDraft?.resetSection(keys);
 </script>
