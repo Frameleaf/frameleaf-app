@@ -24068,7 +24068,7 @@
     },
     "/server/apk-links": {
       "get": {
-        "description": "Retrieve links to the APKs for the current server version.",
+        "description": "Retrieve links to the signed APKs for the current server version, from the release destination configured for this server.",
         "operationId": "getApkLinks",
         "parameters": [],
         "responses": {
@@ -24081,6 +24081,9 @@
               }
             },
             "description": ""
+          },
+          "404": {
+            "description": "No signed Android release is configured for this server"
           }
         },
         "security": [
@@ -24114,6 +24117,52 @@
         ],
         "x-immich-permission": "server.apkLinks",
         "x-immich-state": "Stable"
+      }
+    },
+    "/server/app-releases": {
+      "get": {
+        "description": "Retrieve the signed release destinations of the mobile apps for this server, or that none is configured.",
+        "operationId": "getAppReleases",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerAppReleasesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get app releases",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "server.about",
+        "x-immich-state": "Alpha"
       }
     },
     "/server/config": {
@@ -34055,7 +34104,7 @@
             "in": "query",
             "description": "Maximum number of logs",
             "schema": {
-              "maximum": 9007199254740991,
+              "maximum": 200,
               "exclusiveMinimum": true,
               "default": 50,
               "type": "integer",
@@ -34109,6 +34158,68 @@
           }
         ],
         "x-immich-permission": "workflow.logs"
+      }
+    },
+    "/workflows/{id}/runs/{runId}/retry": {
+      "post": {
+        "description": "Run a logged workflow run again, as its next attempt, for the photo or video that started it. The workflow must be enabled and able to run.",
+        "operationId": "retryWorkflowRun",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Workflow ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "description": "Run ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retry a workflow run",
+        "tags": [
+          "Workflows"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "workflow.update",
+        "x-immich-state": "Alpha"
       }
     },
     "/workflows/{id}/share": {
@@ -54170,6 +54281,13 @@
       },
       "PluginMethodResponseDto": {
         "properties": {
+          "allowedHosts": {
+            "description": "Hosts this method may send requests to; empty when it cannot reach other servers",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "description": {
             "description": "Description",
             "type": "string"
@@ -54209,6 +54327,7 @@
           }
         },
         "required": [
+          "allowedHosts",
           "description",
           "hostFunctions",
           "key",
@@ -58799,6 +58918,57 @@
           "armeabiv7a",
           "universal",
           "x86_64"
+        ],
+        "type": "object"
+      },
+      "ServerAppReleasesResponseDto": {
+        "properties": {
+          "android": {
+            "description": "Android application",
+            "properties": {
+              "appId": {
+                "description": "Android package id of the signed release",
+                "type": "string"
+              },
+              "available": {
+                "description": "Whether a signed Android release is configured for this server",
+                "type": "boolean"
+              },
+              "links": {
+                "$ref": "#/components/schemas/ServerApkLinksDto",
+                "description": "Signed APK downloads for this server version"
+              },
+              "signingCertificateSha256": {
+                "description": "SHA-256 fingerprint of the release signing certificate, as AA:BB:...",
+                "type": "string"
+              }
+            },
+            "required": [
+              "available"
+            ],
+            "type": "object"
+          },
+          "ios": {
+            "description": "iOS application",
+            "properties": {
+              "available": {
+                "description": "Whether an iOS release is configured for this server",
+                "type": "boolean"
+              },
+              "url": {
+                "description": "App Store or TestFlight page",
+                "type": "string"
+              }
+            },
+            "required": [
+              "available"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "android",
+          "ios"
         ],
         "type": "object"
       },
@@ -69710,6 +69880,7 @@
         "properties": {
           "description": {
             "description": "Workflow description",
+            "maxLength": 2000,
             "nullable": true,
             "type": "string"
           },
@@ -69717,12 +69888,18 @@
             "description": "Workflow enabled",
             "type": "boolean"
           },
+          "extra": {
+            "additionalProperties": {},
+            "description": "Additional fields of an imported definition, kept and exported unchanged",
+            "type": "object"
+          },
           "logging": {
             "description": "Workflow logs run results",
             "type": "boolean"
           },
           "name": {
             "description": "Workflow name",
+            "maxLength": 300,
             "nullable": true,
             "type": "string"
           },
@@ -69730,15 +69907,50 @@
             "items": {
               "$ref": "#/components/schemas/WorkflowStepDto"
             },
+            "maxItems": 100,
             "type": "array"
           },
           "trigger": {
-            "$ref": "#/components/schemas/WorkflowTrigger",
-            "description": "Workflow trigger type"
+            "description": "Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
           }
         },
         "required": [
           "trigger"
+        ],
+        "type": "object"
+      },
+      "WorkflowIssueCode": {
+        "description": "Why a workflow definition cannot run",
+        "enum": [
+          "trigger_unavailable",
+          "method_unavailable",
+          "method_incompatible",
+          "config_invalid"
+        ],
+        "type": "string"
+      },
+      "WorkflowIssueDto": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/WorkflowIssueCode"
+          },
+          "message": {
+            "description": "What prevents the workflow from running",
+            "type": "string"
+          },
+          "step": {
+            "description": "Index of the step the issue belongs to",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "message"
         ],
         "type": "object"
       },
@@ -69751,6 +69963,19 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
           },
+          "attempt": {
+            "description": "0 for the first attempt, 1 for the automatic retry, then manual retries",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "error": {
+            "description": "Why the run failed, without stored credentials",
+            "type": "string"
+          },
+          "errorCode": {
+            "$ref": "#/components/schemas/WorkflowRunErrorCode"
+          },
           "id": {
             "description": "Workflow log entry ID",
             "format": "uuid",
@@ -69762,7 +69987,6 @@
             "properties": {
               "index": {
                 "description": "Index of the step in the workflow",
-                "exclusiveMinimum": true,
                 "maximum": 9007199254740991,
                 "minimum": 0,
                 "type": "integer"
@@ -69781,6 +70005,12 @@
           "result": {
             "$ref": "#/components/schemas/WorkflowResult"
           },
+          "runId": {
+            "description": "Run ID shared by every attempt of one run",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
           "triggerDataId": {
             "description": "Workflow trigger data ID",
             "format": "uuid",
@@ -69790,8 +70020,10 @@
         },
         "required": [
           "at",
+          "attempt",
           "id",
-          "result"
+          "result",
+          "runId"
         ],
         "type": "object"
       },
@@ -69810,11 +70042,23 @@
             "description": "Workflow enabled",
             "type": "boolean"
           },
+          "extra": {
+            "additionalProperties": {},
+            "description": "Additional fields of an imported definition, kept and exported unchanged",
+            "type": "object"
+          },
           "id": {
             "description": "Workflow ID",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "issues": {
+            "description": "What prevents this definition from running on this server; empty when it can run",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowIssueDto"
+            },
+            "type": "array"
           },
           "logging": {
             "description": "Workflow logs run results",
@@ -69828,13 +70072,13 @@
           "steps": {
             "description": "Workflow steps",
             "items": {
-              "$ref": "#/components/schemas/WorkflowStepDto"
+              "$ref": "#/components/schemas/WorkflowStepResponseDto"
             },
             "type": "array"
           },
           "trigger": {
-            "$ref": "#/components/schemas/WorkflowTrigger",
-            "description": "Workflow trigger type"
+            "description": "Workflow trigger type",
+            "type": "string"
           },
           "updatedAt": {
             "description": "Update date",
@@ -69845,7 +70089,9 @@
           "createdAt",
           "description",
           "enabled",
+          "extra",
           "id",
+          "issues",
           "logging",
           "name",
           "steps",
@@ -69863,12 +70109,25 @@
         ],
         "type": "string"
       },
+      "WorkflowRunErrorCode": {
+        "description": "Why a workflow run failed",
+        "enum": [
+          "unsupported",
+          "step_failed"
+        ],
+        "type": "string"
+      },
       "WorkflowShareResponseDto": {
         "properties": {
           "description": {
             "description": "Workflow description",
             "nullable": true,
             "type": "string"
+          },
+          "extra": {
+            "additionalProperties": {},
+            "description": "Additional fields of an imported definition, kept and exported unchanged",
+            "type": "object"
           },
           "name": {
             "description": "Workflow name",
@@ -69883,12 +70142,13 @@
             "type": "array"
           },
           "trigger": {
-            "$ref": "#/components/schemas/WorkflowTrigger",
-            "description": "Workflow trigger type"
+            "description": "Workflow trigger type",
+            "type": "string"
           }
         },
         "required": [
           "description",
+          "extra",
           "name",
           "steps",
           "trigger"
@@ -69899,13 +70159,18 @@
         "properties": {
           "config": {
             "additionalProperties": {},
-            "description": "Step configuration",
+            "description": "Step configuration, without credentials",
             "nullable": true,
             "type": "object"
           },
           "enabled": {
             "description": "Step is enabled",
             "type": "boolean"
+          },
+          "extra": {
+            "additionalProperties": {},
+            "description": "Additional fields of an imported definition, kept and exported unchanged",
+            "type": "object"
           },
           "method": {
             "description": "Step plugin method",
@@ -69914,6 +70179,7 @@
         },
         "required": [
           "config",
+          "extra",
           "method"
         ],
         "type": "object"
@@ -69930,14 +70196,72 @@
             "description": "Step is enabled",
             "type": "boolean"
           },
+          "extra": {
+            "additionalProperties": {},
+            "description": "Additional fields of an imported definition, kept and exported unchanged",
+            "type": "object"
+          },
+          "id": {
+            "description": "Step ID from a previous response. A credential left out of its configuration keeps its stored value",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
           "method": {
-            "description": "Step plugin method",
+            "description": "Step plugin method, as plugin#method",
+            "maxLength": 300,
+            "minLength": 1,
             "type": "string"
           }
         },
         "required": [
           "config",
           "method"
+        ],
+        "type": "object"
+      },
+      "WorkflowStepResponseDto": {
+        "properties": {
+          "config": {
+            "additionalProperties": {},
+            "description": "Step configuration, without stored credential values",
+            "nullable": true,
+            "type": "object"
+          },
+          "enabled": {
+            "description": "Step is enabled",
+            "type": "boolean"
+          },
+          "extra": {
+            "additionalProperties": {},
+            "description": "Additional fields of an imported definition, kept and exported unchanged",
+            "type": "object"
+          },
+          "id": {
+            "description": "Step ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "method": {
+            "description": "Step plugin method, as plugin#method",
+            "type": "string"
+          },
+          "storedSecrets": {
+            "description": "Configuration paths (keys joined with \".\") holding a stored credential that is never returned",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "config",
+          "enabled",
+          "extra",
+          "id",
+          "method",
+          "storedSecrets"
         ],
         "type": "object"
       },
@@ -69981,6 +70305,7 @@
         "properties": {
           "description": {
             "description": "Workflow description",
+            "maxLength": 2000,
             "nullable": true,
             "type": "string"
           },
@@ -69988,12 +70313,18 @@
             "description": "Workflow enabled",
             "type": "boolean"
           },
+          "extra": {
+            "additionalProperties": {},
+            "description": "Additional fields of an imported definition, kept and exported unchanged",
+            "type": "object"
+          },
           "logging": {
             "description": "Workflow logs run results",
             "type": "boolean"
           },
           "name": {
             "description": "Workflow name",
+            "maxLength": 300,
             "nullable": true,
             "type": "string"
           },
@@ -70001,11 +70332,14 @@
             "items": {
               "$ref": "#/components/schemas/WorkflowStepDto"
             },
+            "maxItems": 100,
             "type": "array"
           },
           "trigger": {
-            "$ref": "#/components/schemas/WorkflowTrigger",
-            "description": "Workflow trigger type"
+            "description": "Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
           }
         },
         "type": "object"
