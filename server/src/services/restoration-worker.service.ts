@@ -845,8 +845,9 @@ export class RestorationWorkerService {
   /**
    * Decide what a thrown error means for the job record.
    *
-   * An interruption is either the owner's cancel (acknowledged here, the row says cancelled) or a
-   * lost lease (recovery owns the job; the row stays running and the next claim resumes). Anything
+   * An interruption is the owner's cancel (acknowledged here, the row says cancelled), the owner's
+   * pause (the claim is handed back and the job waits, paused, to be resumed; FL-104) or a lost
+   * lease (recovery owns the job; the row stays running and the next claim resumes). Anything
    * else fails the job with a stable code; the row mirrors it so the editor can show why.
    */
   private async settle(
@@ -861,6 +862,13 @@ export class RestorationWorkerService {
         await this.operationRepository.acknowledgeCancel(operation.id, { released: true });
         await this.restorationRepository.transition(restoration.id, [statuses.running], { status: statuses.cancelled });
         this.logger.log(`Restoration ${restoration.id} cancelled by its owner`);
+      } else if (
+        current?.pauseRequestedAt &&
+        (await this.operationRepository.settlePause(operation.id, claimToken))
+      ) {
+        // The owner paused it (FL-104). The restoration row stays running: resuming requeues the
+        // job, and the next claim carries on from the chunks already checkpointed.
+        this.logger.log(`Restoration ${restoration.id} paused by its owner`);
       } else {
         this.logger.warn(`Restoration ${restoration.id} lost its claim on job ${operation.id}; recovery will requeue it`);
       }
@@ -885,14 +893,21 @@ export class RestorationWorkerService {
   /* Helpers                                                             */
   /* ------------------------------------------------------------------ */
 
-  /** Renew the lease and notice a cancel. False means stop: the claim is gone or the owner said so. */
+  /**
+   * Renew the lease and notice a cancel or a pause. False means stop: the claim is gone, or the
+   * owner asked to cancel or to pause (FL-104). `settle` then decides which of those it was.
+   */
   private async renew(operation: MediaOperation, claimToken: string): Promise<boolean> {
     const alive = await this.operationRepository.heartbeat(operation.id, claimToken, RESTORATION_LEASE_MS);
     if (!alive) {
       return false;
     }
     const current = await this.operationRepository.getForOwner(operation.id, operation.ownerId);
-    return !current?.cancelRequestedAt;
+    if (current?.cancelRequestedAt) {
+      return false;
+    }
+    // A pause lands before validation starts; once the output is being checked it is let finish.
+    return !(current?.pauseRequestedAt && current.status !== MediaOperationStatus.Validating);
   }
 
   private async progress(
