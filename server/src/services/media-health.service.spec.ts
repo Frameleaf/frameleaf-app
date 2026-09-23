@@ -1387,14 +1387,14 @@ describe(MediaHealthService.name, () => {
         await writeFile(damaged, 'damaged');
         candidateAt(source);
         const committed = { ...finding({ category: MediaHealthCategory.Corrupt }) };
-        vi.mocked(mediaHealthRepository.relinkManagedAsset).mockImplementation(async (input) => {
+        vi.mocked(mediaHealthRepository.relinkManagedAsset).mockImplementation((input) => {
           Object.assign(committed, {
             status: MediaHealthStatus.Resolved,
             originalPath: input.originalPath,
             evidence: { retainedPath: damaged },
             resolution: { candidateId: 'candidate-1' },
           });
-          return true;
+          return Promise.resolve(true);
         });
         vi.mocked(mediaHealthRepository.getByIds)
           .mockResolvedValueOnce([
