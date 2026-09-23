@@ -91,7 +91,13 @@ export class LivePhotoService {
         continue;
       }
 
-      const error = await this.validatePair(ownerId, videoId, assetById.get(photoId), assetById.get(videoId));
+      const error = await this.validatePair(
+        ownerId,
+        videoId,
+        assetById.get(photoId),
+        assetById.get(videoId),
+        !!auth.session?.hasElevatedPermission,
+      );
       if (error) {
         results.push({ photoId, videoId, success: false, error });
         continue;
@@ -122,7 +128,13 @@ export class LivePhotoService {
     const assets = await this.assetRepository.getByIds([photoId, videoId]);
     const assetById = new Map(assets.map((asset) => [asset.id, asset]));
 
-    const error = await this.validatePair(ownerId, videoId, assetById.get(photoId), assetById.get(videoId));
+    const error = await this.validatePair(
+      ownerId,
+      videoId,
+      assetById.get(photoId),
+      assetById.get(videoId),
+      !!auth.session?.hasElevatedPermission,
+    );
     if (error) {
       return { success: false, error };
     }
@@ -142,11 +154,31 @@ export class LivePhotoService {
   private async validatePair(
     ownerId: string,
     videoId: string,
-    photo: { ownerId: string; type: AssetType; livePhotoVideoId: string | null; deletedAt: Date | null } | undefined,
-    video: { ownerId: string; type: AssetType; deletedAt: Date | null; visibility: AssetVisibility } | undefined,
+    photo:
+      | {
+          ownerId: string;
+          type: AssetType;
+          livePhotoVideoId: string | null;
+          deletedAt: Date | null;
+          isLocked?: boolean;
+        }
+      | undefined,
+    video:
+      | { ownerId: string; type: AssetType; deletedAt: Date | null; visibility: AssetVisibility; isLocked?: boolean }
+      | undefined,
+    elevated = false,
   ): Promise<string | undefined> {
     if (!photo || !video) {
       return 'Asset not found';
+    }
+    // Locked media is only the owner's, and only in an unlocked session: a locked half answers like a
+    // missing one. A locked still and an unlocked video (or the reverse) are never paired, because a
+    // Live Photo locks and unlocks as a whole.
+    if ((photo.isLocked || video.isLocked) && !elevated) {
+      return 'Asset not found';
+    }
+    if (!!photo.isLocked !== !!video.isLocked) {
+      return 'A Locked item cannot be paired with one that is not Locked';
     }
     if (photo.ownerId !== ownerId || video.ownerId !== ownerId) {
       return 'Asset does not belong to the user';
