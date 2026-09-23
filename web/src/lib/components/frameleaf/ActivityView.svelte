@@ -14,9 +14,12 @@
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import '$lib/frameleaf/tokens.css';
   import { downloadManager } from '$lib/managers/download-manager.svelte';
+  import { studioBundleDownloadPath } from '$lib/frameleaf/studio/bundles';
   import { Route } from '$lib/route';
   import { uploadAssetsStore } from '$lib/stores/upload';
+  import { downloadUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
+  import { getBaseUrl, getStudioBundleOperation } from '@immich/sdk';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -106,6 +109,38 @@
   const openResult = (item: ActivityItem) => {
     if (item.assetId) {
       void goto(Route.viewAsset({ id: item.assetId }));
+    }
+  };
+
+  /** A finished bundle export (FL-91): the file comes from the owner-scoped download route. */
+  const downloadBundle = async (item: ActivityItem) => {
+    if (!item.operationId) {
+      return;
+    }
+    try {
+      const bundle = await getStudioBundleOperation({ id: item.operationId });
+      if (!bundle.export?.downloadable) {
+        announcement = $t('frameleaf_studio_bundle_expired');
+        return;
+      }
+      downloadUrl(getBaseUrl() + studioBundleDownloadPath(item.operationId), bundle.export.fileName);
+    } catch (error) {
+      handleError(error, $t('errors.something_went_wrong'));
+    }
+  };
+
+  /** A finished bundle import (FL-91) opens the project it created. */
+  const openImportedProject = async (item: ActivityItem) => {
+    if (!item.operationId) {
+      return;
+    }
+    try {
+      const bundle = await getStudioBundleOperation({ id: item.operationId });
+      if (bundle.import?.projectId) {
+        void goto(Route.studio({ projectId: bundle.import.projectId }));
+      }
+    } catch (error) {
+      handleError(error, $t('errors.something_went_wrong'));
     }
   };
 
@@ -217,6 +252,15 @@
           {/if}
           {#if item.canRetry}
             <Button disabled={busyId === item.id} onclick={() => retry(item)}>{$t('retry')}</Button>
+          {/if}
+          {#if item.finished && !item.failed && item.studioBundle === 'export'}
+            <Button variant="primary" onclick={() => void downloadBundle(item)}>
+              {$t('frameleaf_studio_bundle_download')}
+            </Button>
+          {:else if item.finished && !item.failed && item.studioBundle === 'import'}
+            <Button variant="primary" onclick={() => void openImportedProject(item)}>
+              {$t('frameleaf_studio_library_open')}
+            </Button>
           {/if}
           {#if item.finished && !item.failed && item.assetId}
             <Button variant="primary" onclick={() => openResult(item)}>
