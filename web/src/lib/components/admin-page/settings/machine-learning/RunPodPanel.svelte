@@ -13,6 +13,7 @@
     type RunPodStateDto,
   } from '@immich/sdk';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { Button, modalManager, toastManager } from '@immich/ui';
@@ -51,6 +52,25 @@
       throw new Error(`Failed to enqueue backfill: ${detail}`);
     }
     return response.json() as Promise<{ enqueued: string[]; skipped: string[] }>;
+  };
+
+  // FL-66 transaction boundary: pods, endpoints and the connection test are RunPod resources
+  // acting on the *saved* RunPod settings, through their own endpoints. They never save the
+  // settings draft, and while the draft changes RunPod settings the actions that start or test
+  // something wait until those changes are saved or discarded. Stopping and tearing down are
+  // always available so a billable resource can be ended.
+  const settingsDraft = getSystemConfigDraft();
+  const runpodDraftPending = $derived(
+    settingsDraft?.changes.some(
+      ({ path }) => path === 'machineLearning.enabled' || path.startsWith('machineLearning.runpod.'),
+    ) ?? false,
+  );
+  const waitForSavedSettings = () => {
+    if (runpodDraftPending) {
+      toastManager.warning($t('frameleaf_settings_draft_runpod_pending'));
+      return true;
+    }
+    return false;
   };
 
   let podState = $state<RunPodStateDto | null>(null);
@@ -140,6 +160,9 @@
   };
 
   const handleServerlessSetup = async () => {
+    if (waitForSavedSettings()) {
+      return;
+    }
     endpointBusy = true;
     try {
       podState = await setupServerlessEndpoint();
@@ -233,6 +256,9 @@
   });
 
   const handleTestConnection = async () => {
+    if (waitForSavedSettings()) {
+      return;
+    }
     testing = true;
     testResult = null;
     try {
@@ -249,6 +275,9 @@
   };
 
   const handleLaunch = async () => {
+    if (waitForSavedSettings()) {
+      return;
+    }
     if (!consent) {
       toastManager.warning($t('admin.machine_learning_runpod_consent_required_title'));
       return;
@@ -267,6 +296,9 @@
       };
       podState = await provisionRunPodPod({ runPodProvisionDto: dto });
       toastManager.info($t('admin.machine_learning_runpod_launching_toast'));
+      // Launching records the privacy acknowledgement and run time in the saved settings; take
+      // them as the new baseline so the draft does not see them as another administrator's edit.
+      void settingsDraft?.refresh();
     } catch (error) {
       handleError(error, $t('admin.machine_learning_runpod_failed_to_launch'));
     } finally {
@@ -287,6 +319,9 @@
   };
 
   const handleStart = async () => {
+    if (waitForSavedSettings()) {
+      return;
+    }
     provisioning = true;
     try {
       podState = await startRunPodPod();
@@ -376,6 +411,11 @@
 </script>
 
 <div class="my-2 flex flex-col gap-4">
+  {#if runpodDraftPending}
+    <p class="rounded-sm bg-immich-bg/50 p-3 text-sm" role="status">
+      {$t('frameleaf_settings_draft_runpod_pending')}
+    </p>
+  {/if}
   {#if !enabled}
     <div class="rounded-sm bg-immich-bg/50 p-3 text-sm">
       <p>
