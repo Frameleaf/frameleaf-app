@@ -206,7 +206,7 @@ const AssetRestorationOptionsSchema = z
       .describe('Length of a video preview clip; null for stills'),
     adapterInstalled: z
       .boolean()
-      .describe('The server has a restoration adapter. False means every request will fail honestly.'),
+      .describe('Always true since the restoration adapter ships with the server; whether a model can run is reported per destination.'),
     destinations: z.array(AssetRestorationDestinationSchema),
   })
   .meta({ id: 'AssetRestorationOptionsDto' });

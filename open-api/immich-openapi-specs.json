@@ -5822,7 +5822,7 @@
         "properties": {
           "adapterInstalled": {
             "type": "boolean",
-            "description": "The server has a restoration adapter. False means every request will fail honestly."
+            "description": "Always true since the restoration adapter ships with the server; whether a model can run is reported per destination."
           },
           "assetId": {
             "format": "uuid",
@@ -12363,6 +12363,66 @@
         "required": [],
         "type": "object"
       },
+      "MlRestorationModelsResponseDto": {
+        "properties": {
+          "checkedAt": {
+            "description": "When the destination last verified its models, or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "configurationProblems": {
+            "description": "Problems reading the model manifest or qualification evidence on the destination",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "destinationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "error": {
+            "description": "Why no report could be read, or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "gpus": {
+            "items": {
+              "$ref": "#/components/schemas/RestorationGpuDto"
+            },
+            "type": "array"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/RestorationModelCapabilityDto"
+            },
+            "type": "array"
+          },
+          "reachable": {
+            "description": "Whether the destination answered with a restoration report",
+            "type": "boolean"
+          },
+          "workloads": {
+            "description": "Restoration workloads the destination serves now; empty unless a model is available",
+            "items": {
+              "$ref": "#/components/schemas/MlWorkload"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "checkedAt",
+          "configurationProblems",
+          "destinationId",
+          "error",
+          "gpus",
+          "models",
+          "reachable",
+          "workloads"
+        ],
+        "type": "object"
+      },
       "MlThroughputEstimateDto": {
         "properties": {
           "bytesPerSecond": {
@@ -16746,6 +16806,173 @@
           "refusal"
         ],
         "type": "object"
+      },
+      "RestorationDynamicRange": {
+        "description": "Dynamic range a restoration model accepts",
+        "enum": [
+          "sdr",
+          "hdr"
+        ],
+        "type": "string"
+      },
+      "RestorationGpuDto": {
+        "properties": {
+          "driverVersion": {
+            "type": "string"
+          },
+          "memoryTotalBytes": {
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "driverVersion",
+          "memoryTotalBytes",
+          "name"
+        ],
+        "type": "object"
+      },
+      "RestorationMeasuredThroughputDto": {
+        "properties": {
+          "frames": {
+            "type": "integer"
+          },
+          "framesPerSecond": {
+            "description": "Measured frames restored per second",
+            "format": "double",
+            "type": "number"
+          },
+          "gpu": {
+            "description": "GPU the measurement was made on, as nvidia-smi names it",
+            "type": "string"
+          },
+          "inputHeight": {
+            "type": "integer"
+          },
+          "inputWidth": {
+            "type": "integer"
+          },
+          "peakVramBytes": {
+            "description": "Measured peak GPU memory",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "frames",
+          "framesPerSecond",
+          "gpu",
+          "inputHeight",
+          "inputWidth",
+          "peakVramBytes"
+        ],
+        "type": "object"
+      },
+      "RestorationModelCapabilityDto": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "dynamicRanges": {
+            "description": "Source dynamic ranges the model accepts",
+            "items": {
+              "$ref": "#/components/schemas/RestorationDynamicRange"
+            },
+            "type": "array"
+          },
+          "family": {
+            "description": "Model family, for example realbasicvsr or seedvr2",
+            "type": "string"
+          },
+          "fingerprint": {
+            "description": "Identity of the model and its verified weights, or null until the weights are verified",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "maxFrames": {
+            "description": "Largest number of frames one inference may restore",
+            "type": "integer"
+          },
+          "maxInputLongEdge": {
+            "description": "Largest source long edge the model is qualified for",
+            "type": "integer"
+          },
+          "measured": {
+            "description": "Throughput measured during qualification; estimates come from these",
+            "items": {
+              "$ref": "#/components/schemas/RestorationMeasuredThroughputDto"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AssetRestorationMode"
+          },
+          "nativeScale": {
+            "description": "Fixed enlargement the model restores at, or null",
+            "nullable": true,
+            "type": "integer"
+          },
+          "qualificationId": {
+            "description": "Qualification record covering this model, or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "reasons": {
+            "description": "Every reason the model is not available; empty when it is",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "description": "Pinned upstream commit",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RestorationModelState"
+          }
+        },
+        "required": [
+          "displayName",
+          "dynamicRanges",
+          "family",
+          "fingerprint",
+          "id",
+          "maxFrames",
+          "maxInputLongEdge",
+          "measured",
+          "mode",
+          "nativeScale",
+          "qualificationId",
+          "reasons",
+          "revision",
+          "state"
+        ],
+        "type": "object"
+      },
+      "RestorationModelState": {
+        "description": "Why a restoration model can or cannot run; only available admits a request",
+        "enum": [
+          "available",
+          "verifying",
+          "not-pinned",
+          "runtime-missing",
+          "runtime-dirty",
+          "weights-missing",
+          "weights-mismatch",
+          "unqualified",
+          "license-unreviewed",
+          "no-gpu",
+          "gpu-unqualified",
+          "insufficient-vram"
+        ],
+        "type": "string"
       },
       "ReverseGeocodingStateResponseDto": {
         "properties": {
@@ -38875,6 +39102,64 @@
           }
         ],
         "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/ml-destinations/{id}/restoration-models": {
+      "get": {
+        "description": "Asks the destination which Faithful and Creative restoration models it has, the state of each and every reason one is unavailable, with the throughput measured when it was qualified. No media is sent.",
+        "operationId": "getMlDestinationRestorationModels",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlRestorationModelsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get restoration models of a destination",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
         "x-immich-state": "Alpha"
       }
     },

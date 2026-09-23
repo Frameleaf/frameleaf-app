@@ -1,13 +1,44 @@
 import { Injectable } from '@nestjs/common';
-import { readFile, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { openAsBlob } from 'node:fs';
+import { open, readFile, rm, stat } from 'node:fs/promises';
+import { basename, resolve } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { MachineLearningConfig } from 'src/dtos/config.dto.js';
 import {
+  RESTORATION_MAX_OUTPUT_EDGE,
+  RESTORATION_PROTOCOL,
+  RESTORATION_RESULT_HEADER,
+  RestorationCapabilityReport,
+  RestorationCapabilityReportSchema,
+  RestorationWorkerErrorCode,
+  RestorationWorkerErrorSchema,
+  RestorationWorkerRequest,
+  RestorationWorkerRequestSchema,
+  RestorationWorkerResult,
+  RestorationWorkerResultSchema,
+} from 'src/dtos/restoration-inference.dto.js';
+import {
+  CLOUD_ML_DESTINATION_KINDS,
   LIBRARY_ML_WORKLOADS,
   MachineLearningHardwareAcceleration,
   MlDestinationKind,
   MlWorkload,
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+// Restoration's selection registry and inference types live with the rest of restoration's
+// rules; that module only needs this one's types, so the import cycle is inert at load time.
+import {
+  RestorationInference,
+  RestorationInferenceInput,
+  RestorationInferenceOptions,
+  RestorationInferenceResult,
+  RestorationSelection,
+  restorationAdmissionOf,
+  workloadForMode,
+} from 'src/utils/restoration.js';
 
 export interface BoundingBox {
   x1: number;
@@ -253,8 +284,28 @@ const isMlWorkload = (value: unknown): value is MlWorkload =>
 /** How long an admission probe stays fresh before the next request re-probes the endpoint. */
 export const ML_PROBE_FRESHNESS_MS = 10_000;
 
+/** Longest a single restoration request may take, whatever signal the caller passes. */
+export const RESTORATION_REQUEST_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * A restoration worker refused or failed an inference. `code` is the worker's own code,
+ * `unreachable` when the request never got an answer, or `protocol-error` when the answer
+ * could not be trusted (missing or mismatched result, or a file that failed its hash).
+ */
+export class RestorationWorkerError extends Error {
+  constructor(
+    readonly code: RestorationWorkerErrorCode | 'unreachable' | 'protocol-error',
+    readonly status: number | null,
+    message: string,
+    readonly modelId: string | null = null,
+  ) {
+    super(message);
+    this.name = 'RestorationWorkerError';
+  }
+}
+
 @Injectable()
-export class MachineLearningRepository {
+export class MachineLearningRepository implements RestorationInference {
   private _config?: MachineLearningConfig;
   /**
    * The endpoint the RunPod state machine currently advertises. It is published here so a
@@ -586,6 +637,247 @@ export class MachineLearningRepository {
     };
     const response = await this.predict<NsfwDetectionResponse>(selection, { imagePath }, request);
     return response[ModelTask.NSFW_DETECTION];
+  }
+
+  /**
+   * What a restoration worker reports about its models (FL-114): each model's state, every
+   * reason it is unavailable and the throughput its qualification measured. Metadata only; no
+   * media is sent. Workload names the server does not know are dropped.
+   */
+  async getRestorationModels(endpoint: MlEndpoint): Promise<RestorationCapabilityReport> {
+    const response = await fetch(new URL('restoration/models', endpoint.url), {
+      headers: this.authHeaders(endpoint),
+      signal: AbortSignal.timeout(this.timeout()),
+    });
+    if (response.status === 404) {
+      throw new Error('the destination does not run the restoration worker');
+    }
+    if (!response.ok) {
+      throw new Error(`restoration models returned ${response.status}`);
+    }
+    const report = RestorationCapabilityReportSchema.parse(await response.json());
+    return { ...report, workloads: report.workloads.filter(isMlWorkload) };
+  }
+
+  /**
+   * Run one restoration inference on the selected destination (FL-114). This is the
+   * `RestorationInference` FL-115's restoration worker calls for every still, preview clip and
+   * video chunk.
+   *
+   * The selection must come from `selectRestorationDestination` (`src/utils/restoration.ts`):
+   * anything else is refused, and a cloud destination is refused unless the person confirmed
+   * it for this request. The source is only read, and FL-115 uploads only the crop, clip or
+   * chunk the job needs. The restored file is a new file: `outputPath` is created exclusively,
+   * so an existing file (the original included) can never be replaced, and it is kept only
+   * when its size and sha256 match the worker's result. A failure names the destination and is
+   * never retried anywhere else.
+   */
+  async restore(
+    selection: RestorationSelection,
+    input: RestorationInferenceInput,
+    options: RestorationInferenceOptions,
+  ): Promise<RestorationInferenceResult> {
+    const admission = restorationAdmissionOf(selection);
+    if (!admission) {
+      throw new Error('A restoration runs only on a destination admitted by selectRestorationDestination');
+    }
+    const expected = workloadForMode(options.mode);
+    if (selection.workload !== expected) {
+      throw new Error(`A ${options.mode} restoration needs a ${expected} selection, not ${selection.workload}`);
+    }
+    if (CLOUD_ML_DESTINATION_KINDS.has(selection.kind) && !admission.cloudUploadConfirmed) {
+      throw new Error(`Restoration on ${selection.kind} needs the person's confirmation that media leaves the network`);
+    }
+
+    const sourcePath = input.path;
+    const outputPath = options.outputPath;
+    if (resolve(sourcePath) === resolve(outputPath)) {
+      throw new Error('A restoration never writes over its source');
+    }
+
+    const payload = RestorationWorkerRequestSchema.parse({
+      protocol: RESTORATION_PROTOCOL,
+      requestId: `${options.jobId}:${basename(outputPath)}`.slice(0, 200),
+      mode: options.mode,
+      kind: input.kind,
+      scale: options.upscale,
+      maxWidth: Math.min(options.maxWidth, RESTORATION_MAX_OUTPUT_EDGE),
+      maxHeight: Math.min(options.maxHeight, RESTORATION_MAX_OUTPUT_EDGE),
+      keepGrain: options.keepGrain,
+      seed: 0,
+      source: {
+        width: input.width,
+        height: input.height,
+        durationMs: input.kind === 'video' ? Math.max(1, Math.round(input.durationSeconds * 1000)) : null,
+      },
+    });
+
+    // Exclusive create: fails when anything already exists at the path.
+    const output = await open(outputPath, 'wx');
+    const target = `${selection.kind} destination ${selection.destinationId}`;
+    const body = JSON.stringify(payload);
+    const signal = AbortSignal.any([options.signal, AbortSignal.timeout(RESTORATION_REQUEST_TIMEOUT_MS)]);
+    const started = Date.now();
+    let attempted = false;
+    let keep = false;
+    let bytesSent = 0;
+    let bytesReceived = 0;
+    let response: Response | undefined;
+
+    try {
+      // A file-backed Blob streams the source instead of reading a whole video into memory.
+      // At runtime it is the global Blob; the cast only bridges the node and DOM typings.
+      const media = await openAsBlob(sourcePath);
+      bytesSent = media.size + Buffer.byteLength(body);
+      const form = new FormData();
+      form.append('request', body);
+      form.append('media', media as unknown as Blob, basename(sourcePath));
+
+      attempted = true;
+      try {
+        response = await fetch(new URL('restoration/restore', selection.endpoint.url), {
+          method: 'POST',
+          headers: this.authHeaders(selection.endpoint),
+          body: form,
+          signal,
+        });
+      } catch (error) {
+        this.probeCache.delete(selection.endpoint.url);
+        throw new RestorationWorkerError(
+          'unreachable',
+          null,
+          `Restoration ${payload.requestId} to ${target} failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+
+      if (!response.ok) {
+        const text = await response.text();
+        bytesReceived = Buffer.byteLength(text);
+        const refusal = RestorationWorkerErrorSchema.safeParse(this.parseJson(text));
+        if (refusal.success) {
+          throw new RestorationWorkerError(
+            refusal.data.code,
+            response.status,
+            `Restoration ${payload.requestId} on ${target} was refused (${refusal.data.code}): ${refusal.data.message}`,
+            refusal.data.modelId ?? null,
+          );
+        }
+        throw new RestorationWorkerError(
+          'protocol-error',
+          response.status,
+          `Restoration ${payload.requestId} on ${target} failed with status ${response.status}`,
+        );
+      }
+
+      const result = this.parseRestorationResult(response, payload, target);
+      if (!response.body) {
+        throw new RestorationWorkerError('protocol-error', response.status, `Restoration ${target} sent no file`);
+      }
+
+      const hash = createHash('sha256');
+      await pipeline(
+        Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>),
+        async function* (chunks: AsyncIterable<Uint8Array>) {
+          for await (const chunk of chunks) {
+            hash.update(chunk);
+            bytesReceived += chunk.length;
+            yield chunk;
+          }
+        },
+        output.createWriteStream({ autoClose: false }),
+      );
+
+      const sha256 = hash.digest('hex');
+      if (bytesReceived !== result.output.bytes || sha256 !== result.output.sha256) {
+        throw new RestorationWorkerError(
+          'protocol-error',
+          response.status,
+          `Restoration ${payload.requestId} from ${target} failed verification: received ${bytesReceived} bytes ` +
+            `hashing to ${sha256}; the worker reported ${result.output.bytes} bytes hashing to ${result.output.sha256}`,
+          result.model.id,
+        );
+      }
+
+      keep = true;
+      selection.record({ bytesSent, bytesReceived, durationMs: Date.now() - started, outcome: 'success' });
+      return {
+        outputPath,
+        width: result.output.width,
+        height: result.output.height,
+        modelName: result.model.id,
+        // The pinned revision plus the start of the fingerprint over it and every weight hash.
+        modelVersion: `${result.model.revision.slice(0, 12)}+${result.model.fingerprint.slice(0, 12)}`,
+      };
+    } catch (error) {
+      if (response?.body && !response.bodyUsed) {
+        await response.body.cancel().catch(() => {});
+      }
+      if (attempted) {
+        selection.record({ bytesSent, bytesReceived, durationMs: Date.now() - started, outcome: 'failure' });
+      }
+      throw error;
+    } finally {
+      await output.close().catch((error: unknown) => {
+        this.logger.warn(`Could not close restoration output ${outputPath}: ${error}`);
+      });
+      if (!keep) {
+        // Only ever the file this call created exclusively above.
+        await rm(outputPath, { force: true });
+      }
+    }
+  }
+
+  private parseJson(text: string): unknown {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  }
+
+  private parseRestorationResult(
+    response: Response,
+    payload: RestorationWorkerRequest,
+    target: string,
+  ): RestorationWorkerResult {
+    const header = response.headers.get(RESTORATION_RESULT_HEADER);
+    if (!header) {
+      throw new RestorationWorkerError(
+        'protocol-error',
+        response.status,
+        `Restoration ${payload.requestId} on ${target} answered without a result`,
+      );
+    }
+
+    const parsed = RestorationWorkerResultSchema.safeParse(
+      this.parseJson(Buffer.from(header, 'base64url').toString('utf8')),
+    );
+    if (!parsed.success) {
+      throw new RestorationWorkerError(
+        'protocol-error',
+        response.status,
+        `Restoration ${payload.requestId} on ${target} answered with an unreadable result: ${parsed.error.message}`,
+      );
+    }
+
+    const result = parsed.data;
+    const pinnedFingerprint = payload.modelFingerprint ?? null;
+    const namedModel = payload.modelId ?? null;
+    if (
+      result.requestId !== payload.requestId ||
+      result.mode !== payload.mode ||
+      result.model.mode !== payload.mode ||
+      (pinnedFingerprint !== null && result.model.fingerprint !== pinnedFingerprint) ||
+      (namedModel !== null && result.model.id !== namedModel)
+    ) {
+      throw new RestorationWorkerError(
+        'protocol-error',
+        response.status,
+        `Restoration ${payload.requestId} on ${target} answered for a different request or model`,
+        result.model.id,
+      );
+    }
+    return result;
   }
 
   /** Hardware of one explicit endpoint; the defaults when it does not answer. */

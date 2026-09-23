@@ -65,7 +65,6 @@ import {
   previewExpiryAfterDecision,
   previewInputBytes,
   restorationEstimate,
-  restorationInferenceOf,
   restorationWorkDir,
   workloadForMode,
 } from 'src/utils/restoration.js';
@@ -221,7 +220,8 @@ export class AssetRestorationService {
       outputWidth: output.width,
       outputHeight: output.height,
       previewSeconds: source.sourceType === AssetRestorationSourceType.Video ? RESTORATION_PREVIEW_SECONDS : null,
-      adapterInstalled: restorationInferenceOf(this.machineLearningRepository) !== null,
+      // The adapter ships with the server (FL-114); whether a model can run is per destination.
+      adapterInstalled: true,
       destinations,
     };
   }

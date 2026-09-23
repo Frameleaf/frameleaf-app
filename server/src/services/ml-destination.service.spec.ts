@@ -1,6 +1,8 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaults } from 'src/config.js';
+import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
+import { RESTORATION_PROTOCOL, RestorationDynamicRange, RestorationModelState } from 'src/dtos/restoration-inference.dto.js';
 import { ImmichWorker, MlAdmissionRefusal, MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { MlDestinationService } from 'src/services/ml-destination.service.js';
 import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
@@ -326,6 +328,87 @@ describe(MlDestinationService.name, () => {
 
       expect(result.workloads.find((entry) => entry.workload === MlWorkload.RestorationFaithful)?.available).toBe(false);
       expect(result.studio.restorationWorker).toBe(false);
+    });
+  });
+
+  describe('getRestorationModels', () => {
+    it('reports the models a LAN worker verified, including why they are unavailable', async () => {
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.lan);
+      const models = [
+        {
+          id: 'realbasicvsr-x4',
+          family: 'realbasicvsr',
+          mode: AssetRestorationMode.Faithful,
+          displayName: 'RealBasicVSR x4',
+          revision: 'REPLACE',
+          fingerprint: null,
+          state: RestorationModelState.NotPinned,
+          reasons: ["revision 'REPLACE' is not an exact 40-character commit"],
+          nativeScale: 4,
+          maxInputLongEdge: 1280,
+          maxFrames: 300,
+          dynamicRanges: [RestorationDynamicRange.Sdr],
+          measured: [],
+          qualificationId: null,
+        },
+      ];
+      mocks.machineLearning.getRestorationModels.mockResolvedValue({
+        protocol: RESTORATION_PROTOCOL,
+        workloads: [],
+        models,
+        gpus: [],
+        configurationProblems: [],
+        checkedAt: '2026-09-22T12:00:00.000Z',
+      });
+
+      const result = await sut.getRestorationModels(mlDestinationStub.lan.id);
+
+      expect(mocks.machineLearning.getRestorationModels).toHaveBeenCalledWith({
+        url: 'http://workshop.lan:3003',
+        authToken: 'lan-token',
+      });
+      expect(result).toEqual({
+        destinationId: mlDestinationStub.lan.id,
+        reachable: true,
+        error: null,
+        workloads: [],
+        models,
+        gpus: [],
+        configurationProblems: [],
+        checkedAt: '2026-09-22T12:00:00.000Z',
+      });
+    });
+
+    it('reports an unreachable worker instead of failing', async () => {
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+      mocks.machineLearning.getRestorationModels.mockRejectedValue(
+        new Error('the destination does not run the restoration worker'),
+      );
+
+      const result = await sut.getRestorationModels(mlDestinationStub.local.id);
+
+      expect(result).toMatchObject({
+        reachable: false,
+        error: 'the destination does not run the restoration worker',
+        workloads: [],
+        models: [],
+      });
+    });
+
+    it('does not ask a RunPod destination that has no running worker', async () => {
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPodConsented);
+      mocks.machineLearning.getRunPodEndpoint.mockReturnValue(null);
+
+      const result = await sut.getRestorationModels(mlDestinationStub.runPodConsented.id);
+
+      expect(result).toMatchObject({ reachable: false, error: 'No running pod or ready serverless worker' });
+      expect(mocks.machineLearning.getRestorationModels).not.toHaveBeenCalled();
+    });
+
+    it('throws for an unknown destination', async () => {
+      mocks.mlDestination.getById.mockResolvedValue(undefined);
+
+      await expect(sut.getRestorationModels('missing')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

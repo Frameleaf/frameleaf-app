@@ -1,6 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AssetRestorationMode, AssetRestorationSourceType, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
-import { MediaOperationDestination, MediaOperationKind, MlDestinationKind, MlWorkload } from 'src/enum.js';
+import {
+  MediaOperationDestination,
+  MediaOperationKind,
+  MlAdmissionRefusal,
+  MlDestinationKind,
+  MlWorkload,
+} from 'src/enum.js';
+import type { MachineLearningRepository, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
+import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
+import { MlDestinationRefusedError, selectMlDestination } from 'src/utils/ml-destination.js';
 import {
   RESTORATION_PREVIEW_AFTER_DECISION_DAYS,
   RESTORATION_PREVIEW_EDGE,
@@ -22,11 +31,13 @@ import {
   previewRegionPixels,
   restorationChunkIdentity,
   restorationEstimate,
-  restorationInferenceOf,
+  restorationAdmissionOf,
   restorationOutputPaths,
+  selectRestorationDestination,
   stageOfKind,
   workloadForMode,
 } from 'src/utils/restoration.js';
+import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 
 const snapshot = (overrides: Partial<RestorationSnapshot> = {}): RestorationSnapshot => ({
   version: 1,
@@ -215,19 +226,161 @@ describe('restoration rules (FL-115)', () => {
     });
   });
 
-  describe('paths and the inference seam', () => {
+  describe('paths', () => {
     it('names outputs by restoration id so a re-run lands on the same paths', () => {
       const paths = restorationOutputPaths('/data/thumbs/o/as/se', 'asset-1', 'rest-1');
       expect(paths.before).toBe('/data/thumbs/o/as/se/asset-1_restore_rest-1_before');
       expect(paths.result).toBe('/data/thumbs/o/as/se/asset-1_restore_rest-1_result');
       expect(paths.resultPreview).toBe('/data/thumbs/o/as/se/asset-1_restore_rest-1_result_preview.jpg');
     });
+  });
+});
 
-    it('recognises the repository as an inference provider only when it has restore()', () => {
-      expect(restorationInferenceOf({})).toBeNull();
-      expect(restorationInferenceOf(null)).toBeNull();
-      const provider = { restore: async () => ({}) };
-      expect(restorationInferenceOf(provider)).toBe(provider);
+const runPodEndpoint = { url: 'https://pod.proxy.runpod.net/', authToken: 'rpa_test_key' };
+
+const deps = (overrides: {
+  destination?: MlDestinationRow;
+  probe?: MlEndpointProbe;
+  route?: { workload: MlWorkload; destinationId: string };
+  runPod?: { url: string; authToken?: string } | null;
+}) => {
+  const destination = overrides.destination ?? mlDestinationStub.lan;
+  const find = (id: string) => Promise.resolve(id === destination.id ? destination : undefined);
+  const mlDestinationRepository = {
+    getById: vi.fn().mockImplementation(find),
+    getSpend: vi.fn().mockResolvedValue(0),
+    recordProbe: vi.fn().mockResolvedValue(undefined),
+    recordAccounting: vi.fn().mockResolvedValue(undefined),
+    getRoute: vi.fn().mockResolvedValue(overrides.route),
+  } as unknown as MlDestinationRepository;
+  const machineLearningRepository = {
+    probe: vi.fn().mockResolvedValue(overrides.probe ?? mlProbeStub.restoration),
+    getRunPodEndpoint: vi.fn().mockReturnValue(overrides.runPod ?? null),
+  } as unknown as MachineLearningRepository;
+  return { mlDestinationRepository, machineLearningRepository };
+};
+
+const refusalOf = async (promise: Promise<unknown>) => {
+  const error = await promise.catch((error_: unknown) => error_);
+  expect(error).toBeInstanceOf(MlDestinationRefusedError);
+  return (error as MlDestinationRefusedError).refusal;
+};
+
+describe('selectRestorationDestination (FL-114)', () => {
+  it('admits the LAN worker the person chose and records the admission', async () => {
+    const d = deps({});
+
+    const selection = await selectRestorationDestination(d, {
+      mode: AssetRestorationMode.Faithful,
+      destinationId: mlDestinationStub.lan.id,
+      acknowledgeCloudUpload: false,
+      jobId: 'operation-1',
     });
+
+    expect(selection).toMatchObject({
+      destinationId: mlDestinationStub.lan.id,
+      kind: MlDestinationKind.Lan,
+      workload: MlWorkload.RestorationFaithful,
+    });
+    expect(restorationAdmissionOf(selection)).toEqual({ cloudUploadConfirmed: false });
+    expect(d.machineLearningRepository.probe).toHaveBeenCalledTimes(1);
+  });
+
+  it('never marks a plain selection or a copy of an admitted one as admitted', async () => {
+    const d = deps({});
+    const plain = await selectMlDestination(d, {
+      workload: MlWorkload.RestorationFaithful,
+      destinationId: mlDestinationStub.lan.id,
+    });
+    const admitted = await selectRestorationDestination(d, {
+      mode: AssetRestorationMode.Faithful,
+      destinationId: mlDestinationStub.lan.id,
+      acknowledgeCloudUpload: false,
+    });
+
+    expect(restorationAdmissionOf(plain)).toBeNull();
+    expect(restorationAdmissionOf({ ...admitted })).toBeNull();
+  });
+
+  it('uses the administrator route when the person made no choice', async () => {
+    const d = deps({ route: { workload: MlWorkload.RestorationFaithful, destinationId: mlDestinationStub.lan.id } });
+
+    const selection = await selectRestorationDestination(d, {
+      mode: AssetRestorationMode.Faithful,
+      destinationId: null,
+      acknowledgeCloudUpload: false,
+    });
+
+    expect(selection.destinationId).toBe(mlDestinationStub.lan.id);
+    expect(d.mlDestinationRepository.getRoute).toHaveBeenCalledWith(MlWorkload.RestorationFaithful);
+  });
+
+  it('refuses when there is neither a choice nor a route', async () => {
+    const d = deps({});
+    const request = { mode: AssetRestorationMode.Creative, destinationId: null, acknowledgeCloudUpload: false };
+
+    expect(await refusalOf(selectRestorationDestination(d, request))).toBe(MlAdmissionRefusal.WorkloadNotRouted);
+    expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
+  });
+
+  it('never contacts a cloud destination until the person confirms the upload', async () => {
+    const d = deps({ destination: mlDestinationStub.runPodConsented, runPod: runPodEndpoint });
+    const request = {
+      mode: AssetRestorationMode.Creative,
+      destinationId: mlDestinationStub.runPodConsented.id,
+      acknowledgeCloudUpload: false,
+    };
+
+    expect(await refusalOf(selectRestorationDestination(d, request))).toBe(MlAdmissionRefusal.ConsentMissing);
+    expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
+  });
+
+  it('also refuses a routed cloud destination nobody confirmed', async () => {
+    const d = deps({
+      destination: mlDestinationStub.runPodConsented,
+      runPod: runPodEndpoint,
+      route: { workload: MlWorkload.RestorationCreative, destinationId: mlDestinationStub.runPodConsented.id },
+    });
+    const request = { mode: AssetRestorationMode.Creative, destinationId: null, acknowledgeCloudUpload: false };
+
+    expect(await refusalOf(selectRestorationDestination(d, request))).toBe(MlAdmissionRefusal.ConsentMissing);
+    expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
+  });
+
+  it('still needs the administrator consent when the person confirms the upload', async () => {
+    const d = deps({ destination: mlDestinationStub.runPod, runPod: runPodEndpoint });
+    const request = {
+      mode: AssetRestorationMode.Creative,
+      destinationId: mlDestinationStub.runPod.id,
+      acknowledgeCloudUpload: true,
+    };
+
+    expect(await refusalOf(selectRestorationDestination(d, request))).toBe(MlAdmissionRefusal.ConsentMissing);
+    expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
+  });
+
+  it('admits a consented cloud destination once the person confirms the upload', async () => {
+    const d = deps({ destination: mlDestinationStub.runPodConsented, runPod: runPodEndpoint });
+
+    const selection = await selectRestorationDestination(d, {
+      mode: AssetRestorationMode.Creative,
+      destinationId: mlDestinationStub.runPodConsented.id,
+      acknowledgeCloudUpload: true,
+    });
+
+    expect(selection).toMatchObject({ kind: MlDestinationKind.RunPod, workload: MlWorkload.RestorationCreative });
+    expect(selection.endpoint).toEqual(runPodEndpoint);
+    expect(restorationAdmissionOf(selection)).toEqual({ cloudUploadConfirmed: true });
+  });
+
+  it('refuses a worker that reports no qualified model for the mode', async () => {
+    const d = deps({ probe: mlProbeStub.healthy });
+    const request = {
+      mode: AssetRestorationMode.Faithful,
+      destinationId: mlDestinationStub.lan.id,
+      acknowledgeCloudUpload: false,
+    };
+
+    expect(await refusalOf(selectRestorationDestination(d, request))).toBe(MlAdmissionRefusal.WorkloadNotServed);
   });
 });
