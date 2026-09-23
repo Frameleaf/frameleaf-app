@@ -34,6 +34,14 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 @Index({ columns: ['ownerId', 'createdAt'] })
 @Index({ columns: ['status', 'claimExpiresAt'] })
 @Index({ columns: ['kind', 'status'] })
+// FL-59: one enrichment plan per owner and client idempotency key (migration 2100000000380).
+@Index({
+  name: 'media_operation_enrichment_plan_requestKey_uq',
+  expression: `"ownerId", ("snapshot" ->> 'requestKey')`,
+  unique: true,
+  where: `"kind" = 'enrichment_plan' AND ("snapshot" ->> 'requestKey') IS NOT NULL`,
+  synchronize: false,
+})
 @Table('media_operation')
 @UpdatedAtTrigger('media_operation_updatedAt')
 export class MediaOperationTable {

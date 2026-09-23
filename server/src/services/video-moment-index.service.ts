@@ -56,14 +56,27 @@ import { FrameCutOutcome, VideoFrameDeps, ensureVideoFrames } from 'src/utils/vi
 /** What one stage of an enrichment plan did to one video. */
 export type MomentStageOutcome = { state: EnrichmentItemState; reasonKey?: string; message?: string };
 
+/**
+ * Extends the caller's lease between frames. A plan passes its claim heartbeat so a long stage does
+ * not lose the claim; `false` means the claim is gone and the stage must stop at once.
+ */
+type Heartbeat = () => Promise<boolean>;
+
 type CaptionOptions = {
   destinationId?: string | null;
   imageDescription: SystemConfig['machineLearning']['imageDescription'];
   planConfigHash?: string;
   jobId?: string;
+  heartbeat?: Heartbeat;
 };
 
-type IndexOptions = { destinationId?: string | null; modelName?: string; jobId?: string };
+type IndexOptions = { destinationId?: string | null; modelName?: string; jobId?: string; heartbeat?: Heartbeat };
+
+const CLAIM_LOST: MomentStageOutcome = {
+  state: EnrichmentItemState.Failed,
+  reasonKey: 'stage-error',
+  message: 'The plan lost its claim; another worker carries on from here',
+};
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -150,6 +163,9 @@ export class VideoMomentIndexService {
       const embeddings: { frameId: string; embedding: string }[] = [];
       // One frame at a time: the frames are small, and a video must not monopolise the destination.
       for (const frame of pending) {
+        if (options.heartbeat && !(await options.heartbeat())) {
+          return CLAIM_LOST;
+        }
         embeddings.push({
           frameId: frame.id,
           embedding: await this.machineLearning.encodeImage(selection, frame.path, {
@@ -219,7 +235,12 @@ export class VideoMomentIndexService {
     const { prompt } = this.promptAssembler.build({ config: captionConfig.prompt, knownPersons, nsfw: null });
     const captions: { frameId: string; caption: string }[] = [];
     let failure: string | undefined;
+    let claimLost = false;
     for (const frame of pending) {
+      if (options.heartbeat && !(await options.heartbeat())) {
+        claimLost = true;
+        break;
+      }
       try {
         const result = await this.machineLearning.describeImage(
           selection,
@@ -261,6 +282,9 @@ export class VideoMomentIndexService {
       );
     }
 
+    if (claimLost) {
+      return CLAIM_LOST;
+    }
     return failure
       ? { state: EnrichmentItemState.Failed, reasonKey: 'model-error', message: failure }
       : { state: EnrichmentItemState.Completed };
@@ -348,10 +372,12 @@ export class VideoMomentIndexService {
   /** One reusable frame's image, under the same access as its video. */
   async getFrameFile(auth: AuthDto, frameId: string): Promise<ImmichFileResponse> {
     const frame = await this.moments.getFrame(frameId);
+    // A frame that does not exist and one of a video the caller may not read answer the same, so
+    // frame ids never confirm that somebody else's video exists.
+    await requireAccess(this.access, { auth, permission: Permission.AssetRead, ids: [frame?.assetId ?? frameId] });
     if (!frame) {
-      throw new NotFoundException('Frame not found');
+      throw new BadRequestException(`Not found or no ${Permission.AssetRead} access`);
     }
-    await requireAccess(this.access, { auth, permission: Permission.AssetRead, ids: [frame.assetId] });
     return new ImmichFileResponse({
       path: frame.path,
       contentType: mimeTypes.lookup(frame.path),
@@ -391,10 +417,9 @@ export class VideoMomentIndexService {
     if (isSmartSearchEnabled(config.machineLearning)) {
       try {
         const selection = await this.select(MlWorkload.Clip, null, null);
-        const embedding = await this.machineLearning.encodeText(selection, dto.query, {
-          modelName: config.machineLearning.clip.modelName,
-        });
-        for (const hit of await this.moments.searchFrames(embedding, scope)) {
+        const modelName = config.machineLearning.clip.modelName;
+        const embedding = await this.machineLearning.encodeText(selection, dto.query, { modelName });
+        for (const hit of await this.moments.searchFrames(embedding, modelName, scope)) {
           hits.push({
             assetId: hit.assetId,
             timestampMs: hit.timestampMs,

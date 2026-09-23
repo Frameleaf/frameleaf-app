@@ -176,6 +176,22 @@ describe(EnrichmentPlanService.name, () => {
       expect(operations.create).not.toHaveBeenCalled();
     });
 
+    it('answers a submit that lost the race for its request key with the plan that won', async () => {
+      const assetIds = [newUuid()];
+      const winner = operationOf(snapshotOf({ assetIds }));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(assetIds));
+      vi.mocked(operations.create).mockRejectedValue(new Error('duplicate key value violates unique constraint'));
+      vi.mocked(operations.getByRequestKey).mockResolvedValueOnce(undefined).mockResolvedValueOnce(winner);
+
+      const plan = await sut.createPlan(authStub.user1, {
+        assetIds,
+        stages: [EnrichmentStage.Description],
+        requestKey: newUuid(),
+      });
+
+      expect(plan.operation.id).toBe(winner.id);
+    });
+
     it('answers a repeated submit with the first plan', async () => {
       const existing = operationOf(snapshotOf());
       vi.mocked(operations.getByRequestKey).mockResolvedValue(existing);
@@ -191,6 +207,15 @@ describe(EnrichmentPlanService.name, () => {
   });
 
   describe('preview', () => {
+    it("never previews media that is not the caller's own, such as a partner's", async () => {
+      const assetIds = [newUuid()];
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set(assetIds));
+
+      await expect(sut.preview(authStub.admin, { assetIds })).rejects.toThrow(BadRequestException);
+      expect(enrichment.previewDescription).not.toHaveBeenCalled();
+    });
+
     it('runs each sample through the draft on the named destination and writes nothing', async () => {
       const assetIds = [newUuid(), newUuid()];
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(assetIds));
@@ -327,6 +352,37 @@ describe(EnrichmentPlanService.name, () => {
 
       expect(enrichment.describeAsset).toHaveBeenCalledTimes(1);
       expect(operations.acknowledgeCancel).toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('marks every stage call as a plan run so nothing is sent to an unpinned destination', async () => {
+      const snapshot = snapshotOf({ assetIds: [newUuid()], destinations: { enrichment: destinationId, search: null } });
+      momentRepository.getAssetKinds.mockResolvedValue(kindsOf([[snapshot.assetIds[0], AssetType.Image]]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+
+      await sut.run(operationOf(snapshot), 'token');
+
+      expect(enrichment.describeAsset).toHaveBeenCalledWith(
+        snapshot.assetIds[0],
+        expect.objectContaining({ planRun: true, searchDestinationId: null }),
+      );
+    });
+
+    it('stops working on an asset as soon as the claim is lost', async () => {
+      const video = newUuid();
+      const snapshot = snapshotOf({ assetIds: [video], stages: [EnrichmentStage.Frames, EnrichmentStage.MomentIndex] });
+      momentRepository.getAssetKinds.mockResolvedValue(kindsOf([[video, AssetType.Video]]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([video]));
+      vi.mocked(operations.heartbeat).mockResolvedValue(false);
+      vi.mocked(operations.setBulkResult)
+        .mockResolvedValueOnce(running)
+        .mockResolvedValueOnce(running)
+        .mockResolvedValue(undefined);
+
+      await sut.run(operationOf(snapshot), 'token');
+
+      expect(moments.runFramesStage).toHaveBeenCalled();
+      expect(moments.runIndexStage).not.toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();
     });
 

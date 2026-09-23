@@ -15,6 +15,9 @@ import { Kysely, sql } from 'kysely';
  *   moments with an optional typed transcript. Refreshing generated results never touches a manual
  *   moment; the frame reference is `SET NULL` so a manual moment outlives the frames.
  *
+ * `media_operation_enrichment_plan_requestKey_uq` makes an enrichment plan's client idempotency key
+ * unique per owner, so two submits of the same plan racing each other create one plan, not two.
+ *
  * Constraint and index names follow the generator's conventions (`{table}_{column}_fkey`,
  * `{table}_pkey`, `{table}_{columns}_uq`, a `{table}_{column}_idx` index for every foreign-key
  * column that is not the primary key) so `migrations:generate` produces no drift.
@@ -124,9 +127,14 @@ END $$;`.execute(db);
   BEFORE UPDATE ON "video_moment"
   FOR EACH ROW
   EXECUTE FUNCTION updated_at();`.execute(db);
+
+  await sql`CREATE UNIQUE INDEX "media_operation_enrichment_plan_requestKey_uq"
+  ON "media_operation" ("ownerId", ("snapshot" ->> 'requestKey'))
+  WHERE "kind" = 'enrichment_plan' AND ("snapshot" ->> 'requestKey') IS NOT NULL;`.execute(db);
 }
 
 export async function down(db: Kysely<any>): Promise<void> {
+  await sql`DROP INDEX IF EXISTS "media_operation_enrichment_plan_requestKey_uq";`.execute(db);
   await sql`DROP TABLE IF EXISTS "video_moment";`.execute(db);
   await sql`DROP TABLE IF EXISTS "video_moment_frame_embedding";`.execute(db);
   await sql`DROP TABLE IF EXISTS "video_moment_frame";`.execute(db);
