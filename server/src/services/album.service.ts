@@ -22,7 +22,7 @@ import {
 } from 'src/dtos/album.dto.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { MapMarkerResponseDto } from 'src/dtos/map.dto.js';
-import { AlbumKind, AlbumUserRole, Permission, SharedSpaceEventType } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, AssetVisibility, Permission, SharedSpaceEventType } from 'src/enum.js';
 import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/repositories/album.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { buildAlbumTree } from 'src/utils/album-tree.js';
@@ -249,6 +249,7 @@ export class AlbumService extends BaseService {
     if (dto.albumThumbnailAssetId) {
       const visibleAssetIds = new Set(album.assets?.map((asset) => asset.id));
       if (!visibleAssetIds.has(dto.albumThumbnailAssetId)) {
+        await this.requireNotOwnLockedCover(auth, dto.albumThumbnailAssetId);
         throw new BadRequestException('Invalid album thumbnail');
       }
     }
@@ -650,6 +651,18 @@ export class AlbumService extends BaseService {
       ...(suppressedOnly ? getPrivacyQueryOptions(auth, true) : getHiddenContentQueryOptions(auth)),
       ...getLockedVisibilityOptions(auth),
     };
+  }
+
+  /**
+   * Album covers are never Locked photos (owner decision, September 22, 2026, FL-53). Refuses a cover
+   * that is the caller's own Locked photo with an error that says so. Anyone else's asset gets only the
+   * generic error, so the answer never reveals whether another person's photo is Locked.
+   */
+  private async requireNotOwnLockedCover(auth: AuthDto, assetId: string): Promise<void> {
+    const asset = await this.assetRepository.getById(assetId);
+    if (asset && asset.ownerId === auth.user.id && asset.visibility === AssetVisibility.Locked) {
+      throw new BadRequestException('A Locked photo cannot be an album cover');
+    }
   }
 
   /**
