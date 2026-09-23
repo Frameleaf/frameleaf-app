@@ -208,7 +208,8 @@ test.describe('Detail Panel', () => {
       // The native dialog blocks ordinary controls, so trigger the same lock handler as tab hiding.
       await lock.evaluate((button: HTMLButtonElement) => button.click());
       const shield = page.locator('dialog.session-lock-shield[open]');
-      await expect(shield.first()).toHaveJSProperty('open', true);
+      await expect(shield).toHaveCount(1);
+      await expect(shield).toHaveJSProperty('open', true);
       await expect.poll(() => attempts).toBe(1);
       await page.waitForFunction(() => {
         const button = document.querySelector<HTMLButtonElement>(
@@ -217,7 +218,7 @@ test.describe('Detail Panel', () => {
         return button && !button.disabled;
       });
 
-      const retry = page.getByRole('button', { name: 'Retry', exact: true }).last();
+      const retry = page.getByRole('button', { name: 'Retry', exact: true });
       await retry.click({ timeout: 3000 });
       await expect.poll(() => attempts).toBe(2);
       await expect.poll(() => lockStatuses).toContain(204);
