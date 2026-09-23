@@ -50,20 +50,6 @@
   const runpodServerless = $derived(runpod.serverless!);
   const savedRunpodServerless = $derived(savedRunpod.serverless!);
 
-  // Clamp minMatchingFrames to frameCount at save time, NOT in a $effect.
-  // The previous `$effect` reactively clamped on every keystroke, so typing
-  // a two-digit number in `frameCount` clobbered `minMatchingFrames` between
-  // digits. The SettingField `max={frameCount}` already gives a visible
-  // UI bound; this `onBeforeSave` hook just enforces it once at submit.
-  // Marked async to satisfy SettingActions' onBeforeSave: () => Promise<boolean>.
-  const validateBeforeSave = (): Promise<boolean> => {
-    const enhancedVideo = configToEdit.machineLearning.duplicateDetection.enhancedVideo;
-    if (enhancedVideo.minMatchingFrames > enhancedVideo.frameCount) {
-      enhancedVideo.minMatchingFrames = enhancedVideo.frameCount;
-    }
-    return Promise.resolve(true);
-  };
-
   // Managed RunPod URL polling. Surfaces "Pod state: <URL>" chip when the
   // admin has launched a pod via the Quick Actions panel.
   let managedRunPodUrl = $state<string>('');
@@ -196,7 +182,7 @@
         {disabled}
       />
 
-      <SettingActions keys={['machineLearning']} {disabled} onBeforeSave={validateBeforeSave} />
+      <SettingActions keys={['machineLearning']} {disabled} />
     </form>
   </div>
 </div>

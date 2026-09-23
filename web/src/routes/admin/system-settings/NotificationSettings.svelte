@@ -165,7 +165,7 @@
       </div>
     </form>
   </div>
-  <TemplateSettings config={configToEdit} />
+  <TemplateSettings />
 
   <SettingActions keys={['notifications', 'templates']} {disabled} />
 </div>
