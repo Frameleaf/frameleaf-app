@@ -139,8 +139,9 @@ export class UserAdminService extends BaseService {
    */
   private getUpdateEvents(auth: AuthDto, before: UserAdmin, after: UserAdmin, dto: UserAdminUpdateDto) {
     const events: AccountEvent[] = [];
-    const add = (action: AdminAuditAction, detail: string | null = null) =>
+    const add = (action: AdminAuditAction, detail: string | null = null) => {
       events.push(accountEvent(auth, after, action, detail));
+    };
 
     const profileChanged =
       (dto.name !== undefined && dto.name !== before.name) ||
