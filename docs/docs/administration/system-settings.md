@@ -6,6 +6,18 @@ The admin user can manage settings for the Immich instance here.
 You can always return to the default settings by clicking the `Reset to default` button.
 :::
 
+## Server credentials
+
+The OAuth client secret, the SMTP password, the RunPod API key and the Hugging Face token are **write-only**. Their settings show whether a value is stored (**Stored** or **Not set**), never the value itself:
+
+- **Replace credential** opens a dialog with a single field. The value is sent once, checked like any settings change (for example, the mail server is verified with a new SMTP password), and cleared from the dialog when it closes.
+- **Clear** removes the stored value after a confirmation. The RunPod API key can only be cleared while RunPod is turned off, so a running pod or endpoint can always be stopped.
+- Saving any other setting, **Copy to clipboard**, **Export as JSON** and **Import from JSON** never carry a credential. A configuration file that contains credentials is imported without them, and the page says so.
+- **Send test email** uses the stored SMTP password as long as the server, port, username and security settings on the page match the saved ones.
+- Every replacement or removal is written to the server log by credential name and administrator, never by value.
+
+Scripts can use `GET /api/admin/config/credentials` to see which credentials are stored, and `PUT` or `DELETE /api/admin/config/credentials/{name}` to replace or clear one. For compatibility, a full configuration sent with a non-empty credential still sets it; an empty value keeps the stored one. While a configuration file manages the settings, credentials come from that file and cannot be changed here.
+
 ## Authentication Settings
 
 Manage password, OAuth, and other authentication settings
