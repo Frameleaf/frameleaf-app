@@ -548,6 +548,10 @@ export class JobRepository {
       case JobName.ICloudSync: {
         return { deduplication: { id: `${JobName.ICloudSync}:${item.data.id}`, keepLastIfActive: true } };
       }
+      case JobName.LibraryScanRun: {
+        // FL-78: one waiting wake-up is enough; a scan queued while one drains is picked up after it
+        return { deduplication: { id: JobName.LibraryScanRun, keepLastIfActive: true } };
+      }
       case JobName.NotifyAlbumUpdate: {
         return {
           jobId: `${item.data.id}/${item.data.recipientId}`,
