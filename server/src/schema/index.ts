@@ -116,6 +116,11 @@ import { SmartSearchDescriptionTable } from 'src/schema/tables/smart-search-desc
 import { SmartSearchTable } from 'src/schema/tables/smart-search.table.js';
 import { StackAuditTable } from 'src/schema/tables/stack-audit.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
+import {
+  StudioExportRemoteReferenceTable,
+  StudioExportVersionSourceTable,
+  StudioExportVersionTable,
+} from 'src/schema/tables/studio-export.table.js';
 import { StudioPreviewFrameTable } from 'src/schema/tables/studio-preview.table.js';
 import {
   StudioBundleUploadTable,
@@ -249,6 +254,9 @@ export class ImmichDatabase {
     StudioProjectRevisionTable,
     StudioProjectCommentTable,
     StudioBundleUploadTable,
+    StudioExportVersionTable,
+    StudioExportVersionSourceTable,
+    StudioExportRemoteReferenceTable,
     TakeoutImportTable,
     TakeoutSourceTable,
     TakeoutFileTable,
@@ -433,6 +441,9 @@ export interface DB {
   studio_project_revision: StudioProjectRevisionTable;
   studio_project_comment: StudioProjectCommentTable;
   studio_bundle_upload: StudioBundleUploadTable;
+  studio_export_version: StudioExportVersionTable;
+  studio_export_version_source: StudioExportVersionSourceTable;
+  studio_export_remote_reference: StudioExportRemoteReferenceTable;
 
   system_metadata: SystemMetadataTable;
 
