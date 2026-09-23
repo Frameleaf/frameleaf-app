@@ -207,6 +207,10 @@ export const Route = {
   livePhotosUtility: () => '/utilities/live-photos',
   geolocationUtility: () => '/utilities/geolocation',
   icloudSyncUtility: () => '/utilities/icloud-sync',
+  /** Mobile applications from this server's signed releases (FL-82). */
+  downloadsUtility: () => '/utilities/downloads',
+  /** Obtainium setup for direct Android updates (FL-82). */
+  obtainiumUtility: () => '/utilities/obtainium',
   missingMediaUtility: (params?: { status?: MediaHealthStatus }) => '/utilities/missing-media' + asQueryString(params),
   corruptMediaUtility: (params?: { status?: MediaHealthStatus }) => '/utilities/corrupt-media' + asQueryString(params),
 

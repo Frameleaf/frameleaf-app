@@ -32,7 +32,7 @@ const configured = {
 describe('ApplicationSetup', () => {
   it('says no signed release is available and offers no download when none is configured', async () => {
     sdkMock.getAppReleases.mockResolvedValue({ android: { available: false }, ios: { available: false } });
-    const { container } = render(ApplicationSetup, { tool: 'downloads', open: true });
+    const { container } = render(ApplicationSetup, { tool: 'downloads' });
 
     expect(await screen.findByText(t.unavailable)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: t.download_android })).toBeDisabled();
@@ -41,7 +41,7 @@ describe('ApplicationSetup', () => {
 
   it('downloads the configured signed build and shows its signing certificate', async () => {
     sdkMock.getAppReleases.mockResolvedValue(configured);
-    render(ApplicationSetup, { tool: 'downloads', open: true });
+    render(ApplicationSetup, { tool: 'downloads' });
 
     const link = await screen.findByRole('link', { name: t.download_android });
     expect(link).toHaveAttribute('href', configured.android.links.universal);
@@ -57,7 +57,7 @@ describe('ApplicationSetup', () => {
       secret: 'AbCdEfGhIjKlMnOpQrStUv0123456789',
       apiKey: { id: 'k', name: 'Obtainium updates', permissions: [], createdAt: '', updatedAt: '' },
     } as never);
-    render(ApplicationSetup, { tool: 'obtainium', open: true });
+    render(ApplicationSetup, { tool: 'obtainium' });
 
     expect(await screen.findByRole('button', { name: t.open_obtainium })).toBeDisabled();
     await fireEvent.click(screen.getByRole('button', { name: t.create_access }));
@@ -76,7 +76,7 @@ describe('ApplicationSetup', () => {
 
   it('keeps Obtainium unavailable without a signed Android release', async () => {
     sdkMock.getAppReleases.mockResolvedValue({ android: { available: false }, ios: { available: false } });
-    render(ApplicationSetup, { tool: 'obtainium', open: true });
+    render(ApplicationSetup, { tool: 'obtainium' });
 
     expect(await screen.findByText(t.unavailable)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: t.open_obtainium })).toBeDisabled();

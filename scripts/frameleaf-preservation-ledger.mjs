@@ -1171,7 +1171,7 @@ async function validateLedger(ledger) {
   )
     errors.push("invalid or changed baseline contract");
   const expectedInventoryContract = {
-    webRoutes: 92,
+    webRoutes: 94,
     settings: 535,
     freecut: 210,
     native: 227,
@@ -1599,7 +1599,7 @@ async function validateLedger(ledger) {
     errors.push("stale normalized source evidence hash");
   const expectedHashes = {
     acceptedRoutes:
-      "d219cdd43224fb5e09cafcc6a67196b997a20a5b33b58a113b4fc1d67a1ee7bc",
+      "bd3c5ae5f8fa9867cb6e049f53bad1cd275d14f8d481c7fbb2e9a0b963aa670f",
     acceptedActionFamilies:
       "f73966cdedd51ef644d8219ba95dbe0dcb9d601ed34878e70d6607e084a81a7c",
     acceptedNative:
