@@ -107,9 +107,11 @@ export class BulkController {
 
   /** Tell the person the job is the server's now, and where to follow it. */
   async #announceQueued(action: BulkActionId, count: number) {
-    const $t = await getFormatter();
+    const translate = await getFormatter();
     toastManager.primary(
-      $t('frameleaf_bulk_queued', { values: { action: $t(`frameleaf_bulk_${action.replaceAll('-', '_')}`), count } }),
+      translate('frameleaf_bulk_queued', {
+        values: { action: translate(`frameleaf_bulk_${action.replaceAll('-', '_')}`), count },
+      }),
     );
     this.undo = null;
     this.#queued();
@@ -121,9 +123,9 @@ export class BulkController {
   }
 
   async #report(action: BulkActionId, result: BulkResult) {
-    const $t = await getFormatter();
+    const translate = await getFormatter();
     const { key, values } = bulkResultSummary(result);
-    const message = `${$t(`frameleaf_bulk_${action.replaceAll('-', '_')}`)}: ${$t(key, { values })}`;
+    const message = `${translate(`frameleaf_bulk_${action.replaceAll('-', '_')}`)}: ${translate(key, { values })}`;
     if (result.succeeded.length === 0 && result.failed.length > 0) {
       toastManager.danger(message);
     } else {
@@ -138,7 +140,7 @@ export class BulkController {
     // Trash undoes through restore; every other reversible action reverses itself.
     this.undo = result.undo
       ? {
-          label: $t(`frameleaf_bulk_${result.undo.action.replaceAll('-', '_')}`),
+          label: translate(`frameleaf_bulk_${result.undo.action.replaceAll('-', '_')}`),
           run: async () => {
             const entry = result.undo!;
             this.undo = null;
@@ -172,8 +174,8 @@ export class BulkController {
       await this.#report(action, result);
       return result;
     } catch (error) {
-      const $t = await getFormatter();
-      handleError(error, $t('frameleaf_bulk_reason_failed'));
+      const translate = await getFormatter();
+      handleError(error, translate('frameleaf_bulk_reason_failed'));
       return null;
     } finally {
       this.busy = false;
@@ -188,8 +190,8 @@ export class BulkController {
       this.#follow(action, ids, created);
       await this.#announceQueued(action, ids.length);
     } catch (error) {
-      const $t = await getFormatter();
-      handleError(error, $t('frameleaf_bulk_reason_failed'));
+      const translate = await getFormatter();
+      handleError(error, translate('frameleaf_bulk_reason_failed'));
     } finally {
       this.busy = false;
     }

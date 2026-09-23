@@ -38,9 +38,10 @@
     sortAccounts(filterAccounts(users, { query, filter: filter as AccountFilter }), sort as AccountSort),
   );
 
-  const searchId = $props.id();
-  const filterId = $props.id();
-  const sortId = $props.id();
+  const idPrefix = $props.id();
+  const searchId = `${idPrefix}-search`;
+  const filterId = `${idPrefix}-filter`;
+  const sortId = `${idPrefix}-sort`;
 
   const statusLabel = (user: UserAdminResponseDto) => {
     switch (accountLifecycle(user)) {

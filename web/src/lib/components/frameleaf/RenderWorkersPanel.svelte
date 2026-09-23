@@ -58,9 +58,10 @@
     ),
   );
 
-  const searchId = $props.id();
-  const filterId = $props.id();
-  const destinationId = $props.id();
+  const idPrefix = $props.id();
+  const searchId = `${idPrefix}-search`;
+  const filterId = `${idPrefix}-filter`;
+  const destinationId = `${idPrefix}-destination`;
 
   const seenAt = (value: string | null) =>
     value
