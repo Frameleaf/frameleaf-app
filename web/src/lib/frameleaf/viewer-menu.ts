@@ -178,7 +178,9 @@ export function viewerMenuGroups(context: ViewerMenuContext): ViewerMenuGroup[] 
         id: 'organize',
         labelKey: 'frameleaf_viewer_group_organize',
         items: compact([
-          !isLocked && 'add-to-album',
+          // A Locked item is only ever shown to its owner in an unlocked session, who may put it in any
+          // album (owner decision, September 22, 2026); the album hides it from everyone else.
+          'add-to-album',
           hasAlbumContext && canEditAlbum && 'remove-from-album',
           isOwner && !isLocked && (isArchived ? 'unarchive' : 'archive'),
           // Sensitive marking is metadata and never relocates the asset.

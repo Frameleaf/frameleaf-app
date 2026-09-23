@@ -150,7 +150,8 @@ export const getAssetActions = (
     title: $t('add_to_album'),
     icon: mdiPlus,
     shortcuts: [{ key: 'l' }],
-    $if: () => asset.visibility !== AssetVisibility.Locked && !asset.isTrashed,
+    // Locked items may go into albums from an unlocked session (owner decision, September 22, 2026).
+    $if: () => !asset.isTrashed,
     onAction: () => modalManager.show(AssetAddToAlbumModal, { assetIds: [asset.id] }),
   };
 
