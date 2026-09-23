@@ -49,19 +49,25 @@ describe('the query the top bar search opens on (FL-48)', () => {
     );
   });
 
-  it('keeps the pet, the space and the map when the page has no session state', () => {
+  it('keeps the pet and the space when the page has no session state', () => {
     expect(searchContextFor(onPage(`/pets/${petId}`)).query.filter).toEqual({ petIds: { any: [petId] } });
     expect(searchContextFor(onPage(`/sharing/${spaceId}`)).query.spaceId).toBe(spaceId);
-    expect(searchContextFor(onPage('/map')).query.view).toBe('map');
   });
 
-  it('adds the route scope to a pet or map page that also carries session state', () => {
+  it('adds the route scope to a pet page that also carries session state', () => {
     const view = state({ query: { ...emptyDiscoveryQuery(), text: 'garden', mode: 'smart' } });
     expect(searchContextFor(onPage(`/pets/${petId}`, view)).query).toMatchObject({
       text: 'garden',
       filter: { petIds: { any: [petId] } },
     });
-    expect(searchContextFor(onPage('/map', view)).query.view).toBe('map');
+  });
+
+  it('opens the map page unscoped, matching the prototype (FL-48 map/space follow-ups)', () => {
+    // App.jsx's `exploreQuery`/`MapView`'s "Search this area" always land a submitted search on the
+    // plain grid results, so /map contributes no scope and no view — unlike /pets/:id or /sharing/:id.
+    expect(searchContextFor(onPage('/map')).query.view).toBe('photos');
+    const view = state({ query: { ...emptyDiscoveryQuery(), text: 'garden', mode: 'smart' } });
+    expect(searchContextFor(onPage('/map', view)).query.view).toBe('photos');
   });
 
   it('reads the search page from its own query, never from session state', () => {

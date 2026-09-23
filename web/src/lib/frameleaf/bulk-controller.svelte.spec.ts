@@ -140,9 +140,12 @@ describe('the bulk controller', () => {
   });
 
   it('reports a refused scope as a failed operation without calling anything', async () => {
+    // A shared space with an id resolves to the album condition it is (FL-48 map/space
+    // follow-ups, `bulk-operations.spec.ts`); a space scope with none is still refused, the
+    // same as an album scope with none.
     await controller.runMatching('archive', {
       ...session.state,
-      scope: { kind: 'space', id: 'space-1' },
+      scope: { kind: 'space' },
     });
     expect(session.operations[0].status).toBe('failed');
     expect(session.operations[0].errorKey).toBe('frameleaf_bulk_reason_scope_unsupported');

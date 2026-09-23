@@ -351,6 +351,46 @@ describe('a matching set is bound to the scope it was taken from', () => {
     expect(search.kind === 'metadata' && search.dto.filter?.albumIds).toEqual({ none: ['album-2'], all: ['album-1'] });
   });
 
+  /**
+   * FL-48 map/space follow-ups: a shared space is an album of kind `space`
+   * (`withSpaceScope`/`space-photos.svelte.ts`), so "select all matching" resolves it exactly as it
+   * resolves an album scope, instead of refusing it. `resolveMatchingIds`/`countMatching` call the
+   * authenticated search endpoints, so the matching set is never wider than what a member already
+   * sees in the space; `bulk-actions.spec.ts` covers the viewer-role restriction on top of it.
+   */
+  it('applies a shared-space scope as the album condition it is', () => {
+    const search = snapshotSearch(
+      viewState({
+        scope: { kind: 'space', id: 'space-1' },
+        query: { ...emptyDiscoveryQuery(), filter: { isFavorite: { eq: true } } },
+      }),
+    );
+    expect(search).toEqual({
+      kind: 'metadata',
+      dto: {
+        filter: {
+          isFavorite: { eq: true },
+          albumIds: { any: ['space-1'] },
+          visibility: { eq: AssetVisibility.Timeline },
+          trashedAt: { eq: null },
+        },
+        size: 250,
+      },
+    });
+  });
+
+  it('keeps a query with its own spaceId as the album condition, independent of the page scope', () => {
+    const search = snapshotSearch(viewState({ query: { ...emptyDiscoveryQuery(), spaceId: 'space-2' } }));
+    expect(search.kind === 'metadata' && search.dto.filter?.albumIds).toEqual({ any: ['space-2'] });
+  });
+
+  it('refuses a space scope with no id, the same as an album scope with no id', () => {
+    expect(snapshotSearch(viewState({ scope: { kind: 'space' } }))).toEqual({
+      kind: 'unsupported',
+      reasonKey: 'frameleaf_bulk_reason_scope_unsupported',
+    });
+  });
+
   it('includes trashed assets when the view filters on the trash date', () => {
     const search = snapshotSearch(
       viewState({ query: { ...emptyDiscoveryQuery(), filter: { trashedAt: { gte: '2026-01-01' } } } }),
@@ -396,11 +436,9 @@ describe('a matching set is bound to the scope it was taken from', () => {
     });
   });
 
-  it('refuses a scope or a query the search API cannot express rather than widening it', () => {
-    expect(snapshotSearch(viewState({ scope: { kind: 'space', id: 'space-1' } }))).toEqual({
-      kind: 'unsupported',
-      reasonKey: 'frameleaf_bulk_reason_scope_unsupported',
-    });
+  it('refuses a query the search API cannot express rather than widening it', () => {
+    // A shared-space scope no longer belongs here: FL-48 map/space follow-ups lift that refusal
+    // (`applies a shared-space scope as the album condition it is`, above).
     // FL-48: a text search names its field, so it becomes that field's condition...
     expect(
       snapshotSearch(viewState({ query: { ...emptyDiscoveryQuery(), text: 'lake', mode: 'text', textField: 'ocr' } })),
