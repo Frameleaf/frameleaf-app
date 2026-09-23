@@ -140,3 +140,4 @@
 2100000000310-LockWholeStacksAndRecordProfileImageSource
 2100000000320-AddAssetLock
 2100000000340-AddMediaOperationPause
+2100000000400-AddAssetDocumentEdit

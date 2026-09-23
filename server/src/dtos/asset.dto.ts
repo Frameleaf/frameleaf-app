@@ -66,6 +66,8 @@ export const AssetIdsSchema = z
 export enum AssetJobName {
   REFRESH_FACES = 'refresh-faces',
   REFRESH_METADATA = 'refresh-metadata',
+  /** FL-63: read the photo's text again, through the routed text recognition destination */
+  REFRESH_OCR = 'refresh-ocr',
   REGENERATE_THUMBNAIL = 'regenerate-thumbnail',
   TRANSCODE_VIDEO = 'transcode-video',
 }
