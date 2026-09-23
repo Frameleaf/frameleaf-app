@@ -244,6 +244,20 @@ const clampPercent = (value: number) => Math.min(100, Math.max(0, Math.round(val
 export const isRetryingMediaOperation = (operation: Pick<MediaOperationDto, 'status' | 'autoRetries' | 'retryAt'>) =>
   operation.status === MediaOperationStatus.Queued && ((operation.autoRetries ?? 0) > 0 || !!operation.retryAt);
 
+/** Statuses an iCloud sync's worker is on it in; "Rendering" means nothing for a sync (FL-68). */
+const ICLOUD_WORKING: readonly MediaOperationStatus[] = [
+  MediaOperationStatus.Preparing,
+  MediaOperationStatus.Rendering,
+  MediaOperationStatus.Validating,
+];
+
+/**
+ * An iCloud sync back in the queue to wait out the provider or items on their own back-off (FL-68).
+ * It holds a retry time but has not used its automatic retry, so nothing has failed.
+ */
+export const isWaitingICloudSync = (operation: Pick<MediaOperationDto, 'status' | 'autoRetries' | 'retryAt'>) =>
+  operation.status === MediaOperationStatus.Queued && !!operation.retryAt && (operation.autoRetries ?? 0) === 0;
+
 /**
  * One durable server job as a row.
  *
@@ -261,7 +275,11 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
   const finished = !running && !pause.paused;
   const failed = status === MediaOperationStatus.Failed;
   const counted = Number(operation.totalUnits ?? 0) > 0 || operation.progress > 0;
-  const retrying = isRetryingMediaOperation(operation);
+  const icloud = operation.kind === MediaOperationKind.IcloudSync;
+  // An iCloud sync hands itself back to wait out a provider back-off without failing (FL-68): a
+  // delayed queued run that has not failed is waiting, not retrying.
+  const waiting = icloud && isWaitingICloudSync(operation);
+  const retrying = !waiting && isRetryingMediaOperation(operation);
 
   return {
     id: `job:${operation.id}`,
@@ -270,9 +288,13 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     kindKey: `frameleaf_activity_kind_${operation.kind}`,
     statusKey: pause.pausePending
       ? 'frameleaf_activity_status_pausing'
-      : retrying
-        ? 'frameleaf_activity_status_retrying'
-        : `frameleaf_activity_status_${status}`,
+      : waiting
+        ? 'frameleaf_activity_status_waiting'
+        : retrying
+          ? 'frameleaf_activity_status_retrying'
+          : icloud && ICLOUD_WORKING.includes(status)
+            ? 'frameleaf_activity_icloud_syncing'
+            : `frameleaf_activity_status_${status}`,
     tone: retrying || pause.pausePending ? 'warning' : STATUS_TONE[status],
     title: operation.label,
     progress: status === MediaOperationStatus.Completed ? 100 : counted ? clampPercent(operation.progress) : null,
