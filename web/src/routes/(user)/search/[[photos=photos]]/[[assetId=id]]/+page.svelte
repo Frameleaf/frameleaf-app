@@ -6,17 +6,31 @@
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
-  import { emptyDiscoveryQuery, structuredSearchRequest } from '$lib/components/discovery/query';
+  import {
+    DISCOVERY_QUERY_PARAMETER,
+    discoverySearchRequest,
+    discoveryUrl,
+    emptyDiscoveryQuery,
+    isEmptyDiscoverySearch,
+    readSearchParameters,
+    structuredSearchRequest,
+    toSearchDto,
+    withoutDiscoveryFilter,
+    type DiscoveryQuery,
+  } from '$lib/components/discovery/query';
   import { QueryParameter } from '$lib/constants';
   import { brandedArchiveName, namedEntitySegments } from '$lib/frameleaf/archive-name';
   import { resolveEntityName, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import {
+    discoveryContextChips,
     entityNameKey,
     FILTER_ENTITY_FALLBACK_KEYS,
     FILTER_ENTITY_FIELDS,
     filterEntityIds,
+    withoutDiscoveryContext,
     withoutFilterField,
+    type SearchContextKey,
   } from '$lib/frameleaf/search-chips';
   import { describeFilterChips } from '$lib/frameleaf/search-filters';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -78,10 +92,29 @@
 
   type SearchTerms = MetadataSearchDto & Pick<SmartSearchDto, 'query' | 'queryAssetId'>;
   let searchQuery = $derived(page.url.searchParams.get(QueryParameter.QUERY));
+  let discoveryParameter = $derived(page.url.searchParams.get(DISCOVERY_QUERY_PARAMETER));
   let askSearchQuery = $derived(page.url.searchParams.get(ASK_QUERY_PARAMETER) ?? '');
   let smartSearchEnabled = $derived(featureFlagsManager.value.smartSearch);
-  let terms = $derived<SearchTerms>(searchQuery ? JSON.parse(searchQuery) : {});
-  let hasSearchQuery = $derived(Object.keys(terms).length > 0);
+  /**
+   * FL-48: what the page shows. A search from the search dialog arrives as the whole shared query
+   * (`dq`), so every part of it — the space, the similar-photo reference, the text field — comes back
+   * when the dialog is reopened here. A legacy `query` request (a Places card, an explore link) is kept
+   * exactly as it was. A payload that cannot be read is reported instead of thrown.
+   */
+  let searchLocation = $derived(readSearchParameters(discoveryParameter, searchQuery));
+  let discoveryQuery = $derived<DiscoveryQuery | undefined>(
+    searchLocation.kind === 'discovery' && !isEmptyDiscoverySearch(searchLocation.query)
+      ? searchLocation.query
+      : undefined,
+  );
+  let terms = $derived<SearchTerms>(
+    discoveryQuery
+      ? toSearchDto(discoveryQuery)
+      : searchLocation.kind === 'legacy'
+        ? (searchLocation.terms as SearchTerms)
+        : {},
+  );
+  let hasSearchQuery = $derived(discoveryQuery !== undefined || Object.keys(terms).length > 0);
   let canUseAskSearch = $derived(featureFlagsManager.value.search && featureFlagsManager.value.smartSearch);
 
   $effect(() => {
@@ -192,18 +225,20 @@
    * groups of a structured `filter.petIds` from the search dialog. An excluded pet (`none`) is not a
    * description of the download, so it is never a naming source.
    */
-  const searchedPetIds = (searchTerms: SearchTerms): string[] => {
-    if (Array.isArray(searchTerms.petIds)) {
-      return searchTerms.petIds;
+  const searchedIds = (searchTerms: SearchTerms, field: 'personIds' | 'petIds' | 'tagIds'): string[] => {
+    const flat = searchTerms[field];
+    if (Array.isArray(flat)) {
+      return flat;
     }
-    const condition = searchTerms.filter?.petIds;
+    // FL-48: a search from the search dialog narrows people and tags inside its structured filter too
+    const condition = searchTerms.filter?.[field];
     return [...new Set([...(condition?.any ?? []), ...(condition?.all ?? [])])];
   };
 
   $effect(() => {
-    const personIds = Array.isArray(terms.personIds) ? terms.personIds : [];
-    const petIds = searchedPetIds(terms);
-    const tagIds = Array.isArray(terms.tagIds) ? terms.tagIds : [];
+    const personIds = searchedIds(terms, 'personIds');
+    const petIds = searchedIds(terms, 'petIds');
+    const tagIds = searchedIds(terms, 'tagIds');
     if (personIds.length === 0 && petIds.length === 0 && tagIds.length === 0) {
       resolvedFilterNameSegments = [];
       return;
@@ -244,8 +279,17 @@
    */
   let filterEntityNames = $state<Record<string, string | null>>({});
 
+  /**
+   * The query the chips describe. FL-48: for a search from the dialog it is the shared query itself,
+   * not the request derived from it, so a shared space and the default visibility and trash
+   * conditions the request adds are never drawn as conditions the person set.
+   */
+  const chipQuery = $derived<DiscoveryQuery | undefined>(
+    discoveryQuery ?? (terms.filter ? { ...emptyDiscoveryQuery(), filter: terms.filter } : undefined),
+  );
+
   $effect(() => {
-    const groups = filterEntityIds(terms.filter);
+    const groups = filterEntityIds(chipQuery?.filter);
     if (groups.length === 0) {
       return;
     }
@@ -268,10 +312,10 @@
   });
 
   const filterChips = $derived(
-    terms.filter
+    chipQuery
       ? describeFilterChips(
           $t,
-          { ...emptyDiscoveryQuery(), filter: terms.filter },
+          chipQuery,
           {
             locale: $locale,
             nameFor: (field, id) => {
@@ -326,13 +370,14 @@
     // A search from the search dialog carries a structured filter (a pet, a person, a place, ...). The
     // server refuses flat fields such as `page` and `visibility` beside it, so that request is built
     // by `structuredSearchRequest` and pages by cursor; a flat (legacy) search is sent as before.
-    const structured = terms.filter !== undefined;
-    const searchDto: SearchTerms = structured
-      ? {
-          ...structuredSearchRequest(terms, nextCursor),
-          ...(terms.queryAssetId ? { queryAssetId: terms.queryAssetId } : {}),
-        }
-      : { page: nextPage, withExif: true, ...terms };
+    // FL-48: a search from the dialog goes through the one query-to-request path, so the space, the
+    // similar-photo reference and every date bound reach the server as the dialog stated them.
+    const structured = discoveryQuery !== undefined || terms.filter !== undefined;
+    const searchDto: SearchTerms = discoveryQuery
+      ? discoverySearchRequest(discoveryQuery, nextCursor)
+      : structured
+        ? structuredSearchRequest(terms, nextCursor)
+        : { page: nextPage, withExif: true, ...terms };
 
     try {
       const { albums, assets } =
@@ -479,7 +524,7 @@
   const onAlbumAddAssets = ({ assetIds }: { assetIds: string[] }) => {
     librarySession.clearSelection();
 
-    if (terms.isNotInAlbum) {
+    if (terms.isNotInAlbum || terms.filter?.hasAlbums?.eq === false) {
       const assetIdSet = new Set(assetIds);
       searchResultAssets = searchResultAssets.filter((asset) => !assetIdSet.has(asset.id));
     }
@@ -499,8 +544,25 @@
   /** FL-49: remove one condition of the structured filter, keeping the rest of the search. */
   function removeFilterCondition(field: string) {
     librarySession.clearSelection();
+    if (discoveryQuery) {
+      void goto(discoverySearchUrl(withoutDiscoveryFilter(discoveryQuery, field)));
+      return;
+    }
     void goto(Route.search(withoutFilterField(terms, field)));
   }
+
+  /** FL-48: remove the text, the similar-photo reference or the space, keeping everything else. */
+  function removeContext(key: SearchContextKey) {
+    if (!discoveryQuery) {
+      return;
+    }
+    librarySession.clearSelection();
+    void goto(discoverySearchUrl(withoutDiscoveryContext(discoveryQuery, key)));
+  }
+
+  /** The results page for a query; one that no longer narrows anything is the plain search page. */
+  const discoverySearchUrl = (query: DiscoveryQuery) =>
+    isEmptyDiscoverySearch(query) ? Route.search() : discoveryUrl(query);
 
   function resetAskSearch(clearInput = true) {
     askSearchRequestId++;
@@ -626,58 +688,93 @@
         </button>
       </div>
     {/each}
-    {#each getObjectKeys(terms).filter((key) => key !== 'filter') as searchKey (searchKey)}
-      {@const value = terms[searchKey]}
-      <div class="flex place-content-center place-items-center items-stretch text-xs">
-        <div
-          class="flex items-center justify-center rounded-s-full bg-immich-primary px-4 py-2 text-white dark:bg-immich-dark-primary dark:text-black"
-        >
-          {getHumanReadableSearchKey(searchKey as keyof SearchTerms)}
-        </div>
-
-        {#if value !== true}
-          <div class="bg-gray-300 px-4 py-2 dark:bg-gray-800 dark:text-white">
-            {#if (searchKey === 'takenAfter' || searchKey === 'takenBefore') && typeof value === 'string'}
-              {getHumanReadableDate(value)}
-            {:else if searchKey === 'personIds' && Array.isArray(value)}
-              {#await getPersonName(value) then personName}
-                {personName}
-              {/await}
-            {:else if searchKey === 'petIds' && Array.isArray(value)}
-              {#await getPetNames(value) then petNames}
-                {petNames}
-              {/await}
-            {:else if searchKey === 'tagIds' && (Array.isArray(value) || value === null)}
-              {#await getTagNames(value) then tagNames}
-                {tagNames}
-              {/await}
-            {:else if searchKey === 'rating'}
-              {$t('rating_count', { values: { count: value ?? 0 } })}
-            {:else if searchKey === 'imageEnrichment' && typeof value === 'string'}
-              {getHumanReadableImageEnrichmentFilter(value)}
-            {:else if value === null || value === ''}
-              {$t('unknown')}
-            {:else}
-              {value}
-            {/if}
+    {#if discoveryQuery}
+      <!-- FL-48: the text, the similar-photo reference and the space are chips of their own. -->
+      {#each discoveryContextChips(discoveryQuery) as chip (chip.key)}
+        <div class="flex place-content-center place-items-center items-stretch text-xs">
+          <div
+            class="flex items-center justify-center rounded-s-full bg-immich-primary px-4 py-2 text-white dark:bg-immich-dark-primary dark:text-black"
+          >
+            {$t(chip.labelKey)}
           </div>
-        {/if}
-        <button
-          type="button"
-          class="flex items-center justify-center rounded-e-full bg-gray-300 px-3 text-gray-700 transition hover:text-immich-primary dark:bg-gray-800 dark:text-white dark:hover:text-immich-dark-primary"
-          aria-label={$t('remove_filter')}
-          title={$t('remove_filter')}
-          onclick={() => removeFilter(searchKey as keyof SearchTerms)}
-        >
-          <Icon icon={mdiClose} size="16" />
-        </button>
-      </div>
-    {/each}
+          {#if chip.value}
+            <div class="bg-gray-300 px-4 py-2 dark:bg-gray-800 dark:text-white">{chip.value}</div>
+          {/if}
+          <button
+            type="button"
+            class="flex items-center justify-center rounded-e-full bg-gray-300 px-3 text-gray-700 transition hover:text-immich-primary dark:bg-gray-800 dark:text-white dark:hover:text-immich-dark-primary"
+            aria-label={$t('remove_filter')}
+            title={$t('remove_filter')}
+            onclick={() => removeContext(chip.key)}
+          >
+            <Icon icon={mdiClose} size="16" />
+          </button>
+        </div>
+      {/each}
+    {:else}
+      {#each getObjectKeys(terms).filter((key) => key !== 'filter') as searchKey (searchKey)}
+        {@const value = terms[searchKey]}
+        <div class="flex place-content-center place-items-center items-stretch text-xs">
+          <div
+            class="flex items-center justify-center rounded-s-full bg-immich-primary px-4 py-2 text-white dark:bg-immich-dark-primary dark:text-black"
+          >
+            {getHumanReadableSearchKey(searchKey as keyof SearchTerms)}
+          </div>
+
+          {#if value !== true}
+            <div class="bg-gray-300 px-4 py-2 dark:bg-gray-800 dark:text-white">
+              {#if (searchKey === 'takenAfter' || searchKey === 'takenBefore') && typeof value === 'string'}
+                {getHumanReadableDate(value)}
+              {:else if searchKey === 'personIds' && Array.isArray(value)}
+                {#await getPersonName(value) then personName}
+                  {personName}
+                {/await}
+              {:else if searchKey === 'petIds' && Array.isArray(value)}
+                {#await getPetNames(value) then petNames}
+                  {petNames}
+                {/await}
+              {:else if searchKey === 'tagIds' && (Array.isArray(value) || value === null)}
+                {#await getTagNames(value) then tagNames}
+                  {tagNames}
+                {/await}
+              {:else if searchKey === 'rating'}
+                {$t('rating_count', { values: { count: value ?? 0 } })}
+              {:else if searchKey === 'imageEnrichment' && typeof value === 'string'}
+                {getHumanReadableImageEnrichmentFilter(value)}
+              {:else if value === null || value === ''}
+                {$t('unknown')}
+              {:else}
+                {value}
+              {/if}
+            </div>
+          {/if}
+          <button
+            type="button"
+            class="flex items-center justify-center rounded-e-full bg-gray-300 px-3 text-gray-700 transition hover:text-immich-primary dark:bg-gray-800 dark:text-white dark:hover:text-immich-dark-primary"
+            aria-label={$t('remove_filter')}
+            title={$t('remove_filter')}
+            onclick={() => removeFilter(searchKey as keyof SearchTerms)}
+          >
+            <Icon icon={mdiClose} size="16" />
+          </button>
+        </div>
+      {/each}
+    {/if}
   </section>
 {/if}
 
 <section class="m-4 mb-12 max-h-screen bg-immich-bg dark:bg-immich-dark-bg">
   <section id="search-content">
+    {#if searchLocation.kind === 'rejected'}
+      <!-- FL-48: a damaged or newer search link fails safely and says why, instead of erroring. -->
+      <p class="mx-auto mt-24 max-w-3xl px-6 text-center text-sm text-gray-600 dark:text-gray-300" role="status">
+        {$t(
+          searchLocation.problem === 'unsupported-version'
+            ? 'frameleaf_search_bridge_link_newer'
+            : 'frameleaf_search_bridge_link_damaged',
+        )}
+      </p>
+    {/if}
     {#if !hasSearchQuery && canUseAskSearch}
       <div class="mx-auto mt-24 flex w-full max-w-5xl flex-col gap-8 px-6 text-gray-700 dark:text-gray-200">
         <form class="mx-auto flex w-full max-w-3xl gap-2" onsubmit={onAskSubmit}>
