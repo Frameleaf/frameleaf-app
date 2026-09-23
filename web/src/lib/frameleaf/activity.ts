@@ -148,6 +148,14 @@ export const activitySettingsDetails = (settings: Record<string, unknown> | unde
 const clampPercent = (value: number) => Math.min(100, Math.max(0, Math.round(value)));
 
 /**
+ * A job back in the queue for its automatic retry (FL-104). Every job gets one before a failure is
+ * reported, so a job in this state has failed once and will run again by itself; it reads as
+ * retrying, with the failure it is retrying after, rather than as freshly queued.
+ */
+export const isRetryingMediaOperation = (operation: Pick<MediaOperationDto, 'status' | 'autoRetries' | 'retryAt'>) =>
+  operation.status === MediaOperationStatus.Queued && ((operation.autoRetries ?? 0) > 0 || !!operation.retryAt);
+
+/**
  * One durable server job as a row.
  *
  * `progress` is null while the job is queued and nothing has been counted: an empty bar is honest
@@ -163,14 +171,15 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
   const finished = !running;
   const failed = status === MediaOperationStatus.Failed;
   const counted = Number(operation.totalUnits ?? 0) > 0 || operation.progress > 0;
+  const retrying = isRetryingMediaOperation(operation);
 
   return {
     id: `job:${operation.id}`,
     source: 'job',
     operationId: operation.id,
     kindKey: `frameleaf_activity_kind_${operation.kind}`,
-    statusKey: `frameleaf_activity_status_${status}`,
-    tone: STATUS_TONE[status],
+    statusKey: retrying ? 'frameleaf_activity_status_retrying' : `frameleaf_activity_status_${status}`,
+    tone: retrying ? 'warning' : STATUS_TONE[status],
     title: operation.label,
     progress: status === MediaOperationStatus.Completed ? 100 : counted ? clampPercent(operation.progress) : null,
     running,
@@ -213,16 +222,19 @@ export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityIt
   const answered = bulk ? bulk.succeeded + bulk.failed + bulk.skipped : Number(operation.processedUnits ?? 0);
   const unfinished = !running && answered < requested;
   const failed = status === MediaOperationStatus.Failed || (!running && (bulk?.failed ?? 0) > 0);
+  const retrying = isRetryingMediaOperation(operation);
 
   return {
     id: `job:${operation.id}`,
     source: 'job',
     operationId: operation.id,
     kindKey: 'frameleaf_activity_kind_bulk',
-    statusKey: BULK_WORKING.includes(status)
-      ? 'frameleaf_activity_bulk_running'
-      : `frameleaf_activity_status_${status}`,
-    tone: failed ? 'danger' : STATUS_TONE[status],
+    statusKey: retrying
+      ? 'frameleaf_activity_status_retrying'
+      : BULK_WORKING.includes(status)
+        ? 'frameleaf_activity_bulk_running'
+        : `frameleaf_activity_status_${status}`,
+    tone: failed ? 'danger' : retrying ? 'warning' : STATUS_TONE[status],
     title: operation.label,
     ...(bulk ? { titleKey: `frameleaf_bulk_${bulk.action.replaceAll('-', '_')}` } : {}),
     progress:
