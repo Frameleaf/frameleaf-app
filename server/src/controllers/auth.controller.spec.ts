@@ -161,6 +161,31 @@ describe(AuthController.name, () => {
       expect(service.login).toHaveBeenCalledWith(expect.objectContaining({ email: 'admin@local' }), expect.anything());
     });
 
+    it('rejects a non-boolean cookie preference before authentication', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/auth/login')
+        .send({ email: 'admin@local', password: 'password', rememberMe: 'false' });
+      expect(status).toBe(400);
+      expect(service.login).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, true, false])('sets login cookie persistence for rememberMe=%s', async (rememberMe) => {
+      service.login.mockResolvedValue(mediumFactory.loginResponse());
+      const { status, headers } = await request(ctx.getHttpServer())
+        .post('/auth/login')
+        .send({ email: 'admin@local', password: 'password', rememberMe });
+
+      expect(status).toBe(201);
+      expect(headers['set-cookie']).toHaveLength(3);
+      for (const cookie of headers['set-cookie']) {
+        expect(cookie.includes('Max-Age=34560000')).toBe(rememberMe !== false);
+        expect(cookie.includes('Expires=')).toBe(rememberMe !== false);
+        expect(cookie.includes('HttpOnly')).toBe(!cookie.startsWith('immich_is_authenticated='));
+        expect(cookie).toContain('SameSite=Lax');
+        expect(cookie).toContain('Path=/');
+      }
+    });
+
     it('should auth cookies on a secure connection', async () => {
       const loginResponse = mediumFactory.loginResponse();
       service.login.mockResolvedValue(loginResponse);

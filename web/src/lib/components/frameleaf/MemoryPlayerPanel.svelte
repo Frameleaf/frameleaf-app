@@ -491,7 +491,7 @@
     <header class="fmp-header">
       <div class="fmp-header-title">
         <IconButton label={$t('close')} onclick={() => goto(memoryManager.memoriesHref)}>
-          <Icon icon={mdiClose} size={22} />
+          <Icon icon={mdiClose} size="22" />
         </IconButton>
         <p>{$memoryLaneTitle(current.memory)}</p>
       </div>
@@ -501,7 +501,7 @@
           label={paused ? $t('play_memories') : $t('pause_memories')}
           onclick={() => handlePromiseError(handleAction('PlayPauseButtonClick', paused ? 'play' : 'pause'))}
         >
-          <Icon icon={paused ? mdiPlay : mdiPause} size={20} />
+          <Icon icon={paused ? mdiPlay : mdiPause} size="20" />
         </IconButton>
 
         {#each current.memory.assets as asset, index (asset.id)}
@@ -558,7 +558,7 @@
     {#if galleryInView}
       <div class="fmp-scroll-up visible">
         <IconButton label={$t('hide_gallery')} onclick={() => memoryWrapper?.scrollIntoView({ behavior: 'smooth' })}>
-          <Icon icon={mdiChevronUp} size={20} />
+          <Icon icon={mdiChevronUp} size="20" />
         </IconButton>
       </div>
     {/if}
@@ -613,14 +613,14 @@
                   <Icon icon={current.asset.isFavorite ? mdiHeart : mdiHeartOutline} size="20" />
                 </IconButton>
                 <IconButton label={$t('share')} onclick={openShare}>
-                  <Icon icon={mdiShareVariantOutline} size={20} />
+                  <Icon icon={mdiShareVariantOutline} size="20" />
                 </IconButton>
                 <!-- A direct action rather than a dropdown: .fmp-main-inner clips overflow to
                      contain the Ken Burns zoom, which would also clip an open popup menu
                      positioned near this corner. Removal is undoable from its toast (FL-83
                      MPY-1); removing the whole memory belongs to the index (MPY-2). -->
                 <IconButton label={$t('remove_photo_from_memory')} onclick={() => memoryManager.removeCurrentAsset()}>
-                  <Icon icon={mdiImageMinusOutline} size={20} />
+                  <Icon icon={mdiImageMinusOutline} size="20" />
                 </IconButton>
               </div>
 
@@ -631,7 +631,7 @@
                       label={$t('view_in_timeline')}
                       href={Route.photos({ at: asset.stack?.primaryAssetId ?? asset.id })}
                     >
-                      <Icon icon={mdiImageSearch} size={20} />
+                      <Icon icon={mdiImageSearch} size="20" />
                     </IconButton>
                   {/if}
                 {/await}
@@ -656,19 +656,19 @@
                     </span>
                   </span>
                   <IconButton label={$t('frameleaf_memories_export_cancel')} onclick={() => void cancelExport()}>
-                    <Icon icon={mdiStopCircleOutline} size={20} />
+                    <Icon icon={mdiStopCircleOutline} size="20" />
                   </IconButton>
                 {:else if exportRun?.isDownloadable}
                   <IconButton label={$t('frameleaf_memories_export_download')} onclick={() => void saveExport()}>
-                    <Icon icon={mdiDownload} size={20} />
+                    <Icon icon={mdiDownload} size="20" />
                   </IconButton>
                 {:else}
                   <IconButton label={$t('frameleaf_memories_export')} onclick={() => void startExport()}>
-                    <Icon icon={mdiExportVariant} size={20} />
+                    <Icon icon={mdiExportVariant} size="20" />
                   </IconButton>
                 {/if}
                 <button type="button" class="fmp-studio" onclick={makeMovie}>
-                  <Icon icon={mdiMovieEditOutline} size={18} aria-hidden="true" />
+                  <Icon icon={mdiMovieEditOutline} size="18" aria-hidden="true" />
                   {$t('frameleaf_memories_make_movie')}
                 </button>
               </div>
@@ -682,7 +682,7 @@
             {#if current.previousHref}
               <div class="fmp-nav prev">
                 <IconButton label={$t('previous_memory')} onclick={() => handleNavigate(current?.previousHref)}>
-                  <Icon icon={mdiChevronLeft} size={28} />
+                  <Icon icon={mdiChevronLeft} size="28" />
                 </IconButton>
               </div>
             {/if}
@@ -690,7 +690,7 @@
             {#if current.nextHref}
               <div class="fmp-nav next">
                 <IconButton label={$t('next_memory')} onclick={() => handleNavigate(current?.nextHref)}>
-                  <Icon icon={mdiChevronRight} size={28} />
+                  <Icon icon={mdiChevronRight} size="28" />
                 </IconButton>
               </div>
             {/if}
@@ -737,7 +737,7 @@
   <section class="frameleaf fmp-gallery-section" data-theme={appTheme}>
     <div class="fmp-scroll-down" class:visible={!galleryInView}>
       <IconButton label={$t('show_gallery')} onclick={() => memoryGallery?.scrollIntoView({ behavior: 'smooth' })}>
-        <Icon icon={mdiChevronDown} size={20} />
+        <Icon icon={mdiChevronDown} size="20" />
       </IconButton>
     </div>
 

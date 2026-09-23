@@ -5,7 +5,6 @@ import type {
   AssetResponseDto,
   IntegrityReport,
   JobCreateDto,
-  LibraryResponseDto,
   LoginResponseDto,
   PersonResponseDto,
   QueueResponseDto,
@@ -14,7 +13,6 @@ import type {
   AdminConfigDto,
   TagResponseDto,
   UserAdminResponseDto,
-  WorkflowResponseDto,
 } from '@immich/sdk';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { BaseEventManager } from '$lib/utils/base-event-manager.svelte';
@@ -92,14 +90,6 @@ export type Events = {
   IntegrityReportDeleted: [{ type?: IntegrityReport; id?: string }];
 
   JobCreate: [{ dto: JobCreateDto }];
-
-  LibraryCreate: [LibraryResponseDto];
-  LibraryUpdate: [LibraryResponseDto];
-  LibraryDelete: [{ id: string }];
-
-  WorkflowCreate: [WorkflowResponseDto];
-  WorkflowUpdate: [WorkflowResponseDto];
-  WorkflowDelete: [WorkflowResponseDto];
 
   ReleaseEvent: [ReleaseEventV1];
 

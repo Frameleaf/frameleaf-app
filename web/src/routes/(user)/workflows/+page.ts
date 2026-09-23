@@ -6,14 +6,7 @@ import type { PageLoad } from './$types';
 
 export const load = (async ({ url }) => {
   await authenticate(url);
-
   const [workflows] = await Promise.all([searchWorkflows({}), pluginManager.ready()]);
   const $t = await getFormatter();
-
-  return {
-    workflows,
-    meta: {
-      title: $t('workflows'),
-    },
-  };
+  return { workflows, meta: { title: $t('library_care_tool_workflows') } };
 }) satisfies PageLoad;

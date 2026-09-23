@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { bulkActionTitleKey } from '$lib/frameleaf/bulk-actions';
   import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
   import { t } from 'svelte-i18n';
 
@@ -37,7 +38,7 @@
     {#each operations as operation (operation.requestId)}
       <article>
         <header>
-          <span class="label">{$t(`frameleaf_bulk_${operation.action.replaceAll('-', '_')}`)}</span>
+          <span class="label">{$t(bulkActionTitleKey(operation.action))}</span>
           <span class="scope">{$t(`frameleaf_bulk_scope_${operation.scope.scope.kind}`)}</span>
         </header>
 

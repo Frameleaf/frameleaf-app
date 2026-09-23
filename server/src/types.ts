@@ -252,6 +252,11 @@ export interface IBaseJob {
   force?: boolean;
 }
 
+/** FL-79: `attempt` is 1 for the one automatic retry a failed collection gets. */
+export interface IAnalyticsCollectJob {
+  attempt?: number;
+}
+
 /** FL-71: a preview may retain originals in an account chosen on the page and review one account's copies. */
 export interface IPhysicalDeduplicationDryRunJob extends IBaseJob {
   masterUserId?: string;
@@ -443,6 +448,9 @@ export type JobItem =
   | { name: JobName.UserDelete; data: IEntityJob }
   | { name: JobName.UserSyncUsage; data?: IBaseJob }
 
+  // Analytics (FL-79)
+  | { name: JobName.AnalyticsCollect; data?: IAnalyticsCollectJob }
+
   // Storage Template
   | { name: JobName.StorageTemplateMigration; data?: IBaseJob }
   | { name: JobName.StorageTemplateMigrationSingle; data: IEntityJob }
@@ -512,6 +520,7 @@ export type JobItem =
   | { name: JobName.LibraryRemoveAsset; data: ILibraryFileJob }
   | { name: JobName.LibraryDelete; data: IEntityJob }
   | { name: JobName.LibraryScanQueueAll; data?: IBaseJob }
+  | { name: JobName.LibraryScanRun; data?: IBaseJob }
   | { name: JobName.LibraryDeleteCheck; data: IBaseJob }
 
   // Notification
@@ -542,7 +551,22 @@ export type JobItem =
     }
 
   // Workflow
-  | { name: JobName.WorkflowAssetTrigger; data: { workflowId: string; assetId: string } }
+  | {
+      name: JobName.WorkflowAssetTrigger;
+      data: {
+        workflowId: string;
+        assetId: string;
+        /** Set on retries: the run they continue and which attempt this is (FL-82). */
+        runId?: string;
+        attempt?: number;
+        /** The automatic retry starts at the step that failed; earlier steps already applied. */
+        fromStepId?: string;
+        /** The complete definition at failure; continuation is refused if it has changed. */
+        definitionSha256?: string;
+        /** A manual retry is never retried automatically. */
+        manual?: boolean;
+      };
+    }
 
   // Integrity
   | { name: JobName.IntegrityUntrackedFilesQueueAll; data?: IIntegrityJob }
@@ -558,7 +582,7 @@ export type JobItem =
 
   // Editor
   | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob }
-  | { name: JobName.AssetDevelopRender; data: IEntityJob };
+  | { name: JobName.AssetDevelopRender; data: IEntityJob & IDelayedJob };
 
 export type VectorExtension = (typeof VECTOR_EXTENSIONS)[number];
 

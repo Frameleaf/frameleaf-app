@@ -145,43 +145,43 @@
       {#if cover}
         <img src={getAssetMediaUrl({ id: cover.id })} alt={$getAltText(toTimelineAsset(cover))} loading="lazy" />
       {:else}
-        <span class="fm-card-empty" aria-hidden="true"><Icon icon={mdiImageMultipleOutline} size={28} /></span>
+        <span class="fm-card-empty" aria-hidden="true"><Icon icon={mdiImageMultipleOutline} size="28" /></span>
       {/if}
       <span class="fm-card-shade" aria-hidden="true"></span>
       <span class="fm-card-copy">
         <span class="fm-card-kind">
-          <Icon icon={KIND_ICON[memoryStoryKind(memory)]} size={12} aria-hidden="true" />
+          <Icon icon={KIND_ICON[memoryStoryKind(memory)]} size="12" aria-hidden="true" />
           {KIND_LABEL(memoryStoryKind(memory))}
         </span>
         <strong>{$memoryLaneTitle(memory)}</strong>
         <small>
           {#if isEventStory(memory)}
             {formatLocalDateRange(memory.data.startDate, memory.data.endDate, $locale)}
-            {' · '}
+            <span aria-hidden="true"> · </span>
             {$t('frameleaf_memories_story_days', { values: { count: memory.data.dayCount } })}
-            {' · '}
+            <span aria-hidden="true"> · </span>
           {/if}
           {$t('frameleaf_memories_item_count', { values: { count: memory.assets.length } })}
           {#if memory.isSaved}
-            {' · '}<Icon icon={mdiHeart} size={12} aria-hidden="true" /> {$t('favorite')}
+            <span aria-hidden="true"> · </span><Icon icon={mdiHeart} size="12" aria-hidden="true" /> {$t('favorite')}
           {/if}
         </small>
       </span>
-      <span class="fm-card-play" aria-hidden="true"><Icon icon={mdiPlay} size={20} /></span>
+      <span class="fm-card-play" aria-hidden="true"><Icon icon={mdiPlay} size="20" /></span>
     </a>
     <div class="fm-card-menu">
       <Menu label={$t('frameleaf_memories_more_actions', { values: { title: $memoryLaneTitle(memory) } })}>
-        {#snippet trigger()}<Icon icon={mdiDotsVertical} size={16} aria-hidden="true" />{/snippet}
+        {#snippet trigger()}<Icon icon={mdiDotsVertical} size="16" aria-hidden="true" />{/snippet}
         <MenuItem onSelect={() => goto(cardHref(memory))}>
           <Icon icon={mdiPlay} size="16" aria-hidden="true" />
           {$t('frameleaf_memories_play')}
         </MenuItem>
         <MenuItem onSelect={() => toggleFavorite(memory)}>
-          <Icon icon={memory.isSaved ? mdiHeart : mdiHeartOutline} size={16} aria-hidden="true" />
+          <Icon icon={memory.isSaved ? mdiHeart : mdiHeartOutline} size="16" aria-hidden="true" />
           {memory.isSaved ? $t('unfavorite') : $t('favorite')}
         </MenuItem>
         <MenuItem onSelect={() => confirmRemove(memory)}>
-          <Icon icon={mdiDeleteOutline} size={16} aria-hidden="true" />
+          <Icon icon={mdiDeleteOutline} size="16" aria-hidden="true" />
           {$t('remove_memory')}
         </MenuItem>
       </Menu>
@@ -209,7 +209,7 @@
         pressed={settingsOpen}
         onclick={() => (settingsOpen = !settingsOpen)}
       >
-        <Icon icon={mdiTune} size={18} />
+        <Icon icon={mdiTune} size="18" />
       </IconButton>
       {#if settingsOpen}
         <div class="fm-settings" role="dialog" aria-label={$t('filters')}>
@@ -271,7 +271,7 @@
       <div class="fm-loading"><LoadingSpinner size="giant" /></div>
     {:else}
       <div class="fm-empty" role="status">
-        <Icon icon={mdiImageMultipleOutline} size={30} aria-hidden="true" />
+        <Icon icon={mdiImageMultipleOutline} size="30" aria-hidden="true" />
         <strong>{$t('frameleaf_memories_empty_title')}</strong>
         <p>
           {userPreferencesManager.memories.onlyFavorites

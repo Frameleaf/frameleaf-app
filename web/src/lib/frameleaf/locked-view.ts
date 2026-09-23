@@ -1,4 +1,5 @@
 import { AssetLockReason, AssetVisibility } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 
 /**
  * The Locked view (FL-34): every item its owner locked, whatever locked it, in one place.
@@ -20,7 +21,7 @@ export const LOCKED_FILTERS: readonly LockedFilter[] = [
 
 export const DEFAULT_LOCKED_FILTER: LockedFilter = 'all';
 
-const FILTER_LABEL_KEYS: Record<LockedFilter, string> = {
+const FILTER_LABEL_KEYS: Record<LockedFilter, Translations> = {
   all: 'frameleaf_lock_filter_all',
   [AssetLockReason.ImmichLockedFolder]: 'frameleaf_lock_filter_folder',
   [AssetLockReason.Marked]: 'frameleaf_lock_filter_marked',
@@ -28,7 +29,7 @@ const FILTER_LABEL_KEYS: Record<LockedFilter, string> = {
 };
 
 /** The i18n key of a filter's label. */
-export const lockedFilterLabelKey = (filter: LockedFilter): string => FILTER_LABEL_KEYS[filter];
+export const lockedFilterLabelKey = (filter: LockedFilter): Translations => FILTER_LABEL_KEYS[filter];
 
 /** Reads a filter from a URL value; anything unknown is All. */
 export const parseLockedFilter = (value: string | null | undefined): LockedFilter =>
@@ -44,7 +45,7 @@ export const lockedTimelineOptions = (filter: LockedFilter) =>
  * The label of a locked tile's badge, as the prototype draws it: `Locked` for an item that came from
  * the old Locked folder (or whose reason the read did not carry), `Sensitive` for a mark or a detection.
  */
-export const lockBadgeLabelKey = (reason: AssetLockReason | null | undefined): string =>
+export const lockBadgeLabelKey = (reason: AssetLockReason | null | undefined): Translations =>
   reason === AssetLockReason.Marked || reason === AssetLockReason.Detected
     ? 'frameleaf_library_badge_sensitive'
     : 'frameleaf_library_badge_locked';

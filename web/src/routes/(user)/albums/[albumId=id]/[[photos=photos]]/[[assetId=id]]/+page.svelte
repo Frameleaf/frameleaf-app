@@ -231,6 +231,7 @@
   const refreshEverything = async () => {
     await refreshAlbum();
     await invalidate('album:data');
+    await timelineManager?.refresh();
   };
 
   const handleStartSlideshow = async () => {

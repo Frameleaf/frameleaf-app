@@ -5,7 +5,7 @@ import { getConfigRevision } from 'src/utils/config.js';
 
 describe('getConfigRevision (FL-66 settings revision)', () => {
   it('is the same for equal settings whatever their key order', () => {
-    const reordered = Object.fromEntries(Object.entries(cloneDeep(defaults)).reverse()) as typeof defaults;
+    const reordered = Object.fromEntries(Object.entries(cloneDeep(defaults)).toReversed()) as typeof defaults;
     expect(getConfigRevision(reordered)).toBe(getConfigRevision(defaults));
   });
 

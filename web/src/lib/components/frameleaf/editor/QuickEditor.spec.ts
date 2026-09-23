@@ -1,4 +1,5 @@
 import {
+  AssetDevelopRevisionKind,
   AssetDevelopRevisionStatus,
   AssetTypeEnum,
   getAssetDevelop,
@@ -25,6 +26,8 @@ vi.mock('@immich/sdk', async () => {
     revertAssetDevelop: vi.fn(),
     renderAssetDevelopRevision: vi.fn(),
     cancelAssetDevelopRender: vi.fn(),
+    getDevelopPresets: vi.fn().mockResolvedValue([]),
+    getAssetDevelopExports: vi.fn().mockResolvedValue([]),
   };
 });
 
@@ -54,6 +57,13 @@ const revision = (overrides: Partial<AssetDevelopRevisionResponseDto> = {}): Ass
   error: null,
   recipe: { version: 1, contrast: 30 },
   rendererVersion: 'frameleaf-develop/1',
+  kind: AssetDevelopRevisionKind.Recipe,
+  sourceChecksum: null,
+  renditionChecksum: null,
+  exportId: null,
+  fileName: null,
+  software: null,
+  attempts: 1,
   width: 100,
   height: 100,
   isCurrent: false,
@@ -192,5 +202,100 @@ describe('QuickEditor', () => {
     expect(screen.getByRole('button', { name: 'Save video edits' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'frameleaf_editor_tool_adjust' })).not.toBeInTheDocument();
     expect(getAssetDevelop).not.toHaveBeenCalled();
+  });
+
+  describe('selective photo tools (FL-64)', () => {
+    it('adds a mask from the Masks tool, previews it on the server and saves it with the version', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.mocked(saveAssetDevelop).mockResolvedValue(revision({ status: AssetDevelopRevisionStatus.Queued }));
+      render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await waitFor(() => expect(getAssetDevelop).toHaveBeenCalled());
+
+      await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_editor_tool_masks' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_mask_add_radial' }));
+      expect(screen.getByRole('radio', { name: /frameleaf_editor_mask_number/ })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
+      await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_exposure' }), {
+        target: { value: '0.5' },
+      });
+      await vi.advanceTimersByTimeAsync(400);
+      await waitFor(() =>
+        expect(previewAssetDevelop).toHaveBeenCalledWith(
+          expect.objectContaining({
+            assetDevelopPreviewDto: expect.objectContaining({
+              recipe: expect.objectContaining({
+                masks: [expect.objectContaining({ adjustments: expect.objectContaining({ exposure: 0.5 }) })],
+              }),
+            }),
+          }),
+          expect.anything(),
+        ),
+      );
+      vi.useRealTimers();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_save_version' }));
+      await waitFor(() => expect(saveAssetDevelop).toHaveBeenCalled());
+      const sent = vi.mocked(saveAssetDevelop).mock.calls[0][0].assetDevelopSaveDto.recipe;
+      expect(sent.masks).toEqual([expect.objectContaining({ kind: 'radial', x: 0.5, y: 0.5 })]);
+    });
+
+    it('turns masks with the frame so they stay on the same content', async () => {
+      vi.mocked(saveAssetDevelop).mockResolvedValue(revision({ status: AssetDevelopRevisionStatus.Queued }));
+      render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await waitFor(() => expect(getAssetDevelop).toHaveBeenCalled());
+      await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_editor_tool_masks' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_mask_add_linear' }));
+      await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_editor_tool_crop' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_rotate_right' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_save_version' }));
+      await waitFor(() => expect(saveAssetDevelop).toHaveBeenCalled());
+      const sent = vi.mocked(saveAssetDevelop).mock.calls[0][0].assetDevelopSaveDto.recipe;
+      // A gradient from the top centre down to the middle now runs from the right edge inwards.
+      expect(sent.rotation).toBe(90);
+      expect(sent.masks?.[0]).toMatchObject({ x: 1, y: 0.5, endX: 0.5, endY: 0.5 });
+    });
+
+    it('offers your presets under Presets', async () => {
+      render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_editor_tool_presets' }));
+      expect(screen.getByText('frameleaf_editor_your_presets')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'frameleaf_editor_preset_save' })).toBeInTheDocument();
+    });
+
+    it('compares a rendered version with the original and shows where an imported one came from', async () => {
+      const imported = revision({
+        id: 'rev-2',
+        revision: 2,
+        kind: AssetDevelopRevisionKind.External,
+        fileName: 'IMG_0001.tif',
+        software: 'darktable 5',
+        sourceChecksum: 'ab'.repeat(32),
+        renditionChecksum: 'cd'.repeat(32),
+        isCurrent: true,
+      });
+      vi.mocked(getAssetDevelop).mockResolvedValue({
+        assetId: photo.id,
+        currentRevisionId: imported.id,
+        revisions: [imported, revision()],
+      });
+      render(QuickEditor, { asset: photo, onClose: vi.fn() });
+      await waitFor(() => expect(getAssetDevelop).toHaveBeenCalled());
+      await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_editor_tool_versions' }));
+
+      expect(await screen.findByText(/frameleaf_editor_version_external · darktable 5/)).toBeInTheDocument();
+      expect(screen.getAllByText('frameleaf_editor_version_lineage')).toHaveLength(1);
+      // Only the recipe version offers its settings; both offer a comparison.
+      expect(screen.getAllByRole('button', { name: 'frameleaf_editor_load_settings' })).toHaveLength(2);
+      const compare = screen.getAllByRole('button', { name: 'frameleaf_editor_compare_with_original' });
+      expect(compare).toHaveLength(2);
+
+      await fireEvent.click(compare[0]);
+      expect(compare[0]).toHaveAttribute('aria-pressed', 'true');
+      const stage = screen.getByLabelText('frameleaf_editor_version_compare_stage');
+      expect(stage.getHTML()).toContain('/develop/revisions/rev-2/file');
+      expect(screen.getByText('frameleaf_editor_roundtrip_heading')).toBeInTheDocument();
+    });
   });
 });

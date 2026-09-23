@@ -8,6 +8,7 @@ import {
 } from '@immich/sdk';
 import { omitBy } from 'lodash-es';
 import { OpenQueryParam, QueryParameter, type SharedLinkTab } from '$lib/constants';
+import { analyticsAreaUrl } from '$lib/frameleaf/settings-areas';
 import { studioHandoffQuery } from '$lib/frameleaf/studio/handoff';
 
 const asQueueSlug = (name: QueueName) => {
@@ -76,10 +77,12 @@ export const Route = {
   folders: (params?: { path?: string }) => '/folders' + asQueryString(params),
 
   // libraries
-  libraries: () => '/admin/library-management',
-  newLibrary: () => '/admin/library-management/new',
-  viewLibrary: ({ id }: { id: string }) => `/admin/library-management/${id}`,
-  editLibrary: ({ id }: { id: string }) => `/admin/library-management/${id}/edit`,
+  // FL-78: Libraries is an area of the settings command center, as in the design template; the
+  // `/admin/library-management` addresses redirect here.
+  libraries: () => '/admin/system-settings?area=libraries',
+  newLibrary: () => '/admin/system-settings?area=libraries&new=1',
+  viewLibrary: ({ id }: { id: string }) => `/admin/system-settings?area=libraries&selected=library:${id}`,
+  editLibrary: ({ id }: { id: string }) => `/admin/system-settings?area=libraries&selected=library:${id}&edit=1`,
 
   // maintenance
   maintenanceMode: (params?: { continue?: string }) => '/maintenance' + asQueryString(params),
@@ -169,7 +172,8 @@ export const Route = {
         [QueryParameter.OPEN_SETTING]: params.openSetting,
       },
     ),
-  systemStatistics: () => '/admin/server-status',
+  /** Library analytics in the command center (FL-79); `/admin/server-status` redirects here. */
+  libraryAnalytics: (params?: { scope?: string; range?: string }) => analyticsAreaUrl(params),
   physicalDeduplication: () => '/admin/physical-deduplication',
   systemMaintenance: (params?: { continue?: string }) => '/admin/maintenance' + asQueryString(params),
   /** Processing destinations (FL-110): where machine-learning work may run, with consent and cost controls. */
@@ -207,6 +211,10 @@ export const Route = {
   livePhotosUtility: () => '/utilities/live-photos',
   geolocationUtility: () => '/utilities/geolocation',
   icloudSyncUtility: () => '/utilities/icloud-sync',
+  /** Mobile applications from this server's signed releases (FL-82). */
+  downloadsUtility: () => '/utilities/downloads',
+  /** Obtainium setup for direct Android updates (FL-82). */
+  obtainiumUtility: () => '/utilities/obtainium',
   missingMediaUtility: (params?: { status?: MediaHealthStatus }) => '/utilities/missing-media' + asQueryString(params),
   corruptMediaUtility: (params?: { status?: MediaHealthStatus }) => '/utilities/corrupt-media' + asQueryString(params),
 

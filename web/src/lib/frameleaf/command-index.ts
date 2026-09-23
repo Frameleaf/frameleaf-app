@@ -153,7 +153,12 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
         href: Route.systemWorkers(),
       },
       { id: 'admin:libraries', title: $t('external_libraries'), icon: mdiBookshelf, href: Route.libraries() },
-      { id: 'admin:status', title: $t('server_stats'), icon: mdiServerOutline, href: Route.systemStatistics() },
+      {
+        id: 'admin:status',
+        title: $t('frameleaf_analytics_title'),
+        icon: mdiServerOutline,
+        href: Route.libraryAnalytics(),
+      },
       {
         id: 'admin:maintenance',
         title: $t('admin.maintenance_settings'),
@@ -179,7 +184,12 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
  * area directly. The keys are repeated here rather than imported because the settings list
  * is a component, not a table; the spec asserts the two stay in step.
  */
-export const USER_SETTINGS_AREAS: readonly { key: string; titleKey: string; descriptionKey: string; icon: string }[] = [
+export const USER_SETTINGS_AREAS: readonly {
+  key: string;
+  titleKey: Translations;
+  descriptionKey: Translations;
+  icon: string;
+}[] = [
   { key: 'app-settings', titleKey: 'app_settings', descriptionKey: 'manage_the_app_settings', icon: mdiCogOutline },
   {
     key: 'account',
@@ -256,124 +266,128 @@ export const USER_SETTINGS_AREAS: readonly { key: string; titleKey: string; desc
 ] as const;
 
 /** Accordion keys declared by `admin/system-settings/+page.svelte`. */
-export const ADMIN_SETTINGS_AREAS: readonly { key: string; titleKey: string; descriptionKey: string; icon: string }[] =
-  [
-    {
-      key: 'authentication',
-      titleKey: 'admin.authentication_settings',
-      descriptionKey: 'admin.authentication_settings_description',
-      icon: mdiLockOutline,
-    },
-    {
-      key: 'backup',
-      titleKey: 'admin.backup_settings',
-      descriptionKey: 'admin.backup_settings_description',
-      icon: mdiBackupRestore,
-    },
-    {
-      key: 'image',
-      titleKey: 'admin.image_settings',
-      descriptionKey: 'admin.image_settings_description',
-      icon: mdiImageOutline,
-    },
-    {
-      key: 'integrity-checks',
-      titleKey: 'admin.integrity_checks_settings',
-      descriptionKey: 'admin.integrity_checks_settings_description',
-      icon: mdiFileCheckOutline,
-    },
-    { key: 'job', titleKey: 'admin.job_settings', descriptionKey: 'admin.job_settings_description', icon: mdiSync },
-    {
-      key: 'external-library',
-      titleKey: 'admin.library_settings',
-      descriptionKey: 'admin.library_settings_description',
-      icon: mdiBookshelf,
-    },
-    {
-      key: 'logging',
-      titleKey: 'admin.logging_settings',
-      descriptionKey: 'admin.manage_log_settings',
-      icon: mdiFileDocumentOutline,
-    },
-    {
-      key: 'machine-learning',
-      titleKey: 'admin.machine_learning_settings',
-      descriptionKey: 'admin.machine_learning_settings_description',
-      icon: mdiRobotOutline,
-    },
-    {
-      key: 'location',
-      titleKey: 'admin.map_gps_settings',
-      descriptionKey: 'admin.map_gps_settings_description',
-      icon: mdiMapMarkerOutline,
-    },
-    {
-      key: 'metadata',
-      titleKey: 'admin.metadata_settings',
-      descriptionKey: 'admin.metadata_settings_description',
-      icon: mdiDatabaseOutline,
-    },
-    {
-      key: 'nightly-tasks',
-      titleKey: 'admin.nightly_tasks_settings',
-      descriptionKey: 'admin.nightly_tasks_settings_description',
-      icon: mdiClockOutline,
-    },
-    {
-      key: 'notifications',
-      titleKey: 'admin.notification_settings',
-      descriptionKey: 'admin.notification_settings_description',
-      icon: mdiBellOutline,
-    },
-    {
-      key: 'server',
-      titleKey: 'admin.server_settings',
-      descriptionKey: 'admin.server_settings_description',
-      icon: mdiServerOutline,
-    },
-    {
-      key: 'smart-albums',
-      titleKey: 'admin.smart_albums_settings',
-      descriptionKey: 'admin.smart_albums_settings_description',
-      icon: mdiImageMultipleOutline,
-    },
-    {
-      key: 'storage-template',
-      titleKey: 'admin.storage_template_settings',
-      descriptionKey: 'admin.storage_template_settings_description',
-      icon: mdiFolderOutline,
-    },
-    {
-      key: 'theme',
-      titleKey: 'admin.theme_settings',
-      descriptionKey: 'admin.theme_settings_description',
-      icon: mdiPaletteOutline,
-    },
-    {
-      key: 'trash',
-      titleKey: 'admin.trash_settings',
-      descriptionKey: 'admin.trash_settings_description',
-      icon: mdiTrashCanOutline,
-    },
-    {
-      key: 'user-settings',
-      titleKey: 'admin.user_settings',
-      descriptionKey: 'admin.user_settings_description',
-      icon: mdiAccountOutline,
-    },
-    {
-      key: 'version-check',
-      titleKey: 'admin.version_check_settings',
-      descriptionKey: 'admin.version_check_settings_description',
-      icon: mdiUpdate,
-    },
-    {
-      key: 'video-transcoding',
-      titleKey: 'admin.transcoding_settings',
-      descriptionKey: 'admin.transcoding_settings_description',
-      icon: mdiVideoOutline,
-    },
-  ] as const;
+export const ADMIN_SETTINGS_AREAS: readonly {
+  key: string;
+  titleKey: Translations;
+  descriptionKey: Translations;
+  icon: string;
+}[] = [
+  {
+    key: 'authentication',
+    titleKey: 'admin.authentication_settings',
+    descriptionKey: 'admin.authentication_settings_description',
+    icon: mdiLockOutline,
+  },
+  {
+    key: 'backup',
+    titleKey: 'admin.backup_settings',
+    descriptionKey: 'admin.backup_settings_description',
+    icon: mdiBackupRestore,
+  },
+  {
+    key: 'image',
+    titleKey: 'admin.image_settings',
+    descriptionKey: 'admin.image_settings_description',
+    icon: mdiImageOutline,
+  },
+  {
+    key: 'integrity-checks',
+    titleKey: 'admin.integrity_checks_settings',
+    descriptionKey: 'admin.integrity_checks_settings_description',
+    icon: mdiFileCheckOutline,
+  },
+  { key: 'job', titleKey: 'admin.job_settings', descriptionKey: 'admin.job_settings_description', icon: mdiSync },
+  {
+    key: 'external-library',
+    titleKey: 'admin.library_settings',
+    descriptionKey: 'admin.library_settings_description',
+    icon: mdiBookshelf,
+  },
+  {
+    key: 'logging',
+    titleKey: 'admin.logging_settings',
+    descriptionKey: 'admin.manage_log_settings',
+    icon: mdiFileDocumentOutline,
+  },
+  {
+    key: 'machine-learning',
+    titleKey: 'admin.machine_learning_settings',
+    descriptionKey: 'admin.machine_learning_settings_description',
+    icon: mdiRobotOutline,
+  },
+  {
+    key: 'location',
+    titleKey: 'admin.map_gps_settings',
+    descriptionKey: 'admin.map_gps_settings_description',
+    icon: mdiMapMarkerOutline,
+  },
+  {
+    key: 'metadata',
+    titleKey: 'admin.metadata_settings',
+    descriptionKey: 'admin.metadata_settings_description',
+    icon: mdiDatabaseOutline,
+  },
+  {
+    key: 'nightly-tasks',
+    titleKey: 'admin.nightly_tasks_settings',
+    descriptionKey: 'admin.nightly_tasks_settings_description',
+    icon: mdiClockOutline,
+  },
+  {
+    key: 'notifications',
+    titleKey: 'admin.notification_settings',
+    descriptionKey: 'admin.notification_settings_description',
+    icon: mdiBellOutline,
+  },
+  {
+    key: 'server',
+    titleKey: 'admin.server_settings',
+    descriptionKey: 'admin.server_settings_description',
+    icon: mdiServerOutline,
+  },
+  {
+    key: 'smart-albums',
+    titleKey: 'admin.smart_albums_settings',
+    descriptionKey: 'admin.smart_albums_settings_description',
+    icon: mdiImageMultipleOutline,
+  },
+  {
+    key: 'storage-template',
+    titleKey: 'admin.storage_template_settings',
+    descriptionKey: 'admin.storage_template_settings_description',
+    icon: mdiFolderOutline,
+  },
+  {
+    key: 'theme',
+    titleKey: 'admin.theme_settings',
+    descriptionKey: 'admin.theme_settings_description',
+    icon: mdiPaletteOutline,
+  },
+  {
+    key: 'trash',
+    titleKey: 'admin.trash_settings',
+    descriptionKey: 'admin.trash_settings_description',
+    icon: mdiTrashCanOutline,
+  },
+  {
+    key: 'user-settings',
+    titleKey: 'admin.user_settings',
+    descriptionKey: 'admin.user_settings_description',
+    icon: mdiAccountOutline,
+  },
+  {
+    key: 'version-check',
+    titleKey: 'admin.version_check_settings',
+    descriptionKey: 'admin.version_check_settings_description',
+    icon: mdiUpdate,
+  },
+  {
+    key: 'video-transcoding',
+    titleKey: 'admin.transcoding_settings',
+    descriptionKey: 'admin.transcoding_settings_description',
+    icon: mdiVideoOutline,
+  },
+] as const;
 
 const settingsHref = (base: string, key: string) => `${base}?isOpen=${encodeURIComponent(key)}`;
 

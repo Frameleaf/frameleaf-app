@@ -21,6 +21,7 @@ import {
   LogLevel,
   QueueName,
 } from 'src/enum.js';
+import { AppReleaseConfig, parseAppReleases } from 'src/utils/app-releases.js';
 import { RecoveryRootConfig, parseRecoveryRoots } from 'src/utils/media-health-roots.js';
 import { setDifference } from 'src/utils/set.js';
 
@@ -125,6 +126,9 @@ export interface EnvData {
       installFolder?: string;
     };
   };
+
+  /** Signed release destinations of this installation's apps (FL-82). */
+  appReleases: AppReleaseConfig;
 
   noColor: boolean;
   nodeVersion?: string;
@@ -331,6 +335,8 @@ const getEnv = (): EnvData => {
     setup: {
       allow: dto.IMMICH_ALLOW_SETUP ?? true,
     },
+
+    appReleases: parseAppReleases(dto),
 
     storage: {
       ignoreMountCheckErrors: !!dto.IMMICH_IGNORE_MOUNT_CHECK_ERRORS,

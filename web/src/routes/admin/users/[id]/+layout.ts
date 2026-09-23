@@ -32,7 +32,7 @@ export const load = (async ({ params, url }) => {
     getUserPreferencesAdmin({ id: user.id }),
     getUserStatisticsAdmin({ id: user.id }),
     getUserSessionsAdmin({ id: user.id }),
-    getAllLibraries(),
+    getAllLibraries({}),
   ]);
   const libraries = allLibraries.filter((library) => library.ownerId === user.id);
 

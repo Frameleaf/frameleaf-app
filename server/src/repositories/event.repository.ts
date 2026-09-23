@@ -91,6 +91,12 @@ type EventMap = {
   // queue events
   QueueStart: [QueueStartEvent];
 
+  // library events
+  /** FL-78: a library's folders, exclusions or existence changed; the watching worker re-reads it. */
+  LibraryWatchUpdate: [{ id: string }];
+  /** FL-78: stop the library's scan, if it has one: its folders changed or it is being removed. */
+  LibraryScanStop: [{ libraryId: string; reason: 'paths_changed' | 'library_removed' }];
+
   // session events
   SessionDelete: [{ sessionId: string }];
 

@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import type { Translations } from 'svelte-i18n';
   import { QueryType } from '$lib/constants';
   import type { DiscoverySearchDto } from '$lib/components/discovery/query';
 
@@ -9,11 +10,11 @@
    */
   export const SEARCH_MODES: readonly {
     type: QueryType;
-    labelKey: string;
+    labelKey: Translations;
     /** The DTO key this mode's text is written to. */
     field: keyof DiscoverySearchDto;
     /** The mode's example placeholder, from the production search copy. */
-    placeholderKey: string;
+    placeholderKey: Translations;
   }[] = [
     {
       type: QueryType.SMART,
