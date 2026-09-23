@@ -41,7 +41,6 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
-import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import {
   anyUuid,
   asUuid,
@@ -70,6 +69,8 @@ import {
   withTagId,
   withTags,
 } from 'src/utils/database.js';
+import { onLockedStateChanged, onStacksJoined } from 'src/utils/locked-stacks.js';
+import { getLockedAssetIds, isLockingVisibility } from 'src/utils/locked-state.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 
@@ -934,16 +935,19 @@ export class AssetRepository {
       return;
     }
 
-    if (options.visibility !== AssetVisibility.Locked) {
+    const { visibility } = options;
+    if (visibility === undefined) {
       await this.db.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
       return;
     }
 
-    // A Locked photo is never a cover (FL-53): moving into the Locked folder releases every cover,
-    // featured photo and face thumbnail it was, in the same transaction.
+    // Moving into or out of the Locked folder moves whole stacks, and a Locked photo is never a cover
+    // (FL-53): the rest of each stack follows and every cover, featured photo and face thumbnail is
+    // released, in the same transaction.
     await this.inTransaction(async (tx) => {
+      const wereLocked = isLockingVisibility(visibility) ? [] : await getLockedAssetIds(tx, ids);
       await tx.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
-      await releaseLockedCoverReferences(tx, ids);
+      await onLockedStateChanged(tx, visibility, ids, wereLocked);
     });
   }
 
@@ -968,16 +972,25 @@ export class AssetRepository {
         .$call((qb) => qb.select(withEdits))
         .executeTakeFirst();
 
-    if (asset.visibility !== AssetVisibility.Locked) {
+    const { visibility, stackId } = asset;
+    if (visibility === undefined && !stackId) {
       return updateAndSelect(this.db);
     }
 
-    // A Locked photo is never a cover (FL-53): moving into the Locked folder releases every cover,
-    // featured photo and face thumbnail it was, in the same transaction, as a separate statement so
-    // the new visibility is visible to it.
+    // Moving into or out of the Locked folder moves the whole stack, a stack that holds a Locked photo
+    // is Locked as a whole, and a Locked photo is never a cover (FL-53): the rest of the stack follows
+    // and every cover, featured photo and face thumbnail is released, in the same transaction and as
+    // separate statements so the change is visible to them.
     return this.inTransaction(async (tx) => {
+      const wereLocked =
+        visibility === undefined || isLockingVisibility(visibility) ? [] : await getLockedAssetIds(tx, [asset.id]);
       const updated = await updateAndSelect(tx);
-      await releaseLockedCoverReferences(tx, [asset.id]);
+      if (visibility !== undefined) {
+        await onLockedStateChanged(tx, visibility, [asset.id], wereLocked);
+      }
+      if (stackId) {
+        await onStacksJoined(tx, [stackId]);
+      }
       return updated;
     });
   }

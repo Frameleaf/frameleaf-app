@@ -754,9 +754,10 @@ export class PersonRepository {
   }
 
   /**
-   * People with a face on one of `assetIds` who have a featured face but no thumbnail: after those
-   * assets move into the Locked folder, the people whose featured face was on them (FL-53). Their
-   * thumbnail is generated anew from the face that replaced it.
+   * People with a face on one of `assetIds`, or on another photo of their stacks, who have a featured
+   * face but no thumbnail: after those assets move into the Locked folder, taking the rest of their
+   * stacks with them, the people whose featured face was on them (FL-53). Their thumbnail is
+   * generated anew from the face that replaced it.
    */
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @ChunkedArray()
@@ -775,7 +776,20 @@ export class PersonRepository {
           eb
             .selectFrom('asset_face')
             .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
-            .where('asset_face.assetId', '=', anyUuid(assetIds)),
+            .where((eb) =>
+              eb.or([
+                eb('asset_face.assetId', '=', anyUuid(assetIds)),
+                eb(
+                  'asset_face.assetId',
+                  'in',
+                  eb
+                    .selectFrom('asset as stacked')
+                    .innerJoin('asset as moved', 'moved.stackId', 'stacked.stackId')
+                    .select('stacked.id')
+                    .where('moved.id', '=', anyUuid(assetIds)),
+                ),
+              ]),
+            ),
         ),
       )
       .execute();

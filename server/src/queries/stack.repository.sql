@@ -329,8 +329,34 @@ where
   "asset"."id" = $1
 
 -- StackRepository.merge
+begin
 update "asset"
 set
   "stackId" = $1
 where
   "asset"."stackId" = $2
+select
+  "member"."id"
+from
+  "asset" as "member"
+where
+  "member"."stackId" = any ($1::uuid[])
+  and "member"."visibility" != 'locked'
+  and exists (
+    select
+      1 as "locked"
+    from
+      "asset" as "locked_member"
+    where
+      "locked_member"."stackId" = "member"."stackId"
+      and exists (
+        select
+          1
+        from
+          asset as locked_asset
+        where
+          locked_asset.id = "locked_member"."id"
+          and locked_asset.visibility = 'locked'
+      )
+  )
+commit
