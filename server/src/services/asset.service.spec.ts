@@ -323,6 +323,19 @@ describe(AssetService.name, () => {
       ]);
     });
 
+    it('should answer from the updated row when a session without the PIN locks the asset (FL-34)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.asset.lock.mockResolvedValue([asset.id]);
+
+      const response = await sut.update(authStub.admin, asset.id, { visibility: AssetVisibility.Locked });
+
+      expect(mocks.asset.lock).toHaveBeenCalledWith([asset.id], AssetLockReason.Marked, authStub.admin.user.id);
+      expect(mocks.asset.getById).not.toHaveBeenCalled();
+      expect(response).toEqual(expect.objectContaining({ id: asset.id, visibility: AssetVisibility.Locked }));
+    });
+
     it('should not look for face thumbnails when the asset does not move into the Locked folder', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));

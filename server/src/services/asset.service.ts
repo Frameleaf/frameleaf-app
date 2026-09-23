@@ -209,6 +209,12 @@ export class AssetService extends BaseService {
       await this.notifyAssetsUpdated([id, ...siblingIds], auth.user.id);
     }
 
+    // Locking needs no PIN, but a session without it can no longer read what it just locked (FL-34):
+    // answer from the updated row instead of refusing a change that was made.
+    if (visibility === AssetVisibility.Locked && !auth.session?.hasElevatedPermission) {
+      return mapAsset({ ...asset, isLocked: true }, { auth });
+    }
+
     return this.get(auth, id) as Promise<AssetResponseDto>;
   }
 
