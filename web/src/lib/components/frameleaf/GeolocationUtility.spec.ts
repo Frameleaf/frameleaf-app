@@ -26,7 +26,12 @@ vi.mock('$lib/components/shared-components/map/Map.svelte', async () => ({
 const asset = (id: string, ownerId = 'owner') => ({ id, ownerId, originalFileName: `${id}.jpg`, exifInfo: {} });
 
 describe('location utility', () => {
-  beforeAll(() => addMessages('dev', en));
+  beforeAll(async () => {
+    addMessages('dev', en);
+    // The utility loads the map lazily. Resolve that module once here so the first render does not
+    // race the query timeout while a cold runner compiles the map stub.
+    await import('$lib/components/shared-components/map/Map.svelte');
+  });
   beforeEach(() => {
     state.search.mockReset().mockResolvedValue({
       assets: { items: [asset('one'), asset('two'), asset('partner', 'other')], nextPage: null },

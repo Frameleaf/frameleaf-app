@@ -90,16 +90,16 @@ const type = async (input, value) => {
     setter.call(input, value);
     input.dispatchEvent(new window.Event("input", { bubbles: true }));
     input.dispatchEvent(
-      new window.KeyboardEvent("keyup", { key: value.at(-1), bubbles: true }),
+      new window.KeyboardEvent("keyup", { key: value.at(-1) || "", bubbles: true }),
     );
   });
 };
-const text = () => document.body.textContent;
 // Compare DOM nodes by identity/presence only: a failed assert.equal on a
 // happy-dom node makes node:assert inspect the whole window graph, which
 // exhausts memory instead of reporting the failure.
-const assertAbsent = (selector) =>
-  assert.ok(!document.querySelector(selector), `${selector} should be absent`);
+const absent = (selector, message) =>
+  assert.ok(!document.querySelector(selector), message || `${selector} should be absent`);
+const text = () => document.body.textContent;
 
 test("People grid shows unnamed clusters, a merge suggestion and names inline", async () => {
   const changes = [];
@@ -129,7 +129,7 @@ test("People grid shows unnamed clusters, a merge suggestion and names inline", 
   assert.ok(document.querySelector('[role="listbox"]'), "suggestions listed");
   assert.match(document.querySelector('[role="listbox"]').textContent, /Emma/);
   await type(input, "Sam");
-  assertAbsent('[role="listbox"]');
+  absent('[role="listbox"]', "no suggestions for a new name");
   await click("Save name");
   assert.equal(changes.length, 2);
   const named = Object.entries(changes[1]).find(
@@ -137,7 +137,7 @@ test("People grid shows unnamed clusters, a merge suggestion and names inline", 
   );
   assert.ok(named, "name saved through onChange");
   assert.match(named[0], /^cluster-unnamed-/);
-  assertAbsent('input[role="combobox"]');
+  absent('input[role="combobox"]', "name editor closed");
 
   // Picking a suggestion commits that name for the other cluster.
   await click("Add a name");
@@ -149,7 +149,7 @@ test("People grid shows unnamed clusters, a merge suggestion and names inline", 
   );
   assert.equal(changes.length, 3);
   assert.ok(Object.values(changes[2]).some((entry) => entry.name === "Emma"));
-  assertAbsent('input[role="combobox"]');
+  absent('input[role="combobox"]', "name editor closed");
   // Cancel renaming leaves overrides untouched.
   await click("Rename Jamie");
   await click("Cancel renaming");
@@ -191,7 +191,7 @@ test("Card menu hides a person and the hidden toggle brings them back", async ()
       .click(),
   );
   assert.equal(overrides.Jamie?.hidden, true);
-  assertAbsent('[role="menu"]');
+  absent('[role="menu"]', "menu closed after choosing Hide");
   await rerender();
   assert.equal(document.querySelectorAll(".pl-card").length, 4);
   assert.match(text(), /1 hidden person/);
@@ -295,5 +295,5 @@ test("Person header renders facts and the fix-match panel routes face actions", 
       new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
     ),
   );
-  assertAbsent(".pd-fix");
+  absent(".pd-fix", "Escape closes the fix panel");
 });
