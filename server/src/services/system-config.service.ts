@@ -221,13 +221,15 @@ export class SystemConfigService extends BaseService {
 
     // FL-67: the SMTP password and the OAuth client secret are redacted on read like the RunPod
     // key below, so an empty value coming back means "keep the stored secret", but only for the
-    // server it belongs to: a new mail host or a new identity provider never receives the stored
+    // account it belongs to: a new mail host or username, or a new identity provider, never gets the stored
     // secret, which is cleared instead and has to be replaced for the new server. Clearing one
     // explicitly is DELETE /admin/config/credentials/:name.
     const smtpTransport = dto.notifications?.smtp?.transport;
     const storedTransport = oldConfig.notifications.smtp.transport;
     if (smtpTransport?.password === '') {
-      smtpTransport.password = smtpTransport.host === storedTransport.host ? storedTransport.password : '';
+      const sameAccount =
+        smtpTransport.host === storedTransport.host && smtpTransport.username === storedTransport.username;
+      smtpTransport.password = sameAccount ? storedTransport.password : '';
     }
     if (dto.oauth?.clientSecret === '') {
       dto.oauth.clientSecret = dto.oauth.issuerUrl === oldConfig.oauth.issuerUrl ? oldConfig.oauth.clientSecret : '';
