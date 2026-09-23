@@ -318,6 +318,7 @@ describe(SearchService.name, () => {
         includeNsfw: true,
         tagIds: [tag.id],
         personIds: [person.personGroupId],
+        petIds: [],
         scope: 'owned',
       };
       const hiddenAuth = {

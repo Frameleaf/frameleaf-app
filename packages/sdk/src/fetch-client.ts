@@ -973,6 +973,8 @@ export type PeopleResponse = {
 export type SuppressionResponse = {
     /** Person IDs to suppress from locked browsing sessions */
     personIds: string[];
+    /** Pet IDs to suppress from locked browsing sessions */
+    petIds: string[];
     /** Whether suppression applies only to owned assets or all visible assets */
     scope: SuppressionScope;
     /** Tag IDs to suppress from locked browsing sessions */
@@ -1071,6 +1073,8 @@ export type PeopleUpdate = {
 export type SuppressionUpdate = {
     /** Person IDs to suppress from locked browsing sessions */
     personIds?: string[];
+    /** Pet IDs to suppress from locked browsing sessions */
+    petIds?: string[];
     /** Whether suppression applies only to owned assets or all visible assets */
     scope?: SuppressionScope;
     /** Tag IDs to suppress from locked browsing sessions */
