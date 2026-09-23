@@ -17,7 +17,7 @@
     type ClassificationRuleResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiMinus, mdiPlus } from '@mdi/js';
+  import { mdiMinus, mdiPlus, mdiRefresh } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   /**
@@ -109,7 +109,8 @@
       <Status message={$t('frameleaf_rules_plan_loading')} busy />
     {:else}
       <p class="lead">
-        <strong>{$t('frameleaf_rules_preview_exact', { values: { count: plan.matched } })}</strong>
+        <strong>{$t('frameleaf_rules_item_count', { values: { count: plan.matched } })}</strong>
+        {$t('frameleaf_rules_match_right_now')}
       </p>
       <ul class="diff">
         <li>
@@ -140,6 +141,7 @@
     <div class="buttons">
       <button type="button" onclick={() => (open = false)} disabled={busy}>{$t('cancel')}</button>
       <button type="button" class="primary" disabled={busy || !plan} onclick={() => void apply()}>
+        <Icon icon={mdiRefresh} size="16" />
         {$t('frameleaf_rules_apply')}
       </button>
     </div>
@@ -199,6 +201,11 @@
     border-radius: var(--fl-radius);
     background: var(--fl-raised);
     color: var(--fl-text);
+  }
+  .buttons button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
   }
   .buttons .primary {
     background: var(--fl-accent);
