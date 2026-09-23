@@ -40,7 +40,9 @@ const upload = {
   ],
 } as StudioBundleUploadDto;
 
-const setup = (project = { id: 'p-1', revision: 4, saved: true }, askIncludeMedia?: () => Promise<boolean | null>) => {
+const savedProject = { id: 'p-1', revision: 4, saved: true };
+
+const setup = (project = savedProject, askIncludeMedia?: () => Promise<boolean | null>) => {
   const api: StudioBundleApi = {
     exportProject: vi.fn().mockResolvedValue(operation),
     getUpload: vi.fn().mockResolvedValue(upload),

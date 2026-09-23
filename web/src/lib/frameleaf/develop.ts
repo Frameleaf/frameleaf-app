@@ -524,9 +524,7 @@ export function resizeCropRect(
     const verticalOnly = handle === 'n' || handle === 's';
     if (horizontalOnly) {
       h = w / k;
-    } else if (verticalOnly) {
-      w = h * k;
-    } else if (w / k > h) {
+    } else if (verticalOnly || w / k > h) {
       w = h * k;
     } else {
       h = w / k;
