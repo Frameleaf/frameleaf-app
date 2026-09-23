@@ -117,7 +117,7 @@ export const RestorationInferenceRequestSchema = z.object({
   requestId: z.string().min(1).max(200),
   mode: RestorationModeSchema,
   /** Null: the worker's available model for the mode. A value names one model exactly. */
-  modelId: z.string().max(64).nullable().optional(),
+  modelId: z.string().min(1).max(64).nullable().optional(),
   /** A full render passes its preview's fingerprint; a changed model is refused. */
   modelFingerprint: z.string().regex(SHA256).nullable().optional(),
   scale: z.union([z.literal(1), z.literal(2)]),
@@ -160,7 +160,8 @@ export const RestorationInferenceResultSchema = z.object({
     videoCodec: z.string(),
     dynamicRange: RestorationDynamicRangeSchema,
     bitDepth: z.int(),
-    audio: z.enum(['copied', 'none']),
+    /** `transcoded` when a source codec cannot live in MP4 (PCM, for example) and became AAC. */
+    audio: z.enum(['copied', 'transcoded', 'none']),
     bytes: z.int().nonnegative(),
     sha256: z.string().regex(SHA256),
   }),

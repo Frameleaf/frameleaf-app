@@ -70,6 +70,7 @@ describe('selectRestorationDestination', () => {
       destinationId: mlDestinationStub.lan.id,
       kind: MlDestinationKind.Lan,
       workload: MlWorkload.RestorationFaithful,
+      cloudUploadAcknowledged: false,
     });
     expect(d.machineLearningRepository.probe).toHaveBeenCalledTimes(1);
   });
@@ -142,6 +143,7 @@ describe('selectRestorationDestination', () => {
 
     expect(selection).toMatchObject({ kind: MlDestinationKind.RunPod, workload: MlWorkload.RestorationCreative });
     expect(selection.endpoint).toEqual(runPodEndpoint);
+    expect(selection.cloudUploadAcknowledged).toBe(true);
   });
 
   it('refuses a worker that reports no qualified model for the mode', async () => {
