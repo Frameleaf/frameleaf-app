@@ -262,6 +262,11 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
   const failed = status === MediaOperationStatus.Failed;
   const counted = Number(operation.totalUnits ?? 0) > 0 || operation.progress > 0;
   const retrying = isRetryingMediaOperation(operation);
+  // FL-74: a preservation job copies and checks files; "Rendering" would say something untrue.
+  const workingKey =
+    isPreservationKind(operation.kind) && BULK_WORKING.includes(status)
+      ? 'frameleaf_activity_bulk_running'
+      : `frameleaf_activity_status_${status}`;
 
   return {
     id: `job:${operation.id}`,
@@ -272,7 +277,7 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
       ? 'frameleaf_activity_status_pausing'
       : retrying
         ? 'frameleaf_activity_status_retrying'
-        : `frameleaf_activity_status_${status}`,
+        : workingKey,
     tone: retrying || pause.pausePending ? 'warning' : STATUS_TONE[status],
     title: operation.label,
     progress: status === MediaOperationStatus.Completed ? 100 : counted ? clampPercent(operation.progress) : null,
@@ -296,6 +301,16 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     ...(status === MediaOperationStatus.Completed ? studioBundleOf(operation.kind) : {}),
   };
 };
+
+/** The four preservation kinds (FL-74), which Activity lists beside every other job. */
+const PRESERVATION_KINDS: readonly MediaOperationKind[] = [
+  MediaOperationKind.PreservationExport,
+  MediaOperationKind.PreservationVerify,
+  MediaOperationKind.PreservationReview,
+  MediaOperationKind.PreservationRestore,
+];
+
+const isPreservationKind = (kind: MediaOperationKind) => PRESERVATION_KINDS.includes(kind);
 
 /** A finished bundle job's follow-up (FL-91), or nothing for every other kind. */
 const studioBundleOf = (kind: MediaOperationKind): Pick<ActivityItem, 'studioBundle'> => {

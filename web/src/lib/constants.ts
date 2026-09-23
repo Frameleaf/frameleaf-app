@@ -78,6 +78,8 @@ export enum OpenQueryParam {
   SHARING = 'sharing',
   /** The trash retention settings, from the Trash page (FL-47). */
   TRASH = 'trash',
+  /** Originals & preservation, from Library Care's preservation verification (FL-74). */
+  PRESERVATION = 'preservation',
 }
 
 export const maximumLengthSearchPeople = 100;
