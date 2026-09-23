@@ -51,7 +51,6 @@ import { ProjectionType } from '$lib/constants';
 import { folderOf } from '$lib/frameleaf/viewer-headline';
 import { isPanorama } from '$lib/frameleaf/viewer-media';
 import { showFilmstrip } from '$lib/frameleaf/viewer-preferences';
-import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -66,69 +65,6 @@ import { getAssetMediaUrl, getSharedLink, sleep } from '$lib/utils';
 import { downloadUrl } from '$lib/utils';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
-
-export const getAssetBulkActions = ($t: MessageFormatter, album?: AlbumResponseDto) => {
-  const ownedAssets = assetMultiSelectManager.ownedAssets;
-  const isAlbumOwner = album?.albumUsers[0].user.id === authManager.user.id;
-
-  const onAction = async (name: AssetJobName) => {
-    await handleRunAssetJob({ name, assetIds: ownedAssets.map(({ id }) => id) });
-    assetMultiSelectManager.clear();
-  };
-
-  const AddToAlbum: ActionItem = {
-    title: $t('add_to_album'),
-    icon: mdiPlus,
-    shortcuts: [{ key: 'l' }],
-    onAction: () =>
-      modalManager.show(AssetAddToAlbumModal, { assetIds: assetMultiSelectManager.assets.map((asset) => asset.id) }),
-  };
-
-  const RemoveFromAlbum: ActionItem = {
-    title: $t('remove_from_album'),
-    icon: mdiImageRemoveOutline,
-    $if: () => !!album && (isAlbumOwner || assetMultiSelectManager.isAllUserOwned),
-    onAction: () =>
-      handleBulkRemoveAssetsFromAlbum(
-        assetMultiSelectManager.assets.map((asset) => asset.id),
-        album!,
-      ),
-  };
-
-  const RefreshFacesJob: ActionItem = {
-    title: $t('refresh_faces'),
-    icon: mdiHeadSyncOutline,
-    onAction: () => onAction(AssetJobName.RefreshFaces),
-  };
-
-  const RefreshMetadataJob: ActionItem = {
-    title: $t('refresh_metadata'),
-    icon: mdiDatabaseRefreshOutline,
-    onAction: () => onAction(AssetJobName.RefreshMetadata),
-  };
-
-  const RegenerateThumbnailJob: ActionItem = {
-    title: $t('refresh_thumbnails'),
-    icon: mdiImageRefreshOutline,
-    onAction: () => onAction(AssetJobName.RegenerateThumbnail),
-  };
-
-  const TranscodeVideoJob: ActionItem = {
-    title: $t('refresh_encoded_videos'),
-    icon: mdiCogRefreshOutline,
-    onAction: () => onAction(AssetJobName.TranscodeVideo),
-    $if: () => ownedAssets.every((asset) => asset.isVideo),
-  };
-
-  return {
-    AddToAlbum,
-    RemoveFromAlbum,
-    RefreshFacesJob,
-    RefreshMetadataJob,
-    RegenerateThumbnailJob,
-    TranscodeVideoJob,
-  };
-};
 
 export const getAssetActions = (
   $t: MessageFormatter,
@@ -504,21 +440,6 @@ const handleUnfavorite = async (asset: AssetResponseDto) => {
   } catch (error) {
     handleError(error, $t('errors.unable_to_add_remove_favorites', { values: { favorite: asset.isFavorite } }));
   }
-};
-
-const handleBulkRemoveAssetsFromAlbum = async (assetIds: string[], album: AlbumResponseDto) => {
-  const $t = await getFormatter();
-
-  const isConfirmed = await modalManager.showDialog({
-    prompt: $t('remove_assets_album_confirmation', { values: { count: assetIds.length } }),
-  });
-
-  if (!isConfirmed) {
-    return;
-  }
-
-  await handleRemoveAssetsFromAlbum(assetIds, album);
-  assetMultiSelectManager.clear();
 };
 
 const handleRemoveAssetsFromAlbum = async (assetIds: string[], album: AlbumResponseDto) => {

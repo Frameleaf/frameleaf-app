@@ -13,6 +13,7 @@
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { fromTimelinePlainDate, getDateLocaleString } from '$lib/utils/timeline-util';
   import { Icon } from '@immich/ui';
+  import type { Snippet } from 'svelte';
   import { mdiCheck, mdiMinus } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
@@ -30,6 +31,8 @@
     onToggleSelect?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
     onSelectGroup?: (ids: string[], checked: boolean) => void;
     onFocusAsset?: (asset: TimelineAsset) => void;
+    /** Extra chrome drawn over every tile by the page that mounts the timeline. */
+    tileOverlay?: Snippet<[TimelineAsset]>;
   };
 
   let {
@@ -43,6 +46,7 @@
     onToggleSelect,
     onSelectGroup,
     onFocusAsset,
+    tileOverlay,
   }: Props = $props();
 
   const dayIds = $derived(timelineDay.viewerAssets.map((viewerAsset) => viewerAsset.id));
@@ -117,6 +121,7 @@
             {onOpen}
             {onToggleSelect}
             onFocus={onFocusAsset}
+            overlay={tileOverlay}
           />
         </div>
       {/if}
