@@ -45,7 +45,7 @@ export const errorStatus = (status: number | undefined | null, error?: unknown):
  * explained as not found: saying "forbidden" there would confirm that something exists.
  */
 export const errorKind = (status: number): ErrorKind => {
-  if (status === 400 || status === 404 || status === 410) {
+  if ([400, 404, 410].includes(status)) {
     return 'not-found';
   }
   if (status === 401 || status === 403) {
@@ -67,7 +67,7 @@ export const ERROR_COPY = {
  * id the caller has no access to, 403 when a rule refuses them and 404 when there is nothing there.
  */
 export const isSpaceUnavailableStatus = (status: number | undefined | null): boolean =>
-  status === 400 || status === 403 || status === 404 || status === 410;
+  typeof status === 'number' && [400, 403, 404, 410].includes(status);
 
 /** What a shared space's error page explains: that the space cannot be opened, or that loading it failed. */
 export const spaceErrorKind = (status: number): 'unavailable' | 'failed' =>

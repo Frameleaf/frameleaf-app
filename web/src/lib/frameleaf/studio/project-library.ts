@@ -42,10 +42,10 @@ export const STUDIO_LIBRARY_SORTS: ReadonlyArray<{ id: StudioLibrarySort; labelK
 export const STUDIO_RECENT_LIMIT = 4;
 
 export const isStudioLibraryShelf = (value: unknown): value is StudioLibraryShelf =>
-  value === 'active' || value === 'archived' || value === 'trashed';
+  typeof value === 'string' && ['active', 'archived', 'trashed'].includes(value);
 
 export const isStudioLibrarySort = (value: unknown): value is StudioLibrarySort =>
-  value === 'updated' || value === 'recent' || value === 'name';
+  typeof value === 'string' && ['updated', 'recent', 'name'].includes(value);
 
 /**
  * The projects this person opened most recently, newest first. A reviewer's `lastOpenedAt` is

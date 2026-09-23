@@ -70,7 +70,7 @@ export function classifyInlineEditError(error: unknown): InlineEditFailure {
   if (status === 401 || status === 403) {
     return 'forbidden';
   }
-  if (status === 404 || status === 409 || status === 410) {
+  if ([404, 409, 410].includes(status)) {
     return 'stale';
   }
   // 408 and 429 are "come back later"; a 0 status is a request that never got a response.
