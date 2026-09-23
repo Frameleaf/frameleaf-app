@@ -2912,6 +2912,7 @@
   "frameleaf_studio_preview_stale": "This frame is from an earlier version of the project.",
   "frameleaf_studio_preview_tone_mapped": "Tone-mapped preview, not the colour reference",
   "frameleaf_studio_preview_unavailable": "This frame could not be rendered.",
+  "frameleaf_studio_preview_unsaved": "Preview is available once the project has been saved.",
   "frameleaf_studio_queued_open_activity": "{count, plural, one {# job queued} other {# jobs queued}} · Open Activity",
   "frameleaf_studio_read_only": "Review only",
   "frameleaf_studio_restore_failed": "That version could not be restored.",

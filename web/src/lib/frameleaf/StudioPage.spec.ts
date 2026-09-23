@@ -253,7 +253,7 @@ describe('Studio preview area', () => {
         messageKey: 'frameleaf_studio_preview_stale',
         staleFrame: {
           previewId: 'preview-1',
-          revisionDigest: 'rev-a',
+          revision: 1,
           time: rational(1001, 30_000),
           quality: 'standard',
           objectUrl: 'blob:a',
@@ -286,7 +286,7 @@ describe('Studio preview area', () => {
         phase: 'ready',
         frame: {
           previewId: 'preview-1',
-          revisionDigest: 'rev-a',
+          revision: 1,
           time: rational(1001, 30_000),
           quality: 'standard',
           objectUrl: 'blob:a',
