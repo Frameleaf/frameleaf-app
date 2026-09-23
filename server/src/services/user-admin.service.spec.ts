@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { describe } from 'vitest';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { mapUserAdmin } from 'src/dtos/user.dto.js';
-import { AssetVisibility, JobName, UserStatus } from 'src/enum.js';
+import { AssetVisibility, JobName, UserMetadataKey, UserStatus } from 'src/enum.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
@@ -304,6 +304,50 @@ describe(UserAdminService.name, () => {
       mocks.user.restore.mockResolvedValue(userStub.user1);
       await expect(sut.restore(authStub.admin, userStub.user1.id)).resolves.toEqual(mapUserAdmin(userStub.user1));
       expect(mocks.user.restore).toHaveBeenCalledWith(userStub.user1.id);
+    });
+  });
+
+  describe('updatePreferences (FL-77 admin casting permission)', () => {
+    beforeEach(() => {
+      mocks.user.upsertMetadata.mockResolvedValue();
+    });
+
+    it("should turn casting off for a user without overwriting the user's own choice", async () => {
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { cast: { gCastEnabled: true } } },
+      ]);
+
+      await expect(
+        sut.updatePreferences(authStub.admin, userStub.user1.id, { cast: { adminDisabled: true } }),
+      ).resolves.toMatchObject({ cast: { gCastEnabled: false, adminDisabled: true } });
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(userStub.user1.id, {
+        key: UserMetadataKey.Preferences,
+        value: { cast: { gCastEnabled: true, adminDisabled: true } },
+      });
+    });
+
+    it("should let the user's own choice apply again when casting is allowed", async () => {
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { cast: { gCastEnabled: true, adminDisabled: true } } },
+      ]);
+
+      await expect(
+        sut.updatePreferences(authStub.admin, userStub.user1.id, { cast: { adminDisabled: false } }),
+      ).resolves.toMatchObject({ cast: { gCastEnabled: true, adminDisabled: false } });
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(userStub.user1.id, {
+        key: UserMetadataKey.Preferences,
+        value: { cast: { gCastEnabled: true } },
+      });
+    });
+
+    it('should report the administrator decision from getPreferences', async () => {
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { cast: { adminDisabled: true } } },
+      ]);
+
+      await expect(sut.getPreferences(authStub.admin, userStub.user1.id)).resolves.toMatchObject({
+        cast: { gCastEnabled: false, adminDisabled: true },
+      });
     });
   });
 
