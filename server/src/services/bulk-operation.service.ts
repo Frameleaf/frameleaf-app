@@ -216,10 +216,10 @@ export class BulkOperationService {
       errorCode: 'bulk_worker_lost',
       error: 'The server stopped repeatedly while this job was running',
     });
-    if (recovered.requeued + recovered.failed + recovered.abandonedCancels > 0) {
-      const { requeued, failed, abandonedCancels } = recovered;
+    const { requeued, retried, failed, abandonedCancels } = recovered;
+    if (requeued + retried + failed + abandonedCancels > 0) {
       this.logger.log(
-        `Recovered bulk operations: ${requeued} requeued, ${failed} failed, ${abandonedCancels} cancelled`,
+        `Recovered bulk operations: ${requeued} requeued, ${retried} retrying, ${failed} failed, ${abandonedCancels} cancelled`,
       );
     }
   }

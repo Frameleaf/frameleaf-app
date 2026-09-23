@@ -147,7 +147,18 @@ const MediaOperationSchema = z
     totalUnits: z.string().nullable(),
     attempt: z.int(),
     maxAttempts: z.int(),
-    error: z.string().nullable().describe('Operator detail about a failure'),
+    autoRetries: z
+      .int()
+      .describe('Automatic retries this job has used; every job gets one before a failure is reported'),
+    retryAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('When a job waiting for its automatic retry may run again'),
+    error: z
+      .string()
+      .nullable()
+      .describe('Operator detail about a failure; on a queued job, the failure it is being retried after'),
     errorCode: z.string().nullable().describe('Stable code the client turns into a message'),
     cancelRequestedAt: z.string().meta({ format: 'date-time' }).nullable(),
     cancelAcknowledgedAt: z.string().meta({ format: 'date-time' }).nullable(),

@@ -36,6 +36,8 @@ const operationStub = (overrides: Partial<MediaOperation> = {}): MediaOperation 
     totalUnits: '1000',
     attempt: 1,
     maxAttempts: 3,
+    autoRetries: 0,
+    retryAt: null,
     claimToken: 'claim-token',
     claimedBy: 'worker-1',
     claimExpiresAt: new Date('2026-09-22T10:00:00.000Z'),
@@ -108,6 +110,30 @@ describe(MediaOperationService.name, () => {
       expect(items[0]).not.toHaveProperty('claimedBy');
       expect(items[0]).not.toHaveProperty('remoteJobId');
       expect(items[0]).not.toHaveProperty('snapshot');
+    });
+
+    it('shows a job waiting for its automatic retry, with when it runs again (FL-104)', async () => {
+      vi.mocked(repository.list).mockResolvedValue({
+        items: [
+          operationStub({
+            status: MediaOperationStatus.Queued,
+            autoRetries: 1,
+            retryAt: new Date('2026-09-22T10:00:30.000Z') as never,
+            error: 'The worker stopped responding',
+            errorCode: 'worker_lost',
+          }),
+        ],
+        total: 1,
+      });
+
+      const { items } = await sut.search(authStub.user1, {} as never);
+
+      expect(items[0]).toMatchObject({
+        status: MediaOperationStatus.Queued,
+        autoRetries: 1,
+        retryAt: '2026-09-22T10:00:30.000Z',
+        errorCode: 'worker_lost',
+      });
     });
   });
 

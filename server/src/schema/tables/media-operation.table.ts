@@ -124,6 +124,18 @@ export class MediaOperationTable {
   @Column({ type: 'integer', default: 3 })
   maxAttempts!: Generated<number>;
 
+  /**
+   * Automatic retries this job has used (FL-104, owner decision September 22, 2026). Every job
+   * that fails gets `MEDIA_OPERATION_AUTO_RETRIES` of them before it is reported failed; a manual
+   * retry is a new row and starts again from zero.
+   */
+  @Column({ type: 'integer', default: 0 })
+  autoRetries!: Generated<number>;
+
+  /** A requeued job is not claimed before this moment. Null means claimable as soon as it is queued. */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  retryAt!: Timestamp | null;
+
   /** The lease. A write carrying any other token is stale and must be rejected. */
   @Column({ type: 'uuid', nullable: true })
   claimToken!: string | null;

@@ -144,6 +144,8 @@ const mapOperation = (operation: MediaOperation): MediaOperationDto => ({
   totalUnits: operation.totalUnits === null || operation.totalUnits === undefined ? null : String(operation.totalUnits),
   attempt: operation.attempt,
   maxAttempts: operation.maxAttempts,
+  autoRetries: operation.autoRetries ?? 0,
+  retryAt: asIso(operation.retryAt),
   error: operation.error,
   errorCode: operation.errorCode,
   cancelRequestedAt: asIso(operation.cancelRequestedAt),
