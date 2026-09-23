@@ -41,11 +41,12 @@
   const adding = $derived(scope === 'user' && !limit);
   const subject = $derived(limit?.userId ? users.find((user) => user.id === limit.userId) : undefined);
 
-  const accountId = $props.id();
-  const concurrencyId = $props.id();
-  const wallClockId = $props.id();
-  const outputId = $props.id();
-  const errorId = $props.id();
+  const idPrefix = $props.id();
+  const accountId = `${idPrefix}-account`;
+  const concurrencyId = `${idPrefix}-concurrency`;
+  const wallClockId = `${idPrefix}-wall-clock`;
+  const outputId = `${idPrefix}-output`;
+  const errorId = `${idPrefix}-error`;
 
   const title = $derived.by(() => {
     if (scope === 'instance') {
