@@ -1136,12 +1136,18 @@ describe(RenderWorkerService.name, () => {
       });
       expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
 
-      vi.mocked(workers.getClaimed).mockResolvedValue(
-        operationStub({
-          ...claimedByA,
-          status: MediaOperationStatus.Cancelling,
-          cancelRequestedAt: new Date(),
-        }) as never,
+      // Still only for worker A and its token: the repository answers nothing to anybody else.
+      const cancelling = operationStub({
+        ...claimedByA,
+        status: MediaOperationStatus.Cancelling,
+        cancelRequestedAt: new Date(),
+      });
+      vi.mocked(workers.getClaimed).mockImplementation((id, workerId, claimToken) =>
+        Promise.resolve(
+          id === claimedByA.id && workerId === workerA.id && claimToken === 'claim-1'
+            ? (cancelling as never)
+            : undefined,
+        ),
       );
       expect(
         await sut.acknowledgeCancel(SESSION_A, claimedByA.id, { claimToken: 'claim-1', released: true } as never),
