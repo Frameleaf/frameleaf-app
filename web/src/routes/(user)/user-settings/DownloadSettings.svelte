@@ -1,6 +1,6 @@
 <script lang="ts">
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { ByteUnit, convertFromBytes, convertToBytes } from '$lib/utils/byte-units';
@@ -41,17 +41,17 @@
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" {onsubmit}>
       <div class="flex flex-col gap-4 sm:ms-8">
-        <SettingInputField
+        <SettingField
           inputType={SettingInputFieldType.NUMBER}
           label={$t('archive_size')}
           description={$t('archive_size_description')}
           bind:value={archiveSize}
         />
-        <SettingSwitch
+        <SettingToggle
           title={$t('download_include_embedded_motion_videos')}
           subtitle={$t('download_include_embedded_motion_videos_description')}
           bind:checked={includeEmbeddedVideos}
-        ></SettingSwitch>
+        ></SettingToggle>
         <div class="flex justify-end">
           <Button shape="round" type="submit" size="small" onclick={() => handleSave()}>{$t('save')}</Button>
         </div>
