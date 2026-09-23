@@ -48,6 +48,7 @@ export const markSessionLockSucceeded = () => {
 };
 
 const refreshes = new Set<Promise<unknown>>();
+const pendingUnlocks = new Set<Promise<unknown>>();
 const activeModals = new Set<() => Promise<void>>();
 const trackedManagers = new WeakSet<object>();
 let dismissNewModals = false;
@@ -96,6 +97,19 @@ export const releaseSessionLock = async () => {
     }
   } while (activeModals.size > 0);
   setSessionLockPending(false);
+};
+
+/** Register PIN unlock work before awaiting it, so a concurrent lock cannot finish first. */
+export const trackSessionUnlock = <T>(unlock: Promise<T>): Promise<T> => {
+  pendingUnlocks.add(unlock);
+  void unlock.finally(() => pendingUnlocks.delete(unlock)).catch(() => {});
+  return unlock;
+};
+
+export const waitForSessionUnlocks = async () => {
+  while (pendingUnlocks.size > 0) {
+    await Promise.allSettled(pendingUnlocks);
+  }
 };
 
 /** Keep the root shield up while mounted media views replace their cached elevated results. */

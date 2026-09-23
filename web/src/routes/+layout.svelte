@@ -1,7 +1,8 @@
 <script lang="ts">
   import { afterNavigate, beforeNavigate } from '$app/navigation';
   import { page } from '$app/state';
-  import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
+  import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
+  import { requestSessionLock } from '$lib/frameleaf/session-lock';
   import SessionLockShield from '$lib/components/frameleaf/SessionLockShield.svelte';
   import DownloadPanel from '$lib/components/frameleaf/DownloadPanel.svelte';
   import PanelDock from '$lib/components/frameleaf/PanelDock.svelte';
@@ -36,6 +37,8 @@
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
   import '../app.css';
+
+  trackSessionModals(modalManager);
 
   interface Props {
     children?: Snippet;
@@ -168,6 +171,15 @@
     const element = document.querySelector('#stencil');
     element?.remove();
     // if the browser theme changes, changes the Frameleaf theme too
+    sessionAccess.retryLock = requestSessionLock;
+    if (sessionAccess.lockPending) {
+      void requestSessionLock();
+    }
+    return () => {
+      if (sessionAccess.retryLock === requestSessionLock) {
+        sessionAccess.retryLock = undefined;
+      }
+    };
   });
 
   eventManager.emit('AppInit');

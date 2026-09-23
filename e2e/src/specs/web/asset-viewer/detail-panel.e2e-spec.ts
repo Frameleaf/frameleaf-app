@@ -269,5 +269,30 @@ test.describe('Detail Panel', () => {
       await expect(page.locator('body')).not.toContainText('private-lock-repro.png');
       await expect(page).toHaveURL(/\/photos(?:\?|$)/);
     });
+
+    test('offers lock retry on the PIN prompt without a top bar', async ({ context, page }) => {
+      await utils.setAuthCookies(context, admin.accessToken);
+      await page.goto('/auth/pin-prompt');
+      await page.evaluate(() => sessionStorage.setItem('frameleaf:session-lock-pending', 'true'));
+      let attempts = 0;
+      await page.route('**/api/auth/session/lock', async (route) => {
+        attempts++;
+        if (attempts === 1) {
+          await route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"offline"}' });
+        } else {
+          await route.continue();
+        }
+      });
+      await page.reload();
+      await expect.poll(() => attempts).toBe(1);
+      await expect(page.locator('#dashboard-navbar')).toHaveCount(0);
+      await expect(page.locator('dialog.session-lock-shield[open]')).toHaveCount(1);
+
+      await page.getByRole('button', { name: 'Retry', exact: true }).click();
+      await expect.poll(() => attempts).toBe(2);
+      await expect(page.locator('dialog.session-lock-shield[open]')).toHaveCount(0);
+      await expect(page).toHaveURL(/\/photos(?:\?|$)/);
+      await expect.poll(() => page.evaluate(() => sessionStorage.getItem('frameleaf:session-lock-pending'))).toBeNull();
+    });
   });
 });
