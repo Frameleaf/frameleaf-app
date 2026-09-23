@@ -50,14 +50,7 @@
   import { getSystemConfigActions } from '$lib/services/system-config.service';
   import { websocketEvents } from '$lib/stores/websocket';
   import { getAdminConfigWithRevision, updateAdminConfigWithRevision } from '@immich/sdk';
-  import {
-    Alert,
-    CommandPaletteDefaultProvider,
-    Container,
-    modalManager,
-    Theme as AppTheme,
-    themeManager,
-  } from '@immich/ui';
+  import { Alert, Container, modalManager, Theme as AppTheme, themeManager } from '@immich/ui';
   import {
     mdiAccountOutline,
     mdiBackupRestore,
@@ -311,8 +304,6 @@
     }),
   );
 </script>
-
-<CommandPaletteDefaultProvider name={$t('admin.system_settings')} actions={[CopyToClipboard, Upload, Download]} />
 
 <AdminPageLayout breadcrumbs={[{ title: data.meta.title }]} actions={[CopyToClipboard, Download, Upload]}>
   <Container size="large" center class="my-4">

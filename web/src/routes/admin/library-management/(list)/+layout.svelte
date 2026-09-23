@@ -9,7 +9,6 @@
   import { getBytesWithUnit } from '$lib/utils/byte-units';
   import { type LibraryResponseDto } from '@immich/sdk';
   import {
-    CommandPaletteDefaultProvider,
     Container,
     ContextMenuButton,
     Link,
@@ -61,8 +60,6 @@
 </script>
 
 <OnEvents {onLibraryCreate} {onLibraryUpdate} {onLibraryDelete} />
-
-<CommandPaletteDefaultProvider name={$t('library')} actions={[Create, ScanAll]} />
 
 <AdminPageLayout breadcrumbs={[{ title: data.meta.title }]} actions={[ScanAll, Create]}>
   <Container size="large" center class="my-4">

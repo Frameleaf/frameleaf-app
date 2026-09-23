@@ -5,7 +5,7 @@
   import { queueManager } from '$lib/managers/queue-manager.svelte';
   import { getQueuesActions } from '$lib/services/queue.service';
   import { type QueueResponseDto } from '@immich/sdk';
-  import { CommandPaletteDefaultProvider, Container, type ActionItem } from '@immich/ui';
+  import { Container } from '@immich/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
@@ -23,7 +23,6 @@
   const { ResumePaused, CreateJob, ManageConcurrency, EnrichmentTasks } = $derived(
     getQueuesActions($t, queueManager.queues),
   );
-  const commands: ActionItem[] = $derived([CreateJob, ManageConcurrency, EnrichmentTasks]);
 
   const onQueueUpdate = (update: QueueResponseDto) => {
     queues = queues.map((queue) => {
@@ -34,8 +33,6 @@
     });
   };
 </script>
-
-<CommandPaletteDefaultProvider name={$t('admin.queues')} actions={commands} />
 
 <OnEvents {onQueueUpdate} />
 

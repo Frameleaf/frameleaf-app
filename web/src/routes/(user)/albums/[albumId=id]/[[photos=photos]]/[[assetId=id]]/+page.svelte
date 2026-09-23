@@ -41,7 +41,7 @@
     type AssetResponseDto,
     type TagResponseDto,
   } from '@immich/sdk';
-  import { ActionButton, CommandPaletteDefaultProvider, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { ActionButton, Theme as AppTheme, themeManager } from '@immich/ui';
   import { mdiArrowLeft } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -424,7 +424,6 @@
   onAlbumUserDelete={refreshEverything}
   {onAlbumUpdate}
 />
-<CommandPaletteDefaultProvider name={$t('album')} actions={[AddAssets, Upload, Close]} />
 
 {#snippet header()}
   <AlbumHeader

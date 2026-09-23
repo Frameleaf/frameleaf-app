@@ -8,13 +8,6 @@
   import { passwordStrength } from '$lib/frameleaf/password-strength';
   import { Button, Field, HelperText, Input, PasswordInput } from '@immich/ui';
   import { t } from 'svelte-i18n';
-  import type { PageData } from './$types';
-
-  interface Props {
-    data: PageData;
-  }
-
-  let { data }: Props = $props();
 
   let password = $state('');
   let passwordConfirm = $state('');

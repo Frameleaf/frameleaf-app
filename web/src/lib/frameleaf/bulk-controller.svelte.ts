@@ -149,6 +149,8 @@ export class BulkController {
       // The prototype's toast carries Undo. It matters most when the action emptied the selection
       // (trash, restore, remove from album): the bar and its own Undo button close with it, so the
       // toast is the only place left to reverse the action.
+      // The bar's Undo and the toast's Undo share one entry; whichever runs first consumes it, so
+      // a reversal can never fire twice.
       const undo = this.undo;
       toastManager.primary(
         {
@@ -157,7 +159,9 @@ export class BulkController {
             label: translate('undo'),
             onclick: () => {
               close();
-              void undo.run();
+              if (this.undo === undo) {
+                void undo.run();
+              }
             },
           }),
         },

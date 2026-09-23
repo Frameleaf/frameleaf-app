@@ -5,7 +5,7 @@
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { getUserAdminsActions } from '$lib/services/user-admin.service';
   import { searchUsersAdmin, type UserAdminResponseDto } from '@immich/sdk';
-  import { CommandPaletteDefaultProvider, Container, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Container, Theme as AppTheme, themeManager } from '@immich/ui';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { LayoutData } from './$types';
@@ -47,8 +47,6 @@
   onUserAdminRestore={onUpdate}
   {onUserAdminDeleted}
 />
-
-<CommandPaletteDefaultProvider name={$t('users')} actions={[Create]} />
 
 <AdminPageLayout breadcrumbs={[{ title: data.meta.title }]} actions={[Create]}>
   <Container center size="large">

@@ -968,9 +968,9 @@ const actions = {
     "Person chooser without page context; label",
   ],
   "share-with-recipients-create-or-manage-a-public-link": [
-    "fixed",
-    ["AL-30", "AL-32", "AL-33"],
-    "Selection Share link opens the form; ShareSheet offers the link only; the viewer's Share still opens the legacy create modal (AL-33)",
+    "partial",
+    ["AL-30", "AL-30b", "AL-32", "AL-33"],
+    "Selection Share link opens the form and ShareSheet offers the link only (fixed); per-item person sharing has no server contract (AL-30b, owner); the viewer's Share still opens the legacy create modal (AL-33)",
     {
       production: [
         `${W}/lib/components/frameleaf/ShareSheet.svelte`,
@@ -1761,9 +1761,9 @@ const routes = {
     [`${W}/routes/(user)/user-settings/+page.svelte`],
   ],
   "/utilities": [
-    "partial",
-    ["UT-1", "UT-1a", "UT-12"],
-    "Application setup utility; hub scope line",
+    "missing",
+    ["PL-0", "UT-1", "UT-1a", "UT-12"],
+    "Standalone utilities directory must become the Command Center utilities area (PL-0, owner cc-utilities on codex/FL-69-command-center-utilities); application setup utility; hub scope line",
     [`${P}/UtilitiesManager.jsx`, `${P}/utilities-data.mjs`],
     [
       `${W}/routes/(user)/utilities/+page.svelte`,
