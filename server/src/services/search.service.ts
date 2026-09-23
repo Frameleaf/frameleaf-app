@@ -25,7 +25,7 @@ import {
   isNewShapeRequest,
   mapPlaces,
 } from 'src/dtos/search.dto.js';
-import { AssetOrder, AssetType, AssetVisibility, Permission } from 'src/enum.js';
+import { AssetOrder, AssetType, AssetVisibility, MlWorkload, Permission } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted, requireElevatedPermission } from 'src/utils/access.js';
 import { getMyPartnerIds } from 'src/utils/asset.util.js';
@@ -431,7 +431,8 @@ export class SearchService extends BaseService {
       const key = machineLearning.clip.modelName + dto.query + dto.language;
       let embedding = this.embeddingCache.get(key);
       if (!embedding) {
-        embedding = await this.machineLearningRepository.encodeText(dto.query, {
+        const selection = await this.selectRoutedMlDestination({ workload: MlWorkload.Clip });
+        embedding = await this.machineLearningRepository.encodeText(selection, dto.query, {
           modelName: machineLearning.clip.modelName,
           language: dto.language,
         });

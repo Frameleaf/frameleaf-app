@@ -52,6 +52,7 @@ describe(ImageEnrichmentService.name, () => {
     await expect(sut.handleNsfwDetection({ id: assetId })).resolves.toBe(JobStatus.Success);
 
     expect(mocks.machineLearning.detectNsfw).toHaveBeenCalledWith(
+      expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
       previewFile,
       expect.objectContaining({ modelName: 'onnx-community/nsfw_image_detection-ONNX', threshold: 0.85 }),
     );
@@ -150,6 +151,7 @@ describe(ImageEnrichmentService.name, () => {
       mocks.machineLearning.describeImage.mock.invocationCallOrder[0],
     );
     expect(mocks.machineLearning.describeImage).toHaveBeenCalledWith(
+      expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
       previewFile,
       expect.objectContaining({ modelName: 'Qwen/Qwen2.5-VL-3B-Instruct' }),
       nsfw,
@@ -811,6 +813,7 @@ describe(ImageEnrichmentService.name, () => {
       });
       // The prompt assembler is called with a prompt that includes the known person hint.
       expect(mocks.machineLearning.describeImage).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         previewFile,
         expect.anything(),
         undefined,
@@ -843,6 +846,7 @@ describe(ImageEnrichmentService.name, () => {
 
       // Prompt should NOT contain any name hint.
       expect(mocks.machineLearning.describeImage).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         previewFile,
         expect.anything(),
         undefined,
@@ -874,6 +878,7 @@ describe(ImageEnrichmentService.name, () => {
       await expect(sut.handleImageDescription({ id: assetId })).resolves.toBe(JobStatus.Success);
 
       expect(mocks.machineLearning.describeImage).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         previewFile,
         expect.anything(),
         undefined,
@@ -905,6 +910,7 @@ describe(ImageEnrichmentService.name, () => {
       await expect(sut.handleImageDescription({ id: assetId })).resolves.toBe(JobStatus.Success);
 
       expect(mocks.machineLearning.describeImage).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         previewFile,
         expect.anything(),
         undefined,
@@ -936,6 +942,7 @@ describe(ImageEnrichmentService.name, () => {
       await expect(sut.handleImageDescription({ id: assetId })).resolves.toBe(JobStatus.Success);
 
       expect(mocks.machineLearning.describeImage).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         previewFile,
         expect.anything(),
         undefined,
@@ -967,6 +974,7 @@ describe(ImageEnrichmentService.name, () => {
       await expect(sut.handleImageDescription({ id: assetId })).resolves.toBe(JobStatus.Success);
 
       expect(mocks.machineLearning.describeImage).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         previewFile,
         expect.anything(),
         undefined,
@@ -1022,6 +1030,7 @@ describe(ImageEnrichmentService.name, () => {
       // describeImage must still be called, with a prompt that contains no
       // identity hint (knownPersons was empty due to the lookup failure).
       expect(mocks.machineLearning.describeImage).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         previewFile,
         expect.anything(),
         undefined,
@@ -1189,11 +1198,12 @@ describe(ImageEnrichmentService.name, () => {
         expect.objectContaining({ cols: 2, rows: 2, output: expect.stringContaining('_description_grid.jpeg') }),
       );
 
+      // The explicit destination selection is the first argument (FL-110); the path follows it.
       const describeCall = mocks.machineLearning.describeImage.mock.calls[0];
-      const gridPath = describeCall[0] as string;
+      const gridPath = describeCall[1] as string;
       expect(gridPath).toContain('_description_grid.jpeg');
-      // Prompt is the 4th arg; it should include the video grid prefix.
-      const prompt = describeCall[3] as string;
+      // Prompt is the 5th arg; it should include the video grid prefix.
+      const prompt = describeCall[4] as string;
       expect(prompt).toContain('composite');
       expect(prompt).toContain('frames sampled from a video');
 
@@ -1225,8 +1235,8 @@ describe(ImageEnrichmentService.name, () => {
       expect(mocks.media.composeImageGrid).not.toHaveBeenCalled();
       expect(mocks.duplicateRepository.getVideoDuplicateFrames).not.toHaveBeenCalled();
       const describeCall = mocks.machineLearning.describeImage.mock.calls[0];
-      expect(describeCall[0]).toBe(previewFile);
-      expect(describeCall[3] as string).not.toContain('composite');
+      expect(describeCall[1]).toBe(previewFile);
+      expect(describeCall[4] as string).not.toContain('composite');
     });
   });
 });
