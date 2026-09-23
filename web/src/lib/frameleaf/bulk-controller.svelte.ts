@@ -56,6 +56,7 @@ export class BulkController {
   #running = new Map<string, AbortController>();
   #queued: () => void;
   #tracker: Pick<DurableBulkTracker, 'track'>;
+  #applied: (action: BulkActionId, ids: string[], payload?: BulkPayload) => void;
 
   /** The undo offered after the last reversible action, or null. */
   undo = $state<BulkUndoEntry | null>(null);
@@ -68,6 +69,7 @@ export class BulkController {
     context = () => ({}),
     queued = () => void activitySession.refresh(),
     tracker = durableBulkTracker,
+    applied = () => {},
   }: {
     dispatch: (action: LibrarySessionAction) => void;
     gateway?: BulkGateway;
@@ -76,12 +78,18 @@ export class BulkController {
     queued?: () => void;
     /** Follows accepted durable jobs item by item, for the tile loaders. */
     tracker?: Pick<DurableBulkTracker, 'track'>;
+    /**
+     * Called with the items an immediate action changed, so the page can show the change at once
+     * (a favorite's badge, an archived item leaving the library) without waiting for a reload.
+     */
+    applied?: (action: BulkActionId, ids: string[], payload?: BulkPayload) => void;
   }) {
     this.#dispatch = dispatch;
     this.#gateway = gateway;
     this.#context = context;
     this.#queued = queued;
     this.#tracker = tracker;
+    this.#applied = applied;
   }
 
   /**
@@ -123,7 +131,7 @@ export class BulkController {
     return removesFromView(action, this.#context().view) ? result.succeeded : [];
   }
 
-  async #report(action: BulkActionId, result: BulkResult) {
+  async #report(action: BulkActionId, result: BulkResult, payload?: BulkPayload) {
     const translate = await getFormatter();
     const { key, values } = bulkResultSummary(result);
     const message = `${translate(`frameleaf_bulk_${action.replaceAll('-', '_')}` as Translations)}: ${translate(key, { values })}`;
@@ -131,6 +139,10 @@ export class BulkController {
       toastManager.danger(message);
     } else {
       toastManager.primary(message);
+    }
+
+    if (result.succeeded.length > 0) {
+      this.#applied(action, result.succeeded, payload);
     }
 
     const removed = this.#removed(action, result);
@@ -172,7 +184,7 @@ export class BulkController {
         context: this.#context(),
         gateway: this.#gateway,
       });
-      await this.#report(action, result);
+      await this.#report(action, result, payload);
       return result;
     } catch (error) {
       const translate = await getFormatter();

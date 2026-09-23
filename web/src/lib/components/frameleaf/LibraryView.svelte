@@ -48,7 +48,7 @@
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { AssetVisibility } from '@immich/sdk';
   import { toastManager } from '@immich/ui';
-  import { onDestroy, type Snippet } from 'svelte';
+  import { onDestroy, tick, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -267,8 +267,37 @@
 
   const currentUserId = $derived(authManager.authenticated ? authManager.user.id : undefined);
 
+  /**
+   * An immediate action shows on the page at once, as the prototype's `bulkChange` does: a favorite
+   * gains its badge, and an item the change takes out of this view (archived from the library,
+   * unarchived from Archive, unfavorited from Favorites) leaves it. The server sends no live event
+   * for these edits, so without this the page would only catch up on a reload.
+   */
+  const ASSET_PATCHES: Partial<Record<BulkActionId, (asset: TimelineAsset) => void>> = {
+    favorite: (asset) => void (asset.isFavorite = true),
+    unfavorite: (asset) => void (asset.isFavorite = false),
+    archive: (asset) => void (asset.visibility = AssetVisibility.Archive),
+    unarchive: (asset) => void (asset.visibility = AssetVisibility.Timeline),
+  };
+
+  const applyBulk = (action: BulkActionId, ids: string[]) => {
+    const patch = ASSET_PATCHES[action];
+    if (!patch) {
+      return;
+    }
+    manager.update(ids, patch);
+    const left = ids.filter((id) => {
+      const asset = findAsset(id);
+      return !!asset && manager.isExcluded(asset);
+    });
+    if (left.length > 0) {
+      dispatch({ type: 'mutated', removedIds: left });
+    }
+  };
+
   const bulk = new BulkController({
     dispatch,
+    applied: applyBulk,
     context: () => ({
       view: {
         isLocked: options?.visibility === AssetVisibility.Locked,
@@ -454,6 +483,69 @@
     }
   });
 
+  let root = $state<HTMLElement>();
+
+  const showTimeline = (grouping: LibraryGrouping) => {
+    session.setLayout('timeline');
+    if (session.state.grouping !== grouping) {
+      session.patchView({ grouping });
+    }
+  };
+
+  /**
+   * Arrow keys move focus between tiles in visual order (prototype `App.jsx` `moveFocus`). Left and
+   * right step through the order; up and down take the nearest tile in the row above or below,
+   * because justified rows do not share columns. The focused tile is scrolled only as far as it
+   * needs to be, and focusing it makes it the session's scroll anchor.
+   */
+  const moveTileFocus = (id: string) => {
+    const tiles = [...(root?.querySelectorAll<HTMLElement>('[data-asset-id]') ?? [])];
+    if (tiles.length === 0) {
+      return;
+    }
+    const active = document.activeElement;
+    let index = tiles.findIndex((tile) => tile.contains(active));
+    if (index === -1) {
+      const anchor = session.session.scrollAnchor;
+      index = anchor ? tiles.findIndex((tile) => tile.dataset.assetId === anchor) : -1;
+    }
+    let next: HTMLElement | undefined;
+    if (index === -1) {
+      next = tiles[0];
+    } else if (id === 'navigate-previous' || id === 'navigate-next') {
+      next = tiles[Math.min(tiles.length - 1, Math.max(0, index + (id === 'navigate-next' ? 1 : -1)))];
+    } else {
+      const current = tiles[index].getBoundingClientRect();
+      const down = id === 'focus-down';
+      const centre = current.left + current.width / 2;
+      let bestRow: number | undefined;
+      let bestDistance = Infinity;
+      for (const tile of tiles) {
+        const box = tile.getBoundingClientRect();
+        const inRow = down ? box.top >= current.bottom - 1 : box.bottom <= current.top + 1;
+        if (!inRow) {
+          continue;
+        }
+        const rowDistance = down ? box.top - current.bottom : current.top - box.bottom;
+        const distance = Math.abs(box.left + box.width / 2 - centre);
+        if (bestRow === undefined || rowDistance < bestRow - 1) {
+          bestRow = rowDistance;
+          bestDistance = distance;
+          next = tile;
+        } else if (Math.abs(rowDistance - bestRow) <= 1 && distance < bestDistance) {
+          bestDistance = distance;
+          next = tile;
+        }
+      }
+    }
+    const button = next?.querySelector<HTMLElement>('button');
+    if (!next || !button) {
+      return;
+    }
+    button.focus({ preventScroll: true });
+    next.scrollIntoView({ block: 'nearest' });
+  };
+
   /**
    * One key map serves the timeline and the viewer. The entries this page can act on itself are
    * handled here; the rest are handed to the owner of that action.
@@ -512,14 +604,39 @@
         }
         break;
       }
+      case 'navigate-previous':
+      case 'navigate-next':
+      case 'focus-up':
+      case 'focus-down': {
+        // A control that already used the key (the date scrubber, a menu) keeps it.
+        if (surface !== 'timeline' || event.defaultPrevented) {
+          break;
+        }
+        event.preventDefault();
+        moveTileFocus(shortcut.id);
+        return;
+      }
       case 'group-days':
       case 'group-months':
       case 'group-years': {
-        // Grouping is page state: it travels in a link, survives a layout switch and is what the
-        // query bridge reads. The timeline itself always draws day groups inside month buckets,
-        // which is what the manager loads; coarser groupings need bucket support it does not have.
+        // As in the prototype (`App.jsx` `jump`), D, M and Y show the Timeline layout grouped by
+        // that unit. Grouping is page state: it travels in a link, survives a layout switch and is
+        // what the query bridge reads. The timeline itself always draws day groups inside month
+        // buckets, which is what the manager loads; coarser groupings need bucket support it does
+        // not have.
         event.preventDefault();
-        session.patchView({ grouping: shortcut.id.replace('group-', '') as LibraryGrouping });
+        showTimeline(shortcut.id.replace('group-', '') as LibraryGrouping);
+        return;
+      }
+      case 'go-to-date': {
+        if (surface !== 'timeline') {
+          break;
+        }
+        // The prototype's "Go to a date": the Timeline layout, then the date scrubber takes focus so
+        // the arrow, Page and Home/End keys move through the months.
+        event.preventDefault();
+        showTimeline(session.state.grouping === 'all' ? 'days' : session.state.grouping);
+        void tick().then(() => root?.querySelector<HTMLElement>('[role="slider"]')?.focus());
         return;
       }
       default: {
@@ -532,7 +649,7 @@
 
 <svelte:window onkeydown={handleKeyDown} />
 
-<div class="frameleaf fl-library" data-testid="frameleaf-library" data-layout={session.layout}>
+<div class="frameleaf fl-library" data-testid="frameleaf-library" data-layout={session.layout} bind:this={root}>
   {@render shell?.()}
 
   <div class="fl-library-body" class:has-panel={showInfoPanel}>
