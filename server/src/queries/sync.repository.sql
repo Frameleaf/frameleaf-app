@@ -119,7 +119,6 @@ select
   "asset"."localDateTime",
   "asset"."type",
   "asset"."deletedAt",
-  "asset"."visibility",
   "asset"."duration",
   "asset"."stackId",
   "asset"."libraryId",
@@ -189,6 +188,20 @@ select
     ) then null
     else asset."livePhotoVideoId"
   end as "livePhotoVideoId",
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility",
   case
     when "asset"."ownerId" = $1 then "asset"."isFavorite"
     else $2
@@ -252,7 +265,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $7
+    or "asset"."ownerId" = $7::uuid
   )
 order by
   "album_asset"."updateId" asc
@@ -269,7 +282,6 @@ select
   "asset"."localDateTime",
   "asset"."type",
   "asset"."deletedAt",
-  "asset"."visibility",
   "asset"."duration",
   "asset"."stackId",
   "asset"."libraryId",
@@ -339,6 +351,20 @@ select
     ) then null
     else asset."livePhotoVideoId"
   end as "livePhotoVideoId",
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility",
   case
     when "asset"."ownerId" = $1 then "asset"."isFavorite"
     else $2
@@ -403,7 +429,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $7
+    or "asset"."ownerId" = $7::uuid
   )
 order by
   "asset"."updateId" asc
@@ -421,7 +447,6 @@ select
   "asset"."localDateTime",
   "asset"."type",
   "asset"."deletedAt",
-  "asset"."visibility",
   "asset"."duration",
   "asset"."stackId",
   "asset"."libraryId",
@@ -491,6 +516,20 @@ select
     ) then null
     else asset."livePhotoVideoId"
   end as "livePhotoVideoId",
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility",
   case
     when "asset"."ownerId" = $1 then "asset"."isFavorite"
     else $2
@@ -553,7 +592,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $6
+    or "asset"."ownerId" = $6::uuid
   )
 order by
   "album_asset"."updateId" asc
@@ -645,7 +684,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $5
+    or "asset"."ownerId" = $5::uuid
   )
 order by
   "album_asset"."updateId" asc
@@ -738,7 +777,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $5
+    or "asset"."ownerId" = $5::uuid
   )
 order by
   "asset_exif"."updateId" asc
@@ -831,7 +870,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $4
+    or "asset"."ownerId" = $4::uuid
   )
 order by
   "album_asset"."updateId" asc
@@ -899,7 +938,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $5
+    or "asset"."ownerId" = $5::uuid
   )
 order by
   "album_asset"."updateId" asc
@@ -1030,7 +1069,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $4
+    or "asset"."ownerId" = $4::uuid
   )
 order by
   "album_asset"."updateId" asc
@@ -1184,7 +1223,6 @@ select
   "asset"."type",
   "asset"."deletedAt",
   "asset"."isFavorite",
-  "asset"."visibility",
   "asset"."duration",
   "asset"."stackId",
   "asset"."libraryId",
@@ -1254,6 +1292,20 @@ select
     ) then null
     else asset."livePhotoVideoId"
   end as "livePhotoVideoId",
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility",
   "asset"."updateId"
 from
   "asset" as "asset"
@@ -1566,7 +1618,17 @@ where
   and "asset_face_audit"."id" > $2
   and (
     "asset"."ownerId" = $3
-    or "asset"."visibility" in ($4, $5)
+    or (
+      "asset"."visibility" in ('archive', 'timeline')
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+    )
   )
   and "owner"."clusterGroupId" = (
     select
@@ -1574,7 +1636,7 @@ where
     from
       "user"
     where
-      "user"."id" = $6
+      "user"."id" = $4
   )
   and not (
     case
@@ -1710,7 +1772,17 @@ where
   and "asset_face"."updateId" > $2
   and (
     "asset"."ownerId" = $3
-    or "asset"."visibility" in ($4, $5)
+    or (
+      "asset"."visibility" in ('archive', 'timeline')
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+    )
   )
   and "owner"."clusterGroupId" = (
     select
@@ -1718,7 +1790,7 @@ where
     from
       "user"
     where
-      "user"."id" = $6
+      "user"."id" = $4
   )
   and not (
     case
@@ -2170,7 +2242,6 @@ select
   "asset"."createdAt",
   "asset"."type",
   "asset"."deletedAt",
-  "asset"."visibility",
   "asset"."duration",
   "asset"."stackId",
   "asset"."libraryId",
@@ -2240,6 +2311,28 @@ select
     ) then null
     else asset."livePhotoVideoId"
   end as "livePhotoVideoId",
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility",
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked",
   $1 as "isFavorite",
   "asset"."updateId"
 from
@@ -2325,7 +2418,6 @@ select
   "asset"."createdAt",
   "asset"."type",
   "asset"."deletedAt",
-  "asset"."visibility",
   "asset"."duration",
   "asset"."stackId",
   "asset"."libraryId",
@@ -2395,6 +2487,28 @@ select
     ) then null
     else asset."livePhotoVideoId"
   end as "livePhotoVideoId",
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility",
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked",
   $1 as "isFavorite",
   "asset"."updateId"
 from
@@ -2481,7 +2595,15 @@ select
   "asset_exif"."profileDescription",
   "asset_exif"."rating",
   "asset_exif"."fps",
-  "asset_exif"."updateId"
+  "asset_exif"."updateId",
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked"
 from
   "asset_exif" as "asset_exif"
   inner join "asset" on "asset"."id" = "asset_exif"."assetId"
@@ -2562,7 +2684,15 @@ select
   "asset_exif"."rating",
   "asset_exif"."fps",
   "asset_exif"."updateId",
-  "asset"."ownerId"
+  "asset"."ownerId",
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked"
 from
   "asset_exif" as "asset_exif"
   inner join "asset" on "asset"."id" = "asset_exif"."assetId"
@@ -2858,7 +2988,17 @@ where
       from
         "asset_face"
         inner join "asset" on "asset"."id" = "asset_face"."assetId"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
       where
         "asset_face"."personGroupId" = "person"."personGroupId"
@@ -2870,7 +3010,17 @@ where
       from
         "asset_face"
         inner join "asset" on "asset"."id" = "asset_face"."assetId"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
       where
         "asset_face"."personGroupId" = "person"."personGroupId"

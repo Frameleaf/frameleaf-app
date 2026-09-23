@@ -199,7 +199,14 @@ from
 where
   "asset"."id" in ($1)
   and "asset"."ownerId" = $2
-  and "asset"."visibility" != $3
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     "asset"."visibility" = 'hidden'
     and exists (
@@ -234,6 +241,14 @@ where
   and (
     "asset"."visibility" = 'timeline'
     or "asset"."visibility" = 'hidden'
+  )
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
   )
   and "asset"."id" in ($2)
   and not (
@@ -304,7 +319,14 @@ from
   "asset_file"
   inner join "asset" on "asset"."id" = "asset_file"."assetId"
 where
-  "asset"."visibility" != $1
+  not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     "asset"."visibility" = 'hidden'
     and exists (
@@ -324,8 +346,8 @@ where
         )
     )
   )
-  and "asset"."ownerId" = $2
-  and "asset_file"."id" in ($3)
+  and "asset"."ownerId" = $1
+  and "asset_file"."id" in ($2)
 
 -- AccessRepository.authDevice.checkOwnerAccess
 select
@@ -345,7 +367,17 @@ where
   "asset"."duplicateId" in ($1)
   and "asset"."ownerId" = $2
   and "asset"."deletedAt" is null
-  and "asset"."visibility" in ('archive', 'timeline')
+  and (
+    "asset"."visibility" in ('archive', 'timeline')
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
   and "asset"."stackId" is null
   and not (
     case
@@ -419,7 +451,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -531,7 +573,17 @@ where
       from
         "asset_face"
         inner join "asset" on "asset"."id" = "asset_face"."assetId"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
       where
         "asset_face"."personGroupId" = "person"."personGroupId"
@@ -543,7 +595,17 @@ where
       from
         "asset_face"
         inner join "asset" on "asset"."id" = "asset_face"."assetId"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
       where
         "asset_face"."personGroupId" = "person"."personGroupId"

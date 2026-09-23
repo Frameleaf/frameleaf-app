@@ -17,7 +17,17 @@ from
 where
   "asset"."deletedAt" is null
   and "album_asset"."albumId" = $1
-  and "asset"."visibility" in ('archive', 'timeline')
+  and (
+    "asset"."visibility" in ('archive', 'timeline')
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
 order by
   "fileCreatedAt" desc
 
@@ -36,16 +46,26 @@ from
   and "asset_exif"."longitude" is not null
 where
   "asset"."deletedAt" is null
-  and "asset"."visibility" = $1
   and (
-    "ownerId" in ($2)
+    "asset"."visibility" = 'timeline'
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
+  and (
+    "ownerId" in ($1)
     or exists (
       select
       from
         "album_asset"
       where
         "asset"."id" = "album_asset"."assetId"
-        and "album_asset"."albumId" in ($3)
+        and "album_asset"."albumId" in ($2)
     )
   )
 order by
