@@ -7,7 +7,7 @@ import {
   type SmartSearchDto,
 } from '@immich/sdk';
 import { omitBy } from 'lodash-es';
-import { OpenQueryParam, type SharedLinkTab } from '$lib/constants';
+import { OpenQueryParam, QueryParameter, type SharedLinkTab } from '$lib/constants';
 import { studioHandoffQuery } from '$lib/frameleaf/studio/handoff';
 
 const asQueueSlug = (name: QueueName) => {
@@ -152,7 +152,19 @@ export const Route = {
   userSettings: (params?: { isOpen?: OpenQueryParam }) => '/user-settings' + asQueryString(params),
 
   // system
-  systemSettings: (params?: { isOpen?: OpenQueryParam }) => '/admin/system-settings' + asQueryString(params),
+  /**
+   * `openSetting` drills past the section a plain `isOpen` scrolls to, into a control within it
+   * (e.g. the enrichment workbench trigger inside the machine-learning section) that reads the
+   * same-named query param on mount. See the Jobs manager's "Enrichment tasks" entry (FL-59).
+   */
+  systemSettings: (params?: { isOpen?: OpenQueryParam; openSetting?: string }) =>
+    '/admin/system-settings' +
+    asQueryString(
+      params && {
+        isOpen: params.isOpen,
+        [QueryParameter.OPEN_SETTING]: params.openSetting,
+      },
+    ),
   systemStatistics: () => '/admin/server-status',
   physicalDeduplication: () => '/admin/physical-deduplication',
   systemMaintenance: (params?: { continue?: string }) => '/admin/maintenance' + asQueryString(params),
