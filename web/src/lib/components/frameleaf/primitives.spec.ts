@@ -115,13 +115,14 @@ describe('Frameleaf menu', () => {
 
     await fireEvent.keyDown(menu, { key: 'ArrowDown' });
     expect(activeText()).toBe('Date');
+    // The last command is the harness's keep-open "More…" entry (FL-38).
     await fireEvent.keyDown(menu, { key: 'End' });
-    expect(activeText()).toBe('Hidden people');
+    expect(activeText()).toBe('More…');
     // Wrapping keeps both ends reachable from either direction.
     await fireEvent.keyDown(menu, { key: 'ArrowDown' });
     expect(activeText()).toBe('People');
     await fireEvent.keyDown(menu, { key: 'ArrowUp' });
-    expect(activeText()).toBe('Hidden people');
+    expect(activeText()).toBe('More…');
     await fireEvent.keyDown(menu, { key: 'Home' });
     expect(activeText()).toBe('People');
 
@@ -138,7 +139,7 @@ describe('Frameleaf menu', () => {
     const trigger = screen.getByRole('button', { name: 'Filter' });
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'ArrowUp' });
-    expect(activeText()).toBe('Hidden people');
+    expect(activeText()).toBe('More…');
 
     await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
     expect(screen.queryByRole('menu')).toBeNull();
