@@ -13,6 +13,7 @@
   import { buildPrimaryDestinations, currentPrimaryDestination } from '$lib/frameleaf/navigation';
   import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
   import {
+    closeSessionProtectedModals,
     markSessionLockSucceeded,
     sessionAccess,
     setSessionLockPending,
@@ -227,6 +228,7 @@
       try {
         await lockAuthSession({ signal: AbortSignal.timeout(15_000) });
         markSessionLockSucceeded();
+        await closeSessionProtectedModals();
         if (isSensitiveRoute(pathname)) {
           await goto(Route.photos(), { replaceState: true, invalidateAll: true });
         } else if (isAssetViewerRoute(page)) {
@@ -237,6 +239,10 @@
         eventManager.emit('SessionLocked');
         eventManager.emit('SessionAccessChanged', { isElevated: false });
         await waitForSessionLockRefreshes();
+        await closeSessionProtectedModals();
+        for (const dialog of document.querySelectorAll<HTMLDialogElement>('dialog[open]:not(.session-lock-shield)')) {
+          dialog.close();
+        }
         setSessionLockPending(false);
       } catch (error) {
         handleError(error, $t('errors.something_went_wrong'));

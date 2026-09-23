@@ -155,5 +155,75 @@ test.describe('Detail Panel', () => {
       const timezone = page.getByRole('combobox', { name: 'Timezone' });
       await expect(timezone).toHaveValue(test.expected.timeZoneWithOffset);
     });
+
+    test('retries a failed lock above native modality and closes private editors before revealing the app', async ({
+      context,
+      page,
+    }) => {
+      await utils.setAuthCookies(context, admin.accessToken);
+      const pin = { pinCode: '123456' };
+      const pinSetup = await page.request.post('/api/auth/pin-code', { data: pin });
+      expect(pinSetup.ok()).toBe(true);
+      const unlocked = await page.request.post('/api/auth/session/unlock', { data: pin });
+      expect(unlocked.ok()).toBe(true);
+      await page.goto(`/photos/${asset.id}`);
+      await page.waitForSelector('#immich-asset-viewer');
+      await page.getByRole('button', { name: 'Info' }).click();
+      await page.getByTestId('detail-panel-edit-date-button').click();
+      await expect(page.locator('#datetime')).toBeVisible();
+      // The editor is body-mounted and survives this in-app viewer navigation.
+      await page
+        .getByRole('button', { name: 'Close viewer (Escape)' })
+        .evaluate((button: HTMLButtonElement) => button.click());
+      await expect(page).toHaveURL(/\/photos(?:\?|$)/);
+      await expect(page.locator('#datetime')).toBeVisible();
+      const lock = page.getByRole('button', { name: 'Hide Locked content' }).first();
+      await expect(lock).toBeVisible();
+
+      await page.evaluate(() => {
+        const dialog = document.createElement('dialog');
+        dialog.id = 'native-dialog-during-lock';
+        dialog.textContent = 'Private dialog draft';
+        document.body.append(dialog);
+        dialog.showModal();
+      });
+      const nativeDialog = page.locator('#native-dialog-during-lock');
+      await expect(nativeDialog).toHaveJSProperty('open', true);
+
+      let attempts = 0;
+      const lockStatuses: number[] = [];
+      page.on('response', (response) => {
+        if (response.url().endsWith('/api/auth/session/lock')) {
+          lockStatuses.push(response.status());
+        }
+      });
+      await page.route('**/api/auth/session/lock', async (route) => {
+        attempts++;
+        if (attempts === 1) {
+          await route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"offline"}' });
+        } else {
+          await route.continue();
+        }
+      });
+      // The native dialog blocks ordinary controls, so trigger the same lock handler as tab hiding.
+      await lock.evaluate((button: HTMLButtonElement) => button.click());
+      const shield = page.locator('dialog.session-lock-shield[open]');
+      await expect(shield.first()).toHaveJSProperty('open', true);
+      await expect.poll(() => attempts).toBe(1);
+      await page.waitForFunction(() => {
+        const button = document.querySelector<HTMLButtonElement>(
+          '#dashboard-navbar [aria-label="Unlock Locked content"]',
+        );
+        return button && !button.disabled;
+      });
+
+      const retry = page.getByRole('button', { name: 'Retry', exact: true }).last();
+      await retry.click({ timeout: 3000 });
+      await expect.poll(() => attempts).toBe(2);
+      await expect.poll(() => lockStatuses).toContain(204);
+      await expect(shield).toHaveCount(0);
+      await expect(page.locator('#datetime')).toHaveCount(0);
+      await expect(nativeDialog).toHaveJSProperty('open', false);
+    });
   });
 });
