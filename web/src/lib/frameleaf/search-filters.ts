@@ -24,7 +24,7 @@ export const CUSTOM_CONDITION = '__custom_condition__';
 
 export type SetGroup = 'any' | 'all' | 'none';
 export const SET_GROUPS: readonly SetGroup[] = ['any', 'all', 'none'];
-export const SET_GROUP_LABEL_KEYS: Record<SetGroup, string> = {
+export const SET_GROUP_LABEL_KEYS: Record<SetGroup, Translations> = {
   any: 'frameleaf_search_match_any',
   all: 'frameleaf_search_match_all',
   none: 'frameleaf_search_match_none',

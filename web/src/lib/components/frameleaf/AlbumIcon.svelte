@@ -28,4 +28,4 @@
   const path = $derived(iconPathFor(name, paths));
 </script>
 
-<Icon icon={path} {size} class={className} />
+<Icon icon={path} size={String(size)} class={className} />

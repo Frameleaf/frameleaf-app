@@ -63,6 +63,7 @@
     <Button onclick={onAddUser}>{$t('frameleaf_render_workers_limits_add')}</Button>
   </div>
 
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex (a scrollable region must be reachable by keyboard to scroll it) -->
   <div class="scroll" role="region" aria-label={$t('frameleaf_render_workers_limits_table_label')} tabindex="0">
     <table>
       <thead>

@@ -109,7 +109,7 @@
   };
 </script>
 
-<section
+<div
   bind:this={panel}
   id="notification-panel"
   class="fl-notif-panel"
@@ -125,7 +125,7 @@
     {/if}
     {#if onClose}
       <button type="button" class="fl-icon-button" aria-label={$t('frameleaf_notifications_close')} onclick={onClose}>
-        <Icon icon={mdiClose} size={18} aria-hidden="true" />
+        <Icon icon={mdiClose} size="18" aria-hidden="true" />
       </button>
     {/if}
   </header>
@@ -136,7 +136,7 @@
     {#if noUnreadNotifications}
       <div class="fl-notif-empty" class:compact={!nothingRunning}>
         {#if nothingRunning}
-          <Icon icon={mdiBellOutline} size={28} aria-hidden="true" />
+          <Icon icon={mdiBellOutline} size="28" aria-hidden="true" />
           <p>{$t('frameleaf_notifications_empty')}</p>
           <span>{$t('frameleaf_notifications_empty_help')}</span>
         {:else}
@@ -159,7 +159,7 @@
       ? $t('frameleaf_notifications_unread_count', { values: { count: unreadCount } })
       : $t('frameleaf_notifications_nothing_unread')}
   </footer>
-</section>
+</div>
 
 <style>
   /* Placed by the top bar's anchor (FL-30); on phones it becomes the prototype's bottom sheet. */
