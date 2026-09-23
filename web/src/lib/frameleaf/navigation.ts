@@ -14,6 +14,7 @@ import {
   mdiLinkVariant,
   mdiMapMarkerMultipleOutline,
   mdiMapOutline,
+  mdiMovieEditOutline,
   mdiPawOutline,
   mdiShieldCheckOutline,
   mdiShieldLockOutline,
@@ -34,7 +35,7 @@ import { Route } from '$lib/route';
  *   Albums: All albums, each collection with its albums, Shared links
  *   Shared spaces
  *   Explore: Explore, People, Pets, Memories, Places, Map, Tags, Folders, Documents
- *   Tools: Workflows, Trash
+ *   Tools: Studio, Workflows, Trash
  *   Library Care, Settings, Support
  *
  * Every entry points at a route that exists in production, so the rail never renders a
@@ -67,6 +68,7 @@ export type RailDestinationId =
   | 'map'
   | 'tags'
   | 'folders'
+  | 'studio'
   | 'workflows'
   | 'trash'
   | 'libraryCare'
@@ -183,6 +185,8 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
       id: 'tools',
       labelKey: 'frameleaf_tools',
       destinations: [
+        // The prototype's primary "Studio" destination; it opens the project library (FL-91).
+        destination('studio', 'frameleaf_studio_title', mdiMovieEditOutline, Route.studioProjects()),
         destination('workflows', 'workflows', mdiTuneVariant, Route.workflows()),
         ...keep(capabilities.trash, destination('trash', 'trash', mdiTrashCanOutline, Route.trash())),
       ],

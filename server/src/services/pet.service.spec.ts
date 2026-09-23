@@ -64,6 +64,26 @@ const reviewCandidate = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+/** A session that is not unlocked while the owner suppresses `petId` (owner decision, September 22, 2026). */
+const lockedAuth = () => ({
+  ...authStub.user1,
+  hideNsfwAssets: true,
+  hiddenContent: {
+    userId: ownerId,
+    includeNsfw: false,
+    tagIds: [],
+    personIds: [],
+    petIds: [petId],
+    scope: 'owned' as const,
+  },
+});
+
+/** The same owner, unlocked: `auth.hiddenContent` is never set for an elevated session. */
+const unlockedAuth = () => ({
+  ...authStub.user1,
+  suppressedContent: lockedAuth().hiddenContent,
+});
+
 describe(PetService.name, () => {
   let sut: PetService;
   let mocks: ServiceMocks;
@@ -79,6 +99,7 @@ describe(PetService.name, () => {
       update: vi.fn(),
       delete: vi.fn(),
       isOwnedAsset: vi.fn().mockResolvedValue(true),
+      isOwnLockedAsset: vi.fn().mockResolvedValue(false),
       getObservations: vi.fn().mockResolvedValue([]),
       getObservationById: vi.fn().mockResolvedValue(observation()),
       upsertObservation: vi.fn().mockImplementation((value) => Promise.resolve(observation(value))),
@@ -109,6 +130,15 @@ describe(PetService.name, () => {
       );
     });
 
+    it('refuses a Locked photo as the featured photo (FL-53)', async () => {
+      (petRepository.isOwnLockedAsset as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await expect(
+        sut.create(authStub.user1, { species: PetSpecies.Dog, featuredAssetId: assetId }),
+      ).rejects.toThrow('A Locked photo cannot be a featured photo');
+      expect(petRepository.create).not.toHaveBeenCalled();
+    });
+
     it('refuses a featured photo the account does not own', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
 
@@ -116,6 +146,54 @@ describe(PetService.name, () => {
         sut.create(authStub.user1, { species: PetSpecies.Dog, featuredAssetId: assetId }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(petRepository.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getAll', () => {
+    it('lists without a privacy filter in an unlocked session', async () => {
+      await sut.getAll(authStub.user1, {});
+
+      expect(petRepository.getAll).toHaveBeenCalledWith(ownerId, { withHidden: false });
+    });
+
+    it('hands the session hidden-content filter to the listing so suppressed pets stay out', async () => {
+      const hiddenContent = {
+        userId: ownerId,
+        includeNsfw: false,
+        tagIds: [],
+        personIds: [],
+        petIds: [petId],
+        scope: 'owned' as const,
+      };
+
+      await sut.getAll({ ...authStub.user1, hiddenContent, hideNsfwAssets: true }, { withHidden: true });
+
+      expect(petRepository.getAll).toHaveBeenCalledWith(ownerId, { withHidden: true, hiddenContent });
+    });
+  });
+
+  describe('update', () => {
+    it('refuses a Locked photo as the featured photo (FL-53)', async () => {
+      (petRepository.isOwnLockedAsset as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      await expect(sut.update(authStub.user1, petId, { featuredAssetId: assetId })).rejects.toThrow(
+        'A Locked photo cannot be a featured photo',
+      );
+      expect(petRepository.isOwnLockedAsset).toHaveBeenCalledWith(ownerId, assetId);
+      expect(petRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('accepts a featured photo that is not Locked', async () => {
+      await sut.update(authStub.user1, petId, { featuredAssetId: assetId });
+
+      expect(petRepository.update).toHaveBeenCalledWith(ownerId, petId, { featuredAssetId: assetId });
+    });
+
+    it('clears the featured photo without looking at any asset', async () => {
+      await sut.update(authStub.user1, petId, { featuredAssetId: null });
+
+      expect(petRepository.isOwnLockedAsset).not.toHaveBeenCalled();
+      expect(petRepository.update).toHaveBeenCalledWith(ownerId, petId, { featuredAssetId: null });
     });
   });
 
@@ -158,6 +236,78 @@ describe(PetService.name, () => {
 
       expect(petRepository.getObservations).toHaveBeenCalledWith(ownerId, otherPetId, { withLocked: true });
       expect(petRepository.getObservations).toHaveBeenCalledWith(ownerId, petId, { withLocked: true });
+    });
+
+    it('answers a pet suppressed while the session is locked exactly like a missing one', async () => {
+      const suppressed = await sut.get(lockedAuth(), petId).catch((error: unknown) => error);
+      (petRepository.getById as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+      const missing = await sut.get(authStub.user1, otherPetId).catch((error: unknown) => error);
+
+      expect(suppressed).toBeInstanceOf(NotFoundException);
+      expect(missing).toBeInstanceOf(NotFoundException);
+      expect((suppressed as NotFoundException).getResponse()).toEqual((missing as NotFoundException).getResponse());
+    });
+
+    it('shows a suppressed pet once the session is unlocked', async () => {
+      await expect(sut.get(unlockedAuth(), petId)).resolves.toEqual(expect.objectContaining({ id: petId }));
+    });
+
+    it('still shows a pet that is not suppressed in a locked session', async () => {
+      (petRepository.getById as ReturnType<typeof vi.fn>).mockResolvedValue(pet({ id: otherPetId }));
+
+      await expect(sut.get(lockedAuth(), otherPetId)).resolves.toEqual(expect.objectContaining({ id: otherPetId }));
+    });
+  });
+
+  describe('writes to a suppressed pet while locked', () => {
+    it('answers an update with 404 and writes nothing', async () => {
+      await expect(sut.update(lockedAuth(), petId, { name: 'Rex' })).rejects.toBeInstanceOf(NotFoundException);
+      expect(petRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('answers a delete with 404 and deletes nothing', async () => {
+      await expect(sut.remove(lockedAuth(), petId)).rejects.toBeInstanceOf(NotFoundException);
+      expect(petRepository.delete).not.toHaveBeenCalled();
+    });
+
+    it('answers a new observation with 404', async () => {
+      await expect(sut.addObservation(lockedAuth(), petId, { assetId })).rejects.toBeInstanceOf(NotFoundException);
+      expect(petRepository.upsertObservation).not.toHaveBeenCalled();
+    });
+
+    it('answers its observation list with 404', async () => {
+      await expect(sut.getObservations(lockedAuth(), petId)).rejects.toBeInstanceOf(NotFoundException);
+      expect(petRepository.getObservations).not.toHaveBeenCalled();
+    });
+
+    it('answers removing one of its observations with 404', async () => {
+      await expect(sut.removeObservation(lockedAuth(), observationId)).rejects.toBeInstanceOf(NotFoundException);
+      expect(petRepository.deleteObservation).not.toHaveBeenCalled();
+    });
+
+    it('answers a merge into it with 404', async () => {
+      await expect(sut.merge(lockedAuth(), petId, { ids: [otherPetId] })).rejects.toBeInstanceOf(NotFoundException);
+      expect(petRepository.mergeInto).not.toHaveBeenCalled();
+    });
+
+    it('refuses to merge it into another pet the same way as a missing source', async () => {
+      (petRepository.getById as ReturnType<typeof vi.fn>).mockResolvedValue(pet({ id: otherPetId }));
+      (petRepository.getByIds as ReturnType<typeof vi.fn>).mockResolvedValue([pet()]);
+
+      await expect(sut.merge(lockedAuth(), otherPetId, { ids: [petId] })).rejects.toThrow('Pet not found');
+      expect(petRepository.mergeInto).not.toHaveBeenCalled();
+    });
+
+    it('answers accepting or rejecting a proposal about it with 404', async () => {
+      await expect(sut.acceptCandidate(lockedAuth(), candidateId, {})).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.rejectCandidate(lockedAuth(), candidateId)).rejects.toBeInstanceOf(NotFoundException);
+      expect(petRepository.upsertObservation).not.toHaveBeenCalled();
+    });
+
+    it('lets the unlocked session change it', async () => {
+      await sut.remove(unlockedAuth(), petId);
+
+      expect(petRepository.delete).toHaveBeenCalledWith(ownerId, petId);
     });
   });
 
@@ -224,6 +374,19 @@ describe(PetService.name, () => {
   });
 
   describe('getCandidates', () => {
+    it('leaves out proposals about a pet suppressed while the session is locked', async () => {
+      (petRepository.getCandidates as ReturnType<typeof vi.fn>).mockResolvedValue([
+        reviewCandidate(),
+        reviewCandidate({ id: 'other-candidate', petId: otherPetId }),
+      ]);
+
+      const locked = await sut.getCandidates(lockedAuth(), { size: 50 });
+      const unlocked = await sut.getCandidates(unlockedAuth(), { size: 50 });
+
+      expect(locked.candidates.map(({ petId }) => petId)).toEqual([otherPetId]);
+      expect(unlocked.candidates).toHaveLength(2);
+    });
+
     it('reports honestly that no recognition model is available', async () => {
       const result = await sut.getCandidates(authStub.user1, { size: 100 });
 

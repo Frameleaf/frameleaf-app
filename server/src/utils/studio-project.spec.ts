@@ -4,6 +4,7 @@ import {
   STUDIO_ENVELOPE_SCHEMA_VERSION,
   STUDIO_LEASE_MS,
   STUDIO_LEASE_RENEW_MS,
+  STUDIO_TRASH_RETENTION_DAYS,
   canAcquireStudioLease,
   canonicalJson,
   checkStudioEnvelope,
@@ -13,7 +14,10 @@ import {
   mergeCommandSummaries,
   normalizeCommandSummary,
   normalizeStudioTime,
+  studioDaysUntilPurge,
   studioEnvelopeDigest,
+  studioProjectShelf,
+  studioPurgeAfter,
 } from 'src/utils/studio-project.js';
 import { STUDIO_MAX_GRAPH_BYTES } from 'src/utils/studio-resources.js';
 
@@ -189,5 +193,23 @@ describe('diffStudioGraphs', () => {
     expect(diff.paths).toHaveLength(STUDIO_DIFF_MAX_PATHS);
     expect(diff.added).toBe(STUDIO_DIFF_MAX_PATHS + 5);
     expect(diff.truncated).toBe(true);
+  });
+});
+
+describe('project lifecycle', () => {
+  const now = new Date('2026-09-22T12:00:00.000Z');
+
+  it('keeps a trashed project for the whole retention period and no longer', () => {
+    const purgeAfter = studioPurgeAfter(now);
+    expect(purgeAfter.getTime() - now.getTime()).toBe(STUDIO_TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    expect(studioDaysUntilPurge(purgeAfter, now)).toBe(STUDIO_TRASH_RETENTION_DAYS);
+    expect(studioDaysUntilPurge(new Date(now.getTime() - 1000), now)).toBe(0);
+    expect(studioDaysUntilPurge(null, now)).toBeNull();
+  });
+
+  it('puts a trashed project in the trash even when it was archived first', () => {
+    expect(studioProjectShelf({ deletedAt: null, archivedAt: null })).toBe('active');
+    expect(studioProjectShelf({ deletedAt: null, archivedAt: now })).toBe('archived');
+    expect(studioProjectShelf({ deletedAt: now, archivedAt: now })).toBe('trashed');
   });
 });

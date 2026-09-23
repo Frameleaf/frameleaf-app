@@ -6,11 +6,19 @@
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
-  import { structuredSearchRequest } from '$lib/components/discovery/query';
+  import { emptyDiscoveryQuery, structuredSearchRequest } from '$lib/components/discovery/query';
   import { QueryParameter } from '$lib/constants';
   import { brandedArchiveName, namedEntitySegments } from '$lib/frameleaf/archive-name';
-  import { resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
+  import { resolveEntityName, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
+  import {
+    entityNameKey,
+    FILTER_ENTITY_FALLBACK_KEYS,
+    FILTER_ENTITY_FIELDS,
+    filterEntityIds,
+    withoutFilterField,
+  } from '$lib/frameleaf/search-chips';
+  import { describeFilterChips } from '$lib/frameleaf/search-filters';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
   import { lang, locale } from '$lib/stores/preferences.store';
@@ -227,6 +235,61 @@
     };
   });
 
+  /**
+   * FL-49: a structured `filter` (a search from the search dialog) draws one chip per condition, in
+   * the search dialog's wording, instead of one raw chip for the whole object. Names come from the
+   * cached, access-checked `filter-entity-names` lookups; until one answers the chip shows an
+   * ellipsis, and a name that cannot be read (hidden, unnamed, gone, not allowed) falls back to a
+   * generic word, so the chip is always there to remove.
+   */
+  let filterEntityNames = $state<Record<string, string | null>>({});
+
+  $effect(() => {
+    const groups = filterEntityIds(terms.filter);
+    if (groups.length === 0) {
+      return;
+    }
+    let cancelled = false;
+    handlePromiseError(
+      (async () => {
+        const entries = await Promise.all(
+          groups.flatMap(({ field, kind, ids }) =>
+            ids.map(async (id) => [entityNameKey(field, id), await resolveEntityName(kind, id)] as const),
+          ),
+        );
+        if (!cancelled) {
+          filterEntityNames = { ...filterEntityNames, ...Object.fromEntries(entries) };
+        }
+      })(),
+    );
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  const filterChips = $derived(
+    terms.filter
+      ? describeFilterChips(
+          $t,
+          { ...emptyDiscoveryQuery(), filter: terms.filter },
+          {
+            locale: $locale,
+            nameFor: (field, id) => {
+              const kind = FILTER_ENTITY_FIELDS[field];
+              if (!kind) {
+                return undefined;
+              }
+              const key = entityNameKey(field, id);
+              if (!(key in filterEntityNames)) {
+                return '…';
+              }
+              return filterEntityNames[key] ?? $t(FILTER_ENTITY_FALLBACK_KEYS[kind]);
+            },
+          },
+        )
+      : [],
+  );
+
   const searchDownloadFileName = $derived(
     brandedArchiveName($t('frameleaf_archive_name_search'), [searchDownloadText, ...resolvedFilterNameSegments], {
       withDate: true,
@@ -433,6 +496,12 @@
     void goto(Route.search(nextTerms));
   }
 
+  /** FL-49: remove one condition of the structured filter, keeping the rest of the search. */
+  function removeFilterCondition(field: string) {
+    librarySession.clearSelection();
+    void goto(Route.search(withoutFilterField(terms, field)));
+  }
+
   function resetAskSearch(clearInput = true) {
     askSearchRequestId++;
     askResponse = undefined;
@@ -539,7 +608,25 @@
     id="search-chips"
     class="mt-24 flex w-full flex-wrap place-content-center place-items-center gap-5 px-24 text-center"
   >
-    {#each getObjectKeys(terms) as searchKey (searchKey)}
+    {#each filterChips as chip (chip.field)}
+      <div class="flex place-content-center place-items-center items-stretch text-xs">
+        <div
+          class="flex items-center justify-center rounded-s-full bg-immich-primary px-4 py-2 text-white dark:bg-immich-dark-primary dark:text-black"
+        >
+          {chip.label}
+        </div>
+        <button
+          type="button"
+          class="flex items-center justify-center rounded-e-full bg-gray-300 px-3 text-gray-700 transition hover:text-immich-primary dark:bg-gray-800 dark:text-white dark:hover:text-immich-dark-primary"
+          aria-label={$t('remove_filter')}
+          title={$t('remove_filter')}
+          onclick={() => removeFilterCondition(chip.field)}
+        >
+          <Icon icon={mdiClose} size="16" />
+        </button>
+      </div>
+    {/each}
+    {#each getObjectKeys(terms).filter((key) => key !== 'filter') as searchKey (searchKey)}
       {@const value = terms[searchKey]}
       <div class="flex place-content-center place-items-center items-stretch text-xs">
         <div

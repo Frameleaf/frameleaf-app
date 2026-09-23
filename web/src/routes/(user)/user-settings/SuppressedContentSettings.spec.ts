@@ -1,4 +1,10 @@
-import { SuppressionScope, type AuthStatusResponseDto, type TagResponseDto } from '@immich/sdk';
+import {
+  PetSpecies,
+  SuppressionScope,
+  type AuthStatusResponseDto,
+  type PetResponseDto,
+  type TagResponseDto,
+} from '@immich/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { getAnimateMock } from '$lib/__mocks__/animate.mock';
 import { getIntersectionObserverMock } from '$lib/__mocks__/intersection-observer.mock';
@@ -81,6 +87,7 @@ describe('SuppressedContentSettings', () => {
     authManager.setPreferences(preferencesFactory.build());
     sdkMock.getAuthStatus.mockResolvedValue(authStatus());
     sdkMock.getAllTags.mockResolvedValue([]);
+    sdkMock.getAllPets.mockResolvedValue([]);
     sdkMock.updateMyPreferences.mockResolvedValue(preferencesFactory.build());
   });
 
@@ -111,6 +118,7 @@ describe('SuppressedContentSettings', () => {
         privacy: {
           suppression: {
             personIds: [],
+            petIds: [],
             scope: SuppressionScope.Owned,
             tagIds: [medicalTag.id],
           },
@@ -140,6 +148,7 @@ describe('SuppressedContentSettings', () => {
           privacy: {
             suppression: {
               personIds: [],
+              petIds: [],
               scope: SuppressionScope.Visible,
               tagIds: [travelTag.id],
             },
@@ -158,6 +167,7 @@ describe('SuppressedContentSettings', () => {
         privacy: {
           suppression: {
             personIds: [exPerson.id],
+            petIds: [],
             scope: SuppressionScope.Owned,
             tagIds: [],
           },
@@ -198,6 +208,7 @@ describe('SuppressedContentSettings', () => {
           privacy: {
             suppression: {
               personIds: [alice.id],
+              petIds: [],
               scope: SuppressionScope.Owned,
               tagIds: [newTag.id],
             },
@@ -205,5 +216,71 @@ describe('SuppressedContentSettings', () => {
         },
       }),
     );
+  });
+
+  it('suppresses and releases the owner’s pets, dropping a stored pet that no longer exists', async () => {
+    const pet = (overrides: Partial<PetResponseDto>): PetResponseDto => ({
+      assetCount: 0,
+      birthDate: null,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      featuredAssetId: null,
+      id: 'pet-1',
+      isFavorite: false,
+      isHidden: false,
+      name: 'Biscuit',
+      species: PetSpecies.Cat,
+      updatedAt: '2024-01-01T00:00:00.000Z',
+      ...overrides,
+    });
+    const biscuit = pet({ id: 'pet-biscuit', name: 'Biscuit' });
+    const rex = pet({ id: 'pet-rex', name: 'Rex', species: PetSpecies.Dog });
+    authManager.setPreferences(
+      preferencesFactory.build({
+        privacy: {
+          suppression: {
+            personIds: [],
+            petIds: [biscuit.id, 'pet-deleted'],
+            scope: SuppressionScope.Owned,
+            tagIds: [],
+          },
+        },
+      }),
+    );
+    sdkMock.getAllPets.mockResolvedValue([biscuit, rex]);
+
+    await renderSettings();
+
+    const biscuitButton = await screen.findByRole('button', { name: 'Biscuit' });
+    expect(sdkMock.getAllPets).toHaveBeenCalledWith({ withHidden: true });
+    expect(biscuitButton).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Rex' })).toHaveAttribute('aria-pressed', 'false');
+
+    await fireEvent.click(biscuitButton);
+    await fireEvent.click(screen.getByRole('button', { name: 'Rex' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'save' }));
+
+    await waitFor(() =>
+      expect(sdkMock.updateMyPreferences).toHaveBeenCalledWith({
+        userPreferencesUpdateDto: {
+          privacy: {
+            suppression: {
+              personIds: [],
+              petIds: [rex.id],
+              scope: SuppressionScope.Owned,
+              tagIds: [],
+            },
+          },
+        },
+      }),
+    );
+  });
+
+  it('does not read pets before the session is unlocked', async () => {
+    sdkMock.getAuthStatus.mockResolvedValue(authStatus({ isElevated: false }));
+
+    await renderSettings();
+
+    expect(await screen.findByText('suppressed_content_locked_title')).toBeInTheDocument();
+    expect(sdkMock.getAllPets).not.toHaveBeenCalled();
   });
 });

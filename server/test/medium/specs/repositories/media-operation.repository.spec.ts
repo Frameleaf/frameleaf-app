@@ -630,7 +630,7 @@ describe(MediaOperationRepository.name, () => {
       await expect(sut.countLockedAssets(user.id, [])).resolves.toBe(0);
     });
 
-    it('recovers only the kinds it is asked to', async () => {
+    it('recovers every kind in one pass, whichever worker held the claim (FL-104)', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       await newBulk(sut, user.id, ['a']);
@@ -639,17 +639,14 @@ describe(MediaOperationRepository.name, () => {
       await sut.claimNext({ kinds: [MediaOperationKind.StudioExport], workerId: 'render-1', leaseMs: 1 });
       await new Promise((resolve) => setTimeout(resolve, 20));
 
-      const recovered = await sut.recoverExpiredClaims({
-        kinds: [MediaOperationKind.Bulk],
-        errorCode: 'bulk_worker_lost',
-        error: 'gone',
-      });
+      const recovered = await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
 
-      expect(recovered.requeued).toBe(1);
+      // Other tests' rows may share the database, so only this owner's two are counted on.
+      expect(recovered.requeued).toBeGreaterThanOrEqual(2);
       const { items } = await sut.list({ ownerId: user.id, take: 10, skip: 0 });
       const byKind = Object.fromEntries(items.map((item) => [item.kind, item.status]));
       expect(byKind[MediaOperationKind.Bulk]).toBe(MediaOperationStatus.Queued);
-      expect(byKind[MediaOperationKind.StudioExport]).toBe(MediaOperationStatus.Preparing);
+      expect(byKind[MediaOperationKind.StudioExport]).toBe(MediaOperationStatus.Queued);
     });
   });
 });

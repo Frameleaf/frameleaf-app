@@ -145,7 +145,11 @@ const UUID_PATTERN = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/
 
 const unlessHidden = (id: string | null, hidden: ReadonlySet<string>) => (id && hidden.has(id) ? null : id);
 
-const mapOperation = (operation: MediaOperation, hidden: ReadonlySet<string> = new Set()): MediaOperationDto => ({
+/** `hidden`: the caller's Locked media, never named to a session that has not unlocked it (FL-34). */
+export const mapOperation = (
+  operation: MediaOperation,
+  hidden: ReadonlySet<string> = new Set(),
+): MediaOperationDto => ({
   id: operation.id,
   kind: operation.kind as MediaOperationKind,
   status: operation.status as MediaOperationStatus,

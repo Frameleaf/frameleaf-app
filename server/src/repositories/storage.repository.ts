@@ -148,6 +148,34 @@ export class StorageRepository {
     return fs.readFile(filepath);
   }
 
+  /**
+   * Positional reads from one open file, for formats read from the end first (a ZIP's central
+   * directory). Each read returns exactly the bytes that exist, never a zero-filled tail. The caller
+   * closes the handle.
+   */
+  async openForRandomRead(filepath: string): Promise<{
+    size: number;
+    read: (position: number, length: number) => Promise<Buffer>;
+    close: () => Promise<void>;
+  }> {
+    const handle = await fs.open(filepath, 'r');
+    try {
+      const { size } = await handle.stat();
+      return {
+        size,
+        read: async (position: number, length: number) => {
+          const buffer = Buffer.alloc(Math.max(0, length));
+          const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+          return buffer.subarray(0, bytesRead);
+        },
+        close: () => handle.close(),
+      };
+    } catch (error) {
+      await handle.close();
+      throw error;
+    }
+  }
+
   async readJsonFile<T>(filepath: string): Promise<T> {
     const file = await fs.readFile(filepath, 'utf8');
     return JSON.parse(file) as T;

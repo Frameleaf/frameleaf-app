@@ -1,4 +1,10 @@
-import { AlbumKind, AlbumUserRole, SharedSpaceEventType, type SharedSpaceMemberResponseDto } from '@immich/sdk';
+import {
+  AlbumKind,
+  AlbumUserRole,
+  SharedSpaceEventType,
+  type SharedSpaceCommentResponseDto,
+  type SharedSpaceMemberResponseDto,
+} from '@immich/sdk';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { personFactory } from '@test-data/factories/person-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
@@ -38,6 +44,11 @@ import {
   splitMentions,
   SPACE_PANELS,
   SPACE_ROLE_OPTIONS,
+  groupCommentThreads,
+  replyPrefill,
+  threadRootId,
+  withoutComment,
+  withReply,
 } from '$lib/frameleaf/shared-space';
 
 const owner = userAdminFactory.build({ id: 'owner', name: 'Ada' });
@@ -324,5 +335,107 @@ describe('comments, mentions and the activity feed', () => {
     expect(activityUnreadHint({ unreadCount: 3 })).toBe('3');
     expect(activityUnreadHint({ unreadCount: 0 })).toBeUndefined();
     expect(activityUnreadHint(null)).toBeUndefined();
+  });
+
+  it('tells a reply apart from a comment, on an item or on the space', () => {
+    expect(spaceEventMessageKey({ type: SharedSpaceEventType.Reply, assetCount: 1 })).toBe(
+      'frameleaf_spaces_activity_reply_item',
+    );
+    expect(spaceEventMessageKey({ type: SharedSpaceEventType.Reply, assetCount: 0 })).toBe(
+      'frameleaf_spaces_activity_reply_space',
+    );
+  });
+
+  it('does not say somebody replied to their own comment as if to someone else', () => {
+    expect(spaceEventMessageKey({ type: SharedSpaceEventType.Reply, assetCount: 1, actor: bo, targetUser: bo })).toBe(
+      'frameleaf_spaces_activity_reply_own_item',
+    );
+    expect(spaceEventMessageKey({ type: SharedSpaceEventType.Reply, assetCount: 0, actor: bo, targetUser: bo })).toBe(
+      'frameleaf_spaces_activity_reply_own_space',
+    );
+    expect(spaceEventMessageKey({ type: SharedSpaceEventType.Reply, assetCount: 0, actor: bo, targetUser: ada })).toBe(
+      'frameleaf_spaces_activity_reply_space',
+    );
+  });
+});
+
+describe('threaded replies', () => {
+  const ada = userAdminFactory.build({ id: 'ada', name: 'Ada' });
+  const bo = userAdminFactory.build({ id: 'bo', name: 'Bo' });
+  const roster: SharedSpaceMemberResponseDto[] = [
+    { user: ada, role: AlbumUserRole.Owner, pending: false },
+    { user: bo, role: AlbumUserRole.Editor, pending: false },
+  ];
+
+  const comment = (overrides: Partial<SharedSpaceCommentResponseDto>): SharedSpaceCommentResponseDto => ({
+    id: 'c',
+    createdAt: '2026-09-20T10:00:00.000Z',
+    updatedAt: '2026-09-20T10:00:00.000Z',
+    user: ada,
+    assetId: null,
+    comment: 'text',
+    mentions: [],
+    canEdit: false,
+    canDelete: false,
+    parentId: null,
+    replyCount: 0,
+    ...overrides,
+  });
+
+  it('puts replies under their comment, oldest first, and the most recently active thread last', () => {
+    const early = comment({ id: 'early', createdAt: '2026-09-20T09:00:00.000Z', replyCount: 2 });
+    const late = comment({ id: 'late', createdAt: '2026-09-20T10:00:00.000Z' });
+    const firstReply = comment({ id: 'r1', parentId: 'early', createdAt: '2026-09-20T09:30:00.000Z' });
+    const newestReply = comment({ id: 'r2', parentId: 'early', createdAt: '2026-09-20T11:00:00.000Z' });
+
+    const threads = groupCommentThreads([early, firstReply, late, newestReply]);
+
+    // The early comment has the newest reply, so its thread sits last, next to the composer.
+    expect(threads.map((thread) => thread.comment.id)).toEqual(['late', 'early']);
+    expect(threads[1].replies.map(({ id }) => id)).toEqual(['r1', 'r2']);
+    expect(threads[1].lastActivityAt).toBe('2026-09-20T11:00:00.000Z');
+  });
+
+  it('shows a reply whose comment is missing on its own rather than losing it', () => {
+    const orphan = comment({ id: 'orphan', parentId: 'gone' });
+
+    const threads = groupCommentThreads([orphan]);
+
+    expect(threads.map((thread) => [thread.comment.id, thread.replies.length])).toEqual([['orphan', 0]]);
+  });
+
+  it('files a reply under the thread’s top-level comment', () => {
+    expect(threadRootId({ id: 'r1', parentId: 'root' })).toBe('root');
+    expect(threadRootId({ id: 'root', parentId: null })).toBe('root');
+  });
+
+  it('mentions the person answered only when replying to someone else’s reply who is still a member', () => {
+    expect(replyPrefill(comment({ user: bo, parentId: 'root' }), 'ada', roster)).toBe('@{bo} ');
+    expect(replyPrefill(comment({ user: bo, parentId: null }), 'ada', roster)).toBe('');
+    expect(replyPrefill(comment({ user: ada, parentId: 'root' }), 'ada', roster)).toBe('');
+
+    const gone = userAdminFactory.build({ id: 'gone', name: 'Cy' });
+    expect(replyPrefill(comment({ user: gone, parentId: 'root' }), 'ada', roster)).toBe('');
+  });
+
+  it('removes a comment with its replies, and a reply with its parent’s count', () => {
+    const root = comment({ id: 'root', replyCount: 2 });
+    const r1 = comment({ id: 'r1', parentId: 'root' });
+    const r2 = comment({ id: 'r2', parentId: 'root' });
+    const other = comment({ id: 'other' });
+
+    expect(withoutComment([root, r1, r2, other], root).map(({ id }) => id)).toEqual(['other']);
+
+    const afterReply = withoutComment([root, r1, r2, other], r1);
+    expect(afterReply.map(({ id }) => id)).toEqual(['root', 'r2', 'other']);
+    expect(afterReply.find(({ id }) => id === 'root')?.replyCount).toBe(1);
+  });
+
+  it('adds a reply and counts it on its thread', () => {
+    const root = comment({ id: 'root', replyCount: 0 });
+    const next = withReply([root], comment({ id: 'r1', parentId: 'root' }));
+
+    expect(next.map(({ id }) => id)).toEqual(['root', 'r1']);
+    expect(next[0].replyCount).toBe(1);
   });
 });

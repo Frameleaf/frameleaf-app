@@ -206,9 +206,9 @@ export function viewerMenuGroups(context: ViewerMenuContext): ViewerMenuGroup[] 
         id: 'set-as',
         labelKey: 'frameleaf_viewer_group_set_as',
         items: compact([
-          // An album cover is never a Locked photo (owner decision, September 22, 2026).
+          // A Locked photo is never a cover or a featured face (owner decision, September 22, 2026).
           isImage && hasAlbumContext && canEditAlbum && !isLocked && 'set-album-cover',
-          isImage && hasPersonContext && 'set-person-featured',
+          isImage && hasPersonContext && !isLocked && 'set-person-featured',
           isImage && !isLocked && 'set-profile-picture',
         ]),
       },

@@ -16,7 +16,7 @@ import { Permission, SharedSpaceEventType } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { isSharedSpace } from 'src/utils/shared-space.js';
+import { isSharedSpace, requireSpaceMember } from 'src/utils/shared-space.js';
 
 @Injectable()
 export class ActivityService extends BaseService {
@@ -87,6 +87,17 @@ export class ActivityService extends BaseService {
 
   async delete(auth: AuthDto, id: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.ActivityDelete, ids: [id] });
+
+    // FL-55: in a shared space, only a current member may remove anything, and a comment takes its
+    // replies with it — the same rules as the space's own comment endpoint, whichever one is used.
+    const activity = await this.activityRepository.getById(id);
+    const album = activity ? await this.albumRepository.getById(activity.albumId, { withAssets: false }) : undefined;
+    if (album && isSharedSpace(album)) {
+      requireSpaceMember(album, auth.user.id);
+      await this.albumUserRepository.deleteCommentWithReplies(id);
+      return;
+    }
+
     await this.activityRepository.delete(id);
   }
 

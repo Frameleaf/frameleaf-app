@@ -127,6 +127,13 @@ describe('Studio route, engine absent', () => {
 
     expect(screen.queryByText('frameleaf_studio_queued_open_activity')).not.toBeInTheDocument();
   });
+
+  it('links the bundle jobs this session queued to Activity (FL-91)', () => {
+    const onOpenActivity = vi.fn();
+    render(StudioHost, { ...baseProps(), queuedJobs: 1, onOpenActivity, loadEngine: loadStudioEngine });
+
+    expect(screen.getByText('frameleaf_studio_queued_open_activity')).toBeInTheDocument();
+  });
 });
 
 describe('Studio route, engine present', () => {

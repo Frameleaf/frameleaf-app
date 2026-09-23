@@ -1,7 +1,8 @@
-import { getPerson, getPet, getTagById } from '@immich/sdk';
+import { getAlbumInfo, getPerson, getPet, getTagById } from '@immich/sdk';
 
 /**
- * Name lookups for a person/pet/tag behind an id-list library filter (FL-45).
+ * Name lookups for a person/pet/tag (and an album, for the FL-49 search chips) behind an id-list
+ * library filter (FL-45).
  *
  * A structured filter (`personIds`, `petIds` since FL-58's pet search filter, `tagIds`) carries
  * only ids: the route that owns the filter (Photos reached from a "view in library" link, a typed
@@ -17,7 +18,7 @@ import { getPerson, getPet, getTagById } from '@immich/sdk';
  * name set: the owner decision this ships under is explicit that a hidden identity's name must
  * never leak into a filename, and an empty name is not a name.
  */
-export type FilterEntityKind = 'person' | 'pet' | 'tag';
+export type FilterEntityKind = 'person' | 'pet' | 'tag' | 'album';
 
 const nameCache = new Map<string, Promise<string | null>>();
 
@@ -31,6 +32,11 @@ const fetchEntityName = async (kind: FilterEntityKind, id: string): Promise<stri
   if (kind === 'pet') {
     const pet = await getPet({ id });
     return pet.isHidden || !pet.name.trim() ? null : pet.name;
+  }
+  if (kind === 'album') {
+    // FL-49: the /search chip row names an album condition too; the album read enforces access
+    const album = await getAlbumInfo({ id });
+    return album.albumName.trim() || null;
   }
   const tag = await getTagById({ id });
   // The full nested path ("Trips/Rockies"), not just the leaf name: it is what the existing

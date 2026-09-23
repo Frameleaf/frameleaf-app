@@ -42,7 +42,7 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
-import { releaseLockedAlbumCovers } from 'src/utils/album-cover.js';
+import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import {
   anyUuid,
   asUuid,
@@ -956,11 +956,11 @@ export class AssetRepository {
       return;
     }
 
-    // An album cover is never a Locked photo (FL-53): moving into the Locked folder releases the cover
-    // in the same transaction.
+    // A Locked photo is never a cover (FL-53): moving into the Locked folder releases every cover,
+    // featured photo and face thumbnail it was, in the same transaction.
     await this.inTransaction(async (tx) => {
       await tx.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
-      await releaseLockedAlbumCovers(tx, ids);
+      await releaseLockedCoverReferences(tx, ids);
     });
   }
 
@@ -989,11 +989,12 @@ export class AssetRepository {
       return updateAndSelect(this.db);
     }
 
-    // An album cover is never a Locked photo (FL-53): moving into the Locked folder releases the cover
-    // in the same transaction, as a separate statement so the new visibility is visible to it.
+    // A Locked photo is never a cover (FL-53): moving into the Locked folder releases every cover,
+    // featured photo and face thumbnail it was, in the same transaction, as a separate statement so
+    // the new visibility is visible to it.
     return this.inTransaction(async (tx) => {
       const updated = await updateAndSelect(tx);
-      await releaseLockedAlbumCovers(tx, [asset.id]);
+      await releaseLockedCoverReferences(tx, [asset.id]);
       return updated;
     });
   }
