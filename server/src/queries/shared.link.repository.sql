@@ -453,6 +453,7 @@ from
       ) as "exifInfo" on true
     where
       "asset"."id" = "shared_link_asset"."assetId"
+      and "asset"."visibility" != 'locked'
   ) as "assets" on true
 where
   "shared_link"."id" = $1

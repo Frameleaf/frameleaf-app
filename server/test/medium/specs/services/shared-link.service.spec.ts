@@ -686,5 +686,36 @@ describe(SharedLinkService.name, () => {
         ctx.get(AccessRepository).asset.checkSharedLinkAccess(sharedLink.id, new Set([asset.id])),
       ).resolves.toEqual(new Set());
     });
+
+    it("never hands back a partner's item that moved into their Locked folder when the link is edited", async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: partner } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: partner.id, sharedWithId: user.id });
+      const auth = factory.auth({ user, session: { hasElevatedPermission: true } });
+      const { asset: mine } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: theirs } = await ctx.newAsset({ ownerId: partner.id });
+      for (const { id } of [mine, theirs]) {
+        await ctx.newExif({ assetId: id, make: 'Canon' });
+      }
+
+      const sharedLink = await ctx.get(SharedLinkRepository).create({
+        key: randomBytes(16),
+        id: factory.uuid(),
+        userId: user.id,
+        allowUpload: false,
+        type: SharedLinkType.Individual,
+        assetIds: [mine.id, theirs.id],
+      });
+
+      await ctx.database
+        .updateTable('asset')
+        .set({ visibility: AssetVisibility.Locked })
+        .where('id', '=', theirs.id)
+        .execute();
+
+      const updated = await sut.update(auth, sharedLink.id, { description: 'Lake day' });
+      expect(updated?.assets.map(({ id }) => id)).toEqual([mine.id]);
+    });
   });
 });
