@@ -122,6 +122,8 @@ export const PAUSABLE_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [
   MediaOperationKind.Restoration,
   // FL-59: an enrichment plan records every asset as it finishes and resumes from its cursor.
   MediaOperationKind.EnrichmentPlan,
+  // A Library Care scan or search records its asset or directory cursor after every batch (FL-69).
+  MediaOperationKind.MediaHealth,
 ];
 
 export const isPausableMediaOperationKind = (kind: MediaOperationKind) => PAUSABLE_MEDIA_OPERATION_KINDS.includes(kind);

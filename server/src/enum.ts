@@ -970,6 +970,12 @@ export enum MediaOperationKind {
    * asset by asset on the destinations pinned at submit, with a per-asset state for every stage.
    */
   EnrichmentPlan = 'enrichment_plan',
+  /**
+   * Library Care (FL-69): an owner's media health scan, or a search of chosen locations for the
+   * originals of missing or damaged media. It records a resume cursor after every batch, so it can
+   * pause, survive a restart and carry on where it stopped.
+   */
+  MediaHealth = 'media_health',
 }
 
 export const MediaOperationKindSchema = z
@@ -1014,6 +1020,12 @@ export enum MediaOperationBulkAction {
   ResolveDuplicates = 'resolve-duplicates',
   /** Reverse earlier duplicate review decisions that nothing has changed since (FL-61). */
   UndoDuplicates = 'undo-duplicates',
+  /** Library Care (FL-69): point missing originals at a verified exact copy. */
+  RelinkMissingMedia = 'relink-missing-media',
+  /** Library Care (FL-69): replace confirmed damage with a verified copy, keeping the damaged file. */
+  RecoverDamagedMedia = 'recover-damaged-media',
+  /** Library Care (FL-69): move confirmed damage to the trash after revalidating it. */
+  TrashDamagedMedia = 'trash-damaged-media',
 }
 
 export const MediaOperationBulkActionSchema = z

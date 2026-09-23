@@ -11177,6 +11177,13 @@
               "$ref": "#/components/schemas/MediaHealthBulkResultDto"
             },
             "type": "array"
+          },
+          "operationId": {
+            "description": "The durable job applying the accepted findings, in Activity; null when none was accepted",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
           }
         },
         "required": [
@@ -11245,15 +11252,46 @@
             "format": "double",
             "nullable": true,
             "type": "number"
+          },
+          "checksumMatch": {
+            "description": "The candidate has exactly the checksum recorded for the original",
+            "type": "boolean"
+          },
+          "chosen": {
+            "description": "The reviewer chose this candidate for the finding",
+            "type": "boolean"
+          },
+          "decodeValid": {
+            "description": "The candidate decoded successfully; null when not checked",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "rootId": {
+            "description": "Search location the candidate was found in",
+            "nullable": true,
+            "type": "string"
+          },
+          "rootKind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaHealthRootKind"
+              }
+            ],
+            "nullable": true
           }
         },
         "required": [
           "candidatePath",
           "checkedAt",
+          "checksumMatch",
+          "chosen",
+          "decodeValid",
           "evidence",
           "healthId",
           "id",
           "resolution",
+          "rootId",
+          "rootKind",
           "status",
           "visualMatchScore"
         ],
@@ -11464,6 +11502,13 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "operationId": {
+            "description": "The durable job doing the work, in Activity",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
           }
         },
         "required": [
@@ -11557,7 +11602,10 @@
           "refresh-faces",
           "relink-live-photo",
           "resolve-duplicates",
-          "undo-duplicates"
+          "undo-duplicates",
+          "relink-missing-media",
+          "recover-damaged-media",
+          "trash-damaged-media"
         ],
         "type": "string"
       },
@@ -11677,6 +11725,13 @@
             "maximum": 180,
             "minimum": -180,
             "type": "number"
+          },
+          "mediaHealth": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationMediaHealthEntryDto"
+            },
+            "maxItems": 1000,
+            "type": "array"
           },
           "minutes": {
             "description": "Relative shift in minutes, for `dateMode: shift`",
@@ -12363,7 +12418,8 @@
           "bulk",
           "studio_bundle_export",
           "studio_bundle_import",
-          "enrichment_plan"
+          "enrichment_plan",
+          "media_health"
         ],
         "type": "string"
       },
@@ -29075,6 +29131,433 @@
           "num"
         ],
         "type": "object"
+      },
+      "MediaHealthRootDto": {
+        "properties": {
+          "id": {
+            "description": "Search location ID",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MediaHealthRootKind"
+          },
+          "label": {
+            "type": "string"
+          },
+          "paths": {
+            "description": "Folders searched, for review",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "paths"
+        ],
+        "type": "object"
+      },
+      "MediaHealthRootsResponseDto": {
+        "properties": {
+          "roots": {
+            "items": {
+              "$ref": "#/components/schemas/MediaHealthRootDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "roots"
+        ],
+        "type": "object"
+      },
+      "MediaHealthOperationMode": {
+        "description": "A library scan or a search for originals",
+        "enum": [
+          "scan",
+          "locate"
+        ],
+        "type": "string"
+      },
+      "MediaHealthOperationDto": {
+        "properties": {
+          "autoRetries": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "cancelRequestedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Media operation ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/MediaHealthOperationMode"
+          },
+          "pauseRequestedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "processedUnits": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "progress": {
+            "format": "double",
+            "type": "number"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "totalUnits": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "autoRetries",
+          "cancelRequestedAt",
+          "createdAt",
+          "error",
+          "finishedAt",
+          "id",
+          "mode",
+          "pauseRequestedAt",
+          "processedUnits",
+          "progress",
+          "status",
+          "totalUnits",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "MediaHealthActivityAction": {
+        "description": "What the job did",
+        "enum": [
+          "scan",
+          "locate",
+          "relink-missing-media",
+          "recover-damaged-media",
+          "trash-damaged-media"
+        ],
+        "type": "string"
+      },
+      "MediaHealthActivityDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/MediaHealthActivityAction"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Media operation ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "items": {
+            "description": "Items the job covered",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "action",
+          "createdAt",
+          "finishedAt",
+          "id",
+          "items",
+          "status"
+        ],
+        "type": "object"
+      },
+      "MediaHealthQueuesDto": {
+        "properties": {
+          "damagedConfirmed": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "damagedSuspected": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "duplicates": {
+            "description": "Duplicate groups waiting for review",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "enrichmentPending": {
+            "description": "Items whose metadata has not been read yet",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "importReview": {
+            "description": "Imported items that need review; null when unavailable",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "missing": {
+            "description": "Missing originals that still need a decision",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "missingVerified": {
+            "description": "Missing originals with a verified exact copy",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "unsupportedRaw": {
+            "description": "Kept apart from damage: the decoder cannot read the format",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "damagedConfirmed",
+          "damagedSuspected",
+          "duplicates",
+          "enrichmentPending",
+          "importReview",
+          "missing",
+          "missingVerified",
+          "unsupportedRaw"
+        ],
+        "type": "object"
+      },
+      "MediaHealthRunsDto": {
+        "properties": {
+          "corrupt": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaHealthRunResponseDto"
+              }
+            ],
+            "nullable": true
+          },
+          "missing": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaHealthRunResponseDto"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "corrupt",
+          "missing"
+        ],
+        "type": "object"
+      },
+      "MediaHealthSummaryResponseDto": {
+        "properties": {
+          "operation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaHealthOperationDto"
+              }
+            ],
+            "nullable": true
+          },
+          "queues": {
+            "$ref": "#/components/schemas/MediaHealthQueuesDto"
+          },
+          "recent": {
+            "items": {
+              "$ref": "#/components/schemas/MediaHealthActivityDto"
+            },
+            "type": "array"
+          },
+          "recoveryAvailable": {
+            "description": "At least one recovery location is configured for this reader",
+            "type": "boolean"
+          },
+          "runs": {
+            "$ref": "#/components/schemas/MediaHealthRunsDto"
+          }
+        },
+        "required": [
+          "operation",
+          "queues",
+          "recent",
+          "recoveryAvailable",
+          "runs"
+        ],
+        "type": "object"
+      },
+      "MediaHealthRootKind": {
+        "description": "Kind of search location",
+        "enum": [
+          "managed",
+          "library",
+          "recovery"
+        ],
+        "type": "string"
+      },
+      "MediaHealthLocateDto": {
+        "properties": {
+          "ids": {
+            "description": "Media health finding IDs",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "rootIds": {
+            "description": "Search locations; library storage and external libraries when omitted",
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "type": "object"
+      },
+      "MediaHealthCandidateChoiceDto": {
+        "properties": {
+          "candidateId": {
+            "description": "Candidate ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "findingId": {
+            "description": "Media health finding ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidateId",
+          "findingId"
+        ],
+        "type": "object"
+      },
+      "MediaHealthChooseCandidatesDto": {
+        "properties": {
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/MediaHealthCandidateChoiceDto"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "choices"
+        ],
+        "type": "object"
+      },
+      "MediaHealthRecoverDto": {
+        "properties": {
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/MediaHealthCandidateChoiceDto"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "confirmed": {
+            "description": "Must be true: the reviewer checked the checksum and decode evidence and keeps the damaged source",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "choices",
+          "confirmed"
+        ],
+        "type": "object"
+      },
+      "MediaOperationMediaHealthEntryDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "candidateId": {
+            "description": "Reviewed candidate ID, for a relink or a recovery",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "findingId": {
+            "description": "Media health finding ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "findingId"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -41150,11 +41633,50 @@
         "operationId": "list",
         "parameters": [
           {
+            "name": "allAccounts",
+            "required": false,
+            "in": "query",
+            "description": "Review every account; administrators only",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "category",
             "required": false,
             "in": "query",
             "schema": {
               "$ref": "#/components/schemas/MediaHealthCategory"
+            }
+          },
+          {
+            "name": "needsAttention",
+            "required": false,
+            "in": "query",
+            "description": "Only findings that still need a decision",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "ownerId",
+            "required": false,
+            "in": "query",
+            "description": "Account to review; administrators only for another account",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "integer"
             }
           },
           {
@@ -41367,14 +41889,14 @@
     },
     "/media-health/missing/locate": {
       "post": {
-        "description": "Queue exact-checksum candidate discovery across managed user storage.",
+        "description": "Queue a durable exact-checksum search of the chosen locations for missing originals or copies of confirmed damage.",
         "operationId": "locateMissing",
         "parameters": [],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/MediaHealthBulkActionDto"
+                "$ref": "#/components/schemas/MediaHealthLocateDto"
               }
             }
           },
@@ -41422,7 +41944,7 @@
     },
     "/media-health/missing/relink": {
       "post": {
-        "description": "Relink owned missing assets to validated candidate files.",
+        "description": "Queue a durable job relinking missing originals to their verified exact copies.",
         "operationId": "relinkMissing",
         "parameters": [],
         "requestBody": {
@@ -58534,6 +59056,227 @@
         "summary": "Restore a Studio project from the trash",
         "tags": [
           "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/candidates/choose": {
+      "post": {
+        "description": "Record which verified exact copy each missing original should be relinked to.",
+        "operationId": "chooseCandidates",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaHealthChooseCandidatesDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaHealthBulkResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Choose media health candidates",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/corrupt/recover": {
+      "post": {
+        "description": "Queue a durable job replacing confirmed damage with an exact, decoded copy while keeping the damaged file.",
+        "operationId": "recoverDamaged",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaHealthRecoverDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaHealthBulkResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Recover damaged media from a verified copy",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/roots": {
+      "get": {
+        "description": "Locations the caller may search for exact copies of missing or damaged originals.",
+        "operationId": "getRoots",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaHealthRootsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List Library Care search locations",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/summary": {
+      "get": {
+        "description": "Queue sizes for missing, damaged, duplicate, import and enrichment work, the latest scan or search, and recent Library Care jobs.",
+        "operationId": "getSummary",
+        "parameters": [
+          {
+            "name": "allAccounts",
+            "required": false,
+            "in": "query",
+            "description": "Review every account; administrators only",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "ownerId",
+            "required": false,
+            "in": "query",
+            "description": "Account to review; administrators only for another account",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaHealthSummaryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get Library Care summary",
+        "tags": [
+          "Media Health"
         ],
         "x-immich-history": [
           {
