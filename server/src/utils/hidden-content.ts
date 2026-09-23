@@ -6,6 +6,8 @@ export type SuppressionScope = 'owned' | 'visible';
 export type SuppressionPreferences = {
   tagIds: string[];
   personIds: string[];
+  /** FL-58: the owner's own pets; an asset is suppressed when the owner confirmed one of them in it */
+  petIds: string[];
   scope: SuppressionScope;
 };
 
@@ -23,17 +25,24 @@ export type HiddenContentQueryOptions = {
 export const emptySuppressionPreferences = (): SuppressionPreferences => ({
   tagIds: [],
   personIds: [],
+  petIds: [],
   scope: 'owned',
 });
 
 export const hasHiddenContentFilter = (filter?: HiddenContentFilter): filter is HiddenContentFilter => {
-  return !!filter && (filter.includeNsfw || filter.tagIds.length > 0 || filter.personIds.length > 0);
+  return (
+    !!filter &&
+    (filter.includeNsfw || filter.tagIds.length > 0 || filter.personIds.length > 0 || filter.petIds.length > 0)
+  );
 };
 
 export const hasSuppressionPreferences = (
   preferences?: SuppressionPreferences,
 ): preferences is SuppressionPreferences => {
-  return !!preferences && (preferences.tagIds.length > 0 || preferences.personIds.length > 0);
+  return (
+    !!preferences &&
+    (preferences.tagIds.length > 0 || preferences.personIds.length > 0 || preferences.petIds.length > 0)
+  );
 };
 
 export const getHiddenContentQueryOptions = (auth: AuthDto): HiddenContentQueryOptions => {
