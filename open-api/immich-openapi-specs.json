@@ -16162,6 +16162,12 @@
       },
       "PhysicalDeduplicationPlanDto": {
         "properties": {
+          "applicableCopies": {
+            "description": "Copies listed with a share decision: the most this plan can apply. Copies past the list limit wait for a later plan",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "copies": {
             "items": {
               "$ref": "#/components/schemas/PhysicalDeduplicationCopyDto"
@@ -16182,6 +16188,16 @@
             "minimum": 0,
             "type": "integer"
           },
+          "fingerprint": {
+            "description": "Digest over the plan evidence; changes with every preview (FL-73)",
+            "type": "string"
+          },
+          "hiddenCopies": {
+            "description": "Copies left out of the rows because they are Locked media of another account; counted, never named",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "linkedAssets": {
             "maximum": 9007199254740991,
             "minimum": 0,
@@ -16197,6 +16213,10 @@
           },
           "mode": {
             "$ref": "#/components/schemas/PhysicalDeduplicationPlanMode"
+          },
+          "planId": {
+            "description": "Short name of this plan, typed to confirm applying it (FL-73)",
+            "type": "string"
           },
           "ranAt": {
             "description": "When the plan was produced",
@@ -16236,14 +16256,18 @@
           }
         },
         "required": [
+          "applicableCopies",
           "copies",
           "copiesTruncated",
           "deletedBytes",
           "eligibleAssets",
+          "fingerprint",
+          "hiddenCopies",
           "linkedAssets",
           "masterUserId",
           "masterUserName",
           "mode",
+          "planId",
           "ranAt",
           "reclaimableBytes",
           "retained",
@@ -16279,8 +16303,141 @@
         },
         "type": "object"
       },
+      "PhysicalDeduplicationReviewRequestDto": {
+        "properties": {
+          "excludedRetainedAssetIds": {
+            "description": "Retained originals whose group the administrator decided to leave as they are",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "fingerprint": {
+            "description": "The fingerprint of the plan on screen, from the preview",
+            "pattern": "^[\\da-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint"
+        ],
+        "type": "object"
+      },
+      "PhysicalDeduplicationReviewResponseDto": {
+        "properties": {
+          "confirmation": {
+            "description": "The phrase to type to apply this plan",
+            "type": "string"
+          },
+          "copies": {
+            "description": "Copies the reviewed plan will share",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "estimatedBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "excludedRetainedAssetIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "hiddenCopies": {
+            "description": "Copies in the reviewed plan that are Locked media of another account; counted, never named",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "planId": {
+            "type": "string"
+          },
+          "retainedOriginals": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reviewToken": {
+            "description": "Binds the plan to these per-group decisions; applying must present it",
+            "type": "string"
+          },
+          "reviewedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirmation",
+          "copies",
+          "estimatedBytes",
+          "excludedRetainedAssetIds",
+          "fingerprint",
+          "hiddenCopies",
+          "planId",
+          "retainedOriginals",
+          "reviewToken",
+          "reviewedAt"
+        ],
+        "type": "object"
+      },
+      "PhysicalDeduplicationApplyRequestDto": {
+        "properties": {
+          "confirmation": {
+            "description": "`APPLY <planId>`, typed by the administrator",
+            "maxLength": 90,
+            "type": "string"
+          },
+          "excludedRetainedAssetIds": {
+            "description": "Retained originals whose group the administrator decided to leave as they are",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "fingerprint": {
+            "description": "The fingerprint of the plan on screen, from the preview",
+            "pattern": "^[\\da-f]{64}$",
+            "type": "string"
+          },
+          "reviewToken": {
+            "description": "From the review of this plan",
+            "pattern": "^[\\da-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirmation",
+          "fingerprint",
+          "reviewToken"
+        ],
+        "type": "object"
+      },
       "PhysicalDeduplicationPreviewResponseDto": {
         "properties": {
+          "applies": {
+            "description": "Recently applied plans, newest first (FL-73)",
+            "items": {
+              "$ref": "#/components/schemas/PhysicalDeduplicationApplyDto"
+            },
+            "type": "array"
+          },
+          "applying": {
+            "description": "Whether a reviewed plan is being applied (FL-73)",
+            "type": "boolean"
+          },
           "enabled": {
             "description": "The saved `physicalDeduplication.enabled`",
             "type": "boolean"
@@ -16295,7 +16452,7 @@
             "nullable": true
           },
           "running": {
-            "description": "Whether a deduplication preview or apply job is queued or active",
+            "description": "Whether a deduplication preview is queued or active",
             "type": "boolean"
           },
           "savedMasterUserId": {
@@ -16305,10 +16462,133 @@
           }
         },
         "required": [
+          "applies",
+          "applying",
           "enabled",
           "plan",
           "running",
           "savedMasterUserId"
+        ],
+        "type": "object"
+      },
+      "PhysicalDeduplicationApplyDto": {
+        "properties": {
+          "alreadyApplied": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "applied": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "estimatedBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "mine": {
+            "description": "Whether the requesting administrator applied it",
+            "type": "boolean"
+          },
+          "operationId": {
+            "description": "The media operation applying the plan",
+            "type": "string"
+          },
+          "pauseRequested": {
+            "type": "boolean"
+          },
+          "planId": {
+            "type": "string"
+          },
+          "processed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "progress": {
+            "format": "double",
+            "type": "number"
+          },
+          "reclaimedBytes": {
+            "description": "Bytes actually removed from disk so far",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "requestedById": {
+            "description": "Administrator who applied the plan; the job is theirs to pause or cancel",
+            "type": "string"
+          },
+          "requestedByName": {
+            "type": "string"
+          },
+          "retrying": {
+            "description": "Waiting for its one automatic retry",
+            "type": "boolean"
+          },
+          "skipped": {
+            "description": "Copies left alone because their evidence changed",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "total": {
+            "description": "Copies in the reviewed plan",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "alreadyApplied",
+          "applied",
+          "createdAt",
+          "error",
+          "estimatedBytes",
+          "failed",
+          "fingerprint",
+          "finishedAt",
+          "mine",
+          "operationId",
+          "pauseRequested",
+          "planId",
+          "processed",
+          "progress",
+          "reclaimedBytes",
+          "requestedById",
+          "requestedByName",
+          "retrying",
+          "skipped",
+          "status",
+          "total"
         ],
         "type": "object"
       },
@@ -30958,7 +31238,7 @@
     },
     "/admin/physical-deduplication/preview": {
       "get": {
-        "description": "Return the latest physical deduplication plan with per-copy evidence. Thumbnail visibility is the asset access of the requesting administrator, evaluated on every read.",
+        "description": "Return the latest physical deduplication plan with per-copy evidence, and the plans being applied or applied recently. Thumbnail visibility is the asset access of the requesting administrator, evaluated on every read.",
         "operationId": "getPhysicalDeduplicationPreview",
         "parameters": [],
         "responses": {
@@ -31002,7 +31282,7 @@
         "x-immich-state": "Alpha"
       },
       "post": {
-        "description": "Queue a dry run that may retain originals in an account chosen for the preview and may review the copies of one account. Applying a plan still requires the saved master account and is queued through the jobs endpoint.",
+        "description": "Queue a dry run that may retain originals in an account chosen for the preview and may review the copies of one account. Applying needs a reviewed plan and the saved master account.",
         "operationId": "requestPhysicalDeduplicationPreview",
         "parameters": [],
         "requestBody": {
@@ -31032,6 +31312,118 @@
           }
         ],
         "summary": "Request physical deduplication preview",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/physical-deduplication/plan/apply": {
+      "post": {
+        "description": "Queue exactly the reviewed copies as a durable, pausable job. Requires the review token and the typed confirmation. Answers 409 when another plan is being applied or anything changed since the review.",
+        "operationId": "applyPhysicalDeduplicationPlan",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhysicalDeduplicationApplyRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaOperationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Apply a reviewed physical deduplication plan",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/physical-deduplication/plan/review": {
+      "post": {
+        "description": "Check the plan on screen against the library again and bind the per-group decisions to it. Answers 409 when a newer preview replaced the plan, it was applied, or any checksum, ownership, path or reference evidence changed. Nothing is written.",
+        "operationId": "reviewPhysicalDeduplicationPlan",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhysicalDeduplicationReviewRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhysicalDeduplicationReviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Review a physical deduplication plan",
         "tags": [
           "Maintenance (admin)"
         ],

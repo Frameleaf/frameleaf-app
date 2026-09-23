@@ -791,17 +791,25 @@ export type PhysicalDeduplicationCopyDto = {
     "type": AssetTypeEnum;
 };
 export type PhysicalDeduplicationPlanDto = {
+    /** Copies listed with a share decision: the most this plan can apply. Copies past the list limit wait for a later plan */
+    applicableCopies: number;
     copies: PhysicalDeduplicationCopyDto[];
     /** True when more copies were reviewed than the stored preview keeps; totals still cover all of them */
     copiesTruncated: boolean;
     deletedBytes: number;
     eligibleAssets: number;
+    /** Digest over the plan evidence; changes with every preview (FL-73) */
+    fingerprint: string;
+    /** Copies left out of the rows because they are Locked media of another account; counted, never named */
+    hiddenCopies: number;
     linkedAssets: number;
     /** Account whose originals are retained by this plan */
     masterUserId: string;
     /** Display name of the retained account */
     masterUserName: string;
     mode: PhysicalDeduplicationPlanMode;
+    /** Short name of this plan, typed to confirm applying it (FL-73) */
+    planId: string;
     /** When the plan was produced */
     ranAt: string;
     reclaimableBytes: number;
@@ -812,12 +820,46 @@ export type PhysicalDeduplicationPlanDto = {
     skippedExternal: number;
     skippedMissingMaster: number;
 };
+export type PhysicalDeduplicationApplyDto = {
+    alreadyApplied: number;
+    applied: number;
+    createdAt: string;
+    error: string | null;
+    estimatedBytes: number;
+    failed: number;
+    finishedAt: string | null;
+    fingerprint: string;
+    /** Whether the requesting administrator applied it */
+    mine: boolean;
+    /** The media operation applying the plan */
+    operationId: string;
+    pauseRequested: boolean;
+    planId: string;
+    processed: number;
+    progress: number;
+    /** Bytes actually removed from disk so far */
+    reclaimedBytes: number;
+    /** Administrator who applied the plan; the job is theirs to pause or cancel */
+    requestedById: string;
+    requestedByName: string;
+    /** Waiting for its one automatic retry */
+    retrying: boolean;
+    /** Copies left alone because their evidence changed */
+    skipped: number;
+    status: MediaOperationStatus;
+    /** Copies in the reviewed plan */
+    total: number;
+};
 export type PhysicalDeduplicationPreviewResponseDto = {
+    /** Recently applied plans, newest first (FL-73) */
+    applies: PhysicalDeduplicationApplyDto[];
+    /** Whether a reviewed plan is being applied (FL-73) */
+    applying: boolean;
     /** The saved `physicalDeduplication.enabled` */
     enabled: boolean;
     /** The latest plan, or null when none has run */
     plan: (PhysicalDeduplicationPlanDto) | null;
-    /** Whether a deduplication preview or apply job is queued or active */
+    /** Whether a deduplication preview is queued or active */
     running: boolean;
     /** The saved `physicalDeduplication.masterUserId` */
     savedMasterUserId: string | null;
@@ -827,6 +869,38 @@ export type PhysicalDeduplicationPreviewRequestDto = {
     masterUserId?: string;
     /** Limit the review to copies owned by this account */
     scopeUserId?: string;
+};
+export type PhysicalDeduplicationReviewRequestDto = {
+    /** Retained originals whose group the administrator decided to leave as they are */
+    excludedRetainedAssetIds?: string[];
+    /** The fingerprint of the plan on screen, from the preview */
+    fingerprint: string;
+};
+export type PhysicalDeduplicationReviewResponseDto = {
+    /** The phrase to type to apply this plan */
+    confirmation: string;
+    /** Copies the reviewed plan will share */
+    copies: number;
+    estimatedBytes: number;
+    excludedRetainedAssetIds: string[];
+    fingerprint: string;
+    /** Copies in the reviewed plan that are Locked media of another account; counted, never named */
+    hiddenCopies: number;
+    planId: string;
+    retainedOriginals: number;
+    reviewedAt: string;
+    /** Binds the plan to these per-group decisions; applying must present it */
+    reviewToken: string;
+};
+export type PhysicalDeduplicationApplyRequestDto = {
+    /** `APPLY <planId>`, typed by the administrator */
+    confirmation: string;
+    /** Retained originals whose group the administrator decided to leave as they are */
+    excludedRetainedAssetIds?: string[];
+    /** The fingerprint of the plan on screen, from the preview */
+    fingerprint: string;
+    /** From the review of this plan */
+    reviewToken: string;
 };
 export type UserLicense = {
     /** Activation date */
@@ -7420,6 +7494,36 @@ export function requestPhysicalDeduplicationPreview({ physicalDeduplicationPrevi
         ...opts,
         method: "POST",
         body: physicalDeduplicationPreviewRequestDto
+    })));
+}
+/**
+ * Apply a reviewed physical deduplication plan
+ */
+export function applyPhysicalDeduplicationPlan({ physicalDeduplicationApplyRequestDto }: {
+    physicalDeduplicationApplyRequestDto: PhysicalDeduplicationApplyRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaOperationDto;
+    }>("/admin/physical-deduplication/plan/apply", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: physicalDeduplicationApplyRequestDto
+    })));
+}
+/**
+ * Review a physical deduplication plan
+ */
+export function reviewPhysicalDeduplicationPlan({ physicalDeduplicationReviewRequestDto }: {
+    physicalDeduplicationReviewRequestDto: PhysicalDeduplicationReviewRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhysicalDeduplicationReviewResponseDto;
+    }>("/admin/physical-deduplication/plan/review", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: physicalDeduplicationReviewRequestDto
     })));
 }
 /**
