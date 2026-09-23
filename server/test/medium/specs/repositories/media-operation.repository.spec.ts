@@ -476,6 +476,22 @@ describe(MediaOperationRepository.name, () => {
       });
     });
 
+    it('never settles a pause once the job is validating its output', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      const claim = await claimExport(sut);
+      await sut.requestPause(operation.id, user.id, pausable);
+      await sut.beginValidation(operation.id, claim!.claimToken);
+
+      await expect(sut.settlePause(operation.id, claim!.claimToken)).resolves.toBe(false);
+      await expect(sut.complete(operation.id, claim!.claimToken, { resultAssetId: null })).resolves.toBe(true);
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Completed,
+        pauseRequestedAt: null,
+      });
+    });
+
     it('never touches a job that is already paused during recovery', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
