@@ -1627,6 +1627,7 @@ export enum NotificationType {
   AlbumInvite = 'AlbumInvite',
   AlbumUpdate = 'AlbumUpdate',
   ClusterGroupRequest = 'ClusterGroupRequest',
+  SharedSpaceMention = 'SharedSpaceMention',
   Custom = 'Custom',
 }
 
@@ -1634,6 +1635,32 @@ export const NotificationTypeSchema = z
   .enum(NotificationType)
   .describe('Notification type')
   .meta({ id: 'NotificationType' });
+
+/**
+ * What a shared space's activity feed records (FL-55). Each value is one durable
+ * row in `shared_space_event`, written by the service that made the change and
+ * read back only by current members, with anything about media they cannot see
+ * filtered out at read time.
+ */
+export enum SharedSpaceEventType {
+  AssetsAdded = 'AssetsAdded',
+  AssetsRemoved = 'AssetsRemoved',
+  AlbumLinked = 'AlbumLinked',
+  AlbumUnlinked = 'AlbumUnlinked',
+  PersonLinked = 'PersonLinked',
+  PersonUnlinked = 'PersonUnlinked',
+  MemberJoined = 'MemberJoined',
+  MemberLeft = 'MemberLeft',
+  MemberRemoved = 'MemberRemoved',
+  MemberRoleChanged = 'MemberRoleChanged',
+  Comment = 'Comment',
+  Like = 'Like',
+}
+
+export const SharedSpaceEventTypeSchema = z
+  .enum(SharedSpaceEventType)
+  .describe('Shared space event type')
+  .meta({ id: 'SharedSpaceEventType' });
 
 export enum OAuthTokenEndpointAuthMethod {
   ClientSecretPost = 'client_secret_post',
