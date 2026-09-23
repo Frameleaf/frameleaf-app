@@ -2,7 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { PersonResponseSchema } from 'src/dtos/person.dto.js';
 import { UserResponseSchema } from 'src/dtos/user.dto.js';
-import { AlbumUserRoleSchema } from 'src/enum.js';
+import { AlbumUserRoleSchema, SharedSpaceEventTypeSchema } from 'src/enum.js';
 
 /**
  * What a recipient is shown about a shared space before they accept (FL-55).
@@ -207,7 +207,138 @@ const SharedSpaceNewResponseSchema = z
   })
   .meta({ id: 'SharedSpaceNewResponseDto' });
 
+/* -------------------------------------------------------------------------- */
+/* The activity feed (FL-55)                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One thing that happened in a shared space, as one member may see it.
+ *
+ * The stored event carries ids; this is what is left after the server has
+ * applied the reader's own view. `assetIds` never names an item the reader
+ * cannot see — Locked media, media marked sensitive, media hidden by their own
+ * settings, or media no longer in the space — and an event with nothing
+ * visible left is not sent at all, so the reader cannot even count what was
+ * withheld. A removal carries a count and no ids, because the items are gone
+ * from the space and a thumbnail would be a control that fails.
+ */
+const SharedSpaceEventResponseSchema = z
+  .object({
+    id: z.uuidv4().describe('Event ID'),
+    type: SharedSpaceEventTypeSchema,
+    createdAt: z.string().meta({ format: 'date-time' }).describe('When it happened'),
+    actor: UserResponseSchema.nullable().describe('Who did it; null once that account is gone'),
+    targetUser: UserResponseSchema.nullable().describe('The member a member event is about; null otherwise'),
+    subject: z
+      .string()
+      .nullable()
+      .describe("A linked album's or person's name as the space knew it, or the new role; null otherwise"),
+    assetIds: z
+      .array(z.uuidv4())
+      .describe(
+        'The items this event is about that the reader may see and that are still in the shared space. Empty for a removal.',
+      ),
+    assetCount: z.int().min(0).describe('How many of the items this event is about the reader may see'),
+    activityId: z.uuidv4().nullable().describe('The comment or like this event announces, if any'),
+    comment: z.string().nullable().describe('The comment text, for a comment event. Mentions are @{userId} tokens.'),
+    mentions: z.array(UserResponseSchema).describe('Members named in the comment'),
+  })
+  .meta({ id: 'SharedSpaceEventResponseDto' });
+
+const SharedSpaceActivityResponseSchema = z
+  .object({
+    events: z.array(SharedSpaceEventResponseSchema).describe('Newest first'),
+    lastVisitedAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('When this member last marked the shared space seen; null if they never have'),
+    unreadCount: z
+      .int()
+      .min(0)
+      .describe('Events by other members since then that this member may see. Capped at 500.'),
+    hasMore: z.boolean().describe('True when older events exist beyond this page'),
+  })
+  .meta({ id: 'SharedSpaceActivityResponseDto' });
+
+const SharedSpaceActivitySearchSchema = z.object({
+  before: z.string().meta({ format: 'date-time' }).optional().describe('Only events before this moment, for paging'),
+  take: z.coerce.number().int().min(1).max(200).optional().describe('Page size, 50 by default'),
+});
+
+/* -------------------------------------------------------------------------- */
+/* Comments on the space and on its items (FL-55)                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One comment in a shared space: on one of its items, or on the space itself
+ * when `assetId` is null. The text keeps its `@{userId}` mention tokens and
+ * `mentions` resolves them, so a client renders names without ever having sent
+ * one. `canEdit` and `canDelete` are the server's answer for the caller —
+ * the author edits, and the author or a space owner or editor removes.
+ */
+const SharedSpaceCommentResponseSchema = z
+  .object({
+    id: z.uuidv4().describe('Comment ID'),
+    createdAt: z.string().meta({ format: 'date-time' }).describe('When it was written'),
+    updatedAt: z.string().meta({ format: 'date-time' }).describe('When it was last edited'),
+    user: UserResponseSchema.describe('The author'),
+    assetId: z.uuidv4().nullable().describe('The item commented on; null for a comment on the space itself'),
+    comment: z.string().describe('The text, with @{userId} mention tokens'),
+    mentions: z.array(UserResponseSchema).describe('Members named in the comment'),
+    canEdit: z.boolean().describe('True when the caller may change the text'),
+    canDelete: z.boolean().describe('True when the caller may remove the comment'),
+  })
+  .meta({ id: 'SharedSpaceCommentResponseDto' });
+
+const SharedSpaceCommentsResponseSchema = z
+  .object({
+    comments: z.array(SharedSpaceCommentResponseSchema).describe('Oldest first'),
+  })
+  .meta({ id: 'SharedSpaceCommentsResponseDto' });
+
+const SharedSpaceCommentSearchSchema = z.object({
+  assetId: z
+    .uuidv4()
+    .optional()
+    .describe('Comments on this item. Left out, the comments on the space itself.'),
+});
+
+const CommentTextSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(4000)
+  .describe('The text. Mention a member with @{userId}; every mention must name a current member.');
+
+const SharedSpaceCommentCreateSchema = z
+  .object({
+    assetId: z.uuidv4().optional().describe('The item to comment on. Left out, the comment is on the space itself.'),
+    comment: CommentTextSchema,
+  })
+  .meta({ id: 'SharedSpaceCommentCreateDto' });
+
+const SharedSpaceCommentUpdateSchema = z
+  .object({
+    comment: CommentTextSchema,
+  })
+  .meta({ id: 'SharedSpaceCommentUpdateDto' });
+
+const SharedSpaceCommentParamSchema = z.object({
+  id: z.uuidv4().describe('Shared space ID'),
+  commentId: z.uuidv4().describe('The comment'),
+});
+
 export class SharedSpaceInviteParamDto extends createZodDto(SharedSpaceInviteParamSchema) {}
+export class SharedSpaceEventResponseDto extends createZodDto(SharedSpaceEventResponseSchema) {}
+export class SharedSpaceActivityResponseDto extends createZodDto(SharedSpaceActivityResponseSchema) {}
+export class SharedSpaceActivitySearchDto extends createZodDto(SharedSpaceActivitySearchSchema) {}
+export class SharedSpaceCommentResponseDto extends createZodDto(SharedSpaceCommentResponseSchema) {}
+export class SharedSpaceCommentsResponseDto extends createZodDto(SharedSpaceCommentsResponseSchema) {}
+export class SharedSpaceCommentSearchDto extends createZodDto(SharedSpaceCommentSearchSchema) {}
+export class SharedSpaceCommentCreateDto extends createZodDto(SharedSpaceCommentCreateSchema) {}
+export class SharedSpaceCommentUpdateDto extends createZodDto(SharedSpaceCommentUpdateSchema) {}
+export class SharedSpaceCommentParamDto extends createZodDto(SharedSpaceCommentParamSchema) {}
 export class SharedSpacePreviewResponseDto extends createZodDto(SharedSpacePreviewResponseSchema) {}
 export class SharedSpaceMemberResponseDto extends createZodDto(SharedSpaceMemberResponseSchema) {}
 export class SharedSpaceMembersResponseDto extends createZodDto(SharedSpaceMembersResponseSchema) {}
