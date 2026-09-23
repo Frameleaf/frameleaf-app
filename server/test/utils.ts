@@ -319,6 +319,7 @@ export const getMocks = () => {
 
   databaseMock.withLock.mockImplementation((_type, fn) => fn());
   databaseMock.withAssetMetadataLock.mockImplementation((_assetId, fn) => fn(undefined as never));
+  databaseMock.withUserPreferencesLock.mockImplementation((_userId, fn) => fn(undefined as never));
   databaseMock.getPostgresVersion = vitest.fn().mockResolvedValue('14.10 (Debian 14.10-1.pgdg120+1)');
   databaseMock.getPostgresVersionRange = vitest.fn().mockReturnValue('>=14.0.0');
   databaseMock.createExtension = vitest.fn().mockResolvedValue(void 0);

@@ -5,6 +5,7 @@ import { UserMetadataKey } from 'src/enum.js';
 import { UserMetadataItem } from 'src/types.js';
 import {
   assertPreferencesRevision,
+  changesLockedRules,
   getPreferences,
   getPreferencesPartial,
   getPreferencesRevision,
@@ -208,6 +209,33 @@ describe('preferences (FL-77 admin casting permission)', () => {
     it('still lets the account change its own Locked choices', () => {
       const merged = mergePreferences(getPreferences([]), { privacy: { suppression: { tagIds: [tagId] } } }, 'user');
       expect(merged.privacy.suppression.tagIds).toEqual([tagId]);
+    });
+  });
+
+  describe('Locked rules and sessions that are not unlocked (FL-67)', () => {
+    const personId = 'c5f9f5a1-3b8d-4f6e-9a2b-0d1e2f3a4b5c';
+
+    it('shows a session that is not unlocked where the rules apply, but not what they name', () => {
+      const preferences = getPreferences(
+        stored({ privacy: { suppression: { personIds: [personId], petIds: [personId], scope: 'visible' } } }),
+      );
+      expect(mapPreferences(preferences, 'locked').privacy).toEqual({
+        suppression: { tagIds: [], personIds: [], petIds: [], scope: 'visible' },
+      });
+      expect(mapPreferences(preferences, 'locked').revision).toBe(mapPreferences(preferences, 'self').revision);
+    });
+
+    it('treats any named rule field as a Locked rules change', () => {
+      expect(changesLockedRules({ privacy: { suppression: { tagIds: [] } } })).toBe(true);
+      expect(changesLockedRules({ privacy: { suppression: { scope: 'owned' } } })).toBe(true);
+      expect(changesLockedRules({ privacy: { suppression: { petIds: [personId] } } })).toBe(true);
+    });
+
+    it('does not treat an empty or absent privacy group as a Locked rules change', () => {
+      expect(changesLockedRules({})).toBe(false);
+      expect(changesLockedRules({ privacy: {} })).toBe(false);
+      expect(changesLockedRules({ privacy: { suppression: {} } })).toBe(false);
+      expect(changesLockedRules({ tags: { enabled: true } })).toBe(false);
     });
   });
 });
