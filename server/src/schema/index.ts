@@ -117,6 +117,11 @@ import { SmartSearchTable } from 'src/schema/tables/smart-search.table.js';
 import { StackAuditTable } from 'src/schema/tables/stack-audit.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
 import { StudioPreviewFrameTable } from 'src/schema/tables/studio-preview.table.js';
+import {
+  StudioProjectCommentTable,
+  StudioProjectRevisionTable,
+  StudioProjectTable,
+} from 'src/schema/tables/studio-project.table.js';
 import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table.js';
 import { SystemMetadataTable } from 'src/schema/tables/system-metadata.table.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
@@ -217,6 +222,9 @@ export class ImmichDatabase {
     StackTable,
     StackAuditTable,
     StudioPreviewFrameTable,
+    StudioProjectTable,
+    StudioProjectRevisionTable,
+    StudioProjectCommentTable,
     SessionSyncCheckpointTable,
     SystemMetadataTable,
     TagTable,
@@ -378,6 +386,9 @@ export interface DB {
   stack_audit: StackAuditTable;
 
   studio_preview_frame: StudioPreviewFrameTable;
+  studio_project: StudioProjectTable;
+  studio_project_revision: StudioProjectRevisionTable;
+  studio_project_comment: StudioProjectCommentTable;
 
   system_metadata: SystemMetadataTable;
 

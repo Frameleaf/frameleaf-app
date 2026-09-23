@@ -24084,6 +24084,856 @@
           "year"
         ],
         "type": "object"
+      },
+      "StudioCommandSummaryDto": {
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "description": "Command id to how many times it appeared",
+            "type": "object"
+          },
+          "total": {
+            "description": "Commands in the batch",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "counts",
+          "total"
+        ],
+        "type": "object"
+      },
+      "StudioCommentCreateDto": {
+        "properties": {
+          "requestKey": {
+            "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "revision": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "time": {
+            "$ref": "#/components/schemas/StudioTimeDto"
+          }
+        },
+        "required": [
+          "revision",
+          "text",
+          "time"
+        ],
+        "type": "object"
+      },
+      "StudioCommentDto": {
+        "properties": {
+          "authorId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "projectId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "resolvedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "resolvedById": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The revision the reviewer was looking at",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "time": {
+            "$ref": "#/components/schemas/StudioTimeDto"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorId",
+          "createdAt",
+          "id",
+          "projectId",
+          "resolvedAt",
+          "resolvedById",
+          "revision",
+          "text",
+          "time",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "StudioCommentListResponseDto": {
+        "properties": {
+          "items": {
+            "description": "Oldest first",
+            "items": {
+              "$ref": "#/components/schemas/StudioCommentDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "StudioCommentUpdateDto": {
+        "properties": {
+          "resolved": {
+            "type": "boolean"
+          },
+          "text": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StudioProjectAccess": {
+        "description": "`owner` may write; `reviewer` reaches the project through a shared space, read-only",
+        "enum": [
+          "owner",
+          "reviewer"
+        ],
+        "type": "string"
+      },
+      "StudioProjectCreateDto": {
+        "properties": {
+          "clientId": {
+            "description": "This editor instance; it receives the lease",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "envelope": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioProjectEnvelopeDto"
+              }
+            ],
+            "description": "An initial document, saved as revision 1"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestKey": {
+            "description": "Idempotency key for the initial save",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "spaceId": {
+            "description": "Share the project with a shared space for review",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clientId",
+          "name"
+        ],
+        "type": "object"
+      },
+      "StudioProjectDetailDto": {
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/StudioProjectAccess"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "digest": {
+            "description": "Key-sorted SHA-256 of the head envelope; null when withheld",
+            "nullable": true,
+            "type": "string"
+          },
+          "envelope": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioProjectEnvelopeDto"
+              }
+            ],
+            "nullable": true
+          },
+          "id": {
+            "description": "Studio project ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "lease": {
+            "$ref": "#/components/schemas/StudioProjectLeaseDto"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "The only account that may write",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "resources": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioProjectResourcesDto"
+              }
+            ],
+            "nullable": true
+          },
+          "revision": {
+            "description": "Head revision number; 0 until the first save",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spaceId": {
+            "description": "Shared space whose members may review the project",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "withheld": {
+            "description": "The graph was withheld because a source is unavailable to you",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "access",
+          "createdAt",
+          "digest",
+          "envelope",
+          "id",
+          "lease",
+          "name",
+          "ownerId",
+          "resources",
+          "revision",
+          "spaceId",
+          "updatedAt",
+          "withheld"
+        ],
+        "type": "object"
+      },
+      "StudioProjectDiffDto": {
+        "properties": {
+          "added": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "byteDelta": {
+            "description": "Size change of the serialized graph",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "changed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "commands": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioCommandSummaryDto"
+              }
+            ],
+            "description": "Commands the saves between the two revisions reported"
+          },
+          "from": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "identical": {
+            "description": "The two envelopes have the same digest",
+            "type": "boolean"
+          },
+          "paths": {
+            "description": "Changed graph paths, aggregated and capped",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "to": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "truncated": {
+            "description": "More paths changed than are listed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "added",
+          "byteDelta",
+          "changed",
+          "commands",
+          "from",
+          "identical",
+          "paths",
+          "removed",
+          "to",
+          "truncated"
+        ],
+        "type": "object"
+      },
+      "StudioProjectDto": {
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/StudioProjectAccess"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Studio project ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "lease": {
+            "$ref": "#/components/schemas/StudioProjectLeaseDto"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "The only account that may write",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Head revision number; 0 until the first save",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spaceId": {
+            "description": "Shared space whose members may review the project",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access",
+          "createdAt",
+          "id",
+          "lease",
+          "name",
+          "ownerId",
+          "revision",
+          "spaceId",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "StudioProjectEnvelopeDto": {
+        "properties": {
+          "engine": {
+            "description": "The engine that produced the graph; `freecut`",
+            "type": "string"
+          },
+          "engineRevision": {
+            "description": "Pinned engine revision the editor was built from",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "graph": {
+            "additionalProperties": {},
+            "description": "Opaque engine document, stored and returned byte for byte",
+            "type": "object"
+          },
+          "schemaVersion": {
+            "description": "Envelope shape version; the server accepts exactly one",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "engine",
+          "engineRevision",
+          "graph",
+          "schemaVersion"
+        ],
+        "type": "object"
+      },
+      "StudioProjectHistoryResponseDto": {
+        "properties": {
+          "items": {
+            "description": "Newest first",
+            "items": {
+              "$ref": "#/components/schemas/StudioProjectRevisionDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "StudioProjectLeaseDto": {
+        "properties": {
+          "autosaveDebounceMs": {
+            "description": "Pause in editing after which the client saves",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "expiresAt": {
+            "description": "When the current lease lapses",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "heldByAnother": {
+            "description": "A live lease belongs to another editor instance",
+            "type": "boolean"
+          },
+          "heldByYou": {
+            "description": "This client holds the write lease",
+            "type": "boolean"
+          },
+          "leaseMs": {
+            "description": "Lease length the server grants",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "renewMs": {
+            "description": "How often the holder should renew",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "autosaveDebounceMs",
+          "expiresAt",
+          "heldByAnother",
+          "heldByYou",
+          "leaseMs",
+          "renewMs"
+        ],
+        "type": "object"
+      },
+      "StudioProjectLeaseRequestDto": {
+        "properties": {
+          "clientId": {
+            "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "takeover": {
+            "description": "Take a live lease away from another of your editor instances; never implicit",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "clientId"
+        ],
+        "type": "object"
+      },
+      "StudioProjectListResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StudioProjectDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Matching projects, before paging",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "StudioProjectResourcesDto": {
+        "properties": {
+          "checkedAt": {
+            "description": "When the resolution ran",
+            "format": "date-time",
+            "type": "string"
+          },
+          "complete": {
+            "description": "Every referenced source resolved for the acting account",
+            "type": "boolean"
+          },
+          "refusedCount": {
+            "description": "References that were refused for the acting account",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checkedAt",
+          "complete",
+          "refusedCount"
+        ],
+        "type": "object"
+      },
+      "StudioProjectRestoreDto": {
+        "properties": {
+          "clientId": {
+            "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "expectedRevision": {
+            "description": "The current head; the restore appends after it",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "requestKey": {
+            "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The historical revision to bring back",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clientId",
+          "expectedRevision",
+          "requestKey",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "StudioProjectRevisionDetailDto": {
+        "properties": {
+          "authorId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "digest": {
+            "description": "Null for a reviewer; the digest travels with the graph",
+            "nullable": true,
+            "type": "string"
+          },
+          "envelope": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioProjectEnvelopeDto"
+              }
+            ],
+            "nullable": true
+          },
+          "graphBytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "resources": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioProjectResourcesDto"
+              }
+            ],
+            "nullable": true
+          },
+          "restoredFromRevision": {
+            "description": "Set when this revision restored an earlier one",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "revision": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/StudioCommandSummaryDto"
+          },
+          "withheld": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "authorId",
+          "createdAt",
+          "digest",
+          "envelope",
+          "graphBytes",
+          "id",
+          "resources",
+          "restoredFromRevision",
+          "revision",
+          "summary",
+          "withheld"
+        ],
+        "type": "object"
+      },
+      "StudioProjectRevisionDto": {
+        "properties": {
+          "authorId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "digest": {
+            "description": "Null for a reviewer; the digest travels with the graph",
+            "nullable": true,
+            "type": "string"
+          },
+          "graphBytes": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "restoredFromRevision": {
+            "description": "Set when this revision restored an earlier one",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "revision": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/StudioCommandSummaryDto"
+          }
+        },
+        "required": [
+          "authorId",
+          "createdAt",
+          "digest",
+          "graphBytes",
+          "id",
+          "restoredFromRevision",
+          "revision",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "StudioProjectSaveDto": {
+        "properties": {
+          "clientId": {
+            "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "envelope": {
+            "$ref": "#/components/schemas/StudioProjectEnvelopeDto"
+          },
+          "expectedRevision": {
+            "description": "The head this document was built on",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "requestKey": {
+            "description": "Stable per attempt; a retry carries the same key",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/StudioCommandSummaryDto"
+          }
+        },
+        "required": [
+          "clientId",
+          "envelope",
+          "expectedRevision",
+          "requestKey"
+        ],
+        "type": "object"
+      },
+      "StudioProjectSaveResponseDto": {
+        "properties": {
+          "digest": {
+            "description": "Digest of the head envelope",
+            "type": "string"
+          },
+          "lease": {
+            "$ref": "#/components/schemas/StudioProjectLeaseDto"
+          },
+          "replayed": {
+            "description": "This request key was already accepted; the earlier result is returned",
+            "type": "boolean"
+          },
+          "revision": {
+            "description": "The head after this request",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "revisionId": {
+            "description": "The revision row; null when nothing was written",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "unchanged": {
+            "description": "The document equals the head, so no revision was written",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "digest",
+          "lease",
+          "replayed",
+          "revision",
+          "revisionId",
+          "unchanged"
+        ],
+        "type": "object"
+      },
+      "StudioProjectUpdateDto": {
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "spaceId": {
+            "description": "Set or clear the reviewing shared space",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StudioTimeDto": {
+        "properties": {
+          "den": {
+            "description": "Denominator",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "num": {
+            "description": "Numerator; zero is the start of the sequence",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "den",
+          "num"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -49106,6 +49956,1045 @@
         ],
         "x-immich-permission": "workflow.read"
       }
+    },
+    "/studio/projects": {
+      "get": {
+        "description": "Projects you own and projects shared with a space you belong to, most recently changed first.",
+        "operationId": "searchStudioProjects",
+        "parameters": [
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 0,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List Studio projects",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Creates an empty project owned by you and hands the write lease to the given editor instance. An initial document, when given, is saved as revision 1.",
+        "operationId": "createStudioProject",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioProjectCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectDetailDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}": {
+      "get": {
+        "description": "The project with its head document. A reviewer receives the document only when every source it references is available to them; otherwise it is withheld.",
+        "operationId": "getStudioProject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectDetailDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Rename the project or set the shared space whose members may review it. Owner only.",
+        "operationId": "updateStudioProject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioProjectUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "delete": {
+        "description": "Removes the project, its history and its comments. Owner only. Finished jobs keep their lineage.",
+        "operationId": "deleteStudioProject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/comments": {
+      "get": {
+        "description": "Comments pinned to the timeline, oldest first.",
+        "operationId": "getStudioProjectComments",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 0,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioCommentListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List Studio review comments",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Owner and reviewers may comment. The time is an exact fraction of seconds. No lease is needed.",
+        "operationId": "addStudioProjectComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioCommentCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioCommentDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add a Studio review comment",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/comments/{commentId}": {
+      "put": {
+        "description": "The author edits the text; the author or the owner resolves or reopens it.",
+        "operationId": "updateStudioProjectComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "commentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioCommentUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioCommentDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update a Studio review comment",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "delete": {
+        "description": "The author or the project owner may remove a comment.",
+        "operationId": "removeStudioProjectComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "commentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a Studio review comment",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/lease": {
+      "post": {
+        "description": "One editor instance writes at a time. The holder renews with the same call; a free or lapsed lease is taken; a live lease held elsewhere is refused with `409` unless `takeover` is set explicitly.",
+        "operationId": "acquireStudioProjectLease",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioProjectLeaseRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectLeaseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Acquire or renew the write lease",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/lease/release": {
+      "post": {
+        "description": "Gives the lease back so another editor instance can take it without waiting for it to lapse.",
+        "operationId": "releaseStudioProjectLease",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioProjectLeaseRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Release the write lease",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/restore": {
+      "post": {
+        "description": "Appends a new revision with the content of an earlier one. History is never rewritten; the restore is itself a revision.",
+        "operationId": "restoreStudioProjectRevision",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioProjectRestoreDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectSaveResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Restore a Studio project revision",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/revisions": {
+      "post": {
+        "description": "Autosave. Stores the complete document as the next revision when `expectedRevision` is the head and the caller holds the lease. The same `requestKey` with the same document replays the earlier result; an unchanged document writes nothing.",
+        "operationId": "saveStudioProjectRevision",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioProjectSaveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectSaveResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Save a Studio project revision",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "Revisions newest first, without their documents.",
+        "operationId": "getStudioProjectHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 0,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectHistoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List Studio project history",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/revisions/{revision}": {
+      "get": {
+        "description": "One historical revision with its document, under the same review rule as the head.",
+        "operationId": "getStudioProjectRevision",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "revision",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectRevisionDetailDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Studio project revision",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/revisions/{revision}/diff": {
+      "get": {
+        "description": "What changed between `against` and this revision, as graph paths and counts. No graph values are returned.",
+        "operationId": "diffStudioProjectRevision",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "revision",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "against",
+            "required": true,
+            "in": "query",
+            "description": "The earlier revision to compare with",
+            "schema": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectDiffDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Compare two Studio project revisions",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
     }
   },
   "servers": [
@@ -49317,6 +51206,10 @@
     {
       "name": "Shared spaces",
       "description": "A shared space is a top-level album that a group of people share. Its members hold the album roles - owner, editor or viewer - and somebody joins only by accepting an invitation, which they can preview first."
+    },
+    {
+      "name": "Studio projects",
+      "description": "A Studio project is an edit in progress: an opaque engine document stored as immutable revisions behind one writer lease, with a history that only appends, review comments pinned to exact timeline instants, and read-only review for members of a shared space the owner chose."
     }
   ]
 }
