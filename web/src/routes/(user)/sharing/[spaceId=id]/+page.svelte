@@ -24,6 +24,15 @@
   {/snippet}
 
   <Theme theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}>
-    <SharedSpaceDetail space={data.space} members={data.members} albums={data.albums} onRefresh={refresh} />
+    <SharedSpaceDetail
+      space={data.space}
+      members={data.members}
+      albums={data.albums}
+      spaces={data.spaces}
+      linkedAlbums={data.linkedAlbums}
+      people={data.people}
+      newSince={data.newSince}
+      onRefresh={refresh}
+    />
   </Theme>
 </UserPageLayout>
