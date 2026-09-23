@@ -159,7 +159,7 @@
         </span>
       </button>
 
-      <a href={Route.suppressed()} role="menuitem" class="fl-item" onclick={close}>
+      <a href={Route.locked()} role="menuitem" class="fl-item" onclick={close}>
         <Icon icon={mdiShieldLockOutline} size="1.125em" aria-hidden={true} />
         <span>
           {$t('frameleaf_open_locked')}

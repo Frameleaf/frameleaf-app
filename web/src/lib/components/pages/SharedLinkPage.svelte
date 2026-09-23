@@ -2,6 +2,7 @@
   import AlbumViewer from '$lib/components/album-page/AlbumViewer.svelte';
   import Brand from '$lib/components/frameleaf/Brand.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import IndividualSharedViewer from '$lib/components/share-page/IndividualSharedViewer.svelte';
   import '$lib/frameleaf/tokens.css';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -10,7 +11,8 @@
   import { handleError } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
   import { sharedLinkLogin, SharedLinkType, type AssetResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
-  import { Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { mdiEyeOffOutline, mdiEyeOutline } from '@mdi/js';
   import { onDestroy, tick } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -36,6 +38,7 @@
   let { title, description } = $state(meta);
   let isOwned = $derived(authManager.authenticated && authManager.user.id === sharedLink?.userId);
   let password = $state('');
+  let showPassword = $state(false);
 
   if (passwordRequired) {
     assetViewerManager.showAssetViewer(false);
@@ -86,17 +89,23 @@
     <form class="pv-password-card" novalidate {onsubmit}>
       <h1>{$t('frameleaf_public_password_title')}</h1>
       <p>{$t('frameleaf_public_password_body')}</p>
-      <label class="pv-password-field">
-        <span class="sr-only">{$t('password')}</span>
+      <div class="pv-password-field">
         <input
-          type="password"
+          type={showPassword ? 'text' : 'password'}
           autocomplete="off"
           placeholder={$t('password')}
           aria-label={$t('password')}
           bind:value={password}
         />
-      </label>
-      <Button type="submit" variant="primary">{$t('submit')}</Button>
+        <IconButton
+          label={showPassword ? $t('hide_password') : $t('show_password')}
+          pressed={showPassword}
+          onclick={() => (showPassword = !showPassword)}
+        >
+          <Icon icon={showPassword ? mdiEyeOffOutline : mdiEyeOutline} size="1.25em" aria-hidden={true} />
+        </IconButton>
+      </div>
+      <Button type="submit" variant="primary">{$t('continue')}</Button>
     </form>
   </main>
 {/if}
@@ -146,10 +155,13 @@
     font-size: 0.875rem;
   }
   .pv-password-field {
+    display: flex;
+    gap: 0.375rem;
     width: 100%;
   }
   .pv-password-field input {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);

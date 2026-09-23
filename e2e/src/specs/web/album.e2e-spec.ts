@@ -12,19 +12,28 @@ test.describe('Album', () => {
     admin = await utils.adminSetup();
   });
 
-  test(`doesn't delete album after canceling add assets`, async ({ context, page }) => {
+  test('keeps a new album after leaving Add photos without choosing anything', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
 
+    // Albums page -> Create album opens the create dialog (Collections.jsx), then the new album.
     await page.goto('/albums');
-    await page.getByRole('button', { name: 'Create album' }).click();
-    await page.getByRole('button', { name: 'Select photos' }).click();
-    await page.getByRole('button', { name: 'Close' }).click();
+    await page.getByRole('button', { name: 'Create album' }).first().click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Name').fill('Weekend trip');
+    await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+    await page.waitForURL(/\/albums\/[\da-f-]{36}/);
+
+    // CollectionHeader.jsx: Add photos -> Select from library / Upload from computer.
+    await page.getByRole('button', { name: 'Add photos' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Upload from computer' })).toBeVisible();
+    await page.getByRole('menuitem', { name: 'Select from library' }).click();
+    await page.keyboard.press('Escape');
 
     await page.reload();
-    await page.getByRole('button', { name: 'Select photos' }).waitFor();
+    await expect(page.getByRole('button', { name: 'Add photos' })).toBeVisible();
   });
 
-  test('should keep map view open after viewing an asset from the map and going back', async ({ context, page }) => {
+  test('opens the Map screen scoped to the album and returns to it from the viewer', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
 
     const imagePath = `${testAssetDir}/metadata/gps-position/thompson-springs.jpg`;
@@ -42,22 +51,23 @@ test.describe('Album', () => {
       assetIds: [mapAsset.id],
     });
 
+    // App.jsx onOpenMap: the album's Map action opens the Map screen with the album's scope.
     await page.goto(`/albums/${mapAlbum.id}`);
     const mapButton = page.getByRole('button', { name: 'Map' });
-    await expect(mapButton).toBeVisible();
+    await expect(mapButton).toBeEnabled();
     await mapButton.click();
+    await page.waitForURL(`/map?albumId=${mapAlbum.id}`);
 
-    const mapModal = page.getByRole('dialog');
-    await expect(mapModal).toBeVisible();
-
-    const mapMarker = mapModal.getByRole('img', { name: /Map marker/i }).first();
+    const mapMarker = page.getByRole('img', { name: /Map marker/i }).first();
     await expect(mapMarker).toBeVisible();
     await mapMarker.click();
 
-    await page.waitForSelector('#immich-asset-viewer');
-    await page.getByRole('button', { name: 'Go back' }).click();
+    const viewer = page.locator('#immich-asset-viewer');
+    await expect(viewer).toHaveAttribute('data-asset-id', mapAsset.id);
+    await page.keyboard.press('Escape');
 
-    await expect(page.locator('#immich-asset-viewer')).not.toBeVisible();
-    await expect(mapModal).toBeVisible();
+    await expect(viewer).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp(String.raw`/map\?albumId=${mapAlbum.id}`));
+    await expect(mapMarker).toBeVisible();
   });
 });
