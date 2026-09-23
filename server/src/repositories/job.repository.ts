@@ -11,6 +11,7 @@ import { ImmichWorker, JobName, JobStatus, MetadataKey, QueueCleanType, QueueJob
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
 import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
 
 type JobMapItem = {
@@ -584,6 +585,12 @@ export class JobRepository {
         const kind = (item.data as { kind?: string } | undefined)?.kind;
         const dedupId = kind ? `${JobName.SmartAlbumReevaluateAll}:${kind}` : JobName.SmartAlbumReevaluateAll;
         return { deduplication: { id: dedupId } };
+      }
+      case JobName.AnalyticsCollect: {
+        // FL-79: the nightly run is one per night; its one automatic retry waits a few minutes.
+        return item.data?.attempt
+          ? { delay: ANALYTICS_AUTO_RETRY_DELAY_MS }
+          : { deduplication: { id: JobName.AnalyticsCollect } };
       }
       case JobName.VersionCheck: {
         return { deduplication: { id: JobName.VersionCheck } };

@@ -17,11 +17,13 @@
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
   import SettingsDraftNotices from '$lib/components/frameleaf/settings/SettingsDraftNotices.svelte';
   import SettingsSaveBar from '$lib/components/frameleaf/settings/SettingsSaveBar.svelte';
   import SettingsSection from '$lib/components/frameleaf/settings/SettingsSection.svelte';
   import {
+    isScreenArea,
     resolveSettingsArea,
     searchSettingsSections,
     sectionsForArea,
@@ -41,6 +43,7 @@
   import {
     mdiBackupRestore,
     mdiBellOutline,
+    mdiChartTimelineVariant,
     mdiDesktopTowerMonitor,
     mdiFolderOutline,
     mdiHarddisk,
@@ -78,6 +81,11 @@
   const AREA_PARAM = 'area';
 
   const areaCopy: Record<SettingsAreaId, { title: string; description: string; icon: string }> = $derived({
+    analytics: {
+      title: $t('frameleaf_settings_area_analytics'),
+      description: $t('frameleaf_settings_area_analytics_description'),
+      icon: mdiChartTimelineVariant,
+    },
     storage: {
       title: $t('frameleaf_settings_area_storage'),
       description: $t('frameleaf_settings_area_storage_description'),
@@ -136,6 +144,7 @@
   });
 
   const groupCopy: Record<SettingsGroupId, string> = $derived({
+    command: $t('frameleaf_settings_group_command'),
     library: $t('frameleaf_settings_group_library'),
     server: $t('frameleaf_settings_group_server'),
     personal: $t('frameleaf_settings_group_personal'),
@@ -308,6 +317,11 @@
           </SettingsSection>
         {/each}
       </div>
+    {:else if isScreenArea(area)}
+      <!-- As in the template, Library analytics carries its own heading instead of the area's. -->
+      {#if area === 'analytics'}
+        <AnalyticsArea />
+      {/if}
     {:else}
       {#if !(areaPanel && PANEL_AREAS.has(area))}
         <header class="heading">
