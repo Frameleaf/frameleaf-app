@@ -199,13 +199,17 @@
     if (delay === null) {
       return;
     }
-    pollTimer = setTimeout(async () => {
-      try {
-        follow(await getEnrichmentPlan({ id: next.operation.id }));
-      } catch (error) {
-        handleError(error, $t('frameleaf_enrichment_plan_error'));
-      }
-    }, delay);
+    pollTimer = setTimeout(
+      () =>
+        void (async () => {
+          try {
+            follow(await getEnrichmentPlan({ id: next.operation.id }));
+          } catch (error) {
+            handleError(error, $t('frameleaf_enrichment_plan_error'));
+          }
+        })(),
+      delay,
+    );
   };
 
   const openPlan = async (id: string) => {

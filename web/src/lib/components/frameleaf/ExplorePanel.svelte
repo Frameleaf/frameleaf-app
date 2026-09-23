@@ -80,7 +80,7 @@
 
   {#if !hasAnything}
     <div class="explore-empty" role="status">
-      <Icon icon={mdiImageSearchOutline} size={32} aria-hidden="true" />
+      <Icon icon={mdiImageSearchOutline} size="32" aria-hidden="true" />
       <p>{$t('no_explore_results_message')}</p>
     </div>
   {:else}
@@ -90,7 +90,7 @@
           <h2 id="explore-people-heading">{$t('people')}</h2>
           <a href={Route.people()}>
             {$t('view_all')}
-            <Icon icon={mdiChevronRight} size={16} aria-hidden="true" />
+            <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
           </a>
         </div>
         <div class="explore-people">
@@ -114,12 +114,12 @@
               loading="lazy"
             />
           {:else}
-            <div class="explore-cover-empty"><Icon icon={mdiImageMultipleOutline} size={28} aria-hidden="true" /></div>
+            <div class="explore-cover-empty"><Icon icon={mdiImageMultipleOutline} size="28" aria-hidden="true" /></div>
           {/if}
           <span class="explore-cover-shade"></span>
           <span class="explore-best-copy">
             <span class="explore-overline"
-              ><Icon icon={mdiStarOutline} size={16} aria-hidden="true" /> {$t('best_photos')}</span
+              ><Icon icon={mdiStarOutline} size="16" aria-hidden="true" /> {$t('best_photos')}</span
             >
             <strong>{$t('frameleaf_explore_highlight_copy')}</strong>
             <small>
@@ -137,7 +137,7 @@
         <div class="explore-shortcuts">
           {#each shortcuts as shortcut (shortcut.id)}
             <a href={shortcut.href}>
-              <span class="explore-shortcut-icon"><Icon icon={shortcut.icon} size={20} aria-hidden="true" /></span>
+              <span class="explore-shortcut-icon"><Icon icon={shortcut.icon} size="20" aria-hidden="true" /></span>
               <span>
                 <strong>{$t(shortcut.labelKey)}</strong>
                 <small>
@@ -146,7 +146,7 @@
                     : $t('frameleaf_explore_item_count', { values: { count: shortcut.count } })}
                 </small>
               </span>
-              <Icon icon={mdiChevronRight} size={16} aria-hidden="true" />
+              <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
             </a>
           {/each}
         </div>
@@ -159,7 +159,7 @@
           <h2 id="explore-places-heading">{$t('places')}</h2>
           <a href={Route.places()}>
             {$t('view_all')}
-            <Icon icon={mdiChevronRight} size={16} aria-hidden="true" />
+            <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
           </a>
         </div>
         <div class="explore-places">
@@ -184,7 +184,7 @@
           <h2 id="explore-memories-heading">{$t('frameleaf_explore_days_to_revisit')}</h2>
           <a href={Route.memories()}>
             {$t('view_all')}
-            <Icon icon={mdiChevronRight} size={16} aria-hidden="true" />
+            <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
           </a>
         </div>
         <div class="explore-memory-row">
@@ -193,7 +193,7 @@
               <img src={memory.src} alt={memory.alt} loading="lazy" />
               <span class="explore-cover-shade"></span>
               <span class="explore-memory-copy">
-                <Icon icon={mdiHistory} size={14} aria-hidden="true" />
+                <Icon icon={mdiHistory} size="14" aria-hidden="true" />
                 <strong>{memory.title}</strong>
               </span>
             </a>
@@ -208,7 +208,7 @@
           <h2 id="explore-albums-heading">{$t('frameleaf_explore_from_your_albums')}</h2>
           <a href={Route.albums()}>
             {$t('view_all')}
-            <Icon icon={mdiChevronRight} size={16} aria-hidden="true" />
+            <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
           </a>
         </div>
         <div class="explore-albums">
@@ -219,7 +219,7 @@
                 <strong>{album.albumName}</strong>
                 <small>{$t('frameleaf_explore_item_count', { values: { count: album.assetCount } })}</small>
               </span>
-              <Icon icon={mdiChevronRight} size={16} aria-hidden="true" />
+              <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
             </a>
           {/each}
         </div>
@@ -232,7 +232,7 @@
           <h2 id="explore-recent-heading">{$t('recently_added')}</h2>
           <a href={Route.recentlyAdded()}>
             {$t('view_all')}
-            <Icon icon={mdiChevronRight} size={16} aria-hidden="true" />
+            <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
           </a>
         </div>
         <div class="explore-recent">
@@ -240,7 +240,7 @@
             <button type="button" onclick={() => onViewAsset(asset.id)} aria-label={altTextFor(asset)}>
               <img src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail })} alt="" loading="lazy" />
               {#if asset.type === AssetTypeEnum.Video}
-                <span class="explore-media-label"><Icon icon={mdiMovieOpenOutline} size={14} aria-hidden="true" /></span
+                <span class="explore-media-label"><Icon icon={mdiMovieOpenOutline} size="14" aria-hidden="true" /></span
                 >
               {/if}
             </button>
@@ -253,12 +253,12 @@
       <a href={Route.memories()}>
         <Icon icon={mdiHistory} aria-hidden="true" />
         <span>{$t('memories')}</span>
-        <Icon icon={mdiChevronRight} size={16} aria-hidden="true" />
+        <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
       </a>
       <a href={Route.recentlyAdded()}>
         <Icon icon={mdiClockOutline} aria-hidden="true" />
         <span>{$t('recently_added')}</span>
-        <Icon icon={mdiChevronRight} size={16} aria-hidden="true" />
+        <Icon icon={mdiChevronRight} size="16" aria-hidden="true" />
       </a>
     </div>
   {/if}

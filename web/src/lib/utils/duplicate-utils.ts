@@ -23,6 +23,7 @@ import {
   mdiWeightKilogram,
 } from '@mdi/js';
 import { DateTime } from 'luxon';
+import type { Translations } from 'svelte-i18n';
 import type { MessageFormatter } from 'svelte-i18n';
 import { getAssetResolution, getFileSize } from '$lib/utils/asset-utils';
 import { fromISODateTime, fromISODateTimeUTC } from '$lib/utils/timeline-util';
@@ -56,7 +57,7 @@ const getDateTime = (asset: AssetResponseDto) => {
 
 type MetadataFieldDefinition = {
   icon: string;
-  titleKey: string;
+  titleKey: Translations;
   keys: readonly string[];
   render: (asset: AssetResponseDto, $t: MessageFormatter, locale: string | undefined) => string;
   tooltip?: (asset: AssetResponseDto, $t: MessageFormatter) => string;

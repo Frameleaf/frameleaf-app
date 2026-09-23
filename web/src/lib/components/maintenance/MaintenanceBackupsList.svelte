@@ -46,7 +46,6 @@
   }
 
   const groupedBackups = $derived.by(() => {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const groups = new Map<string, { date: DateTime; backups: DatabaseBackupDto[] }>();
     const unknownDateKey = $t('unknown_date');
 

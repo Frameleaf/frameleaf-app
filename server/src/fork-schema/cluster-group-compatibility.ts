@@ -1,4 +1,4 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely, RawBuilder, sql } from 'kysely';
 import {
   down as revertClusterGroups,
   up as applyClusterGroups,
@@ -59,6 +59,7 @@ export async function revertClusterGroupsForOfficial(db: Kysely<any>): Promise<v
     FROM fork_person_handoff mapping
     WHERE audit."ownerId" = mapping."ownerId" AND audit."personGroupId" = mapping."personGroupId"
   `.execute(db);
+  await detachSharedSpacePeopleForOfficial(db);
   await revertClusterGroups(db);
   // Sync sends deletions before upserts. Retire the previous IDs as well as
   // bumping the live rows, so clients do not keep ghost people after remapping.
@@ -80,6 +81,7 @@ export async function applyClusterGroupsAfterOfficial(db: Kysely<any>): Promise<
     SELECT to_regclass('immich_fork.migration_audit') IS NOT NULL AS present
   `.execute(db);
   if (!auditExists.rows[0]?.present) {
+    await reattachSharedSpacePeopleAfterOfficial(db, null);
     return;
   }
   const snapshot = await sql<{ id: string; details: Record<string, unknown> }>`
@@ -88,6 +90,7 @@ export async function applyClusterGroupsAfterOfficial(db: Kysely<any>): Promise<
   `.execute(db);
   const saved = snapshot.rows[0];
   if (!saved) {
+    await reattachSharedSpacePeopleAfterOfficial(db, null);
     return;
   }
   const { mapping, users, clusters, groups, requests, audit } = saved.details;
@@ -155,8 +158,72 @@ export async function applyClusterGroupsAfterOfficial(db: Kysely<any>): Promise<
     SELECT * FROM jsonb_populate_recordset(NULL::public.person_group_audit, ${audit}::jsonb)
     ON CONFLICT DO NOTHING
   `.execute(db);
+  await reattachSharedSpacePeopleAfterOfficial(db, mappings);
   await sql`
     UPDATE immich_fork.migration_audit SET status = 'reconciled', "completedAt" = now()
     WHERE id = ${saved.id}::bigint
   `.execute(db);
+}
+
+const sharedSpacePersonFk = 'shared_space_person_personGroupId_fkey';
+
+const hasSharedSpacePersonFk = async (db: Kysely<any>) => {
+  const result = await sql<{ present: boolean }>`
+    SELECT EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conname = ${sharedSpacePersonFk} AND conrelid = to_regclass('public.shared_space_person')
+    ) AS present
+  `.execute(db);
+  return !!result.rows[0]?.present;
+};
+
+// A shared space's linked people (fork table `shared_space_person`, migration 2100000000200) point at a
+// person group, which the certified tag does not have. Before the groups are dropped, move each link onto
+// its owner's official person (the id the down migration gives that person) and release the foreign key;
+// the table itself is fork data the certified container never reads. Runs after `fork_person_handoff`
+// exists and before `revertClusterGroups`.
+async function detachSharedSpacePeopleForOfficial(db: Kysely<any>): Promise<void> {
+  if (!(await hasSharedSpacePersonFk(db))) {
+    return;
+  }
+  await sql.raw(`ALTER TABLE public.shared_space_person DROP CONSTRAINT "${sharedSpacePersonFk}"`).execute(db);
+  await sql`
+    UPDATE public.shared_space_person link SET "personGroupId" = mapping."officialId"
+    FROM fork_person_handoff mapping
+    WHERE link."personOwnerId" = mapping."ownerId" AND link."personGroupId" = mapping."personGroupId"
+  `.execute(db);
+}
+
+// The return: map each link back onto its restored person group, drop links whose owner's person was
+// removed while the official container ran (deleting that person removed it from the space), and restore
+// the key.
+async function reattachSharedSpacePeopleAfterOfficial(
+  db: Kysely<any>,
+  mappings: RawBuilder<unknown> | null,
+): Promise<void> {
+  const table = await sql<{ present: boolean }>`
+    SELECT to_regclass('public.shared_space_person') IS NOT NULL AS present
+  `.execute(db);
+  if (!table.rows[0]?.present || (await hasSharedSpacePersonFk(db))) {
+    return;
+  }
+  if (mappings) {
+    await sql`
+      UPDATE public.shared_space_person link SET "personGroupId" = mapping."personGroupId"
+      FROM ${mappings}
+      WHERE link."personOwnerId" = mapping."ownerId" AND link."personGroupId" = mapping."officialId"
+    `.execute(db);
+  }
+  await sql`
+    DELETE FROM public.shared_space_person link
+    WHERE NOT EXISTS (
+      SELECT 1 FROM public.person person
+      WHERE person."ownerId" = link."personOwnerId" AND person."personGroupId" = link."personGroupId"
+    )
+  `.execute(db);
+  await sql
+    .raw(
+      `ALTER TABLE public.shared_space_person ADD CONSTRAINT "${sharedSpacePersonFk}" FOREIGN KEY ("personGroupId") REFERENCES "person_group" ("id") ON UPDATE CASCADE ON DELETE CASCADE`,
+    )
+    .execute(db);
 }

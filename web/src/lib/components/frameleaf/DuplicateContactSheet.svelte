@@ -14,6 +14,7 @@
     frameOffsetSeconds,
     isBurst,
     type ReviewGroup,
+    qualityReasonKey,
   } from '$lib/frameleaf/duplicate-review';
   import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
@@ -91,7 +92,7 @@
     <strong>{focused.originalFileName}</strong>
     {#if focusedReasons.length > 0}
       <p>
-        {focusedReasons.map((reason) => $t(`frameleaf_duplicates_quality_${reason.replaceAll('-', '_')}`)).join(' · ')}
+        {focusedReasons.map((reason) => $t(qualityReasonKey(reason))).join(' · ')}
       </p>
     {/if}
     <small>

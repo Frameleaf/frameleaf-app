@@ -9,7 +9,8 @@
   import AlbumMoveDialog from '$lib/components/frameleaf/AlbumMoveDialog.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
   import CollectionShelf from '$lib/components/frameleaf/CollectionShelf.svelte';
-  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import SmartAlbumReevaluateDialog from '$lib/components/frameleaf/SmartAlbumReevaluateDialog.svelte';
+  import SmartAlbumRuleDialog from '$lib/components/frameleaf/SmartAlbumRuleDialog.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
@@ -42,9 +43,20 @@
     handleRemoveUserFromAlbum,
   } from '$lib/services/album.service';
   import { albumDirectoryView } from '$lib/stores/preferences.store';
+  import { loadRuleSources, type RuleSources } from '$lib/frameleaf/classification-sources';
+  import { handleError } from '$lib/utils/handle-error';
   import { getAlbumDragData, isAlbumDrag } from '$lib/utils/album-drag';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
-  import { AlbumKind, type AlbumResponseDto, type AlbumTreeResponseDto, type CreateAlbumDto } from '@immich/sdk';
+  import {
+    AlbumKind,
+    createClassificationRule,
+    getClassificationRule,
+    type AlbumResponseDto,
+    type AlbumTreeResponseDto,
+    type ClassificationRuleCreateDto,
+    type ClassificationRuleResponseDto,
+    type CreateAlbumDto,
+  } from '@immich/sdk';
   import { Icon, modalManager } from '@immich/ui';
   import {
     mdiAccountMultipleOutline,
@@ -103,13 +115,17 @@
   let dragged = $state<AlbumResponseDto | undefined>();
   let overRoot = $state(false);
   let busy = $state(false);
-  let createDialog = $state<{ open: boolean; kind: AlbumKind; parentId: string | null }>({
+  let createDialog = $state<{ open: boolean; kind: AlbumKind; parentId: string | null; smart: boolean }>({
     open: false,
     kind: AlbumKind.Album,
     parentId: null,
+    smart: false,
   });
   let moveDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
-  let smartDialogOpen = $state(false);
+  let reevaluate = $state<{ open: boolean; rule?: ClassificationRuleResponseDto; sources: RuleSources }>({
+    open: false,
+    sources: { people: [], tags: [] },
+  });
   const headingId = albumDirectoryHeadingId;
 
   const arrangement = $derived(
@@ -204,8 +220,38 @@
   );
 
   /* ---- actions ---- */
-  const openCreate = (kind: AlbumKind, parentId: string | null = null) => {
-    createDialog = { open: true, kind, parentId };
+  const openCreate = (kind: AlbumKind, parentId: string | null = null, smart = false) => {
+    createDialog = { open: true, kind, parentId, smart };
+  };
+
+  /** A smart album and its rule are created together (FL-60); nothing is matched until it is applied. */
+  const createSmart = async (dto: ClassificationRuleCreateDto) => {
+    busy = true;
+    try {
+      const rule = await createClassificationRule({ classificationRuleCreateDto: dto });
+      status = $t('frameleaf_albums_created', { values: { name: rule.albumName } });
+      await goto(Route.viewAlbum({ id: rule.albumId }));
+      return true;
+    } catch (error) {
+      handleError(error, $t('frameleaf_rules_create_failed'));
+      return false;
+    } finally {
+      busy = false;
+    }
+  };
+
+  /** Re-evaluate a rule-backed smart album in place; the built-in ones keep the server-wide check. */
+  const openReevaluate = async (album: AlbumResponseDto) => {
+    if (!album.smartRuleId) {
+      void modalManager.show(SmartAlbumReevaluateModal, {});
+      return;
+    }
+    try {
+      const [rule, sources] = await Promise.all([getClassificationRule({ id: album.smartRuleId }), loadRuleSources()]);
+      reevaluate = { open: true, rule, sources };
+    } catch (error) {
+      handleError(error, $t('frameleaf_rules_plan_failed'));
+    }
   };
 
   const create = async (dto: CreateAlbumDto) => {
@@ -272,7 +318,27 @@
     await refresh();
   };
 
+  let ruleEdit = $state<{
+    open: boolean;
+    album?: AlbumResponseDto;
+    rule?: ClassificationRuleResponseDto;
+    sources: RuleSources;
+  }>({ open: false, sources: { people: [], tags: [] } });
+
   const edit = async (album: AlbumResponseDto) => {
+    // A smart album is edited with its rule, as the design's edit dialog does (FL-60).
+    if (album.smartRuleId) {
+      try {
+        const [rule, sources] = await Promise.all([
+          getClassificationRule({ id: album.smartRuleId }),
+          loadRuleSources(),
+        ]);
+        ruleEdit = { open: true, album, rule, sources };
+      } catch (error) {
+        handleError(error, $t('frameleaf_rules_save_failed'));
+      }
+      return;
+    }
     await modalManager.show(AlbumEditModal, { album });
     await refresh();
   };
@@ -364,11 +430,11 @@
         onClick={() => void openFileUploadDialog({ albumId: album.id })}
       />
     {/if}
-    {#if album.isSmart}
+    {#if album.isSmart && (album.smartRuleId || authManager.user.isAdmin)}
       <MenuOption
         icon={mdiRefresh}
         text={$t('frameleaf_albums_smart_reevaluate')}
-        onClick={() => void modalManager.show(SmartAlbumReevaluateModal, {})}
+        onClick={() => void openReevaluate(album)}
       />
     {/if}
     {#if isSpace(album)}
@@ -496,7 +562,7 @@
         <MenuOption
           icon={mdiAutoFix}
           text={$t('frameleaf_albums_new_smart')}
-          onClick={() => (smartDialogOpen = true)}
+          onClick={() => openCreate(AlbumKind.Album, null, true)}
         />
         <MenuOption
           icon={mdiFolderMultipleOutline}
@@ -632,7 +698,9 @@
   kind={createDialog.kind}
   collections={editableCollections}
   defaultParentId={createDialog.parentId}
+  smart={createDialog.smart}
   onCreate={create}
+  onCreateSmart={createSmart}
 />
 
 {#if moveDialog.album}
@@ -645,28 +713,30 @@
   />
 {/if}
 
-<Dialog title={$t('frameleaf_albums_smart_title')} closeLabel={$t('close')} bind:open={smartDialogOpen}>
-  <div class="smart">
-    <p>{$t('frameleaf_albums_smart_description')}</p>
-    <div class="buttons">
-      {#if authManager.user.isAdmin}
-        <a href={Route.systemSettings()} onclick={() => (smartDialogOpen = false)}
-          >{$t('frameleaf_albums_smart_settings')}</a
-        >
-      {/if}
-      <button
-        type="button"
-        class="primary"
-        onclick={() => {
-          smartDialogOpen = false;
-          void modalManager.show(SmartAlbumReevaluateModal, {});
-        }}
-      >
-        {$t('frameleaf_albums_smart_reevaluate')}
-      </button>
-    </div>
-  </div>
-</Dialog>
+{#if ruleEdit.rule && ruleEdit.album}
+  <SmartAlbumRuleDialog
+    album={ruleEdit.album}
+    rule={ruleEdit.rule}
+    sources={ruleEdit.sources}
+    bind:open={ruleEdit.open}
+    onSaved={(_saved, message) => {
+      status = message;
+      void refresh();
+    }}
+  />
+{/if}
+
+{#if reevaluate.rule}
+  <SmartAlbumReevaluateDialog
+    rule={reevaluate.rule}
+    sources={reevaluate.sources}
+    bind:open={reevaluate.open}
+    onApplied={(message) => {
+      status = message;
+      void refresh();
+    }}
+  />
+{/if}
 
 <style>
   .albums {
@@ -878,28 +948,6 @@
     border-color: var(--fl-accent);
     color: var(--fl-text);
     background: var(--fl-raised);
-  }
-  .smart {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    margin-block-start: 1rem;
-    max-width: 28rem;
-  }
-  .smart p {
-    margin: 0;
-    color: var(--fl-muted);
-    font-size: 0.875rem;
-  }
-  .smart .buttons {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    gap: 0.75rem;
-  }
-  .smart a {
-    color: var(--fl-text);
-    font-size: 0.875rem;
   }
   @media (max-width: 640px) {
     .albums {

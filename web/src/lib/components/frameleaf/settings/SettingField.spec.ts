@@ -57,7 +57,7 @@ describe('SettingField component', () => {
     const input = getByLabelText('External domain') as HTMLInputElement;
     expect(input.value).toBe('https://photos.example');
     expect(input.getAttribute('aria-describedby')).toBeTruthy();
-    expect(document.getElementById(input.getAttribute('aria-describedby')!)?.textContent).toContain(
+    expect(document.querySelector(`#${CSS.escape(input.getAttribute('aria-describedby')!)}`)?.textContent).toContain(
       'Used in links sent by email',
     );
   });

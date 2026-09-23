@@ -3,6 +3,7 @@ import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AnalyticsRepository } from 'src/repositories/analytics.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
@@ -12,11 +13,13 @@ import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
+import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { DocumentRepository } from 'src/repositories/document.repository.js';
 import { DownloadRepository } from 'src/repositories/download.repository.js';
 import { DuplicateDecisionRepository } from 'src/repositories/duplicate-decision.repository.js';
@@ -56,8 +59,11 @@ import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
+import { PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
+import { PreservationFileRepository } from 'src/repositories/preservation-files.repository.js';
+import { PreservationRepository } from 'src/repositories/preservation.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { RunPodRepository } from 'src/repositories/runpod.repository.js';
@@ -69,6 +75,7 @@ import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
 import { StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
@@ -97,6 +104,7 @@ export const repositories = [
   ActivityRepository,
   AdminAuditRepository,
   AlbumRepository,
+  AnalyticsRepository,
   AlbumUserRepository,
   ApiKeyRepository,
   AppRepository,
@@ -142,18 +150,24 @@ export const repositories = [
   NotificationRepository,
   OAuthRepository,
   OcrRepository,
+  ClassificationRepository,
   ClusterGroupRepository,
   PartnerRepository,
   PersonRepository,
   PetRepository,
+  PhotoToolsRepository,
   PhysicalFileRepository,
   PluginRepository,
+  PreservationFileRepository,
+  PreservationRepository,
   ProcessRepository,
   RunPodRepository,
   SearchRepository,
   ServerInfoRepository,
   SmartAlbumRepository,
   StudioProjectRepository,
+  StudioExportRepository,
+  DerivativePrivacyRepository,
   SessionRepository,
   SharedLinkRepository,
   SharedLinkAssetRepository,
