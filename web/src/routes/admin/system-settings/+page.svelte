@@ -21,6 +21,7 @@
   import MachineLearningSettings from './MachineLearningSettings.svelte';
   import MapSettings from './MapSettings.svelte';
   import MetadataSettings from './MetadataSettings.svelte';
+  import MigrationSettingsSection from '$lib/components/frameleaf/settings/MigrationSettingsSection.svelte';
   import NewVersionCheckSettings from './NewVersionCheckSettings.svelte';
   import NightlyTasksSettings from './NightlyTasksSettings.svelte';
   import NotificationSettings from './NotificationSettings.svelte';
@@ -80,6 +81,7 @@
     mdiServerOutline,
     mdiSync,
     mdiTrashCanOutline,
+    mdiTruckOutline,
     mdiUpdate,
     mdiVideoOutline,
   } from '@mdi/js';
@@ -227,6 +229,13 @@
       subtitle: $t('admin.metadata_settings_description'),
       key: 'metadata',
       icon: mdiDatabaseOutline,
+    },
+    {
+      component: MigrationSettingsSection,
+      title: $t('admin.frameleaf_migration_settings_title'),
+      subtitle: $t('admin.frameleaf_migration_settings_subtitle'),
+      key: 'migration',
+      icon: mdiTruckOutline,
     },
     {
       component: NightlyTasksSettings,
