@@ -12,6 +12,30 @@ Currently, Immich supports the following types of edits:
 
 <img src={require('./img/web-edit-interface.webp').default} title="Web edit interface" />
 
+## Originals, edited masters and playback copies
+
+Three kinds of file exist for an edited asset, and they are never confused for one another:
+
+- The **original** is what you uploaded. Editing never writes to it, and every render reads from it. Reverting an edit simply stops using the derived files.
+- The **edited master** is a new file rendered from the original plus the edit recipe. It is the highest-quality version of the edit and is what a download or an export gives you. It is never re-edited in place: changing the recipe re-renders from the original, so repeated edits do not stack up generation loss.
+- **Playback copies** — previews, thumbnails and the streaming renditions — are derived from the master, deliberately smaller, and safe to delete. They are regenerated on demand and are never treated as the master.
+
+Each edited master is written alongside a small `.lineage.json` record naming the original it came from, that original's checksum, the exact revision of the edit recipe and the version of the renderer. That record is what lets the server recognise a master that is out of date and re-render it from the original.
+
+### What the master preserves
+
+The general video transcoding settings in the administration panel describe playback copies. They do not cap an edited master, which keeps the original's resolution regardless of the configured target resolution, uses a higher quality target than the playback setting, and ignores the playback bitrate ceiling.
+
+Beyond quality, a rendered master preserves:
+
+- **Timing.** Frame timing is passed through rather than resampled, so a variable-frame-rate recording keeps its original cadence. The output timescale matches the source.
+- **Audio.** The channel layout is kept. An audio track the edit does not touch is copied through untouched; a track the edit does change is re-encoded without being forced down to stereo.
+- **Colour and bit depth.** A 10-bit source stays 10-bit. Colour primaries, transfer and matrix are written explicitly. If a high-dynamic-range source has to be tone mapped, that choice is recorded in the lineage rather than applied silently, and the HDR original remains the reference.
+
+An edit that only turns the picture by a quarter or a half turn does not re-encode at all where the source allows it: the rotation is written into the file's display metadata and every video and audio packet is preserved exactly.
+
+If a source cannot be preserved — currently, Dolby Vision profile 5, which has no usable base layer — the edit is refused before anything is written. The original and any previously rendered master are left intact.
+
 ## Download
 
 When you download an edited asset, Immich provides the edited version of the asset by default. However, you can choose to download the original version if needed.

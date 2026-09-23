@@ -213,6 +213,7 @@ select
   "asset"."ownerId",
   "asset"."thumbhash",
   "asset"."type",
+  "asset"."checksum",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -798,6 +799,7 @@ select
   "asset"."id",
   "asset"."ownerId",
   "asset"."originalPath",
+  "asset"."checksum",
   (
     select
       coalesce(json_agg(agg), '[]')
