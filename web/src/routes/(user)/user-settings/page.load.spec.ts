@@ -1,27 +1,48 @@
-import { getApiKeys, getSessions } from '@immich/sdk';
+import { getAdminConfigWithRevision, getApiKeys, getConfigDefaults, getSessions } from '@immich/sdk';
 import { load } from './+page';
 
+const auth = vi.hoisted(() => ({ user: { isAdmin: false } }));
 vi.mock('@immich/sdk', () => ({
   getApiKeys: vi.fn().mockResolvedValue([]),
   getSessions: vi.fn().mockResolvedValue([]),
+  getAdminConfigWithRevision: vi.fn().mockResolvedValue({ config: {}, revision: 1 }),
+  getConfigDefaults: vi.fn().mockResolvedValue({}),
 }));
 vi.mock('$lib/utils/auth', () => ({ authenticate: vi.fn() }));
 vi.mock('$lib/utils/i18n', () => ({ getFormatter: vi.fn().mockResolvedValue((key: string) => key) }));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
+vi.mock('$lib/managers/system-config-manager.svelte', () => ({ systemConfigManager: { init: vi.fn() } }));
 
-describe('user settings utilities access', () => {
+const open = (query: string) => load({ url: new URL(`https://example.test/user-settings${query}`) } as never);
+
+describe('the Command Center page (FL-71)', () => {
   beforeEach(() => vi.clearAllMocks());
-  it.each(['?area=utilities', '?area=utilities&section=duplicates', '?screen=care'])(
-    'opens %s without account credentials or admin configuration reads',
+
+  it.each(['', '?area=utilities', '?area=utilities&section=duplicates', '?area=preferences&section=api-keys'])(
+    'opens %s for an account without administration and never reads server settings',
     async (query) => {
-      const result = await load({ url: new URL(`https://example.test/user-settings${query}`) } as never);
-      expect(result).toMatchObject({ commandCenter: true });
+      auth.user.isAdmin = false;
+      await expect(open(query)).resolves.toMatchObject({ screen: 'settings', system: null });
+      expect(getAdminConfigWithRevision).not.toHaveBeenCalled();
+      expect(getConfigDefaults).not.toHaveBeenCalled();
+      // Keys and devices load with their own sections, not with every Command Center page.
       expect(getApiKeys).not.toHaveBeenCalled();
       expect(getSessions).not.toHaveBeenCalled();
     },
   );
-  it('preserves the existing personal account settings loader', async () => {
-    await load({ url: new URL('https://example.test/user-settings?isOpen=preservation') } as never);
-    expect(getApiKeys).toHaveBeenCalledTimes(1);
-    expect(getSessions).toHaveBeenCalledTimes(1);
+
+  it('loads the server settings with their revision for an administrator', async () => {
+    auth.user.isAdmin = true;
+    await expect(open('?area=storage')).resolves.toMatchObject({
+      screen: 'settings',
+      system: { current: { config: {}, revision: 1 }, defaultConfig: {} },
+    });
+    expect(getAdminConfigWithRevision).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the Library Care screen separate', async () => {
+    auth.user.isAdmin = true;
+    await expect(open('?screen=care')).resolves.toMatchObject({ screen: 'care', system: null });
+    expect(getAdminConfigWithRevision).not.toHaveBeenCalled();
   });
 });
