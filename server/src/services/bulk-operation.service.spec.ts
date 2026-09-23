@@ -365,7 +365,7 @@ describe(BulkOperationService.name, () => {
         payload: { mediaHealth: [{ assetId, findingId: newUuid(), candidateId: newUuid() }] },
         elevated: false,
       });
-      vi.mocked(operations.getLockedAssetIds).mockResolvedValue(new Set([assetId]));
+      vi.mocked(operations.getLockedIds).mockResolvedValue(new Set([assetId]));
 
       const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
 

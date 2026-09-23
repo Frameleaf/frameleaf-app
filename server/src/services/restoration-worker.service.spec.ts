@@ -331,7 +331,9 @@ describe(RestorationWorkerService.name, () => {
     });
 
     it('leaves the row running while the job waits for its automatic retry (FL-104)', async () => {
-      delete (mocks.machineLearning as unknown as { restore?: unknown }).restore;
+      // the adapter always exists since FL-114 (AdapterMissing is no longer raised); a worker failure
+      // is what waits for the automatic retry now
+      restore.mockRejectedValue(new Error('worker unreachable'));
       operations.fail.mockResolvedValue('retrying');
 
       await sut.run(operation(), CLAIM);
@@ -339,7 +341,7 @@ describe(RestorationWorkerService.name, () => {
       expect(operations.fail).toHaveBeenCalledWith(
         OPERATION_ID,
         CLAIM,
-        expect.objectContaining({ errorCode: RestorationErrorCode.AdapterMissing }),
+        expect.objectContaining({ errorCode: RestorationErrorCode.Failed }),
       );
       expect(restorations.transition).not.toHaveBeenCalledWith(
         RESTORATION_ID,
