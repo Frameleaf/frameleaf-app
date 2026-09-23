@@ -112,6 +112,29 @@ export class LivePhotoService {
   }
 
   /**
+   * Validate and link a single still + video pair (FL-70). Used by the durable bulk-operation
+   * worker (`relink-live-photo`), which applies its frozen set of stills one item at a time and
+   * does its own cross-item deduplication and access accounting for the batch; `relink` above
+   * keeps its own single-request bulk fetch and same-request reuse guard unchanged.
+   */
+  async relinkOne(auth: AuthDto, photoId: string, videoId: string): Promise<{ success: boolean; error?: string }> {
+    const ownerId = auth.user.id;
+    const assets = await this.assetRepository.getByIds([photoId, videoId]);
+    const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+
+    const error = await this.validatePair(ownerId, videoId, assetById.get(photoId), assetById.get(videoId));
+    if (error) {
+      return { success: false, error };
+    }
+
+    await linkLivePhotoAssets(
+      { asset: this.assetRepository, album: this.albumRepository, event: this.eventRepository },
+      { photoAssetId: photoId, motionAssetId: videoId, motionOwnerId: ownerId },
+    );
+    return { success: true };
+  }
+
+  /**
    * Re-validate a client-submitted pair before linking. The candidate query is
    * advisory only; this is the security/consistency check that the assets exist,
    * belong to the user, and are still eligible for relinking.
