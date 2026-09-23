@@ -544,12 +544,19 @@ describe(StudioProjectService.name, () => {
       expect(again.cached).toBe(false);
     });
 
-    it('answers the head digest only to an account that may read the project', async () => {
-      await expect(sut.getCurrentRevisionDigest(project.id, owner.user.id)).resolves.toBe(head.digest);
-      await expect(sut.getCurrentRevisionDigest(project.id, reviewer.user.id)).resolves.toBeNull();
+    it('answers the head revision only to an account that may read the project', async () => {
+      await expect(sut.getReadableRevision(project.id, owner.user.id)).resolves.toBe(3);
+      await expect(sut.getReadableRevision(project.id, reviewer.user.id)).resolves.toBeNull();
+      await expect(sut.getReadableRevision(newUuidV7(), owner.user.id)).resolves.toBeNull();
+    });
 
-      project = projectStub({ currentRevision: 0 });
-      await expect(sut.getCurrentRevisionDigest(project.id, owner.user.id)).resolves.toBeNull();
+    it('answers a space member with the head, and stops the moment they leave the space', async () => {
+      project = projectStub({ spaceId: newUuid() });
+      memberOf(project.spaceId as string);
+      await expect(sut.getReadableRevision(project.id, reviewer.user.id)).resolves.toBe(3);
+
+      memberOf(newUuid());
+      await expect(sut.getReadableRevision(project.id, reviewer.user.id)).resolves.toBeNull();
     });
   });
 });

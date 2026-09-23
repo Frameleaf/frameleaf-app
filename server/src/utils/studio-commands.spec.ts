@@ -162,8 +162,12 @@ describe('studio batches', () => {
       }),
     );
 
+    const comment = accepted(envelope({ id: 'review.add', payload: { time: rational(2), text: 'Hold' } }));
+
     expect(studioBatchMutatesGraph([edit])).toBe(true);
     expect(studioBatchMutatesGraph([exportJob])).toBe(false);
+    // Review comments are stored beside the graph (FL-89): a reviewer needs no lease for them.
+    expect(studioBatchMutatesGraph([comment])).toBe(false);
     expect(studioBatchCapabilities([edit, exportJob])).toEqual(['renderWorker']);
   });
 });
