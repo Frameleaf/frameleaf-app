@@ -193,8 +193,8 @@ export class MemoryService extends BaseService {
             endDate: story.endDate,
             dayCount: story.dayCount,
             assetCount: story.totalAssets,
-            ...(story.place ? { place: story.place } : {}),
-            ...(label ? { title: label } : {}),
+            ...(story.place && { place: story.place }),
+            ...(label && { title: label }),
           },
           memoryAt: story.startAt.toISOString(),
           // the story becomes current the moment it is generated; there is no natural
@@ -463,7 +463,7 @@ export class MemoryService extends BaseService {
       // A throw inside the loop below skips `await finished`, which would leave this
       // promise rejected and unobserved. Attaching a handler now prevents an unhandled
       // rejection from taking the worker down; `await finished` still rethrows.
-      void finished.catch(() => undefined);
+      void finished.catch(() => {});
 
       const names = new Map<string, number>();
       let processed = 0;

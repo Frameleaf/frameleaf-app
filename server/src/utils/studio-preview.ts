@@ -89,7 +89,7 @@ export const previewCacheKey = (binding: PreviewBinding): string =>
         binding.quality,
         String(binding.viewportWidth),
         String(binding.viewportHeight),
-      ].join('\u0000'),
+      ].join('\u{0}'),
     )
     .digest('hex');
 

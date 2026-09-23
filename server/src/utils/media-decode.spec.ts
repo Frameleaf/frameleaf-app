@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { VideoStreamInfo } from 'src/types.js';
 import { defaults } from 'src/dtos/config.dto.js';
 import {
   ColorMatrix,
@@ -9,7 +10,6 @@ import {
   ToneMapping,
   TranscodeHardwareAcceleration,
 } from 'src/enum.js';
-import type { VideoStreamInfo } from 'src/types.js';
 import {
   ChromaSubsampling,
   DECODE_MATRIX,

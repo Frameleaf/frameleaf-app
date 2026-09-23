@@ -40,6 +40,7 @@ import { ApiKeyTable } from 'src/schema/tables/api-key.table.js';
 import { AssetAuditTable } from 'src/schema/tables/asset-audit.table.js';
 import { AssetAudioTable, AssetKeyframeTable, AssetVideoTable } from 'src/schema/tables/asset-av.table.js';
 import { AssetBestPhotoScoreTable } from 'src/schema/tables/asset-best-photo-score.table.js';
+import { AssetDocumentEditTable } from 'src/schema/tables/asset-document-edit.table.js';
 import { AssetEditAuditTable } from 'src/schema/tables/asset-edit-audit.table.js';
 import { AssetEditTable } from 'src/schema/tables/asset-edit.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
@@ -51,7 +52,6 @@ import {
   AssetHealthRunTable,
   AssetHealthTable,
 } from 'src/schema/tables/asset-health.table.js';
-import { AssetDocumentEditTable } from 'src/schema/tables/asset-document-edit.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetLockTable } from 'src/schema/tables/asset-lock.table.js';
 import { AssetMetadataAuditTable } from 'src/schema/tables/asset-metadata-audit.table.js';
@@ -69,12 +69,6 @@ import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
-import {
-  RenderWorkerAuditTable,
-  RenderWorkerLimitTable,
-  RenderWorkerSessionTable,
-  RenderWorkerTable,
-} from 'src/schema/tables/render-worker.table.js';
 import { MemoryAssetAuditTable } from 'src/schema/tables/memory-asset-audit.table.js';
 import { MemoryAssetTable } from 'src/schema/tables/memory-asset.table.js';
 import { MemoryAuditTable } from 'src/schema/tables/memory-audit.table.js';
@@ -99,6 +93,12 @@ import { PetCandidateTable, PetDetectionTable, PetObservationTable, PetTable } f
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
 import { PluginTable } from 'src/schema/tables/plugin.table.js';
+import {
+  RenderWorkerAuditTable,
+  RenderWorkerLimitTable,
+  RenderWorkerSessionTable,
+  RenderWorkerTable,
+} from 'src/schema/tables/render-worker.table.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
 import { SharedLinkAssetTable } from 'src/schema/tables/shared-link-asset.table.js';
 import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';

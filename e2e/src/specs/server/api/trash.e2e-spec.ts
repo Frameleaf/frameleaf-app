@@ -20,6 +20,12 @@ describe('/trash', () => {
   });
 
   const bearer = () => `Bearer ${admin.accessToken}`;
+  const review = (body: object) => request(app).post('/trash/review').set('Authorization', bearer()).send(body);
+  const apply = (body: object) => request(app).post('/trash/apply').set('Authorization', bearer()).send(body);
+  const lock = (ids: string[]) =>
+    request(app).post('/assets/lock').set('Authorization', bearer()).send({ ids }).expect(204);
+  /** Start from an empty visible trash, so whole-trash reviews see only this test's items. */
+  const emptyVisibleTrash = () => request(app).post('/trash/empty').set('Authorization', bearer()).expect(200);
   const trashed = async () => {
     const { id } = await utils.createAsset(admin.accessToken);
     await utils.deleteAssets(admin.accessToken, [id]);
@@ -245,14 +251,6 @@ describe('/trash', () => {
   });
 
   describe('reviewed trash (FL-47)', () => {
-    const review = (body: object) => request(app).post('/trash/review').set('Authorization', bearer()).send(body);
-    const apply = (body: object) => request(app).post('/trash/apply').set('Authorization', bearer()).send(body);
-    const lock = (ids: string[]) =>
-      request(app).post('/assets/lock').set('Authorization', bearer()).send({ ids }).expect(204);
-
-    /** Start from an empty visible trash, so whole-trash reviews see only this test's items. */
-    const emptyVisibleTrash = () => request(app).post('/trash/empty').set('Authorization', bearer()).expect(200);
-
     it('should permanently delete exactly the reviewed items', async () => {
       await emptyVisibleTrash();
       const first = await trashed();

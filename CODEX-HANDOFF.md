@@ -75,7 +75,7 @@ For the Codex agent picking up this work. You will not have the original machine
 ## 5. Fork migrations
 
 Fork migrations live in `server/src/schema/migrations/2100000000NNN-Name.ts`, listed in `server/src/schema/migrations/ORDER` (keep the fork block sorted numerically, no duplicates) and registered in `server/src/fork-schema/migration-manifest.ts` `LEGACY_FORK_MIGRATIONS` plus an assertion in `migration-manifest.spec.ts`.
-Used on this branch: 010–110, 130, 140, 150, 160, 170, 180, 190, 200, 210, 220, 240, 250, 260, 270, 280, 290, 300, 310, 320, 340, 380, 390, 400, 450, 460, 490, 500. FL-73 used no migration. In flight: 410 (FL-66, if used), 510 (FL-74). **Next free: 530.** None of these has run on a shared database yet, so in-place edits are still allowed until the first deployment.
+Used on this branch: 010–110, 130, 140, 150, 160, 170, 180, 190, 200, 210, 220, 240, 250, 260, 270, 280, 290, 300, 310, 320, 340, 380, 390, 400, 450, 460, 490, 500, 530 (FL-41 generated schema reconciliation). FL-73 used no migration. In flight: 410 (FL-66, if used), 510 (FL-74). **Next free: 540.** None of these has run on a shared database yet, so in-place edits are still allowed until the first deployment.
 
 ## 6. Getting CI green (do this first)
 

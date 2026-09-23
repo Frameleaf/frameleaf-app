@@ -75,7 +75,7 @@ export const parseMediaHealthSnapshot = (value: unknown): MediaHealthOperationSn
 
   if (value.mode === 'scan') {
     if (typeof value.missingRunId !== 'string' || typeof value.corruptRunId !== 'string') {
-      throw new Error('Library Care scan snapshot has no runs');
+      throw new TypeError('Library Care scan snapshot has no runs');
     }
     return {
       mode: 'scan',

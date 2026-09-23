@@ -15,7 +15,7 @@ import {
   mapPetCandidate,
   mapPetObservation,
 } from 'src/dtos/pet.dto.js';
-import { PetObservationSource, PetObservationState, Permission } from 'src/enum.js';
+import { Permission, PetObservationSource, PetObservationState } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
@@ -90,12 +90,12 @@ export class PetService {
       dto.featuredAssetId === undefined ? undefined : await this.resolveFeaturedAsset(auth, dto.featuredAssetId);
 
     await this.petRepository.update(auth.user.id, pet.id, {
-      ...(dto.name === undefined ? {} : { name: normalizePetName(dto.name) }),
-      ...(dto.species === undefined ? {} : { species: dto.species }),
-      ...(dto.birthDate === undefined ? {} : { birthDate: dto.birthDate }),
-      ...(featuredAssetId === undefined ? {} : { featuredAssetId }),
-      ...(dto.isHidden === undefined ? {} : { isHidden: dto.isHidden }),
-      ...(dto.isFavorite === undefined ? {} : { isFavorite: dto.isFavorite }),
+      ...(dto.name !== undefined && { name: normalizePetName(dto.name) }),
+      ...(dto.species !== undefined && { species: dto.species }),
+      ...(dto.birthDate !== undefined && { birthDate: dto.birthDate }),
+      ...(featuredAssetId !== undefined && { featuredAssetId }),
+      ...(dto.isHidden !== undefined && { isHidden: dto.isHidden }),
+      ...(dto.isFavorite !== undefined && { isFavorite: dto.isFavorite }),
     });
 
     return mapPet(await this.findOrFail(auth, id));
@@ -357,7 +357,7 @@ export class PetService {
       };
     }
 
-    if (parts.some((part) => part === undefined)) {
+    if (parts.includes(undefined)) {
       throw new BadRequestException('A pet region needs all four bounds and the image size');
     }
 

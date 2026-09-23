@@ -1,20 +1,22 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import path from 'node:path';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { SystemConfig } from 'src/dtos/config.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { JobOf, RawImageInfo } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   ASSET_DEVELOP_RECIPE_VERSION,
   AssetDevelopFileKind,
   AssetDevelopPreviewDto,
+  type AssetDevelopRecipe,
   AssetDevelopResponseDto,
   AssetDevelopRevertDto,
   AssetDevelopRevisionResponseDto,
   AssetDevelopRevisionStatus,
   AssetDevelopSaveDto,
-  type AssetDevelopRecipe,
 } from 'src/dtos/asset-develop.dto.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { SystemConfig } from 'src/dtos/config.dto.js';
 import {
   AssetType,
   CacheControl,
@@ -31,13 +33,11 @@ import { AssetDevelopRepository, type AssetDevelopRevision } from 'src/repositor
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
-import type { JobOf, RawImageInfo } from 'src/types.js';
 import { requireAccess } from 'src/utils/access.js';
 import { getConfig } from 'src/utils/config.js';
 import { asDateTimeString } from 'src/utils/date.js';
@@ -416,7 +416,7 @@ export class AssetDevelopService {
 
   private async discard(paths: string[]) {
     for (const file of paths) {
-      await this.storageRepository.unlink(file).catch(() => undefined);
+      await this.storageRepository.unlink(file).catch(() => {});
     }
   }
 

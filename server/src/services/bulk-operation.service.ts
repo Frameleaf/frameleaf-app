@@ -788,7 +788,7 @@ export class BulkOperationService {
 
       default: {
         // Every action is handled above; an unknown one is refused rather than guessed at.
-        outcomes.push(...allowed.map((id) => refused(id, new Error(`Unsupported bulk action: ${String(action)}`))));
+        outcomes.push(...allowed.map((id) => refused(id, new Error(`Unsupported bulk action: ${action}`))));
       }
     }
 

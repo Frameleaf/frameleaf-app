@@ -783,7 +783,7 @@ export class MediaOperationRepository {
         claimToken: null,
         claimedBy: null,
         claimExpiresAt: null,
-        ...(options.returnAttempt ? { attempt: sql<number>`greatest("attempt" - 1, 0)` } : {}),
+        ...(options.returnAttempt && { attempt: sql<number>`greatest("attempt" - 1, 0)` }),
       })
       .where('id', '=', id)
       .where('claimToken', '=', claimToken)
@@ -864,7 +864,7 @@ export class MediaOperationRepository {
       .set({
         status: MediaOperationStatus.Cancelled,
         cancelAcknowledgedAt: sql<Date>`now()`,
-        ...(options.released ? { remoteReleasedAt: sql<Date>`now()` } : {}),
+        ...(options.released && { remoteReleasedAt: sql<Date>`now()` }),
         finishedAt: sql<Date>`coalesce("finishedAt", now())`,
         claimToken: null,
         claimExpiresAt: null,

@@ -250,7 +250,7 @@ describe('frames', () => {
       { frameIndex: 1, score: 30 },
       { frameIndex: 2, score: 30 },
     ]);
-    expect([...ranks.entries()]).toEqual([
+    expect([...ranks]).toEqual([
       [1, 1],
       [2, 2],
       [0, 3],

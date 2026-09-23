@@ -20,7 +20,7 @@ const RUNNING_MEMORY_EXPORT_STATUSES = [
 ];
 
 /** Queues whose pause the queue service refuses; the panel shows their control disabled. */
-const UNPAUSABLE_QUEUES: readonly QueueName[] = [QueueName.BackgroundTask];
+const UNPAUSABLE_QUEUES: ReadonlySet<QueueName> = new Set([QueueName.BackgroundTask]);
 
 /**
  * The one summary the notifications panel polls (FL-104, owner request September 23, 2026; FL-72).
@@ -87,7 +87,7 @@ export class RunningJobService {
           return {
             name,
             isPaused,
-            canPause: !UNPAUSABLE_QUEUES.includes(name),
+            canPause: !UNPAUSABLE_QUEUES.has(name),
             active: run.active,
             waiting: run.waiting,
             processed: run.processed,

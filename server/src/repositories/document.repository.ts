@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { type Insertable, type Kysely, type Selectable, sql, type SqlBool, type Updateable } from 'kysely';
+import { type Insertable, type Kysely, type Selectable, type SqlBool, type Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { AssetStatus, AssetVisibility, DocumentEditAction } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AssetDocumentEditTable } from 'src/schema/tables/asset-document-edit.table.js';
 import { asUuid, tokenizeForSearch, withEdits, withHiddenContentFilter } from 'src/utils/database.js';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { isLocked, revealedLockScope } from 'src/utils/locked.js';
 import { paginationHelper } from 'src/utils/pagination.js';
 

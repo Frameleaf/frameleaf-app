@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AssetDevelopRevisionStatus, type AssetDevelopRecipe } from 'src/dtos/asset-develop.dto.js';
+import { type AssetDevelopRecipe, AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { DB } from 'src/schema/index.js';
 
 export type AssetDevelopRevision = {
@@ -144,7 +144,7 @@ export class AssetDevelopRepository {
     const { rows } = await sql<{ cancelRequested: boolean }>`
       SELECT "cancelRequested" FROM ${TABLE} WHERE id = ${id}::uuid
     `.execute(this.db);
-    return rows[0]?.cancelRequested === true;
+    return rows[0]?.cancelRequested;
   }
 
   /** Every rendered file path for an asset, used when the asset itself is deleted. */

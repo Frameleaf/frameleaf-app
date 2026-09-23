@@ -105,7 +105,7 @@ export const AssetRestorationRegionSchema = z
       .optional()
       .describe('Video only: where the preview clip starts. Ignored for stills.'),
   })
-  .refine((rect) => rect.x + rect.w <= 1.000_01 && rect.y + rect.h <= 1.000_01, {
+  .refine((rect) => rect.x + rect.w <= 1.00001 && rect.y + rect.h <= 1.00001, {
     error: 'The preview area must stay inside the frame',
   })
   .meta({ id: 'AssetRestorationRegionDto' });
@@ -116,7 +116,11 @@ export type AssetRestorationRegion = z.infer<typeof AssetRestorationRegionSchema
 export const DEFAULT_RESTORATION_REGION: AssetRestorationRegion = { x: 0.25, y: 0.25, w: 0.5, h: 0.5 };
 
 export const AssetRestorationUpscaleSchema = z
-  .union([z.literal(1), z.literal(2), z.literal(4)])
+  .union([
+    z.literal(1).meta({ format: 'double' }),
+    z.literal(2).meta({ format: 'double' }),
+    z.literal(4).meta({ format: 'double' }),
+  ])
   .describe('Upscale factor. Output is additionally capped at 4K.');
 
 const AssetRestorationRequestSchema = z

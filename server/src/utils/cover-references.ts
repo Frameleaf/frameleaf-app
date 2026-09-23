@@ -1,9 +1,9 @@
 import { Expression, ExpressionBuilder, Kysely, sql } from 'kysely';
+import type { JobRepository } from 'src/repositories/job.repository.js';
+import type { PersonRepository } from 'src/repositories/person.repository.js';
 import { BEST_PHOTOS_MIN_SCORE } from 'src/dtos/best-photos.dto.js';
 import { AlbumKind, AlbumUserRole, AssetVisibility, JobName, PetObservationState } from 'src/enum.js';
 import { getForkSchemaPhase, readsForkSidecar } from 'src/repositories/fork-derived-results.js';
-import type { JobRepository } from 'src/repositories/job.repository.js';
-import type { PersonRepository } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
 import { anyUuid, nsfwAssetIdExists } from 'src/utils/database.js';
 import { isLockedAssetId, isUnlockedAsset } from 'src/utils/locked-state.js';

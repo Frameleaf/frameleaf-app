@@ -60,7 +60,7 @@ export const parseDuplicateGroups = (value: unknown): DuplicateGroupDecision[] =
             decision: decision as DuplicateDecisionKind,
             memberIds: [...new Set(strings(group.memberIds))],
             keepAssetIds: [...new Set(strings(group.keepAssetIds))],
-            ...(typeof decisionId === 'string' && decisionId ? { decisionId } : {}),
+            ...(typeof decisionId === 'string' && decisionId && { decisionId }),
           },
         ];
       })
@@ -192,7 +192,7 @@ type ReviewAsset = Pick<AssetResponseDto, 'id' | 'type' | 'localDateTime' | 'ori
 
 const captureTime = (asset: ReviewAsset): number | null => {
   const value = asset.exifInfo?.dateTimeOriginal ?? asset.localDateTime;
-  const time = value ? Date.parse(String(value)) : Number.NaN;
+  const time = value ? Date.parse(value) : NaN;
   return Number.isFinite(time) ? time : null;
 };
 
@@ -208,7 +208,7 @@ export const classifyDuplicateGroup = (assets: readonly ReviewAsset[]): Duplicat
     return DuplicateGroupKind.Duplicates;
   }
   const times = assets.map((asset) => captureTime(asset));
-  if (times.some((time) => time === null)) {
+  if (times.includes(null)) {
     return DuplicateGroupKind.Duplicates;
   }
   const values = times as number[];

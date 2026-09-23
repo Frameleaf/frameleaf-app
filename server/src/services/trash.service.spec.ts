@@ -4,9 +4,9 @@ import { AssetStatus, AssetType, JobName, JobStatus } from 'src/enum.js';
 import { TrashService } from 'src/services/trash.service.js';
 import {
   TrashReviewAction,
-  trashReviewToken,
   type TrashReviewRow,
   type TrashScopeRow,
+  trashReviewToken,
 } from 'src/utils/trash-review.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';

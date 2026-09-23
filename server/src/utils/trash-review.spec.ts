@@ -1,15 +1,15 @@
 import { AssetStatus } from 'src/enum.js';
 import {
+  TrashReviewAction,
+  type TrashReviewRow,
+  type TrashScopeRow,
   escapeLikeTerm,
   summarizeTrashReview,
   toByteCount,
-  TrashReviewAction,
   trashActionSourceStatus,
   trashActionTargetStatus,
   trashReviewToken,
   trashSearchTerms,
-  type TrashReviewRow,
-  type TrashScopeRow,
 } from 'src/utils/trash-review.js';
 
 const row = (id: string, overrides: Partial<TrashScopeRow> = {}): TrashScopeRow => ({

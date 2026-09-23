@@ -1,9 +1,9 @@
 import { DateTime } from 'luxon';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { CalendarHeatmapDto } from 'src/dtos/calendar-heatmap.dto.js';
 import { CalendarHeatmapType } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { asDateString } from 'src/utils/date.js';
-import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 
 /**
  * `lockedOwnerId`: set only when the user asks for their own heatmap from an elevated session, so

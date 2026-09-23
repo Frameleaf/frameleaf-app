@@ -1,5 +1,8 @@
+import { describe, expect, it } from 'vitest';
 import { RationalError, rational } from 'src/utils/rational-time.js';
 import {
+  type EvictionCandidate,
+  type PreviewBinding,
   decidePreviewDelivery,
   isValidPreviewViewport,
   planPreviewEviction,
@@ -7,10 +10,7 @@ import {
   previewETag,
   previewETagMatches,
   previewTimeKey,
-  type EvictionCandidate,
-  type PreviewBinding,
 } from 'src/utils/studio-preview.js';
-import { describe, expect, it } from 'vitest';
 
 const binding = (overrides: Partial<PreviewBinding> = {}): PreviewBinding => ({
   ownerId: 'owner-1',
@@ -68,7 +68,7 @@ describe('preview identity', () => {
   });
 
   it('cannot be forged by a project id containing the separator', () => {
-    expect(previewCacheKey(binding({ projectId: 'project-1\u0000rev-a' }))).not.toBe(previewCacheKey(binding()));
+    expect(previewCacheKey(binding({ projectId: 'project-1\u{0}rev-a' }))).not.toBe(previewCacheKey(binding()));
   });
 
   it('puts the revision digest in the entity tag', () => {
@@ -239,7 +239,7 @@ describe('isValidPreviewViewport', () => {
     [8000, 1080],
     [1920, 8000],
     [1920.5, 1080],
-    [Number.NaN, 1080],
+    [NaN, 1080],
   ])('refuses %s x %s', (width, height) => {
     expect(isValidPreviewViewport(width, height)).toBe(false);
   });

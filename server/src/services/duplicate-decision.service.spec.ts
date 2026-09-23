@@ -1,3 +1,4 @@
+import type { DuplicateDecision, DuplicateKeeperState } from 'src/repositories/duplicate-decision.repository.js';
 import {
   AssetStatus,
   AssetType,
@@ -8,7 +9,6 @@ import {
   MediaOperationBulkAction,
   MediaOperationItemStatus,
 } from 'src/enum.js';
-import type { DuplicateDecision, DuplicateKeeperState } from 'src/repositories/duplicate-decision.repository.js';
 import { DuplicateDecisionReason, DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newUuid, newUuidV7 } from 'test/small.factory.js';

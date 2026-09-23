@@ -224,7 +224,7 @@ describe(VideoMomentIndexService.name, () => {
       });
 
       expect(mocks.machineLearning.describeImage).toHaveBeenCalledTimes(2);
-      const [, , config] = mocks.machineLearning.describeImage.mock.calls[0];
+      const config = mocks.machineLearning.describeImage.mock.calls[0][2];
       expect(config.prompt).toEqual(expect.objectContaining({ style: 'terse', sentenceCountTarget: 1 }));
       expect(moments.publishCaptions).toHaveBeenCalledWith(
         assetId,

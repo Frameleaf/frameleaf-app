@@ -317,7 +317,7 @@ describe(ICloudSyncService.name, () => {
         .mockResolvedValueOnce({ ...connection, nextRunAt: later });
       await sut.run(operation(), 'token');
       expect(repository.defer).toHaveBeenCalledWith('connection', 'owner', 'rate_limited');
-      const [, , options] = operations.requeue.mock.calls[0];
+      const options = operations.requeue.mock.calls[0][2];
       expect(options.returnAttempt).toBe(true);
       expect(options.delayMs).toBeGreaterThan(0);
       expect(options.delayMs).toBeLessThanOrEqual(60_000);

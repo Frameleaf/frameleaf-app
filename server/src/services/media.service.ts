@@ -44,7 +44,6 @@ import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
-import { isUnsupportedRawDecodeError } from 'src/utils/media-health.js';
 import {
   DecodeSupport,
   assertDecodeQualified,
@@ -57,6 +56,7 @@ import {
   requiresFloatIntermediate,
   selectEncoderPixelFormat,
 } from 'src/utils/media-encode.js';
+import { isUnsupportedRawDecodeError } from 'src/utils/media-health.js';
 import {
   EditedMasterColorDecision,
   EditedMasterColorPolicy,

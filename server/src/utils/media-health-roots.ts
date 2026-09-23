@@ -105,11 +105,13 @@ export const rootForPath = (roots: readonly MediaHealthRoot[], candidate: string
   let best: { root: MediaHealthRoot; depth: number } | undefined;
   for (const root of roots) {
     for (const rootPath of root.paths) {
-      if (isPathWithin(rootPath, candidate)) {
-        const depth = rootPath.split(path.sep).length;
-        if (!best || depth > best.depth) {
-          best = { root, depth };
-        }
+      if (!isPathWithin(rootPath, candidate)) {
+        continue;
+      }
+
+      const depth = rootPath.split(path.sep).length;
+      if (!best || depth > best.depth) {
+        best = { root, depth };
       }
     }
   }

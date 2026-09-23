@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { type Insertable, type Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { sql, type Insertable, type Kysely } from 'kysely';
 import { DB } from 'src/schema/index.js';
 import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.js';
 

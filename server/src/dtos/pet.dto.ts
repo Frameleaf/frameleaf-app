@@ -1,7 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { PetObservationSourceSchema, PetObservationStateSchema, PetSpecies, PetSpeciesSchema } from 'src/enum.js';
 import type { PetObservation, PetReviewCandidate, PetWithCounts } from 'src/repositories/pet.repository.js';
+import { PetObservationSourceSchema, PetObservationStateSchema, PetSpecies, PetSpeciesSchema } from 'src/enum.js';
 import { asDateString, asDateTimeString } from 'src/utils/date.js';
 import { PET_NAME_MAX_LENGTH } from 'src/utils/pets.js';
 import { stringToBool } from 'src/validation.js';

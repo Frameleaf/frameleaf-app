@@ -100,7 +100,7 @@ export class StudioPreviewRepository {
       .set({
         seekGeneration: frame.seekGeneration,
         requestedAt: new Date(),
-        ...(frame.grantToken ? { grantToken: frame.grantToken, grantSessionId: frame.grantSessionId ?? null } : {}),
+        ...(frame.grantToken && { grantToken: frame.grantToken, grantSessionId: frame.grantSessionId ?? null }),
       })
       .where('cacheKey', '=', frame.cacheKey)
       .where('ownerId', '=', frame.ownerId)

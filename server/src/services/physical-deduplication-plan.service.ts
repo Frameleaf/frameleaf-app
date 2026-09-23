@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { OnEvent } from 'src/decorators.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { OnEvent } from 'src/decorators.js';
 import { MediaOperationDto } from 'src/dtos/media-operation.dto.js';
 import {
   PhysicalDeduplicationApplyDto,

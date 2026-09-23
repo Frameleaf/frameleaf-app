@@ -1,6 +1,6 @@
-import { MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js';
 import type { MlEndpointProbe, MlSelection } from 'src/repositories/machine-learning.repository.js';
 import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
+import { MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js';
 
 const at = new Date('2026-09-22T12:00:00.000Z');
 
@@ -36,7 +36,7 @@ export const mlDestinationStub = {
     id: 'ml-destination-lan',
     kind: MlDestinationKind.Lan,
     name: 'Workshop GPU',
-    url: 'http://workshop.lan:3004',
+    url: 'https://workshop.lan:3004',
     authToken: 'lan-token',
     workloads: [MlWorkload.RestorationFaithful],
     lastProbeWorkloads: [MlWorkload.RestorationFaithful],
@@ -46,7 +46,7 @@ export const mlDestinationStub = {
     id: 'ml-destination-library-lan',
     kind: MlDestinationKind.Lan,
     name: 'Study PC',
-    url: 'http://study.lan:3003',
+    url: 'https://study.lan:3003',
     authToken: null,
     workloads: [MlWorkload.Face, MlWorkload.Clip],
     lastProbeWorkloads: [MlWorkload.Face, MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Enrichment],

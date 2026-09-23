@@ -15,7 +15,7 @@ import {
   physicalDeduplicationReviewToken,
 } from 'src/utils/physical-deduplication-plan.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
-import { newTestService, ServiceMocks } from 'test/utils.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 type Handler = 'handleDryRun' | 'handleApply';
 

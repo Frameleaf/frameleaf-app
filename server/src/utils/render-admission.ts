@@ -96,7 +96,7 @@ export type RenderLimits = {
  */
 export const tightestLimits = (...sources: Array<Partial<RenderLimits> | null | undefined>): RenderLimits => {
   const result: RenderLimits = {
-    maxConcurrentOperations: Number.POSITIVE_INFINITY,
+    maxConcurrentOperations: Infinity,
     maxWallClockMs: null,
     maxOutputBytes: null,
   };

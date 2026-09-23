@@ -1127,7 +1127,7 @@ export const parseBundleExportResult = (value: unknown): StudioBundleExportResul
     expiresAt: raw.expiresAt,
     embedded: typeof raw.embedded === 'number' ? raw.embedded : 0,
     referenced: typeof raw.referenced === 'number' ? raw.referenced : 0,
-    ...(typeof raw.expiredAt === 'string' ? { expiredAt: raw.expiredAt } : {}),
+    ...(typeof raw.expiredAt === 'string' && { expiredAt: raw.expiredAt }),
   };
 };
 

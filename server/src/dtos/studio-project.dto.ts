@@ -1,6 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
-import { stringToBool } from 'src/validation.js';
 import z from 'zod';
+import { stringToBool } from 'src/validation.js';
 
 const JsonObjectSchema = z.record(z.string(), z.unknown());
 

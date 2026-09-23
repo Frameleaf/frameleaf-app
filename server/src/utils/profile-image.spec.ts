@@ -1,10 +1,10 @@
-import { StorageCore } from 'src/cores/storage.core.js';
+import { vitest } from 'vitest';
 import { defaults } from 'src/config.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { JobName } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { replaceLockedProfileImages } from 'src/utils/profile-image.js';
-import { vitest } from 'vitest';
 
 /**
  * Owner decision 2, September 22, 2026 (FL-53): a profile picture copied from a photo that becomes

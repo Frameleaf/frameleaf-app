@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { AlbumKind, AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
 import type { SharedSpaceEvent } from 'src/repositories/album-user.repository.js';
+import { AlbumKind, AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
 import { SharedSpaceService } from 'src/services/shared-space.service.js';
 import { ActivityFactory } from 'test/factories/activity.factory.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';

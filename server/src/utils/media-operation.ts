@@ -173,12 +173,12 @@ export const canPauseMediaOperation = (operation: {
   !operation.cancelRequestedAt;
 
 /** Statuses a job can be in while a pause it was asked for has not been reached yet. */
-const PAUSE_PENDING_STATUSES: readonly MediaOperationStatus[] = [
+const PAUSE_PENDING_STATUSES: ReadonlySet<MediaOperationStatus> = new Set([
   MediaOperationStatus.Queued,
   MediaOperationStatus.Preparing,
   MediaOperationStatus.Rendering,
   MediaOperationStatus.Validating,
-];
+]);
 
 /**
  * A paused job can be resumed, and so can one whose pause was asked for but not yet reached: the
@@ -186,7 +186,7 @@ const PAUSE_PENDING_STATUSES: readonly MediaOperationStatus[] = [
  */
 export const canResumeMediaOperation = (operation: { status: MediaOperationStatus; pauseRequestedAt?: unknown }) =>
   operation.status === MediaOperationStatus.Paused ||
-  (!!operation.pauseRequestedAt && PAUSE_PENDING_STATUSES.includes(operation.status));
+  (!!operation.pauseRequestedAt && PAUSE_PENDING_STATUSES.has(operation.status));
 
 /** Only a failed or cancelled job may be retried; retry copies the snapshot into a new row. */
 export const canRetryMediaOperation = (status: MediaOperationStatus) =>

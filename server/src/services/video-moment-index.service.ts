@@ -1,17 +1,18 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { join } from 'node:path';
 import type { SystemConfig } from 'src/config.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   VideoMomentCoverDto,
   VideoMomentCreateDto,
   VideoMomentDto,
   VideoMomentSearchDto,
   VideoMomentSearchResponseDto,
-  VideoMomentsResponseDto,
   VideoMomentUpdateDto,
+  VideoMomentsResponseDto,
 } from 'src/dtos/enrichment.dto.js';
 import {
   CacheControl,
@@ -27,7 +28,6 @@ import {
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository, MlSelection } from 'src/repositories/machine-learning.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
@@ -271,7 +271,7 @@ export class VideoMomentIndexService {
           configHash: captionHash,
           identityHash: names,
           destinationId: selection.destinationId,
-          ...(options.planConfigHash ? { planConfigHash: options.planConfigHash } : {}),
+          ...(options.planConfigHash && { planConfigHash: options.planConfigHash }),
         },
         {
           captionModel: captionConfig.modelName,
@@ -346,10 +346,10 @@ export class VideoMomentIndexService {
     await this.requireWithinVideo(assetId, timestampMs, endMs);
 
     const updated = await this.moments.updateManualMoment(momentId, {
-      ...(dto.timestampMs === undefined ? {} : { timestampMs }),
-      ...(dto.endMs === undefined ? {} : { endMs }),
-      ...(dto.caption === undefined ? {} : { caption: dto.caption?.trim() || null }),
-      ...(dto.transcript === undefined ? {} : { transcript: dto.transcript }),
+      ...(dto.timestampMs !== undefined && { timestampMs }),
+      ...(dto.endMs !== undefined && { endMs }),
+      ...(dto.caption !== undefined && { caption: dto.caption?.trim() || null }),
+      ...(dto.transcript !== undefined && { transcript: dto.transcript }),
     });
     if (!updated) {
       throw new NotFoundException('Moment not found');
@@ -538,7 +538,7 @@ export class VideoMomentIndexService {
   private async currentFrames(
     assetId: string,
     config: SystemConfig,
-  ): Promise<{ list: VideoMomentFrame[]; ownerId: string } | MomentStageOutcome> {
+  ): Promise<MomentStageOutcome | { list: VideoMomentFrame[]; ownerId: string }> {
     const outcome = await ensureVideoFrames(this.frameDeps, assetId, config);
     if (outcome.status !== 'cut' && outcome.status !== 'current') {
       return this.fromFrameOutcome(outcome);

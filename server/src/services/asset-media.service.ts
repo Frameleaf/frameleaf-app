@@ -455,7 +455,7 @@ export class AssetMediaService extends BaseService {
 
   private getDuplicateCheckOptions(auth: AuthDto) {
     const options = {
-      ...(auth.hideNsfwAssets ? getHiddenContentQueryOptions(auth) : {}),
+      ...(auth.hideNsfwAssets && getHiddenContentQueryOptions(auth)),
       ...getLockedVisibilityOptions(auth),
     };
     return Object.keys(options).length > 0 ? options : undefined;

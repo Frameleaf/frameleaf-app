@@ -1,8 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { SystemConfig } from 'src/config.js';
-import { OnEvent } from 'src/decorators.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { OnEvent } from 'src/decorators.js';
 import {
   EnrichmentOptionsResponseDto,
   EnrichmentPlanCreateDto,
@@ -245,9 +245,9 @@ export class EnrichmentPlanService {
 
     const draft: SystemConfig['machineLearning']['imageDescription'] = {
       ...machineLearning.imageDescription,
-      ...(dto.modelName ? { modelName: dto.modelName } : {}),
-      ...(dto.fallbackModelName === undefined ? {} : { fallbackModelName: dto.fallbackModelName }),
-      ...(dto.prompt ? { prompt: dto.prompt } : {}),
+      ...(dto.modelName && { modelName: dto.modelName }),
+      ...(dto.fallbackModelName !== undefined && { fallbackModelName: dto.fallbackModelName }),
+      ...(dto.prompt && { prompt: dto.prompt }),
     };
 
     const samples: EnrichmentPreviewResponseDto['samples'] = [];

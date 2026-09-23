@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import type { UpdateAssetDto } from 'src/dtos/asset.dto.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
-import type { UpdateAssetDto } from 'src/dtos/asset.dto.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetVisibility, ImmichWorker, MediaOperationKind, MediaOperationStatus, StorageFolder } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -120,7 +120,7 @@ const isFile = (name: string) => {
     return 'sidecar' as const;
   }
   if (!mimeTypes.isAsset(name)) {
-    return undefined;
+    return;
   }
   return mimeTypes.isVideo(name) ? ('video' as const) : ('image' as const);
 };
@@ -296,7 +296,7 @@ export class TakeoutWorkerService {
 
     // Keeps the lease while a long step runs, and notices a pause or cancel asked for meanwhile.
     const heartbeat = setInterval(() => {
-      void this.pulse(run).catch(() => undefined);
+      void this.pulse(run).catch(() => {});
     }, TAKEOUT_HEARTBEAT_MS);
 
     try {
