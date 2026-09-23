@@ -47,7 +47,10 @@ const AnalyticsSeriesDefinitionSchema = z
     unit: AnalyticsUnitSchema,
     grain: AnalyticsGrainSchema,
     source: z.string().describe('Where the number comes from'),
-    owner: z.enum(['library', 'host', 'processing']).describe('The part of the product that answers for it'),
+    owner: z
+      .enum(['library', 'host', 'processing'])
+      .describe('The part of the product that answers for it')
+      .meta({ id: 'AnalyticsSeriesOwner' }),
     scopes: z.array(AnalyticsScopeKindSchema).describe('Selections the series can be read for'),
     measurementScope: AnalyticsMeasurementScopeSchema,
     collected: z.boolean().describe('Written by the local nightly collector rather than read live'),
@@ -124,14 +127,16 @@ const AnalyticsDaySchema = z
 const AnalyticsCameraSchema = z
   .object({
     name: z.string().nullable().describe('Camera model; null for the other and unknown rows'),
-    kind: z.enum(['model', 'other', 'unknown']),
+    kind: z.enum(['model', 'other', 'unknown']).meta({ id: 'AnalyticsCameraKind' }),
     count: count(),
   })
   .meta({ id: 'AnalyticsCameraDto' });
 
 const AnalyticsMetadataSchema = z
   .object({
-    field: z.enum(['captureDate', 'location', 'cameraModel', 'aiDescription', 'checksum']),
+    field: z
+      .enum(['captureDate', 'location', 'cameraModel', 'aiDescription', 'checksum'])
+      .meta({ id: 'AnalyticsMetadataField' }),
     present: count(),
     missing: count(),
     total: count(),
@@ -140,7 +145,7 @@ const AnalyticsMetadataSchema = z
 
 const AnalyticsViewSchema = z
   .object({
-    view: z.enum(['timeline', 'favorites', 'archive', 'trash']),
+    view: z.enum(['timeline', 'favorites', 'archive', 'trash']).meta({ id: 'AnalyticsView' }),
     photos: count(),
     videos: count(),
     total: count(),

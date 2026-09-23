@@ -54,7 +54,7 @@
         href={Route.systemProcessingDestinations()}
         icon={mdiRobotOutline}
       />
-      <NavbarItem title={$t('server_stats')} href={Route.systemStatistics()} icon={mdiServer} />
+      <NavbarItem title={$t('frameleaf_analytics_title')} href={Route.systemStatistics()} icon={mdiServer} />
     </div>
 
     <div class="me-4 mb-2">

@@ -63,8 +63,8 @@ export const getPagesProvider = ($t: MessageFormatter) => {
       onAction: () => goto(Route.libraries()),
     },
     {
-      title: $t('server_stats'),
-      description: $t('admin.server_stats_page_description'),
+      title: $t('frameleaf_analytics_title'),
+      description: $t('frameleaf_analytics_description'),
       icon: mdiServer,
       onAction: () => goto(Route.systemStatistics()),
     },

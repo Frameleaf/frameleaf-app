@@ -34459,12 +34459,7 @@
             "type": "integer"
           },
           "kind": {
-            "enum": [
-              "model",
-              "other",
-              "unknown"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/AnalyticsCameraKind"
           },
           "name": {
             "description": "Camera model; null for the other and unknown rows",
@@ -34478,6 +34473,14 @@
           "name"
         ],
         "type": "object"
+      },
+      "AnalyticsCameraKind": {
+        "enum": [
+          "model",
+          "other",
+          "unknown"
+        ],
+        "type": "string"
       },
       "AnalyticsDayDto": {
         "properties": {
@@ -34602,14 +34605,7 @@
       "AnalyticsMetadataDto": {
         "properties": {
           "field": {
-            "enum": [
-              "captureDate",
-              "location",
-              "cameraModel",
-              "aiDescription",
-              "checksum"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/AnalyticsMetadataField"
           },
           "missing": {
             "maximum": 9007199254740991,
@@ -34634,6 +34630,16 @@
           "total"
         ],
         "type": "object"
+      },
+      "AnalyticsMetadataField": {
+        "enum": [
+          "captureDate",
+          "location",
+          "cameraModel",
+          "aiDescription",
+          "checksum"
+        ],
+        "type": "string"
       },
       "AnalyticsProcessingDto": {
         "properties": {
@@ -34884,13 +34890,7 @@
             "$ref": "#/components/schemas/AnalyticsMeasurementScope"
           },
           "owner": {
-            "description": "The part of the product that answers for it",
-            "enum": [
-              "library",
-              "host",
-              "processing"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/AnalyticsSeriesOwner"
           },
           "scopes": {
             "description": "Selections the series can be read for",
@@ -34936,6 +34936,15 @@
           "processing.completed",
           "processing.failed",
           "processing.estimatedCostUsd"
+        ],
+        "type": "string"
+      },
+      "AnalyticsSeriesOwner": {
+        "description": "The part of the product that answers for it",
+        "enum": [
+          "library",
+          "host",
+          "processing"
         ],
         "type": "string"
       },
@@ -35061,6 +35070,15 @@
         ],
         "type": "string"
       },
+      "AnalyticsView": {
+        "enum": [
+          "timeline",
+          "favorites",
+          "archive",
+          "trash"
+        ],
+        "type": "string"
+      },
       "AnalyticsViewDto": {
         "properties": {
           "overlaps": {
@@ -35083,13 +35101,7 @@
             "type": "integer"
           },
           "view": {
-            "enum": [
-              "timeline",
-              "favorites",
-              "archive",
-              "trash"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/AnalyticsView"
           }
         },
         "required": [
