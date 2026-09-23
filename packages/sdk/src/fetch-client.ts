@@ -3521,11 +3521,50 @@ export type QueueCommandDto = {
     /** Force the command execution (if applicable) */
     force?: boolean;
 };
+export type LibraryScanResponseDto = {
+    /** New items indexed */
+    added: number;
+    /** Indexed items checked against their folder */
+    checked: number;
+    /** When the scan was asked for */
+    createdAt: string;
+    /** Failure detail for the administrator */
+    error: string | null;
+    /** Stable failure code */
+    errorCode: string | null;
+    /** When the scan ended */
+    finishedAt: string | null;
+    /** Items whose file is missing, marked offline */
+    offlined: number;
+    /** Offline items whose file is back */
+    onlined: number;
+    /** The scan job, a media operation of kind library_scan */
+    operationId: string;
+    /** A pause was asked for and the scan has not reached it yet */
+    pauseRequested: boolean;
+    phase: LibraryScanPhase;
+    /** Files and items handled so far */
+    processedUnits: number;
+    /** Progress, 0 to 100 */
+    progress: number;
+    /** The scan failed once and waits for its automatic retry */
+    retrying: boolean;
+    /** When the scan first started */
+    startedAt: string | null;
+    status: MediaOperationStatus;
+    stopReason: (LibraryScanStopReason) | null;
+    /** Files and items known so far; grows while the folders are read */
+    totalUnits: number;
+    /** Items whose file changed and are read again */
+    updated: number;
+};
 export type LibraryResponseDto = {
     /** Number of assets */
     assetCount: number;
     /** Creation date */
     createdAt: string;
+    /** When removal was confirmed; set while removal is in progress */
+    deletedAt: string | null;
     /** Exclusion patterns */
     exclusionPatterns: string[];
     /** Library ID */
@@ -3538,6 +3577,8 @@ export type LibraryResponseDto = {
     ownerId: string;
     /** Last refresh date */
     refreshedAt: string | null;
+    /** The latest scan, or null if the library was never scanned */
+    scan: (LibraryScanResponseDto) | null;
     /** Last update date */
     updatedAt: string;
 };
@@ -3548,8 +3589,22 @@ export type CreateLibraryDto = {
     importPaths?: string[];
     /** Library name */
     name?: string;
-    /** Owner user ID */
+    /** Owner user ID. Fixed once the library exists. */
     ownerId: string;
+};
+export type ManagedUploadsStatsResponseDto = {
+    /** Account whose uploads these are */
+    ownerId: string;
+    /** Number of photos */
+    photos: number;
+    /** Total number of assets */
+    total: number;
+    /** Storage usage in bytes */
+    usage: number;
+    /** Storage usage in bytes, counting each distinct original file once */
+    usagePhysical: number;
+    /** Number of videos */
+    videos: number;
 };
 export type UpdateLibraryDto = {
     /** Exclusion patterns (max 128) */
@@ -3559,6 +3614,42 @@ export type UpdateLibraryDto = {
     /** Library name */
     name?: string;
 };
+export type LibraryRemovalReviewDto = {
+    /** Albums that lose items */
+    albums: number;
+    /** Detected faces that will be removed with their items */
+    faces: number;
+    /** Library ID */
+    libraryId: string;
+    /** Library name, to be typed to confirm */
+    name: string;
+    /** Items already offline */
+    offline: number;
+    /** Source files in the import folders are never deleted */
+    originalsKept: boolean;
+    /** Owner user ID */
+    ownerId: string;
+    /** Indexed photos that will be removed */
+    photos: number;
+    /** Present this to confirm the removal */
+    reviewToken: string;
+    /** A scan is running and will be stopped */
+    scanActive: boolean;
+    /** Shared links that lose items */
+    sharedLinks: number;
+    /** Indexed items that will be removed */
+    total: number;
+    /** Original bytes those items reference */
+    usage: number;
+    /** Indexed videos that will be removed */
+    videos: number;
+};
+export type LibraryRemovalDto = {
+    /** The library name, typed to confirm */
+    confirmName: string;
+    /** The token from the removal review */
+    reviewToken: string;
+};
 export type LibraryStatsResponseDto = {
     /** Number of photos */
     photos: number;
@@ -3566,6 +3657,8 @@ export type LibraryStatsResponseDto = {
     total: number;
     /** Storage usage in bytes */
     usage: number;
+    /** Storage usage in bytes, counting each distinct original file once */
+    usagePhysical: number;
     /** Number of videos */
     videos: number;
 };
@@ -3582,6 +3675,7 @@ export type ValidateLibraryImportPathResponseDto = {
     isValid: boolean;
     /** Validation message */
     message?: string;
+    reason: LibraryImportPathReason;
 };
 export type ValidateLibraryResponseDto = {
     /** Validation results for import paths */
@@ -10270,11 +10364,15 @@ export function runQueueCommandLegacy({ name, queueCommandDto }: {
 /**
  * Retrieve libraries
  */
-export function getAllLibraries(opts?: Oazapfts.RequestOpts) {
+export function getAllLibraries({ withDeleted }: {
+    withDeleted?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: LibraryResponseDto[];
-    }>("/libraries", {
+    }>(`/libraries${QS.query(QS.explode({
+        withDeleted
+    }))}`, {
         ...opts
     }));
 }
@@ -10292,6 +10390,17 @@ export function createLibrary({ createLibraryDto }: {
         method: "POST",
         body: createLibraryDto
     })));
+}
+/**
+ * Retrieve managed upload statistics
+ */
+export function getManagedUploadStatistics(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ManagedUploadsStatsResponseDto[];
+    }>("/libraries/managed-uploads", {
+        ...opts
+    }));
 }
 /**
  * Delete a library
@@ -10332,6 +10441,43 @@ export function updateLibrary({ id, updateLibraryDto }: {
         method: "PUT",
         body: updateLibraryDto
     })));
+}
+/**
+ * Review a library removal
+ */
+export function getLibraryRemovalReview({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryRemovalReviewDto;
+    }>(`/libraries/${encodeURIComponent(id)}/removal`, {
+        ...opts
+    }));
+}
+/**
+ * Remove a library
+ */
+export function removeLibrary({ id, libraryRemovalDto }: {
+    id: string;
+    libraryRemovalDto: LibraryRemovalDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/removal`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryRemovalDto
+    })));
+}
+/**
+ * Cancel a library scan
+ */
+export function cancelLibraryScan({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/scan`, {
+        ...opts,
+        method: "DELETE"
+    }));
 }
 /**
  * Scan a library
@@ -15030,7 +15176,8 @@ export enum MediaOperationKind {
     MediaHealth = "media_health",
     IcloudSync = "icloud_sync",
     TakeoutImport = "takeout_import",
-    PhysicalDeduplication = "physical_deduplication"
+    PhysicalDeduplication = "physical_deduplication",
+    LibraryScan = "library_scan"
 }
 export enum MediaOperationStatus {
     Queued = "queued",
@@ -15125,6 +15272,7 @@ export enum AdminAuditAction {
     LibraryCreated = "library-created",
     LibraryUpdated = "library-updated",
     LibraryScanQueued = "library-scan-queued",
+    LibraryScanCancelled = "library-scan-cancelled",
     LibraryDeleted = "library-deleted"
 }
 export enum AssetOrder {
@@ -15700,6 +15848,31 @@ export enum QueueCommand {
     Empty = "empty",
     ClearFailed = "clear-failed"
 }
+export enum LibraryScanPhase {
+    Crawl = "crawl",
+    Check = "check",
+    Done = "done"
+}
+export enum LibraryScanStopReason {
+    PathsChanged = "paths_changed",
+    LibraryRemoved = "library_removed",
+    OwnerDeleted = "owner_deleted"
+}
+export enum LibraryImportPathReason {
+    Valid = "valid",
+    NotAbsolute = "not_absolute",
+    InvalidCharacters = "invalid_characters",
+    ParentTraversal = "parent_traversal",
+    UploadFolder = "upload_folder",
+    ContainsUploadFolder = "contains_upload_folder",
+    NotFound = "not_found",
+    NotDirectory = "not_directory",
+    NotReadable = "not_readable",
+    Unavailable = "unavailable",
+    Duplicate = "duplicate",
+    Nested = "nested",
+    OtherLibrary = "other_library"
+}
 export enum LivePhotoMatchConfidence {
     High = "high",
     Low = "low"
@@ -15873,6 +16046,7 @@ export enum JobName {
     LibrarySyncFilesQueueAll = "LibrarySyncFilesQueueAll",
     LibrarySyncFiles = "LibrarySyncFiles",
     LibraryScanQueueAll = "LibraryScanQueueAll",
+    LibraryScanRun = "LibraryScanRun",
     HlsSessionCleanup = "HlsSessionCleanup",
     MemoryCleanup = "MemoryCleanup",
     MemoryGenerate = "MemoryGenerate",

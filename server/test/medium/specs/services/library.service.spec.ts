@@ -4,7 +4,15 @@ import { copyFile, mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { AdminAuditAction, AssetStatus, JobName, JobStatus, LibraryImportPathReason, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import {
+  AdminAuditAction,
+  AssetStatus,
+  JobName,
+  JobStatus,
+  LibraryImportPathReason,
+  MediaOperationKind,
+  MediaOperationStatus,
+} from 'src/enum.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -318,7 +326,12 @@ describe(LibraryService.name, () => {
 
       await expect(sut.validate(newUuid(), { importPaths: [filePath] })).resolves.toEqual({
         importPaths: [
-          { importPath: filePath, isValid: false, reason: LibraryImportPathReason.NotDirectory, message: 'Not a directory' },
+          {
+            importPath: filePath,
+            isValid: false,
+            reason: LibraryImportPathReason.NotDirectory,
+            message: 'Not a directory',
+          },
         ],
       });
     });
@@ -622,7 +635,7 @@ describe(LibraryService.name, () => {
         scans.queue(library, { ownerId: library.ownerId, trigger: 'manual' }),
       ]);
 
-      expect([first.created, second.created].sort()).toEqual([false, true]);
+      expect([first.created, second.created].filter(Boolean)).toHaveLength(1);
       expect(first.operation.id).toBe(second.operation.id);
       await scans.drain();
     });
@@ -650,7 +663,7 @@ describe(LibraryService.name, () => {
 
   describe('scan: settings-driven offlining', () => {
     it('should set an asset offline if its file is not in any import path', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const { asset } = await ctx.newAsset({
@@ -673,7 +686,7 @@ describe(LibraryService.name, () => {
     });
 
     it('should set an asset offline if its file is covered by an exclusion pattern', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({
         importPaths: [importRoot],
@@ -702,7 +715,7 @@ describe(LibraryService.name, () => {
 
   describe('scan: checking existing items', () => {
     it('should set an asset offline if its file is missing', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const { asset } = await ctx.newAsset({
@@ -726,7 +739,7 @@ describe(LibraryService.name, () => {
     });
 
     it('should not set an asset offline if file exists in import path and is not excluded', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({
         importPaths: [importRoot],
@@ -753,7 +766,7 @@ describe(LibraryService.name, () => {
     });
 
     it('should set an offline asset to online if its file exists in an import path and is not excluded', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const { asset } = await ctx.newAsset({
@@ -776,7 +789,7 @@ describe(LibraryService.name, () => {
     });
 
     it('should not set an offline asset to online if its file exists in an import path but is excluded', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({
         importPaths: [importRoot],
@@ -803,7 +816,7 @@ describe(LibraryService.name, () => {
     });
 
     it('should keep an offline asset offline if it is outside import paths', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const { asset } = await ctx.newAsset({
@@ -827,7 +840,7 @@ describe(LibraryService.name, () => {
     });
 
     it('should set a trashed asset offline if its file is missing', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const { asset } = await ctx.newAsset({
@@ -852,7 +865,7 @@ describe(LibraryService.name, () => {
     });
 
     it('should set a trashed offline asset to online but keep it in trash', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const { asset } = await ctx.newAsset({
@@ -875,7 +888,7 @@ describe(LibraryService.name, () => {
     });
 
     it('should queue sidecar checks for assets whose file changed', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const jobs = ctx.getMock(JobRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const rawPath = await copyTestAsset('formats/raw/Nikon/D80/glarus.nef', join(importPath, 'glarus.nef'));
@@ -904,12 +917,12 @@ describe(LibraryService.name, () => {
     });
 
     it('should not queue sidecar checks for unchanged assets', async () => {
-      const { sut, ctx } = setup();
+      const { ctx } = setup();
       const jobs = ctx.getMock(JobRepository);
       const library = await ctx.createLibrary({ importPaths: [importPath] });
       const rawPath = await copyTestAsset('formats/raw/Nikon/D80/glarus.nef', join(importPath, 'glarus.nef'));
 
-      const { asset } = await ctx.newAsset({
+      await ctx.newAsset({
         ownerId: library.ownerId,
         libraryId: library.id,
         originalPath: rawPath,

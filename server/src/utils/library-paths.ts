@@ -30,7 +30,7 @@ export type ImportPathStorage = {
 export type ImportPathNeighbour = { id: string; name: string; importPaths: string[] };
 
 // eslint-disable-next-line no-control-regex
-const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/;
+const CONTROL_CHARACTERS = /[\u{0}-\u{1F}\u{7F}]/u;
 
 const valid = (importPath: string): ImportPathCheck => ({
   importPath,
@@ -103,7 +103,10 @@ export const checkImportPathFormat = (importPath: string): ImportPathCheck | nul
 };
 
 /** Whether the folder is, right now, a directory this server can read. */
-export const checkImportPathOnDisk = async (storage: ImportPathStorage, importPath: string): Promise<ImportPathCheck> => {
+export const checkImportPathOnDisk = async (
+  storage: ImportPathStorage,
+  importPath: string,
+): Promise<ImportPathCheck> => {
   try {
     const stat = await storage.stat(importPath);
     if (!stat.isDirectory()) {

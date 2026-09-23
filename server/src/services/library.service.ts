@@ -5,6 +5,7 @@ import path from 'node:path';
 import picomatch from 'picomatch';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { LibraryRemovalCounts } from 'src/repositories/library.repository.js';
 import type { JobOf } from 'src/types.js';
 import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -31,7 +32,6 @@ import {
   QueueName,
   UserStatus,
 } from 'src/enum.js';
-import type { LibraryRemovalCounts } from 'src/repositories/library.repository.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
@@ -387,7 +387,8 @@ export class LibraryService extends BaseService {
     await this.recordAdminEvents([libraryEvent(auth, library, AdminAuditAction.LibraryUpdated)]);
 
     const foldersChanged =
-      libraryPathsFingerprint(existing) !== libraryPathsFingerprint(library as { importPaths: string[]; exclusionPatterns: string[] });
+      libraryPathsFingerprint(existing) !==
+      libraryPathsFingerprint(library as { importPaths: string[]; exclusionPatterns: string[] });
     if (foldersChanged) {
       // A running scan was asked about the old folders; it stops, and the watcher follows the new ones.
       await this.eventRepository.emit('LibraryScanStop', { libraryId: id, reason: 'paths_changed' });

@@ -11659,9 +11659,19 @@
     },
     "/libraries": {
       "get": {
-        "description": "Retrieve a list of external libraries.",
+        "description": "Retrieve a list of external libraries, each with its latest scan.",
         "operationId": "getAllLibraries",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "withDeleted",
+            "required": false,
+            "in": "query",
+            "description": "Include libraries whose removal is still in progress",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -11705,6 +11715,11 @@
           {
             "version": "v2",
             "state": "Stable"
+          },
+          {
+            "version": "v3",
+            "state": "Updated",
+            "description": "Each library carries its latest scan and removal state"
           }
         ],
         "x-immich-permission": "library.read",
@@ -11768,6 +11783,51 @@
         ],
         "x-immich-permission": "library.create",
         "x-immich-state": "Stable"
+      }
+    },
+    "/libraries/managed-uploads": {
+      "get": {
+        "description": "Retrieve, for every active account, the photos, videos and original sizes it keeps in managed upload storage rather than in external libraries.",
+        "operationId": "getManagedUploadStatistics",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ManagedUploadsStatsResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve managed upload statistics",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "library.statistics"
       }
     },
     "/libraries/{id}": {
@@ -11962,7 +12022,158 @@
         "x-immich-state": "Deprecated"
       }
     },
+    "/libraries/{id}/removal": {
+      "get": {
+        "description": "The first stage of removing an external library: the indexed items, albums, shared links and faces the removal takes with it, and a token to confirm it with. Source files are never deleted.",
+        "operationId": "getLibraryRemovalReview",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryRemovalReviewDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Review a library removal",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "library.delete"
+      },
+      "post": {
+        "description": "The second stage of removing an external library: confirm with the typed name and the review token. Refused when the library changed after the review.",
+        "operationId": "removeLibrary",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryRemovalDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a library",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "library.delete"
+      }
+    },
     "/libraries/{id}/scan": {
+      "delete": {
+        "description": "Stop the external library's waiting, running or paused scan. Items it already handled stay as they are.",
+        "operationId": "cancelLibraryScan",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel a library scan",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "library.update"
+      },
       "post": {
         "description": "Queue a scan for the external library to find and import new assets.",
         "operationId": "scanLibrary",
@@ -31609,6 +31820,7 @@
           "library-created",
           "library-updated",
           "library-scan-queued",
+          "library-scan-cancelled",
           "library-deleted"
         ],
         "type": "string"
@@ -38575,6 +38787,7 @@
           "exclusionPatterns": {
             "description": "Exclusion patterns (max 128)",
             "items": {
+              "maxLength": 1024,
               "type": "string"
             },
             "maxItems": 128,
@@ -38583,6 +38796,7 @@
           "importPaths": {
             "description": "Import paths (max 128)",
             "items": {
+              "maxLength": 1024,
               "type": "string"
             },
             "maxItems": 128,
@@ -38590,11 +38804,12 @@
           },
           "name": {
             "description": "Library name",
+            "maxLength": 160,
             "minLength": 1,
             "type": "string"
           },
           "ownerId": {
-            "description": "Owner user ID",
+            "description": "Owner user ID. Fixed once the library exists.",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
@@ -41694,6 +41909,7 @@
           "LibrarySyncFilesQueueAll",
           "LibrarySyncFiles",
           "LibraryScanQueueAll",
+          "LibraryScanRun",
           "HlsSessionCleanup",
           "MemoryCleanup",
           "MemoryGenerate",
@@ -41742,6 +41958,143 @@
         ],
         "type": "string"
       },
+      "LibraryImportPathReason": {
+        "description": "Why an import folder was accepted or refused",
+        "enum": [
+          "valid",
+          "not_absolute",
+          "invalid_characters",
+          "parent_traversal",
+          "upload_folder",
+          "contains_upload_folder",
+          "not_found",
+          "not_directory",
+          "not_readable",
+          "unavailable",
+          "duplicate",
+          "nested",
+          "other_library"
+        ],
+        "type": "string"
+      },
+      "LibraryRemovalDto": {
+        "properties": {
+          "confirmName": {
+            "description": "The library name, typed to confirm",
+            "maxLength": 160,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reviewToken": {
+            "description": "The token from the removal review",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirmName",
+          "reviewToken"
+        ],
+        "type": "object"
+      },
+      "LibraryRemovalReviewDto": {
+        "properties": {
+          "albums": {
+            "description": "Albums that lose items",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "faces": {
+            "description": "Detected faces that will be removed with their items",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "libraryId": {
+            "description": "Library ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "Library name, to be typed to confirm",
+            "type": "string"
+          },
+          "offline": {
+            "description": "Items already offline",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "originalsKept": {
+            "description": "Source files in the import folders are never deleted",
+            "type": "boolean"
+          },
+          "ownerId": {
+            "description": "Owner user ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "photos": {
+            "description": "Indexed photos that will be removed",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "reviewToken": {
+            "description": "Present this to confirm the removal",
+            "type": "string"
+          },
+          "scanActive": {
+            "description": "A scan is running and will be stopped",
+            "type": "boolean"
+          },
+          "sharedLinks": {
+            "description": "Shared links that lose items",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "total": {
+            "description": "Indexed items that will be removed",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "usage": {
+            "description": "Original bytes those items reference",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "videos": {
+            "description": "Indexed videos that will be removed",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "albums",
+          "faces",
+          "libraryId",
+          "name",
+          "offline",
+          "originalsKept",
+          "ownerId",
+          "photos",
+          "reviewToken",
+          "scanActive",
+          "sharedLinks",
+          "total",
+          "usage",
+          "videos"
+        ],
+        "type": "object"
+      },
       "LibraryResponseDto": {
         "properties": {
           "assetCount": {
@@ -41754,6 +42107,14 @@
             "description": "Creation date",
             "example": "2024-01-01T00:00:00.000Z",
             "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "deletedAt": {
+            "description": "When removal was confirmed; set while removal is in progress",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "nullable": true,
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
           },
@@ -41795,6 +42156,15 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
           },
+          "scan": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LibraryScanResponseDto"
+              }
+            ],
+            "description": "The latest scan, or null if the library was never scanned",
+            "nullable": true
+          },
           "updatedAt": {
             "description": "Last update date",
             "example": "2024-01-01T00:00:00.000Z",
@@ -41806,15 +42176,171 @@
         "required": [
           "assetCount",
           "createdAt",
+          "deletedAt",
           "exclusionPatterns",
           "id",
           "importPaths",
           "name",
           "ownerId",
           "refreshedAt",
+          "scan",
           "updatedAt"
         ],
         "type": "object"
+      },
+      "LibraryScanPhase": {
+        "description": "Scan phase",
+        "enum": [
+          "crawl",
+          "check",
+          "done"
+        ],
+        "type": "string"
+      },
+      "LibraryScanResponseDto": {
+        "properties": {
+          "added": {
+            "description": "New items indexed",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "checked": {
+            "description": "Indexed items checked against their folder",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "createdAt": {
+            "description": "When the scan was asked for",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "error": {
+            "description": "Failure detail for the administrator",
+            "nullable": true,
+            "type": "string"
+          },
+          "errorCode": {
+            "description": "Stable failure code",
+            "nullable": true,
+            "type": "string"
+          },
+          "finishedAt": {
+            "description": "When the scan ended",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "offlined": {
+            "description": "Items whose file is missing, marked offline",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "onlined": {
+            "description": "Offline items whose file is back",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "operationId": {
+            "description": "The scan job, a media operation of kind library_scan",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "pauseRequested": {
+            "description": "A pause was asked for and the scan has not reached it yet",
+            "type": "boolean"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/LibraryScanPhase"
+          },
+          "processedUnits": {
+            "description": "Files and items handled so far",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "progress": {
+            "description": "Progress, 0 to 100",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "retrying": {
+            "description": "The scan failed once and waits for its automatic retry",
+            "type": "boolean"
+          },
+          "startedAt": {
+            "description": "When the scan first started",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "stopReason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LibraryScanStopReason"
+              }
+            ],
+            "nullable": true
+          },
+          "totalUnits": {
+            "description": "Files and items known so far; grows while the folders are read",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "updated": {
+            "description": "Items whose file changed and are read again",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "added",
+          "checked",
+          "createdAt",
+          "error",
+          "errorCode",
+          "finishedAt",
+          "offlined",
+          "onlined",
+          "operationId",
+          "pauseRequested",
+          "phase",
+          "processedUnits",
+          "progress",
+          "retrying",
+          "startedAt",
+          "status",
+          "stopReason",
+          "totalUnits",
+          "updated"
+        ],
+        "type": "object"
+      },
+      "LibraryScanStopReason": {
+        "description": "Why the server stopped a scan on its own",
+        "enum": [
+          "paths_changed",
+          "library_removed",
+          "owner_deleted"
+        ],
+        "type": "string"
       },
       "LibraryStatsResponseDto": {
         "properties": {
@@ -41836,6 +42362,12 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "usagePhysical": {
+            "description": "Storage usage in bytes, counting each distinct original file once",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
           "videos": {
             "description": "Number of videos",
             "maximum": 9007199254740991,
@@ -41847,6 +42379,7 @@
           "photos",
           "total",
           "usage",
+          "usagePhysical",
           "videos"
         ],
         "type": "object"
@@ -42269,6 +42802,55 @@
         "required": [
           "action",
           "active"
+        ],
+        "type": "object"
+      },
+      "ManagedUploadsStatsResponseDto": {
+        "properties": {
+          "ownerId": {
+            "description": "Account whose uploads these are",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "photos": {
+            "description": "Number of photos",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "total": {
+            "description": "Total number of assets",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "usage": {
+            "description": "Storage usage in bytes",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "usagePhysical": {
+            "description": "Storage usage in bytes, counting each distinct original file once",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "videos": {
+            "description": "Number of videos",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ownerId",
+          "photos",
+          "total",
+          "usage",
+          "usagePhysical",
+          "videos"
         ],
         "type": "object"
       },
@@ -44063,7 +44645,8 @@
           "media_health",
           "icloud_sync",
           "takeout_import",
-          "physical_deduplication"
+          "physical_deduplication",
+          "library_scan"
         ],
         "type": "string"
       },
@@ -60544,6 +61127,7 @@
           "exclusionPatterns": {
             "description": "Exclusion patterns (max 128)",
             "items": {
+              "maxLength": 1024,
               "type": "string"
             },
             "maxItems": 128,
@@ -60552,6 +61136,7 @@
           "importPaths": {
             "description": "Import paths (max 128)",
             "items": {
+              "maxLength": 1024,
               "type": "string"
             },
             "maxItems": 128,
@@ -60559,6 +61144,7 @@
           },
           "name": {
             "description": "Library name",
+            "maxLength": 160,
             "minLength": 1,
             "type": "string"
           }
@@ -61576,6 +62162,7 @@
           "exclusionPatterns": {
             "description": "Exclusion patterns (max 128)",
             "items": {
+              "maxLength": 1024,
               "type": "string"
             },
             "maxItems": 128,
@@ -61584,6 +62171,7 @@
           "importPaths": {
             "description": "Import paths to validate (max 128)",
             "items": {
+              "maxLength": 1024,
               "type": "string"
             },
             "maxItems": 128,
@@ -61605,11 +62193,15 @@
           "message": {
             "description": "Validation message",
             "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/LibraryImportPathReason"
           }
         },
         "required": [
           "importPath",
-          "isValid"
+          "isValid",
+          "reason"
         ],
         "type": "object"
       },

@@ -162,7 +162,8 @@ export class LibraryController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
     summary: 'Cancel a library scan',
-    description: "Stop the external library's waiting, running or paused scan. Items it already handled stay as they are.",
+    description:
+      "Stop the external library's waiting, running or paused scan. Items it already handled stay as they are.",
     history: new HistoryBuilder().added('v3'),
   })
   cancelLibraryScan(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
@@ -191,11 +192,7 @@ export class LibraryController {
       'The second stage of removing an external library: confirm with the typed name and the review token. Refused when the library changed after the review.',
     history: new HistoryBuilder().added('v3'),
   })
-  removeLibrary(
-    @Auth() auth: AuthDto,
-    @Param() { id }: UUIDParamDto,
-    @Body() dto: LibraryRemovalDto,
-  ): Promise<void> {
+  removeLibrary(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto, @Body() dto: LibraryRemovalDto): Promise<void> {
     return this.service.remove(auth, id, dto);
   }
 }
