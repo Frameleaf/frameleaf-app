@@ -3,6 +3,7 @@ import {
   destinationChoices,
   formatMomentTime,
   initialStages,
+  lastPlanKey,
   neededBy,
   newRequestKey,
   parseMomentTime,
@@ -120,5 +121,11 @@ describe('moment times', () => {
 describe('newRequestKey', () => {
   it('always makes a version 4 UUID the server accepts', () => {
     expect(newRequestKey()).toMatch(/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);
+  });
+});
+
+describe('lastPlanKey', () => {
+  it('keeps each account to its own last plan in this browser', () => {
+    expect(lastPlanKey('user-a')).not.toBe(lastPlanKey('user-b'));
   });
 });

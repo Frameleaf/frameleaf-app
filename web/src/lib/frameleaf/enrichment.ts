@@ -264,24 +264,27 @@ export const newRequestKey = (): string => {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 };
 
-/** The last plan this browser opened, so reopening the workbench returns to it. A convenience only. */
-const LAST_PLAN_KEY = 'frameleaf.enrichment.lastPlan';
+/**
+ * The last plan this browser opened for this account, so reopening the workbench returns to it. A
+ * convenience only, keyed by user so an account never reopens another account's plan here.
+ */
+export const lastPlanKey = (userId: string) => `frameleaf.enrichment.lastPlan.${userId}`;
 
-export const rememberPlan = (id: string | null) => {
+export const rememberPlan = (userId: string, id: string | null) => {
   try {
     if (id) {
-      localStorage.setItem(LAST_PLAN_KEY, id);
+      localStorage.setItem(lastPlanKey(userId), id);
     } else {
-      localStorage.removeItem(LAST_PLAN_KEY);
+      localStorage.removeItem(lastPlanKey(userId));
     }
   } catch {
     // Storage may be unavailable; the plan itself is durable on the server.
   }
 };
 
-export const lastPlan = (): string | null => {
+export const lastPlan = (userId: string): string | null => {
   try {
-    return localStorage.getItem(LAST_PLAN_KEY);
+    return localStorage.getItem(lastPlanKey(userId));
   } catch {
     return null;
   }
