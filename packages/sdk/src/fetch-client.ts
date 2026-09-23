@@ -2740,7 +2740,31 @@ export type FaceDto = {
     /** Face ID */
     id: string;
 };
+export type ICloudSyncRunDto = {
+    createdAt: string;
+    /** Stable failure code, translated by the client */
+    errorCode: string | null;
+    finishedAt: string | null;
+    /** Media operation ID of the run */
+    id: string;
+    /** A pause was asked for and the worker has not reached it yet */
+    pauseRequested: boolean;
+    /** Resources settled so far */
+    processedUnits: number;
+    /** 0 to 100, from resources settled out of those known so far */
+    progress: number;
+    /** Back in the queue for its automatic retry after a failure */
+    retrying: boolean;
+    startedAt: string | null;
+    status: MediaOperationStatus;
+    /** Resources known so far; null until the inventory is counted */
+    totalUnits: number | null;
+    /** Handed back to wait for the provider or a backed-off item */
+    waiting: boolean;
+};
 export type ICloudConnectionResponseDto = {
+    /** Whether an encrypted Apple session is stored; the session is never returned */
+    authenticated: boolean;
     config: {
         albums: string[];
         concurrency: number;
@@ -2758,6 +2782,8 @@ export type ICloudConnectionResponseDto = {
     label: string;
     lastError: string | null;
     nextRunAt: string | null;
+    /** The current or most recent sync run */
+    run: (ICloudSyncRunDto) | null;
     state: string;
 };
 export type ICloudConnectionsResponseDto = {
@@ -2808,14 +2834,25 @@ export type ICloudInventoryResponseDto = {
     }[];
     complete: boolean;
     libraries: {
+        area: ICloudLibraryArea;
         id: string;
         name: string;
         supported: boolean;
     }[];
     recent?: {
         assetId: string;
+        fileName: string;
         outcome: string;
         resourceId: string;
+    }[];
+    /** Reconciliation findings; private items only for an unlocked session */
+    review: {
+        assetId: string | null;
+        fileName: string | null;
+        kind: ICloudReviewKind;
+        reason: string | null;
+        resourceId: string;
+        role: string;
     }[];
 };
 export type QueueStatisticsDto = {
@@ -9126,6 +9163,14 @@ export function getICloudInventory({ id }: {
         ...opts
     }));
 }
+export function removeICloudConnection({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/icloud-sync/connections/${encodeURIComponent(id)}/remove`, {
+        ...opts,
+        method: "POST"
+    }));
+}
 /**
  * Retrieve queue counts and status
  */
@@ -13985,6 +14030,17 @@ export enum ICloudControlAction {
     Rescan = "rescan",
     Retry = "retry"
 }
+export enum ICloudLibraryArea {
+    Private = "private",
+    Shared = "shared"
+}
+export enum ICloudReviewKind {
+    Review = "review",
+    Failed = "failed",
+    Unsupported = "unsupported",
+    KeptTrashed = "kept-trashed",
+    SourceRemoved = "source-removed"
+}
 export enum ManualJobName {
     PersonCleanup = "person-cleanup",
     TagCleanup = "tag-cleanup",
@@ -14108,7 +14164,8 @@ export enum MediaOperationKind {
     QuickEdit = "quick_edit",
     Bulk = "bulk",
     StudioBundleExport = "studio_bundle_export",
-    StudioBundleImport = "studio_bundle_import"
+    StudioBundleImport = "studio_bundle_import",
+    IcloudSync = "icloud_sync"
 }
 export enum MediaOperationBulkAction {
     Favorite = "favorite",
