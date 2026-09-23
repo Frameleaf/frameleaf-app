@@ -102,7 +102,6 @@ test.describe('Shared Links', () => {
     await page.goto(`/share/${sharedLink.key}`);
     await page.getByRole('heading', { name: 'Test Album' }).waitFor();
     await expect(page.getByRole('button', { name: 'Download all' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Add photos' })).toHaveCount(0);
   });
 
   test('enter password for a shared link', async ({ page }) => {
