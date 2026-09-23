@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_WORKER_FORM,
+  RENDER_WORKER_KINDS,
   RENDER_WORKER_QUERY_MAX_LENGTH,
   RENDER_WORKER_UNREACHABLE_MS,
   auditDetailEntries,
@@ -10,6 +11,7 @@ import {
   destinationKey,
   filterWorkers,
   gibToBytes,
+  isRenderWorkerKind,
   limitFormFrom,
   minutesToMs,
   msToMinutes,
@@ -117,6 +119,28 @@ describe('vocabulary', () => {
     expect(Object.keys(workerHealthKey).sort()).toEqual(['busy', 'never_admitted', 'ready', 'revoked', 'unreachable']);
   });
 
+  it('offers a render worker only the render kinds, never server-side jobs (FL-73)', () => {
+    expect([...RENDER_WORKER_KINDS].sort()).toEqual(
+      [
+        MediaOperationKind.QuickEdit,
+        MediaOperationKind.Restoration,
+        MediaOperationKind.RestorationPreview,
+        MediaOperationKind.StudioExport,
+        MediaOperationKind.StudioPreview,
+      ].sort(),
+    );
+    for (const kind of [
+      MediaOperationKind.Bulk,
+      MediaOperationKind.StudioBundleExport,
+      MediaOperationKind.StudioBundleImport,
+      MediaOperationKind.EnrichmentPlan,
+      MediaOperationKind.MediaHealth,
+    ]) {
+      expect(isRenderWorkerKind(kind)).toBe(false);
+    }
+    expect(DEFAULT_WORKER_FORM.kinds.every((kind) => isRenderWorkerKind(kind))).toBe(true);
+  });
+
   it('marks refusals and stops, not enrolment or admission', () => {
     expect(auditEventIsRefusal(RenderWorkerAuditEvent.Refused)).toBe(true);
     expect(auditEventIsRefusal(RenderWorkerAuditEvent.ClaimRefused)).toBe(true);
@@ -213,6 +237,18 @@ describe('parseWorkerForm', () => {
     gpuMemoryGiB: '24',
     concurrency: '2',
   };
+
+  it('drops kinds a render worker cannot take and refuses a scope with none left (FL-73)', () => {
+    const parsed = parseWorkerForm({
+      ...filled,
+      kinds: [MediaOperationKind.Bulk, MediaOperationKind.QuickEdit, MediaOperationKind.MediaHealth],
+    });
+    expect(parsed.ok && parsed.value.kinds).toEqual([MediaOperationKind.QuickEdit]);
+    expect(parseWorkerForm({ ...filled, kinds: [MediaOperationKind.EnrichmentPlan] })).toEqual({
+      ok: false,
+      field: 'kinds',
+    });
+  });
 
   it('produces the enrolment values the server expects', () => {
     expect(parseWorkerForm(filled)).toEqual({
