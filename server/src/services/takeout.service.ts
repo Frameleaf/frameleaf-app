@@ -59,9 +59,11 @@ import {
 export const TAKEOUT_MAX_SOURCES = 500;
 /**
  * Claims one import job may use before a lapsed lease counts as a failure. Imports are long and
- * survive restarts; every claim resumes from what was recorded.
+ * survive restarts; every claim resumes from what was recorded. A shutdown, a pause or the item
+ * retry hands the claim back with its attempt returned, so only a lost claim counts, and a lost
+ * claim may be resumed twice before it is a failure (owner decision, September 22, 2026; FL-43).
  */
-export const TAKEOUT_MAX_ATTEMPTS = 20;
+export const TAKEOUT_MAX_ATTEMPTS = 3;
 
 const asIso = (value: Date) => value.toISOString();
 

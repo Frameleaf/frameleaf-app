@@ -426,6 +426,7 @@ describe(TakeoutWorkerService.name, () => {
       expect(repository.itemDone).toHaveBeenCalledWith(itemOf().id, 'failed', expect.stringContaining('Trip'));
       expect(operations.requeue).toHaveBeenCalledWith(operationId, claimToken, {
         delayMs: MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
+        returnAttempt: true,
       });
       expect(operations.setBulkResult).toHaveBeenLastCalledWith(
         operationId,
@@ -474,7 +475,7 @@ describe(TakeoutWorkerService.name, () => {
 
       await sut.run(operationOf('import'), claimToken);
 
-      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(operationId, { released: false });
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(operationId, claimToken, { released: false });
       expect(operations.complete).not.toHaveBeenCalled();
     });
 

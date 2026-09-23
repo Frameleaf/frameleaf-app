@@ -218,6 +218,9 @@ const requireRenderKinds = (kinds: readonly MediaOperationKind[]) => {
   }
 };
 
+/** A worker named a result asset that is not a live asset of the job's owner (FL-43). */
+export const RENDER_RESULT_NOT_OWNED = 'result_not_owned';
+
 /**
  * Authenticated renderer admission and resource limits (FL-95 `STU-401`).
  *
@@ -234,6 +237,7 @@ const requireRenderKinds = (kinds: readonly MediaOperationKind[]) => {
  * The decisions themselves are the pure functions in `src/utils/render-admission.ts`; this
  * service gathers their inputs, applies the answer and records it.
  */
+
 @Injectable()
 export class RenderWorkerService {
   private destinationHealth: DestinationHealthProvider;
@@ -874,8 +878,10 @@ export class RenderWorkerService {
   }
 
   /**
-   * Publish a validated result. Owner access to the result is not decided here: adoption of an
-   * output as an asset belongs to the publish path; this only records that the claim finished.
+   * Publish a validated result. Adopting an output as an asset belongs to the publish path; this
+   * records that the claim finished and which asset it produced. That asset must be a live asset of
+   * the job's owner (FL-43): a worker naming anything else — another account's media, a deleted
+   * asset — is refused, and the job fails with a stable code instead of publishing it as lineage.
    */
   async complete(
     sessionToken: string | undefined,
@@ -884,6 +890,17 @@ export class RenderWorkerService {
   ): Promise<RenderWorkerWriteResultDto> {
     const { worker } = await this.authenticate(sessionToken);
     const operation = await this.requireClaimed(worker.id, operationId, dto.claimToken);
+
+    if (dto.resultAssetId && !(await this.operations.isPublishableResult(operation.ownerId, dto.resultAssetId))) {
+      this.logger.warn(
+        `Render worker ${worker.id} named a result for media operation ${operation.id} that is not the owner's`,
+      );
+      await this.operations.fail(operation.id, dto.claimToken, {
+        error: 'The worker reported a result that does not belong to this account',
+        errorCode: RENDER_RESULT_NOT_OWNED,
+      });
+      return { accepted: false, refusal: null };
+    }
 
     const accepted = await this.operations.complete(operation.id, dto.claimToken, { resultAssetId: dto.resultAssetId });
     if (accepted) {
@@ -934,7 +951,7 @@ export class RenderWorkerService {
       return { accepted: false, refusal: null };
     }
 
-    const accepted = await this.operations.acknowledgeCancel(operation.id, { released: dto.released });
+    const accepted = await this.operations.acknowledgeCancel(operation.id, dto.claimToken, { released: dto.released });
     return { accepted, refusal: null };
   }
 
