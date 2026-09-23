@@ -61,6 +61,9 @@ export const studioCommandIds = [
   // Jobs
   'job.enqueueExport',
   'job.enqueueRestoration',
+  // Preview
+  'preview.request',
+  'preview.release',
 ] as const;
 
 export type StudioCommandId = (typeof studioCommandIds)[number];
@@ -166,6 +169,22 @@ export interface StudioCommandPayloads {
     preview: boolean;
     destinationId: string;
   };
+  /**
+   * Ask for one frame of the current revision (FL-96).
+   *
+   * Time is a rational pair of decimal strings, never float seconds: a preview must address
+   * exactly the frame the export does. Minimal local shape standing in for FL-93's model.
+   * The viewport is part of the frame's identity, not a hint; the engine reports the size of
+   * the surface it will paint into.
+   */
+  'preview.request': {
+    time: { numerator: string; denominator: string };
+    quality: 'draft' | 'standard' | 'full';
+    viewportWidth: number;
+    viewportHeight: number;
+  };
+  /** The engine no longer needs the frame it last asked for; stop paying for it. */
+  'preview.release': Record<string, never>;
 }
 
 export type StudioCommand = {
@@ -176,7 +195,7 @@ export type StudioCommand = {
 /* Registry                                                             */
 /* ------------------------------------------------------------------ */
 
-export type StudioCommandScope = 'clip' | 'track' | 'sequence' | 'project' | 'review' | 'job';
+export type StudioCommandScope = 'clip' | 'track' | 'sequence' | 'project' | 'review' | 'job' | 'preview';
 
 export interface StudioCommandDefinition {
   id: StudioCommandId;
@@ -338,6 +357,28 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     requiresCapability: 'renderWorker',
     owner: 'FL-104',
     prototypeSource: 'estimateRender via ExportDialog',
+  }),
+  define({
+    /**
+     * Not a graph change and not undoable: asking to look at a frame changes nothing about the
+     * project. It needs the GPU worker, and it is accepted in a read-only review session
+     * because reviewing without a picture is not reviewing.
+     */
+    id: 'preview.request',
+    scope: 'preview',
+    mutatesGraph: false,
+    undoable: false,
+    requiresCapability: 'gpuWorker',
+    owner: 'FL-96',
+    prototypeSource: 'Studio.jsx preview monitor',
+  }),
+  define({
+    id: 'preview.release',
+    scope: 'preview',
+    mutatesGraph: false,
+    undoable: false,
+    owner: 'FL-96',
+    prototypeSource: 'Studio.jsx preview monitor',
   }),
   define({
     id: 'job.enqueueRestoration',
