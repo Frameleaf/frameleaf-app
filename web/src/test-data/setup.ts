@@ -3,9 +3,11 @@ import { init } from 'svelte-i18n';
 
 beforeAll(async () => {
   await init({ fallbackLocale: 'dev' });
-  Element.prototype.animate = vi.fn().mockImplementation(function () {
-    return { cancel: () => {}, finished: Promise.resolve() };
-  });
+  // A plain function, not `vi.fn()`: a spec's `vi.resetAllMocks()` would otherwise strip the
+  // implementation and every later animation (toasts, transitions) would get `undefined` back.
+  Element.prototype.animate = function () {
+    return { cancel: () => {}, finished: Promise.resolve() } as unknown as Animation;
+  };
 });
 
 if (!('part' in HTMLElement.prototype)) {

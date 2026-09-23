@@ -60,5 +60,12 @@ describe('Frameleaf settings areas', () => {
       expect(sectionsForArea(sections, 'storage').map((s) => s.key)).toEqual(['storage-template', 'trash']);
       expect(sectionsForArea(sections, 'care')).toEqual([]);
     });
+
+    it('keeps the change history as its own personal area without settings forms (FL-66)', () => {
+      const history = SETTINGS_AREAS.find((area) => area.id === 'history');
+      expect(history).toEqual({ id: 'history', group: 'personal', sections: [] });
+      expect(sectionsForArea(sections, 'history')).toEqual([]);
+      expect(resolveSettingsArea({ area: 'history' })).toBe('history');
+    });
   });
 });

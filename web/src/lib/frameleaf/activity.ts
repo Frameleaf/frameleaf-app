@@ -306,6 +306,8 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     tone: retrying || pause.pausePending ? 'warning' : STATUS_TONE[status],
     title: operation.label,
     ...(dedup && { titleKey: 'frameleaf_activity_title_physical_deduplication' }),
+    // A job about a Locked item a locked session may not see comes without its file name (FL-43).
+    ...(operation.withheld && { titleKey: 'frameleaf_activity_title_locked_item' }),
     progress: status === MediaOperationStatus.Completed ? 100 : counted ? clampPercent(operation.progress) : null,
     running,
     ...pause,
