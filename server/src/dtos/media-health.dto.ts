@@ -6,9 +6,17 @@ import {
   MediaHealthSeveritySchema,
   MediaHealthStatus,
   MediaHealthStatusSchema,
+  MediaOperationStatusSchema,
 } from 'src/enum.js';
+import { stringToBool } from 'src/validation.js';
 
 const JsonObjectSchema = z.record(z.string(), z.unknown());
+
+/** Where a candidate was found (FL-69): library storage, an external library, or a recovery location. */
+const MediaHealthRootKindSchema = z
+  .enum(['managed', 'library', 'recovery'])
+  .describe('Kind of search location')
+  .meta({ id: 'MediaHealthRootKind' });
 
 const MediaHealthCandidateSchema = z
   .object({
@@ -20,6 +28,11 @@ const MediaHealthCandidateSchema = z
     evidence: JsonObjectSchema,
     resolution: JsonObjectSchema,
     checkedAt: z.string().meta({ format: 'date-time' }),
+    rootId: z.string().nullable().describe('Search location the candidate was found in'),
+    rootKind: MediaHealthRootKindSchema.nullable(),
+    checksumMatch: z.boolean().describe('The candidate has exactly the checksum recorded for the original'),
+    decodeValid: z.boolean().nullable().describe('The candidate decoded successfully; null when not checked'),
+    chosen: z.boolean().describe('The reviewer chose this candidate for the finding'),
   })
   .meta({ id: 'MediaHealthCandidateDto' });
 
@@ -72,13 +85,25 @@ const MediaHealthListResponseSchema = z
   })
   .meta({ id: 'MediaHealthListResponseDto' });
 
-const MediaHealthListQuerySchema = z
-  .object({
-    category: MediaHealthCategorySchema.optional(),
-    status: MediaHealthStatusSchema.optional(),
-    size: z.coerce.number().int().min(1).max(200).default(100).optional(),
-  })
-  .meta({ id: 'MediaHealthListQueryDto' });
+/**
+ * Whose findings a Library Care read covers (FL-69). An owner always reviews their own; an
+ * administrator may also review one other account or every account. Nobody's Locked media is ever
+ * included except the reader's own, in their unlocked session.
+ */
+const MediaHealthScopeSchema = z.object({
+  ownerId: z.uuidv4().optional().describe('Account to review; administrators only for another account'),
+  allAccounts: stringToBool.optional().describe('Review every account; administrators only'),
+});
+
+const MediaHealthListQuerySchema = MediaHealthScopeSchema.extend({
+  category: MediaHealthCategorySchema.optional(),
+  status: MediaHealthStatusSchema.optional(),
+  needsAttention: stringToBool.optional().describe('Only findings that still need a decision'),
+  size: z.coerce.number().int().min(1).max(200).default(100).optional(),
+  page: z.coerce.number().int().min(1).default(1).optional(),
+}).meta({ id: 'MediaHealthListQueryDto' });
+
+const MediaHealthSummaryQuerySchema = MediaHealthScopeSchema.meta({ id: 'MediaHealthSummaryQueryDto' });
 
 const MediaHealthBulkActionSchema = z
   .object({
@@ -90,9 +115,41 @@ const MediaHealthDeleteCorruptSchema = MediaHealthBulkActionSchema.extend({
   confirmText: z.string().describe('Typed confirmation text'),
 }).meta({ id: 'MediaHealthDeleteCorruptDto' });
 
+const MediaHealthLocateSchema = MediaHealthBulkActionSchema.extend({
+  rootIds: z
+    .array(z.string().min(1).max(200))
+    .min(1)
+    .max(50)
+    .optional()
+    .describe('Search locations; library storage and external libraries when omitted'),
+}).meta({ id: 'MediaHealthLocateDto' });
+
+const MediaHealthCandidateChoiceSchema = z
+  .object({
+    findingId: z.uuidv4().describe('Media health finding ID'),
+    candidateId: z.uuidv4().describe('Candidate ID'),
+  })
+  .meta({ id: 'MediaHealthCandidateChoiceDto' });
+
+const MediaHealthChooseCandidatesSchema = z
+  .object({
+    choices: z.array(MediaHealthCandidateChoiceSchema).min(1).max(1000),
+  })
+  .meta({ id: 'MediaHealthChooseCandidatesDto' });
+
+const MediaHealthRecoverSchema = z
+  .object({
+    choices: z.array(MediaHealthCandidateChoiceSchema).min(1).max(1000),
+    confirmed: z
+      .literal(true)
+      .describe('The reviewer checked the checksum and decode evidence and keeps the damaged source'),
+  })
+  .meta({ id: 'MediaHealthRecoverDto' });
+
 const MediaHealthScanResponseSchema = z
   .object({
     runId: z.uuidv4(),
+    operationId: z.uuidv7().nullable().optional().describe('The durable job doing the work, in Activity'),
   })
   .meta({ id: 'MediaHealthScanResponseDto' });
 
@@ -108,8 +165,88 @@ const MediaHealthBulkResultSchema = z
 const MediaHealthBulkResponseSchema = z
   .object({
     results: z.array(MediaHealthBulkResultSchema),
+    operationId: z
+      .uuidv7()
+      .nullable()
+      .optional()
+      .describe('The durable job applying the accepted findings, in Activity; null when none was accepted'),
   })
   .meta({ id: 'MediaHealthBulkResponseDto' });
+
+const MediaHealthRootSchema = z
+  .object({
+    id: z.string().describe('Search location ID'),
+    kind: MediaHealthRootKindSchema,
+    label: z.string(),
+    paths: z.array(z.string()).describe('Folders searched, for review'),
+  })
+  .meta({ id: 'MediaHealthRootDto' });
+
+const MediaHealthRootsResponseSchema = z
+  .object({ roots: z.array(MediaHealthRootSchema) })
+  .meta({ id: 'MediaHealthRootsResponseDto' });
+
+/** The latest scan or search, as Library Care shows it (FL-69). A view of its `media_operation` row. */
+const MediaHealthOperationSchema = z
+  .object({
+    id: z.uuidv7().describe('Media operation ID'),
+    mode: z.enum(['scan', 'locate']).describe('A library scan or a search for originals'),
+    status: MediaOperationStatusSchema,
+    progress: z.number().meta({ format: 'double' }),
+    processedUnits: z.int(),
+    totalUnits: z.int().nullable(),
+    pauseRequestedAt: z.string().meta({ format: 'date-time' }).nullable(),
+    cancelRequestedAt: z.string().meta({ format: 'date-time' }).nullable(),
+    autoRetries: z.int(),
+    error: z.string().nullable(),
+    createdAt: z.string().meta({ format: 'date-time' }),
+    updatedAt: z.string().meta({ format: 'date-time' }),
+    finishedAt: z.string().meta({ format: 'date-time' }).nullable(),
+  })
+  .meta({ id: 'MediaHealthOperationDto' });
+
+const MediaHealthActivitySchema = z
+  .object({
+    id: z.uuidv7().describe('Media operation ID'),
+    action: z
+      .enum(['scan', 'locate', 'relink-missing-media', 'recover-damaged-media', 'trash-damaged-media'])
+      .describe('What the job did'),
+    status: MediaOperationStatusSchema,
+    items: z.int().describe('Items the job covered'),
+    createdAt: z.string().meta({ format: 'date-time' }),
+    finishedAt: z.string().meta({ format: 'date-time' }).nullable(),
+  })
+  .meta({ id: 'MediaHealthActivityDto' });
+
+const MediaHealthQueuesSchema = z
+  .object({
+    missing: z.int().describe('Missing originals that still need a decision'),
+    missingVerified: z.int().describe('Missing originals with a verified exact copy'),
+    damagedConfirmed: z.int(),
+    damagedSuspected: z.int(),
+    unsupportedRaw: z.int().describe('Kept apart from damage: the decoder cannot read the format'),
+    duplicates: z.int().describe('Duplicate groups waiting for review'),
+    importReview: z.int().nullable().describe('Imported items that need review; null when unavailable'),
+    enrichmentPending: z.int().describe('Items whose metadata has not been read yet'),
+  })
+  .meta({ id: 'MediaHealthQueuesDto' });
+
+const MediaHealthRunsSchema = z
+  .object({
+    missing: MediaHealthRunResponseSchema.nullable(),
+    corrupt: MediaHealthRunResponseSchema.nullable(),
+  })
+  .meta({ id: 'MediaHealthRunsDto' });
+
+const MediaHealthSummaryResponseSchema = z
+  .object({
+    queues: MediaHealthQueuesSchema,
+    operation: MediaHealthOperationSchema.nullable(),
+    runs: MediaHealthRunsSchema,
+    recent: z.array(MediaHealthActivitySchema),
+    recoveryAvailable: z.boolean().describe('At least one recovery location is configured for this reader'),
+  })
+  .meta({ id: 'MediaHealthSummaryResponseDto' });
 
 export class MediaHealthCandidateDto extends createZodDto(MediaHealthCandidateSchema) {}
 export class MediaHealthItemDto extends createZodDto(MediaHealthItemSchema) {}
@@ -117,12 +254,40 @@ export class MediaHealthBucketDto extends createZodDto(MediaHealthBucketSchema) 
 export class MediaHealthRunResponseDto extends createZodDto(MediaHealthRunResponseSchema) {}
 export class MediaHealthListResponseDto extends createZodDto(MediaHealthListResponseSchema) {}
 export class MediaHealthListQueryDto extends createZodDto(MediaHealthListQuerySchema) {}
+export class MediaHealthSummaryQueryDto extends createZodDto(MediaHealthSummaryQuerySchema) {}
 export class MediaHealthBulkActionDto extends createZodDto(MediaHealthBulkActionSchema) {}
 export class MediaHealthDeleteCorruptDto extends createZodDto(MediaHealthDeleteCorruptSchema) {}
+export class MediaHealthLocateDto extends createZodDto(MediaHealthLocateSchema) {}
+export class MediaHealthChooseCandidatesDto extends createZodDto(MediaHealthChooseCandidatesSchema) {}
+export class MediaHealthRecoverDto extends createZodDto(MediaHealthRecoverSchema) {}
 export class MediaHealthScanResponseDto extends createZodDto(MediaHealthScanResponseSchema) {}
 export class MediaHealthBulkResponseDto extends createZodDto(MediaHealthBulkResponseSchema) {}
+export class MediaHealthRootsResponseDto extends createZodDto(MediaHealthRootsResponseSchema) {}
+export class MediaHealthOperationDto extends createZodDto(MediaHealthOperationSchema) {}
+export class MediaHealthSummaryResponseDto extends createZodDto(MediaHealthSummaryResponseSchema) {}
+
+export type MediaHealthCandidateResponse = z.infer<typeof MediaHealthCandidateSchema>;
+export type MediaHealthRootResponse = z.infer<typeof MediaHealthRootSchema>;
+export type MediaHealthActivityResponse = z.infer<typeof MediaHealthActivitySchema>;
 
 export const CORRUPT_MEDIA_DELETE_CONFIRM_TEXT = 'MOVE CORRUPT MEDIA TO TRASH';
 export const CORRUPT_MEDIA_DELETE_RECENT_MS = 24 * 60 * 60 * 1000;
 
 export const CORRUPT_DELETE_STATUSES = new Set<MediaHealthStatus>([MediaHealthStatus.CorruptConfirmed]);
+
+/**
+ * Statuses that are settled (FL-69): nothing is left to decide. Everything else "needs attention",
+ * which is what Library Care shows by default. Unsupported RAW and suspected damage stay open on
+ * purpose: they are kept, not resolved, until validation says otherwise.
+ */
+export const SETTLED_MEDIA_HEALTH_STATUSES: readonly MediaHealthStatus[] = [
+  MediaHealthStatus.Relinked,
+  MediaHealthStatus.Resolved,
+  MediaHealthStatus.Dismissed,
+  MediaHealthStatus.Trashed,
+  MediaHealthStatus.Deleted,
+];
+
+export const NEEDS_ATTENTION_MEDIA_HEALTH_STATUSES: readonly MediaHealthStatus[] = Object.values(
+  MediaHealthStatus,
+).filter((status) => !SETTLED_MEDIA_HEALTH_STATUSES.includes(status));
