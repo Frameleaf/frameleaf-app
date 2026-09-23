@@ -48,6 +48,7 @@ import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
+import { PetRepository } from 'src/repositories/pet.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
@@ -123,6 +124,7 @@ export const repositories = [
   ClusterGroupRepository,
   PartnerRepository,
   PersonRepository,
+  PetRepository,
   PhysicalFileRepository,
   PluginRepository,
   ProcessRepository,
