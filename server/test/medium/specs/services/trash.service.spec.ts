@@ -173,6 +173,33 @@ describe(TrashService.name, () => {
         retainedBytes: 5000,
       });
     });
+
+    it('should not count copies deleted together as keeping their shared original', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const shared = own();
+      const { asset: first } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: shared,
+        status: AssetStatus.Trashed,
+        deletedAt: new Date(),
+      });
+      const { asset: second } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: shared,
+        status: AssetStatus.Trashed,
+        deletedAt: new Date(),
+      });
+
+      await expect(
+        sut.review(auth, { action: TrashReviewAction.Delete, ids: [first.id, second.id] }),
+      ).resolves.toMatchObject({ count: 2, retainedOriginals: 0 });
+      await expect(sut.review(auth, { action: TrashReviewAction.Delete, ids: [first.id] })).resolves.toMatchObject({
+        count: 1,
+        retainedOriginals: 1,
+      });
+    });
   });
 
   describe('hidden items', () => {
@@ -263,17 +290,28 @@ describe(TrashService.name, () => {
         status: AssetStatus.Trashed,
         deletedAt: new Date(),
       });
+      // one the owner trashed whose file went missing afterwards is an ordinary trash item
+      const { asset: trashedThenMissing } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: own(),
+        isExternal: true,
+        isOffline: true,
+        status: AssetStatus.Trashed,
+        deletedAt: new Date(),
+      });
 
-      await expect(sut.getSummary(auth)).resolves.toMatchObject({ count: 2, offline: 1 });
+      await expect(sut.getSummary(auth)).resolves.toMatchObject({ count: 3, offline: 1 });
       const { items } = await sut.getItems(auth, {});
       expect(items.find(({ id }) => id === offline.id)).toMatchObject({ isOffline: true });
+      expect(items.find(({ id }) => id === trashedThenMissing.id)).toMatchObject({ isOffline: false });
 
       const review = await sut.review(auth, { action: TrashReviewAction.Empty });
-      expect(review.count).toBe(1);
+      expect(review.count).toBe(2);
       await sut.apply(auth, { action: TrashReviewAction.Empty, token: review.token });
 
       await expect(statusOf(ctx.database, offline.id)).resolves.toBe(AssetStatus.Active);
       await expect(statusOf(ctx.database, trashed.id)).resolves.toBe(AssetStatus.Deleted);
+      await expect(statusOf(ctx.database, trashedThenMissing.id)).resolves.toBe(AssetStatus.Deleted);
 
       // nor can it be moved to the trash as if it were in the library
       await expect(sut.review(auth, { action: TrashReviewAction.Trash, ids: [offline.id] })).rejects.toThrow(

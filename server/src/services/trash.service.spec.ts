@@ -217,6 +217,7 @@ describe(TrashService.name, () => {
             id: 'asset-1',
             originalFileName: 'Lake morning.mov',
             type: AssetType.Video,
+            status: AssetStatus.Trashed,
             fileSizeInByte: '4819000000',
             deletedAt: trashedAt,
             isLocked: false,
@@ -256,7 +257,44 @@ describe(TrashService.name, () => {
     });
   });
 
+  describe('missing external originals', () => {
+    it("should mark only the library scan's missing originals, not trashed items whose file went missing", async () => {
+      const row = {
+        originalFileName: 'a.jpg',
+        type: AssetType.Image,
+        fileSizeInByte: null,
+        deletedAt: trashedAt,
+        isLocked: false,
+        isOffline: true,
+      };
+      mocks.trash.getItems.mockResolvedValue({
+        items: [
+          { ...row, id: 'scan', status: AssetStatus.Active },
+          { ...row, id: 'owner', status: AssetStatus.Trashed },
+        ],
+        hasNextPage: false,
+        total: 2,
+      });
+
+      const { items } = await sut.getItems(authStub.user1, {});
+
+      expect(items.map(({ id, isOffline }) => ({ id, isOffline }))).toEqual([
+        { id: 'scan', isOffline: true },
+        { id: 'owner', isOffline: false },
+      ]);
+    });
+  });
+
   describe('review', () => {
+    it('should refuse a move to the trash while the trash is turned off', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ trash: { enabled: false } });
+
+      await expect(sut.review(authStub.user1, { action: TrashReviewAction.Trash, ids: ['asset-1'] })).rejects.toThrow(
+        'Trash is turned off',
+      );
+      expect(mocks.trash.getReviewRows).not.toHaveBeenCalled();
+    });
+
     it('should require chosen items for a delete', async () => {
       await expect(sut.review(authStub.user1, { action: TrashReviewAction.Delete, ids: [] })).rejects.toBeInstanceOf(
         BadRequestException,
