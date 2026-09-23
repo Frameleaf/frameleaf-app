@@ -393,7 +393,7 @@ export class AlbumService extends BaseService {
 
     const newAssetIds = results.filter(({ success }) => success).map(({ id }) => id);
     // Putting an item in a rule's smart album by hand is a decision the rule keeps (FL-60).
-    await this.classificationRepository.recordAlbumAdditions(id, newAssetIds);
+    await this.classificationRepository.recordAlbumAdditions(id, newAssetIds, auth.user.id);
     if (newAssetIds.length > 0) {
       await this.albumRepository.update(
         id,
@@ -476,7 +476,7 @@ export class AlbumService extends BaseService {
     await this.albumRepository.addAssetIdsToAlbums(albumAssetValues);
     for (const albumId of allowedAlbumIds) {
       const added = albumAssetValues.filter((value) => value.albumId === albumId).map(({ assetId }) => assetId);
-      await this.classificationRepository.recordAlbumAdditions(albumId, added);
+      await this.classificationRepository.recordAlbumAdditions(albumId, added, auth.user.id);
     }
     for (const event of events) {
       await this.eventRepository.emit('AlbumUpdate', event);
@@ -499,7 +499,8 @@ export class AlbumService extends BaseService {
     );
 
     const removedIds = results.filter(({ success }) => success).map(({ id }) => id);
-    await this.recordSmartAlbumRemovals(id, removedIds);
+    const isOwner = album.albumUsers.some(({ role, user }) => role === AlbumUserRole.Owner && user.id === auth.user.id);
+    await this.recordSmartAlbumRemovals(id, removedIds, auth.user.id, isOwner);
     if (removedIds.length > 0) {
       if (album.albumThumbnailAssetId && removedIds.includes(album.albumThumbnailAssetId)) {
         await this.albumRepository.updateThumbnails();
@@ -521,15 +522,17 @@ export class AlbumService extends BaseService {
    * match is rejected (and what the rule added besides the album is taken back), and a built-in smart
    * album excludes the item.
    */
-  private async recordSmartAlbumRemovals(albumId: string, assetIds: string[]) {
+  private async recordSmartAlbumRemovals(albumId: string, assetIds: string[], actorId: string, isOwner: boolean) {
     if (assetIds.length === 0) {
       return;
     }
-    const outcome = await this.classificationRepository.recordAlbumRemovals(albumId, assetIds);
+    const outcome = await this.classificationRepository.recordAlbumRemovals(albumId, assetIds, actorId);
     for (const assetId of outcome.untagged) {
       await this.eventRepository.emit('AssetUntag', { assetId });
     }
-    await this.smartAlbumRepository.excludeFromAlbum(albumId, assetIds);
+    if (isOwner) {
+      await this.smartAlbumRepository.excludeFromAlbum(albumId, assetIds);
+    }
   }
 
   async addUsers(auth: AuthDto, id: string, { albumUsers }: AddUsersDto): Promise<AlbumResponseDto> {

@@ -188,9 +188,22 @@ export class ClassificationRepository {
     }
     const rows = await this.db
       .selectFrom('classification_match')
-      .select(['ruleId', 'decision', (eb) => eb.fn.countAll<number>().as('count')])
-      .where('ruleId', 'in', ruleIds)
-      .groupBy(['ruleId', 'decision'])
+      .innerJoin('classification_rule', 'classification_rule.id', 'classification_match.ruleId')
+      .innerJoin('asset', (join) =>
+        join
+          .onRef('asset.id', '=', 'classification_match.assetId')
+          .onRef('asset.ownerId', '=', 'classification_rule.ownerId'),
+      )
+      .select([
+        'classification_match.ruleId',
+        'classification_match.decision',
+        (eb) => eb.fn.countAll<number>().as('count'),
+      ])
+      .where('classification_match.ruleId', 'in', ruleIds)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.visibility', 'in', LISTED)
+      .where(isNotLocked('asset'))
+      .groupBy(['classification_match.ruleId', 'classification_match.decision'])
       .execute();
     for (const row of rows) {
       const entry = counts.get(row.ruleId);
@@ -428,7 +441,7 @@ export class ClassificationRepository {
    * are not the owner's, are in the trash or are locked are left alone and counted as unchanged.
    */
   async apply(
-    rule: ClassificationRuleEffects,
+    rule: ClassificationRule,
     assetIds: string[],
     matches: Map<string, number | null>,
   ): Promise<ClassificationApplyOutcome> {
@@ -438,8 +451,37 @@ export class ClassificationRepository {
     }
 
     await this.db.transaction().execute(async (trx) => {
-      const existing = await this.lockMatches(trx, rule.id, assetIds);
+      // Lock the rule after inference, then compare the inputs that produced the matches. An edit,
+      // disable or withdrawn archive consent during inference must never apply stale effects.
+      const current = await trx
+        .selectFrom('classification_rule')
+        .selectAll()
+        .where('id', '=', rule.id)
+        .forNoKeyUpdate()
+        .executeTakeFirst();
+      const revision = (value: ClassificationRule) =>
+        JSON.stringify([
+          value.ownerId,
+          value.albumId,
+          value.enabled,
+          value.personIds,
+          value.tagIds,
+          value.takenAfter,
+          value.takenBefore,
+          value.mediaType,
+          value.visualQueries,
+          value.threshold,
+          value.action,
+          value.tagId,
+          value.archive,
+          value.archiveConsentAt,
+          value.updatedAt,
+        ]);
+      if (!current || !current.enabled || revision(current) !== revision(rule)) {
+        throw new Error('Classification rule changed while matching; retry with the current rule');
+      }
       const assets = await this.liveAssets(trx, rule.ownerId, assetIds);
+      const existing = await this.lockMatches(trx, rule.id, assetIds);
 
       for (const assetId of assetIds) {
         const asset = assets.get(assetId);
@@ -518,8 +560,8 @@ export class ClassificationRepository {
     }
 
     await this.db.transaction().execute(async (trx) => {
-      const existing = await this.lockMatches(trx, rule.id, assetIds);
       const assets = await this.liveAssets(trx, rule.ownerId, assetIds);
+      const existing = await this.lockMatches(trx, rule.id, assetIds);
       for (const assetId of assetIds) {
         const asset = assets.get(assetId);
         const row = existing.get(assetId);
@@ -547,16 +589,16 @@ export class ClassificationRepository {
    * The owner took items out of a rule's smart album by hand: a rejection that reprocessing keeps.
    * What the rule contributed besides the album (its tag, the archive state) is taken back too.
    */
-  async recordAlbumRemovals(albumId: string, assetIds: string[]): Promise<ClassificationApplyOutcome> {
+  async recordAlbumRemovals(albumId: string, assetIds: string[], actorId: string): Promise<ClassificationApplyOutcome> {
     const outcome = emptyOutcome();
     const rule = assetIds.length > 0 ? await this.getRuleByAlbumId(albumId) : undefined;
-    if (!rule) {
+    if (!rule || rule.ownerId !== actorId) {
       return outcome;
     }
 
     await this.db.transaction().execute(async (trx) => {
-      const existing = await this.lockMatches(trx, rule.id, assetIds);
       const assets = await this.liveAssets(trx, rule.ownerId, assetIds);
+      const existing = await this.lockMatches(trx, rule.id, assetIds);
       for (const assetId of assetIds) {
         const asset = assets.get(assetId);
         if (!asset) {
@@ -574,14 +616,14 @@ export class ClassificationRepository {
   }
 
   /** The owner put items in a rule's smart album by hand: an acceptance that reprocessing keeps. */
-  async recordAlbumAdditions(albumId: string, assetIds: string[]): Promise<void> {
+  async recordAlbumAdditions(albumId: string, assetIds: string[], actorId: string): Promise<void> {
     const rule = assetIds.length > 0 ? await this.getRuleByAlbumId(albumId) : undefined;
-    if (!rule) {
+    if (!rule || rule.ownerId !== actorId) {
       return;
     }
     await this.db.transaction().execute(async (trx) => {
-      const existing = await this.lockMatches(trx, rule.id, assetIds);
       const assets = await this.liveAssets(trx, rule.ownerId, assetIds);
+      const existing = await this.lockMatches(trx, rule.id, assetIds);
       for (const assetId of assetIds) {
         if (!assets.has(assetId)) {
           continue;
@@ -623,22 +665,13 @@ export class ClassificationRepository {
     );
   }
 
-  /** True when the person has since removed the album membership, the tag or the archive by hand. */
+  /** Album removals are recorded with their actor at the service boundary; only tag/archive remain inferable here. */
   private async wasUndoneByHand(
     trx: Transaction<DB>,
     rule: ClassificationRuleEffects,
     asset: LiveAsset,
     row: ClassificationMatch,
   ): Promise<boolean> {
-    const inAlbum = await trx
-      .selectFrom('album_asset')
-      .select('assetId')
-      .where('albumId', '=', rule.albumId)
-      .where('assetId', '=', asset.id)
-      .executeTakeFirst();
-    if (!inAlbum) {
-      return true;
-    }
     if (row.tagContributed && rule.tagId && !(await this.hasTag(trx, rule.tagId, asset.id))) {
       return true;
     }
@@ -683,15 +716,28 @@ export class ClassificationRepository {
     }
 
     let archiveContributed = row?.archiveContributed ?? false;
-    if (rule.archive && !archiveContributed && asset.visibility === AssetVisibility.Timeline) {
-      await trx
-        .updateTable('asset')
-        .set({ visibility: AssetVisibility.Archive })
-        .where('id', '=', asset.id)
-        .where('visibility', '=', AssetVisibility.Timeline)
-        .execute();
-      asset.visibility = AssetVisibility.Archive;
-      archiveContributed = true;
+    if (rule.archive && !archiveContributed) {
+      if (asset.visibility === AssetVisibility.Timeline) {
+        await trx
+          .updateTable('asset')
+          .set({ visibility: AssetVisibility.Archive })
+          .where('id', '=', asset.id)
+          .where('visibility', '=', AssetVisibility.Timeline)
+          .execute();
+        asset.visibility = AssetVisibility.Archive;
+        archiveContributed = true;
+      } else if (asset.visibility === AssetVisibility.Archive) {
+        // Share an archive created by another rule, but never claim one the owner made manually.
+        const holder = await trx
+          .selectFrom('classification_match')
+          .select('ruleId')
+          .where('assetId', '=', asset.id)
+          .where('ruleId', '!=', rule.id)
+          .where('decision', 'in', ACTIVE)
+          .where('archiveContributed', '=', true)
+          .executeTakeFirst();
+        archiveContributed = !!holder;
+      }
     }
 
     return { tagContributed, archiveContributed };
