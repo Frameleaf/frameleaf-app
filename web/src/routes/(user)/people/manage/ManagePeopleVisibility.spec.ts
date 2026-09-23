@@ -1,11 +1,20 @@
-import { render } from '@testing-library/svelte';
+import { render, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'svelte';
 import { vi } from 'vitest';
+import { goto } from '$app/navigation';
 import { getIntersectionObserverMock } from '$lib/__mocks__/intersection-observer.mock';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { personFactory } from '@test-data/factories/person-factory';
+import { userAdminFactory } from '@test-data/factories/user-factory';
 import ManagePeoplePage from './+page.svelte';
 import ManagePeoplePageTestWrapper from './ManagePeopleVisibility.test-wrapper.svelte';
+
+vi.mock('$app/navigation', async () => ({
+  ...(await vi.importActual<typeof import('$app/navigation')>('$app/navigation')),
+  goto: vi.fn(),
+}));
 
 vi.mock(import('$lib/managers/feature-flags-manager.svelte'), function () {
   return {
@@ -81,4 +90,219 @@ describe('People manage page', () => {
     expect(personButtons).toHaveLength(3);
     expect(personButtons[2].getAttribute('aria-pressed')).toBe('false');
   });
+});
+
+describe('People visibility recovery', () => {
+  beforeEach(() => {
+    vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
+    vi.mocked(goto).mockClear();
+    sdkMock.updatePeople.mockReset();
+  });
+
+  it('keeps a draft until the prototype discard dialog is confirmed', async () => {
+    const person = personFactory.build({ isHidden: false });
+    const view = render(ManagePeoplePageTestWrapper, { data: getData([person]) });
+    const user = userEvent.setup();
+    await user.click(view.container.querySelector('button[aria-pressed]')!);
+    await user.click(view.getByRole('button', { name: 'cancel' }));
+    expect(view.getByRole('dialog')).toBeInTheDocument();
+    expect(goto).not.toHaveBeenCalled();
+    await user.click(view.getByRole('button', { name: 'frameleaf_settings_draft_keep_editing' }));
+    expect(view.container.querySelector('button[aria-pressed]')).toHaveAttribute('aria-pressed', 'false');
+    await user.click(view.getByRole('button', { name: 'cancel' }));
+    await user.click(view.getByRole('button', { name: 'frameleaf_settings_draft_discard' }));
+    expect(goto).toHaveBeenCalledWith('/people');
+    expect(sdkMock.updatePeople).not.toHaveBeenCalled();
+    expect(person.isHidden).toBe(false);
+  });
+
+  it('retains failed unnamed-person changes and retries only unconfirmed IDs', async () => {
+    const a = personFactory.build({ id: 'a', name: 'Alex', isHidden: false });
+    const b = personFactory.build({ id: 'b', name: '', isHidden: false });
+    sdkMock.updatePeople.mockResolvedValueOnce([
+      { id: a.id, success: true },
+      { id: b.id, success: false },
+    ]);
+    sdkMock.updatePeople.mockResolvedValueOnce([{ id: b.id, success: true }]);
+    const view = render(ManagePeoplePageTestWrapper, { data: getData([a, b]) });
+    const user = userEvent.setup();
+    const cards = view.container.querySelectorAll('button[aria-pressed]');
+    await user.click(cards[0]);
+    await user.click(cards[1]);
+    await user.click(view.getByRole('button', { name: 'frameleaf_people_save_changes_count' }));
+    await waitFor(() => expect(sdkMock.updatePeople).toHaveBeenCalledOnce());
+    expect(goto).not.toHaveBeenCalled();
+    expect(a.isHidden).toBe(true);
+    expect(b.isHidden).toBe(false);
+    expect(view.getByRole('alert')).toBeInTheDocument();
+    await user.click(view.getByRole('button', { name: 'retry' }));
+    await waitFor(() => expect(sdkMock.updatePeople).toHaveBeenCalledTimes(2));
+    expect(sdkMock.updatePeople.mock.calls[1][0]).toEqual({
+      peopleUpdateDto: { people: [{ id: b.id, isHidden: true }] },
+    });
+    await waitFor(() => expect(goto).toHaveBeenCalledWith('/people'));
+  });
+
+  it.each(['restricted', 'account', 'logout', 'dispose'])(
+    'does not republish or navigate after %s while a bulk save is pending',
+    async (boundary) => {
+      const person = personFactory.build({ isHidden: false });
+      let complete!: (result: { id: string; success: boolean }[]) => void;
+      sdkMock.updatePeople.mockReturnValueOnce(
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+      );
+      const view = render(ManagePeoplePageTestWrapper, { data: getData([person]) });
+      const user = userEvent.setup();
+      await user.click(view.container.querySelector('button[aria-pressed]')!);
+      await user.click(view.getByRole('button', { name: 'frameleaf_people_save_changes_count' }));
+      switch (boundary) {
+        case 'dispose': {
+          view.unmount();
+
+          break;
+        }
+        case 'restricted': {
+          eventManager.emit('SessionAccessChanged', { isElevated: false });
+
+          break;
+        }
+        case 'logout': {
+          eventManager.emit('AuthLogout');
+
+          break;
+        }
+        default: {
+          eventManager.emit('AuthUserLoaded', userAdminFactory.build({ id: 'other-account' }));
+        }
+      }
+      complete([{ id: person.id, success: true }]);
+      await waitFor(() => expect(view.container.querySelectorAll('button[aria-pressed]')).toHaveLength(0));
+      expect(person.isHidden).toBe(false);
+      expect(goto).not.toHaveBeenCalled();
+      expect(sdkMock.updatePeople.mock.calls[0][1]?.signal?.aborted).toBe(true);
+    },
+  );
+});
+
+it.each(['restricted', 'account', 'logout', 'dispose'])(
+  'retires a pending page after %s and rejects duplicate observer loads',
+  async (boundary) => {
+    const a = personFactory.build({ id: 'a' });
+    const b = personFactory.build({ id: 'b' });
+    let observerCallback!: IntersectionObserverCallback;
+    let sentinel!: Element;
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          observerCallback = callback;
+        }
+        observe(target: Element) {
+          sentinel = target;
+        }
+        disconnect = disconnect;
+      },
+    );
+    let complete!: (result: ComponentProps<typeof ManagePeoplePage>['data']['people']) => void;
+    sdkMock.getAllPeople.mockReset().mockReturnValueOnce(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    const view = render(ManagePeoplePageTestWrapper, { data: getData([a], true) });
+    const intersect = () =>
+      observerCallback(
+        [{ target: sentinel, isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    intersect();
+    intersect();
+    expect(sdkMock.getAllPeople).toHaveBeenCalledTimes(1);
+    switch (boundary) {
+      case 'dispose': {
+        view.unmount();
+        break;
+      }
+      case 'restricted': {
+        eventManager.emit('SessionAccessChanged', { isElevated: false });
+        break;
+      }
+      case 'logout': {
+        eventManager.emit('AuthLogout');
+        break;
+      }
+      default: {
+        eventManager.emit('AuthUserLoaded', userAdminFactory.build({ id: 'other-account' }));
+      }
+    }
+    complete(getData([b]).people);
+    await waitFor(() => expect(view.container.querySelectorAll('button[aria-pressed]')).toHaveLength(0));
+    expect(sdkMock.getAllPeople.mock.calls[0][1]?.signal?.aborted).toBe(true);
+    expect(disconnect).toHaveBeenCalled();
+  },
+);
+
+it('keeps pending controls immutable and preserves harmless unlock drafts', async () => {
+  vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
+  const person = personFactory.build({ isHidden: false });
+  let complete!: (result: { id: string; success: boolean }[]) => void;
+  sdkMock.updatePeople.mockReset().mockReturnValueOnce(
+    new Promise((resolve) => {
+      complete = resolve;
+    }),
+  );
+  const view = render(ManagePeoplePageTestWrapper, { data: getData([person]) });
+  const user = userEvent.setup();
+  const card = view.container.querySelector('button[aria-pressed]')!;
+  await user.click(card);
+  eventManager.emit('SessionAccessChanged', { isElevated: true });
+  expect(card).toHaveAttribute('aria-pressed', 'false');
+  await user.click(view.getByRole('button', { name: 'frameleaf_people_save_changes_count' }));
+  expect(card).toBeDisabled();
+  expect(view.getByRole('button', { name: 'reset_people_visibility' })).toBeDisabled();
+  complete([]);
+  await waitFor(() => expect(card).not.toBeDisabled());
+  expect(view.getByRole('alert')).toBeInTheDocument();
+  expect(person.isHidden).toBe(false);
+});
+
+it('retries a failed page without dropping earlier visibility drafts or duplicating loaded people', async () => {
+  const a = personFactory.build({ id: 'a', name: 'Alex', isHidden: false });
+  const b = personFactory.build({ id: 'b', name: '', isHidden: true });
+  let observerCallback!: IntersectionObserverCallback;
+  let sentinel!: Element;
+  vi.stubGlobal(
+    'IntersectionObserver',
+    class {
+      constructor(callback: IntersectionObserverCallback) {
+        observerCallback = callback;
+      }
+      observe(target: Element) {
+        sentinel = target;
+      }
+      disconnect() {}
+    },
+  );
+  sdkMock.getAllPeople
+    .mockReset()
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce(getData([a, b]).people);
+  const view = render(ManagePeoplePageTestWrapper, { data: getData([a], true) });
+  const user = userEvent.setup();
+  await user.click(view.container.querySelector('button[aria-pressed]')!);
+  observerCallback(
+    [{ target: sentinel, isIntersecting: true } as IntersectionObserverEntry],
+    {} as IntersectionObserver,
+  );
+  await waitFor(() => expect(view.getByRole('alert')).toBeInTheDocument());
+  await user.click(view.getByRole('button', { name: 'retry' }));
+  await waitFor(() => expect(view.container.querySelectorAll('button[aria-pressed]')).toHaveLength(2));
+  const cards = view.container.querySelectorAll('button[aria-pressed]');
+  expect(cards[0]).toHaveAttribute('aria-pressed', 'false');
+  expect(cards[1]).toHaveAttribute('aria-pressed', 'false');
+  expect(a.isHidden).toBe(false);
+  expect(sdkMock.getAllPeople.mock.calls.map(([request]) => request?.page)).toEqual([2, 2]);
 });
