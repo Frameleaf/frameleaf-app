@@ -78,14 +78,22 @@
    * or shared space. Albums drag onto a collection shelf (mouse, pen) or move
    * through the dialog (keyboard, touch). Everything comes from GET /albums/tree
    * and goes back through the album service; the server owns the access rules.
+   *
+   * Shared spaces are the last shelf (FL-55). They stay top level — never inside
+   * a collection, never offered a move — and open on their own page, where the
+   * space's photos, viewer and members live. The shelf links to Sharing, where
+   * spaces are created and invitations answered, and says when invitations are
+   * waiting.
    */
   interface Props {
     tree: AlbumTreeResponseDto;
+    /** Shared space invitations waiting for this person's answer. */
+    spaceInvitations?: number;
     /** Re-fetch the tree after a change; the page owns the loader. */
     onRefresh: () => Promise<void> | void;
   }
 
-  let { tree, onRefresh }: Props = $props();
+  let { tree, spaceInvitations = 0, onRefresh }: Props = $props();
 
   const currentUserId = $derived(authManager.user.id);
   const view = $derived(normalizeAlbumDirectoryView($albumDirectoryView));
@@ -116,6 +124,19 @@
     tree.collections.map(({ collection }) => collection).filter((collection) => canEdit(collection, currentUserId)),
   );
   const find = (id: string) => everything.find((album) => album.id === id);
+
+  /**
+   * The spaces shelf shows whenever it has spaces to show, and — so there is always a way to one
+   * from here — as an invitation to make the first when the page has other things on it and the
+   * filter could include a space.
+   */
+  const showSpaces = $derived(
+    arrangement.spaces.length > 0 ||
+      (!arrangement.searching && !arrangement.empty && (view.filter === 'all' || view.filter === 'shared')),
+  );
+  const isSpace = (album: AlbumResponseDto) => album.kind === AlbumKind.Space;
+  const openRoute = (album: AlbumResponseDto) =>
+    isSpace(album) ? Route.viewSharedSpace({ id: album.id }) : Route.viewAlbum({ id: album.id });
   const nameOf = (album: AlbumResponseDto | undefined) => album?.albumName || $t('unnamed_album');
 
   const filterLabels: Record<AlbumDirectoryFilter, () => string> = {
@@ -314,7 +335,7 @@
     direction="left"
     size="small"
   >
-    <MenuOption icon={mdiFolderOpenOutline} text={$t('open')} onClick={() => goto(Route.viewAlbum({ id: album.id }))} />
+    <MenuOption icon={mdiFolderOpenOutline} text={$t('open')} onClick={() => goto(openRoute(album))} />
     {#if editor}
       <MenuOption icon={mdiPencilOutline} text={$t('edit')} onClick={() => edit(album)} />
     {/if}
@@ -330,11 +351,20 @@
     {#if album.isSmart}
       <MenuOption icon={mdiRefresh} text={$t('frameleaf_albums_smart_reevaluate')} onClick={() => void modalManager.show(SmartAlbumReevaluateModal, {})} />
     {/if}
-    <MenuOption
-      icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline}
-      text={owner ? $t('share') : $t('frameleaf_albums_members')}
-      onClick={() => share(album)}
-    />
+    {#if isSpace(album)}
+      <!-- A space's people are invitations and roles, managed on the space's own Members panel. -->
+      <MenuOption
+        icon={mdiAccountMultipleOutline}
+        text={$t('frameleaf_albums_members')}
+        onClick={() => goto(`${Route.viewSharedSpace({ id: album.id })}?panel=members`)}
+      />
+    {:else}
+      <MenuOption
+        icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline}
+        text={owner ? $t('share') : $t('frameleaf_albums_members')}
+        onClick={() => share(album)}
+      />
+    {/if}
     {#if album.assetCount > 0}
       <MenuOption icon={mdiDownloadOutline} text={$t('download')} onClick={() => handleDownloadAlbum(album)} />
     {/if}
@@ -485,7 +515,7 @@
 
   {#if arrangement.albums.length > 0}
     <section class="plain" aria-label={$t('frameleaf_albums_other')}>
-      {#if arrangement.shelves.length > 0 || arrangement.spaces.length > 0}
+      {#if arrangement.shelves.length > 0 || showSpaces}
         <h2>
           {$t('frameleaf_albums_other')}
           <small>{$t('frameleaf_albums_count', { values: { count: arrangement.albums.length } })}</small>
@@ -495,13 +525,33 @@
     </section>
   {/if}
 
-  {#if arrangement.spaces.length > 0}
-    <section class="plain" aria-label={$t('frameleaf_albums_spaces')}>
-      <h2>
-        {$t('frameleaf_albums_spaces')}
-        <small>{$t('frameleaf_albums_space_count', { values: { count: arrangement.spaces.length } })}</small>
-      </h2>
-      {@render albums(arrangement.spaces, '')}
+  {#if showSpaces}
+    <section class="plain spaces" aria-label={$t('frameleaf_albums_spaces')}>
+      <div class="spaces-head">
+        <h2>
+          {$t('frameleaf_albums_spaces')}
+          <small>{$t('frameleaf_albums_space_count', { values: { count: arrangement.spaces.length } })}</small>
+        </h2>
+        <div class="spaces-links">
+          {#if spaceInvitations > 0}
+            <a class="invitations" href={Route.sharing()}>
+              {$t('frameleaf_albums_spaces_invitations', { values: { count: spaceInvitations } })}
+            </a>
+          {/if}
+          <a href={Route.sharing()}>{$t('frameleaf_albums_spaces_open_sharing')}</a>
+        </div>
+      </div>
+      <p class="spaces-hint">{$t('frameleaf_spaces_intro')}</p>
+      {#if arrangement.spaces.length > 0}
+        {@render albums(arrangement.spaces, '')}
+      {:else}
+        <div class="shelf-empty spaces-empty">
+          <p>{$t('frameleaf_spaces_empty_title')}</p>
+          <button type="button" class="primary" onclick={() => openCreate(AlbumKind.Space)}>
+            {$t('frameleaf_spaces_new')}
+          </button>
+        </div>
+      {/if}
     </section>
   {/if}
 
@@ -701,6 +751,48 @@
     margin: 0 0 0.75rem;
     font-size: 1rem;
     font-weight: 600;
+  }
+  .spaces-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.25rem 1rem;
+  }
+  .spaces-head h2 {
+    margin-block-end: 0.25rem;
+  }
+  .spaces-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    font-size: 0.8125rem;
+  }
+  .spaces-links a {
+    color: var(--fl-accent);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .spaces-links .invitations {
+    color: var(--fl-text);
+  }
+  .spaces-hint {
+    margin: 0 0 0.75rem;
+    color: var(--fl-muted);
+    font-size: 0.8125rem;
+  }
+  .spaces-empty {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+  .spaces-empty p {
+    margin: 0;
+  }
+  .spaces-empty .primary {
+    min-height: 36px;
   }
   .plain h2 small {
     color: var(--fl-muted);

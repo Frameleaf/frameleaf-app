@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { asAlbumKind } from 'src/dtos/album.dto.js';
-import { AlbumKind, AlbumUserRole } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
 
 /**
  * Shared space rules (FL-55), kept pure so they can be read and tested on their own.
@@ -129,3 +129,121 @@ export const requireUnlinkRights = (album: SpaceLike, actorId: string, linkedByI
     throw new ForbiddenException('Only the person who made this link, or the shared space owner, can remove it');
   }
 };
+
+/* -------------------------------------------------------------------------- */
+/* Comments, mentions and the activity feed (FL-55)                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A mention in a comment: `@{<user id>}`.
+ *
+ * Mentions are ids, never names. Typing somebody's name does not mention them,
+ * renaming an account does not break a mention, and the server checks every id
+ * against the space's current members before it stores anything — so a mention
+ * can only ever reach somebody who is already in the space.
+ */
+export const MENTION_TOKEN = /@\{([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\}/gi;
+
+export const mentionToken = (userId: string): string => `@{${userId}}`;
+
+/** The distinct user ids a comment mentions, in order of first appearance. */
+export const parseMentions = (comment: string): string[] => {
+  const ids: string[] = [];
+  for (const match of comment.matchAll(MENTION_TOKEN)) {
+    const id = match[1].toLowerCase();
+    if (!ids.includes(id)) {
+      ids.push(id);
+    }
+  }
+  return ids;
+};
+
+/** Every mention must name a current member. A pending invitee or a stranger is refused, not dropped. */
+export const requireMentionableMembers = (album: SpaceLike, userIds: string[]): void => {
+  if (userIds.some((id) => !isSpaceMember(album, id))) {
+    throw new BadRequestException('A mention must name a current member of this shared space');
+  }
+};
+
+/** Only its author may change what a comment says. */
+export const canEditSpaceComment = (comment: { userId: string }, actorId: string): boolean =>
+  comment.userId === actorId;
+
+export const requireCommentEditRights = (comment: { userId: string }, actorId: string): void => {
+  if (!canEditSpaceComment(comment, actorId)) {
+    throw new ForbiddenException('Only the author can edit this comment');
+  }
+};
+
+/**
+ * Who may remove a comment: its author, and anyone who contributes to the
+ * space. Moderation is an owner's and an editor's duty; a viewer can remove
+ * only what they said themselves.
+ */
+export const canDeleteSpaceComment = (album: SpaceLike, comment: { userId: string }, actorId: string): boolean =>
+  comment.userId === actorId || canContributeToSpace(album, actorId);
+
+export const requireCommentDeleteRights = (album: SpaceLike, comment: { userId: string }, actorId: string): void => {
+  if (!canDeleteSpaceComment(album, comment, actorId)) {
+    throw new ForbiddenException('Only the author, or a shared space owner or editor, can remove this comment');
+  }
+};
+
+/** The two events that are about a set of items rather than one activity. */
+export const ASSET_EVENT_TYPES: readonly SharedSpaceEventType[] = [
+  SharedSpaceEventType.AssetsAdded,
+  SharedSpaceEventType.AssetsRemoved,
+];
+
+export type SpaceEventLike = {
+  type: SharedSpaceEventType;
+  assetIds: string[];
+  /** The item a comment or like is on; null for a space-level comment or like. */
+  activityAssetId: string | null;
+};
+
+/**
+ * Narrow one stored event to what a viewer may see, or drop it.
+ *
+ * `visible` is the set of asset ids this viewer may see — computed by the
+ * caller with the viewer's own hidden-content settings, Locked media excluded,
+ * and (for additions) restricted to items still in the space. An asset event
+ * keeps only its visible ids and is dropped when none are left; a comment or
+ * like on an item the viewer cannot see is dropped whole, because the text may
+ * describe it. Member and link events carry no media and pass through. A
+ * removal never exposes ids at all: the items are no longer in the space, so a
+ * thumbnail would be a control that fails, and the count is all that remains.
+ */
+export const narrowSpaceEvent = <T extends SpaceEventLike>(
+  event: T,
+  visible: ReadonlySet<string>,
+): (T & { assetIds: string[]; assetCount: number }) | null => {
+  if (ASSET_EVENT_TYPES.includes(event.type)) {
+    const kept = event.assetIds.filter((id) => visible.has(id));
+    if (kept.length === 0) {
+      return null;
+    }
+    return {
+      ...event,
+      assetIds: event.type === SharedSpaceEventType.AssetsRemoved ? [] : kept,
+      assetCount: kept.length,
+    };
+  }
+
+  if (!event.activityAssetId) {
+    return { ...event, assetIds: [], assetCount: 0 };
+  }
+
+  if (!visible.has(event.activityAssetId)) {
+    return null;
+  }
+
+  return { ...event, assetIds: [event.activityAssetId], assetCount: 1 };
+};
+
+/** Whether an event is news to this member: after their marker, and not their own doing. */
+export const isNewSpaceEvent = (
+  event: { actorId: string | null; createdAt: Date },
+  viewerId: string,
+  lastSeenAt?: Date | null,
+): boolean => event.actorId !== viewerId && (!lastSeenAt || event.createdAt.getTime() > lastSeenAt.getTime());

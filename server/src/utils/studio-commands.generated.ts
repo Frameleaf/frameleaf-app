@@ -900,7 +900,7 @@ export const studioCommandMirror = {
   },
   'review.add': {
     scope: 'review',
-    mutatesGraph: true,
+    mutatesGraph: false,
     undoable: false,
     capability: null,
     owner: 'FL-94',
@@ -911,7 +911,7 @@ export const studioCommandMirror = {
   },
   'review.remove': {
     scope: 'review',
-    mutatesGraph: true,
+    mutatesGraph: false,
     undoable: false,
     capability: null,
     owner: 'FL-94',
@@ -921,7 +921,7 @@ export const studioCommandMirror = {
   },
   'review.update': {
     scope: 'review',
-    mutatesGraph: true,
+    mutatesGraph: false,
     undoable: false,
     capability: null,
     owner: 'FL-94',

@@ -251,6 +251,35 @@ export class NotificationService extends BaseService {
     this.websocketRepository.clientSend('on_notification', userId, mapNotification(item));
   }
 
+  /**
+   * Somebody was named in a shared space comment (FL-55). One in-app
+   * notification per mentioned member, through the same repository and socket
+   * as every other notification. This reads only the space's name — never an
+   * asset — so it runs for every comment whatever the item's visibility, and
+   * needs no elevated session; the client decides what to show when the
+   * notification is opened.
+   */
+  @OnEvent({ name: 'SharedSpaceMention' })
+  async onSharedSpaceMention({ id, assetId, activityId, userIds, senderName }: ArgOf<'SharedSpaceMention'>) {
+    const album = await this.albumRepository.getById(id, { withAssets: false });
+    if (!album) {
+      return;
+    }
+
+    for (const userId of userIds) {
+      const item = await this.notificationRepository.create({
+        userId,
+        type: NotificationType.SharedSpaceMention,
+        level: NotificationLevel.Info,
+        title: 'Mentioned in a shared space',
+        description: `${senderName} mentioned you in ${album.albumName}`,
+        data: JSON.stringify({ albumId: id, assetId, activityId }),
+      });
+
+      this.websocketRepository.clientSend('on_notification', userId, mapNotification(item));
+    }
+  }
+
   @OnEvent({ name: 'SessionDelete' })
   onSessionDelete({ sessionId }: ArgOf<'SessionDelete'>) {
     // after the response is sent

@@ -204,6 +204,8 @@ export const endpointTags: Record<ApiTag, string> = {
     'A stack is a group of related assets. One asset is the "primary" asset, and the rest are "child" assets. On the main timeline, stack parents are included by default, while child assets are hidden.',
   [ApiTag.StudioPreviews]:
     'Revision-bound Studio preview frames. A frame is delivered only to the account that requested it, and only while the project revision it was rendered for is still current.',
+  [ApiTag.StudioProjects]:
+    'A Studio project is an edit in progress: an opaque engine document stored as immutable revisions behind one writer lease, with a history that only appends, review comments pinned to exact timeline instants, and read-only review for members of a shared space the owner chose.',
   [ApiTag.Sync]: 'A collection of endpoints for the new mobile synchronization implementation.',
   [ApiTag.SystemConfig]: 'Endpoints to view, modify, and validate the system configuration settings.',
   [ApiTag.SystemMetadata]:

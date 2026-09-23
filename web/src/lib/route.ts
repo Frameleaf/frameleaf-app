@@ -130,8 +130,11 @@ export const Route = {
 
   // sharing
   sharing: () => '/sharing',
-  /** One shared space: its people, roles and invitations. Its photos are the album view. */
+  /** One shared space: its photos, linked albums, people, places, activity and members. */
   viewSharedSpace: ({ id }: { id: string }) => `/sharing/${id}`,
+  /** One item in a shared space's own viewer; next and previous stay inside the space. */
+  viewSharedSpaceAsset: ({ spaceId, assetId }: { spaceId: string; assetId: string }) =>
+    `/sharing/${spaceId}/photos/${assetId}`,
 
   // shared links
   sharedLinks: (params?: { filter?: SharedLinkTab }) => '/shared-links' + asQueryString(params),
@@ -182,6 +185,9 @@ export const Route = {
   // workflows
   workflows: () => '/workflows',
   viewWorkflow: ({ id }: { id: string }) => `/workflows/${id}`,
+
+  // render workers
+  renderWorkers: () => '/admin/render-workers',
 
   // queues
   queues: () => '/admin/queues',
