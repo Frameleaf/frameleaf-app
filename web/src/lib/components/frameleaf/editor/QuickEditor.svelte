@@ -69,6 +69,7 @@
   import {
     anyRevisionBusy,
     changeDraft,
+    rebaseDraft,
     createDraft,
     geometryIsDefault,
     initialRecipe,
@@ -229,10 +230,7 @@
     try {
       develop = await getAssetDevelop({ id: asset.id });
       const start = openingRecipe(develop);
-      // An edit made while the versions were loading is kept, not replaced by the opening recipe.
-      if (draft.undo.length === 0) {
-        draft = createDraft(start);
-      }
+      draft = rebaseDraft(draft, start);
       opened = start;
       if (anyRevisionBusy(develop.revisions)) {
         follow();
