@@ -4,7 +4,8 @@ import { copyFile, mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { AssetStatus, JobName, JobStatus } from 'src/enum.js';
+import { AdminAuditAction, AssetStatus, JobName, JobStatus } from 'src/enum.js';
+import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -16,7 +17,7 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { DB } from 'src/schema/index.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { MediumTestContext, testAssetsDir } from 'test/medium.factory.js';
-import { newUuid } from 'test/small.factory.js';
+import { factory, newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 // `validateImportPath` checks candidate paths against the media location
@@ -44,7 +45,14 @@ class LibraryTestContext extends MediumTestContext<typeof LibraryService> {
   constructor(database: Kysely<DB>) {
     super(LibraryService, {
       database,
-      real: [AssetRepository, AssetJobRepository, CryptoRepository, LibraryRepository, StorageRepository],
+      real: [
+        AdminAuditRepository,
+        AssetRepository,
+        AssetJobRepository,
+        CryptoRepository,
+        LibraryRepository,
+        StorageRepository,
+      ],
       mock: [EventRepository, JobRepository, LoggingRepository],
     });
 
@@ -162,6 +170,27 @@ describe(LibraryService.name, () => {
           exclusionPatterns: ['**/Raw/**'],
         }),
       );
+    });
+
+    it("should record the new library in its owner's administrator history (FL-76)", async () => {
+      const { sut, ctx } = setup();
+      const { user: admin } = await ctx.newUser({ isAdmin: true });
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: admin.id, isAdmin: true } });
+
+      const library = await sut.create({ ownerId: user.id, name: 'Family archive' }, auth);
+
+      await expect(ctx.get(AdminAuditRepository).getByUserId(user.id, { take: 10 })).resolves.toEqual([
+        expect.objectContaining({
+          userId: user.id,
+          actorId: admin.id,
+          actorName: admin.name,
+          libraryId: library.id,
+          action: AdminAuditAction.LibraryCreated,
+          subject: 'Family archive',
+          detail: null,
+        }),
+      ]);
     });
   });
 
