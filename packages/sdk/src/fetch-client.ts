@@ -3237,6 +3237,12 @@ export type MediaHealthCandidateDto = {
     /** Candidate file path */
     candidatePath: string;
     checkedAt: string;
+    /** The candidate has exactly the checksum recorded for the original */
+    checksumMatch: boolean;
+    /** The reviewer chose this candidate for the finding */
+    chosen: boolean;
+    /** The candidate decoded successfully; null when not checked */
+    decodeValid: boolean | null;
     evidence: {
         [key: string]: any;
     };
@@ -3247,6 +3253,9 @@ export type MediaHealthCandidateDto = {
     resolution: {
         [key: string]: any;
     };
+    /** Search location the candidate was found in */
+    rootId: string | null;
+    rootKind: (MediaHealthRootKind) | null;
     status: MediaHealthStatus;
     /** Visual match score from 0 to 1 */
     visualMatchScore: number | null;
@@ -3313,14 +3322,103 @@ export type MediaHealthBulkResultDto = {
     success: boolean;
 };
 export type MediaHealthBulkResponseDto = {
+    /** The durable job applying the accepted findings, in Activity; null when none was accepted */
+    operationId?: string | null;
     results: MediaHealthBulkResultDto[];
 };
+export type MediaHealthCandidateChoiceDto = {
+    /** Candidate ID */
+    candidateId: string;
+    /** Media health finding ID */
+    findingId: string;
+};
+export type MediaHealthChooseCandidatesDto = {
+    choices: MediaHealthCandidateChoiceDto[];
+};
+export type MediaHealthRecoverDto = {
+    choices: MediaHealthCandidateChoiceDto[];
+    /** Must be true: the reviewer checked the checksum and decode evidence and keeps the damaged source */
+    confirmed: boolean;
+};
 export type MediaHealthScanResponseDto = {
+    /** The durable job doing the work, in Activity */
+    operationId?: string | null;
     runId: string;
 };
 export type MediaHealthBulkActionDto = {
     /** Media health finding IDs */
     ids: string[];
+};
+export type MediaHealthLocateDto = {
+    /** Media health finding IDs */
+    ids: string[];
+    /** Search locations; library storage and external libraries when omitted */
+    rootIds?: string[];
+};
+export type MediaHealthRootDto = {
+    /** Search location ID */
+    id: string;
+    kind: MediaHealthRootKind;
+    label: string;
+    /** Folders searched, for review */
+    paths: string[];
+};
+export type MediaHealthRootsResponseDto = {
+    roots: MediaHealthRootDto[];
+};
+export type MediaHealthOperationDto = {
+    autoRetries: number;
+    cancelRequestedAt: string | null;
+    createdAt: string;
+    error: string | null;
+    finishedAt: string | null;
+    /** Media operation ID */
+    id: string;
+    mode: MediaHealthOperationMode;
+    pauseRequestedAt: string | null;
+    processedUnits: number;
+    progress: number;
+    status: MediaOperationStatus;
+    totalUnits: number | null;
+    updatedAt: string;
+};
+export type MediaHealthQueuesDto = {
+    damagedConfirmed: number;
+    damagedSuspected: number;
+    /** Duplicate groups waiting for review */
+    duplicates: number;
+    /** Items whose metadata has not been read yet */
+    enrichmentPending: number;
+    /** Imported items that need review; null when unavailable */
+    importReview: number | null;
+    /** Missing originals that still need a decision */
+    missing: number;
+    /** Missing originals with a verified exact copy */
+    missingVerified: number;
+    /** Kept apart from damage: the decoder cannot read the format */
+    unsupportedRaw: number;
+};
+export type MediaHealthActivityDto = {
+    action: MediaHealthActivityAction;
+    createdAt: string;
+    finishedAt: string | null;
+    /** Media operation ID */
+    id: string;
+    /** Items the job covered */
+    items: number;
+    status: MediaOperationStatus;
+};
+export type MediaHealthRunsDto = {
+    corrupt: (MediaHealthRunResponseDto) | null;
+    missing: (MediaHealthRunResponseDto) | null;
+};
+export type MediaHealthSummaryResponseDto = {
+    operation: (MediaHealthOperationDto) | null;
+    queues: MediaHealthQueuesDto;
+    recent: MediaHealthActivityDto[];
+    /** At least one recovery location is configured for this reader */
+    recoveryAvailable: boolean;
+    runs: MediaHealthRunsDto;
 };
 export type MediaOperationEstimateDto = {
     /** Configured cloud rate detail, when one applies */
@@ -3526,6 +3624,14 @@ export type MediaOperationDuplicateGroupDto = {
     /** Every photo of the group, as reviewed */
     memberIds: string[];
 };
+export type MediaOperationMediaHealthEntryDto = {
+    /** Asset ID */
+    assetId: string;
+    /** Reviewed candidate ID, for a relink or a recovery */
+    candidateId?: string;
+    /** Media health finding ID */
+    findingId: string;
+};
 export type MediaOperationBulkPayloadDto = {
     albumId?: string;
     dateMode?: DateMode;
@@ -3535,6 +3641,7 @@ export type MediaOperationBulkPayloadDto = {
     duplicateGroups?: MediaOperationDuplicateGroupDto[];
     latitude?: number;
     longitude?: number;
+    mediaHealth?: MediaOperationMediaHealthEntryDto[];
     /** Relative shift in minutes, for `dateMode: shift` */
     minutes?: number;
     pairs?: MediaOperationLivePhotoPairDto[];
@@ -9755,8 +9862,12 @@ export function reverseGeocode({ lat, lon }: {
 /**
  * List media health findings
  */
-export function list({ category, size, status }: {
+export function list({ allAccounts, category, needsAttention, ownerId, page, size, status }: {
+    allAccounts?: boolean;
     category?: MediaHealthCategory;
+    needsAttention?: boolean;
+    ownerId?: string;
+    page?: number;
     size?: number;
     status?: MediaHealthStatus;
 }, opts?: Oazapfts.RequestOpts) {
@@ -9764,12 +9875,31 @@ export function list({ category, size, status }: {
         status: 200;
         data: MediaHealthListResponseDto;
     }>(`/media-health${QS.query(QS.explode({
+        allAccounts,
         category,
+        needsAttention,
+        ownerId,
+        page,
         size,
         status
     }))}`, {
         ...opts
     }));
+}
+/**
+ * Choose media health candidates
+ */
+export function chooseCandidates({ mediaHealthChooseCandidatesDto }: {
+    mediaHealthChooseCandidatesDto: MediaHealthChooseCandidatesDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaHealthBulkResponseDto;
+    }>("/media-health/candidates/choose", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaHealthChooseCandidatesDto
+    })));
 }
 /**
  * Move confirmed corrupt media to trash
@@ -9799,6 +9929,21 @@ export function startCorruptScan(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Recover damaged media from a verified copy
+ */
+export function recoverDamaged({ mediaHealthRecoverDto }: {
+    mediaHealthRecoverDto: MediaHealthRecoverDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaHealthBulkResponseDto;
+    }>("/media-health/corrupt/recover", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaHealthRecoverDto
+    })));
+}
+/**
  * Dismiss media health findings
  */
 export function dismiss({ mediaHealthBulkActionDto }: {
@@ -9813,8 +9958,8 @@ export function dismiss({ mediaHealthBulkActionDto }: {
 /**
  * Locate missing media
  */
-export function locateMissing({ mediaHealthBulkActionDto }: {
-    mediaHealthBulkActionDto: MediaHealthBulkActionDto;
+export function locateMissing({ mediaHealthLocateDto }: {
+    mediaHealthLocateDto: MediaHealthLocateDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 201;
@@ -9822,7 +9967,7 @@ export function locateMissing({ mediaHealthBulkActionDto }: {
     }>("/media-health/missing/locate", oazapfts.json({
         ...opts,
         method: "POST",
-        body: mediaHealthBulkActionDto
+        body: mediaHealthLocateDto
     })));
 }
 /**
@@ -9850,6 +9995,34 @@ export function startMissingScan(opts?: Oazapfts.RequestOpts) {
     }>("/media-health/missing/scan", {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * List Library Care search locations
+ */
+export function getRoots(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaHealthRootsResponseDto;
+    }>("/media-health/roots", {
+        ...opts
+    }));
+}
+/**
+ * Get Library Care summary
+ */
+export function getSummary({ allAccounts, ownerId }: {
+    allAccounts?: boolean;
+    ownerId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaHealthSummaryResponseDto;
+    }>(`/media-health/summary${QS.query(QS.explode({
+        allAccounts,
+        ownerId
+    }))}`, {
+        ...opts
     }));
 }
 /**
@@ -14524,6 +14697,22 @@ export enum MediaHealthSeverity {
     Warning = "warning",
     Critical = "critical"
 }
+export enum MediaHealthRootKind {
+    Managed = "managed",
+    Library = "library",
+    Recovery = "recovery"
+}
+export enum MediaHealthOperationMode {
+    Scan = "scan",
+    Locate = "locate"
+}
+export enum MediaHealthActivityAction {
+    Scan = "scan",
+    Locate = "locate",
+    RelinkMissingMedia = "relink-missing-media",
+    RecoverDamagedMedia = "recover-damaged-media",
+    TrashDamagedMedia = "trash-damaged-media"
+}
 export enum MediaOperationKind {
     StudioExport = "studio_export",
     StudioPreview = "studio_preview",
@@ -14533,7 +14722,8 @@ export enum MediaOperationKind {
     Bulk = "bulk",
     StudioBundleExport = "studio_bundle_export",
     StudioBundleImport = "studio_bundle_import",
-    EnrichmentPlan = "enrichment_plan"
+    EnrichmentPlan = "enrichment_plan",
+    MediaHealth = "media_health"
 }
 export enum MediaOperationBulkAction {
     Favorite = "favorite",
@@ -14560,7 +14750,10 @@ export enum MediaOperationBulkAction {
     RefreshFaces = "refresh-faces",
     RelinkLivePhoto = "relink-live-photo",
     ResolveDuplicates = "resolve-duplicates",
-    UndoDuplicates = "undo-duplicates"
+    UndoDuplicates = "undo-duplicates",
+    RelinkMissingMedia = "relink-missing-media",
+    RecoverDamagedMedia = "recover-damaged-media",
+    TrashDamagedMedia = "trash-damaged-media"
 }
 export enum MediaOperationStatus {
     Queued = "queued",

@@ -33,6 +33,7 @@ import {
   carriedShiftOrigins,
   emptyBulkResult,
   isBulkAction,
+  isMediaHealthBulkAction,
   parseBulkResult,
   parseBulkSnapshot,
   type BulkOperationSnapshot,
@@ -128,6 +129,11 @@ const mapSnapshot = (operation: MediaOperation): Record<string, unknown> => {
     const { assetIds, requestKey: _requestKey, ...rest } = snapshot;
     return { ...rest, assetCount: Array.isArray(assetIds) ? assetIds.length : 0 };
   }
+  if (operation.kind === MediaOperationKind.MediaHealth) {
+    // FL-69: a search names its findings; the detail view carries how many.
+    const { findingIds, ...rest } = snapshot;
+    return Array.isArray(findingIds) ? { ...rest, findingCount: findingIds.length } : rest;
+  }
   if (operation.kind !== MediaOperationKind.Bulk) {
     return snapshot;
   }
@@ -141,6 +147,12 @@ const mapSnapshot = (operation: MediaOperation): Record<string, unknown> => {
   if ('duplicateGroups' in payload) {
     const { duplicateGroups, ...payloadRest } = payload;
     mapped.payload = { ...payloadRest, groupCount: Array.isArray(duplicateGroups) ? duplicateGroups.length : 0 };
+  }
+  // FL-69: a Library Care job's entries name items that may be locked since, or another account's;
+  // the detail view carries only how many findings it covers
+  if ('mediaHealth' in payload) {
+    const { mediaHealth, ...payloadRest } = payload;
+    mapped.payload = { ...payloadRest, findingCount: Array.isArray(mediaHealth) ? mediaHealth.length : 0 };
   }
   return mapped;
 };
@@ -311,9 +323,19 @@ export class MediaOperationService {
    *
    * Duplicate ids are removed and order is kept; the order is the resume cursor.
    */
-  async createBulk(auth: AuthDto, dto: MediaOperationBulkCreateDto): Promise<MediaOperationDto> {
+  async createBulk(
+    auth: AuthDto,
+    dto: MediaOperationBulkCreateDto,
+    options: { libraryCare?: boolean } = {},
+  ): Promise<MediaOperationDto> {
     if (auth.sharedLink) {
       throw new ForbiddenException('Bulk operations are not available on a shared link');
+    }
+
+    // FL-69: Library Care's relink, recovery and trash jobs carry gates this endpoint cannot see — the
+    // reviewer's consent, a typed confirmation, fresh evidence — so they are only queued by Library Care.
+    if (isMediaHealthBulkAction(dto.action) && !options.libraryCare) {
+      throw new BadRequestException('Submit this action from Library Care');
     }
 
     const requested = BULK_ACTION_PERMISSIONS[dto.action];
@@ -472,6 +494,12 @@ export class MediaOperationService {
       return this.retryEnrichmentPlan(auth, operation);
     }
 
+    // FL-69: a scan or search is started again from Library Care, which admits one at a time and
+    // opens fresh runs; copying the old row would reopen finished runs beside a running job.
+    if (operation.kind === MediaOperationKind.MediaHealth) {
+      throw new BadRequestException('Start the scan or search again from Library Care');
+    }
+
     if (!canRetryMediaOperation(operation.status as MediaOperationStatus)) {
       throw new BadRequestException('Only a failed or cancelled job can be retried');
     }
@@ -564,6 +592,11 @@ export class MediaOperationService {
     }
 
     const snapshot = parseBulkSnapshot(operation.snapshot);
+    // FL-69: a relink, recovery or trash is reviewed again in Library Care, where its consent, typed
+    // confirmation, PIN and evidence freshness are checked; a copied retry would skip them.
+    if (isMediaHealthBulkAction(snapshot.action)) {
+      throw new BadRequestException('Review these items again in Library Care');
+    }
     const result = parseBulkResult(operation.result, snapshot.assetIds.length);
     const remaining = bulkResumeIds(snapshot, result, Number(operation.processedUnits ?? 0));
     if (remaining.length === 0) {
