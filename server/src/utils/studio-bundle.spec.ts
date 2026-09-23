@@ -307,6 +307,166 @@ describe('readZipEntry and digestZipEntry', () => {
     });
     expect(digest.sha256).toBe(sha256Of(media));
   });
+
+  it('hands every produced byte to onData, in order, for stored and deflated entries (FL-74)', async () => {
+    const media = randomBytes(150_000);
+    const zip = buildZip([
+      { name: 'stored.bin', data: media, method: 0 },
+      { name: 'deflated.bin', data: media },
+    ]);
+    const source = sourceOf(zip);
+    const directory = await readZipDirectory(source);
+
+    for (const name of ['stored.bin', 'deflated.bin']) {
+      const copied: Buffer[] = [];
+      const digest = await digestZipEntry(source, directory.byName.get(name)!, {
+        chunkSize: 4096,
+        onData: async (chunk) => {
+          await Promise.resolve();
+          copied.push(Buffer.from(chunk));
+        },
+      });
+      expect(Buffer.concat(copied)).toEqual(media);
+      expect(digest.sha256).toBe(sha256Of(media));
+    }
+  });
+
+  it('reads a document entry up to a caller-chosen limit and no further', async () => {
+    const text = Buffer.from('x'.repeat(2048));
+    const zip = buildZip([{ name: 'index.jsonl', data: text, method: 0 }]);
+    const source = sourceOf(zip);
+    const directory = await readZipDirectory(source);
+
+    expect(await readZipEntry(source, directory.byName.get('index.jsonl')!, 4096)).toEqual(text);
+    await expectRefusal(readZipEntry(source, directory.byName.get('index.jsonl')!, 1024), 'bundle_too_large');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* ZIP64, which only preservation packages may use (FL-74)              */
+/* ------------------------------------------------------------------ */
+
+/** A stored-only archive written the way a ZIP64 writer marks every size and offset. */
+const buildZip64 = (entries: Array<{ name: string; data: Buffer }>, options: { spanned?: boolean } = {}): Buffer => {
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name, 'utf8');
+    const checksum = crc32(entry.data);
+
+    const localExtra = Buffer.alloc(20);
+    localExtra.writeUInt16LE(0x00_01, 0);
+    localExtra.writeUInt16LE(16, 2);
+    localExtra.writeBigUInt64LE(BigInt(entry.data.length), 4);
+    localExtra.writeBigUInt64LE(BigInt(entry.data.length), 12);
+    const local = Buffer.alloc(30 + name.length);
+    local.writeUInt32LE(0x04_03_4b_50, 0);
+    local.writeUInt16LE(45, 4);
+    local.writeUInt16LE(0, 8);
+    local.writeUInt32LE(checksum, 14);
+    local.writeUInt32LE(0xff_ff_ff_ff, 18);
+    local.writeUInt32LE(0xff_ff_ff_ff, 22);
+    local.writeUInt16LE(name.length, 26);
+    local.writeUInt16LE(localExtra.length, 28);
+    name.copy(local, 30);
+
+    const centralExtra = Buffer.alloc(28);
+    centralExtra.writeUInt16LE(0x00_01, 0);
+    centralExtra.writeUInt16LE(24, 2);
+    centralExtra.writeBigUInt64LE(BigInt(entry.data.length), 4);
+    centralExtra.writeBigUInt64LE(BigInt(entry.data.length), 12);
+    centralExtra.writeBigUInt64LE(BigInt(offset), 20);
+    const central = Buffer.alloc(46 + name.length);
+    central.writeUInt32LE(0x02_01_4b_50, 0);
+    central.writeUInt16LE(45, 4);
+    central.writeUInt16LE(45, 6);
+    central.writeUInt16LE(0, 10);
+    central.writeUInt32LE(checksum, 16);
+    central.writeUInt32LE(0xff_ff_ff_ff, 20);
+    central.writeUInt32LE(0xff_ff_ff_ff, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt16LE(centralExtra.length, 30);
+    central.writeUInt32LE(0xff_ff_ff_ff, 42);
+    name.copy(central, 46);
+
+    locals.push(local, localExtra, entry.data);
+    centrals.push(central, centralExtra);
+    offset += local.length + localExtra.length + entry.data.length;
+  }
+
+  const directory = Buffer.concat(centrals);
+  const record = Buffer.alloc(56);
+  record.writeUInt32LE(0x06_06_4b_50, 0);
+  record.writeBigUInt64LE(44n, 4);
+  record.writeUInt16LE(45, 12);
+  record.writeUInt16LE(45, 14);
+  record.writeUInt32LE(options.spanned ? 1 : 0, 16);
+  record.writeBigUInt64LE(BigInt(entries.length), 24);
+  record.writeBigUInt64LE(BigInt(entries.length), 32);
+  record.writeBigUInt64LE(BigInt(directory.length), 40);
+  record.writeBigUInt64LE(BigInt(offset), 48);
+
+  const locator = Buffer.alloc(20);
+  locator.writeUInt32LE(0x07_06_4b_50, 0);
+  locator.writeBigUInt64LE(BigInt(offset + directory.length), 8);
+  locator.writeUInt32LE(1, 16);
+
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06_05_4b_50, 0);
+  eocd.writeUInt16LE(0xff_ff, 8);
+  eocd.writeUInt16LE(0xff_ff, 10);
+  eocd.writeUInt32LE(0xff_ff_ff_ff, 12);
+  eocd.writeUInt32LE(0xff_ff_ff_ff, 16);
+
+  return Buffer.concat([...locals, directory, record, locator, eocd]);
+};
+
+const zip64Limits = {
+  maxBytes: 1024 * 1024 * 1024,
+  maxEntries: 10,
+  maxDirectoryBytes: 1024 * 1024,
+  maxUncompressedBytes: 1024 * 1024 * 1024,
+  documentLimit: (name: string) => (name.endsWith('.json') ? 1024 : null),
+  allowZip64: true,
+};
+
+describe('readZipDirectory with ZIP64 (FL-74)', () => {
+  it('reads sizes and offsets from the ZIP64 records when the limits allow them', async () => {
+    const first = Buffer.from('{"a":1}');
+    const second = randomBytes(5000);
+    const zip = buildZip64([
+      { name: 'manifest.json', data: first },
+      { name: 'originals/x.bin', data: second },
+    ]);
+    const source = sourceOf(zip);
+    const directory = await readZipDirectory(source, zip64Limits);
+
+    expect(directory.byName.get('originals/x.bin')?.uncompressedSize).toBe(second.length);
+    expect(await readZipEntry(source, directory.byName.get('manifest.json')!, 1024)).toEqual(first);
+    expect((await digestZipEntry(source, directory.byName.get('originals/x.bin')!)).sha256).toBe(sha256Of(second));
+  });
+
+  it('keeps refusing ZIP64 under the Studio bundle limits', async () => {
+    const zip = buildZip64([{ name: 'manifest.json', data: Buffer.from('{}') }]);
+    await expectRefusal(readZipDirectory(sourceOf(zip)), 'bundle_zip64');
+  });
+
+  it('refuses an archive split across several files', async () => {
+    const zip = buildZip64([{ name: 'manifest.json', data: Buffer.from('{}') }], { spanned: true });
+    await expectRefusal(readZipDirectory(sourceOf(zip), zip64Limits), 'bundle_spanned');
+  });
+
+  it('applies the caller’s entry and document limits', async () => {
+    const zip = buildZip64([{ name: 'manifest.json', data: Buffer.from('x'.repeat(2000)) }]);
+    await expectRefusal(readZipDirectory(sourceOf(zip), zip64Limits), 'bundle_too_large');
+
+    const many = buildZip64(
+      Array.from({ length: 11 }, (_, index) => ({ name: `originals/${index}.bin`, data: Buffer.from([index]) })),
+    );
+    await expectRefusal(readZipDirectory(sourceOf(many), zip64Limits), 'bundle_too_many_entries');
+  });
 });
 
 describe('checkStudioBundleManifest', () => {
