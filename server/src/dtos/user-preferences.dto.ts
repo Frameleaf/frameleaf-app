@@ -1,7 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { AssetOrderSchema, UserAvatarColorSchema } from 'src/enum.js';
-import type { FrameleafUserPreferences } from 'src/utils/preferences.js';
+import { type FrameleafUserPreferences, getPreferencesRevision } from 'src/utils/preferences.js';
 
 const AlbumsUpdateSchema = z
   .object({
@@ -149,6 +149,12 @@ const UserPreferencesUpdateSchema = z
     sharedLinks: SharedLinksUpdateSchema,
     tags: TagsUpdateSchema,
     recentlyAdded: RecentlyAddedUpdateSchema,
+    expectedRevision: z
+      .string()
+      .optional()
+      .describe(
+        'The revision these changes were made against. When it no longer matches the stored preferences the update is rejected with 409 and nothing is changed',
+      ),
   })
   .meta({ id: 'UserPreferencesUpdateDto' });
 
@@ -268,18 +274,36 @@ const UserPreferencesResponseSchema = z
     purchase: PurchaseResponseSchema,
     cast: CastResponseSchema,
     recentlyAdded: RecentlyAddedResponseSchema,
+    revision: z
+      .string()
+      .describe('Changes whenever the stored preferences change; send it back as expectedRevision to reject stale saves'),
   })
   .meta({ id: 'UserPreferencesResponseDto' });
 
 export class UserPreferencesUpdateDto extends createZodDto(UserPreferencesUpdateSchema) {}
 export class UserPreferencesResponseDto extends createZodDto(UserPreferencesResponseSchema) {}
 
-export const mapPreferences = (preferences: FrameleafUserPreferences): UserPreferencesResponseDto => {
+/**
+ * Who a preferences response is for: the account itself, or an administrator editing it.
+ * An administrator never sees the account's private Locked choices (FL-77).
+ */
+export type PreferencesAudience = 'self' | 'admin';
+
+export const mapPreferences = (
+  preferences: FrameleafUserPreferences,
+  audience: PreferencesAudience = 'self',
+): UserPreferencesResponseDto => {
   // FL-77: an administrator's decision wins over the user's own casting choice, which stays
   // stored so it applies again once casting is allowed.
   const { gCastEnabled, adminDisabled } = preferences.cast;
+  const { suppression } = preferences.privacy;
   return {
     ...preferences,
     cast: { gCastEnabled: gCastEnabled && !adminDisabled, adminDisabled },
+    privacy:
+      audience === 'admin'
+        ? { suppression: { tagIds: [], personIds: [], petIds: [], scope: suppression.scope } }
+        : preferences.privacy,
+    revision: getPreferencesRevision(preferences),
   };
 };

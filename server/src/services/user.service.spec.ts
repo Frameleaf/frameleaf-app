@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
@@ -9,6 +10,7 @@ import { AssetVisibility, CacheControl, JobName, UserMetadataKey } from 'src/enu
 import { UserService } from 'src/services/user.service.js';
 import { UserMetadataItem } from 'src/types.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { getPreferences, getPreferencesRevision } from 'src/utils/preferences.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
@@ -469,6 +471,29 @@ describe(UserService.name, () => {
 
       await expect(sut.getMyPreferences(authStub.user1)).resolves.toMatchObject({
         cast: { gCastEnabled: false, adminDisabled: true },
+      });
+    });
+
+    it('should reject a save made against preferences an administrator changed since they were loaded', async () => {
+      const loaded = getPreferencesRevision(getPreferences([]));
+      mocks.user.getMetadata.mockResolvedValue(castTurnedOff);
+
+      await expect(
+        sut.updateMyPreferences(authStub.user1, { expectedRevision: loaded, tags: { enabled: true } }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
+    });
+
+    it('should apply a save made against the current revision without storing the revision', async () => {
+      mocks.user.getMetadata.mockResolvedValue(castTurnedOff);
+      const { revision } = await sut.getMyPreferences(authStub.user1);
+
+      await expect(
+        sut.updateMyPreferences(authStub.user1, { expectedRevision: revision, tags: { enabled: true } }),
+      ).resolves.toMatchObject({ tags: { enabled: true } });
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(authStub.user1.user.id, {
+        key: UserMetadataKey.Preferences,
+        value: { tags: { enabled: true }, cast: { gCastEnabled: true, adminDisabled: true } },
       });
     });
   });
