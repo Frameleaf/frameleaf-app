@@ -234,9 +234,12 @@ export class StudioProjectRepository {
   }
 
   /** Unscoped read. The service decides access from `ownerId` and `spaceId`; nothing else may. */
-  async getById(id: string): Promise<StudioProject | undefined> {
-    return this.db.selectFrom('studio_project').selectAll().where('id', '=', id).executeTakeFirst() as unknown as
-      StudioProject | undefined;
+  getById(id: string): Promise<StudioProject | undefined> {
+    return this.db
+      .selectFrom('studio_project')
+      .selectAll()
+      .where('id', '=', id)
+      .executeTakeFirst() as unknown as Promise<StudioProject | undefined>;
   }
 
   /**

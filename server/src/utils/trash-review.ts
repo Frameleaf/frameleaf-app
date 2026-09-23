@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { AssetStatus } from 'src/enum.js';
+import { compareCodeUnits } from 'src/utils/compare.js';
 
 /**
  * Reviewed trash changes (FL-47).
@@ -94,7 +95,7 @@ const toIso = (value: Date | string | null) => {
 export const trashReviewToken = (userId: string, action: TrashReviewAction, rows: readonly TrashScopeRow[]) => {
   const hash = createHash('sha256');
   hash.update(`${userId}\n${action}\n`);
-  for (const row of [...rows].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
+  for (const row of rows.toSorted((a, b) => compareCodeUnits(a.id, b.id))) {
     hash.update(`${row.id}|${row.ownerId}|${row.status}|${toIso(row.deletedAt)}|${row.isLocked ? 1 : 0}\n`);
   }
   return hash.digest('hex');

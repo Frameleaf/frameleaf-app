@@ -609,8 +609,7 @@ export class MediaHealthService {
     const rootIds = dto.rootIds ? [...new Set(dto.rootIds)] : null;
     if (rootIds) {
       const allowed = new Set((await this.getRoots(auth)).roots.map(({ id }) => id));
-      const refused = rootIds.find((id) => !allowed.has(id));
-      if (refused) {
+      if (rootIds.some((id) => !allowed.has(id))) {
         throw new ForbiddenException('One of the chosen locations is not available to you');
       }
     }
@@ -1439,7 +1438,7 @@ export class MediaHealthService {
     counts: { checked: number; missing?: number; corrupt?: number; found?: number },
     error?: string | null,
   ): Promise<void> {
-    const finished = state === 'completed' || state === 'failed' || state === 'cancelled';
+    const finished = ['completed', 'failed', 'cancelled'].includes(state);
     const base = {
       status: state,
       totalAssets: counts.checked,
