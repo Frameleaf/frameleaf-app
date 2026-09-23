@@ -181,6 +181,9 @@ export const Route = {
   workflows: () => '/workflows',
   viewWorkflow: ({ id }: { id: string }) => `/workflows/${id}`,
 
+  // render workers
+  renderWorkers: () => '/admin/render-workers',
+
   // queues
   queues: () => '/admin/queues',
   viewQueue: ({ name }: { name: QueueName }) => `/admin/queues/${asQueueSlug(name)}`,
