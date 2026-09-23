@@ -24,6 +24,8 @@
   let oauthError = $state('');
   let loading = $state(false);
   let oauthLoading = $state(true);
+  // The prototype's "Forgot your password?" note: passwords are reset by the administrator.
+  let forgotOpen = $state(false);
 
   const serverConfig = $derived(serverConfigManager.value);
   const publicConfig = $derived(data.publicConfig);
@@ -126,7 +128,7 @@
   };
 </script>
 
-<AuthPageLayout title={data.meta.title}>
+<AuthPageLayout title={$t('frameleaf_auth_welcome_back')} subtitle={$t('frameleaf_auth_sign_in_subtitle')}>
   <Stack gap={4}>
     {#if publicConfig.server.loginPageMessage}
       <Alert color="primary" class="mb-6">
@@ -149,7 +151,23 @@
           <PasswordInput id="password" bind:value={password} autocomplete="current-password" />
         </Field>
 
-        <Button type="submit" size="large" shape="round" fullWidth {loading} class="mt-6">{$t('to_login')}</Button>
+        <div class="flex justify-end">
+          <button
+            type="button"
+            class="text-sm underline"
+            aria-expanded={forgotOpen}
+            onclick={() => (forgotOpen = !forgotOpen)}
+          >
+            {$t('frameleaf_auth_forgot_password')}
+          </button>
+        </div>
+        {#if forgotOpen}
+          <Alert color="primary" size="small" title={$t('frameleaf_auth_forgot_password_help')} />
+        {/if}
+
+        <Button type="submit" size="large" shape="round" fullWidth {loading} class="mt-6"
+          >{$t('frameleaf_auth_sign_in')}</Button
+        >
       </form>
     {/if}
 

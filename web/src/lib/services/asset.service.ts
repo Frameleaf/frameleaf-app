@@ -192,7 +192,7 @@ export const getAssetActions = (
   };
 
   const Info: ActionItem = {
-    title: $t('info'),
+    title: $t('frameleaf_viewer_information'),
     icon: mdiInformationOutline,
     $if: () => asset.hasMetadata,
     onAction: () => assetViewerManager.toggleDetailPanel(),

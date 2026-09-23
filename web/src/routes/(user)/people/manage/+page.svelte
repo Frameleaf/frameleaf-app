@@ -1,8 +1,9 @@
 <script lang="ts">
   import PeopleInfiniteScroll from '../PeopleInfiniteScroll.svelte';
-  import { goto } from '$app/navigation';
+  import { beforeNavigate, goto } from '$app/navigation';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
+  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import ManagePersonCard from '$lib/components/frameleaf/people/ManagePersonCard.svelte';
   import { filterPeopleByName, sortPeopleForManage } from '$lib/frameleaf/people';
   import { locale } from '$lib/stores/preferences.store';
@@ -98,6 +99,44 @@
       setHiddenOverride(person, false);
     }
   };
+
+  // FL-83 (MP-3): leaving with unsaved visibility changes asks first, as the prototype's
+  // "Discard changes?" dialog does. Close, the browser's back and any other in-app
+  // navigation all go through the same guard; saving clears the draft before it navigates.
+  let pendingNavigation = $state<URL | null>(null);
+  let discardOpen = $state(false);
+
+  beforeNavigate(({ cancel, to, type }) => {
+    if (type === 'leave' || overrides.size === 0 || !to) {
+      return;
+    }
+    cancel();
+    pendingNavigation = to.url;
+    discardOpen = true;
+  });
+
+  const leave = () => {
+    if (overrides.size > 0) {
+      pendingNavigation = null;
+      discardOpen = true;
+      return;
+    }
+    return goto('/people');
+  };
+
+  const keepEditing = () => {
+    discardOpen = false;
+    pendingNavigation = null;
+  };
+
+  const discardAndLeave = async () => {
+    const destination = pendingNavigation ?? '/people';
+    pendingNavigation = null;
+    discardOpen = false;
+    // With the draft cleared the guard above lets this navigation through.
+    overrides.clear();
+    await goto(destination);
+  };
 </script>
 
 <UserPageLayout title={$t('show_and_hide_people')} description={`(${totalPeopleCount.toLocaleString($locale)})`}>
@@ -110,18 +149,21 @@
         placeholder={$t('frameleaf_people_find_a_person')}
         bind:value={frameleafSearch}
       />
-      <FrameleafButton onclick={hideAllFrameleaf}>{$t('hide_all_people')}</FrameleafButton>
-      <FrameleafButton onclick={hideUnnamedFrameleaf}>{$t('hide_unnamed_people')}</FrameleafButton>
-      <FrameleafButton onclick={showAllFrameleaf}>{$t('show_all_people')}</FrameleafButton>
-      <FrameleafButton disabled={frameleafPending === 0} onclick={() => overrides.clear()}>
-        {$t('reset_people_visibility')}
-      </FrameleafButton>
+      <!-- FL-83 (MP-1): the prototype's short batch labels, grouped for assistive tech. -->
+      <div class="frameleaf-manage-batches" role="group" aria-label={$t('frameleaf_people_visibility_shortcuts')}>
+        <FrameleafButton onclick={hideAllFrameleaf}>{$t('frameleaf_people_hide_all')}</FrameleafButton>
+        <FrameleafButton onclick={hideUnnamedFrameleaf}>{$t('frameleaf_people_hide_unnamed')}</FrameleafButton>
+        <FrameleafButton onclick={showAllFrameleaf}>{$t('frameleaf_people_show_all')}</FrameleafButton>
+        <FrameleafButton disabled={frameleafPending === 0} onclick={() => overrides.clear()}>
+          {$t('frameleaf_people_reset_visibility')}
+        </FrameleafButton>
+      </div>
       <FrameleafButton variant="primary" disabled={frameleafPending === 0} onclick={handleSaveVisibility}>
         {frameleafPending > 0
           ? $t('frameleaf_people_save_changes_count', { values: { count: frameleafPending } })
           : $t('done')}
       </FrameleafButton>
-      <FrameleafButton onclick={() => goto('/people')}>{$t('close')}</FrameleafButton>
+      <FrameleafButton onclick={() => void leave()}>{$t('close')}</FrameleafButton>
     </div>
   {/snippet}
 
@@ -145,11 +187,43 @@
   </div>
 </UserPageLayout>
 
+{#if discardOpen}
+  <Dialog title={$t('frameleaf_people_discard_title')} closeLabel={$t('close')} bind:open={discardOpen}>
+    <div class="frameleaf-discard">
+      <p>{$t('frameleaf_people_discard_body', { values: { count: frameleafPending } })}</p>
+      <div class="frameleaf-discard-actions">
+        <FrameleafButton onclick={keepEditing}>{$t('frameleaf_people_keep_editing')}</FrameleafButton>
+        <FrameleafButton variant="primary" onclick={() => void discardAndLeave()}>
+          {$t('frameleaf_people_discard')}
+        </FrameleafButton>
+      </div>
+    </div>
+  </Dialog>
+{/if}
+
 <style>
-  .frameleaf-manage-toolbar {
+  .frameleaf-manage-toolbar,
+  .frameleaf-manage-batches {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    gap: 0.5rem;
+  }
+  .frameleaf-discard {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-block-start: 1rem;
+    width: min(26rem, calc(100vw - 4rem));
+  }
+  .frameleaf-discard p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--fl-text);
+  }
+  .frameleaf-discard-actions {
+    display: flex;
+    justify-content: flex-end;
     gap: 0.5rem;
   }
   .frameleaf-manage-search {

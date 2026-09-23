@@ -121,7 +121,7 @@
         color="secondary"
         variant="ghost"
       />
-      <p class="text-lg text-immich-fg dark:text-immich-dark-fg">{$t('info')}</p>
+      <p class="text-lg text-immich-fg dark:text-immich-dark-fg">{$t('frameleaf_viewer_information_heading')}</p>
     </div>
 
     {#if asset.isOffline}
@@ -155,7 +155,6 @@
     <DetailPanelImageEnrichment
       {asset}
       {isOwner}
-      isAdmin={authManager.authenticated && authManager.user.isAdmin}
       onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
       {onAssetSuppressed}
       onDescriptionReview={(review) => (descriptionSource = review?.source ?? 'none')}

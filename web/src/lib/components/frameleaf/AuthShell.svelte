@@ -18,12 +18,15 @@
 
   let {
     title,
+    subtitle,
     icon,
     withHeader = true,
     children,
     footer,
   }: {
     title?: string;
+    /** The prototype's one-line explanation under the heading (AuthScreens.jsx `auth-heading`). */
+    subtitle?: string;
     icon?: string;
     withHeader?: boolean;
     children?: Snippet;
@@ -50,6 +53,9 @@
           {/if}
           {#if title}
             <h1>{title}</h1>
+          {/if}
+          {#if subtitle}
+            <p class="fl-auth-subtitle">{subtitle}</p>
           {/if}
         </div>
       {/if}
@@ -108,6 +114,11 @@
     margin: 0;
     font-size: 1.25rem;
     font-weight: 600;
+  }
+  .fl-auth-subtitle {
+    margin: 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
   }
   .fl-auth-foot {
     display: flex;
