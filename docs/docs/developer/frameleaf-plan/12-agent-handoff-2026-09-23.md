@@ -14,7 +14,7 @@ Continuation of [10-agent-handoff-2026-09-22.md](10-agent-handoff-2026-09-22.md)
 ## 2. Access limitations during this run
 
 - **No Jira or Confluence API** (Atlassian connector unauthorized in the session). Jira received activity only through Smart Commit `#comment` lines on push. Nobody could read issue comments. **Confluence mirrors were not updated.** Known mirrored doc changed and pending sync: `docs/docs/features/preservation.md` (page 61374992; receipt still records 7,066 bytes). `confluence-mirror.json` also lists `docs/docs/developer/frameleaf-command-center-data.md`, which does not exist in the repo; the coverage validator treats it as a historical receipt, so leave it.
-- Older open PRs #127, #130, #131, #132, #133 are superseded by #137 (their FL keys were re-implemented on the integration branch). The owner has not objected to closing them; nothing was closed.
+- **Corrected after the owner's September 23 audit request:** older open PRs #127, #130, #131, #132 and #133 contain completed behavior missing from #137. Reimplemented issue keys did not establish parity. PR133 combines the earlier implementation and is an active recovery source. Read the [open-PR reconciliation](../evidence/frameleaf-open-pr-audit-2026-09-23.md) before continuing any affected work. Preserve those PRs and worktrees; this handoff does not authorize closing them. The September 22 prototype remains the UI authority.
 
 ## 3. Integration branch state
 
