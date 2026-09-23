@@ -65,7 +65,7 @@ export class RunningJobsSession {
 
   async #load(): Promise<void> {
     try {
-      this.summary = await getRunningJobs();
+      this.summary = (await getRunningJobs()) ?? EMPTY;
       this.unreachable = false;
     } catch {
       // Keep the last answer on screen: the jobs are unaffected by this tab losing the server.
