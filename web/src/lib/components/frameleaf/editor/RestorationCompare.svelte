@@ -120,6 +120,7 @@
       preload="metadata"
       aria-label={beforeLabel}
     ></video>
+    <!-- svelte-ignore a11y_media_has_caption (a restoration render has no caption track to offer) -->
     <video
       class="rc-media rc-after"
       bind:this={afterVideo}

@@ -21,7 +21,7 @@
   import ImageDescriptionRequeueModal from '$lib/modals/ImageDescriptionRequeueModal.svelte';
   import SmartAlbumReevaluateModal from '$lib/modals/SmartAlbumReevaluateModal.svelte';
   import { Route } from '$lib/route';
-  import { Kind } from '@immich/sdk';
+  import { Kind3 as SmartAlbumKind } from '@immich/sdk';
   import { Button, Modal, ModalBody, ModalFooter, modalManager } from '@immich/ui';
   import { t } from 'svelte-i18n';
 
@@ -43,8 +43,16 @@
   let selectedTask: ComboBoxOption | undefined = $state(taskOptions[0]);
   const task = $derived((selectedTask?.value as Task | undefined) ?? 'descriptions');
 
-  const kindKeys = [Kind.Travel, Kind.Documents, Kind.Screenshots, Kind.Food, Kind.Pets, Kind.Nature] as const;
-  const kindTitle = (kind: Kind) => $t(`admin.smart_albums_kind_${kind}` as const);
+  // The generated client names the built-in smart-album kind enum `Kind3`.
+  const kindKeys = [
+    SmartAlbumKind.Travel,
+    SmartAlbumKind.Documents,
+    SmartAlbumKind.Screenshots,
+    SmartAlbumKind.Food,
+    SmartAlbumKind.Pets,
+    SmartAlbumKind.Nature,
+  ] as const;
+  const kindTitle = (kind: SmartAlbumKind) => $t(`admin.smart_albums_kind_${kind}` as const);
   const kindOptions: ComboBoxOption[] = [
     { value: '', label: $t('frameleaf_enrichment_tasks_category_all') },
     ...kindKeys.map((kind) => ({ value: kind as string, label: kindTitle(kind) })),
@@ -67,7 +75,7 @@
 
   const handleSmartAlbums = async () => {
     const value = selectedKind?.value;
-    const kind = (value as Kind | undefined) || undefined;
+    const kind = (value as SmartAlbumKind | undefined) || undefined;
     busy = true;
     try {
       const props = kind ? { kind, kindLabel: kindTitle(kind) } : {};

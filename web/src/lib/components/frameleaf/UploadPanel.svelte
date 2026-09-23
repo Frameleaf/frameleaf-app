@@ -123,14 +123,9 @@
         <strong>{$remainingUploads > 0 ? $remainingUploads.toLocaleString($locale) : $stats.errors}</strong>
       </button>
     {:else}
-      <section
-        class="fl-panel"
-        role="region"
-        aria-label={$t('upload')}
-        in:scale={{ duration: 250, easing: quartInOut }}
-      >
+      <section class="fl-panel" aria-label={$t('upload')} in:scale={{ duration: 250, easing: quartInOut }}>
         <header class="fl-panel-head">
-          <Icon icon={active ? mdiProgressUpload : mdiCloudCheckOutline} size={20} aria-hidden="true" />
+          <Icon icon={active ? mdiProgressUpload : mdiCloudCheckOutline} size="20" aria-hidden="true" />
           <div class="fl-panel-head-text">
             <strong aria-live="polite">{label}</strong>
             <span>
@@ -150,7 +145,7 @@
             aria-label={$t('frameleaf_transfer_minimize_uploads')}
             onclick={() => (minimized = true)}
           >
-            <Icon icon={mdiChevronDown} size={18} aria-hidden="true" />
+            <Icon icon={mdiChevronDown} size="18" aria-hidden="true" />
           </button>
           {#if !active}
             <button
@@ -159,7 +154,7 @@
               aria-label={$t('frameleaf_transfer_close_uploads')}
               onclick={() => uploadAssetsStore.reset()}
             >
-              <Icon icon={mdiClose} size={18} aria-hidden="true" />
+              <Icon icon={mdiClose} size="18" aria-hidden="true" />
             </button>
           {/if}
         </header>
@@ -187,7 +182,7 @@
                 {:else}
                   <Icon
                     icon={item.file.type.startsWith('video/') ? mdiVideoOutline : mdiImageOutline}
-                    size={18}
+                    size="18"
                     aria-hidden="true"
                   />
                 {/if}
@@ -195,7 +190,7 @@
               <span class="fl-name" title={item.file.name}>{item.file.name}</span>
               <span class="fl-state">
                 {#if item.state === UploadState.PENDING}
-                  <Icon icon={mdiCircleOutline} size={18} aria-hidden="true" />
+                  <Icon icon={mdiCircleOutline} size="18" aria-hidden="true" />
                   <span class="fl-sr-only">{$t('frameleaf_transfer_status_pending')}</span>
                 {:else if item.state === UploadState.STARTED}
                   <span
@@ -208,17 +203,17 @@
                     aria-valuenow={Math.round(item.progress ?? 0)}
                   ></span>
                 {:else if item.state === UploadState.DONE}
-                  <Icon icon={mdiCheckCircle} size={18} class="fl-success" aria-hidden="true" />
+                  <Icon icon={mdiCheckCircle} size="18" class="fl-success" aria-hidden="true" />
                   <span class="fl-sr-only">{$t('asset_uploaded')}</span>
                 {:else if item.state === UploadState.DUPLICATED}
                   {#if item.isTrashed}
-                    <Icon icon={mdiTrashCan} size={18} class="fl-muted-icon" aria-hidden="true" />
+                    <Icon icon={mdiTrashCan} size="18" class="fl-muted-icon" aria-hidden="true" />
                   {:else}
-                    <Icon icon={mdiContentDuplicate} size={18} class="fl-warning" aria-hidden="true" />
+                    <Icon icon={mdiContentDuplicate} size="18" class="fl-warning" aria-hidden="true" />
                   {/if}
                   <span class="fl-sr-only">{$t(item.isTrashed ? 'asset_skipped_in_trash' : 'asset_skipped')}</span>
                 {:else if item.state === UploadState.ERROR}
-                  <Icon icon={mdiAlertCircleOutline} size={18} class="fl-danger" aria-hidden="true" />
+                  <Icon icon={mdiAlertCircleOutline} size="18" class="fl-danger" aria-hidden="true" />
                   <span class="fl-sr-only">{$t('error')}</span>
                 {/if}
               </span>
@@ -242,7 +237,7 @@
                       rel="noopener noreferrer"
                       aria-label={$t('view')}
                     >
-                      <Icon icon={mdiOpenInNew} size={16} aria-hidden="true" />
+                      <Icon icon={mdiOpenInNew} size="16" aria-hidden="true" />
                     </a>
                   {/if}
                   <button
@@ -250,20 +245,20 @@
                     aria-label={$t('dismiss')}
                     onclick={() => uploadAssetsStore.removeItem(item.id)}
                   >
-                    <Icon icon={mdiClose} size={16} aria-hidden="true" />
+                    <Icon icon={mdiClose} size="16" aria-hidden="true" />
                   </button>
                 </span>
               {:else if item.state === UploadState.ERROR}
                 <span class="fl-actions">
                   <button type="button" aria-label={$t('retry_upload')} onclick={() => retryItem(item)}>
-                    <Icon icon={mdiRefresh} size={16} aria-hidden="true" />
+                    <Icon icon={mdiRefresh} size="16" aria-hidden="true" />
                   </button>
                   <button
                     type="button"
                     aria-label={$t('dismiss')}
                     onclick={() => uploadAssetsStore.removeItem(item.id)}
                   >
-                    <Icon icon={mdiClose} size={16} aria-hidden="true" />
+                    <Icon icon={mdiClose} size="16" aria-hidden="true" />
                   </button>
                 </span>
               {/if}
@@ -287,7 +282,7 @@
           <div class="fl-panel-actions">
             {#if $stats.errors > 0}
               <button type="button" class="fl-button" onclick={() => void retryAllFailed()}>
-                <Icon icon={mdiRefresh} size={16} aria-hidden="true" />
+                <Icon icon={mdiRefresh} size="16" aria-hidden="true" />
                 {$t('frameleaf_transfer_retry_failed')}
               </button>
             {/if}

@@ -14,6 +14,7 @@ import {
   MlWorkload,
   type MlDestinationResponseDto,
 } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 
 /** The order workloads are listed in: library work first, then restoration, then Studio. */
 export const ML_WORKLOAD_ORDER: readonly MlWorkload[] = [
@@ -26,7 +27,7 @@ export const ML_WORKLOAD_ORDER: readonly MlWorkload[] = [
   MlWorkload.StudioAi,
 ];
 
-export const mlWorkloadLabelKey = (workload: MlWorkload): string => {
+export const mlWorkloadLabelKey = (workload: MlWorkload): Translations => {
   switch (workload) {
     case MlWorkload.Face: {
       return 'admin.frameleaf_ml_workload_face';
@@ -52,7 +53,7 @@ export const mlWorkloadLabelKey = (workload: MlWorkload): string => {
   }
 };
 
-export const mlDestinationKindLabelKey = (kind: MlDestinationKind): string => {
+export const mlDestinationKindLabelKey = (kind: MlDestinationKind): Translations => {
   switch (kind) {
     case MlDestinationKind.Local: {
       return 'admin.frameleaf_ml_destination_kind_local';
@@ -69,7 +70,7 @@ export const mlDestinationKindLabelKey = (kind: MlDestinationKind): string => {
   }
 };
 
-export const mlHealthLabelKey = (health: MlDestinationHealth): string => {
+export const mlHealthLabelKey = (health: MlDestinationHealth): Translations => {
   switch (health) {
     case MlDestinationHealth.Healthy: {
       return 'admin.frameleaf_ml_health_healthy';
@@ -98,7 +99,7 @@ export const mlHealthTone = (health: MlDestinationHealth): 'teal' | 'danger' | '
   }
 };
 
-export const mlRefusalLabelKey = (refusal: MlAdmissionRefusal): string => {
+export const mlRefusalLabelKey = (refusal: MlAdmissionRefusal): Translations => {
   switch (refusal) {
     case MlAdmissionRefusal.DestinationMissing: {
       return 'admin.frameleaf_ml_refusal_destination_missing';

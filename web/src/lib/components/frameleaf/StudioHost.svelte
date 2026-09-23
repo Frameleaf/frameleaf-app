@@ -142,7 +142,8 @@
     loadEngine?: () => Promise<StudioEngineResolution>;
   } = $props();
 
-  let state = $state(initialStudioHostState());
+  // Not named `state`: that would make `$state` read as a store subscription.
+  let host = $state(initialStudioHostState());
   let stage = $state<HTMLDivElement>();
   let root = $state<HTMLElement>();
   let online = $state(true);
@@ -160,7 +161,7 @@
   let mountToken = 0;
 
   const dispatch = (event: StudioHostEvent) => {
-    state = reduceStudioHost(state, event);
+    host = reduceStudioHost(host, event);
   };
 
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
@@ -277,7 +278,7 @@
   $effect(() => {
     const next = context();
     untrack(() => {
-      if (engine && state.phase === 'ready') {
+      if (engine && host.phase === 'ready') {
         engine.update(next);
       }
     });
@@ -287,7 +288,7 @@
   // phase is read before the (non-reactive) engine check: short-circuiting on a null engine at
   // first run would leave the effect with no dependencies, so it would never run again.
   $effect(() => {
-    const phase = state.phase;
+    const phase = host.phase;
     if (engine && shouldDisposeEngine(phase)) {
       void disposeEngine();
     }
@@ -311,7 +312,7 @@
     void disposeEngine();
   });
 
-  const headingKey = $derived(studioHostHeadingKey(state));
+  const headingKey = $derived(studioHostHeadingKey(host));
 
   /**
    * What, if anything, the preview area has to say.
@@ -355,7 +356,7 @@
         {:else if saveStatus === 'lease-lost'}
           <Icon icon={mdiLockOutline} size="14" />
           {$t('frameleaf_studio_lease_lost_title')}
-        {:else if state.dirty || saveStatus === 'dirty'}
+        {:else if host.dirty || saveStatus === 'dirty'}
           {$t('frameleaf_studio_unsaved')}
         {:else if !project.hasLease}
           <Icon icon={mdiLockOutline} size="14" />
@@ -445,7 +446,7 @@
       class="fl-studio-stage"
       bind:this={stage}
       data-testid="studio-stage"
-      aria-hidden={state.phase === 'ready' ? undefined : 'true'}
+      aria-hidden={host.phase === 'ready' ? undefined : 'true'}
     ></div>
 
     <!--
@@ -455,7 +456,7 @@
       produced it says that, with the stable code kept for diagnostics rather than shown as the
       message. There is deliberately no state here that presents an old frame as the live one.
     -->
-    {#if state.phase === 'ready' && previewNoticePhase}
+    {#if host.phase === 'ready' && previewNoticePhase}
       <div
         class="fl-studio-preview"
         data-testid="studio-preview-state"
@@ -485,30 +486,30 @@
     {/if}
 
     {#if headingKey}
-      <div class="fl-studio-state" data-testid="studio-state" data-phase={state.phase}>
-        {#if state.phase !== 'loading'}
+      <div class="fl-studio-state" data-testid="studio-state" data-phase={host.phase}>
+        {#if host.phase !== 'loading'}
           <Icon icon={mdiAlertCircleOutline} size="28" />
         {/if}
         <h2>{$t(headingKey)}</h2>
 
-        {#if state.messageKey}
-          <p>{$t(state.messageKey)}</p>
+        {#if host.messageKey}
+          <p>{$t(host.messageKey)}</p>
         {/if}
 
-        {#if state.phase === 'unavailable' && state.missingCapabilities.length > 0}
+        {#if host.phase === 'unavailable' && host.missingCapabilities.length > 0}
           <!-- Name what is missing; "Studio is unavailable" on its own is not actionable. -->
           <ul aria-label={$t('frameleaf_studio_missing_capabilities')}>
-            {#each state.missingCapabilities as capability (capability)}
+            {#each host.missingCapabilities as capability (capability)}
               <li>{$t(studioCapabilityLabelKey(capability))}</li>
             {/each}
           </ul>
         {/if}
 
         <div class="fl-studio-state-actions">
-          {#if studioHostCanRetry(state)}
+          {#if studioHostCanRetry(host)}
             <Button onclick={retry}>{$t('frameleaf_studio_retry')}</Button>
           {/if}
-          <Button variant={studioHostCanRetry(state) ? 'quiet' : 'primary'} onclick={onBack}>
+          <Button variant={studioHostCanRetry(host) ? 'quiet' : 'primary'} onclick={onBack}>
             {$t('frameleaf_studio_back_to_library')}
           </Button>
         </div>
