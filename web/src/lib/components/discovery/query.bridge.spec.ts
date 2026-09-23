@@ -417,8 +417,18 @@ describe('searching from a scope keeps the scope', () => {
     expect(roundTrip(smart).spaceId).toBe(spaceId);
   });
 
-  it('keeps the map view through the results URL', () => {
+  it('never tags a search opened from the map with a map results view (FL-48 map/space follow-ups)', () => {
+    // The prototype (App.jsx `exploreQuery`/`MapView`'s "Search this area") always lands a submitted
+    // search on the plain grid results, never on a persisted map view the results page would ignore.
     const { query } = contextDiscoveryState(urlOf('/map'));
+    expect(query.view).toBe('photos');
+    expect(roundTrip(typed(query, 'harbour')).view).toBe('photos');
+  });
+
+  it('still round-trips an explicit map view once one is already on a query', () => {
+    // A view the contract already carries (a stored preset, an older link) is never mutated on
+    // read — only /map itself stops manufacturing one for a freshly opened search.
+    const query: DiscoveryQuery = { ...emptyDiscoveryQuery(), view: 'map' };
     expect(roundTrip(typed(query, 'harbour')).view).toBe('map');
   });
 

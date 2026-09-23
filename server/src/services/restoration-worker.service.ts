@@ -5,7 +5,15 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { AssetRestorationSourceType, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import type { SystemConfig } from 'src/dtos/config.dto.js';
-import { Colorspace, ImageFormat, ImmichWorker, JobName, MediaOperationStatus, StorageFolder } from 'src/enum.js';
+import {
+  Colorspace,
+  ImageFormat,
+  ImmichWorker,
+  JobName,
+  MediaOperationKind,
+  MediaOperationStatus,
+  StorageFolder,
+} from 'src/enum.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -45,6 +53,7 @@ import {
   selectRestorationDestination,
   stageOfKind,
 } from 'src/utils/restoration.js';
+import { ALL_LIBRARY_ANALYSIS_QUEUES, libraryAnalysisBacklog, readQueueBacklogs } from 'src/utils/worker-inventory.js';
 
 /** How often an idle worker asks for the next restoration job. */
 export const RESTORATION_POLL_MS = 2000;
@@ -54,6 +63,8 @@ export const RESTORATION_SWEEP_MS = 60_000;
 export const RESTORATION_LEASE_MS = 90_000;
 /** Rows one retention pass looks at. */
 const RETENTION_BATCH = 200;
+/** How long one reading of the library-analysis backlog is reused by the claim loop. */
+export const LIBRARY_BACKLOG_FRESHNESS_MS = 10_000;
 
 type Source = NonNullable<Awaited<ReturnType<AssetJobRepository['getForGenerateThumbnailJob']>>>;
 
@@ -134,6 +145,7 @@ export class RestorationWorkerService {
   private sweepTimer?: ReturnType<typeof setInterval>;
   private busy = false;
   private readonly workerId = `restoration:${hostname()}:${process.pid}`;
+  private backlogReading?: { at: number; value: number };
 
   constructor(
     private logger: LoggingRepository,
@@ -191,10 +203,12 @@ export class RestorationWorkerService {
     }
     this.busy = true;
     try {
+      const holdBack = await this.destinationsWaitingForLibraryAnalysis();
       const claim = await this.operationRepository.claimNext({
         kinds: RESTORATION_OPERATION_KINDS,
         workerId: this.workerId,
         leaseMs: RESTORATION_LEASE_MS,
+        ...(holdBack.length > 0 ? { holdBack: { kinds: [MediaOperationKind.Restoration], destinationIds: holdBack } } : {}),
       });
       if (!claim) {
         return false;
@@ -204,6 +218,26 @@ export class RestorationWorkerService {
     } finally {
       this.busy = false;
     }
+  }
+
+  /**
+   * Restoration workers the administrator marked as sharing library analysis's GPU, while library
+   * analysis has work (FL-72). Full restorations bound to them stay queued until that work is done,
+   * so a long restoration never takes the GPU from face, CLIP, OCR or enrichment jobs. Previews are
+   * short and someone is waiting for them, so they are never held. Nothing moves to another
+   * destination; a held job keeps its place in the queue.
+   */
+  async destinationsWaitingForLibraryAnalysis(): Promise<string[]> {
+    const shared = (await this.mlDestinationRepository.getAll()).filter((row) => row.sharesLibraryHardware);
+    if (shared.length === 0) {
+      return [];
+    }
+    const now = Date.now();
+    if (!this.backlogReading || now - this.backlogReading.at >= LIBRARY_BACKLOG_FRESHNESS_MS) {
+      const backlogs = await readQueueBacklogs(this.jobRepository, ALL_LIBRARY_ANALYSIS_QUEUES);
+      this.backlogReading = { at: now, value: libraryAnalysisBacklog(backlogs) };
+    }
+    return this.backlogReading.value > 0 ? shared.map((row) => row.id) : [];
   }
 
   /**

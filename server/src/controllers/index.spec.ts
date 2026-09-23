@@ -7,8 +7,12 @@ import { MediaHealthController } from 'src/controllers/media-health.controller.j
 import { LivePhotoRelinkDto } from 'src/dtos/live-photo.dto.js';
 import {
   MediaHealthBulkActionDto,
+  MediaHealthChooseCandidatesDto,
   MediaHealthDeleteCorruptDto,
   MediaHealthListQueryDto,
+  MediaHealthLocateDto,
+  MediaHealthRecoverDto,
+  MediaHealthSummaryQueryDto,
 } from 'src/dtos/media-health.dto.js';
 import { AuthenticatedOptions, getAuthenticatedOptions } from 'src/middleware/auth.guard.js';
 
@@ -21,6 +25,8 @@ const UNAUTHENTICATED_ADMIN_ROUTES = new Set([
 /** Admin-only routes that live outside `admin/`, i.e. `@Authenticated({ admin: true })` */
 const ADMIN_ROUTES = new Set([
   'DELETE libraries/:id',
+  'GET enrichment/options',
+  'POST enrichment/preview',
   'DELETE ml-destinations/:id',
   'DELETE ml-destinations/:id/consent',
   'GET ml-destinations',
@@ -175,7 +181,10 @@ describe('controllers', () => {
 describe('request DTO runtime metadata', () => {
   it.each([
     [MediaHealthController, 'list', MediaHealthListQueryDto],
-    [MediaHealthController, 'locateMissing', MediaHealthBulkActionDto],
+    [MediaHealthController, 'getSummary', MediaHealthSummaryQueryDto],
+    [MediaHealthController, 'locateMissing', MediaHealthLocateDto],
+    [MediaHealthController, 'chooseCandidates', MediaHealthChooseCandidatesDto],
+    [MediaHealthController, 'recoverDamaged', MediaHealthRecoverDto],
     [MediaHealthController, 'relinkMissing', MediaHealthBulkActionDto],
     [MediaHealthController, 'dismiss', MediaHealthBulkActionDto],
     [MediaHealthController, 'deleteCorrupt', MediaHealthDeleteCorruptDto],

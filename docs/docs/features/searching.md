@@ -29,6 +29,8 @@ You can search the following types of content:
 | Display options                     | In Archive, in Favorites or Not in any album          |
 | Star rating                         | User-assigned star rating                             |
 
+To browse the photos that show text, and to correct what was read, see [Documents](./documents.md).
+
 <img src={require('./img/advanced-search-filters.webp').default} width="70%" title='Advanced search filters' />
 
 ## Ask Search

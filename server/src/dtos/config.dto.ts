@@ -747,6 +747,11 @@ const AdminConfigSchemaWithVisibility = z
             .max(1)
             .describe('Minimum confidence score for text recognition')
             .meta({ format: 'double' }),
+          // FL-63: off by default, as in the design; suggestions stay editable and tied to their text
+          documentFields: z
+            .boolean()
+            .default(false)
+            .describe('Suggest receipt and document fields (dates, totals, references) from recognized text'),
         }).meta({ id: 'AdminConfigOcrDto' }),
         imageDescription: ImageDescriptionConfigSchema.default(imageDescriptionDefaults),
         nsfwDetection: NsfwDetectionConfigSchema.default(nsfwDetectionDefaults),
@@ -1198,6 +1203,7 @@ export const defaults = Object.freeze<SystemConfig>({
       minDetectionScore: 0.5,
       minRecognitionScore: 0.8,
       maxResolution: 736,
+      documentFields: false,
     },
     imageDescription: imageDescriptionDefaults,
     nsfwDetection: nsfwDetectionDefaults,

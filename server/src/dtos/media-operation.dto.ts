@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import {
+  DuplicateDecisionKindSchema,
   MediaOperationBulkActionSchema,
   MediaOperationCheckpointStateSchema,
   MediaOperationDestinationSchema,
@@ -9,6 +10,7 @@ import {
   MediaOperationStatusSchema,
 } from 'src/enum.js';
 import { BULK_MAX_ITEMS } from 'src/utils/bulk-operation.js';
+import { DUPLICATE_DECISION_MAX_GROUPS } from 'src/utils/duplicate-review.js';
 
 const JsonObjectSchema = z.record(z.string(), z.unknown());
 
@@ -19,6 +21,15 @@ const MediaOperationLivePhotoPairSchema = z
     videoId: z.uuidv4().describe('Motion video asset ID'),
   })
   .meta({ id: 'MediaOperationLivePhotoPairDto' });
+
+/** One reviewed Library Care finding (FL-69): the item, the finding and the chosen candidate. */
+const MediaOperationMediaHealthEntrySchema = z
+  .object({
+    assetId: z.uuidv4().describe('Asset ID'),
+    findingId: z.uuidv4().describe('Media health finding ID'),
+    candidateId: z.uuidv4().optional().describe('Reviewed candidate ID, for a relink or a recovery'),
+  })
+  .meta({ id: 'MediaOperationMediaHealthEntryDto' });
 
 /**
  * What a checkpoint shows the owner.
@@ -83,6 +94,24 @@ const MediaOperationBulkItemSchema = z
   .meta({ id: 'MediaOperationBulkItemDto' });
 
 /**
+ * One duplicate group of a `resolve-duplicates` or `undo-duplicates` job (FL-61): the complete group
+ * as the owner reviewed it and what they decided. The job's `assetIds` are these members, group by
+ * group, and the worker compares each group with its current members before it changes anything.
+ */
+const MediaOperationDuplicateGroupSchema = z
+  .object({
+    duplicateId: z.uuidv4().describe('Duplicate group ID'),
+    decision: DuplicateDecisionKindSchema,
+    memberIds: z.array(z.uuidv4()).min(2).max(BULK_MAX_ITEMS).describe('Every photo of the group, as reviewed'),
+    keepAssetIds: z
+      .array(z.uuidv4())
+      .max(BULK_MAX_ITEMS)
+      .describe('Photos to keep; the first is a stack cover. Other members of a `keepers` group are trashed'),
+    decisionId: z.uuidv7().optional().describe('For `undo-duplicates`: the recorded decision to reverse'),
+  })
+  .meta({ id: 'MediaOperationDuplicateGroupDto' });
+
+/**
  * The payload a bulk action needs beyond its asset ids.
  *
  * Every field is optional here and required by the action that uses it; the service rejects a
@@ -103,6 +132,12 @@ const MediaOperationBulkPayloadSchema = z
     primaryId: z.uuidv4().optional(),
     stackIds: z.array(z.uuidv4()).max(1000).optional(),
     pairs: z.array(MediaOperationLivePhotoPairSchema).max(BULK_MAX_ITEMS).optional(),
+    duplicateGroups: z
+      .array(MediaOperationDuplicateGroupSchema)
+      .max(DUPLICATE_DECISION_MAX_GROUPS)
+      .optional()
+      .describe('Duplicate review decisions, one complete group each (FL-61)'),
+    mediaHealth: z.array(MediaOperationMediaHealthEntrySchema).max(1000).optional(),
   })
   .meta({ id: 'MediaOperationBulkPayloadDto' });
 
@@ -252,3 +287,4 @@ export class MediaOperationBulkCreateDto extends createZodDto(MediaOperationBulk
 export class MediaOperationBulkSummaryDto extends createZodDto(MediaOperationBulkSummarySchema) {}
 export class MediaOperationBulkItemDto extends createZodDto(MediaOperationBulkItemSchema) {}
 export class MediaOperationBulkPayloadDto extends createZodDto(MediaOperationBulkPayloadSchema) {}
+export class MediaOperationDuplicateGroupDto extends createZodDto(MediaOperationDuplicateGroupSchema) {}

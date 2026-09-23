@@ -55,6 +55,14 @@ These environment variables are used by the `docker-compose.yml` file and do **N
 
 \*3: The [default configuration](https://helmetjs.github.io/#content-security-policy) sets `upgrade-insecure-requests`, which tells the browser to upgrade all requests to HTTPS. This breaks on HTTP-only deployments. If you cannot use HTTPS, you should use a custom helmet config file with `"upgrade-insecure-requests": null`.
 
+## Library Care
+
+| Variable                   | Description                                                                                                              | Default | Containers | Workers            |
+| :------------------------- | :----------------------------------------------------------------------------------------------------------------------- | :-----: | :--------- | :----------------- |
+| `FRAMELEAF_RECOVERY_ROOTS` | Recovery locations Library Care may search for exact copies, as `Label=/path;Label=/path`. Only ever read.<sup>\*1</sup> |         | server     | api, microservices |
+
+\*1: Each entry is an absolute path inside the container, optionally labelled. A copy found there is copied into library storage before an item is relinked to it; see [Library Care](/features/library-care).
+
 ## Workers
 
 | Variable                 | Description                                                                                          | Default | Containers |
