@@ -15,12 +15,12 @@ const detail = (overrides: Partial<MediaOperationDetailDto> = {}): MediaOperatio
 
 describe('the durable bulk tracker', () => {
   let tracker: DurableBulkTracker;
-  let fetch: ReturnType<typeof vi.fn>;
+  let fetch: ReturnType<typeof vi.fn<(operationId: string) => Promise<MediaOperationDetailDto>>>;
   let removed: string[][];
 
   beforeEach(() => {
     vi.useFakeTimers();
-    fetch = vi.fn();
+    fetch = vi.fn<(operationId: string) => Promise<MediaOperationDetailDto>>();
     tracker = new DurableBulkTracker({ fetch, pollMs: 1000 });
     removed = [];
     tracker.onRemoved((ids) => removed.push(ids));

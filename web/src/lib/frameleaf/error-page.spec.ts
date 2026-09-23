@@ -54,7 +54,7 @@ describe('errorKind', () => {
 
 describe('ERROR_COPY', () => {
   it('names strings that exist and never mention another product', () => {
-    const strings = en as Record<string, string>;
+    const strings = en as unknown as Record<string, string>;
     for (const { title, body } of Object.values(ERROR_COPY)) {
       for (const key of [title, body]) {
         expect(strings[key], key).toBeTypeOf('string');

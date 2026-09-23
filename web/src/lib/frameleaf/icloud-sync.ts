@@ -54,7 +54,7 @@ const ACTIVE_RUN_STATUSES: ReadonlySet<MediaOperationStatus> = new Set([
 ]);
 
 /** A run the server is still responsible for: queued, working, stopping or paused. */
-export const isActiveRun = (run: ICloudSyncRunDto | null | undefined): run is ICloudSyncRunDto =>
+export const isActiveRun = (run: ICloudSyncRunDto | null | undefined): boolean =>
   !!run && ACTIVE_RUN_STATUSES.has(run.status);
 
 type Connection = Pick<ICloudConnectionResponseDto, 'state' | 'authenticated' | 'run'>;
@@ -183,13 +183,14 @@ export const icloudRunControls = (connection: Connection): ICloudRunControls => 
   return {
     syncNow: connection.authenticated && ['connected', 'paused'].includes(connection.state) && !active,
     pause:
+      !!run &&
       active &&
       !run.pauseRequested &&
       [MediaOperationStatus.Queued, MediaOperationStatus.Preparing, MediaOperationStatus.Rendering].includes(
         run.status,
       ),
     resume,
-    cancel: active && run.status !== MediaOperationStatus.Cancelling,
+    cancel: !!run && active && run.status !== MediaOperationStatus.Cancelling,
     retry:
       signedIn &&
       !active &&

@@ -1,4 +1,5 @@
 import {
+  StudioProjectAccess,
   StudioProjectShelf,
   type StudioProjectDetailDto,
   type StudioProjectLeaseDto,
@@ -37,7 +38,7 @@ const detail = (overrides: Partial<StudioProjectDetailDto> = {}): StudioProjectD
   name: 'Lake trip',
   spaceId: null,
   revision: 3,
-  access: 'owner',
+  access: StudioProjectAccess.Owner,
   lease: lease(),
   createdAt: '2026-09-22T10:00:00.000Z',
   updatedAt: '2026-09-22T10:05:00.000Z',
@@ -163,7 +164,9 @@ describe('studio project session', () => {
     });
 
     it('opens read-only for a reviewer and never asks for a lease', async () => {
-      api.get.mockResolvedValue(detail({ access: 'reviewer', withheld: true, envelope: null, digest: null }));
+      api.get.mockResolvedValue(
+        detail({ access: StudioProjectAccess.Reviewer, withheld: true, envelope: null, digest: null }),
+      );
       const session = create();
       await session.open();
 
@@ -498,7 +501,7 @@ describe('studio project session', () => {
     });
 
     it('refuses to restore without the lease', async () => {
-      api.get.mockResolvedValue(detail({ access: 'reviewer' }));
+      api.get.mockResolvedValue(detail({ access: StudioProjectAccess.Reviewer }));
       const session = create();
       await session.open();
 
