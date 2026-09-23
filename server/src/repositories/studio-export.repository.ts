@@ -7,6 +7,7 @@ import {
   AssetVisibility,
   ChecksumAlgorithm,
   MediaOperationDestination,
+  MediaOperationStatus,
   StudioExportRemoteReason,
   StudioExportScope,
   StudioExportVersionState,
@@ -63,7 +64,8 @@ export type StudioExportRefusalCode =
   | 'scope-changed'
   | 'quota-exceeded'
   | 'duplicate-restricted'
-  | 'not-staged';
+  | 'not-staged'
+  | 'claim-lost';
 
 const CANCELLING_REFUSALS: ReadonlySet<StudioExportRefusalCode> = new Set([
   'owner-unavailable',
@@ -91,6 +93,7 @@ export type StudioExportPublication = {
   versionId: string;
   /** The publication job holding the claim. Only its own staged version is published. */
   operationId: string;
+  claimToken: string;
   ownerId: string;
   /** Library sources as the render recorded them, re-checked here under row locks. */
   sources: ReadonlyArray<Pick<StudioExportVersionSource, 'key' | 'kind' | 'assetId' | 'checksum'>>;
@@ -273,11 +276,11 @@ export class StudioExportRepository {
 
   /**
    * The render reported a file: record it and queue its publication, in one transaction. Only a
-   * version that is still rendering moves; a render completing after its version was cancelled
-   * queues nothing.
+   * current validating claim can move a rendering version; cancelled or replaced claims queue nothing.
    */
   async stage(
     renderOperationId: string,
+    claimToken: string | null,
     output: {
       path: string;
       checksum: Buffer;
@@ -288,6 +291,9 @@ export class StudioExportRepository {
     publish: (version: StudioExportVersion) => MediaOperationCreate,
   ): Promise<{ version: StudioExportVersion; operation: MediaOperation } | undefined> {
     return this.db.transaction().execute(async (tx) => {
+      if (!claimToken || !(await this.lockClaim(tx, renderOperationId, claimToken))) {
+        return;
+      }
       const version = (await tx
         .selectFrom('studio_export_version')
         .selectAll()
@@ -361,6 +367,19 @@ export class StudioExportRepository {
       .executeTakeFirst() as Promise<StudioExportVersion | undefined>;
   }
 
+  /** Serialize publication and staging against cancellation and claim recovery (FL-43). */
+  private async lockClaim(tx: Kysely<DB>, operationId: string, claimToken: string): Promise<boolean> {
+    const held = await tx
+      .selectFrom('media_operation')
+      .select('id')
+      .where('id', '=', operationId)
+      .where('claimToken', '=', claimToken)
+      .where('status', '=', MediaOperationStatus.Validating)
+      .forUpdate()
+      .executeTakeFirst();
+    return !!held;
+  }
+
   /* ------------------------------------------------------------------ */
   /* Publication                                                         */
   /* ------------------------------------------------------------------ */
@@ -370,7 +389,7 @@ export class StudioExportRepository {
    *
    * In order, inside one transaction:
    *
-   *   1. the version, locked, must still be `staged` under this publication job;
+   *   1. the current validating operation claim and its staged version are locked;
    *   2. the database must not be handed over or taken back right now (the fork state row is
    *      share-locked, so a cutover waits for this transaction or this one sees it);
    *   3. the owner (share-locked) must not be deleted, and the project (locked for the version
@@ -390,6 +409,9 @@ export class StudioExportRepository {
    */
   async publish(input: StudioExportPublication): Promise<StudioExportPublished> {
     return this.db.transaction().execute(async (tx) => {
+      if (!(await this.lockClaim(tx, input.operationId, input.claimToken))) {
+        throw new StudioExportRefusal('claim-lost', 'The publication claim is no longer validating');
+      }
       const version = (await tx
         .selectFrom('studio_export_version')
         .selectAll()

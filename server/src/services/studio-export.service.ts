@@ -206,7 +206,7 @@ export class StudioExportService {
         }
         const version = await this.repository.getByRenderOperation(existing.id);
         if (version) {
-          return { version: this.map(version, auth), operation: mapOperation(existing) };
+          return { version: this.map(await this.findOwned(auth, version.id), auth), operation: mapOperation(existing) };
         }
       }
     }
@@ -418,6 +418,7 @@ export class StudioExportService {
 
     const staged = await this.repository.stage(
       operation.id,
+      operation.claimToken,
       {
         path: output.path,
         checksum: Buffer.from(output.checksum, 'hex'),
@@ -580,10 +581,14 @@ export class StudioExportService {
       return;
     }
 
+    if (!(await this.operations.beginValidation(operation.id, claimToken))) {
+      return;
+    }
+
     let prepared: PreparedPublication | undefined;
     try {
       prepared = await this.prepare(version);
-      const published = await this.publishAcknowledged(version, operation, prepared);
+      const published = await this.publishAcknowledged(version, operation, claimToken, prepared);
       await this.afterPublished(published, prepared);
       await this.finishJob(operation, claimToken, published.version.resultAssetId);
       this.logger.log(
@@ -594,6 +599,9 @@ export class StudioExportService {
     } catch (error) {
       if (prepared) {
         await this.restoreStaged(prepared);
+      }
+      if (error instanceof StudioExportRefusal && error.code === 'claim-lost') {
+        return;
       }
       if (error instanceof StudioExportRefusal && error.cancels) {
         await this.cancelVersion(version, error.code, error.message);
@@ -741,12 +749,14 @@ export class StudioExportService {
   private async publishAcknowledged(
     version: StudioExportVersion,
     operation: MediaOperation,
+    claimToken: string,
     prepared: PreparedPublication,
   ): Promise<StudioExportPublished> {
     return settleStudioExportPublication(this.repository, version.id, operation.id, () =>
       this.repository.publish({
         versionId: version.id,
         operationId: operation.id,
+        claimToken,
         ownerId: version.ownerId,
         sources: prepared.sources,
         expectedScope: prepared.expectedScope,

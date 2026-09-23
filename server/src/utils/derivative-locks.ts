@@ -2,12 +2,8 @@ import { Kysely, sql } from 'kysely';
 import { AssetLockReason, StudioExportVersionState } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 
-/** How deep a chain of exports made from exports is followed in one lock. */
-const MAX_DERIVATIVE_DEPTH = 8;
-
 /**
- * A source that becomes Locked locks everything already published from it (FL-106; coordinator
- * decision, September 23, 2026, for owner confirmation).
+ * A source that becomes Locked locks everything already published from it (FL-106).
  *
  * Privacy is inherited as a union at publication, and this keeps the union true afterwards: when a
  * source gains a lock, every published Studio export that read it gains one too, with the source's
@@ -22,9 +18,10 @@ const MAX_DERIVATIVE_DEPTH = 8;
  */
 export const lockDerivedResults = async (db: Kysely<DB>, assetIds: string[]): Promise<string[]> => {
   const locked: string[] = [];
-  let frontier = [...new Set(assetIds)];
+  const visited = new Set(assetIds);
+  let frontier = [...visited];
 
-  for (let depth = 0; depth < MAX_DERIVATIVE_DEPTH && frontier.length > 0; depth++) {
+  while (frontier.length > 0) {
     const exists = await sql<{ present: boolean }>`
       SELECT to_regclass('public.studio_export_version_source') IS NOT NULL AS present
     `.execute(db);
@@ -86,7 +83,10 @@ export const lockDerivedResults = async (db: Kysely<DB>, assetIds: string[]): Pr
       await db.updateTable('asset').set({ updatedAt: new Date() }).where('id', 'in', next).execute();
     }
     locked.push(...next);
-    frontier = next;
+    frontier = results.filter((id) => !visited.has(id));
+    for (const id of frontier) {
+      visited.add(id);
+    }
   }
 
   return locked;
