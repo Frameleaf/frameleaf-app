@@ -235,6 +235,9 @@ export class AssetRepository {
               index: ref('excluded.index'),
               profile: ref('excluded.profile'),
               codecName: ref('excluded.codecName'),
+              channels: ref('excluded.channels'),
+              channelLayout: ref('excluded.channelLayout'),
+              sampleRate: ref('excluded.sampleRate'),
             })),
           ),
       );
