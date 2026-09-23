@@ -105,7 +105,7 @@ const find = (graph: unknown, kind: StudioResourceKind) =>
 
 describe('studio resource registry', () => {
   it('has one row per resource kind and every row is self-consistent', () => {
-    expect([...studioResourceRegistry.keys()]).toEqual(studioResourceKinds);
+    expect(studioResourceRegistry.keys().toArray()).toEqual(studioResourceKinds);
     for (const kind of studioResourceKinds) {
       const definition = getStudioResourceClass(kind);
       expect(definition.kind).toBe(kind);
