@@ -26,6 +26,7 @@
     type LibraryCareRow,
   } from '$lib/frameleaf/library-care';
   import { MediaHealthRootKind, type MediaHealthRootDto } from '@immich/sdk';
+  import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   let {
@@ -51,22 +52,30 @@
     onCommit: (choices: Record<string, string>) => void;
   } = $props();
 
+  // The reviewer's own choices start from what the dialog opened with and are theirs from then on:
+  // later updates to `rows` (a search finishing) add candidates without undoing a choice.
   // Library storage is searched by default, and recovery locations when replacing damage.
   let rootIds = $state<string[]>(
-    roots
-      .filter(
-        (root) =>
-          root.kind === MediaHealthRootKind.Managed ||
-          (mode === 'replace' ? root.kind === MediaHealthRootKind.Recovery : root.kind === MediaHealthRootKind.Library),
-      )
-      .map(({ id }) => id),
+    untrack(() =>
+      roots
+        .filter(
+          (root) =>
+            root.kind === MediaHealthRootKind.Managed ||
+            (mode === 'replace'
+              ? root.kind === MediaHealthRootKind.Recovery
+              : root.kind === MediaHealthRootKind.Library),
+        )
+        .map(({ id }) => id),
+    ),
   );
   let choices = $state<Record<string, string>>(
-    Object.fromEntries(
-      rows.flatMap((row) => {
-        const chosen = row.candidates.find((candidate) => candidate.chosen);
-        return chosen ? [[row.id, chosen.id]] : [];
-      }),
+    untrack(() =>
+      Object.fromEntries(
+        rows.flatMap((row) => {
+          const chosen = row.candidates.find((candidate) => candidate.chosen);
+          return chosen ? [[row.id, chosen.id]] : [];
+        }),
+      ),
     ),
   );
   let consent = $state(false);
