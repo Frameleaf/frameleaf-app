@@ -189,7 +189,7 @@ describe('durable bulk jobs', () => {
   it('shows counts only, never the items themselves', () => {
     const item = fromMediaOperation(bulkJob());
 
-    expect(item.bulk).toEqual({ requested: 1200, succeeded: 590, failed: 0, skipped: 10 });
+    expect(item.bulk).toEqual({ requested: 1200, succeeded: 590, failed: 0, skipped: 10, retried: 0 });
     expect(item.assetId).toBeUndefined();
     expect(item.details).toEqual([]);
   });

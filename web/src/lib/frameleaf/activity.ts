@@ -100,7 +100,7 @@ export type ActivityItem = {
    * A bulk job's running totals. Counts only: which items were refused, and what they are, is not
    * shown here, so a Locked or sensitive item never appears on this page by name or thumbnail.
    */
-  bulk?: { requested: number; succeeded: number; failed: number; skipped: number };
+  bulk?: { requested: number; succeeded: number; failed: number; skipped: number; retried: number };
 };
 
 const DESTINATION_KEY: Record<MediaOperationDestination, string> = {
@@ -255,7 +255,18 @@ export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityIt
     canRetry: !running && (failed || unfinished || status === MediaOperationStatus.Cancelled),
     canDismiss: !running,
     browserLocal: false,
-    ...(bulk ? { bulk: { requested, succeeded: bulk.succeeded, failed: bulk.failed, skipped: bulk.skipped } } : {}),
+    ...(bulk
+      ? {
+          bulk: {
+            requested,
+            succeeded: bulk.succeeded,
+            failed: bulk.failed,
+            skipped: bulk.skipped,
+            // Failed items get one automatic retry before they count as failed (FL-104).
+            retried: bulk.retried ?? 0,
+          },
+        }
+      : {}),
   };
 };
 

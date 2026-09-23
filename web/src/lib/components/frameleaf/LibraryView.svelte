@@ -24,6 +24,7 @@
   import type { BulkAsset, BulkActionContext, BulkActionId } from '$lib/frameleaf/bulk-actions';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
+  import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { librarySession, type LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import type { LibraryGrouping, LibrarySessionAction } from '$lib/frameleaf/library-session';
   import { matchLibraryShortcut, type LibraryShortcut } from '$lib/frameleaf/library-shortcuts';
@@ -222,6 +223,20 @@
     }
     session.dispatch(action);
   };
+
+  /**
+   * A durable job's finished items leave the timeline as the job finishes them — through the same
+   * `mutated` path as a small delete, so the session and the timeline drop them together, without
+   * a reload (owner decision, September 22, 2026). Until then each tile shows its own loader.
+   */
+  $effect(() =>
+    durableBulkTracker.onRemoved((removedIds) => {
+      const shown = removedIds.filter((id) => !!findAsset(id));
+      if (shown.length > 0) {
+        dispatch({ type: 'mutated', removedIds: shown });
+      }
+    }),
+  );
 
   const currentUserId = $derived(authManager.authenticated ? authManager.user.id : undefined);
 
