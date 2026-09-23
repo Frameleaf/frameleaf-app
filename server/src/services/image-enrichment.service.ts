@@ -340,8 +340,9 @@ export class ImageEnrichmentService extends BaseService {
    */
   async recordOwnerUnlock(auth: AuthDto, assetIds: string[]): Promise<void> {
     for (const id of assetIds) {
+      // access was checked by the unlock; stack members and live-photo parts share their owner
       const asset = await this.assetRepository.getById(id);
-      if (!asset || asset.ownerId !== auth.user.id) {
+      if (!asset) {
         continue;
       }
 
