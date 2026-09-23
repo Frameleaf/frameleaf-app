@@ -276,37 +276,60 @@ describe(PreservationService.name, () => {
       expect(repository.getPackage).toHaveBeenCalledWith(expect.any(String), owner.user.id);
     });
 
-    it('counts Locked items in the report but never names them to an ordinary session', async () => {
+    it('never lists or counts a Locked item for an ordinary session', async () => {
       const found = packageOf();
       repository.getPackage.mockResolvedValue(found);
-      const lockedItem = {
-        id: newUuidV7(),
-        packageId: found.id,
-        sourceAssetId: newUuid(),
-        assetId: newUuid(),
-        state: 'copied',
-        locked: true,
-        entry: { originalFileName: 'private.jpg', original: { bytes: 5, sha256: 'c'.repeat(64) } },
-        verifyState: 'ok',
-        reasonKey: null,
-        error: null,
-      } as unknown as PreservationItem;
-      repository.listItems.mockResolvedValue({ items: [lockedItem], total: 1 });
-      repository.lockedItemIds.mockResolvedValue(new Set([lockedItem.id]));
+      const itemOf = (locked: boolean, name: string) =>
+        ({
+          id: newUuidV7(),
+          packageId: found.id,
+          sourceAssetId: newUuid(),
+          assetId: newUuid(),
+          state: 'copied',
+          locked,
+          entry: { originalFileName: name, original: { bytes: 5, sha256: 'c'.repeat(64) } },
+          verifyState: 'ok',
+          reasonKey: null,
+          error: null,
+        }) as unknown as PreservationItem;
+      const open = itemOf(false, 'lake.jpg');
+      // Locked in the library after the ordinary read was filtered: still withheld.
+      const lockedSince = itemOf(false, 'private.jpg');
+      repository.listItems.mockResolvedValue({ items: [open, lockedSince], total: 2 });
+      repository.lockedItemIds.mockResolvedValue(new Set([lockedSince.id]));
 
       const report = await sut.getPackageItems(owner, found.id, {});
 
-      expect(report.total).toBe(1);
-      expect(report.items[0]).toMatchObject({
-        name: null,
-        sourceAssetId: null,
-        sha256: null,
-        locked: true,
-        state: 'copied',
-      });
+      expect(repository.listItems).toHaveBeenCalledWith(found.id, expect.objectContaining({ excludeLocked: true }));
+      expect(report.items.map((item) => item.name)).toEqual(['lake.jpg']);
 
+      const lockedItem = itemOf(true, 'private.jpg');
+      repository.listItems.mockResolvedValue({ items: [open, lockedItem], total: 2 });
       const revealed = await sut.getPackageItems(unlocked, found.id, {});
-      expect(revealed.items[0].name).toBe('private.jpg');
+      expect(repository.listItems).toHaveBeenLastCalledWith(
+        found.id,
+        expect.objectContaining({ excludeLocked: false }),
+      );
+      expect(revealed.items.map((item) => [item.name, item.locked])).toEqual([
+        ['lake.jpg', false],
+        ['private.jpg', true],
+      ]);
+    });
+
+    it('counts a package’s items without its Locked ones for an ordinary session', async () => {
+      const found = packageOf();
+      repository.getPackage.mockResolvedValue(found);
+      repository.countItems.mockResolvedValue(new Map([[found.id, { states: { copied: 3 }, locked: 2, bytes: 30 }]]));
+
+      const ordinary = await sut.getPackage(owner, found.id);
+      expect(repository.countItems).toHaveBeenLastCalledWith([found.id], { excludeLocked: true });
+      expect(ordinary.counts.locked).toBe(0);
+      expect(ordinary.lockedContent).toBe(false);
+
+      const revealed = await sut.getPackage(unlocked, found.id);
+      expect(repository.countItems).toHaveBeenLastCalledWith([found.id], { excludeLocked: false });
+      expect(revealed.counts.locked).toBe(2);
+      expect(revealed.lockedContent).toBe(true);
     });
 
     it('states the restoration support of a package without metadata as originals only', () => {
@@ -488,7 +511,7 @@ describe(PreservationService.name, () => {
       });
     });
 
-    it('hides a Locked item’s name and conflicts from an ordinary session', async () => {
+    it('never lists a Locked restoration item, or its conflicts, to an ordinary session', async () => {
       const restore = restoreOf();
       repository.getRestore.mockResolvedValue(restore);
       const item = {
@@ -510,11 +533,19 @@ describe(PreservationService.name, () => {
       repository.listRestoreItems.mockResolvedValue({ items: [item], total: 1 });
 
       const hidden = await sut.getRestoreItems(owner, restore.id, {});
-      expect(hidden.items[0]).toMatchObject({ hidden: true, name: null, assetId: null, conflicts: [] });
+      expect(repository.listRestoreItems).toHaveBeenLastCalledWith(
+        restore.id,
+        expect.objectContaining({ excludeLocked: true }),
+      );
+      expect(hidden.items).toEqual([]);
 
       const shown = await sut.getRestoreItems(unlocked, restore.id, {});
+      expect(repository.listRestoreItems).toHaveBeenLastCalledWith(
+        restore.id,
+        expect.objectContaining({ excludeLocked: false }),
+      );
       expect(shown.items[0]).toMatchObject({
-        hidden: false,
+        locked: true,
         name: 'private.jpg',
         conflicts: [{ field: 'description', archived: 'a', current: 'b', decision: null }],
       });
@@ -524,7 +555,9 @@ describe(PreservationService.name, () => {
       const restore = restoreOf();
       repository.getRestore.mockResolvedValue(restore);
       expect((await sut.getRestore(owner, restore.id)).counts.locked).toBe(0);
+      expect(repository.countRestoreItems).toHaveBeenLastCalledWith(restore.id, { excludeLocked: true });
       expect((await sut.getRestore(unlocked, restore.id)).counts.locked).toBe(4);
+      expect(repository.countRestoreItems).toHaveBeenLastCalledWith(restore.id, { excludeLocked: false });
     });
   });
 

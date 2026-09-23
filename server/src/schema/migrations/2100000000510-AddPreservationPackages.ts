@@ -41,6 +41,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   "removedAt" timestamp with time zone,
   "createdAt" timestamp with time zone NOT NULL DEFAULT now(),
   "updatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+  "updateId" uuid NOT NULL DEFAULT immich_uuid_v7(),
   CONSTRAINT "preservation_package_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "user" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT "preservation_package_pkey" PRIMARY KEY ("id")
 );`.execute(db);
@@ -67,6 +68,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   "error" text,
   "createdAt" timestamp with time zone NOT NULL DEFAULT now(),
   "updatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+  "updateId" uuid NOT NULL DEFAULT immich_uuid_v7(),
   CONSTRAINT "preservation_item_packageId_fkey" FOREIGN KEY ("packageId") REFERENCES "preservation_package" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT "preservation_item_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES "asset" ("id") ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT "preservation_item_packageId_sourceAssetId_uq" UNIQUE ("packageId", "sourceAssetId"),
@@ -92,6 +94,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   "summary" jsonb,
   "createdAt" timestamp with time zone NOT NULL DEFAULT now(),
   "updatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+  "updateId" uuid NOT NULL DEFAULT immich_uuid_v7(),
   CONSTRAINT "preservation_restore_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "user" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT "preservation_restore_packageId_fkey" FOREIGN KEY ("packageId") REFERENCES "preservation_package" ("id") ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT "preservation_restore_pkey" PRIMARY KEY ("id")
@@ -126,6 +129,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   "appliedAt" timestamp with time zone,
   "createdAt" timestamp with time zone NOT NULL DEFAULT now(),
   "updatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+  "updateId" uuid NOT NULL DEFAULT immich_uuid_v7(),
   CONSTRAINT "preservation_restore_item_restoreId_fkey" FOREIGN KEY ("restoreId") REFERENCES "preservation_restore" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT "preservation_restore_item_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES "asset" ("id") ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT "preservation_restore_item_restoreId_sourceAssetId_uq" UNIQUE ("restoreId", "sourceAssetId"),
@@ -141,10 +145,21 @@ export async function up(db: Kysely<any>): Promise<void> {
   BEFORE UPDATE ON "preservation_restore_item"
   FOR EACH ROW
   EXECUTE FUNCTION updated_at();`.execute(db);
+
+  // The schema tool records every updatedAt trigger it manages; without these rows it would
+  // report the triggers as drift.
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_preservation_package_updatedAt', '{"type":"trigger","name":"preservation_package_updatedAt","sql":"CREATE OR REPLACE TRIGGER \\"preservation_package_updatedAt\\"\\n  BEFORE UPDATE ON \\"preservation_package\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(db);
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_preservation_item_updatedAt', '{"type":"trigger","name":"preservation_item_updatedAt","sql":"CREATE OR REPLACE TRIGGER \\"preservation_item_updatedAt\\"\\n  BEFORE UPDATE ON \\"preservation_item\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(db);
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_preservation_restore_updatedAt', '{"type":"trigger","name":"preservation_restore_updatedAt","sql":"CREATE OR REPLACE TRIGGER \\"preservation_restore_updatedAt\\"\\n  BEFORE UPDATE ON \\"preservation_restore\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(db);
+  await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_preservation_restore_item_updatedAt', '{"type":"trigger","name":"preservation_restore_item_updatedAt","sql":"CREATE OR REPLACE TRIGGER \\"preservation_restore_item_updatedAt\\"\\n  BEFORE UPDATE ON \\"preservation_restore_item\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(db);
 }
 
 export async function down(db: Kysely<any>): Promise<void> {
   // Package files on disk are left alone: removing an owner's copies is never a schema operation.
+  await sql`DELETE FROM "migration_overrides" WHERE "name" = 'trigger_preservation_package_updatedAt';`.execute(db);
+  await sql`DELETE FROM "migration_overrides" WHERE "name" = 'trigger_preservation_item_updatedAt';`.execute(db);
+  await sql`DELETE FROM "migration_overrides" WHERE "name" = 'trigger_preservation_restore_updatedAt';`.execute(db);
+  await sql`DELETE FROM "migration_overrides" WHERE "name" = 'trigger_preservation_restore_item_updatedAt';`.execute(db);
   await sql`DROP TABLE IF EXISTS "preservation_restore_item";`.execute(db);
   await sql`DROP TABLE IF EXISTS "preservation_restore";`.execute(db);
   await sql`DROP TABLE IF EXISTS "preservation_item";`.execute(db);

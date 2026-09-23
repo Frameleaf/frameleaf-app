@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { AssetVisibility, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
@@ -9,7 +10,14 @@ import {
   PreservationRestoreItem,
 } from 'src/repositories/preservation.repository.js';
 import { PreservationWorkerService } from 'src/services/preservation-worker.service.js';
-import { PRESERVATION_SCHEMA_VERSION, PreservationPackageError, PreservationSidecar } from 'src/utils/preservation.js';
+import {
+  PRESERVATION_FORMAT,
+  PRESERVATION_SCHEMA_VERSION,
+  PreservationEntry,
+  PreservationPackageError,
+  PreservationSidecar,
+  preservationJson,
+} from 'src/utils/preservation.js';
 import { newUuid, newUuidV7 } from 'test/small.factory.js';
 import { getMocks } from 'test/utils.js';
 
@@ -499,6 +507,361 @@ describe(PreservationWorkerService.name, () => {
       expect(operations.fail).toHaveBeenCalledWith(operation.id, expect.any(String), {
         error: 'The package is gone',
         errorCode: 'package_unavailable',
+      });
+    });
+  });
+
+  /**
+   * Reading packages back (FL-74 acceptance: tampered manifests, partial packages, wrong owners).
+   * The package lives in memory; everything the worker believes comes from its own checks.
+   */
+  describe('reading a package', () => {
+    const hash = (bytes: Buffer) => ({
+      sha1: createHash('sha1').update(bytes).digest('hex'),
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      bytes: bytes.length,
+    });
+
+    const memorySource = (entries: Map<string, Buffer>) => ({
+      format: 'directory' as const,
+      listEntries: vi.fn(() => Promise.resolve([...entries.keys()])),
+      has: vi.fn((name: string) => Promise.resolve(entries.has(name))),
+      readDocument: vi.fn((name: string, maxBytes: number) => {
+        const bytes = entries.get(name);
+        if (!bytes) {
+          return Promise.reject(new PreservationPackageError('package_entry_missing', `${name} is not in the package`));
+        }
+        if (bytes.length > maxBytes) {
+          return Promise.reject(new PreservationPackageError('package_too_large', `${name} is too large`));
+        }
+        return Promise.resolve(bytes);
+      }),
+      stream: vi.fn((name: string) => {
+        const bytes = entries.get(name);
+        return bytes
+          ? Promise.resolve(hash(bytes))
+          : Promise.reject(new PreservationPackageError('package_entry_missing', `${name} is not in the package`));
+      }),
+      close: vi.fn(),
+    });
+
+    /** A well-formed package of `count` originals with their sidecars, index and manifest. */
+    const buildPackage = (count: number) => {
+      const entries = new Map<string, Buffer>();
+      const index: PreservationEntry[] = [];
+      for (let i = 0; i < count; i++) {
+        const sourceAssetId = newUuid();
+        const original = Buffer.from(`original ${i}`);
+        const digests = hash(original);
+        const sidecar = preservationJson(
+          sidecarOf(sourceAssetId, { checksum: { sha1: digests.sha1, sha256: digests.sha256 } }),
+        );
+        const entry: PreservationEntry = {
+          sourceAssetId,
+          originalFileName: 'lake.jpg',
+          type: 'IMAGE',
+          locked: false,
+          original: { path: `originals/${sourceAssetId}.jpg`, ...digests },
+          metadata: { path: `metadata/${sourceAssetId}.json`, sha256: hash(sidecar).sha256, bytes: sidecar.length },
+        };
+        entries.set(entry.original.path, original);
+        entries.set(entry.metadata!.path, sidecar);
+        index.push(entry);
+      }
+      const indexBytes = Buffer.from(index.map((entry) => `${JSON.stringify(entry)}\n`).join(''));
+      entries.set('assets.jsonl', indexBytes);
+      const manifest = {
+        format: PRESERVATION_FORMAT,
+        schemaVersion: PRESERVATION_SCHEMA_VERSION,
+        packageId: newUuid(),
+        name: 'Italy 2024',
+        createdAt: '2026-09-23T10:00:00.000Z',
+        producer: { product: 'frameleaf', version: '3.0.0' },
+        scope: { description: 'Whole library', includeLocked: false, includeMetadata: true },
+        counts: { selected: count, exported: count, failed: 0, skipped: 0, locked: 0, bytes: 1 },
+        complete: true,
+        files: { 'assets.jsonl': { sha256: hash(indexBytes).sha256, bytes: indexBytes.length } },
+        support: {},
+      };
+      entries.set('manifest.json', preservationJson(manifest));
+      return { entries, index, manifest };
+    };
+
+    const operationOf = (kind: MediaOperationKind, snapshot: Record<string, unknown>, owner = ownerId) =>
+      ({
+        id: newUuidV7(),
+        ownerId: owner,
+        kind,
+        status: MediaOperationStatus.Preparing,
+        snapshot,
+        result: null,
+      }) as unknown as MediaOperation;
+
+    let source: ReturnType<typeof memorySource>;
+
+    const useSource = (entries: Map<string, Buffer>) => {
+      source = memorySource(entries);
+      files.openPackage = vi.fn().mockResolvedValue(source);
+    };
+
+    beforeEach(() => {
+      files.readLines = vi.fn(
+        async (from: ReturnType<typeof memorySource>, name: string, _max: number, onLine: (line: string) => Promise<void>) => {
+          const bytes = await from.readDocument(name, Number.MAX_SAFE_INTEGER);
+          for (const line of bytes.toString('utf8').split('\n')) {
+            await onLine(line);
+          }
+          return { sha256: hash(bytes).sha256, bytes: bytes.length };
+        },
+      );
+      operations.setBulkResult = vi.fn().mockResolvedValue({
+        status: MediaOperationStatus.Rendering,
+        cancelRequestedAt: null,
+        pauseRequestedAt: null,
+      });
+      operations.beginValidation = vi.fn().mockResolvedValue(true);
+      operations.complete = vi.fn();
+      operations.reportProgress = vi.fn();
+      Object.assign(repository, {
+        getPackageById: vi.fn(),
+        updatePackage: vi.fn(),
+        resetVerification: vi.fn(),
+        upsertListedItems: vi.fn(),
+        itemIdsBySource: vi.fn().mockResolvedValue(new Map()),
+        countVerified: vi.fn().mockResolvedValue({}),
+        verificationWork: vi.fn().mockResolvedValue([]),
+        setVerifyState: vi.fn(),
+        getRestoreById: vi.fn(),
+        updateRestore: vi.fn(),
+        addRestoreItems: vi.fn(),
+        countRestoreItems: vi.fn().mockResolvedValue({ total: 0, pending: 0 }),
+        reviewWork: vi.fn().mockResolvedValue([]),
+      });
+    });
+
+    describe('verify', () => {
+      it('calls a package whose manifest was rewritten after this server wrote it unreadable', async () => {
+        const built = buildPackage(1);
+        useSource(built.entries);
+        // What this server recorded when it published the package: a different index digest.
+        const found = packageOf({
+          status: 'ready',
+          manifest: { files: { 'assets.jsonl': { sha256: 'c'.repeat(64), bytes: 1 } } } as never,
+        });
+        repository.getPackageById.mockResolvedValue(found);
+
+        const operation = operationOf(MediaOperationKind.PreservationVerify, { packageId: found.id });
+        await sut.run({ operation, claimToken: newUuid() });
+
+        expect(repository.updatePackage).toHaveBeenCalledWith(
+          found.id,
+          expect.objectContaining({
+            verification: expect.objectContaining({ status: 'unreadable', reasonKey: 'package_manifest_changed' }),
+          }),
+        );
+        expect(repository.setVerifyState).not.toHaveBeenCalled();
+        expect(operations.complete).toHaveBeenCalled();
+        expect(operations.fail).not.toHaveBeenCalled();
+      });
+
+      it('refuses an index that does not list what the manifest counts', async () => {
+        const built = buildPackage(2);
+        const manifest = { ...built.manifest, counts: { ...built.manifest.counts, selected: 3, exported: 3 } };
+        built.entries.set('manifest.json', preservationJson(manifest));
+        useSource(built.entries);
+        const found = packageOf({ origin: 'upload', format: 'zip', status: 'building' });
+        repository.getPackageById.mockResolvedValue(found);
+
+        await sut.run({
+          operation: operationOf(MediaOperationKind.PreservationVerify, { packageId: found.id }),
+          claimToken: newUuid(),
+        });
+
+        expect(repository.updatePackage).toHaveBeenCalledWith(
+          found.id,
+          expect.objectContaining({
+            status: 'unreadable',
+            verification: expect.objectContaining({ status: 'unreadable', reasonKey: 'package_counts_changed' }),
+          }),
+        );
+      });
+
+      it('refuses an index changed after the manifest digested it', async () => {
+        const built = buildPackage(1);
+        built.entries.set('assets.jsonl', Buffer.concat([built.entries.get('assets.jsonl')!, Buffer.from('\n')]));
+        useSource(built.entries);
+        const found = packageOf({ origin: 'upload', format: 'zip' });
+        repository.getPackageById.mockResolvedValue(found);
+
+        await sut.run({
+          operation: operationOf(MediaOperationKind.PreservationVerify, { packageId: found.id }),
+          claimToken: newUuid(),
+        });
+
+        expect(repository.updatePackage).toHaveBeenCalledWith(
+          found.id,
+          expect.objectContaining({
+            verification: expect.objectContaining({ status: 'unreadable', reasonKey: 'package_index_changed' }),
+          }),
+        );
+      });
+
+      it('reports the missing and changed files of a partial package, item by item', async () => {
+        const built = buildPackage(3);
+        const [kept, lost, altered] = built.index;
+        built.entries.delete(lost.original.path);
+        built.entries.set(altered.original.path, Buffer.from('not the original'));
+        built.entries.set('stray.txt', Buffer.from('left behind'));
+        useSource(built.entries);
+        const found = packageOf({ origin: 'upload', format: 'zip' });
+        repository.getPackageById.mockResolvedValue(found);
+        const rows = built.index.map((entry) => ({
+          id: newUuidV7(),
+          packageId: found.id,
+          sourceAssetId: entry.sourceAssetId,
+          state: 'listed',
+          entry,
+          verifyState: null,
+        }));
+        repository.verificationWork.mockResolvedValueOnce(rows).mockResolvedValue([]);
+        repository.countVerified.mockResolvedValueOnce({ unchecked: 3 }).mockResolvedValue({ ok: 1, missing: 1, changed: 1 });
+
+        await sut.run({
+          operation: operationOf(MediaOperationKind.PreservationVerify, { packageId: found.id }),
+          claimToken: newUuid(),
+        });
+
+        expect(repository.upsertListedItems).toHaveBeenCalledWith(
+          found.id,
+          expect.arrayContaining([expect.objectContaining({ sourceAssetId: kept.sourceAssetId })]),
+        );
+        expect(repository.setVerifyState).toHaveBeenCalledWith(rows[0].id, 'ok', null);
+        expect(repository.setVerifyState).toHaveBeenCalledWith(rows[1].id, 'missing', 'package_entry_missing');
+        expect(repository.setVerifyState).toHaveBeenCalledWith(rows[2].id, 'changed', 'package_entry_changed');
+        expect(repository.updatePackage).toHaveBeenCalledWith(
+          found.id,
+          expect.objectContaining({
+            status: 'ready',
+            verification: expect.objectContaining({ status: 'problems', missing: 1, changed: 1, unexpected: 1 }),
+          }),
+        );
+      });
+
+      it('never reads a package for a job of another account', async () => {
+        const found = packageOf({ ownerId: newUuid() });
+        repository.getPackageById.mockResolvedValue(found);
+        files.openPackage = vi.fn();
+
+        const operation = operationOf(MediaOperationKind.PreservationVerify, { packageId: found.id });
+        await sut.run({ operation, claimToken: newUuid() });
+
+        expect(files.openPackage).not.toHaveBeenCalled();
+        expect(operations.fail).toHaveBeenCalledWith(operation.id, expect.any(String), {
+          error: 'The package is gone',
+          errorCode: 'package_unavailable',
+        });
+      });
+    });
+
+    describe('review', () => {
+      const restoreFor = (found: PreservationPackage, overrides: Partial<PreservationRestore> = {}) =>
+        ({
+          id: newUuidV7(),
+          ownerId,
+          packageId: found.id,
+          name: 'Italy 2024',
+          status: 'reviewing',
+          packageIdentity: null,
+          options: { restoreEditRecipes: true, conflictDefault: 'keep' },
+          summary: null,
+          ...overrides,
+        }) as unknown as PreservationRestore;
+
+      it('marks a changed original and a sidecar that names other bytes as failed, and matches the rest', async () => {
+        const built = buildPackage(3);
+        const [good, altered, lying] = built.index;
+        built.entries.set(altered.original.path, Buffer.from('not the original'));
+        // A sidecar rewritten to name other bytes, with its digest in the index updated to match.
+        const forged = preservationJson(sidecarOf(lying.sourceAssetId));
+        built.entries.set(lying.metadata!.path, forged);
+        lying.metadata = { path: lying.metadata!.path, sha256: hash(forged).sha256, bytes: forged.length };
+        useSource(built.entries);
+
+        const found = packageOf({ origin: 'upload', format: 'zip', status: 'ready' });
+        const restore = restoreFor(found);
+        repository.getRestoreById.mockResolvedValue(restore);
+        repository.getPackageById.mockResolvedValue(found);
+        const items = built.index.map((entry) =>
+          restoreItemOf({ restoreId: restore.id, sourceAssetId: entry.sourceAssetId, state: 'pending', entry } as never),
+        );
+        repository.reviewWork.mockResolvedValueOnce(items).mockResolvedValue([]);
+        repository.countRestoreItems.mockResolvedValue({ total: 3, pending: 3 });
+
+        await sut.run({
+          operation: operationOf(MediaOperationKind.PreservationReview, { packageId: found.id, restoreId: restore.id }),
+          claimToken: newUuid(),
+        });
+
+        expect(repository.updateRestoreItem).toHaveBeenCalledWith(
+          items[0].id,
+          expect.objectContaining({ state: 'ready', match: 'new' }),
+        );
+        expect(repository.updateRestoreItem).toHaveBeenCalledWith(items[1].id, {
+          state: 'failed',
+          reasonKey: 'original_changed',
+        });
+        expect(repository.updateRestoreItem).toHaveBeenCalledWith(items[2].id, {
+          state: 'failed',
+          reasonKey: 'metadata_invalid',
+        });
+        expect(repository.findByChecksum).toHaveBeenCalledTimes(1);
+        expect(repository.findByChecksum).toHaveBeenCalledWith(ownerId, good.original.sha256, good.original.sha1);
+        expect(repository.updateRestore).toHaveBeenCalledWith(restore.id, { status: 'ready' });
+        expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+      });
+
+      it('calls a restoration of a tampered manifest unreadable and writes nothing to the library', async () => {
+        const built = buildPackage(1);
+        const manifest = { ...built.manifest, complete: false };
+        built.entries.set('manifest.json', preservationJson(manifest));
+        useSource(built.entries);
+        const found = packageOf({ origin: 'upload', format: 'zip', status: 'ready' });
+        const restore = restoreFor(found);
+        repository.getRestoreById.mockResolvedValue(restore);
+        repository.getPackageById.mockResolvedValue(found);
+
+        await sut.run({
+          operation: operationOf(MediaOperationKind.PreservationReview, { packageId: found.id, restoreId: restore.id }),
+          claimToken: newUuid(),
+        });
+
+        expect(repository.updateRestore).toHaveBeenCalledWith(
+          restore.id,
+          expect.objectContaining({
+            status: 'unreadable',
+            summary: expect.objectContaining({ reasonKey: 'package_manifest_invalid' }),
+          }),
+        );
+        expect(repository.addRestoreItems).not.toHaveBeenCalled();
+        expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+      });
+
+      it('never reviews or restores another account’s restoration', async () => {
+        const found = packageOf();
+        const restore = restoreFor(found, { ownerId: newUuid() });
+        repository.getRestoreById.mockResolvedValue(restore);
+        repository.getPackageById.mockResolvedValue(found);
+        files.openPackage = vi.fn();
+
+        for (const kind of [MediaOperationKind.PreservationReview, MediaOperationKind.PreservationRestore]) {
+          const operation = operationOf(kind, { packageId: found.id, restoreId: restore.id });
+          await sut.run({ operation, claimToken: newUuid() });
+          expect(operations.fail).toHaveBeenCalledWith(operation.id, expect.any(String), {
+            error: 'The restoration is gone',
+            errorCode: 'restore_unavailable',
+          });
+        }
+        expect(files.openPackage).not.toHaveBeenCalled();
       });
     });
   });

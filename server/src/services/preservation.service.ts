@@ -120,8 +120,9 @@ const oneOf = <T extends string>(values: readonly T[], value: unknown, fallback:
  *   a shared album's or a shared space's — and every read is scoped to the owner in the query, so
  *   somebody else's package reads as absent.
  * - **Locked stays Locked.** Locked items join an export only from an unlocked session; a package
- *   that holds any is downloadable only from one; and in an ordinary session a Locked item is
- *   counted but never named. Restored, it is Locked again.
+ *   that holds any is downloadable only from one; and an ordinary session is never told a Locked
+ *   item exists — not its name, not its values, not even a count (owner decision, September 22,
+ *   2026). The worker, a background runner, reads them all. Restored, a Locked item is Locked again.
  * - **A download is not a restore.** Every package says, category by category, what a restoration
  *   brings back, keeps as provenance or leaves out ({@link PRESERVATION_SUPPORT}).
  */
@@ -429,7 +430,7 @@ export class PreservationService {
     const packages = await this.repository.listPackages(auth.user.id);
     const ids = packages.map((item) => item.id);
     const [counts, operations] = await Promise.all([
-      this.repository.countItems(ids),
+      this.repository.countItems(ids, { excludeLocked: !this.isUnlocked(auth) }),
       this.repository.latestOperations(auth.user.id, 'packageId', ids),
     ]);
     return Promise.all(
@@ -443,21 +444,29 @@ export class PreservationService {
     return this.mapPackage(auth, await this.findPackage(auth, id));
   }
 
-  /** The item report. A Locked item is counted and shown by state, never named, until the session is unlocked. */
+  /**
+   * The item report. An ordinary session never sees a Locked item, not even as a row or in the
+   * total; the rows it is given are still checked, so one locked between the two reads stays unnamed.
+   */
   async getPackageItems(
     auth: AuthDto,
     id: string,
     dto: PreservationItemsQueryDto,
   ): Promise<PreservationItemsResponseDto> {
     const found = await this.findPackage(auth, id);
+    const unlocked = this.isUnlocked(auth);
     const { items, total } = await this.repository.listItems(found.id, {
       state: dto.state,
       verifyState: dto.verifyState,
       take: dto.take ?? 50,
       skip: dto.skip ?? 0,
+      excludeLocked: !unlocked,
     });
-    const hidden = this.isUnlocked(auth) ? new Set<string>() : await this.repository.lockedItemIds(items);
-    return { items: items.map((item) => this.mapItem(item, hidden.has(item.id))), total };
+    const hidden = unlocked ? new Set<string>() : await this.repository.lockedItemIds(items);
+    return {
+      items: items.filter((item) => !hidden.has(item.id)).map((item) => this.mapItem(item)),
+      total,
+    };
   }
 
   /* ------------------------------------------------------------------ */
@@ -642,13 +651,18 @@ export class PreservationService {
     dto: PreservationRestoreItemsQueryDto,
   ): Promise<PreservationRestoreItemsResponseDto> {
     const found = await this.findRestore(auth, id);
+    const unlocked = this.isUnlocked(auth);
+    // An ordinary session is not told a Locked item exists: not in the rows, not in the total.
     const { items, total } = await this.repository.listRestoreItems(found.id, {
       filter: dto.filter,
       take: dto.take ?? 50,
       skip: dto.skip ?? 0,
+      excludeLocked: !unlocked,
     });
-    const unlocked = this.isUnlocked(auth);
-    return { items: items.map((item) => this.mapRestoreItem(item, !unlocked && item.locked)), total };
+    return {
+      items: items.filter((item) => unlocked || !item.locked).map((item) => this.mapRestoreItem(item)),
+      total,
+    };
   }
 
   /**
@@ -857,7 +871,10 @@ export class PreservationService {
       operation?: MediaOperation;
     },
   ): Promise<PreservationPackageDto> {
-    const counts = preloaded ? preloaded.counts : (await this.repository.countItems([item.id])).get(item.id);
+    const unlocked = this.isUnlocked(auth);
+    const counts = preloaded
+      ? preloaded.counts
+      : (await this.repository.countItems([item.id], { excludeLocked: !unlocked })).get(item.id);
     const operation = preloaded
       ? preloaded.operation
       : (await this.repository.latestOperations(auth.user.id, 'packageId', [item.id])).get(item.id);
@@ -873,7 +890,8 @@ export class PreservationService {
       isActiveMediaOperation(operation.status as MediaOperationStatus) &&
       operation.kind === MediaOperationKind.PreservationExport;
     const hasManifest = typeof manifest.packageId === 'string';
-    const lockedContent = item.includeLocked || (counts?.locked ?? 0) > 0;
+    // The owner chose to include Locked items; beyond that choice an ordinary session learns nothing.
+    const lockedContent = item.includeLocked || (unlocked && (counts?.locked ?? 0) > 0);
 
     return {
       id: item.id,
@@ -895,7 +913,7 @@ export class PreservationService {
         failed: states.failed ?? 0,
         skipped: states.skipped ?? 0,
         listed: states.listed ?? 0,
-        locked: this.isUnlocked(auth) ? (counts?.locked ?? 0) : 0,
+        locked: unlocked ? (counts?.locked ?? 0) : 0,
       },
       manifest: hasManifest
         ? {
@@ -906,7 +924,7 @@ export class PreservationService {
             exported: asInt(manifestCounts.exported),
             failed: asInt(manifestCounts.failed),
             skipped: asInt(manifestCounts.skipped),
-            locked: this.isUnlocked(auth) ? asInt(manifestCounts.locked) : 0,
+            locked: unlocked ? asInt(manifestCounts.locked) : 0,
             includeMetadata: manifestScope.includeMetadata !== false,
             includeLocked: manifestScope.includeLocked === true,
             scopeDescription: asText(manifestScope.description) ?? '',
@@ -942,21 +960,22 @@ export class PreservationService {
     };
   }
 
-  private mapItem(item: PreservationItem, hidden: boolean): PreservationItemDto {
+  /** One item as the report shows it. Only an unlocked session is ever given a Locked one. */
+  private mapItem(item: PreservationItem): PreservationItemDto {
     const entry = asRecord(item.entry);
     const original = asRecord(entry.original);
     return {
       id: item.id,
-      sourceAssetId: hidden ? null : item.sourceAssetId,
-      assetId: hidden ? null : item.assetId,
-      name: hidden ? null : asText(entry.originalFileName),
+      sourceAssetId: item.sourceAssetId,
+      assetId: item.assetId,
+      name: asText(entry.originalFileName),
       state: oneOf(itemStates, item.state, 'pending'),
       verifyState: item.verifyState === null ? null : oneOf(verifyStates, item.verifyState, 'changed'),
-      locked: item.locked || hidden,
-      sizeBytes: hidden || typeof original.bytes !== 'number' ? null : String(original.bytes),
-      sha256: hidden ? null : asText(original.sha256),
+      locked: item.locked,
+      sizeBytes: typeof original.bytes === 'number' ? String(original.bytes) : null,
+      sha256: asText(original.sha256),
       reasonKey: item.reasonKey,
-      error: hidden ? null : item.error,
+      error: item.error,
     };
   }
 
@@ -967,10 +986,10 @@ export class PreservationService {
   ): Promise<PreservationRestoreDto> {
     const operation =
       preloaded ?? (await this.repository.latestOperations(auth.user.id, 'restoreId', [item.id])).get(item.id);
-    const counts = await this.repository.countRestoreItems(item.id);
+    const unlocked = this.isUnlocked(auth);
+    const counts = await this.repository.countRestoreItems(item.id, { excludeLocked: !unlocked });
     const options = asRecord(item.options);
     const summary = asRecord(item.summary);
-    const unlocked = this.isUnlocked(auth);
     return {
       id: item.id,
       name: item.name,
@@ -989,33 +1008,31 @@ export class PreservationService {
     };
   }
 
-  private mapRestoreItem(item: PreservationRestoreItem, hidden: boolean): PreservationRestoreItemDto {
+  /** One restoration item. Only an unlocked session is ever given a Locked one. */
+  private mapRestoreItem(item: PreservationRestoreItem): PreservationRestoreItemDto {
     const entry = asRecord(item.entry);
     const decisions = sanitizeDecisions(item.decisions);
     const conflicts = (Array.isArray(item.conflicts) ? item.conflicts : []) as unknown as PreservationConflict[];
     return {
       id: item.id,
-      sourceAssetId: hidden ? null : item.sourceAssetId,
-      assetId: hidden ? null : item.assetId,
-      name: hidden ? null : asText(entry.originalFileName),
+      sourceAssetId: item.sourceAssetId,
+      assetId: item.assetId,
+      name: asText(entry.originalFileName),
       state: oneOf(restoreItemStates, item.state, 'pending'),
       match: item.match === null ? null : oneOf(matches, item.match, 'new'),
       locked: item.locked,
-      hidden,
       applied: !!item.appliedAt,
-      conflicts: hidden
-        ? []
-        : conflicts
-            .filter((conflict) => (PRESERVATION_CONFLICT_FIELDS as readonly string[]).includes(conflict.field))
-            .map((conflict) => ({
-              field: conflict.field,
-              archived: asText(conflict.archived),
-              current: asText(conflict.current),
-              decision: decisions[conflict.field] ?? null,
-            })),
+      conflicts: conflicts
+        .filter((conflict) => (PRESERVATION_CONFLICT_FIELDS as readonly string[]).includes(conflict.field))
+        .map((conflict) => ({
+          field: conflict.field,
+          archived: asText(conflict.archived),
+          current: asText(conflict.current),
+          decision: decisions[conflict.field] ?? null,
+        })),
       findings: Array.isArray(item.findings) ? item.findings.filter((value) => typeof value === 'string') : [],
       reasonKey: item.reasonKey,
-      error: hidden ? null : item.error,
+      error: item.error,
     };
   }
 }
