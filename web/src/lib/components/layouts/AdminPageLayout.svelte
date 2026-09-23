@@ -11,6 +11,7 @@
     mdiBookshelf,
     mdiCog,
     mdiContentDuplicate,
+    mdiMemory,
     mdiRobotOutline,
     mdiServer,
     mdiTrayFull,
@@ -40,6 +41,7 @@
       <NavbarItem title={$t('users')} href={Route.users()} icon={mdiAccountMultipleOutline} />
       <NavbarItem title={$t('external_libraries')} href={Route.libraries()} icon={mdiBookshelf} />
       <NavbarItem title={$t('admin.queues')} href={Route.queues()} icon={mdiTrayFull} />
+      <NavbarItem title={$t('admin.render_workers')} href={Route.renderWorkers()} icon={mdiMemory} />
       <NavbarItem title={$t('settings')} href={Route.systemSettings()} icon={mdiCog} />
       <NavbarItem
         title={$t('admin.physical_deduplication')}

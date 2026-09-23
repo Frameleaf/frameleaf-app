@@ -29,6 +29,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000140-CreateMlDestinations')).toBe('legacy-fork');
     expect(classifyMigration('2100000000150-AddPetIdentities')).toBe('legacy-fork');
     expect(classifyMigration('2100000000160-AddMediaOperationTables')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000170-AddRenderWorkers')).toBe('legacy-fork');
     expect(classifyMigration('2100000000180-AddStudioPreviewFrames')).toBe('legacy-fork');
     expect(classifyMigration('2100000000190-AddSharedSpaceInvite')).toBe('legacy-fork');
     expect(classifyMigration('2100000000200-AddSharedSpacePanels')).toBe('legacy-fork');

@@ -14,7 +14,9 @@
  * - Access is decided for the acting user, never inherited from the project owner. A project
  *   shared with a reviewer resolves the reviewer's access; sources they cannot see are refused.
  *   Project sharing therefore never grants original access.
- * - Locked media never enters Studio, even for an elevated session. Trashed and offline originals
+ * - Locked media never enters Studio through the interactive path, even for an elevated session.
+ *   A background runner (FL-95) resolving a job the owner already submitted says so explicitly
+ *   with `backgroundRunner` and reads the Locked sources that job references. Trashed and offline originals
  *   are refused. The acting user's sensitive and suppressed content settings apply through the
  *   same `checkAccess` the library uses.
  * - Cloud is never a fallback. A RunPod destination without explicit consent fails before a single
@@ -122,6 +124,13 @@ export type StudioProjectResourceContext = {
   destination: StudioDestination;
   /** Required, and recorded, when the destination leaves the machine. */
   cloudConsent?: boolean;
+  /**
+   * Set only by background runners (FL-95 render workers) resolving a job its owner already
+   * authorized: Locked sources the graph references are resolved instead of refused, because a
+   * backend task must be able to read every asset the job names. The interactive Studio path
+   * never sets it, so nothing Locked is shown to, or placed by, a person through Studio.
+   */
+  backgroundRunner?: boolean;
 };
 
 /* ------------------------------------------------------------------ */
@@ -375,7 +384,9 @@ export class StudioResourceService extends BaseService {
         }
       }
     }
-    const assetDecisions = await this.decideAssets(auth, assetIds);
+    const assetDecisions = await this.decideAssets(auth, assetIds, {
+      backgroundRunner: context.backgroundRunner,
+    });
 
     const decideAsset = (reference: StudioResourceReference): AssetDecision => {
       if (!isStudioUuid(reference.id)) {
@@ -906,7 +917,7 @@ export class StudioResourceService extends BaseService {
    */
   async verifyReadGrant(
     token: string,
-    { workerId, auth }: { workerId: string; auth: AuthDto },
+    { workerId, auth, backgroundRunner }: { workerId: string; auth: AuthDto; backgroundRunner?: boolean },
   ): Promise<StudioGrantVerification> {
     let grant: StudioReadGrantPayload;
     try {
@@ -942,7 +953,7 @@ export class StudioResourceService extends BaseService {
       grant.kind === StudioResourceKind.Audio ||
       grant.kind === StudioResourceKind.EditedMaster
     ) {
-      const decisions = await this.decideAssets(auth, new Set([grant.id]));
+      const decisions = await this.decideAssets(auth, new Set([grant.id]), { backgroundRunner });
       const decision = decisions.get(grant.id);
       if (!decision) {
         return { valid: false, reason: StudioRefusalReason.NotFound, detail: 'The source no longer exists.' };
@@ -998,7 +1009,11 @@ export class StudioResourceService extends BaseService {
 
   /* ------------------------------------------------------------------ */
 
-  private async decideAssets(auth: AuthDto, ids: Set<string>): Promise<Map<string, AssetDecision>> {
+  private async decideAssets(
+    auth: AuthDto,
+    ids: Set<string>,
+    { backgroundRunner = false }: { backgroundRunner?: boolean } = {},
+  ): Promise<Map<string, AssetDecision>> {
     const decisions = new Map<string, AssetDecision>();
     if (ids.size === 0) {
       return decisions;
@@ -1014,7 +1029,7 @@ export class StudioResourceService extends BaseService {
         decisions.set(id, { ok: false, reason: StudioRefusalReason.NotFound, detail: 'No such asset.' });
       } else if (asset.deletedAt) {
         decisions.set(id, { ok: false, reason: StudioRefusalReason.Trashed, detail: 'The asset is in the trash.' });
-      } else if (asset.visibility === AssetVisibility.Locked) {
+      } else if (asset.visibility === AssetVisibility.Locked && !backgroundRunner) {
         decisions.set(id, {
           ok: false,
           reason: StudioRefusalReason.Locked,
@@ -1038,7 +1053,8 @@ export class StudioResourceService extends BaseService {
     }
 
     // Owner, shared album and partner access with the acting user's sensitive and suppressed
-    // content filters. Locked is already refused above regardless of session elevation.
+    // content filters. Locked is already refused above regardless of session elevation, except
+    // for a background runner, whose owner auth carries the elevation the access query needs.
     const allowed = await this.checkAccess({ auth, permission: Permission.AssetRead, ids: candidates });
 
     for (const id of candidates) {
