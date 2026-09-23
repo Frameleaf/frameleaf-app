@@ -24,6 +24,12 @@ describe(UserAdminService.name, () => {
     mocks.user.get.mockImplementation((userId) =>
       Promise.resolve([userStub.admin, userStub.user1].find((user) => user.id === userId) ?? undefined),
     );
+
+    // the session repository mock is strict: PIN changes lock sessions, deletion signs them out and
+    // an administrator can revoke one (FL-76)
+    mocks.session.lockAll.mockResolvedValue();
+    mocks.session.invalidateAll.mockResolvedValue();
+    mocks.session.delete.mockResolvedValue();
   });
 
   describe('create', () => {
@@ -275,6 +281,21 @@ describe(UserAdminService.name, () => {
         status: UserStatus.Deleted,
         deletedAt: expect.any(Date),
       });
+    });
+
+    it("should sign out the account's devices, so a restored account signs in again (FL-76)", async () => {
+      mocks.user.get.mockResolvedValue(userStub.user1);
+      mocks.user.update.mockResolvedValue(userStub.user1);
+
+      await sut.delete(authStub.admin, userStub.user1.id, {});
+
+      expect(mocks.session.invalidateAll).toHaveBeenCalledWith({ userId: userStub.user1.id });
+    });
+
+    it('should leave sessions alone when the account cannot be deleted', async () => {
+      await expect(sut.delete(authStub.admin, userStub.admin.id, {})).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(mocks.session.invalidateAll).not.toHaveBeenCalled();
     });
 
     it('should force delete user', async () => {
