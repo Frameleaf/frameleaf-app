@@ -1,6 +1,7 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { get, isEqual, set } from 'lodash-es';
-import { UserPreferencesUpdateDto } from 'src/dtos/user-preferences.dto.js';
+import { createHash } from 'node:crypto';
+import type { UserPreferencesUpdateDto } from 'src/dtos/user-preferences.dto.js';
 import { AssetOrder, UserMetadataKey } from 'src/enum.js';
 import { DeepPartial, UserMetadataItem, UserPreferences } from 'src/types.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
@@ -24,6 +25,8 @@ export type FrameleafUserPreferences = UserPreferences & {
 export type PreferencesEditor = 'user' | 'admin';
 
 export const CAST_DISABLED_BY_ADMIN_MESSAGE = 'Casting has been turned off by your administrator';
+export const PREFERENCES_CHANGED_MESSAGE =
+  'These preferences changed after they were loaded. Load the latest preferences and try again.';
 
 const getDefaultPreferences = (): FrameleafUserPreferences => {
   return {
@@ -119,17 +122,23 @@ export const getPreferencesPartial = (newPreferences: UserPreferences) => {
  *   when the administrator allows casting.
  * - An administrator may set `cast.adminDisabled`; while it is (or becomes) true, the user's
  *   own `cast.gCastEnabled` choice is preserved rather than overwritten.
+ * - An administrator never rewrites the account's private Locked choices (`privacy`); that
+ *   group is dropped from an administrator's update.
  */
 export const restrictPreferencesUpdate = (
   current: FrameleafUserPreferences,
   dto: UserPreferencesUpdateDto,
   editor: PreferencesEditor,
 ): UserPreferencesUpdateDto => {
-  if (!dto.cast) {
-    return dto;
+  // Locked people, pets and tags are the account owner's private choices.
+  const { privacy: _privacy, ...withoutPrivacy } = dto;
+  const allowed = editor === 'admin' && dto.privacy !== undefined ? withoutPrivacy : dto;
+
+  if (!allowed.cast) {
+    return allowed;
   }
 
-  const cast = { ...dto.cast };
+  const cast = { ...allowed.cast };
 
   if (editor === 'user') {
     delete cast.adminDisabled;
@@ -146,15 +155,62 @@ export const restrictPreferencesUpdate = (
     }
   }
 
-  return { ...dto, cast };
+  return { ...allowed, cast };
 };
 
+/** Serialises a value with object keys sorted, so equal preferences always hash the same way. */
+const canonicalJson = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
+  }
+
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const entries = Object.keys(record)
+      .filter((key) => record[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`);
+    return `{${entries.join(',')}}`;
+  }
+
+  return JSON.stringify(value) ?? 'null';
+};
+
+/**
+ * FL-77: a digest of the preferences exactly as they are stored (the partial that
+ * `getPreferencesPartial` writes), reported to clients as `revision`. It changes whenever a
+ * stored value changes, including values a response does not show as stored (the user's own
+ * casting choice while an administrator has turned casting off, or Locked choices hidden from
+ * administrators), so an editor can tell that the account changed since it loaded it. No
+ * schema change is needed: user_metadata keeps one JSON value per key.
+ */
+export const getPreferencesRevision = (preferences: FrameleafUserPreferences): string =>
+  createHash('sha256')
+    .update(canonicalJson(getPreferencesPartial(preferences)))
+    .digest('hex')
+    .slice(0, 32);
+
+/** FL-77: reject an update made against preferences that have since changed (409). */
+export const assertPreferencesRevision = (current: FrameleafUserPreferences, expectedRevision?: string) => {
+  if (expectedRevision !== undefined && expectedRevision !== getPreferencesRevision(current)) {
+    throw new ConflictException(PREFERENCES_CHANGED_MESSAGE);
+  }
+};
+
+/**
+ * Merges an update into the current preferences. When the update carries `expectedRevision`
+ * it is applied only if the stored preferences still match that revision; the field itself is
+ * never stored. Only the groups and fields the update names change, so unrelated groups are
+ * preserved.
+ */
 export const mergePreferences = (
   preferences: FrameleafUserPreferences,
   dto: UserPreferencesUpdateDto,
   editor: PreferencesEditor,
 ) => {
-  const update = restrictPreferencesUpdate(preferences, dto, editor);
+  const { expectedRevision, ...changes } = dto;
+  assertPreferencesRevision(preferences, expectedRevision);
+  const update = restrictPreferencesUpdate(preferences, changes, editor);
   for (const key of getKeysDeep(update)) {
     set(preferences, key, get(update, key));
   }

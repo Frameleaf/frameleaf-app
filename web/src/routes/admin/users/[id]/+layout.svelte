@@ -1,21 +1,30 @@
 <script lang="ts">
   import { goto, invalidateAll } from '$app/navigation';
   import AdminCard from '$lib/components/AdminCard.svelte';
-  import AdminCastPermission from '$lib/components/frameleaf/AdminCastPermission.svelte';
   import AccountLifecyclePanel from '$lib/components/frameleaf/AccountLifecyclePanel.svelte';
+  import AccountPreferencesEditor from '$lib/components/frameleaf/AccountPreferencesEditor.svelte';
   import AccountSecurityPanel from '$lib/components/frameleaf/AccountSecurityPanel.svelte';
+  import Pane from '$lib/components/frameleaf/Pane.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import ServerStatisticsCard from '$lib/components/server-statistics/ServerStatisticsCard.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
-  import FeatureSetting from './FeatureSetting.svelte';
+  import { accountLifecycle } from '$lib/frameleaf/accounts';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { getUserAdminActions } from '$lib/services/user-admin.service';
   import { locale } from '$lib/stores/preferences.store';
   import { createDateFormatter, findLocale } from '$lib/utils';
   import { getBytesWithUnit } from '$lib/utils/byte-units';
-  import { CalendarHeatmapType, getUserCalendarHeatmapAdmin, type UserAdminResponseDto } from '@immich/sdk';
+  import {
+    CalendarHeatmapType,
+    getMyPreferences,
+    getUserCalendarHeatmapAdmin,
+    getUserPreferencesAdmin,
+    updateUserPreferencesAdmin,
+    type UserAdminResponseDto,
+  } from '@immich/sdk';
   import {
     Alert,
     Badge,
@@ -32,6 +41,7 @@
     Text,
     Theme as AppTheme,
     themeManager,
+    toastManager,
   } from '@immich/ui';
   import {
     mdiAccountOutline,
@@ -40,7 +50,6 @@
     mdiChartPieOutline,
     mdiCheckCircle,
     mdiCloudUploadOutline,
-    mdiFeatureSearchOutline,
     mdiPlayCircle,
     mdiTrashCanOutline,
   } from '@mdi/js';
@@ -84,6 +93,22 @@
 
     data.user = update;
     await invalidateAll();
+  };
+
+  // FL-77: the administrator's own account links to its Locked settings; nobody else's does.
+  const openOwnLockedSettings = () => goto(`${Route.userSettings()}?isOpen=suppressed-content`);
+
+  const onPreferencesSaved = async () => {
+    toastManager.primary($t('frameleaf_account_prefs_saved_toast', { values: { name: user.name } }));
+    // Saving their own account applies to this session at once. The admin response leaves out
+    // Locked choices, so the session reloads its own full preferences instead of using it.
+    if (user.id === authManager.user.id) {
+      try {
+        authManager.setPreferences(await getMyPreferences());
+      } catch {
+        // The saved values still apply on the next load.
+      }
+    }
   };
 
   const onUserAdminDeleted = async ({ id }: { id: string }) => {
@@ -169,22 +194,6 @@
           </Stack>
         </AdminCard>
 
-        <AdminCard icon={mdiFeatureSearchOutline} title={$t('features')}>
-          <Stack gap={3}>
-            <FeatureSetting title={$t('email_notifications')} state={userPreferences.emailNotifications.enabled} />
-            <FeatureSetting title={$t('folders')} state={userPreferences.folders.enabled} />
-            <FeatureSetting title={$t('memories')} state={userPreferences.memories.enabled} />
-            <FeatureSetting title={$t('people')} state={userPreferences.people.enabled} />
-            <FeatureSetting title={$t('rating')} state={userPreferences.ratings.enabled} />
-            <FeatureSetting title={$t('shared_links')} state={userPreferences.sharedLinks.enabled} />
-            <FeatureSetting title={$t('show_supporter_badge')} state={userPreferences.purchase.showSupportBadge} />
-            <FeatureSetting title={$t('tags')} state={userPreferences.tags.enabled} />
-            <FeatureSetting title={$t('gcast_enabled')} state={userPreferences.cast.gCastEnabled} />
-            <!-- FL-77: casting is administrator-enforced; the rows above are the account's own choices. -->
-            <AdminCastPermission {user} preferences={userPreferences} />
-          </Stack>
-        </AdminCard>
-
         <AdminCard icon={mdiChartPieOutline} title={$t('storage_quota')}>
           {#if user.quotaSizeInBytes !== null && user.quotaSizeInBytes >= 0}
             <Meter
@@ -208,6 +217,29 @@
             </Text>
           {/if}
         </AdminCard>
+
+        <!--
+          Frameleaf account preferences (FL-77), the Features / Preferences / Notifications tabs of
+          the design template's account detail. One draft across the tabs; saves go through the
+          admin preferences endpoint and are refused if the account changed since it was loaded.
+        -->
+        <div class="col-span-full">
+          <Theme theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}>
+            <Pane label={$t('frameleaf_account_prefs_title', { values: { name: user.name } })}>
+              {#key user.id}
+                <AccountPreferencesEditor
+                  preferences={userPreferences}
+                  accountName={user.name}
+                  editable={accountLifecycle(user) === 'active'}
+                  save={(update) => updateUserPreferencesAdmin({ id: user.id, userPreferencesUpdateDto: update })}
+                  load={() => getUserPreferencesAdmin({ id: user.id })}
+                  onSaved={onPreferencesSaved}
+                  onOpenPrivacy={user.id === authManager.user.id ? openOwnLockedSettings : undefined}
+                />
+              {/key}
+            </Pane>
+          </Theme>
+        </div>
 
         <!--
           Frameleaf account lifecycle and security (FL-76). Both panels act through the
