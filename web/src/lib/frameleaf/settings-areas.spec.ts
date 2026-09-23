@@ -29,6 +29,9 @@ describe('Frameleaf settings areas', () => {
     expect(areaForSection('notifications')).toBe('notifications');
     // Google Photos imports sit with the other imports (FL-65).
     expect(areaForSection('takeout')).toBe('backup');
+    // Server migration is the last Storage & originals section, as in the template (FL-75).
+    expect(areaForSection('migration')).toBe('storage');
+    expect(SETTINGS_AREAS.find((area) => area.id === 'storage')?.sections.at(-1)).toBe('migration');
     expect(areaForSection('unknown')).toBeUndefined();
   });
 
