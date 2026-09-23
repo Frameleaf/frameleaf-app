@@ -30,7 +30,7 @@
     mdiShieldLockOutline,
     mdiStar,
   } from '@mdi/js';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -51,6 +51,11 @@
     onToggleSelect?: (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => void;
     onFocus?: (asset: TimelineAsset) => void;
     tabindex?: number;
+    /**
+     * Extra chrome drawn over the thumbnail by the page that mounts the timeline — the geolocation
+     * utility's GPS markers, for instance. It is decoration: pointer events stay with the tile.
+     */
+    overlay?: Snippet<[TimelineAsset]>;
   };
 
   let {
@@ -67,6 +72,7 @@
     onToggleSelect,
     onFocus,
     tabindex = 0,
+    overlay,
   }: Props = $props();
 
   const PREVIEW_DELAY = 300;
@@ -278,6 +284,9 @@
       ></video>
     {/if}
     <span class="fl-tile-scrim" aria-hidden="true"></span>
+    {#if overlay}
+      <span class="fl-tile-overlay" aria-hidden="true">{@render overlay(asset)}</span>
+    {/if}
     <span class="fl-tile-badges">
       {#if asset.isVideo}
         <span class="fl-badge">
@@ -399,6 +408,12 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+  .fl-tile-overlay {
+    position: absolute;
+    inset: 0;
+    display: block;
+    pointer-events: none;
   }
   .fl-tile-scrim {
     position: absolute;
