@@ -304,6 +304,48 @@ describe('bulk-operation', () => {
     it('allows clearing a description', () => {
       expect(bulkPayloadProblem(MediaOperationBulkAction.ChangeDescription, { description: '' }, ids)).toBeNull();
     });
+
+    it('requires a matching still + video pair for every id in the frozen set (FL-70)', () => {
+      expect(bulkPayloadProblem(MediaOperationBulkAction.RelinkLivePhoto, {}, ['a', 'b'])).not.toBeNull();
+      expect(
+        bulkPayloadProblem(
+          MediaOperationBulkAction.RelinkLivePhoto,
+          { pairs: [{ photoId: 'a', videoId: 'x' }] },
+          ['a', 'b'],
+        ),
+      ).not.toBeNull();
+      expect(
+        bulkPayloadProblem(
+          MediaOperationBulkAction.RelinkLivePhoto,
+          {
+            pairs: [
+              { photoId: 'a', videoId: 'x' },
+              { photoId: 'a', videoId: 'y' },
+            ],
+          },
+          ['a'],
+        ),
+      ).not.toBeNull();
+      expect(
+        bulkPayloadProblem(
+          MediaOperationBulkAction.RelinkLivePhoto,
+          { pairs: [{ photoId: 'a', videoId: 'a' }] },
+          ['a'],
+        ),
+      ).not.toBeNull();
+      expect(
+        bulkPayloadProblem(
+          MediaOperationBulkAction.RelinkLivePhoto,
+          {
+            pairs: [
+              { photoId: 'a', videoId: 'x' },
+              { photoId: 'b', videoId: 'y' },
+            ],
+          },
+          ['a', 'b'],
+        ),
+      ).toBeNull();
+    });
   });
 
   describe(chunkIds.name, () => {

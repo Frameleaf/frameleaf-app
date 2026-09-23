@@ -53,6 +53,9 @@
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import {
     activeFilterCount,
+    discoveryTextField,
+    discoveryUrl,
+    isEmptyDiscoverySearch,
     toSearchDto,
     withDiscoveryEnrichment,
     withDiscoveryFacet,
@@ -60,6 +63,7 @@
     withoutDiscoveryFilters,
     type DiscoveryFilterSection,
     type DiscoveryQuery,
+    type DiscoveryTextField,
   } from '$lib/components/discovery/query';
   import {
     isCommandQuery,
@@ -67,6 +71,7 @@
     searchCommands,
     type CommandItem,
   } from '$lib/frameleaf/command-palette';
+  import { discoveryContextChips, withoutDiscoveryContext } from '$lib/frameleaf/search-chips';
   import { describeFilterChips, ENRICHMENT_QUICK_FILTERS } from '$lib/frameleaf/search-filters';
   import {
     emptyFilterPanelOptions,
@@ -100,12 +105,18 @@
     commandIndex = [],
     section = 'people',
     scopeLabel,
+    unsupported = [],
     onClose,
     onCommand,
     onOpenPalette,
     onSubmit,
   }: {
     query: DiscoveryQuery;
+    /**
+     * FL-48: fields of the page's current (legacy) search that the query cannot carry. The dialog
+     * says so, and submitting without an edit keeps that search rather than a narrower one.
+     */
+    unsupported?: string[];
     commandIndex?: CommandItem[];
     /** The filter-panel section the Filter control deep-linked into. */
     section?: DiscoveryFilterSection;
@@ -123,8 +134,19 @@
 
   let dialog = $state<HTMLDialogElement>();
   let query = $state<DiscoveryQuery>(structuredClone(initialQuery));
+  /** FL-48: the mode a query opens in, including which text field a text search searches. */
+  const modeFor = (source: DiscoveryQuery): QueryType => {
+    if (source.mode === 'smart') {
+      return QueryType.SMART;
+    }
+    const field = discoveryTextField(source);
+    return (
+      SEARCH_MODES.find((entry) => entry.type !== QueryType.SMART && entry.field === field)?.type ?? QueryType.METADATA
+    );
+  };
+
   let text = $state(initialQuery.text);
-  let mode = $state<QueryType>(initialQuery.mode === 'smart' ? QueryType.SMART : QueryType.METADATA);
+  let mode = $state<QueryType>(modeFor(initialQuery));
   let showFilters = $state(activeFilterCount(initialQuery) > 0);
   let options = $state(emptyFilterPanelOptions());
   let matching = $state<number | null>(null);
@@ -137,12 +159,19 @@
 
   const modeEntry = $derived(SEARCH_MODES.find((entry) => entry.type === mode) ?? SEARCH_MODES[0]);
 
-  /** The query as it will be submitted: the panel's filters plus the typed text and mode. */
-  const pending = $derived<DiscoveryQuery>({
-    ...query,
-    text,
-    mode: mode === QueryType.SMART ? 'smart' : 'text',
-  });
+  /**
+   * The query as it will be submitted: the panel's filters plus the typed text and mode. Everything
+   * else the dialog opened with — the space, the similar-photo reference, the view and grouping —
+   * rides along untouched (FL-48).
+   */
+  const pending = $derived<DiscoveryQuery>(
+    mode === QueryType.SMART
+      ? { ...query, text, mode: 'smart' }
+      : { ...query, text, mode: 'text', textField: modeEntry.field as DiscoveryTextField },
+  );
+
+  /** Search context shown as chips beside the filters; the typed text lives in the input instead. */
+  const contextChips = $derived(discoveryContextChips(pending).filter((chip) => chip.key !== 'text'));
 
   const commandQuery = $derived(isCommandQuery(text));
   const chips = $derived(
@@ -250,12 +279,20 @@
       onOpenPalette?.(text);
       return;
     }
-    rememberSearch(text);
     const dto = toSearchDto(pending, modeEntry.field);
+    // FL-48: the page's search has fields the query cannot carry. Until something is edited, "Show
+    // results" keeps that search as it is instead of replacing it with a narrower one.
+    if (unsupported.length > 0 && JSON.stringify(dto) === JSON.stringify(toSearchDto(initialQuery))) {
+      onClose();
+      return;
+    }
+    rememberSearch(text);
     if (onSubmit) {
       onSubmit(pending, dto);
     } else {
-      handlePromiseError(goto(Route.search(dto)));
+      // The whole query travels to the results page, so the space, the similar-photo reference, the
+      // text field, the view and the grouping all come back when the dialog is opened there again.
+      handlePromiseError(goto(isEmptyDiscoverySearch(pending) ? Route.search() : discoveryUrl(pending)));
     }
     onClose();
   };
@@ -325,15 +362,28 @@
       <p class="muted">{$t('frameleaf_search_scope', { values: { scope: scopeLabel } })}</p>
     {/if}
 
-    {#if chips.length > 0}
+    {#if unsupported.length > 0}
+      <p class="muted" role="note">{$t('frameleaf_search_bridge_unsupported')}</p>
+    {/if}
+
+    {#if chips.length > 0 || contextChips.length > 0}
       <section aria-label={$t('frameleaf_search_active_filters')}>
         <div class="section-heading">
           <h3>{$t('frameleaf_search_active_filters')}</h3>
-          <Button variant="quiet" onclick={() => (query = withoutDiscoveryFilters(query))}>
-            {$t('clear_all')}
-          </Button>
+          {#if chips.length > 0}
+            <Button variant="quiet" onclick={() => (query = withoutDiscoveryFilters(query))}>
+              {$t('clear_all')}
+            </Button>
+          {/if}
         </div>
         <div class="chips">
+          {#each contextChips as chip (chip.key)}
+            <Chip
+              label={$t(chip.labelKey)}
+              removeLabel={$t('frameleaf_search_remove_filter', { values: { filter: $t(chip.labelKey) } })}
+              onRemove={() => (query = withoutDiscoveryContext(query, chip.key))}
+            />
+          {/each}
           {#each chips as chip (chip.field)}
             <Chip
               label={chip.label}

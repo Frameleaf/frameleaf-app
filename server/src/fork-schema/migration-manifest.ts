@@ -74,6 +74,8 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000320-AddAssetLock',
   '2100000000340-AddMediaOperationPause',
   '2100000000380-AddVideoMomentIndex',
+  '2100000000390-AddDuplicateDecision',
+  '2100000000400-AddAssetDocumentEdit',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(

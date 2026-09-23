@@ -133,7 +133,16 @@ const mapSnapshot = (operation: MediaOperation): Record<string, unknown> => {
   }
 
   const { assetIds, apiKeyId: _apiKeyId, ...rest } = snapshot;
-  return { ...rest, assetCount: Array.isArray(assetIds) ? assetIds.length : 0 };
+  const mapped: Record<string, unknown> = { ...rest, assetCount: Array.isArray(assetIds) ? assetIds.length : 0 };
+
+  // FL-61: a duplicate decision job's groups name every photo of every group, Locked ones included
+  // once they are locked; the detail view carries only how many groups there are, like the ids above
+  const payload = asObject(rest.payload);
+  if ('duplicateGroups' in payload) {
+    const { duplicateGroups, ...payloadRest } = payload;
+    mapped.payload = { ...payloadRest, groupCount: Array.isArray(duplicateGroups) ? duplicateGroups.length : 0 };
+  }
+  return mapped;
 };
 
 const bulkItems = (operation: MediaOperation) =>

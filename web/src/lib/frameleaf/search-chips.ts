@@ -1,4 +1,9 @@
 import type { SearchFilter } from '@immich/sdk';
+import {
+  discoveryTextField,
+  type DiscoveryQuery,
+  type DiscoveryTextField,
+} from '$lib/components/discovery/query';
 import type { FilterEntityKind } from '$lib/frameleaf/filter-entity-names';
 
 /**
@@ -83,4 +88,61 @@ export const withoutFilterField = <T extends { filter?: SearchFilter }>(terms: T
     next.filter = filter as SearchFilter;
   }
   return next;
+};
+
+/* -------------------------------------------------------------------------- */
+/* Search context chips (FL-48)                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The parts of a search that are not filter conditions but still decide what it finds: the typed
+ * text, the photo a "view similar photos" search compares against, and the shared space it was
+ * started in. On the results page each one is a chip of its own, so it can be seen and removed
+ * without starting over; nothing else ever drops them.
+ */
+export type SearchContextKey = 'text' | 'queryAssetId' | 'spaceId';
+
+export type SearchContextChip = {
+  key: SearchContextKey;
+  /** i18n key naming the chip. */
+  labelKey: string;
+  /** What was typed, for the text chip; null for the others, whose name says it all. */
+  value: string | null;
+};
+
+const TEXT_FIELD_LABEL_KEYS: Readonly<Record<DiscoveryTextField, string>> = {
+  originalFileName: 'file_name_text',
+  description: 'description',
+  ocr: 'ocr',
+  originalPath: 'full_path_or_folder',
+};
+
+export const discoveryContextChips = (query: DiscoveryQuery): SearchContextChip[] => {
+  const chips: SearchContextChip[] = [];
+  const text = query.text.trim();
+  if (text) {
+    chips.push({
+      key: 'text',
+      labelKey: query.mode === 'smart' ? 'context' : TEXT_FIELD_LABEL_KEYS[discoveryTextField(query)],
+      value: text,
+    });
+  }
+  if (query.queryAssetId) {
+    chips.push({ key: 'queryAssetId', labelKey: 'frameleaf_search_bridge_similar_photo', value: null });
+  }
+  if (query.spaceId) {
+    chips.push({ key: 'spaceId', labelKey: 'frameleaf_search_kind_space', value: null });
+  }
+  return chips;
+};
+
+/** The query without one context part; everything else, filters included, is kept as it was. */
+export const withoutDiscoveryContext = (query: DiscoveryQuery, key: SearchContextKey): DiscoveryQuery => {
+  const result = structuredClone(query);
+  if (key === 'text') {
+    result.text = '';
+  } else {
+    delete result[key];
+  }
+  return result;
 };

@@ -1,11 +1,14 @@
 import {
   DISCOVERY_FILTER_SECTIONS,
   emptyDiscoveryQuery,
+  isDiscoveryFilter,
+  MAX_DISCOVERY_QUERY_LENGTH,
+  parseDiscoveryQuery,
   type DiscoveryFilterSection,
   type DiscoveryQuery,
+  type DiscoveryQueryProblem,
 } from '$lib/components/discovery/query';
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
-import { ImageEnrichmentFilter } from '@immich/sdk';
 
 /**
  * The one library session every Frameleaf view shares.
@@ -531,199 +534,106 @@ const oneOf = (value: unknown, choices: readonly string[]): value is string =>
 const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 
-const stringValue = (value: unknown) => typeof value === 'string' && value.length <= 4096;
-const numberValue = (value: unknown) => typeof value === 'number' && Number.isFinite(value);
-const booleanFields = new Set([
-  'isFavorite',
-  'isMotion',
-  'isOffline',
-  'isEncoded',
-  'hasAlbums',
-  'hasPeople',
-  'hasTags',
-  'favorite',
-]);
-const numberFields = new Set(['rating', 'fileSizeInBytes']);
-const listFields = new Set(['personIds', 'petIds', 'tagIds', 'albumIds']);
-const stringFields = new Set([
-  'id',
-  'libraryId',
-  'type',
-  'visibility',
-  'city',
-  'state',
-  'country',
-  'make',
-  'model',
-  'lensModel',
-  'description',
-  'originalFileName',
-  'originalPath',
-  'ocr',
-  'takenAt',
-  'createdAt',
-  'updatedAt',
-  'trashedAt',
-  'checksum',
-  'encodedVideoPath',
-  'person',
-]);
-const scalarOperators = new Set([
-  'eq',
-  'ne',
-  'lt',
-  'lte',
-  'gt',
-  'gte',
-  'like',
-  'notLike',
-  'startsWith',
-  'endsWith',
-  'matches',
-]);
-const listOperators = new Set(['in', 'notIn', 'any', 'all', 'none']);
+/** The URL parameter carrying the portable view state. */
+export const LIBRARY_VIEW_PARAMETER = 'fl';
 
-/** Bounded structural validation; the authenticated search API still validates field semantics. */
-export const isLibraryFilter = (value: unknown, branch = false): boolean => {
-  if (!object(value) || Object.keys(value).length > 64) {
-    return false;
-  }
-  return Object.entries(value).every(([field, condition]) => {
-    if (field === 'or') {
-      return (
-        !branch &&
-        Array.isArray(condition) &&
-        condition.length > 0 &&
-        condition.length <= 64 &&
-        condition.every((item) => object(item) && Object.keys(item).length > 0 && isLibraryFilter(item, true))
-      );
-    }
-    if (!object(condition) || Object.keys(condition).length === 0 || Object.keys(condition).length > 12) {
-      return false;
-    }
-    if (booleanFields.has(field)) {
-      return Object.keys(condition).length === 1 && typeof condition.eq === 'boolean';
-    }
-    const itemValid = numberFields.has(field)
-      ? numberValue
-      : stringFields.has(field) || listFields.has(field)
-        ? stringValue
-        : null;
-    if (!itemValid) {
-      return false;
-    }
-    return Object.entries(condition).every(([operator, item]) => {
-      if (listOperators.has(operator)) {
-        return Array.isArray(item) && item.length > 0 && item.length <= 1000 && item.every((value) => itemValid(value));
-      }
-      if (listFields.has(field) || !scalarOperators.has(operator)) {
-        return false;
-      }
-      return ((operator === 'eq' || operator === 'ne') && item === null) || itemValid(item);
-    });
-  });
-};
+/**
+ * Bounded structural validation of a filter. FL-48: this is the shared query contract's validator,
+ * which mirrors the search DTO field by field; the authenticated search API still validates again.
+ */
+export const isLibraryFilter = (value: unknown, branch = false): boolean => isDiscoveryFilter(value, branch);
+
+/**
+ * Why a view state was refused. `unsupported-version` comes from a newer client: the caller must not
+ * overwrite it with its own narrower reading (FL-48).
+ */
+export type LibraryViewProblem = DiscoveryQueryProblem;
+
+export type LibraryViewParse = { ok: true; state: LibraryViewState } | { ok: false; problem: LibraryViewProblem };
+
+const refuseView = (problem: LibraryViewProblem): LibraryViewParse => ({ ok: false, problem });
 
 /**
  * Parse only view state. URLs restore portable query state; they cannot inject local selections,
- * a layout, leases or edit history.
+ * a layout, leases or edit history. The query inside goes through the one query reader
+ * (`parseDiscoveryQuery`), so every field of the query — text field, similar-photo reference, space,
+ * enrichment facet, grouping and view — survives a round trip through the URL and through storage.
  */
-export const readLibraryView = (url: URL): LibraryViewState | null => {
-  const raw = url.searchParams.get('fl');
-  if (!raw || raw.length > 32_768) {
+export const parseLibraryViewValue = (value: unknown): LibraryViewParse => {
+  if (!object(value)) {
+    return refuseView('malformed');
+  }
+  if (value.version !== 1) {
+    const newer = typeof value.version === 'number' && Number.isInteger(value.version) && value.version > 1;
+    return refuseView(newer ? 'unsupported-version' : 'malformed');
+  }
+  if (!object(value.scope) || !oneOf(value.scope.kind, LIBRARY_SCOPE_KINDS)) {
+    return refuseView('invalid');
+  }
+  if (
+    value.scope.kind !== 'library' &&
+    (typeof value.scope.id !== 'string' || !value.scope.id || value.scope.id.length > 128)
+  ) {
+    return refuseView('invalid');
+  }
+  if (
+    !oneOf(value.sort, LIBRARY_SORTS) ||
+    !oneOf(value.grouping, LIBRARY_GROUPINGS) ||
+    !oneOf(value.view, LIBRARY_VIEWS)
+  ) {
+    return refuseView('invalid');
+  }
+  const query = parseDiscoveryQuery(value.query);
+  if (!query.ok) {
+    return refuseView(query.problem);
+  }
+  return {
+    ok: true,
+    state: {
+      version: 1,
+      scope: {
+        kind: value.scope.kind as LibraryScope['kind'],
+        ...(value.scope.kind !== 'library' && { id: value.scope.id as string }),
+      },
+      query: query.query,
+      sort: value.sort as LibrarySort,
+      grouping: value.grouping as LibraryGrouping,
+      view: value.view as LibraryView,
+    },
+  };
+};
+
+/**
+ * The view state a URL carries. `null` when it carries none; otherwise the parse result, so a caller
+ * can tell a missing state from a refused one.
+ */
+export const parseLibraryView = (url: URL): LibraryViewParse | null => {
+  const raw = url.searchParams.get(LIBRARY_VIEW_PARAMETER);
+  if (!raw) {
     return null;
+  }
+  if (raw.length > MAX_DISCOVERY_QUERY_LENGTH) {
+    return refuseView('malformed');
   }
   try {
-    const value: unknown = JSON.parse(raw);
-    if (!object(value) || value.version !== 1 || !object(value.scope) || !object(value.query)) {
-      return null;
-    }
-    if (!oneOf(value.scope.kind, LIBRARY_SCOPE_KINDS)) {
-      return null;
-    }
-    if (
-      value.scope.kind !== 'library' &&
-      (typeof value.scope.id !== 'string' || !value.scope.id || value.scope.id.length > 128)
-    ) {
-      return null;
-    }
-    if (
-      !oneOf(value.sort, LIBRARY_SORTS) ||
-      !oneOf(value.grouping, LIBRARY_GROUPINGS) ||
-      !oneOf(value.view, LIBRARY_VIEWS)
-    ) {
-      return null;
-    }
-    const q = value.query;
-    const filter = object(q.filter) ? structuredClone(q.filter) : q.filter;
-    // FL-58: earlier links carried pets beside the filter as a top-level `petIds` list the search API
-    // never read. Pets are now an ordinary `filter.petIds` condition, so such a list is folded into it
-    // (as `any`, which is what the prototype meant) unless the filter already says something about pets.
-    if (q.petIds !== undefined && (!Array.isArray(q.petIds) || q.petIds.some((id) => typeof id !== 'string'))) {
-      return null;
-    }
-    if (Array.isArray(q.petIds) && q.petIds.length > 0 && object(filter) && filter.petIds === undefined) {
-      filter.petIds = { any: [...new Set(q.petIds as string[])] };
-    }
-    // Earlier prototype URLs stored the rating select's DOM string value.
-    if (
-      object(filter) &&
-      object(filter.rating) &&
-      typeof filter.rating.eq === 'string' &&
-      /^[1-5]$/.test(filter.rating.eq)
-    ) {
-      filter.rating.eq = Number(filter.rating.eq);
-    }
-    if (
-      q.version !== 1 ||
-      typeof q.text !== 'string' ||
-      q.text.length > 4096 ||
-      !isLibraryFilter(filter) ||
-      !oneOf(q.mode, ['text', 'smart']) ||
-      !oneOf(q.grouping, ['all', 'months', 'years']) ||
-      !oneOf(q.view, ['photos', 'map', 'moments'])
-    ) {
-      return null;
-    }
-    if (q.spaceId !== undefined && typeof q.spaceId !== 'string') {
-      return null;
-    }
-    // FL-49: the enrichment facet is a closed server enum, so an unknown value is rejected here
-    // rather than forwarded to the API.
-    if (
-      q.imageEnrichment !== undefined &&
-      !Object.values(ImageEnrichmentFilter).includes(q.imageEnrichment as ImageEnrichmentFilter)
-    ) {
-      return null;
-    }
-    return {
-      version: 1,
-      scope: { kind: value.scope.kind, ...(value.scope.kind !== 'library' && { id: value.scope.id }) },
-      query: {
-        version: 1,
-        text: q.text,
-        mode: q.mode,
-        filter,
-        grouping: q.grouping,
-        view: q.view,
-        ...(q.spaceId && { spaceId: q.spaceId }),
-        ...(q.imageEnrichment && { imageEnrichment: q.imageEnrichment }),
-      },
-      sort: value.sort,
-      grouping: value.grouping,
-      view: value.view,
-    } as LibraryViewState;
+    return parseLibraryViewValue(JSON.parse(raw));
   } catch {
-    return null;
+    return refuseView('malformed');
   }
+};
+
+/** The view state a URL carries, or `null` for none or an unusable one. */
+export const readLibraryView = (url: URL): LibraryViewState | null => {
+  const result = parseLibraryView(url);
+  return result?.ok ? result.state : null;
 };
 
 /** Reuse URL validation for stored presets without accepting their arbitrary object shape. */
 export const readLibraryViewValue = (value: unknown): LibraryViewState | null => {
   try {
-    const url = new URL('http://localhost/');
-    url.searchParams.set('fl', JSON.stringify(value));
-    return readLibraryView(url);
+    // The same JSON round trip a URL makes, so an in-memory value reads exactly as its link would.
+    const result = parseLibraryViewValue(JSON.parse(JSON.stringify(value)));
+    return result.ok ? result.state : null;
   } catch {
     return null;
   }
@@ -731,7 +641,7 @@ export const readLibraryViewValue = (value: unknown): LibraryViewState | null =>
 
 export const writeLibraryView = (url: URL, state: LibraryViewState): URL => {
   const next = new URL(url);
-  next.searchParams.set('fl', JSON.stringify(state));
+  next.searchParams.set(LIBRARY_VIEW_PARAMETER, JSON.stringify(state));
   return next;
 };
 
