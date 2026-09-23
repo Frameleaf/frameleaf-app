@@ -5,6 +5,7 @@ import {
   AnalyticsSampleGrain,
   AnalyticsScopeKind,
   AnalyticsSeriesId,
+  AssetLockReason,
   AssetType,
   AssetVisibility,
   MlDestinationKind,
@@ -222,6 +223,29 @@ describe(AnalyticsRepository.name, () => {
     const all = await sut.getAlbums(host, taylor.id);
     expect(all).toHaveLength(3);
     expect(all.find((row) => row.name === 'Private')?.viewerHasAccess).toBe(false);
+  });
+
+  it('derives library album membership only from unlocked assets', async () => {
+    const { db, ctx, sut } = await setup();
+    const { user } = await ctx.newUser();
+    const { id: libraryId } = await newLibrary(db, user.id);
+    const locked = await newSizedAsset(ctx, user.id, 100, { libraryId });
+    await db
+      .insertInto('asset_lock')
+      .values({
+        assetId: locked.id,
+        reason: AssetLockReason.Marked,
+        lockedBy: user.id,
+      })
+      .execute();
+    const { album } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Private collection' }, [locked.id]);
+    await expect(sut.getInventory(library(libraryId))).resolves.toMatchObject({ photos: 0 });
+    await expect(sut.getAlbums(library(libraryId), user.id)).resolves.toEqual([]);
+    const visible = await newSizedAsset(ctx, user.id, 200, { libraryId });
+    await db.insertInto('album_asset').values({ albumId: album.id, assetId: visible.id }).execute();
+    await expect(sut.getAlbums(library(libraryId), user.id)).resolves.toEqual([
+      expect.objectContaining({ id: album.id, name: 'Private collection' }),
+    ]);
   });
 
   it('reads processing outcomes and costs per day, costed attempts only', async () => {
