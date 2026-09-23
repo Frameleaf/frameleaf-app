@@ -661,7 +661,8 @@ describe(ImageEnrichmentService.name, () => {
         exifInfo: { description: '' },
         tags: [],
       } as never);
-      mocks.asset.getMetadataByKey.mockResolvedValue(detectedMetadata);
+      // a copy: the service edits the metadata it reads
+      mocks.asset.getMetadataByKey.mockResolvedValue(structuredClone(detectedMetadata));
 
       await sut.updateAssetEnrichment(authStub.adminWithElevatedPermission, assetId, {
         action: AssetImageEnrichmentAction.MarkSafe,
@@ -744,7 +745,8 @@ describe(ImageEnrichmentService.name, () => {
 
     it('records the owner review as safe when unlocking what the check counts as sensitive', async () => {
       mocks.asset.unlock.mockResolvedValue([{ assetId, reason: AssetLockReason.Detected }]);
-      mocks.asset.getMetadataByKey.mockResolvedValue(detectedMetadata);
+      // a copy: the service edits the metadata it reads
+      mocks.asset.getMetadataByKey.mockResolvedValue(structuredClone(detectedMetadata));
 
       await sut.unlockAssets(authStub.adminWithElevatedPermission, { ids: [assetId] });
 

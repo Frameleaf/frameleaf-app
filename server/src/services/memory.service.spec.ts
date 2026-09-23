@@ -24,8 +24,11 @@ describe(MemoryService.name, () => {
   describe('onMemoryCleanup', () => {
     it('should clean up memories', async () => {
       mocks.memory.cleanup.mockResolvedValue([]);
+      // The same cleanup also reclaims finished and stale highlight exports (FL-62).
+      mocks.memory.getReclaimableExports.mockResolvedValue([]);
       await sut.onMemoriesCleanup();
       expect(mocks.memory.cleanup).toHaveBeenCalled();
+      expect(mocks.memory.getReclaimableExports).toHaveBeenCalled();
     });
   });
 
@@ -523,6 +526,11 @@ describe(MemoryService.name, () => {
   });
 
   describe('handleMemoryExport', () => {
+    beforeEach(() => {
+      // The run row is the worker's only record of progress; every path writes to it.
+      mocks.memory.updateExport.mockResolvedValue(void 0);
+    });
+
     const givenZip = () => {
       const stream = new PassThrough();
       const addFile = vitest.fn();

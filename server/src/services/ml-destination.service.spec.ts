@@ -32,12 +32,15 @@ describe(MlDestinationService.name, () => {
       { workload: MlWorkload.Face, destinationId: mlDestinationStub.local.id, updatedAt: new Date() },
     ]);
     mocks.mlDestination.getThroughput.mockResolvedValue({ sampleCount: 0, bytesSent: 0, durationMs: 0, spentUsd: 0 });
+    // Like the database, an update leaves a column alone when the patch leaves it undefined.
     mocks.mlDestination.update.mockImplementation((id, patch) =>
       Promise.resolve({
         ...(id === mlDestinationStub.runPod.id ? mlDestinationStub.runPod : mlDestinationStub.local),
-        ...patch,
+        ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)),
       } as never),
     );
+    mocks.mlDestination.setRoute.mockResolvedValue();
+    mocks.mlDestination.clearRoute.mockResolvedValue();
     mocks.mlDestination.create.mockImplementation((row) =>
       Promise.resolve({ ...mlDestinationStub.local, ...row, id: 'created' } as never),
     );
