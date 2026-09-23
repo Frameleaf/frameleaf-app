@@ -4,6 +4,7 @@ import {
   MlAdmissionRefusalSchema,
   MlDestinationHealthSchema,
   MlDestinationKindSchema,
+  MlWorkerRoleSchema,
   MlWorkloadSchema,
 } from 'src/enum.js';
 
@@ -65,6 +66,10 @@ const MlDestinationResponseSchema = z
     authTokenConfigured: z.boolean().describe('Whether a bearer token is stored for this destination'),
     enabled: z.boolean(),
     workloads: z.array(MlWorkloadSchema).describe('Workloads the administrator allows on this destination'),
+    role: MlWorkerRoleSchema,
+    sharesLibraryHardware: z
+      .boolean()
+      .describe('A restoration worker on the GPU library analysis uses; its full restorations wait for library work'),
     consent: MlDestinationConsentSchema,
     costControls: MlDestinationCostControlsSchema,
     health: MlDestinationHealthStateSchema,
@@ -72,6 +77,11 @@ const MlDestinationResponseSchema = z
     updatedAt: z.string(),
   })
   .meta({ id: 'MlDestinationResponseDto' });
+
+const sharesLibraryHardwareField = z
+  .boolean()
+  .optional()
+  .describe('Restoration workers only: full restorations wait while library analysis has work');
 
 const costControlFields = {
   budgetLimitUsd: z.number().min(0).meta({ format: 'double' }).nullable().optional(),
@@ -86,10 +96,15 @@ const MlDestinationCreateSchema = z
     url: z
       .url()
       .optional()
-      .describe('Required for a LAN destination, optional for a local one, forbidden for RunPod'),
-    authToken: z.string().max(4096).optional().describe('Bearer token for a LAN worker (write-only)'),
+      .describe('Required for a LAN or RunPod video destination, optional for a local one, forbidden for RunPod'),
+    authToken: z
+      .string()
+      .max(4096)
+      .optional()
+      .describe('Bearer token for a LAN or RunPod video worker (write-only)'),
     workloads: z.array(MlWorkloadSchema).max(16).default([]),
     enabled: z.boolean().default(true),
+    sharesLibraryHardware: sharesLibraryHardwareField,
     ...costControlFields,
   })
   .meta({ id: 'MlDestinationCreateDto' });
@@ -106,6 +121,7 @@ const MlDestinationUpdateSchema = z
       .describe('New bearer token; null clears it; omitted keeps the stored token'),
     workloads: z.array(MlWorkloadSchema).max(16).optional(),
     enabled: z.boolean().optional(),
+    sharesLibraryHardware: sharesLibraryHardwareField,
     ...costControlFields,
   })
   .meta({ id: 'MlDestinationUpdateDto' });

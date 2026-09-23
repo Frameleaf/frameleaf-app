@@ -112,7 +112,8 @@ export const MEDIA_OPERATION_AUTO_RETRY_DELAY_MS = 30_000;
  * The kinds that can stop partway and carry on later (FL-104, owner request September 23, 2026).
  *
  * Each one records where it has got to in a way the next claim resumes from: a bulk job its cursor
- * and per-item result, a Studio export and a restoration their checkpointed chunks. The rest are
+ * and per-item result, a Studio export and a restoration their checkpointed chunks, a Google Photos
+ * import (FL-65) every staged file and imported item. The rest are
  * one-shot — a preview, a still edit — or rebuild their output from the start (a portable project
  * bundle), so pausing one would only throw its work away; they are offered no pause at all.
  */
@@ -124,6 +125,10 @@ export const PAUSABLE_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [
   MediaOperationKind.EnrichmentPlan,
   // A Library Care scan or search records its asset or directory cursor after every batch (FL-69).
   MediaOperationKind.MediaHealth,
+  // An iCloud sync resumes from its inventory checkpoints and leased resources (FL-68).
+  MediaOperationKind.ICloudSync,
+  // A Google Photos import records every staged file and imported item as it goes (FL-65).
+  MediaOperationKind.TakeoutImport,
   // FL-73: a reviewed deduplication plan records every copy as it finishes and resumes from its cursor.
   MediaOperationKind.PhysicalDeduplication,
 ];
@@ -131,9 +136,10 @@ export const PAUSABLE_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [
 export const isPausableMediaOperationKind = (kind: MediaOperationKind) => PAUSABLE_MEDIA_OPERATION_KINDS.includes(kind);
 
 /**
- * The kinds a remote render worker may ever claim (FL-73): the renders. Bulk jobs, project bundles,
- * enrichment plans, Library Care and physical deduplication run on this server's own workers, and
- * their snapshots can name other accounts' files; a worker whose saved scope lists one of them is
+ * The kinds a remote render worker may ever claim (FL-73): the renders. Bulk jobs (duplicate
+ * decisions included), project bundles, enrichment plans, Library Care, iCloud and Google Photos
+ * imports and physical deduplication run on this server's own workers, and their snapshots can name
+ * other accounts' files; a worker whose saved scope lists one of them, whatever its destination, is
  * still never handed it.
  */
 export const RENDER_WORKER_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [

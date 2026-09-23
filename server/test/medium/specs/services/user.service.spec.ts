@@ -4,6 +4,7 @@ import { ImmichEnvironment, JobName, JobStatus, UserAvatarColor } from 'src/enum
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -34,6 +35,8 @@ const setup = (db?: Kysely<DB>) => {
       ClusterGroupRepository,
       CryptoRepository,
       ConfigRepository,
+      // FL-67: preference saves run under DatabaseRepository.withUserPreferencesLock
+      DatabaseRepository,
       SystemMetadataRepository,
       UserRepository,
       SessionRepository,
@@ -270,6 +273,51 @@ describe(UserService.name, () => {
       await expect(sut.getMyPreferences(auth)).resolves.toMatchObject({ people: { minimumFaces: 3 } });
       await expect(sut.updateMyPreferences(auth, dto)).resolves.toMatchObject(dto);
       await expect(sut.getMyPreferences(auth)).resolves.toMatchObject(dto);
+    });
+
+    it('should change Locked rules only from an unlocked session and hide them from other sessions (FL-67)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const locked = factory.auth({ user: { id: user.id } });
+      const unlocked = { ...locked, session: { id: newUuid(), hasElevatedPermission: true } } as typeof locked;
+      const tagId = newUuid();
+
+      await expect(
+        sut.updateMyPreferences(locked, { privacy: { suppression: { tagIds: [tagId] } } }),
+      ).rejects.toThrow('Unlock with your PIN before changing Locked rules');
+
+      await expect(
+        sut.updateMyPreferences(unlocked, { privacy: { suppression: { tagIds: [tagId], scope: 'visible' } } }),
+      ).resolves.toMatchObject({ privacy: { suppression: { tagIds: [tagId], scope: 'visible' } } });
+
+      await expect(sut.getMyPreferences(locked)).resolves.toMatchObject({
+        privacy: { suppression: { tagIds: [], personIds: [], petIds: [], scope: 'visible' } },
+      });
+      await expect(sut.getMyPreferences(unlocked)).resolves.toMatchObject({
+        privacy: { suppression: { tagIds: [tagId] } },
+      });
+    });
+
+    it('should let only one of two saves made against the same revision through (FL-67)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const unlocked = { ...auth, session: { id: newUuid(), hasElevatedPermission: true } } as typeof auth;
+      const { revision } = await sut.getMyPreferences(unlocked);
+
+      const results = await Promise.allSettled([
+        sut.updateMyPreferences(unlocked, {
+          expectedRevision: revision,
+          privacy: { suppression: { tagIds: [newUuid()] } },
+        }),
+        sut.updateMyPreferences(unlocked, {
+          expectedRevision: revision,
+          privacy: { suppression: { scope: 'visible' } },
+        }),
+      ]);
+
+      expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+      expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
     });
   });
 

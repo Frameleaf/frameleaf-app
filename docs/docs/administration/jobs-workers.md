@@ -42,6 +42,10 @@ services:
 +     IMMICH_WORKERS_EXCLUDE: 'api'
 ```
 
+## Machine-learning and restoration workers
+
+Machine learning runs outside the server container, on the destinations listed under Administration > Processing destinations. Library analysis and restoration use separate workers, and restorations never take a job queue's concurrency slot. See [Workers and endpoints](/administration/workers-and-endpoints).
+
 ## Jobs
 
 When a new asset is uploaded it kicks off a series of jobs, which include metadata extraction, thumbnail generation, machine learning tasks, image enrichment, and storage template migration, if enabled. To view the status of a job navigate to the Administration -> Jobs page.

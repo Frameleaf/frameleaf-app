@@ -458,8 +458,10 @@ export type AdminConfigSmtpTransportDto = {
     host: string;
     /** Whether to ignore SSL certificate errors */
     ignoreCert: boolean;
-    /** SMTP password */
+    /** SMTP password (write-only; empty preserves the existing password) */
     password: string;
+    /** Read-only indicator that an SMTP password is stored. Set by the server; ignored on write. */
+    passwordConfigured?: boolean;
     /** SMTP server port */
     port: number;
     /** Whether to use secure connection (TLS/SSL) */
@@ -492,8 +494,10 @@ export type AdminConfigOAuthDto = {
     buttonText: string;
     /** Client ID */
     clientId: string;
-    /** Client secret */
+    /** Client secret (write-only; empty preserves the existing secret) */
     clientSecret: string;
+    /** Read-only indicator that a client secret is stored. Set by the server; ignored on write. */
+    clientSecretConfigured?: boolean;
     /** Default storage quota */
     defaultStorageQuota: number | null;
     /** Enabled */
@@ -1263,6 +1267,15 @@ export type AssetStatsResponseDto = {
 export type AlbumUserResponseDto = {
     role: AlbumUserRole;
     user: UserResponseDto;
+};
+export type ConfigCredentialResponseDto = {
+    /** Whether a value is stored. The value itself is never returned */
+    configured: boolean;
+    name: ConfigCredential;
+};
+export type ConfigCredentialUpdateDto = {
+    /** The new secret. Stored as sent and never returned */
+    value: string;
 };
 export type ContributorCountResponseDto = {
     /** Number of assets contributed */
@@ -3042,7 +3055,31 @@ export type FaceDto = {
     /** Face ID */
     id: string;
 };
+export type ICloudSyncRunDto = {
+    createdAt: string;
+    /** Stable failure code, translated by the client */
+    errorCode: string | null;
+    finishedAt: string | null;
+    /** Media operation ID of the run */
+    id: string;
+    /** A pause was asked for and the worker has not reached it yet */
+    pauseRequested: boolean;
+    /** Resources settled so far */
+    processedUnits: number;
+    /** 0 to 100, from resources settled out of those known so far */
+    progress: number;
+    /** Back in the queue for its automatic retry after a failure */
+    retrying: boolean;
+    startedAt: string | null;
+    status: MediaOperationStatus;
+    /** Resources known so far; null until the inventory is counted */
+    totalUnits: number | null;
+    /** Handed back to wait for the provider or a backed-off item */
+    waiting: boolean;
+};
 export type ICloudConnectionResponseDto = {
+    /** Whether an encrypted Apple session is stored; the session is never returned */
+    authenticated: boolean;
     config: {
         albums: string[];
         concurrency: number;
@@ -3060,6 +3097,8 @@ export type ICloudConnectionResponseDto = {
     label: string;
     lastError: string | null;
     nextRunAt: string | null;
+    /** The current or most recent sync run */
+    run: (ICloudSyncRunDto) | null;
     state: string;
 };
 export type ICloudConnectionsResponseDto = {
@@ -3110,14 +3149,25 @@ export type ICloudInventoryResponseDto = {
     }[];
     complete: boolean;
     libraries: {
+        area: ICloudLibraryArea;
         id: string;
         name: string;
         supported: boolean;
     }[];
     recent?: {
         assetId: string;
+        fileName: string;
         outcome: string;
         resourceId: string;
+    }[];
+    /** Reconciliation findings; private items only for an unlocked session */
+    review: {
+        assetId: string | null;
+        fileName: string | null;
+        kind: ICloudReviewKind;
+        reason: string | null;
+        resourceId: string;
+        role: string;
     }[];
 };
 export type QueueStatisticsDto = {
@@ -4093,6 +4143,98 @@ export type MemoryUpdateDto = {
     /** Date when memory was seen */
     seenAt?: string;
 };
+export type WorkerWorkloadAdmissionDto = {
+    /** Whether the last check would admit this workload here */
+    admitted: boolean;
+    /** Why it would be refused, or null */
+    detail: string | null;
+    refusal: (MlAdmissionRefusal) | null;
+    workload: MlWorkload;
+};
+export type WorkerGpuDto = {
+    memoryTotalBytes: number;
+    name: string;
+};
+export type WorkerInventoryEntryDto = {
+    acceleration: MlWorkerAcceleration;
+    /** Jobs running here now */
+    activeOperations: number;
+    /** Per allowed workload, from the last check */
+    admission: WorkerWorkloadAdmissionDto[];
+    allowedWorkloads: MlWorkload[];
+    /** Last check or check-in */
+    checkedAt: string | null;
+    /** For a local destination: its URL is still in the machine-learning URL list. Always true otherwise */
+    configured: boolean;
+    /** True when no consent is needed or it is recorded */
+    consentGranted: boolean;
+    credential: WorkerCredentialState;
+    enabled: boolean;
+    /** Largest GPU memory reported or qualified, or null when unknown */
+    gpuMemoryBytes: number | null;
+    /** GPUs the worker reported, with memory; empty when not reported */
+    gpus: WorkerGpuDto[];
+    /** ML destination ID or render worker ID */
+    id: string;
+    /** ML destination kind, or the render worker destination */
+    kind: string;
+    latencyMs: number | null;
+    /** Work sent here leaves the network */
+    leavesNetwork: boolean;
+    /** Render workers: the most they may hold at once */
+    maxConcurrentOperations: number | null;
+    name: string;
+    /** Jobs waiting for this worker */
+    queuedOperations: number;
+    readiness: MlWorkerReadiness;
+    /** Operation kinds a render worker may claim */
+    renderKinds: MediaOperationKind[];
+    /** What an ML destination is for; null for a render worker */
+    role: (MlWorkerRole) | null;
+    /** Workloads whose route names this destination */
+    routedWorkloads: MlWorkload[];
+    /** Workloads the worker reported on its last check, or null when it never answered */
+    servedWorkloads: MlWorkload[] | null;
+    sharesLibraryHardware: boolean;
+    source: WorkerInventorySource;
+    summary: string | null;
+    /** Endpoint URL, or null when there is none to show */
+    url: string | null;
+    /** Full restorations bound here are waiting because library analysis has work */
+    waitingForLibraryAnalysis: boolean;
+};
+export type WorkerQueueBacklogDto = {
+    active: number;
+    paused: boolean;
+    queue: QueueName;
+    waiting: number;
+};
+export type WorkerLibraryRouteDto = {
+    destinationId: string | null;
+    /** Queues whose jobs run this workload */
+    queues: QueueName[];
+    workload: MlWorkload;
+};
+export type WorkerRunnerDto = {
+    activeOperations: number;
+    kinds: MediaOperationKind[];
+    lastHeartbeatAt: string | null;
+    /** The server process holding the claims */
+    workerId: string;
+};
+export type WorkerInventoryResponseDto = {
+    checkedAt: string;
+    /** The machine-learning URL list, in order */
+    configuredUrls: string[];
+    entries: WorkerInventoryEntryDto[];
+    /** Library-analysis jobs active or waiting, not counting paused queues */
+    libraryBacklog: number;
+    libraryQueues: WorkerQueueBacklogDto[];
+    libraryRoutes: WorkerLibraryRouteDto[];
+    machineLearningEnabled: boolean;
+    /** Server processes running restorations now */
+    runners: WorkerRunnerDto[];
+};
 export type MlDestinationConsentDto = {
     /** When an administrator recorded consent, or null */
     acknowledgedAt: string | null;
@@ -4133,6 +4275,9 @@ export type MlDestinationResponseDto = {
     id: string;
     kind: MlDestinationKind;
     name: string;
+    role: MlWorkerRole;
+    /** A restoration worker on the GPU library analysis uses; its full restorations wait for library work */
+    sharesLibraryHardware: boolean;
     updatedAt: string;
     /** Endpoint URL; null for a RunPod destination with no ready worker */
     url: string | null;
@@ -4140,7 +4285,7 @@ export type MlDestinationResponseDto = {
     workloads: MlWorkload[];
 };
 export type MlDestinationCreateDto = {
-    /** Bearer token for a LAN worker (write-only) */
+    /** Bearer token for a LAN or RunPod video worker (write-only) */
     authToken?: string;
     budgetLimitUsd?: number | null;
     enabled?: boolean;
@@ -4148,7 +4293,9 @@ export type MlDestinationCreateDto = {
     maxRuntimeMinutes?: number | null;
     maxUploadBytes?: number | null;
     name: string;
-    /** Required for a LAN destination, optional for a local one, forbidden for RunPod */
+    /** Restoration workers only: full restorations wait while library analysis has work */
+    sharesLibraryHardware?: boolean;
+    /** Required for a LAN or RunPod video destination, optional for a local one, forbidden for RunPod */
     url?: string;
     workloads?: MlWorkload[];
 };
@@ -4206,6 +4353,8 @@ export type MlDestinationUpdateDto = {
     maxRuntimeMinutes?: number | null;
     maxUploadBytes?: number | null;
     name?: string;
+    /** Restoration workers only: full restorations wait while library analysis has work */
+    sharesLibraryHardware?: boolean;
     url?: string | null;
     workloads?: MlWorkload[];
 };
@@ -7142,6 +7291,221 @@ export type SyncUserV1 = {
     /** User profile changed at */
     profileChangedAt: string;
 };
+export type TakeoutAlbumDto = {
+    /** Items in the folder */
+    count: number;
+    /** The export folder */
+    folder: string;
+    /** The album name it becomes */
+    name: string;
+    /** Recreated by the next import */
+    selected: boolean;
+    /** One of Google’s automatic year folders */
+    year: boolean;
+};
+export type TakeoutCountsDto = {
+    failed: number;
+    /** Files found in the sources */
+    files: number;
+    /** Items going into Locked, not listed until Locked is unlocked */
+    hiddenLocked: number;
+    imported: number;
+    importing: number;
+    /** Photos and videos */
+    items: number;
+    matched: number;
+    /** Items already in the library, whose album memberships are restored */
+    matchedOriginals: number;
+    /** Items still to import that are not in the library yet */
+    newAssets: number;
+    ready: number;
+    /** Archive entries refused */
+    rejected: number;
+    review: number;
+    skipped: number;
+    /** Possible Live Photo pairs awaiting a decision */
+    suggestedPairs: number;
+    /** Live Photo pairs that could not be linked */
+    unresolvedPairs: number;
+};
+export type TakeoutOptionsResponseDto = {
+    albums: boolean;
+    archive: boolean;
+    dates: boolean;
+    descriptions: boolean;
+    favorites: boolean;
+    locations: boolean;
+    selectedAlbums?: string[];
+    sidecarReview: boolean;
+    updateMatchedMetadata: boolean;
+};
+export type TakeoutSourceResponseDto = {
+    id: string;
+    kind: TakeoutSourceKind;
+    /** The archive’s file name, or the directory’s name */
+    name: string;
+    /** Bytes staged so far; an upload resumes here */
+    received: number;
+    /** Entries refused: unsafe names, links or encryption */
+    rejected: number;
+    /** Every entry has been read */
+    scanned: boolean;
+    /** Declared archive size in bytes; zero for a directory */
+    size: number;
+};
+export type TakeoutResponseDto = {
+    /** What the latest job did or is doing */
+    action: (TakeoutAction) | null;
+    albums: TakeoutAlbumDto[];
+    counts: TakeoutCountsDto;
+    createdAt: string;
+    error: string | null;
+    errorCode: string | null;
+    id: string;
+    name: string;
+    /** The latest job, as Activity lists it */
+    operationId: string | null;
+    options: TakeoutOptionsResponseDto;
+    phase: TakeoutPhase;
+    /** Units the latest job has finished */
+    processed: number;
+    sources: TakeoutSourceResponseDto[];
+    state: TakeoutState;
+    /** Units the latest job knows of so far; grows while a scan reads its sources */
+    total: number | null;
+    updatedAt: string;
+};
+export type TakeoutCreateDto = {
+    /** Administrators only: the directory inside the root, relative to it; empty for the root itself */
+    directory?: string;
+    /** A name for this import */
+    name: string;
+    /** Administrators only: the permitted import root to read a server directory from */
+    rootId?: string;
+};
+export type TakeoutRootDto = {
+    id: string;
+    /** The directory the administrator permitted */
+    path: string;
+};
+export type TakeoutRootsResponseDto = {
+    roots: TakeoutRootDto[];
+};
+export type TakeoutArchiveCreateDto = {
+    /** The archive’s file name */
+    name: string;
+    /** The archive’s size in bytes */
+    size: number;
+};
+export type TakeoutVerifyChunkDto = {
+    /** Byte offset of the range */
+    offset: number;
+    /** SHA-256 of the range, hex */
+    sha256: string;
+    /** Length of the range */
+    size: number;
+};
+export type TakeoutControlDto = {
+    action: TakeoutControlAction;
+};
+export type TakeoutOptionsDto = {
+    /** Recreate album memberships, including for photos already in the library */
+    albums?: boolean;
+    /** Bring over archived photos as archived */
+    archive?: boolean;
+    /** Bring over the dates photos were taken */
+    dates?: boolean;
+    /** Bring over descriptions */
+    descriptions?: boolean;
+    /** Bring over favorites */
+    favorites?: boolean;
+    /** Bring over locations */
+    locations?: boolean;
+    /** Album folders to recreate; omitted means every folder that is not a year folder */
+    selectedAlbums?: string[];
+    /** Hold items whose metadata sidecars disagree for a decision; off imports them without a sidecar */
+    sidecarReview?: boolean;
+    /** Fill metadata missing from photos already in the library; values already there are never replaced */
+    updateMatchedMetadata?: boolean;
+};
+export type TakeoutMetadataDto = {
+    /** Archived in Google Photos */
+    archived?: boolean;
+    /** When Google Photos received the photo (ISO 8601) */
+    createdAt?: string;
+    /** Description */
+    description?: string;
+    /** Favorite in Google Photos */
+    favorite?: boolean;
+    /** Latitude */
+    latitude?: number;
+    /** In the Google Photos Locked Folder; imported into Locked */
+    locked?: boolean;
+    /** Longitude */
+    longitude?: number;
+    /** When the photo was taken (ISO 8601) */
+    takenAt?: string;
+    /** File name Google Photos recorded */
+    title: string;
+    /** In the Google Photos trash; not imported */
+    trashed?: boolean;
+};
+export type TakeoutSidecarCandidateDto = {
+    id: string;
+    metadata: TakeoutMetadataDto;
+    path: string;
+};
+export type TakeoutItemResponseDto = {
+    albums: string[];
+    /** The library item it became or matched, when this session may open it */
+    assetId: string | null;
+    candidates: TakeoutSidecarCandidateDto[];
+    error: string | null;
+    folder: string;
+    id: string;
+    kind: TakeoutItemKind;
+    locked: boolean;
+    metadata: TakeoutMetadataDto;
+    /** Path inside the export */
+    path: string;
+    sidecarId: string | null;
+    size: number;
+    /** The archive or directory the file came from */
+    source: string;
+    state: TakeoutItemState;
+    warnings: TakeoutWarning[];
+};
+export type TakeoutItemsResponseDto = {
+    hiddenLocked: number;
+    items: TakeoutItemResponseDto[];
+    total: number;
+};
+export type TakeoutResolveDto = {
+    /** The sidecar to use; null imports without one */
+    sidecarId?: string | null;
+    /** True leaves the item out of the import; false brings it back */
+    skip?: boolean;
+};
+export type TakeoutPairResponseDto = {
+    error: string | null;
+    photoItemId: string;
+    photoPath: string;
+    state: TakeoutPairState;
+    videoItemId: string;
+    videoPath: string;
+};
+export type TakeoutPairsResponseDto = {
+    pairs: TakeoutPairResponseDto[];
+    total: number;
+};
+export type TakeoutPairDecisionDto = {
+    /** True links them as one Live Photo; false keeps them separate */
+    approve: boolean;
+    /** The still photo */
+    photoItemId: string;
+    /** The motion video */
+    videoItemId: string;
+};
 /**
  * List all activities
  */
@@ -7241,6 +7605,47 @@ export function updateAdminConfig({ adminConfigDto }: {
         ...opts,
         method: "PUT",
         body: adminConfigDto
+    })));
+}
+/**
+ * List the server credentials
+ */
+export function getConfigCredentials(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConfigCredentialResponseDto[];
+    }>("/admin/config/credentials", {
+        ...opts
+    }));
+}
+/**
+ * Clear a server credential
+ */
+export function deleteConfigCredential({ name }: {
+    name: ConfigCredential;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConfigCredentialResponseDto;
+    }>(`/admin/config/credentials/${encodeURIComponent(name)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Replace a server credential
+ */
+export function updateConfigCredential({ name, configCredentialUpdateDto }: {
+    name: ConfigCredential;
+    configCredentialUpdateDto: ConfigCredentialUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConfigCredentialResponseDto;
+    }>(`/admin/config/credentials/${encodeURIComponent(name)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: configCredentialUpdateDto
     })));
 }
 /**
@@ -9739,6 +10144,14 @@ export function getICloudInventory({ id }: {
         ...opts
     }));
 }
+export function removeICloudConnection({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/icloud-sync/connections/${encodeURIComponent(id)}/remove`, {
+        ...opts,
+        method: "POST"
+    }));
+}
 /**
  * Retrieve queue counts and status
  */
@@ -10782,6 +11195,17 @@ export function createMlDestination({ mlDestinationCreateDto }: {
         method: "POST",
         body: mlDestinationCreateDto
     })));
+}
+/**
+ * Get the worker inventory
+ */
+export function getWorkerInventory(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: WorkerInventoryResponseDto;
+    }>("/admin/workers", {
+        ...opts
+    }));
 }
 /**
  * Get machine-learning capabilities
@@ -13543,6 +13967,248 @@ export function tagAssets({ id, bulkIdsDto }: {
     })));
 }
 /**
+ * List Google Photos imports
+ */
+export function listTakeoutImports(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto[];
+    }>("/takeout", {
+        ...opts
+    }));
+}
+/**
+ * Start a Google Photos import
+ */
+export function createTakeoutImport({ takeoutCreateDto }: {
+    takeoutCreateDto: TakeoutCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: TakeoutResponseDto;
+    }>("/takeout", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: takeoutCreateDto
+    })));
+}
+/**
+ * List the permitted import locations
+ */
+export function getTakeoutRoots(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutRootsResponseDto;
+    }>("/takeout/roots", {
+        ...opts
+    }));
+}
+/**
+ * Delete a Google Photos import
+ */
+export function deleteTakeoutImport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/takeout/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get a Google Photos import
+ */
+export function getTakeoutImport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Stage a Takeout archive
+ */
+export function createTakeoutArchive({ id, takeoutArchiveCreateDto }: {
+    id: string;
+    takeoutArchiveCreateDto: TakeoutArchiveCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: TakeoutSourceResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/archives`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: takeoutArchiveCreateDto
+    })));
+}
+/**
+ * Remove a staged Takeout archive
+ */
+export function deleteTakeoutArchive({ archiveId, id }: {
+    archiveId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/takeout/${encodeURIComponent(id)}/archives/${encodeURIComponent(archiveId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Upload part of a Takeout archive
+ */
+export function uploadTakeoutArchiveChunk({ archiveId, id, offset, body }: {
+    archiveId: string;
+    id: string;
+    offset: number;
+    body: Blob;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutSourceResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/archives/${encodeURIComponent(archiveId)}/chunks${QS.query(QS.explode({
+        offset
+    }))}`, {
+        ...opts,
+        method: "PUT",
+        body
+    }));
+}
+/**
+ * Check a staged part of a Takeout archive
+ */
+export function verifyTakeoutArchiveChunk({ archiveId, id, takeoutVerifyChunkDto }: {
+    archiveId: string;
+    id: string;
+    takeoutVerifyChunkDto: TakeoutVerifyChunkDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/takeout/${encodeURIComponent(id)}/archives/${encodeURIComponent(archiveId)}/verify`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: takeoutVerifyChunkDto
+    })));
+}
+/**
+ * Pause, resume or cancel a Google Photos import
+ */
+export function controlTakeoutImport({ id, takeoutControlDto }: {
+    id: string;
+    takeoutControlDto: TakeoutControlDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/control`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: takeoutControlDto
+    })));
+}
+/**
+ * Import the reviewed items
+ */
+export function startTakeoutImport({ id, takeoutOptionsDto }: {
+    id: string;
+    takeoutOptionsDto: TakeoutOptionsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/import`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: takeoutOptionsDto
+    })));
+}
+/**
+ * List the items of a Google Photos import
+ */
+export function getTakeoutItems({ id, limit, offset, state }: {
+    id: string;
+    limit?: number;
+    offset?: number;
+    state?: TakeoutItemState;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutItemsResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/items${QS.query(QS.explode({
+        limit,
+        offset,
+        state
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Choose metadata for an item, or leave it out
+ */
+export function resolveTakeoutItem({ id, itemId, takeoutResolveDto }: {
+    id: string;
+    itemId: string;
+    takeoutResolveDto: TakeoutResolveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: takeoutResolveDto
+    })));
+}
+/**
+ * List possible Live Photos in a Google Photos import
+ */
+export function getTakeoutPairs({ id, limit, offset, state }: {
+    id: string;
+    limit?: number;
+    offset?: number;
+    state?: TakeoutPairState;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutPairsResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/live-photos${QS.query(QS.explode({
+        limit,
+        offset,
+        state
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Link or separate a possible Live Photo
+ */
+export function decideTakeoutPair({ id, takeoutPairDecisionDto }: {
+    id: string;
+    takeoutPairDecisionDto: TakeoutPairDecisionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutPairsResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/live-photos`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: takeoutPairDecisionDto
+    })));
+}
+/**
+ * Scan a Google Photos import
+ */
+export function scanTakeoutImport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto;
+    }>(`/takeout/${encodeURIComponent(id)}/scan`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Get time bucket
  */
 export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
@@ -14191,6 +14857,12 @@ export enum Colorspace {
     Srgb = "srgb",
     P3 = "p3"
 }
+export enum ConfigCredential {
+    SmtpPassword = "smtp-password",
+    OauthClientSecret = "oauth-client-secret",
+    RunpodApiKey = "runpod-api-key",
+    HuggingfaceToken = "huggingface-token"
+}
 export enum ImageFormat {
     Jpeg = "jpeg",
     Webp = "webp"
@@ -14686,6 +15358,17 @@ export enum ICloudControlAction {
     Rescan = "rescan",
     Retry = "retry"
 }
+export enum ICloudLibraryArea {
+    Private = "private",
+    Shared = "shared"
+}
+export enum ICloudReviewKind {
+    Review = "review",
+    Failed = "failed",
+    Unsupported = "unsupported",
+    KeptTrashed = "kept-trashed",
+    SourceRemoved = "source-removed"
+}
 export enum ManualJobName {
     PersonCleanup = "person-cleanup",
     TagCleanup = "tag-cleanup",
@@ -14828,6 +15511,8 @@ export enum MediaOperationKind {
     StudioBundleImport = "studio_bundle_import",
     EnrichmentPlan = "enrichment_plan",
     MediaHealth = "media_health",
+    IcloudSync = "icloud_sync",
+    TakeoutImport = "takeout_import",
     PhysicalDeduplication = "physical_deduplication"
 }
 export enum MediaOperationBulkAction {
@@ -14897,7 +15582,8 @@ export enum StudioPreviewStatus {
 export enum MlDestinationKind {
     Local = "local",
     Lan = "lan",
-    RunPod = "runpod"
+    RunPod = "runpod",
+    RunPodVideo = "runpod-video"
 }
 export enum MlWorkload {
     Face = "face",
@@ -14922,7 +15608,38 @@ export enum MlAdmissionRefusal {
     ConsentMissing = "consent-missing",
     BudgetExceeded = "budget-exceeded",
     EndpointUnresolved = "endpoint-unresolved",
-    DestinationUnhealthy = "destination-unhealthy"
+    DestinationUnhealthy = "destination-unhealthy",
+    RoleConflict = "role-conflict"
+}
+export enum MlWorkerRole {
+    LibraryAnalysis = "library-analysis",
+    Restoration = "restoration",
+    Studio = "studio",
+    Mixed = "mixed",
+    Unassigned = "unassigned"
+}
+export enum MlWorkerAcceleration {
+    Unknown = "unknown",
+    Cpu = "cpu",
+    Gpu = "gpu"
+}
+export enum MlWorkerReadiness {
+    Unknown = "unknown",
+    Disabled = "disabled",
+    Unreachable = "unreachable",
+    NotServing = "not-serving",
+    Cpu = "cpu",
+    ModelReady = "model-ready"
+}
+export enum WorkerCredentialState {
+    None = "none",
+    Stored = "stored",
+    Managed = "managed",
+    Enrolled = "enrolled"
+}
+export enum WorkerInventorySource {
+    MlDestination = "ml-destination",
+    RenderWorker = "render-worker"
 }
 export enum RestorationDynamicRange {
     Sdr = "sdr",
@@ -15381,4 +16098,63 @@ export enum VideoMomentIndexState {
     None = "none",
     Ready = "ready",
     Stale = "stale"
+}
+export enum TakeoutAction {
+    Scan = "scan",
+    Import = "import"
+}
+export enum TakeoutSourceKind {
+    Zip = "zip",
+    Directory = "directory"
+}
+export enum TakeoutPhase {
+    Sources = "sources",
+    Scanning = "scanning",
+    Review = "review",
+    Importing = "importing",
+    Completed = "completed"
+}
+export enum TakeoutState {
+    Sources = "sources",
+    Queued = "queued",
+    Scanning = "scanning",
+    Review = "review",
+    Importing = "importing",
+    Paused = "paused",
+    Cancelling = "cancelling",
+    Cancelled = "cancelled",
+    Failed = "failed",
+    Completed = "completed"
+}
+export enum TakeoutControlAction {
+    Pause = "pause",
+    Resume = "resume",
+    Cancel = "cancel"
+}
+export enum TakeoutItemKind {
+    Image = "image",
+    Video = "video"
+}
+export enum TakeoutItemState {
+    Ready = "ready",
+    Review = "review",
+    Importing = "importing",
+    Imported = "imported",
+    Matched = "matched",
+    Skipped = "skipped",
+    Failed = "failed"
+}
+export enum TakeoutWarning {
+    AmbiguousSidecar = "ambiguous_sidecar",
+    NoSidecar = "no_sidecar",
+    InvalidSidecar = "invalid_sidecar",
+    Trashed = "trashed",
+    Locked = "locked"
+}
+export enum TakeoutPairState {
+    Suggested = "suggested",
+    Approved = "approved",
+    Skipped = "skipped",
+    Linked = "linked",
+    Failed = "failed"
 }

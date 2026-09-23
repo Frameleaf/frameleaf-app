@@ -1,0 +1,55 @@
+#
+# Restoration worker overlay (FL-72). NOT QUALIFIED: read
+# machine-learning/video-restoration/README.md before relying on it.
+#
+# Library analysis (faces, search, text, descriptions) and restoration run in separate
+# containers so a long restoration never holds the process or the GPU that library analysis
+# uses. Start it next to the regular services from a source checkout:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.restoration.yml up -d
+#
+# then add it under Administration > Processing destinations as a home-network worker at
+# http://frameleaf-restoration:3004 that is allowed restoration only. Nothing routes work to it
+# until you do.
+#
+# No restoration image is published until a model is qualified, so this overlay builds the
+# `worker` target from source. That target serves no restoration workload on its own: every
+# model reports why it is unavailable until the manifest, weights and a qualification record
+# are mounted (see the README).
+#
+# GPUs: FRAMELEAF_RESTORATION_GPU has no default; Compose refuses to start until you choose.
+# Give each worker its own GPU where you can: set it to a GPU the machine-learning container does
+# not use (pin that one with `device_ids` in hwaccel.ml.yml). With a single GPU, set the same
+# index and tick "This worker shares a GPU with library analysis" on the destination: full
+# restorations then wait while library analysis has work, and previews still run.
+
+services:
+  frameleaf-restoration:
+    container_name: frameleaf_restoration
+    image: frameleaf-video-restoration:local
+    build:
+      context: ../machine-learning
+      dockerfile: Dockerfile.video-restoration
+      target: worker
+    environment:
+      # This worker's own bearer. The worker reads the variable name the predict image uses, but
+      # the value is separate; store the same value on the restoration destination as its token.
+      IMMICH_ML_AUTH_TOKEN: ${FRAMELEAF_RESTORATION_TOKEN:-}
+    volumes:
+      - ${FRAMELEAF_RESTORATION_CONFIG:-./restoration/config}:/restoration/config:ro
+      - ${FRAMELEAF_RESTORATION_WEIGHTS:-./restoration/weights}:/restoration/weights:ro
+      - restoration-work:/restoration/work
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${FRAMELEAF_RESTORATION_GPU:?Set FRAMELEAF_RESTORATION_GPU to the GPU the restoration worker may use}']
+              capabilities:
+                - gpu
+    restart: always
+    healthcheck:
+      disable: false
+
+volumes:
+  restoration-work:

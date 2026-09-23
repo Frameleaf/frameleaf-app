@@ -75,6 +75,8 @@ import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repos
 import { SyncRepository } from 'src/repositories/sync.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
+import { TakeoutStagingRepository } from 'src/repositories/takeout-staging.repository.js';
+import { TakeoutRepository } from 'src/repositories/takeout.repository.js';
 import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
@@ -162,6 +164,8 @@ export const repositories = [
   SyncCheckpointRepository,
   SystemMetadataRepository,
   TagRepository,
+  TakeoutRepository,
+  TakeoutStagingRepository,
   TrashRepository,
   UserRepository,
   ViewRepository,

@@ -1,5 +1,6 @@
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { EmailTemplate } from 'src/repositories/email.repository.js';
+import { NotificationAdminService } from 'src/services/notification-admin.service.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { userStub } from 'test/fixtures/user.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -108,5 +109,52 @@ describe(NotificationService.name, () => {
         }),
       );
     });
+  });
+});
+
+describe(`${NotificationAdminService.name} test email with a write-only password (FL-67)`, () => {
+  let sut: NotificationAdminService;
+  let mocks: ServiceMocks;
+
+  const stored = smtpTransport.notifications.smtp.transport;
+  const redactedDraft = { ...smtpTransport.notifications.smtp, transport: { ...stored, password: '' } };
+
+  beforeEach(() => {
+    ({ sut, mocks } = newTestService(NotificationAdminService));
+    mocks.user.get.mockResolvedValue(userStub.admin);
+    mocks.email.verifySmtp.mockResolvedValue(true);
+    mocks.email.renderEmail.mockResolvedValue({ html: '', text: '' });
+    mocks.email.sendEmail.mockResolvedValue({ messageId: 'message-1', response: '' });
+    mocks.systemMetadata.get.mockResolvedValue({ notifications: { smtp: { transport: stored } } });
+  });
+
+  it('should use the stored password for the stored server when the draft carries none', async () => {
+    await sut.sendTestEmail('', redactedDraft);
+
+    expect(mocks.email.verifySmtp).toHaveBeenCalledWith(expect.objectContaining({ password: 'test' }));
+    expect(mocks.email.sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ smtp: expect.objectContaining({ password: 'test' }) }),
+    );
+  });
+
+  it('should never send the stored password to a different server', async () => {
+    await sut.sendTestEmail('', { ...redactedDraft, transport: { ...redactedDraft.transport, host: 'elsewhere' } });
+
+    expect(mocks.email.verifySmtp).toHaveBeenCalledWith(expect.objectContaining({ host: 'elsewhere', password: '' }));
+  });
+
+  it('should never send the stored password to a different account or security mode', async () => {
+    await sut.sendTestEmail('', { ...redactedDraft, transport: { ...redactedDraft.transport, username: 'other' } });
+    await sut.sendTestEmail('', { ...redactedDraft, transport: { ...redactedDraft.transport, ignoreCert: true } });
+
+    for (const [transport] of mocks.email.verifySmtp.mock.calls) {
+      expect(transport.password).toBe('');
+    }
+  });
+
+  it('should use a password typed into the draft as it is', async () => {
+    await sut.sendTestEmail('', { ...redactedDraft, transport: { ...redactedDraft.transport, password: 'typed' } });
+
+    expect(mocks.email.verifySmtp).toHaveBeenCalledWith(expect.objectContaining({ password: 'typed' }));
   });
 });

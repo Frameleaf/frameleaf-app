@@ -148,6 +148,10 @@ export const Route = {
   viewSharedLink: ({ slug, key }: { slug?: string | null; key: string }) =>
     slug ? `/s/${encodeURIComponent(slug)}` : `/share/${key}`,
 
+  // imports
+  /** The Google Photos import wizard (FL-65); `import` opens one import. */
+  takeout: (params?: { import?: string }) => '/takeout' + asQueryString(params),
+
   // settings
   userSettings: (params?: { isOpen?: OpenQueryParam }) => '/user-settings' + asQueryString(params),
 
@@ -170,6 +174,8 @@ export const Route = {
   systemMaintenance: (params?: { continue?: string }) => '/admin/maintenance' + asQueryString(params),
   /** Processing destinations (FL-110): where machine-learning work may run, with consent and cost controls. */
   systemProcessingDestinations: () => '/admin/processing-destinations',
+  /** Workers & endpoints (FL-72): the worker inventory at the top of the same page. */
+  systemWorkers: () => '/admin/processing-destinations#workers',
   systemMaintenanceIntegrityReport: ({ reportType }: { reportType: IntegrityReport }) =>
     `/admin/maintenance/integrity-report/${reportType}`,
 
