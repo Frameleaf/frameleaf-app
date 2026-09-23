@@ -78,7 +78,7 @@ describe(StudioProjectRepository.name, () => {
         sut.appendRevision(append(project.id, user.id, { requestKey: 'req-b', digest: 'b' })),
       ]);
 
-      const statuses = [first.status, second.status].sort();
+      const statuses = [first.status, second.status].toSorted((a, b) => a.localeCompare(b));
       expect(statuses).toEqual(['appended', 'rejected']);
       const after = await sut.getById(project.id);
       expect(after?.currentRevision).toBe(1);

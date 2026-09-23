@@ -168,8 +168,12 @@ describe('Studio route, engine present', () => {
     expect(screen.queryByTestId('studio-state')).not.toBeInTheDocument();
 
     // The whole point of the boundary: data and callbacks, never a way to call the API.
-    const serialised = JSON.stringify(context);
+    // `theme.tokens` is the design-token map (colours, radii), not a credential, so that one key
+    // is set aside; every other key and value is still searched.
+    const serialised = JSON.stringify({ ...context, theme: { ...context.theme, tokens: undefined } });
     expect(serialised).not.toMatch(/token|apiKey|Authorization|baseUrl/i);
+    expect(Object.keys(context.theme).sort()).toEqual(['theme', 'tokens']);
+    expect(JSON.stringify(Object.values(context.theme.tokens))).not.toMatch(/token|apiKey|Authorization|baseUrl/i);
     expect(Object.keys(context).sort()).toEqual([
       'assets',
       'auth',
