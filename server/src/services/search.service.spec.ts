@@ -436,6 +436,7 @@ describe(SearchService.name, () => {
           userIds: [authStub.user1.user.id],
           viewingUserId: authStub.user1.user.id,
           visibility: 'not-locked',
+          hideLockedMotion: true,
         },
       );
     });
@@ -454,6 +455,7 @@ describe(SearchService.name, () => {
           viewingUserId: auth.user.id,
           excludeNsfw: true,
           visibility: 'not-locked',
+          hideLockedMotion: true,
         },
       );
     });
@@ -554,6 +556,24 @@ describe(SearchService.name, () => {
       await sut.searchMetadata(auth, { size: 250, albumIds: [albumId] });
 
       expect(mocks.search.searchMetadata.mock.calls[0][1].lockedOwnerId).toBeUndefined();
+    });
+
+    it('leaves the motion parts of Locked live photos out of every search (FL-34)', async () => {
+      const { auth } = partnerSetup();
+      mocks.search.searchMetadataV3.mockResolvedValue({ hasNextPage: false, items: [] });
+
+      await sut.searchMetadata(auth, { size: 250 });
+      expect(mocks.search.searchMetadata).toHaveBeenCalledWith(
+        { page: 1, size: 250 },
+        expect.objectContaining({ hideLockedMotion: true, lockedOwnerId: auth.user.id }),
+      );
+
+      await sut.searchMetadata(auth, { filter: {} });
+      expect(mocks.search.searchMetadataV3).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ lockedMotion: { lockedOwnerId: auth.user.id } }),
+      );
     });
 
     it('keeps an explicit Locked request to the caller alone', async () => {

@@ -53,6 +53,7 @@ import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { extractTimeZone } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { batched, findOrFail } from 'src/utils/misc.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 
@@ -118,7 +119,8 @@ export class AssetService extends BaseService {
       exifInfo: true,
       owner: true,
       faces: { person: true, viewingUserId: auth.user.id },
-      stack: { assets: true },
+      // a stack led by Locked media stays off the asset unless it is the viewer's own and unlocked
+      stack: { assets: true, ...getLockedVisibilityOptions(auth) },
       edits: true,
       tags: true,
     });

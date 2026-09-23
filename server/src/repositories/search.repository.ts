@@ -3,6 +3,7 @@ import { Kysely, OrderByDirection, Selectable, ShallowDehydrateObject, sql } fro
 import { InjectKysely } from 'nestjs-kysely';
 import z from 'zod';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
@@ -166,6 +167,11 @@ export interface SearchLockedOwnerOptions {
    * partner's, an album member's) never does.
    */
   lockedOwnerId?: string;
+  /**
+   * Leave out live-photo motion parts of Locked stills other than `lockedOwnerId`'s (FL-34). Every
+   * interactive search sets it; the motion part keeps visibility `hidden` while its still is Locked.
+   */
+  hideLockedMotion?: boolean;
 }
 
 export type AssetSearchOptions = Omit<BaseAssetSearchOptions, 'visibility'> &
@@ -191,6 +197,11 @@ export type AssetSearchScope = {
   userIds: string[];
   lockedOwnerId: string;
   viewingUserId?: string;
+  /**
+   * Set by every interactive search (FL-34): leaves out live-photo motion parts of Locked stills
+   * except those of `lockedMotion.lockedOwnerId`, the viewer when their session is elevated.
+   */
+  lockedMotion?: LockedVisibilityOptions;
 };
 
 export type SmartSearchOptions = SearchDateOptions &

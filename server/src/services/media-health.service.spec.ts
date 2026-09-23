@@ -119,6 +119,24 @@ describe(MediaHealthService.name, () => {
     expect(mediaHealthRepository.markDismissed).toHaveBeenCalledWith([], authStub.admin.user.id);
   });
 
+  it("includes the caller's Locked media only in an elevated session (FL-34)", async () => {
+    const auth = authStub.adminWithElevatedPermission;
+    vi.mocked(mediaHealthRepository.list).mockResolvedValue([]);
+    vi.mocked(mediaHealthRepository.getLatestRun).mockResolvedValue(undefined);
+    vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([]);
+    vi.mocked(mediaHealthRepository.getCandidatesByHealthIds).mockResolvedValue([]);
+    vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([]);
+
+    await sut.list(auth, { size: 10 });
+    await sut.dismiss(auth, { ids: ['health-1'] });
+
+    const privacy = { lockedOwnerId: auth.user.id };
+    expect(mediaHealthRepository.list).toHaveBeenCalledWith(expect.objectContaining({ privacy }));
+    expect(mediaHealthRepository.count).toHaveBeenCalledWith(expect.objectContaining({ privacy }));
+    expect(mediaHealthRepository.getAssets).toHaveBeenCalledWith([], auth.user.id, privacy);
+    expect(mediaHealthRepository.getByIds).toHaveBeenCalledWith(['health-1'], auth.user.id, privacy);
+  });
+
   it('queues candidate lookup only for the authenticated user', async () => {
     vi.mocked(mediaHealthRepository.createRun).mockResolvedValue({ id: 'run-1' } as never);
     vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue([{ id: 'health-1' }] as never);

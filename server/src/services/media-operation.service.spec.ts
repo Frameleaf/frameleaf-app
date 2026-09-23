@@ -76,6 +76,7 @@ describe(MediaOperationService.name, () => {
       getBulkByRequestId: vi.fn().mockResolvedValue(undefined),
       getActiveRetry: vi.fn().mockResolvedValue(undefined),
       countLockedAssets: vi.fn().mockResolvedValue(0),
+      getLockedAssetIds: vi.fn().mockResolvedValue(new Set()),
     } as unknown as MediaOperationRepository;
 
     sut = new MediaOperationService(mocks.logger as never, repository, mocks.access as never);
@@ -134,6 +135,47 @@ describe(MediaOperationService.name, () => {
         retryAt: '2026-09-22T10:00:30.000Z',
         errorCode: 'worker_lost',
       });
+    });
+  });
+
+  describe('Locked media (FL-34)', () => {
+    const lockedId = '0195e2a0-0000-7000-8000-0000000000aa';
+    const visibleId = '0195e2a0-0000-7000-8000-0000000000bb';
+
+    it('never names an asset that is Locked now to a session that has not unlocked it', async () => {
+      const operation = operationStub({ assetId: lockedId, resultAssetId: visibleId });
+      vi.mocked(repository.list).mockResolvedValue({ items: [operation], total: 1 });
+      vi.mocked(repository.getLockedAssetIds).mockResolvedValue(new Set([lockedId]));
+
+      const { items } = await sut.search(authStub.user1, {} as never);
+
+      expect(items[0]).toEqual(expect.objectContaining({ assetId: null, resultAssetId: visibleId }));
+      expect(repository.getLockedAssetIds).toHaveBeenCalledWith(authStub.user1.user.id, [lockedId, visibleId]);
+    });
+
+    it('leaves Locked items out of a bulk job’s detail and names them again once unlocked', async () => {
+      const operation = operationStub({
+        kind: MediaOperationKind.Bulk,
+        result: {
+          items: [
+            { id: lockedId, status: MediaOperationItemStatus.Ok },
+            { id: visibleId, status: MediaOperationItemStatus.Ok },
+          ],
+        },
+      } as never);
+      vi.mocked(repository.getForOwner).mockResolvedValue(operation);
+      vi.mocked(repository.getLockedAssetIds).mockResolvedValue(new Set([lockedId]));
+
+      const ordinary = await sut.get(authStub.user1, operation.id);
+      expect(ordinary.bulkItems.map(({ id }) => id)).toEqual([visibleId]);
+
+      vi.mocked(repository.getLockedAssetIds).mockClear();
+      const elevated = await sut.get(
+        { ...authStub.user1, session: { id: 'session-id', hasElevatedPermission: true } } as never,
+        operation.id,
+      );
+      expect(elevated.bulkItems.map(({ id }) => id)).toEqual([lockedId, visibleId]);
+      expect(repository.getLockedAssetIds).not.toHaveBeenCalled();
     });
   });
 

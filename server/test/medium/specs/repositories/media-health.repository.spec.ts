@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { AssetStatus, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum.js';
+import { AssetStatus, AssetVisibility, MediaHealthCategory, MediaHealthSeverity, MediaHealthStatus } from 'src/enum.js';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import forkCatalog from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -798,6 +798,38 @@ describe(MediaHealthRepository.name, () => {
           },
         ]),
       ).rejects.toThrow('Cannot replace media-health candidates for multiple findings');
+    });
+  });
+
+  describe('Locked media (FL-34)', () => {
+    it("lists Locked media to an interactive read only for its owner's elevated session", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: timeline } = await ctx.newAsset({ ownerId: user.id });
+      const { result: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      await sut.upsertFinding(findingDto(timeline.id, timeline.originalPath, null));
+      const lockedFinding = await sut.upsertFinding(findingDto(locked.id, locked.originalPath, null));
+      assert.isDefined(lockedFinding);
+
+      const ordinary = {};
+      const elevated = { lockedOwnerId: user.id };
+      const listed = async (privacy?: { lockedOwnerId?: string }) =>
+        (await sut.list({ ownerId: user.id, privacy, size: 10 })).map(({ assetId }) => assetId).sort();
+
+      await expect(listed(ordinary)).resolves.toEqual([timeline.id]);
+      await expect(listed(elevated)).resolves.toEqual([timeline.id, locked.id].sort());
+      await expect(sut.count({ ownerId: user.id, privacy: ordinary })).resolves.toBe(1);
+      await expect(sut.getByIds([lockedFinding.id], user.id, ordinary)).resolves.toEqual([]);
+      await expect(sut.getAssets([locked.id], user.id, ordinary)).resolves.toEqual([]);
+      await expect(sut.getAssets([locked.id], user.id, elevated)).resolves.toEqual([
+        expect.objectContaining({ id: locked.id }),
+      ]);
+
+      // a background job passes no privacy and still sees the Locked finding
+      await expect(listed()).resolves.toEqual([timeline.id, locked.id].sort());
+      await expect(sut.getByIds([lockedFinding.id], user.id)).resolves.toEqual([
+        expect.objectContaining({ id: lockedFinding.id }),
+      ]);
     });
   });
 });
