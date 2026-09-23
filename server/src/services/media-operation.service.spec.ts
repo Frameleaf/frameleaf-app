@@ -473,6 +473,22 @@ describe(MediaOperationService.name, () => {
       expect(result.id).toBe(existing.id);
     });
 
+    it('queues Library Care actions only from Library Care, whose gates it cannot see (FL-69)', async () => {
+      const payload = { mediaHealth: [{ assetId: assetIds[0], findingId: newUuid(), candidateId: newUuid() }] };
+      const request = { action: MediaOperationBulkAction.RecoverDamagedMedia, assetIds: [assetIds[0]], payload };
+
+      await expect(sut.createBulk(authStub.user1, request)).rejects.toBeInstanceOf(BadRequestException);
+      expect(repository.create).not.toHaveBeenCalled();
+
+      await sut.createBulk(authStub.user1, request, { libraryCare: true });
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: MediaOperationKind.Bulk,
+          snapshot: expect.objectContaining({ action: MediaOperationBulkAction.RecoverDamagedMedia, payload }),
+        }),
+      );
+    });
+
     it('refuses an action that is missing its payload', async () => {
       await expect(
         sut.createBulk(authStub.user1, { action: MediaOperationBulkAction.AddToAlbum, assetIds }),

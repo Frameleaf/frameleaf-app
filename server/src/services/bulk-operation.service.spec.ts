@@ -53,6 +53,7 @@ describe(BulkOperationService.name, () => {
   let users: { get: any; getMetadata: any };
   let apiKeys: { getById: any };
   let livePhoto: { relinkOne: any };
+  let mediaHealth: { applyBulkEntry: any };
 
   const running = { status: MediaOperationStatus.Rendering, cancelRequestedAt: null, pauseRequestedAt: null };
 
@@ -92,6 +93,11 @@ describe(BulkOperationService.name, () => {
     users = { get: vi.fn().mockResolvedValue({ ...authStub.user1.user }), getMetadata: vi.fn().mockResolvedValue([]) };
     apiKeys = { getById: vi.fn() };
     livePhoto = { relinkOne: vi.fn().mockResolvedValue({ success: true }) };
+    mediaHealth = {
+      applyBulkEntry: vi
+        .fn()
+        .mockImplementation((_auth, _action, entry) => Promise.resolve({ id: entry.assetId, status: 'ok' })),
+    };
 
     sut = new BulkOperationService(
       mocks.logger as never,
@@ -106,6 +112,7 @@ describe(BulkOperationService.name, () => {
       stacks as never,
       enrichment as never,
       livePhoto as never,
+      mediaHealth as never,
     );
   });
 
@@ -307,6 +314,56 @@ describe(BulkOperationService.name, () => {
       expect(livePhoto.relinkOne).not.toHaveBeenCalled();
       expect(outcomes).toEqual([
         { id: photoId, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_not_found' },
+      ]);
+    });
+
+    it.each([
+      MediaOperationBulkAction.RelinkMissingMedia,
+      MediaOperationBulkAction.RecoverDamagedMedia,
+      MediaOperationBulkAction.TrashDamagedMedia,
+    ])('hands each reviewed finding of a %s job to Library Care (FL-69)', async (action) => {
+      const [first, second, unreviewed] = [newUuid(), newUuid(), newUuid()];
+      const entries = [
+        { assetId: first, findingId: newUuid(), candidateId: newUuid() },
+        { assetId: second, findingId: newUuid(), candidateId: newUuid() },
+      ];
+      const snapshot = snapshotOf({ action, assetIds: [first, second, unreviewed], payload: { mediaHealth: entries } });
+      mediaHealth.applyBulkEntry.mockResolvedValueOnce({ id: first, status: MediaOperationItemStatus.Ok });
+      mediaHealth.applyBulkEntry.mockResolvedValueOnce({
+        id: second,
+        status: MediaOperationItemStatus.Skipped,
+        reasonKey: 'frameleaf_bulk_reason_media_health_changed',
+      });
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
+
+      expect(mediaHealth.applyBulkEntry).toHaveBeenNthCalledWith(1, authStub.user1, action, entries[0]);
+      expect(mediaHealth.applyBulkEntry).toHaveBeenNthCalledWith(2, authStub.user1, action, entries[1]);
+      expect(mediaHealth.applyBulkEntry).toHaveBeenCalledTimes(2);
+      // Library Care checks owner and Locked itself: an administrator may repair another account.
+      expect(mocks.access.asset.checkOwnerAccess).not.toHaveBeenCalled();
+      expect(outcomes).toEqual([
+        { id: first, status: MediaOperationItemStatus.Ok },
+        expect.objectContaining({ id: second, status: MediaOperationItemStatus.Skipped }),
+        { id: unreviewed, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_not_found' },
+      ]);
+    });
+
+    it('skips a Library Care item locked since a job submitted without the PIN (FL-69)', async () => {
+      const assetId = newUuid();
+      const snapshot = snapshotOf({
+        action: MediaOperationBulkAction.RelinkMissingMedia,
+        assetIds: [assetId],
+        payload: { mediaHealth: [{ assetId, findingId: newUuid(), candidateId: newUuid() }] },
+        elevated: false,
+      });
+      vi.mocked(operations.getLockedAssetIds).mockResolvedValue(new Set([assetId]));
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
+
+      expect(mediaHealth.applyBulkEntry).not.toHaveBeenCalled();
+      expect(outcomes).toEqual([
+        { id: assetId, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_locked' },
       ]);
     });
 
