@@ -21,7 +21,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`ALTER TABLE "media_operation_checkpoint" ADD COLUMN IF NOT EXISTS "updateId" uuid NOT NULL DEFAULT immich_uuid_v7();`.execute(
     db,
   );
-  await sql`CREATE UNIQUE INDEX "media_operation_retryOfId_active_uq"
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS "media_operation_retryOfId_active_uq"
   ON "media_operation" ("retryOfId")
   WHERE "retryOfId" IS NOT NULL AND "status" NOT IN ('completed', 'cancelled', 'failed');`.execute(db);
 }
