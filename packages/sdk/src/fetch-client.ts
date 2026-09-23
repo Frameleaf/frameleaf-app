@@ -5800,6 +5800,8 @@ export type TimeBucketAssetResponseDto = {
     livePhotoVideoId: (string | null)[];
     /** Array of UTC offset hours at the time each photo was taken. Positive values are east of UTC, negative values are west of UTC. Values may be fractional (e.g., 5.5 for +05:30, -9.75 for -09:45). Applying this offset to 'fileCreatedAt' will give you the time the photo was taken from the photographer's perspective. */
     localOffsetHours: number[];
+    /** Why each asset is locked, or null when it is not. Returned with visibility LOCKED and for the timeline of an elevated owner, which reveals their marked and detected items */
+    lockReason?: (AssetLockReason | null)[];
     /** Array of longitude coordinates extracted from EXIF GPS data */
     longitude?: (number | null)[];
     /** Array of owner IDs for each asset */
@@ -7624,6 +7626,18 @@ export function runAssetJobs({ assetJobsDto }: {
     })));
 }
 /**
+ * Lock assets
+ */
+export function lockAssets({ bulkIdsDto }: {
+    bulkIdsDto: BulkIdsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/assets/lock", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: bulkIdsDto
+    })));
+}
+/**
  * Delete asset metadata
  */
 export function deleteBulkAssetMetadata({ assetMetadataBulkDeleteDto }: {
@@ -7668,6 +7682,18 @@ export function getAssetStatistics({ isFavorite, isTrashed, visibility }: {
     }))}`, {
         ...opts
     }));
+}
+/**
+ * Unlock assets
+ */
+export function unlockAssets({ bulkIdsDto }: {
+    bulkIdsDto: BulkIdsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/assets/unlock", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: bulkIdsDto
+    })));
 }
 /**
  * Retrieve an asset
@@ -12453,13 +12479,14 @@ export function tagAssets({ id, bulkIdsDto }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, key, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     bbox?: string;
     dateType?: TimeBucketDateType;
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
+    lockReason?: AssetLockReason;
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
@@ -12484,6 +12511,7 @@ export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, 
         isFavorite,
         isTrashed,
         key,
+        lockReason,
         order,
         orderBy,
         personId,
@@ -12504,13 +12532,14 @@ export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, 
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed, key, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     bbox?: string;
     dateType?: TimeBucketDateType;
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
+    lockReason?: AssetLockReason;
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
@@ -12534,6 +12563,7 @@ export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed,
         isFavorite,
         isTrashed,
         key,
+        lockReason,
         order,
         orderBy,
         personId,
@@ -13133,6 +13163,11 @@ export enum AssetVisibility {
     Timeline = "timeline",
     Hidden = "hidden",
     Locked = "locked"
+}
+export enum AssetLockReason {
+    Marked = "marked",
+    Detected = "detected",
+    ImmichLockedFolder = "immich-locked-folder"
 }
 export enum AlbumUserRole {
     Editor = "editor",

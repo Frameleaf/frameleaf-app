@@ -14,12 +14,13 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { Album, columns } from 'src/database.js';
 import { ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
-import { AlbumUserRole, AssetVisibility, SharedLinkType } from 'src/enum.js';
+import { AlbumUserRole, SharedLinkType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
 import { withHiddenContentFilter } from 'src/utils/database.js';
+import { isNotLocked } from 'src/utils/locked.js';
 
 export type SharedLinkSearchOptions = HiddenContentQueryOptions & {
   userId: string;
@@ -40,7 +41,7 @@ const withSharedAssets = (eb: ExpressionBuilder<DB, 'shared_link'>, options: Sha
     .whereRef('shared_link.id', '=', 'shared_link_asset.sharedLinkId')
     .innerJoin('asset', 'asset.id', 'shared_link_asset.assetId')
     .where('asset.deletedAt', 'is', null)
-    .where('asset.visibility', '!=', sql.lit(AssetVisibility.Locked))
+    .where(isNotLocked('asset'))
     .$call((qb) => withHiddenContentFilter(qb, options))
     .selectAll('asset')
     .orderBy('asset.fileCreatedAt', 'asc');
@@ -107,7 +108,7 @@ export class SharedLinkRepository {
                   .whereRef('album_asset.assetId', '=', 'asset.id')
                   .where('asset.deletedAt', 'is', null)
                   // an album's Locked members never show through its shared link, see withSharedAssets
-                  .where('asset.visibility', '!=', sql.lit(AssetVisibility.Locked))
+                  .where(isNotLocked('asset'))
                   .$call((qb) => withHiddenContentFilter(qb, options))
                   .innerJoinLateral(withExifInfo, (join) => join.onTrue())
                   .select((eb) => eb.fn.toJson(eb.table('exifInfo')).as('exifInfo'))
@@ -262,7 +263,7 @@ export class SharedLinkRepository {
             .whereRef('asset.id', '=', 'shared_link_asset.assetId')
             // what create and update hand back follows the same rule as every other read of a link:
             // no Locked media, including a partner's item that moved into their Locked folder
-            .where('asset.visibility', '!=', sql.lit(AssetVisibility.Locked))
+            .where(isNotLocked('asset'))
             .selectAll('asset')
             .innerJoinLateral(withExifInfo, (join) => join.onTrue())
             .as('assets'),

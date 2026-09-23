@@ -4,6 +4,7 @@ import { AssetJobName, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
+  AssetLockReason,
   AssetMetadataKey,
   AssetStatus,
   AssetType,
@@ -309,6 +310,7 @@ describe(AssetService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
       mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.asset.lock.mockResolvedValue([asset.id]);
       mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([
         { ownerId: 'owner-1', personGroupId: 'person-group-1' },
       ]);
@@ -319,6 +321,19 @@ describe(AssetService.name, () => {
       expect(mocks.job.queueAll).toHaveBeenCalledWith([
         { name: JobName.PersonGenerateThumbnail, data: { ownerId: 'owner-1', personGroupId: 'person-group-1' } },
       ]);
+    });
+
+    it('should answer from the updated row when a session without the PIN locks the asset (FL-34)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.asset.lock.mockResolvedValue([asset.id]);
+
+      const response = await sut.update(authStub.admin, asset.id, { visibility: AssetVisibility.Locked });
+
+      expect(mocks.asset.lock).toHaveBeenCalledWith([asset.id], AssetLockReason.Marked, authStub.admin.user.id);
+      expect(mocks.asset.getById).not.toHaveBeenCalled();
+      expect(response).toEqual(expect.objectContaining({ id: asset.id, visibility: AssetVisibility.Locked }));
     });
 
     it('should not look for face thumbnails when the asset does not move into the Locked folder', async () => {
@@ -343,6 +358,7 @@ describe(AssetService.name, () => {
       ]);
       mocks.user.getProfileImageReplacement.mockResolvedValue(undefined);
       mocks.user.replaceLockedProfileImage.mockResolvedValue(true);
+      mocks.asset.lock.mockResolvedValue([asset.id]);
 
       await sut.update(authStub.adminWithElevatedPermission, asset.id, { visibility: AssetVisibility.Locked });
 
@@ -555,7 +571,7 @@ describe(AssetService.name, () => {
       });
     });
 
-    it('should keep album membership when assets move into the Locked folder (FL-32)', async () => {
+    it('should keep album membership when assets are locked (FL-32, FL-34)', async () => {
       const auth = authStub.adminWithElevatedPermission;
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
 
@@ -563,16 +579,38 @@ describe(AssetService.name, () => {
 
       await sut.updateAll(auth, { ids: ['asset-1', 'asset-2'], visibility: AssetVisibility.Locked });
 
-      expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1', 'asset-2'], {
-        visibility: AssetVisibility.Locked,
-      });
+      // `visibility: locked` is a lock record, never a stored visibility
+      expect(mocks.asset.lock).toHaveBeenCalledWith(['asset-1', 'asset-2'], AssetLockReason.Marked, auth.user.id);
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
       expect(mocks.album.removeAssetsFromAll).not.toHaveBeenCalled();
+    });
+
+    it('should never unlock when storing another visibility (FL-34)', async () => {
+      const auth = authStub.adminWithElevatedPermission;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.updateAll(auth, { ids: ['asset-1'], visibility: AssetVisibility.Timeline });
+
+      expect(mocks.asset.unlock).not.toHaveBeenCalled();
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1'], { visibility: AssetVisibility.Timeline });
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
+    it('should leave the lock alone when no visibility is asked for (FL-34)', async () => {
+      const auth = authStub.adminWithElevatedPermission;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.updateAll(auth, { ids: ['asset-1'], isFavorite: true });
+
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+      expect(mocks.asset.unlock).not.toHaveBeenCalled();
     });
 
     it('should queue one new thumbnail per person whose featured face became Locked (FL-53)', async () => {
       const auth = authStub.adminWithElevatedPermission;
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
       // the same person twice, e.g. from two chunks of a large move
+      mocks.asset.lock.mockResolvedValue(['asset-1', 'asset-2']);
       mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([
         { ownerId: 'owner-1', personGroupId: 'person-group-1' },
         { ownerId: 'owner-1', personGroupId: 'person-group-1' },
@@ -679,6 +717,36 @@ describe(AssetService.name, () => {
         localDateTime: new Date('2020-02-25T04:41:00.000Z'),
       });
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
+    });
+  });
+
+  describe('lock (FL-34)', () => {
+    it('should lock assets of the caller as their own lock without asking for the PIN', async () => {
+      const auth = authStub.admin;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.lock.mockResolvedValue(['asset-1']);
+
+      await sut.lock(auth, { ids: ['asset-1'] });
+
+      expect(mocks.asset.lock).toHaveBeenCalledWith(['asset-1'], AssetLockReason.Marked, auth.user.id);
+      expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith(['asset-1']);
+    });
+
+    it('should refuse assets the caller may not change', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+
+      await expect(sut.lock(authStub.admin, { ids: ['asset-1'] })).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
+    it('should follow up nothing when every asset was already locked', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.lock.mockResolvedValue([]);
+
+      await sut.lock(authStub.admin, { ids: ['asset-1'] });
+
+      expect(mocks.person.getMissingThumbnailsForAssets).not.toHaveBeenCalled();
     });
   });
 
@@ -992,6 +1060,28 @@ describe(AssetService.name, () => {
       );
 
       expect(mocks.asset.upsertBulkMetadata).not.toHaveBeenCalled();
+    });
+
+    it('should lock an asset whose owner review marks it sensitive (FL-34)', async () => {
+      const asset = AssetFactory.create();
+      const value = { nsfwDetection: { review: { action: 'marked-nsfw', isNsfw: true } } };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.upsertMetadata.mockResolvedValue([]);
+
+      await sut.upsertMetadata(authStub.admin, asset.id, { items: [{ key: AssetMetadataKey.MlEnrichment, value }] });
+
+      expect(mocks.asset.lock).toHaveBeenCalledWith([asset.id], AssetLockReason.Marked, authStub.admin.user.id);
+    });
+
+    it('should not lock a detection while hiding sensitive detections is off (FL-34)', async () => {
+      const asset = AssetFactory.create();
+      const value = { nsfwDetection: { status: 'success', result: { isNsfw: true, score: 0.99, labels: {} } } };
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.upsertMetadata.mockResolvedValue([]);
+
+      await sut.upsertMetadata(authStub.admin, asset.id, { items: [{ key: AssetMetadataKey.MlEnrichment, value }] });
+
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
     });
   });
 

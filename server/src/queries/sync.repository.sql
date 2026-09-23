@@ -244,7 +244,14 @@ where
     end
   )
   and (
-    "asset"."visibility" != 'locked'
+    not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
     or "asset"."ownerId" = $7
   )
 order by
@@ -388,7 +395,14 @@ where
     end
   )
   and (
-    "asset"."visibility" != 'locked'
+    not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
     or "asset"."ownerId" = $7
   )
 order by
@@ -531,7 +545,14 @@ where
     end
   )
   and (
-    "asset"."visibility" != 'locked'
+    not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
     or "asset"."ownerId" = $6
   )
 order by
@@ -616,7 +637,14 @@ where
     end
   )
   and (
-    "asset"."visibility" != 'locked'
+    not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
     or "asset"."ownerId" = $5
   )
 order by
@@ -702,7 +730,14 @@ where
     end
   )
   and (
-    "asset"."visibility" != 'locked'
+    not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
     or "asset"."ownerId" = $5
   )
 order by
@@ -788,7 +823,14 @@ where
     end
   )
   and (
-    "asset"."visibility" != 'locked'
+    not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
     or "asset"."ownerId" = $4
   )
 order by
@@ -849,7 +891,14 @@ where
     end
   )
   and (
-    "asset"."visibility" != 'locked'
+    not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
     or "asset"."ownerId" = $5
   )
 order by
@@ -973,7 +1022,14 @@ where
     end
   )
   and (
-    "asset"."visibility" != 'locked'
+    not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
     or "asset"."ownerId" = $4
   )
 order by

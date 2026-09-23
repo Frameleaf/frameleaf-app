@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { AlbumKind, AssetFileType, AssetVisibility, PetObservationState } from 'src/enum.js';
+import { AlbumKind, AssetFileType, AssetLockReason, AssetVisibility, PetObservationState } from 'src/enum.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -8,11 +8,8 @@ import { StackRepository } from 'src/repositories/stack.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { up as clearLockedCoverReferences } from 'src/schema/migrations/2100000000300-ClearLockedCoverReferences.js';
-import {
-  down as undoLockWholeStacks,
-  up as lockWholeStacks,
-} from 'src/schema/migrations/2100000000310-LockWholeStacksAndRecordProfileImageSource.js';
 import { BaseService } from 'src/services/base.service.js';
+import { effectiveVisibility } from 'src/utils/locked.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -51,8 +48,13 @@ const markBestPhoto = (db: Kysely<DB>, asset: { id: string; ownerId: string }, s
     .values({ assetId: asset.id, ownerId: asset.ownerId, score, scoreVersion: 1, computedAt: new Date() })
     .execute();
 
+/** The visibility each asset shows a caller (FL-34): `locked` when it has a lock record. */
 const visibilityOf = async (db: Kysely<DB>, assetIds: string[]) => {
-  const rows = await db.selectFrom('asset').select(['id', 'visibility']).where('id', 'in', assetIds).execute();
+  const rows = await db
+    .selectFrom('asset')
+    .select(['id', effectiveVisibility('asset').as('visibility')])
+    .where('id', 'in', assetIds)
+    .execute();
   return Object.fromEntries(rows.map((row) => [row.id, row.visibility]));
 };
 
@@ -178,8 +180,16 @@ const referencesOf = async (db: Kysely<DB>, seeded: Seeded) => {
   };
 };
 
-/** Data written before FL-53, or by a writer that bypassed the release: Locked, covers kept. */
+/** A writer that bypassed the release: a lock record (FL-34), covers kept. */
 const lockBehindTheRelease = (db: Kysely<DB>, assetId: string) =>
+  db
+    .insertInto('asset_lock')
+    .values({ assetId, reason: AssetLockReason.Marked, lockedBy: null })
+    .onConflict((oc) => oc.column('assetId').doNothing())
+    .execute();
+
+/** Data saved before FL-53 and before FL-34: the upstream Locked folder, covers kept. */
+const lockInOldFolder = (db: Kysely<DB>, assetId: string) =>
   db.updateTable('asset').set({ visibility: AssetVisibility.Locked }).where('id', '=', assetId).execute();
 
 const membershipOf = (db: Kysely<DB>, assetId: string) =>
@@ -339,7 +349,7 @@ describe('Locked cover references (FL-53)', () => {
       const { ctx } = context;
       const seeded = await seed(context);
       const untouched = await seed(context);
-      await lockBehindTheRelease(ctx.database, seeded.cover.id);
+      await lockInOldFolder(ctx.database, seeded.cover.id);
       await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
         expect.objectContaining({ personFace: seeded.lockedFace.id, petFeatured: seeded.cover.id }),
       );
@@ -370,8 +380,8 @@ describe('Locked cover references (FL-53)', () => {
       const context = setup();
       const { ctx } = context;
       const seeded = await seed(context);
-      await lockBehindTheRelease(ctx.database, seeded.cover.id);
-      await lockBehindTheRelease(ctx.database, seeded.fallback.id);
+      await lockInOldFolder(ctx.database, seeded.cover.id);
+      await lockInOldFolder(ctx.database, seeded.fallback.id);
 
       await clearLockedCoverReferences(ctx.database);
 
@@ -391,7 +401,7 @@ describe('Locked cover references (FL-53)', () => {
         personGroupId: seeded.person.personGroupId,
       });
       await markBestPhoto(ctx.database, best);
-      await lockBehindTheRelease(ctx.database, seeded.cover.id);
+      await lockInOldFolder(ctx.database, seeded.cover.id);
 
       await clearLockedCoverReferences(ctx.database);
 
@@ -404,7 +414,7 @@ describe('Locked cover references (FL-53)', () => {
       const context = setup();
       const { ctx } = context;
       const seeded = await seed(context);
-      await lockBehindTheRelease(ctx.database, seeded.cover.id);
+      await lockInOldFolder(ctx.database, seeded.cover.id);
 
       await setForkPhase(ctx.database, 'inactive');
       try {
@@ -440,7 +450,7 @@ describe('Locked cover references (FL-53)', () => {
           { petId: seeded.pet.id, assetId: seeded.fallback.id },
         ])
         .execute();
-      await lockBehindTheRelease(ctx.database, seeded.cover.id);
+      await lockInOldFolder(ctx.database, seeded.cover.id);
 
       await clearLockedCoverReferences(ctx.database);
 
@@ -588,24 +598,27 @@ describe('Locked cover references (FL-53)', () => {
       await expect(coverOf(ctx.database, album.id)).resolves.toBe(other.id);
     });
 
-    it('moves the whole stack out of the Locked folder to the same place', async () => {
+    it('unlocks the whole stack, each photo back exactly where it was (FL-34)', async () => {
       const context = setup();
       const { ctx, sut } = context;
       const { primary, member } = await seedStack(context);
+      await sut.update({ id: member.id, visibility: AssetVisibility.Archive });
       await sut.update({ id: primary.id, visibility: AssetVisibility.Locked });
 
-      await sut.update({ id: member.id, visibility: AssetVisibility.Archive });
-
       await expect(visibilityOf(ctx.database, [primary.id, member.id])).resolves.toEqual({
-        [primary.id]: AssetVisibility.Archive,
-        [member.id]: AssetVisibility.Archive,
+        [primary.id]: AssetVisibility.Locked,
+        [member.id]: AssetVisibility.Locked,
       });
 
-      await sut.updateAll([primary.id], { visibility: AssetVisibility.Locked });
-      await sut.updateAll([primary.id], { visibility: AssetVisibility.Timeline });
+      await expect(sut.unlock([member.id])).resolves.toEqual(
+        expect.arrayContaining([
+          { assetId: primary.id, reason: AssetLockReason.Marked },
+          { assetId: member.id, reason: AssetLockReason.Marked },
+        ]),
+      );
       await expect(visibilityOf(ctx.database, [primary.id, member.id])).resolves.toEqual({
         [primary.id]: AssetVisibility.Timeline,
-        [member.id]: AssetVisibility.Timeline,
+        [member.id]: AssetVisibility.Archive,
       });
     });
 
@@ -664,31 +677,6 @@ describe('Locked cover references (FL-53)', () => {
       await expect(ctx.get(PersonRepository).getMissingThumbnailsForAssets([primary.id])).resolves.toEqual([
         { ownerId: owner.id, personGroupId: person.personGroupId },
       ]);
-    });
-  });
-
-  describe('migration 2100000000310-LockWholeStacksAndRecordProfileImageSource', () => {
-    it('locks stacks saved half Locked and repairs the covers of the photos it locks', async () => {
-      const context = setup();
-      const { ctx } = context;
-      const { primary, member, other, album } = await seedStack(context);
-      const untouched = await seedStack(context);
-      await lockBehindTheRelease(ctx.database, primary.id);
-
-      await undoLockWholeStacks(ctx.database);
-      await lockWholeStacks(ctx.database);
-
-      await expect(visibilityOf(ctx.database, [primary.id, member.id, other.id])).resolves.toEqual({
-        [primary.id]: AssetVisibility.Locked,
-        [member.id]: AssetVisibility.Locked,
-        [other.id]: AssetVisibility.Timeline,
-      });
-      await expect(coverOf(ctx.database, album.id)).resolves.toBe(other.id);
-      await expect(visibilityOf(ctx.database, [untouched.primary.id, untouched.member.id])).resolves.toEqual({
-        [untouched.primary.id]: AssetVisibility.Timeline,
-        [untouched.member.id]: AssetVisibility.Timeline,
-      });
-      await expect(coverOf(ctx.database, untouched.album.id)).resolves.toBe(untouched.member.id);
     });
   });
 

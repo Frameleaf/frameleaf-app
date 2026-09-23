@@ -509,7 +509,14 @@ from
 where
   "asset"."deletedAt" is null
   and "album_asset"."albumId" = $1
-  and "asset"."visibility" != 'locked'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     case
       when "asset"."id" is null then false

@@ -1,10 +1,18 @@
-import { AssetOrder, getAssetInfo, getTimeBuckets, TimeBucketDateType, type AssetResponseDto } from '@immich/sdk';
+import {
+  AssetLockReason,
+  AssetOrder,
+  AssetVisibility,
+  getAssetInfo,
+  getTimeBuckets,
+  TimeBucketDateType,
+  type AssetResponseDto,
+} from '@immich/sdk';
 import { clamp, isEqual } from 'lodash-es';
 import { SvelteDate, SvelteSet } from 'svelte/reactivity';
+import { revealsLocks } from '$lib/frameleaf/session-access.svelte';
 import { VirtualScrollManager } from '$lib/managers/VirtualScrollManager/VirtualScrollManager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import { GroupInsertionCache } from '$lib/managers/timeline-manager/group-insertion-cache.svelte';
 import { updateTimelineMonthViewportProximity } from '$lib/managers/timeline-manager/internal/intersection-support.svelte';
 import { updateGeometry } from '$lib/managers/timeline-manager/internal/layout-support.svelte';
@@ -508,11 +516,28 @@ export class TimelineManager extends VirtualScrollManager {
     return [...result.notUpdated];
   }
 
-  // Only remove locally when the server would actually hide the asset from this
-  // view. That means NSFW hiding is enabled globally AND this view isn't the
-  // suppressed/review view (which exists to surface hidden assets).
+  /**
+   * Whether an item whose lock just changed still belongs in this view (FL-34). A newly locked item
+   * stays in the Locked view and in an unlocked session's timeline, which reveals the owner's marks;
+   * a newly unlocked item leaves the Locked view only.
+   */
+  keepsAfterLockChange(locked: boolean): boolean {
+    const isLockedView = this.#options.visibility === AssetVisibility.Locked;
+    return locked ? isLockedView || revealsLocks(this.#options) : !isLockedView;
+  }
+
+  // Marking an item sensitive locks it (FL-34), so every view drops it except the Locked view, which
+  // is where it now lives, and an unlocked session's timeline, which reveals the owner's marks: there
+  // it stays, badged as sensitive, exactly as the server returns it on the next load.
   #handleMarkNsfw(ids: string[]) {
-    if (!featureFlagsManager.value.nsfwHiding || this.#options.suppressedOnly) {
+    if (this.#options.visibility === AssetVisibility.Locked) {
+      return;
+    }
+    if (revealsLocks(this.#options)) {
+      this.update(ids, (asset) => {
+        asset.visibility = AssetVisibility.Locked;
+        asset.lockReason = AssetLockReason.Marked;
+      });
       return;
     }
     for (const id of ids) {
@@ -656,10 +681,23 @@ export class TimelineManager extends VirtualScrollManager {
     return retrieveRangeUtil(this, start, end);
   }
 
+  /**
+   * FL-34: an unlocked session reveals the owner's own sensitive marks and detections in the timeline
+   * ("Revealed for this session"); the server sends them with visibility `locked` and their reason.
+   * Anything else locked never belongs to a timeline view.
+   */
+  #isVisibilityMismatch(asset: TimelineAsset) {
+    const revealed =
+      this.#options.visibility === AssetVisibility.Timeline &&
+      asset.visibility === AssetVisibility.Locked &&
+      (asset.lockReason === AssetLockReason.Marked || asset.lockReason === AssetLockReason.Detected);
+    return !revealed && isMismatched(this.#options.visibility, asset.visibility);
+  }
+
   isExcluded(asset: TimelineAsset) {
     return (
       this.#nsfwHiddenAssetIds.has(asset.id) ||
-      isMismatched(this.#options.visibility, asset.visibility) ||
+      this.#isVisibilityMismatch(asset) ||
       isMismatched(this.#options.isFavorite, asset.isFavorite) ||
       isMismatched(this.#options.isTrashed, asset.isTrashed) ||
       (this.#options.tagId && asset.tags && !asset.tags.includes(this.#options.tagId)) ||

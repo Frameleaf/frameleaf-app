@@ -11,6 +11,8 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
   let db: Kysely<DB>;
   let repository: ICloudMetadataRepository;
   let service: ICloudMetadataService;
+  // the lock follow-up (FL-34) runs in AssetService on this event
+  const events = { emit: vi.fn() };
   beforeAll(async () => {
     db = await getKyselyDB();
     await sql`DROP SCHEMA public CASCADE`.execute(db);
@@ -43,12 +45,16 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
       'CREATE TABLE immich_fork.asset_best_photo_score("assetId" uuid PRIMARY KEY REFERENCES asset,score double precision)',
       'ALTER TABLE pet ADD COLUMN "ownerId" uuid',
       `CREATE TABLE pet_observation(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),"petId" uuid REFERENCES pet,"assetId" uuid REFERENCES asset,state text NOT NULL DEFAULT 'confirmed')`,
+      // Locked is a lock record (FL-34); locking touches the asset and takes live-photo parts along
+      `CREATE TABLE asset_lock("assetId" uuid PRIMARY KEY REFERENCES asset ON DELETE CASCADE,reason text NOT NULL,"lockedAt" timestamptz NOT NULL DEFAULT now(),"lockedBy" uuid,"previousVisibility" text)`,
+      'ALTER TABLE asset ADD COLUMN "livePhotoVideoId" uuid',
+      'ALTER TABLE asset ADD COLUMN "updatedAt" timestamptz',
     ]) {
       await sql.raw(statement).execute(db);
     }
     await migration.up(db);
     repository = new ICloudMetadataRepository(db);
-    service = new ICloudMetadataService(repository);
+    service = new ICloudMetadataService(repository, events as never);
   });
   afterAll(async () => {
     await db?.destroy();
@@ -80,7 +86,9 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
         isFavorite: boolean;
         visibility: string;
         fileCreatedAt: Date;
-      }>`SELECT "isFavorite",visibility,"fileCreatedAt" FROM asset WHERE id=${assetId}::uuid`,
+      }>`SELECT "isFavorite",
+        CASE WHEN EXISTS (SELECT 1 FROM asset_lock l WHERE l."assetId"=asset.id) THEN 'locked' ELSE visibility END AS visibility,
+        "fileCreatedAt" FROM asset WHERE id=${assetId}::uuid`,
     );
   const baseline = (id: string) =>
     first(
@@ -102,6 +110,8 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
       visibility: 'locked',
       fileCreatedAt: new Date('2020-03-04T12:34:56Z'),
     });
+    // the lock's follow-up (new face thumbnails, replaced profile pictures) runs once it commits (FL-34)
+    expect(events.emit).toHaveBeenCalledWith('AssetLockAll', { assetIds: [ctx.assetId], userId: ctx.ownerId });
     expect(
       await first(
         sql`SELECT "dateTimeOriginal","lockedProperties",description,latitude,longitude,"timeZone" FROM asset_exif WHERE "assetId"=${ctx.assetId}::uuid`,
@@ -248,7 +258,9 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
     await sourceUpdate(ctx.resourceId, { isFavorite: false, isHidden: false });
     await service.reconcile(ctx.connectionId, ctx.ownerId);
     expect(await target(ctx.assetId)).toMatchObject({ isFavorite: false, visibility: 'locked' });
+    // the owner unlocked it into the archive (FL-34: the lock record goes, the visibility is stored)
     await sql`UPDATE asset SET "isFavorite"=true,visibility='archive' WHERE id=${ctx.assetId}::uuid`.execute(db);
+    await sql`DELETE FROM asset_lock WHERE "assetId"=${ctx.assetId}::uuid`.execute(db);
     await sourceUpdate(ctx.resourceId, { isHidden: true });
     await service.reconcile(ctx.connectionId, ctx.ownerId);
     expect(await target(ctx.assetId)).toMatchObject({ isFavorite: true, visibility: 'archive' });

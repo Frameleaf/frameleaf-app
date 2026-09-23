@@ -254,7 +254,7 @@ export type StudioGrantVerification =
 type AssetRow = Pick<
   Selectable<AssetTable>,
   'id' | 'ownerId' | 'type' | 'visibility' | 'deletedAt' | 'isOffline' | 'originalPath' | 'checksum'
->;
+> & { isLocked?: boolean | null };
 
 type AssetDecision =
   | { ok: true; asset: AssetRow; sourceAccess: 'owner' | 'shared' }

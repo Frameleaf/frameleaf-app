@@ -7,9 +7,15 @@ import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getPrivacyQueryOptions, requireSuppressedOnlyAccess } from 'src/utils/hidden-content.js';
+import { getLockedOwnerId } from 'src/utils/locked.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLocationHiddenPartnerIds } from 'src/utils/partner-location.js';
 import { requirePetFilterAllowed } from 'src/utils/search-filter.js';
+
+const getRevealOptions = (auth: AuthDto) => {
+  const revealLockedOwnerId = getLockedOwnerId(auth);
+  return revealLockedOwnerId ? { revealLockedOwnerId } : {};
+};
 
 @Injectable()
 export class TimelineService extends BaseService {
@@ -30,7 +36,7 @@ export class TimelineService extends BaseService {
   }
 
   private async buildTimeBucketOptions(auth: AuthDto, dto: TimeBucketDto): Promise<TimeBucketOptions> {
-    const { userId, suppressedOnly, ...options } = dto;
+    const { userId, suppressedOnly, lockReason, ...options } = dto;
     let userIds: string[] | undefined;
 
     if (userId) {
@@ -59,15 +65,24 @@ export class TimelineService extends BaseService {
       ...options,
       ...getPrivacyQueryOptions(auth, suppressedOnly),
       // An album shows the viewer their own Locked members in an elevated session (owner decision,
-      // September 22, 2026). The main timeline never does: the Locked folder is its own view.
+      // September 22, 2026). The main timeline never does: the Locked view is its own view.
       ...(dto.albumId ? getLockedVisibilityOptions(auth) : {}),
       userIds,
+      ...(lockReason ? { lockReasons: [lockReason] } : {}),
+      // FL-34: the owner's own sensitive marks and detections show in their ordinary timeline once the
+      // session is unlocked ("Revealed for this session"); items from the old Locked folder do not
+      ...(!dto.albumId && dto.visibility === AssetVisibility.Timeline ? getRevealOptions(auth) : {}),
       ...(locationHiddenOwnerIds.length > 0 ? { locationHiddenOwnerIds } : {}),
     };
   }
 
   private async timeBucketChecks(auth: AuthDto, dto: TimeBucketDto) {
     requireSuppressedOnlyAccess(auth, dto.suppressedOnly);
+
+    // FL-34: why an asset is locked is part of the Locked view only
+    if (dto.lockReason && dto.visibility !== AssetVisibility.Locked) {
+      throw new BadRequestException('lockReason is only supported with visibility LOCKED');
+    }
 
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);

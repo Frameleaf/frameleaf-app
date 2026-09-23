@@ -199,8 +199,10 @@ describe('core plugin', () => {
 
       await expect(ctx.sut.handleAssetTrigger({ workflowId: workflow.id, assetId: asset.id })).resolves.toBeUndefined();
 
+      // a lock record (FL-34), never a stored `locked` visibility
       await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({
-        visibility: AssetVisibility.Locked,
+        visibility: AssetVisibility.Timeline,
+        isLocked: true,
       });
     });
 
@@ -218,9 +220,7 @@ describe('core plugin', () => {
         JobStatus.Skipped,
       );
 
-      await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({
-        visibility: AssetVisibility.Locked,
-      });
+      await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({ isLocked: true });
     });
   });
 

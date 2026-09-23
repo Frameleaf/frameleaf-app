@@ -24,6 +24,7 @@ import { AssetDuplicateResult } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { suggestDuplicateKeepAssetIds } from 'src/utils/duplicate.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { effectiveVisibilityOf } from 'src/utils/locked.js';
 import { ThumbnailConfig } from 'src/utils/media.js';
 import { batched, isDuplicateDetectionEnabled } from 'src/utils/misc.js';
 
@@ -324,7 +325,8 @@ export class DuplicateService extends BaseService {
     response.assetUpdate.isFavorite = assets.some((asset) => asset.isFavorite);
 
     const visibilityOrder = [AssetVisibility.Locked, AssetVisibility.Archive, AssetVisibility.Timeline];
-    let visibility = visibilityOrder.find((level) => assets.some((asset) => asset.visibility === level));
+    // `locked` is the lock record (FL-34); `updateAll` turns it into a lock on the kept copy
+    let visibility = visibilityOrder.find((level) => assets.some((asset) => effectiveVisibilityOf(asset) === level));
     if (!visibility && assets.some((asset) => asset.visibility === AssetVisibility.Hidden)) {
       visibility = AssetVisibility.Hidden;
     }

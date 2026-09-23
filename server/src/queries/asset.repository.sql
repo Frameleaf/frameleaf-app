@@ -347,7 +347,14 @@ from
 where
   "ownerId" = $1::uuid
   and "checksum" in ($2)
-  and "asset"."visibility" != 'locked'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     case
       when "asset"."id" is null then false
@@ -399,7 +406,14 @@ where
   "ownerId" = $1::uuid
   and "checksum" = $2
   and "libraryId" is null
-  and "asset"."visibility" != 'locked'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     case
       when "asset"."id" is null then false
@@ -455,7 +469,14 @@ where
   and "createdAt" >= $2
   and "createdAt" < $3
   and "deletedAt" is null
-  and "asset"."visibility" != 'locked'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
 group by
   date_trunc('DAY', "asset"."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
 order by
@@ -893,7 +914,6 @@ from
 where
   "asset"."type" = 'IMAGE'
   and "asset"."deletedAt" is null
-  and "asset"."visibility" != 'hidden'
   and "asset"."visibility" in ('archive', 'timeline')
   and exists (
     select

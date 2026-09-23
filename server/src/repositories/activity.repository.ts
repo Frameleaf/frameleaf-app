@@ -1,15 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { type Insertable, type Kysely, type NotNull, type Updateable, sql } from 'kysely';
+import { type Insertable, type Kysely, type NotNull, type Updateable } from 'kysely';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { ActivityTable } from 'src/schema/tables/activity.table.js';
 import { asUuid, dummy, withHiddenContentFilter } from 'src/utils/database.js';
+import { isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
 
 export interface ActivitySearch extends HiddenContentQueryOptions, LockedVisibilityOptions {
   albumId?: string;
@@ -58,11 +58,7 @@ export class ActivityRepository {
       // learns the item's id or what was said about it (owner decision, September 22, 2026)
       .$if(!options.includeLocked, (qb) =>
         qb.where((eb) =>
-          eb.or([
-            eb('asset.id', 'is', null),
-            eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
-            ...(options.lockedOwnerId ? [eb('asset.ownerId', '=', options.lockedOwnerId)] : []),
-          ]),
+          eb.or([eb('asset.id', 'is', null), notLockedOrOwnedBy(options.lockedOwnerId, 'asset')]),
         ),
       )
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -141,8 +137,7 @@ export class ActivityRepository {
       .where('activity.albumId', '=', albumId)
       .where(({ or, and, eb }) => {
         // counted exactly as `search` lists: a Locked item's reactions only for its owner's elevated session
-        const notLocked = eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked));
-        const visible = lockedOwnerId ? or([notLocked, eb('asset.ownerId', '=', lockedOwnerId)]) : notLocked;
+        const visible = lockedOwnerId ? notLockedOrOwnedBy(lockedOwnerId, 'asset') : isNotLocked('asset');
         return or([and([eb('asset.deletedAt', 'is', null), visible]), eb('asset.id', 'is', null)]);
       })
       .executeTakeFirstOrThrow();
