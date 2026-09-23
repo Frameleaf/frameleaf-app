@@ -1,5 +1,6 @@
 import {
   getAllLibraries,
+  getLibraryStatistics,
   getUserPreferencesAdmin,
   getUserSessionsAdmin,
   getUserStatisticsAdmin,
@@ -25,14 +26,21 @@ export const load = (async ({ params, url }) => {
     redirect(307, Route.users());
   }
 
-  // `libraries` is every library in the system, the same call the library-management list page
-  // makes; the account detail's Libraries tab (FL-76) filters it to this account's own.
-  const [userPreferences, userStatistics, userSessions, libraries] = await Promise.all([
+  // Every library in the system, the same call the library-management list page makes, narrowed
+  // to this account's own for the account detail's Libraries tab (FL-76).
+  const [userPreferences, userStatistics, userSessions, allLibraries] = await Promise.all([
     getUserPreferencesAdmin({ id: user.id }),
     getUserStatisticsAdmin({ id: user.id }),
     getUserSessionsAdmin({ id: user.id }),
     getAllLibraries(),
   ]);
+  const libraries = allLibraries.filter((library) => library.ownerId === user.id);
+
+  // Item counts for the Libraries tab: each external library's own, and the managed uploads row
+  // is the account's total less these (FL-76). The same statistics the library pages show.
+  const libraryStatistics = Object.fromEntries(
+    await Promise.all(libraries.map(async ({ id }) => [id, await getLibraryStatistics({ id })] as const)),
+  );
 
   const $t = await getFormatter();
 
@@ -42,6 +50,7 @@ export const load = (async ({ params, url }) => {
     userStatistics,
     userSessions,
     libraries,
+    libraryStatistics,
     meta: {
       title: $t('admin.user_details'),
     },

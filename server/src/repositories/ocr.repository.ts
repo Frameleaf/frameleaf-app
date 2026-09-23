@@ -5,6 +5,7 @@ import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetOcrResponseDto } from 'src/dtos/ocr.dto.js';
 import { DB } from 'src/schema/index.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
+import { tokenizeForSearch } from 'src/utils/database.js';
 
 @Injectable()
 export class OcrRepository {
@@ -106,7 +107,17 @@ export class OcrRepository {
           .execute();
       }
 
-      const searchText = visible.map((item) => item.text.trim()).join(' ');
+      // FL-63: the searchable text is rebuilt from every line that is visible now, tokenized the way
+      // `upsert` writes it. Built from `visible` alone it lost the lines this edit did not touch (an
+      // edit without a crop passes only the lines it restored), so a rotated photo stopped being
+      // found by its text, and a later crop could still be found by text it no longer shows.
+      const lines = await trx
+        .selectFrom('asset_ocr')
+        .select('asset_ocr.text')
+        .where('asset_ocr.assetId', '=', assetId)
+        .where('asset_ocr.isVisible', '=', true)
+        .execute();
+      const searchText = lines.flatMap((line) => tokenizeForSearch(line.text)).join(' ');
       await trx.updateTable('ocr_search').set({ text: searchText }).where('assetId', '=', assetId).execute();
     });
   }

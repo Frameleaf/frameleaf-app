@@ -1,6 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssetRestorationMode, AssetRestorationSourceType, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
-import { AssetType, JobName, MediaOperationDestination, MediaOperationKind, MediaOperationStatus, MlDestinationKind, MlWorkload } from 'src/enum.js';
+import {
+  AssetType,
+  JobName,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+  MlDestinationKind,
+  MlWorkload,
+  QueueName,
+} from 'src/enum.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
@@ -185,6 +194,9 @@ describe(RestorationWorkerService.name, () => {
 
     mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
     mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.lan);
+    // FL-72: no library routes on the restoration worker's endpoint and nothing shares its GPU.
+    mocks.mlDestination.getRoutes.mockResolvedValue([]);
+    mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, mlDestinationStub.lan]);
     mocks.machineLearning.probe.mockResolvedValue({ ...mlProbeStub.healthy, workloads: [MlWorkload.RestorationFaithful] });
     mocks.media.decodeImage.mockResolvedValue({ data: Buffer.alloc(12, 128), info: { width: 4000, height: 3000, channels: 3 } } as never);
     mocks.media.getImageMetadata
@@ -287,9 +299,14 @@ describe(RestorationWorkerService.name, () => {
     });
 
     it('fails in place when the destination refuses, never moving the media elsewhere', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPod);
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPodVideo);
 
-      await sut.run(operation({ snapshot: snapshot({ destinationId: mlDestinationStub.runPod.id, destinationKind: MlDestinationKind.RunPod }) }), CLAIM);
+      await sut.run(
+        operation({
+          snapshot: snapshot({ destinationId: mlDestinationStub.runPodVideo.id, destinationKind: MlDestinationKind.RunPodVideo }),
+        }),
+        CLAIM,
+      );
 
       expect(restore).not.toHaveBeenCalled();
       expect(operations.fail).toHaveBeenCalledWith(
@@ -424,6 +441,53 @@ describe(RestorationWorkerService.name, () => {
         expect.objectContaining({ kinds: [MediaOperationKind.RestorationPreview, MediaOperationKind.Restoration] }),
       );
       expect(await sut.tick()).toBe(false);
+    });
+
+    describe('a restoration worker on the GPU library analysis uses (FL-72)', () => {
+      const shared = { ...mlDestinationStub.lan, sharesLibraryHardware: true };
+      const counts = (active: number, waiting: number) => ({ active, waiting, completed: 0, failed: 0, delayed: 0, paused: 0 });
+
+      beforeEach(() => {
+        mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, shared]);
+        mocks.job.isPaused.mockResolvedValue(false);
+      });
+
+      it('holds full restorations bound to it while library analysis has work, and never previews', async () => {
+        mocks.job.getJobCounts.mockImplementation((queue) =>
+          Promise.resolve(queue === QueueName.FaceDetection ? counts(1, 40) : counts(0, 0)),
+        );
+
+        await sut.tick();
+
+        expect(operations.claimNext).toHaveBeenCalledWith(
+          expect.objectContaining({ holdBack: { kinds: [MediaOperationKind.Restoration], destinationIds: [shared.id] } }),
+        );
+      });
+
+      it('claims normally once library analysis is idle', async () => {
+        mocks.job.getJobCounts.mockResolvedValue(counts(0, 0));
+
+        await sut.tick();
+
+        expect(operations.claimNext).toHaveBeenCalledWith(expect.not.objectContaining({ holdBack: expect.anything() }));
+      });
+
+      it('does not wait behind a queue an administrator paused', async () => {
+        mocks.job.getJobCounts.mockResolvedValue(counts(0, 500));
+        mocks.job.isPaused.mockResolvedValue(true);
+
+        await sut.tick();
+
+        expect(operations.claimNext).toHaveBeenCalledWith(expect.not.objectContaining({ holdBack: expect.anything() }));
+      });
+
+      it('never reads the queues when no worker shares hardware', async () => {
+        mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, mlDestinationStub.lan]);
+
+        await sut.tick();
+
+        expect(mocks.job.getJobCounts).not.toHaveBeenCalled();
+      });
     });
   });
 

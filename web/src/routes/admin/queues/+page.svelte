@@ -20,8 +20,10 @@
 
   let queues = $derived<QueueResponseDto[]>(queueManager.queues);
 
-  const { ResumePaused, CreateJob, ManageConcurrency } = $derived(getQueuesActions($t, queueManager.queues));
-  const commands: ActionItem[] = $derived([CreateJob, ManageConcurrency]);
+  const { ResumePaused, CreateJob, ManageConcurrency, EnrichmentTasks } = $derived(
+    getQueuesActions($t, queueManager.queues),
+  );
+  const commands: ActionItem[] = $derived([CreateJob, ManageConcurrency, EnrichmentTasks]);
 
   const onQueueUpdate = (update: QueueResponseDto) => {
     queues = queues.map((queue) => {
@@ -37,7 +39,10 @@
 
 <OnEvents {onQueueUpdate} />
 
-<AdminPageLayout breadcrumbs={[{ title: data.meta.title }]} actions={[ResumePaused, CreateJob, ManageConcurrency]}>
+<AdminPageLayout
+  breadcrumbs={[{ title: data.meta.title }]}
+  actions={[ResumePaused, ManageConcurrency, EnrichmentTasks, CreateJob]}
+>
   <Container size="medium" center>
     {#if queues}
       <JobsPanel {queues} />

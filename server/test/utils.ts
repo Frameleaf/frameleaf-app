@@ -20,6 +20,7 @@ import { FileUploadInterceptor } from 'src/middleware/file-upload.interceptor.js
 import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
+import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
@@ -239,6 +240,7 @@ export const automock = <T>(
 export type ServiceOverrides = {
   access: AccessRepository;
   activity: ActivityRepository;
+  adminAudit: AdminAuditRepository;
   album: AlbumRepository;
   albumUser: AlbumUserRepository;
   apiKey: ApiKeyRepository;
@@ -331,6 +333,8 @@ export const getMocks = () => {
     cron: automock(CronRepository, { args: [, loggerMock] }),
     crypto: newCryptoRepositoryMock(),
     activity: automock(ActivityRepository),
+    // recording an administrator's change is incidental to most tests (FL-76)
+    adminAudit: automock(AdminAuditRepository, { strict: false }),
     album: automock(AlbumRepository, { strict: false }),
     albumUser: automock(AlbumUserRepository),
     asset: newAssetRepositoryMock(),
@@ -405,6 +409,8 @@ export const getMocks = () => {
     Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, updatedAt: new Date() }),
   );
   mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+  // no route names a restoration endpoint for library work unless a test says otherwise (FL-72)
+  mocks.mlDestination.getRoutes.mockResolvedValue([]);
   mocks.mlDestination.getSpend.mockResolvedValue(0);
   mocks.mlDestination.recordProbe.mockResolvedValue();
   mocks.mlDestination.recordAccounting.mockResolvedValue();
@@ -424,6 +430,7 @@ export const newTestService = <T extends BaseService>(
     overrides.logger || (mocks.logger as As<LoggingRepository>),
     overrides.access || (mocks.access as IAccessRepository as AccessRepository),
     overrides.activity || (mocks.activity as As<ActivityRepository>),
+    overrides.adminAudit || (mocks.adminAudit as As<AdminAuditRepository>),
     overrides.album || (mocks.album as As<AlbumRepository>),
     overrides.albumUser || (mocks.albumUser as As<AlbumUserRepository>),
     overrides.apiKey || (mocks.apiKey as As<ApiKeyRepository>),

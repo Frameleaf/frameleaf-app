@@ -6,6 +6,8 @@
   import DetailPanelLocation from '$lib/components/asset-viewer/DetailPanelLocation.svelte';
   import DetailPanelRating from '$lib/components/asset-viewer/DetailPanelStarRating.svelte';
   import DetailPanelTags from '$lib/components/asset-viewer/DetailPanelTags.svelte';
+  import DocumentTextSection from '$lib/components/frameleaf/DocumentTextSection.svelte';
+  import VideoMomentsPanel from '$lib/components/frameleaf/VideoMomentsPanel.svelte';
   import ViewerDetailRows from '$lib/components/frameleaf/ViewerDetailRows.svelte';
   import { timeToLoadTheMap } from '$lib/constants';
   import type { DescriptionSource } from '$lib/frameleaf/info-panel';
@@ -158,6 +160,8 @@
       {onAssetSuppressed}
       onDescriptionReview={(review) => (descriptionSource = review?.source ?? 'none')}
     />
+    <!-- FL-59: a video's reusable frames, cover and timestamped moments. -->
+    <VideoMomentsPanel {asset} {isOwner} />
     <DetailPanelRating {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
     <DetailPanelPeople {asset} {isOwner} {previousRoute} onFacesChanged={handleRefreshPeople} />
 
@@ -284,6 +288,9 @@
       </section>
     {/if}
   {/await}
+
+  <!-- FL-63: the design puts "Text in this photo" last, after the albums and the owner. -->
+  <DocumentTextSection {asset} />
 
   <div class="pb-12"></div>
 {/if}

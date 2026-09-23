@@ -12,7 +12,9 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
+import { VIDEO_MOMENT_EXTRACTOR_VERSION, identityHash, sourceFingerprint } from 'src/utils/enrichment-plan.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
 
@@ -1401,6 +1403,21 @@ describe(ImageEnrichmentService.name, () => {
 
   describe('video descriptions', () => {
     const videoAssetId = newUuid();
+    const source = {
+      id: videoAssetId,
+      ownerId,
+      type: AssetType.Video,
+      status: AssetStatus.Active,
+      deletedAt: null,
+      visibility: AssetVisibility.Timeline,
+      originalPath: '/data/library/clip.mp4',
+      checksum: Buffer.from('aabb', 'hex'),
+      fileModifiedAt: new Date('2026-01-01T00:00:00Z'),
+      duration: 14_000,
+      videoStream: {},
+      format: { duration: 14_000 },
+    };
+    const fingerprint = sourceFingerprint(source);
 
     const baseVideoAsset = {
       id: videoAssetId,
@@ -1413,7 +1430,26 @@ describe(ImageEnrichmentService.name, () => {
       previewFile,
     };
 
-    it('persists a skipped status with video-frames-unavailable when no duplicate frames exist', async () => {
+    const frames = [
+      { id: newUuid(), assetId: videoAssetId, frameIndex: 2, timestampMs: 9000, path: '/frames/2.jpeg', rank: 1 },
+      { id: newUuid(), assetId: videoAssetId, frameIndex: 0, timestampMs: 1000, path: '/frames/0.jpeg', rank: 3 },
+      { id: newUuid(), assetId: videoAssetId, frameIndex: 1, timestampMs: 5000, path: '/frames/1.jpeg', rank: 2 },
+      { id: newUuid(), assetId: videoAssetId, frameIndex: 3, timestampMs: 13_000, path: '/frames/3.jpeg', rank: 4 },
+    ];
+
+    const describedAs = {
+      description: 'A short video.',
+      people: [],
+      environment: 'outdoors',
+      objects: [],
+      visible_text: [],
+      context: '',
+      tags: [],
+    };
+
+    let moments: Record<string, ReturnType<typeof vi.fn>>;
+
+    beforeEach(() => {
       mocks.systemMetadata.get.mockResolvedValue({
         machineLearning: {
           enabled: true,
@@ -1422,7 +1458,21 @@ describe(ImageEnrichmentService.name, () => {
         },
       });
       mocks.assetJob.getForImageEnrichment.mockResolvedValue(baseVideoAsset);
-      mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([]);
+      moments = {
+        getVideoSource: vi.fn().mockResolvedValue(source),
+        getFingerprints: vi.fn().mockResolvedValue(new Map([[videoAssetId, fingerprint]])),
+        getIndex: vi
+          .fn()
+          .mockResolvedValue({ sourceFingerprint: fingerprint, extractorVersion: VIDEO_MOMENT_EXTRACTOR_VERSION }),
+        getFrames: vi.fn().mockResolvedValue(frames),
+        replaceFrames: vi.fn(),
+        withFrameLock: vi.fn((_assetId: string, callback: () => Promise<unknown>) => callback()),
+      };
+      sut.useVideoMomentRepository(moments as never);
+    });
+
+    it('persists a skipped status with video-frames-unavailable when no frames can be had', async () => {
+      moments.getVideoSource.mockResolvedValue(undefined);
 
       await expect(sut.handleImageDescription({ id: videoAssetId })).resolves.toBe(JobStatus.Skipped);
 
@@ -1438,33 +1488,13 @@ describe(ImageEnrichmentService.name, () => {
       expect(saved.description.reason).toBe('video-frames-unavailable');
     });
 
-    it('composes a frame grid and passes videoContext to the prompt when frames are present', async () => {
-      mocks.systemMetadata.get.mockResolvedValue({
-        machineLearning: {
-          enabled: true,
-          nsfwDetection: { enabled: false },
-          imageDescription: { enabled: true, modelName: 'Qwen/Qwen2.5-VL-3B-Instruct' },
-        },
-      });
-      mocks.assetJob.getForImageEnrichment.mockResolvedValue(baseVideoAsset);
-      mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([
-        { assetId: videoAssetId, frameIndex: 0, timestampMs: 1000, path: '/frames/0.jpeg' },
-        { assetId: videoAssetId, frameIndex: 1, timestampMs: 5000, path: '/frames/1.jpeg' },
-        { assetId: videoAssetId, frameIndex: 2, timestampMs: 9000, path: '/frames/2.jpeg' },
-        { assetId: videoAssetId, frameIndex: 3, timestampMs: 13_000, path: '/frames/3.jpeg' },
-      ] as never);
-      mocks.machineLearning.describeImage.mockResolvedValue({
-        description: 'A short video.',
-        people: [],
-        environment: 'outdoors',
-        objects: [],
-        visible_text: [],
-        context: '',
-        tags: [],
-      });
+    it('composes a grid of the reusable frames in time order, without duplicate detection', async () => {
+      mocks.machineLearning.describeImage.mockResolvedValue(describedAs);
 
       await expect(sut.handleImageDescription({ id: videoAssetId })).resolves.toBe(JobStatus.Success);
 
+      expect(mocks.duplicateRepository.getVideoDuplicateFrames).not.toHaveBeenCalled();
+      expect(moments.replaceFrames).not.toHaveBeenCalled();
       expect(mocks.media.composeImageGrid).toHaveBeenCalledWith(
         ['/frames/0.jpeg', '/frames/1.jpeg', '/frames/2.jpeg', '/frames/3.jpeg'],
         expect.objectContaining({ cols: 2, rows: 2, output: expect.stringContaining('_description_grid.jpeg') }),
@@ -1483,14 +1513,90 @@ describe(ImageEnrichmentService.name, () => {
       expect(mocks.storage.unlink).toHaveBeenCalledWith(gridPath);
     });
 
+    it('pins the source fingerprint and the confirmed names on the stored description', async () => {
+      mocks.machineLearning.describeImage.mockResolvedValue(describedAs);
+
+      await sut.handleImageDescription({ id: videoAssetId });
+
+      const saved = mocks.asset.upsertMetadata.mock.calls
+        .map((call) => call[1][0]?.value as { description?: { status?: string; provenance?: Record<string, string> } })
+        .find((value) => value?.description?.status === 'success')!;
+      expect(saved.description!.provenance).toEqual(
+        expect.objectContaining({
+          sourceFingerprint: fingerprint,
+          identityHash: identityHash([]),
+          destinationId: expect.any(String),
+        }),
+      );
+    });
+
+    it('publishes nothing when the original is replaced while the model is working', async () => {
+      moments.getFingerprints
+        .mockResolvedValueOnce(new Map([[videoAssetId, fingerprint]]))
+        .mockResolvedValueOnce(new Map([[videoAssetId, 'replaced']]));
+      mocks.machineLearning.describeImage.mockResolvedValue(describedAs);
+
+      await expect(sut.describeAsset(videoAssetId)).resolves.toEqual({
+        status: JobStatus.Skipped,
+        reasonKey: 'source-changed',
+      });
+
+      const published = mocks.asset.upsertMetadata.mock.calls.some(
+        (call) =>
+          (call[1][0]?.value as { description?: { status?: string } } | undefined)?.description?.status === 'success',
+      );
+      expect(published).toBe(false);
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+    });
+
     it('keeps the image-asset path unchanged (no grid compose, no video context)', async () => {
-      // Default beforeEach mocks already configure an image asset.
+      mocks.assetJob.getForImageEnrichment.mockResolvedValue({
+        id: assetId,
+        ownerId,
+        type: AssetType.Image,
+        status: AssetStatus.Active,
+        deletedAt: null,
+        visibility: AssetVisibility.Timeline,
+        description: '',
+        previewFile,
+      });
+      mocks.machineLearning.describeImage.mockResolvedValue({ ...describedAs, description: 'A bright kitchen.' });
+
+      await expect(sut.handleImageDescription({ id: assetId })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.media.composeImageGrid).not.toHaveBeenCalled();
+      expect(moments.getVideoSource).not.toHaveBeenCalled();
+      const describeCall = mocks.machineLearning.describeImage.mock.calls[0];
+      expect(describeCall[1]).toBe(previewFile);
+      expect(describeCall[4] as string).not.toContain('composite');
+    });
+  });
+
+  describe('enrichment plan stages (FL-59)', () => {
+    it('sends a pinned plan to the destination it pinned, not the routed one', async () => {
+      const pinned = { ...mlDestinationStub.local, id: newUuid() };
+      mocks.mlDestination.getById.mockResolvedValue(pinned);
       mocks.systemMetadata.get.mockResolvedValue({
-        machineLearning: {
-          enabled: true,
-          nsfwDetection: { enabled: false },
-          imageDescription: { enabled: true, modelName: 'Qwen/Qwen2.5-VL-3B-Instruct' },
-        },
+        machineLearning: { nsfwDetection: { enabled: true }, imageDescription: { enabled: false } },
+      });
+      mocks.machineLearning.detectNsfw.mockResolvedValue({ isNsfw: false, score: 0.01, labels: {} });
+
+      await expect(
+        sut.detectLockedContent(assetId, { enrichmentDestinationId: pinned.id, nsfwDetection: { threshold: 0.5 } }),
+      ).resolves.toEqual({ status: JobStatus.Success });
+
+      expect(mocks.mlDestination.getRoute).not.toHaveBeenCalled();
+      expect(mocks.mlDestination.getById).toHaveBeenCalledWith(pinned.id);
+      expect(mocks.machineLearning.detectNsfw).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: pinned.id }),
+        previewFile,
+        expect.objectContaining({ threshold: 0.5 }),
+      );
+    });
+
+    it('leaves the description embedding alone when the plan pinned no search destination', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { enabled: true, nsfwDetection: { enabled: false }, imageDescription: { enabled: true } },
       });
       mocks.machineLearning.describeImage.mockResolvedValue({
         description: 'A bright kitchen.',
@@ -1502,13 +1608,101 @@ describe(ImageEnrichmentService.name, () => {
         tags: [],
       });
 
-      await expect(sut.handleImageDescription({ id: assetId })).resolves.toBe(JobStatus.Success);
+      await expect(
+        sut.describeAsset(assetId, {
+          planRun: true,
+          enrichmentDestinationId: mlDestinationStub.local.id,
+          searchDestinationId: null,
+        }),
+      ).resolves.toEqual({ status: JobStatus.Success });
 
-      expect(mocks.media.composeImageGrid).not.toHaveBeenCalled();
-      expect(mocks.duplicateRepository.getVideoDuplicateFrames).not.toHaveBeenCalled();
-      const describeCall = mocks.machineLearning.describeImage.mock.calls[0];
-      expect(describeCall[1]).toBe(previewFile);
-      expect(describeCall[4] as string).not.toContain('composite');
+      expect(mocks.machineLearning.encodeText).not.toHaveBeenCalled();
+      expect(mocks.mlDestination.getRoute).not.toHaveBeenCalled();
+    });
+
+    it('reports a refused destination as a failed stage with the reason', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { nsfwDetection: { enabled: true }, imageDescription: { enabled: false } },
+      });
+      mocks.mlDestination.getById.mockResolvedValue(undefined);
+
+      const result = await sut.detectLockedContent(assetId, { enrichmentDestinationId: newUuid() });
+
+      expect(result).toEqual(expect.objectContaining({ status: JobStatus.Failed, reasonKey: 'model-error' }));
+      expect(mocks.machineLearning.detectNsfw).not.toHaveBeenCalled();
+    });
+
+    it('skips the Locked-content check for a video', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { nsfwDetection: { enabled: true }, imageDescription: { enabled: false } },
+      });
+      mocks.assetJob.getForImageEnrichment.mockResolvedValue({
+        id: assetId,
+        ownerId,
+        type: AssetType.Video,
+        status: AssetStatus.Active,
+        deletedAt: null,
+        visibility: AssetVisibility.Timeline,
+        description: '',
+        previewFile,
+      });
+
+      await expect(sut.detectLockedContent(assetId)).resolves.toEqual({
+        status: JobStatus.Skipped,
+        reasonKey: 'not-an-image',
+      });
+    });
+  });
+
+  describe('previewDescription (FL-59)', () => {
+    it('describes a sample with the draft prompt and writes nothing', async () => {
+      mocks.machineLearning.describeImage.mockResolvedValue({
+        description: 'A turquoise alpine lake.',
+        people: [],
+        environment: 'outdoors',
+        objects: [],
+        visible_text: [],
+        context: '',
+        tags: ['lake'],
+      });
+      const draft = {
+        ...defaults.machineLearning.imageDescription,
+        modelName: 'draft-model',
+        prompt: { ...defaults.machineLearning.imageDescription.prompt, customInstructions: 'Name the lake.' },
+      };
+
+      const preview = await sut.previewDescription(assetId, {
+        imageDescription: draft,
+        destinationId: mlDestinationStub.local.id,
+      });
+
+      expect(preview).toEqual(
+        expect.objectContaining({ status: 'success', candidate: 'A turquoise alpine lake.', modelName: 'draft-model' }),
+      );
+      expect(mocks.machineLearning.describeImage).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: mlDestinationStub.local.id }),
+        previewFile,
+        expect.objectContaining({ modelName: 'draft-model' }),
+        undefined,
+        expect.stringContaining('Name the lake.'),
+      );
+      expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.tag.upsertAssetIds).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
+    it('reports a model failure without writing a failed status', async () => {
+      mocks.machineLearning.describeImage.mockRejectedValue(new Error('model offline'));
+
+      const preview = await sut.previewDescription(assetId, {
+        imageDescription: defaults.machineLearning.imageDescription,
+        destinationId: mlDestinationStub.local.id,
+      });
+
+      expect(preview).toEqual(expect.objectContaining({ status: 'failed', message: 'model offline' }));
+      expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
     });
   });
 });

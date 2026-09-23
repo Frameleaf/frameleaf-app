@@ -12,7 +12,7 @@ The dirty checkout also contains `library-backlog.json`, but that fragment omits
 
 Read these preservation records before changing a covered surface:
 
-- [Web route inventory](../frameleaf-route-inventory.json) — the exact 70 production routes at reviewed baseline `7cfa62336f394189c0450533c30618c66366d868`, plus 14 dirty-only routes recorded as absent and unreviewed.
+- [Web route inventory](../frameleaf-route-inventory.json) — the exact 80 committed production routes (the 70 at reviewed baseline `7cfa62336f394189c0450533c30618c66366d868` plus 10 added by FL stories, implemented in code and not qualified), plus 12 dirty-only routes recorded as absent and unreviewed.
 - [Library action parity](../frameleaf-library-action-parity.md) — source action families and the evidence required before replacing them.
 - [Settings and administration inventory](../frameleaf-settings-inventory.md) — current admin routes, settings composition, account boundaries, and known API gaps.
 

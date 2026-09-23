@@ -40,6 +40,7 @@ import {
   textFieldCondition,
   toServerFilter,
   withSearchDefaults,
+  withSpaceScope,
 } from '$lib/components/discovery/query';
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
 import type { LibraryViewState } from '$lib/frameleaf/library-session';
@@ -395,9 +396,18 @@ export const snapshotSearch = (state: LibraryViewState): SnapshotSearch => {
       ? { ...albums, all: [...new Set([...(albums.all ?? []), state.scope.id])] }
       : { any: [state.scope.id] };
   }
-  if (state.scope.kind === 'space' || state.query.spaceId) {
-    // Shared spaces are not expressible in the search DTO; the caller must select explicitly.
+  if (state.scope.kind === 'space' && !state.scope.id) {
     return { kind: 'unsupported', reasonKey: 'frameleaf_bulk_reason_scope_unsupported' };
+  }
+  // FL-48 map/space follow-ups: a shared space is an album of kind `space` (`withSpaceScope`), so a
+  // matching set is resolved for it exactly as an album scope is, on top of any album condition the
+  // query already has. `resolveMatchingIds`/`countMatching` call the authenticated search endpoints,
+  // which apply the caller's own album access, so a viewer's matching set is never wider than what
+  // the space already shows them; the caller is the one that restricts which actions a viewer may
+  // run over it (`bulk-actions.ts`'s `spaceViewerMatching`).
+  const spaceId = state.scope.kind === 'space' ? state.scope.id : state.query.spaceId;
+  if (spaceId) {
+    filter = withSpaceScope(filter, spaceId);
   }
   // Locked browsing depends on an elevated session and its own visibility handling; a matching set
   // is never guessed for it.

@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put } from '@nestjs/common';
 import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   CreateLibraryDto,
@@ -10,7 +11,7 @@ import {
   ValidateLibraryResponseDto,
 } from 'src/dtos/library.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
-import { Authenticated } from 'src/middleware/auth.guard.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { UUIDParamDto } from 'src/validation.js';
 
@@ -37,8 +38,8 @@ export class LibraryController {
     description: 'Create a new external library.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  createLibrary(@Body() dto: CreateLibraryDto): Promise<LibraryResponseDto> {
-    return this.service.create(dto);
+  createLibrary(@Auth() auth: AuthDto, @Body() dto: CreateLibraryDto): Promise<LibraryResponseDto> {
+    return this.service.create(dto, auth);
   }
 
   @Get(':id')
@@ -63,15 +64,23 @@ export class LibraryController {
       .stable('v2')
       .deprecated('v3', { replacementId: 'updateLibrary' }),
   })
-  updateLibrary(@Param() { id }: UUIDParamDto, @Body() dto: UpdateLibraryDto): Promise<LibraryResponseDto> {
-    return this.service.update(id, dto);
+  updateLibrary(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: UpdateLibraryDto,
+  ): Promise<LibraryResponseDto> {
+    return this.service.update(id, dto, auth);
   }
 
   @Patch(':id')
   @ApiExcludeEndpoint()
   @Authenticated({ permission: Permission.LibraryUpdate, admin: true })
-  updateLibraryV3(@Param() { id }: UUIDParamDto, @Body() dto: UpdateLibraryDto): Promise<LibraryResponseDto> {
-    return this.service.update(id, dto);
+  updateLibraryV3(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: UpdateLibraryDto,
+  ): Promise<LibraryResponseDto> {
+    return this.service.update(id, dto, auth);
   }
 
   @Delete(':id')
@@ -82,8 +91,8 @@ export class LibraryController {
     description: 'Delete an external library by its ID.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  deleteLibrary(@Param() { id }: UUIDParamDto): Promise<void> {
-    return this.service.delete(id);
+  deleteLibrary(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.delete(id, auth);
   }
 
   @Post(':id/validate')
@@ -119,7 +128,7 @@ export class LibraryController {
     description: 'Queue a scan for the external library to find and import new assets.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  scanLibrary(@Param() { id }: UUIDParamDto): Promise<void> {
-    return this.service.queueScan(id);
+  scanLibrary(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.queueScan(id, auth);
   }
 }

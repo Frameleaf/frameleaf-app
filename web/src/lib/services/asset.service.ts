@@ -465,6 +465,7 @@ const getAssetJobMessage = ($t: MessageFormatter, job: AssetJobName) => {
   const messages: Record<AssetJobName, string> = {
     [AssetJobName.RefreshFaces]: $t('refreshing_faces'),
     [AssetJobName.RefreshMetadata]: $t('refreshing_metadata'),
+    [AssetJobName.RefreshOcr]: $t('frameleaf_documents_reading_again'),
     [AssetJobName.RegenerateThumbnail]: $t('regenerating_thumbnails'),
     [AssetJobName.TranscodeVideo]: $t('refreshing_encoded_video'),
   };

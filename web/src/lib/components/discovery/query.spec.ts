@@ -68,7 +68,10 @@ describe('discovery query', () => {
     expect(contextDiscoveryQuery(new URL(`http://localhost/sharing/${spaceId}/photos/${albumId}`)).spaceId).toBe(
       spaceId,
     );
-    expect(contextDiscoveryQuery(new URL('http://localhost/map')).view).toBe('map');
+    // FL-48 map/space follow-ups: the map page contributes no scope. The prototype always lands a
+    // submitted search on the plain grid results (App.jsx `exploreQuery`/`MapView`'s "Search this
+    // area"), so a search opened from /map is unscoped, exactly like /photos.
+    expect(contextDiscoveryQuery(new URL('http://localhost/map'))).toEqual(emptyDiscoveryQuery());
     expect(contextDiscoveryQuery(new URL('http://localhost/photos'))).toEqual(emptyDiscoveryQuery());
   });
 

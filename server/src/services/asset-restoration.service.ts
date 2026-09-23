@@ -24,6 +24,7 @@ import {
   CacheControl,
   JobName,
   MediaOperationKind,
+  MlAdmissionRefusal,
   MlDestinationHealth,
   MlDestinationKind,
   MlWorkload,
@@ -46,10 +47,12 @@ import { ImmichFileResponse } from 'src/utils/file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
+  MlDestinationRefusedError,
   evaluateAdmission,
   hasRequiredConsent,
   isCloudDestination,
   resolveEndpoint,
+  restorationRoleConflict,
   selectMlDestination,
 } from 'src/utils/ml-destination.js';
 import {
@@ -185,13 +188,25 @@ export class AssetRestorationService {
 
     const destinations: AssetRestorationDestinationDto[] = [];
     for (const row of rows) {
-      const verdict = evaluateAdmission({
+      let verdict = evaluateAdmission({
         destination: row,
         workload,
         endpoint: resolveEndpoint(row, this.machineLearningRepository.getRunPodEndpoint()),
         probe: this.probeFromRow(row),
         spentUsd: row.budgetLimitUsd === null ? 0 : await this.mlDestinationRepository.getSpend(row.id, windowStart(ML_BUDGET_WINDOW_DAYS)),
       });
+      if (verdict.admitted) {
+        // FL-72: the rule requestPreview and accept apply before anything is created, so the
+        // picker never offers an endpoint library analysis uses.
+        const conflict = await restorationRoleConflict(
+          { mlDestinationRepository: this.mlDestinationRepository, machineLearningRepository: this.machineLearningRepository },
+          row,
+          workload,
+        );
+        if (conflict) {
+          verdict = { admitted: false, refusal: MlAdmissionRefusal.RoleConflict, detail: conflict };
+        }
+      }
       const sample = await this.mlDestinationRepository.getThroughput(row.id, since, workload);
       destinations.push({
         id: row.id,
@@ -237,11 +252,8 @@ export class AssetRestorationService {
     const workload = workloadForMode(dto.mode);
     const region = dto.region ?? DEFAULT_RESTORATION_REGION;
 
-    // Consent, allow-list, budget and health are all decided here, before a row exists.
-    await selectMlDestination(
-      { mlDestinationRepository: this.mlDestinationRepository, machineLearningRepository: this.machineLearningRepository },
-      { workload, destinationId: dto.destinationId, jobName: MediaOperationKind.RestorationPreview },
-    );
+    // Consent, allow-list, budget, health and the worker's role are all decided here, before a row exists.
+    await this.admitRestoration(workload, dto.destinationId, MediaOperationKind.RestorationPreview);
     const destination = await this.requireDestination(dto.destinationId);
     const output = cappedOutputSize(source.width, source.height, dto.upscale);
     const sample = await this.mlDestinationRepository.getThroughput(destination.id, windowStart(ESTIMATE_WINDOW_DAYS), workload);
@@ -317,10 +329,7 @@ export class AssetRestorationService {
       throw new BadRequestException('The destination this preview ran on has been removed; request a new preview');
     }
 
-    await selectMlDestination(
-      { mlDestinationRepository: this.mlDestinationRepository, machineLearningRepository: this.machineLearningRepository },
-      { workload: restoration.workload as MlWorkload, destinationId: restoration.destinationId, jobName: MediaOperationKind.Restoration },
-    );
+    await this.admitRestoration(restoration.workload as MlWorkload, restoration.destinationId, MediaOperationKind.Restoration);
     const destination = await this.requireDestination(restoration.destinationId);
     const output = cappedOutputSize(restoration.sourceWidth, restoration.sourceHeight, restoration.upscale);
     const sample = await this.mlDestinationRepository.getThroughput(
@@ -542,6 +551,23 @@ export class AssetRestorationService {
       durationSeconds,
       sizeBytes: Number(exif?.fileSizeInByte ?? 0),
     };
+  }
+
+  /**
+   * Admit a restoration request up front: refused when the destination is the library-analysis
+   * pod, still allows library work or shares an endpoint a library route uses (FL-72), and then
+   * by the ordinary admission (consent, allow-list, budget, live health). Nothing is moved.
+   */
+  private async admitRestoration(workload: MlWorkload, destinationId: string, jobName: MediaOperationKind) {
+    const deps = { mlDestinationRepository: this.mlDestinationRepository, machineLearningRepository: this.machineLearningRepository };
+    const row = await this.mlDestinationRepository.getById(destinationId);
+    if (row) {
+      const conflict = await restorationRoleConflict(deps, row, workload);
+      if (conflict) {
+        throw new MlDestinationRefusedError(MlAdmissionRefusal.RoleConflict, workload, row.id, conflict);
+      }
+    }
+    await selectMlDestination(deps, { workload, destinationId, jobName });
   }
 
   /** The persisted probe as an admission input; nothing is probed on a read. */

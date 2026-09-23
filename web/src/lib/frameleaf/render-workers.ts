@@ -156,6 +156,11 @@ export const operationKindKey: Readonly<Record<MediaOperationKind, Translations>
   [MediaOperationKind.Restoration]: 'frameleaf_render_workers_kind_restoration',
   [MediaOperationKind.RestorationPreview]: 'frameleaf_render_workers_kind_restoration_preview',
   [MediaOperationKind.QuickEdit]: 'frameleaf_render_workers_kind_quick_edit',
+  [MediaOperationKind.Bulk]: 'frameleaf_render_workers_kind_bulk',
+  [MediaOperationKind.StudioBundleExport]: 'frameleaf_render_workers_kind_studio_bundle_export',
+  [MediaOperationKind.StudioBundleImport]: 'frameleaf_render_workers_kind_studio_bundle_import',
+  [MediaOperationKind.EnrichmentPlan]: 'frameleaf_render_workers_kind_enrichment_plan',
+  [MediaOperationKind.IcloudSync]: 'frameleaf_render_workers_kind_icloud_sync',
 };
 
 export const auditEventKey: Readonly<Record<RenderWorkerAuditEvent, Translations>> = {
