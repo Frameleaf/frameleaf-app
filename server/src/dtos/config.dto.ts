@@ -4,6 +4,8 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { DeepPartial } from 'src/types.js';
 import {
+  ClassificationRuleAction,
+  ClassificationRuleActionSchema,
   AudioCodec,
   AudioCodecSchema,
   CQMode,
@@ -207,8 +209,14 @@ const runpodDefaults = {
   serverless: runpodServerlessDefaults,
 };
 
+const smartAlbumRulesDefaults = {
+  visualCategories: true,
+  defaultAction: ClassificationRuleAction.Review,
+};
+
 const smartAlbumsDefaults = {
   enabled: false,
+  rules: smartAlbumRulesDefaults,
   builtIn: {
     travel: {
       enabled: true,
@@ -557,9 +565,21 @@ const SmartAlbumKindSchema = z
   })
   .meta({ id: 'AdminConfigSmartAlbumKindDto' });
 
+/**
+ * Rules people write for their own smart albums (FL-60). `defaultAction` is only the action a new
+ * rule starts with; archiving is never a default and always an explicit, consented rule choice.
+ */
+const AdminConfigSmartAlbumRulesSchema = z
+  .object({
+    visualCategories: configBool.describe('Whether rules may match visual category phrases'),
+    defaultAction: ClassificationRuleActionSchema.describe('The action a new rule starts with'),
+  })
+  .meta({ id: 'AdminConfigSmartAlbumRulesDto' });
+
 const AdminConfigSmartAlbumsSchema = z
   .object({
     enabled: configBool.describe('Master smart-album enabled toggle'),
+    rules: AdminConfigSmartAlbumRulesSchema.default(smartAlbumRulesDefaults),
     builtIn: z
       .object({
         travel: SmartAlbumKindSchema,

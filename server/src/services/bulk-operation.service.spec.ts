@@ -56,6 +56,7 @@ describe(BulkOperationService.name, () => {
   let livePhoto: { relinkOne: any };
   let duplicateDecisions: { applyGroup: any; undoGroup: any; getLockedIds: any };
   let mediaHealth: { applyBulkEntry: any };
+  let classification: { applyBulkBatch: any };
 
   const running = { status: MediaOperationStatus.Rendering, cancelRequestedAt: null, pauseRequestedAt: null };
 
@@ -106,6 +107,14 @@ describe(BulkOperationService.name, () => {
         .mockImplementation((_auth, _action, entry) => Promise.resolve({ id: entry.assetId, status: 'ok' })),
     };
 
+    classification = {
+      applyBulkBatch: vi
+        .fn()
+        .mockImplementation((_auth, _ruleId, ids: string[]) =>
+          Promise.resolve(ids.map((id) => ({ id, status: 'ok' }))),
+        ),
+    };
+
     sut = new BulkOperationService(
       mocks.logger as never,
       operations,
@@ -121,6 +130,7 @@ describe(BulkOperationService.name, () => {
       livePhoto as never,
       duplicateDecisions as never,
       mediaHealth as never,
+      classification as never,
     );
   });
 

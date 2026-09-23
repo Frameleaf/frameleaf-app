@@ -29,6 +29,7 @@ import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
@@ -249,6 +250,7 @@ export type ServiceOverrides = {
   assetEdit: AssetEditRepository;
   assetFile: AssetFileRepository;
   assetJob: AssetJobRepository;
+  classification: ClassificationRepository;
   clusterGroup: ClusterGroupRepository;
   config: ConfigRepository;
   cron: CronRepository;
@@ -342,6 +344,7 @@ export const getMocks = () => {
     assetEdit: automock(AssetEditRepository),
     assetFile: automock(AssetFileRepository),
     assetJob: automock(AssetJobRepository),
+    classification: automock(ClassificationRepository, { strict: false }),
     clusterGroup: automock(ClusterGroupRepository),
     app: automock(AppRepository, { strict: false }),
     config: newConfigRepositoryMock(),
@@ -400,6 +403,22 @@ export const getMocks = () => {
   // every new user gets a cluster group, which is incidental to most tests
   mocks.clusterGroup.create.mockResolvedValue(ClusterGroupFactory.create());
 
+  // no album is filled by smart album rules, and no classification rule exists, unless a test says so (FL-60)
+  mocks.smartAlbum.getSmartBackedAlbumIds.mockResolvedValue(new Set());
+  mocks.classification.getRuleAlbumIds.mockResolvedValue(new Set());
+  mocks.classification.getRules.mockResolvedValue([]);
+  mocks.classification.getEnabledRules.mockResolvedValue([]);
+  mocks.classification.getRuleByAlbumId.mockResolvedValue(undefined);
+  mocks.classification.recordAlbumRemovals.mockResolvedValue({
+    added: 0,
+    suggested: 0,
+    removed: 0,
+    unchanged: 0,
+    tagged: [],
+    untagged: [],
+  });
+  mocks.classification.recordAlbumAdditions.mockResolvedValue();
+
   // moving photos into the Locked folder finds no released face thumbnails or profile pictures
   // unless a test says otherwise (FL-53)
   mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
@@ -440,6 +459,7 @@ export const newTestService = <T extends BaseService>(
     overrides.assetEdit || (mocks.assetEdit as As<AssetEditRepository>),
     overrides.assetFile || (mocks.assetFile as As<AssetFileRepository>),
     overrides.assetJob || (mocks.assetJob as As<AssetJobRepository>),
+    overrides.classification || (mocks.classification as As<ClassificationRepository>),
     overrides.clusterGroup || (mocks.clusterGroup as As<ClusterGroupRepository>),
     overrides.config || (mocks.config as As<ConfigRepository> as ConfigRepository),
     overrides.cron || (mocks.cron as As<CronRepository>),
