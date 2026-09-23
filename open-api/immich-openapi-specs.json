@@ -24758,6 +24758,10 @@
           "recentlyAdded": {
             "$ref": "#/components/schemas/RecentlyAddedResponse"
           },
+          "revision": {
+            "description": "Changes whenever the stored preferences change; send it back as expectedRevision to reject stale saves",
+            "type": "string"
+          },
           "sharedLinks": {
             "$ref": "#/components/schemas/SharedLinksResponse"
           },
@@ -24777,6 +24781,7 @@
           "purchase",
           "ratings",
           "recentlyAdded",
+          "revision",
           "sharedLinks",
           "tags"
         ],
@@ -24798,6 +24803,10 @@
           },
           "emailNotifications": {
             "$ref": "#/components/schemas/EmailNotificationsUpdate"
+          },
+          "expectedRevision": {
+            "description": "The revision these changes were made against. When it no longer matches the stored preferences the update is rejected with 409 and nothing is changed",
+            "type": "string"
           },
           "folders": {
             "$ref": "#/components/schemas/FoldersUpdate"
