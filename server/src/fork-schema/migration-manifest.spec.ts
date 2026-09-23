@@ -41,6 +41,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000280-AddSharedSpaceCommentThread')).toBe('legacy-fork');
     expect(classifyMigration('2100000000290-ClearLockedAlbumCovers')).toBe('legacy-fork');
     expect(classifyMigration('2100000000300-ClearLockedCoverReferences')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000310-LockWholeStacksAndRecordProfileImageSource')).toBe('legacy-fork');
   });
 
   it('classifies migrations from a certified upstream tag', () => {
