@@ -547,9 +547,9 @@ export const BULK_ITEM_PERMISSION: Readonly<Record<MediaOperationBulkAction, Per
   [MediaOperationBulkAction.ChangeDate]: Permission.AssetUpdate,
   [MediaOperationBulkAction.ChangeDescription]: Permission.AssetUpdate,
   [MediaOperationBulkAction.ChangeLocation]: Permission.AssetUpdate,
-  // Sensitive marking runs one item at a time and checks each one itself.
-  [MediaOperationBulkAction.MarkSensitive]: null,
-  [MediaOperationBulkAction.UnmarkSensitive]: null,
+  // Mark Sensitive is the lock (FL-34): the lock and unlock endpoints reject a whole list.
+  [MediaOperationBulkAction.MarkSensitive]: Permission.AssetUpdate,
+  [MediaOperationBulkAction.UnmarkSensitive]: Permission.AssetUpdate,
   [MediaOperationBulkAction.Delete]: Permission.AssetDelete,
   [MediaOperationBulkAction.DeletePermanently]: Permission.AssetDelete,
   [MediaOperationBulkAction.Restore]: Permission.AssetDelete,
