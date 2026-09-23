@@ -1,6 +1,6 @@
 import { WorkflowTrigger } from '@immich/plugin-sdk';
 import { Kysely } from 'kysely';
-import { WorkflowType } from 'src/enum.js';
+import { WorkflowResult, WorkflowRunErrorCode, WorkflowType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
@@ -93,6 +93,99 @@ describe(WorkflowService.name, () => {
         description: 'A test workflow',
         enabled: true,
       });
+    });
+  });
+
+  describe('definitions (FL-82)', () => {
+    it('stores an imported definition with an unknown method paused and reads it back unchanged', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+
+      const created = await sut.create(auth, {
+        trigger: WorkflowTrigger.AssetCreate,
+        name: 'imported',
+        enabled: false,
+        extra: { source: 'elsewhere' },
+        steps: [
+          { method: 'test-core-plugin#test-filter', config: { keep: ['a'] } },
+          { method: 'missing-plugin#gone', config: { threshold: 3 }, enabled: false, extra: { note: 'kept' } },
+          { method: 'test-core-plugin#test-action', config: null },
+        ],
+      });
+
+      const read = await sut.get(auth, created.id);
+      expect(read.extra).toEqual({ source: 'elsewhere' });
+      expect(read.steps.map(({ method, config, enabled, extra }) => ({ method, config, enabled, extra }))).toEqual([
+        { method: 'test-core-plugin#test-filter', config: { keep: ['a'] }, enabled: true, extra: {} },
+        { method: 'missing-plugin#gone', config: { threshold: 3 }, enabled: false, extra: { note: 'kept' } },
+        { method: 'test-core-plugin#test-action', config: null, enabled: true, extra: {} },
+      ]);
+      expect(read.issues).toEqual([expect.objectContaining({ step: 1, code: 'method_unavailable' })]);
+
+      // only installed steps are runnable, at their definition positions
+      const runnable = await defaultDatabase
+        .selectFrom('workflow_step')
+        .select(['id', 'order'])
+        .where('workflowId', '=', created.id)
+        .orderBy('order')
+        .execute();
+      expect(runnable).toEqual([
+        { id: read.steps[0].id, order: 0 },
+        { id: read.steps[2].id, order: 2 },
+      ]);
+
+      await expect(sut.update(auth, created.id, { enabled: true })).rejects.toThrow(/unavailable/);
+      expect((await sut.get(auth, created.id)).enabled).toBe(false);
+    });
+
+    it('keeps a step whose runnable row a plugin upgrade deleted, and never runs without it', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+
+      const created = await sut.create(auth, {
+        trigger: WorkflowTrigger.AssetCreate,
+        enabled: true,
+        steps: [{ method: 'test-core-plugin#test-filter', config: null }],
+      });
+      // what pruning a method does to the shared step table
+      await defaultDatabase.deleteFrom('workflow_step').where('workflowId', '=', created.id).execute();
+
+      const read = await sut.get(auth, created.id);
+      expect(read.steps).toHaveLength(1);
+      const run = await ctx.get(WorkflowRepository).getForWorkflowRun(created.id);
+      expect(run?.steps).toEqual([]);
+      expect(run?.definition?.steps).toHaveLength(1);
+    });
+
+    it('records the attempt and failure of a logged run', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const created = await sut.create(auth, { trigger: WorkflowTrigger.AssetCreate, enabled: false, logging: true });
+      const runId = '00000000-0000-4000-8000-000000000123';
+
+      await ctx.get(WorkflowRepository).log({
+        workflowId: created.id,
+        runId,
+        result: WorkflowResult.Error,
+        attempt: 1,
+        errorCode: WorkflowRunErrorCode.StepFailed,
+        error: 'plugin failed',
+      });
+
+      const [entry] = await sut.getLogs(auth, created.id, { limit: 10 });
+      expect(entry).toMatchObject({ runId, attempt: 1, errorCode: 'step_failed', error: 'plugin failed' });
+      expect(await ctx.get(WorkflowRepository).getLatestRunAttempt(created.id, runId)).toMatchObject({ attempt: 1 });
+
+      await sut.update(auth, created.id, { logging: false });
+      const details = await defaultDatabase
+        .selectFrom('workflow_log_detail')
+        .selectAll()
+        .where('workflowId', '=', created.id)
+        .execute();
+      expect(details).toEqual([]);
     });
   });
 

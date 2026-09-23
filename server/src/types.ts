@@ -551,7 +551,22 @@ export type JobItem =
     }
 
   // Workflow
-  | { name: JobName.WorkflowAssetTrigger; data: { workflowId: string; assetId: string } }
+  | {
+      name: JobName.WorkflowAssetTrigger;
+      data: {
+        workflowId: string;
+        assetId: string;
+        /** Set on retries: the run they continue and which attempt this is (FL-82). */
+        runId?: string;
+        attempt?: number;
+        /** The automatic retry starts at the step that failed; earlier steps already applied. */
+        fromStepId?: string;
+        /** The complete definition at failure; continuation is refused if it has changed. */
+        definitionSha256?: string;
+        /** A manual retry is never retried automatically. */
+        manual?: boolean;
+      };
+    }
 
   // Integrity
   | { name: JobName.IntegrityUntrackedFilesQueueAll; data?: IIntegrityJob }
