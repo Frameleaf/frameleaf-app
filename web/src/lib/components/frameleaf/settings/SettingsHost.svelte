@@ -172,6 +172,7 @@
     <label class="search">
       <Icon icon={mdiMagnify} size="1.125rem" aria-hidden={true} />
       <input
+        id="settings-search"
         type="search"
         aria-label={$t('frameleaf_settings_search_label')}
         placeholder={$t('frameleaf_settings_search_placeholder')}
