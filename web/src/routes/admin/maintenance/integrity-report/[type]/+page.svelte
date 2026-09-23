@@ -108,33 +108,33 @@
             {/if}
           </span>
         </div>
+
+        <Table striped spacing="tiny">
+          <TableHeader>
+            <TableHeading class="w-7/8 text-left">{$t('filename')}</TableHeading>
+            <TableHeading class="w-1/8" />
+          </TableHeader>
+
+          <TableBody>
+            {#each filteredItems as { id, path } (id)}
+              <IntegrityReportTableItem {id} {path} reportType={data.type} />
+            {/each}
+          </TableBody>
+
+          {#if filterSummary.isFiltered && filteredItems.length === 0}
+            <tfoot>
+              <tr
+                ><td colspan="2" class="frameleaf-report-empty">{$t('admin.frameleaf_maintenance_report_search_empty')}</td
+                ></tr
+              >
+            </tfoot>
+          {:else if integrityReport.nextCursor}
+            <tfoot class="mt-4 flex justify-center">
+              <Button size="medium" color="secondary" onclick={() => loadMore()}>{$t('load_more')}</Button>
+            </tfoot>
+          {/if}
+        </Table>
       </Theme>
-      <Table striped spacing="tiny">
-        <TableHeader>
-          <TableHeading class="w-7/8 text-left">{$t('filename')}</TableHeading>
-          <TableHeading class="w-1/8" />
-        </TableHeader>
-
-        <TableBody>
-          {#each filteredItems as { id, path } (id)}
-            <IntegrityReportTableItem {id} {path} reportType={data.type} />
-          {/each}
-        </TableBody>
-
-        {#if filterSummary.isFiltered && filteredItems.length === 0}
-          <tfoot>
-            <tr
-              ><td colspan="2" class="frameleaf-report-empty frameleaf" data-theme={appTheme}
-                >{$t('admin.frameleaf_maintenance_report_search_empty')}</td
-              ></tr
-            >
-          </tfoot>
-        {:else if integrityReport.nextCursor}
-          <tfoot class="mt-4 flex justify-center">
-            <Button size="medium" color="secondary" onclick={() => loadMore()}>{$t('load_more')}</Button>
-          </tfoot>
-        {/if}
-      </Table>
     </section>
   </section>
 </AdminPageLayout>
