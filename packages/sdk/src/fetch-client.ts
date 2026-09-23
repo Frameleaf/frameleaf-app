@@ -4583,6 +4583,39 @@ export type SharedSpaceMembersResponseDto = {
     /** Members and pending invitations, owner first */
     members: SharedSpaceMemberResponseDto[];
 };
+export type SharedSpaceEventResponseDto = {
+    /** The comment or like this event announces, if any */
+    activityId: string | null;
+    /** Who did it; null once that account is gone */
+    actor: UserResponseDto | null;
+    /** How many of the items this event is about the reader may see */
+    assetCount: number;
+    /** The items this event is about that the reader may see and that are still in the shared space. Empty for a removal. */
+    assetIds: string[];
+    /** The comment text, for a comment event. Mentions are @{userId} tokens. */
+    comment: string | null;
+    /** When it happened */
+    createdAt: string;
+    /** Event ID */
+    id: string;
+    /** Members named in the comment */
+    mentions: UserResponseDto[];
+    /** A linked album's or person's name as the space knew it, or the new role; null otherwise */
+    subject: string | null;
+    /** The member a member event is about; null otherwise */
+    targetUser: UserResponseDto | null;
+    "type": SharedSpaceEventType;
+};
+export type SharedSpaceActivityResponseDto = {
+    /** Newest first */
+    events: SharedSpaceEventResponseDto[];
+    /** True when older events exist beyond this page */
+    hasMore: boolean;
+    /** When this member last marked the shared space seen; null if they never have */
+    lastVisitedAt: string | null;
+    /** Events by other members since then that this member may see. Capped at 500. */
+    unreadCount: number;
+};
 export type SharedSpaceAlbumResponseDto = {
     /** The linked album name */
     albumName: string;
@@ -4604,6 +4637,40 @@ export type SharedSpaceAlbumResponseDto = {
 export type SharedSpaceAlbumsResponseDto = {
     /** Albums linked into the shared space, by name */
     albums: SharedSpaceAlbumResponseDto[];
+};
+export type SharedSpaceCommentResponseDto = {
+    /** The item commented on; null for a comment on the space itself */
+    assetId: string | null;
+    /** True when the caller may remove the comment */
+    canDelete: boolean;
+    /** True when the caller may change the text */
+    canEdit: boolean;
+    /** The text, with @{userId} mention tokens */
+    comment: string;
+    /** When it was written */
+    createdAt: string;
+    /** Comment ID */
+    id: string;
+    /** Members named in the comment */
+    mentions: UserResponseDto[];
+    /** When it was last edited */
+    updatedAt: string;
+    /** The author */
+    user: UserResponseDto;
+};
+export type SharedSpaceCommentsResponseDto = {
+    /** Oldest first */
+    comments: SharedSpaceCommentResponseDto[];
+};
+export type SharedSpaceCommentCreateDto = {
+    /** The item to comment on. Left out, the comment is on the space itself. */
+    assetId?: string;
+    /** The text. Mention a member with @{userId}; every mention must name a current member. */
+    comment: string;
+};
+export type SharedSpaceCommentUpdateDto = {
+    /** The text. Mention a member with @{userId}; every mention must name a current member. */
+    comment: string;
 };
 export type SharedSpaceNewResponseDto = {
     /** Items other members added since then */
@@ -9954,6 +10021,24 @@ export function acceptSharedSpaceInvitation({ id }: {
     }));
 }
 /**
+ * What happened in a shared space
+ */
+export function getSharedSpaceActivity({ id, before, take }: {
+    id: string;
+    before?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceActivityResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/activity${QS.query(QS.explode({
+        before,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * List albums linked into a shared space
  */
 export function getSharedSpaceAlbums({ id }: {
@@ -9992,6 +10077,67 @@ export function linkSharedSpaceAlbum({ id, albumId }: {
         ...opts,
         method: "PUT"
     }));
+}
+/**
+ * List comments in a shared space
+ */
+export function getSharedSpaceComments({ id, assetId }: {
+    id: string;
+    assetId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceCommentsResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/comments${QS.query(QS.explode({
+        assetId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Comment in a shared space
+ */
+export function createSharedSpaceComment({ id, sharedSpaceCommentCreateDto }: {
+    id: string;
+    sharedSpaceCommentCreateDto: SharedSpaceCommentCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: SharedSpaceCommentResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/comments`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: sharedSpaceCommentCreateDto
+    })));
+}
+/**
+ * Remove a shared space comment
+ */
+export function deleteSharedSpaceComment({ id, commentId }: {
+    id: string;
+    commentId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Edit a shared space comment
+ */
+export function updateSharedSpaceComment({ id, commentId, sharedSpaceCommentUpdateDto }: {
+    id: string;
+    commentId: string;
+    sharedSpaceCommentUpdateDto: SharedSpaceCommentUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceCommentResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: sharedSpaceCommentUpdateDto
+    })));
 }
 /**
  * Decline a shared space invitation
@@ -11044,6 +11190,20 @@ export enum ReactionType {
     Comment = "comment",
     Like = "like"
 }
+export enum SharedSpaceEventType {
+    AssetsAdded = "AssetsAdded",
+    AssetsRemoved = "AssetsRemoved",
+    AlbumLinked = "AlbumLinked",
+    AlbumUnlinked = "AlbumUnlinked",
+    PersonLinked = "PersonLinked",
+    PersonUnlinked = "PersonUnlinked",
+    MemberJoined = "MemberJoined",
+    MemberLeft = "MemberLeft",
+    MemberRemoved = "MemberRemoved",
+    MemberRoleChanged = "MemberRoleChanged",
+    Comment = "Comment",
+    Like = "Like"
+}
 export enum UserAvatarColor {
     Primary = "primary",
     Pink = "pink",
@@ -11187,6 +11347,7 @@ export enum NotificationType {
     AlbumInvite = "AlbumInvite",
     AlbumUpdate = "AlbumUpdate",
     ClusterGroupRequest = "ClusterGroupRequest",
+    SharedSpaceMention = "SharedSpaceMention",
     Custom = "Custom"
 }
 export enum UserStatus {
