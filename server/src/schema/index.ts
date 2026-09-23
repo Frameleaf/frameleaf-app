@@ -118,6 +118,7 @@ import { StackAuditTable } from 'src/schema/tables/stack-audit.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
 import { StudioPreviewFrameTable } from 'src/schema/tables/studio-preview.table.js';
 import {
+  StudioBundleUploadTable,
   StudioProjectCommentTable,
   StudioProjectRevisionTable,
   StudioProjectTable,
@@ -225,6 +226,7 @@ export class ImmichDatabase {
     StudioProjectTable,
     StudioProjectRevisionTable,
     StudioProjectCommentTable,
+    StudioBundleUploadTable,
     SessionSyncCheckpointTable,
     SystemMetadataTable,
     TagTable,
@@ -389,6 +391,7 @@ export interface DB {
   studio_project: StudioProjectTable;
   studio_project_revision: StudioProjectRevisionTable;
   studio_project_comment: StudioProjectCommentTable;
+  studio_bundle_upload: StudioBundleUploadTable;
 
   system_metadata: SystemMetadataTable;
 
