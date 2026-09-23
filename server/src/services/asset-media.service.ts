@@ -21,6 +21,7 @@ import {
 import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import {
   AssetFileType,
+  AssetLockReason,
   AssetVisibility,
   CacheControl,
   ChecksumAlgorithm,
@@ -152,25 +153,33 @@ export class AssetMediaService extends BaseService {
       }
 
       const physicalDeduplication = await this.getPhysicalDeduplicationCandidate(auth.user.id, file);
-      asset = await this.assetRepository.create({
-        ownerId: auth.user.id,
-        libraryId: null,
+      asset = await this.assetRepository.create(
+        {
+          ownerId: auth.user.id,
+          libraryId: null,
 
-        checksum: file.checksum,
-        checksumAlgorithm: ChecksumAlgorithm.sha256File,
-        originalPath: file.originalPath,
+          checksum: file.checksum,
+          checksumAlgorithm: ChecksumAlgorithm.sha256File,
+          originalPath: file.originalPath,
 
-        fileCreatedAt: dto.fileCreatedAt,
-        fileModifiedAt: dto.fileModifiedAt,
-        localDateTime: dto.fileCreatedAt,
+          fileCreatedAt: dto.fileCreatedAt,
+          fileModifiedAt: dto.fileModifiedAt,
+          localDateTime: dto.fileCreatedAt,
 
-        type: mimeTypes.assetType(file.originalPath),
-        isFavorite: dto.isFavorite,
-        duration: dto.duration || null,
-        visibility: dto.visibility ?? AssetVisibility.Timeline,
-        livePhotoVideoId: dto.livePhotoVideoId,
-        originalFileName: dto.filename || file.originalName,
-      });
+          type: mimeTypes.assetType(file.originalPath),
+          isFavorite: dto.isFavorite,
+          duration: dto.duration || null,
+          // `locked` is a lock record, never a stored visibility (FL-34): an upload into the Locked view
+          // is stored on the timeline and locked in the same transaction, so nothing lists it unlocked
+          visibility:
+            dto.visibility && dto.visibility !== AssetVisibility.Locked ? dto.visibility : AssetVisibility.Timeline,
+          livePhotoVideoId: dto.livePhotoVideoId,
+          originalFileName: dto.filename || file.originalName,
+        },
+        dto.visibility === AssetVisibility.Locked
+          ? { reason: AssetLockReason.Marked, lockedBy: auth.user.id }
+          : undefined,
+      );
 
       if (dto.metadata?.length) {
         await this.assetRepository.upsertMetadata(asset.id, dto.metadata);

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectKysely } from 'nestjs-kysely';
 import { sql, type Insertable, type Kysely, type Updateable } from 'kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AlbumUserRole, AssetVisibility, SharedSpaceEventType } from 'src/enum.js';
+import { AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
 import { SharedSpaceAlbumTable } from 'src/schema/tables/shared-space-album.table.js';
@@ -11,6 +11,7 @@ import { SharedSpaceEventTable } from 'src/schema/tables/shared-space-event.tabl
 import { SharedSpaceInviteTable } from 'src/schema/tables/shared-space-invite.table.js';
 import { SharedSpacePersonTable } from 'src/schema/tables/shared-space-person.table.js';
 import { withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import { isLocked } from 'src/utils/locked.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 
 export type AlbumPermissionId = {
@@ -324,7 +325,7 @@ export class AlbumUserRepository {
           .onRef('person.personGroupId', '=', 'link.personGroupId'),
       )
       .leftJoin('asset as cover', (join) =>
-        join.onRef('cover.id', '=', 'link.coverAssetId').on('cover.visibility', '=', sql.lit(AssetVisibility.Locked)),
+        join.onRef('cover.id', '=', 'link.coverAssetId').on(isLocked('cover')),
       )
       .where('link.albumId', '=', spaceId)
       .select([

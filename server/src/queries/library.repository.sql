@@ -36,7 +36,14 @@ select
       (
         "asset"."type" = $1
         and "asset"."visibility" != $2
-        and "asset"."visibility" != 'locked'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
       )
   ) as "photos",
   count(*) filter (
@@ -44,7 +51,14 @@ select
       (
         "asset"."type" = $3
         and "asset"."visibility" != $4
-        and "asset"."visibility" != 'locked'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
       )
   ) as "videos",
   coalesce(sum("asset_exif"."fileSizeInByte"), $5) as "usage"

@@ -156,13 +156,24 @@
 
   const handlePreAction = async (action: Action) => {
     switch (action.type) {
+      case AssetAction.SET_VISIBILITY_LOCKED:
+      case AssetAction.SET_VISIBILITY_TIMELINE: {
+        // FL-34: Mark and Unmark Sensitive only take the item out of a view it no longer belongs in
+        if (timelineManager.keepsAfterLockChange(action.type === AssetAction.SET_VISIBILITY_LOCKED)) {
+          break;
+        }
+        timelineManager.removeAssets([action.asset.id]);
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        (await navigateToAsset(assetCursor?.nextAsset)) ||
+          (await navigateToAsset(assetCursor?.previousAsset)) ||
+          (await handleClose(action.asset.id));
+        break;
+      }
       case removeAction:
       case AssetAction.TRASH:
       case AssetAction.RESTORE:
       case AssetAction.DELETE:
-      case AssetAction.ARCHIVE:
-      case AssetAction.SET_VISIBILITY_LOCKED:
-      case AssetAction.SET_VISIBILITY_TIMELINE: {
+      case AssetAction.ARCHIVE: {
         // must update manager before performing any navigation
         timelineManager.removeAssets([action.asset.id]);
 

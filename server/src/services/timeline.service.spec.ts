@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { AssetVisibility, TimeBucketDateType } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility, TimeBucketDateType } from 'src/enum.js';
 import { TimelineService } from 'src/services/timeline.service.js';
 import { PartnerFactory } from 'test/factories/partner.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
@@ -417,6 +417,64 @@ describe(TimelineService.name, () => {
       await expect(
         sut.getTimeBuckets(elevated, { userId: 'someone-else', visibility: AssetVisibility.Locked }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('the Locked view filtered by why items are locked (FL-34)', () => {
+    const elevated = authStub.adminWithElevatedPermission;
+
+    it('narrows the Locked view to one reason, for the caller only', async () => {
+      mocks.access.timeline.checkPartnerAccess.mockResolvedValue(new Set());
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+
+      await sut.getTimeBuckets(elevated, { visibility: AssetVisibility.Locked, lockReason: AssetLockReason.Detected });
+
+      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(
+        expect.objectContaining({
+          visibility: AssetVisibility.Locked,
+          lockReasons: [AssetLockReason.Detected],
+          userIds: [elevated.user.id],
+        }),
+        elevated,
+      );
+    });
+
+    it('refuses a reason outside the Locked view', async () => {
+      await expect(sut.getTimeBuckets(elevated, { lockReason: AssetLockReason.Marked })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
+    });
+
+    it("reveals the owner's own sensitive locks in their timeline once unlocked", async () => {
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+
+      await sut.getTimeBuckets(elevated, { visibility: AssetVisibility.Timeline });
+      expect(mocks.asset.getTimeBuckets.mock.calls[0][0].revealLockedOwnerId).toBe(elevated.user.id);
+
+      await sut.getTimeBuckets(authStub.admin, { visibility: AssetVisibility.Timeline });
+      expect(mocks.asset.getTimeBuckets.mock.calls[1][0].revealLockedOwnerId).toBeUndefined();
+    });
+
+    it('reveals nothing through an album or the archive', async () => {
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-id']));
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+
+      await sut.getTimeBuckets(elevated, { albumId: 'album-id', visibility: AssetVisibility.Timeline });
+      await sut.getTimeBuckets(elevated, { visibility: AssetVisibility.Archive });
+
+      expect(mocks.asset.getTimeBuckets.mock.calls[0][0].revealLockedOwnerId).toBeUndefined();
+      expect(mocks.asset.getTimeBuckets.mock.calls[1][0].revealLockedOwnerId).toBeUndefined();
+    });
+
+    it('needs the unlocked session for the Locked view, whatever the reason', async () => {
+      await expect(
+        sut.getTimeBuckets(authStub.admin, {
+          visibility: AssetVisibility.Locked,
+          lockReason: AssetLockReason.ImmichLockedFolder,
+        }),
+      ).rejects.toThrow();
+      expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
     });
   });
 });

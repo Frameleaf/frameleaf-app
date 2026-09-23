@@ -596,7 +596,14 @@ select
 from
   "asset_face"
   inner join "asset" on "asset"."id" = "asset_face"."assetId"
-  and "asset"."visibility" != 'locked'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
 where
   "asset_face"."personGroupId" = $1
   and "asset_face"."deletedAt" is null
@@ -723,7 +730,14 @@ from
   inner join "asset_face" on "asset_face"."assetId" = "asset"."id"
 where
   (
-    "asset"."visibility" != 'locked'
+    not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
     or "asset"."ownerId" = $1
   )
   and "asset_face"."personGroupId" = $2

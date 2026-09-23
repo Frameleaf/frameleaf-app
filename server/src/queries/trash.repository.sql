@@ -8,7 +8,14 @@ set
 where
   "ownerId" = $3
   and "status" = $4
-  and "asset"."visibility" != 'locked'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
 
 -- TrashRepository.empty
 update "asset"
@@ -17,7 +24,14 @@ set
 where
   "ownerId" = $2
   and "status" = $3
-  and "asset"."visibility" != 'locked'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
 
 -- TrashRepository.restoreAll
 update "asset"

@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post
 import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import {
   AssetBulkDeleteDto,
@@ -93,6 +94,32 @@ export class AssetController {
   })
   deleteAssets(@Auth() auth: AuthDto, @Body() dto: AssetBulkDeleteDto): Promise<void> {
     return this.service.deleteAll(auth, dto);
+  }
+
+  @Post('lock')
+  @Authenticated({ permission: Permission.AssetUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Lock assets',
+    description:
+      'Locks assets: they keep their albums and organization, are hidden from every view except the Locked view of their owner in a PIN-unlocked session, and stacks and live photos lock as a whole.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  lockAssets(@Auth() auth: AuthDto, @Body() dto: BulkIdsDto): Promise<void> {
+    return this.service.lock(auth, dto);
+  }
+
+  @Post('unlock')
+  @Authenticated({ permission: Permission.AssetUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Unlock assets',
+    description:
+      'Unlocks assets the caller owns, whatever locked them, returning each exactly where it was. Requires a PIN-unlocked session.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  unlockAssets(@Auth() auth: AuthDto, @Body() dto: BulkIdsDto): Promise<void> {
+    return this.imageEnrichmentService.unlockAssets(auth, dto);
   }
 
   @Get(':id')

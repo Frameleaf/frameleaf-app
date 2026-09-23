@@ -418,23 +418,6 @@
   />
 {:else if dialog === 'delete-permanently'}
   <BulkConfirmDialog {count} bind:open={dialogOpen} onConfirm={() => submitDialog('delete-permanently')} />
-{:else if dialog === 'move-to-locked'}
-  <BulkConfirmDialog
-    {count}
-    bind:open={dialogOpen}
-    danger={false}
-    labelKey="frameleaf_bulk_move_to_locked"
-    messageKey="frameleaf_bulk_move_to_locked_confirm"
-    onConfirm={() => submitDialog('move-to-locked')}
-  />
-{:else if dialog === 'remove-from-locked'}
-  <BulkConfirmDialog
-    {count}
-    bind:open={dialogOpen}
-    labelKey="frameleaf_bulk_remove_from_locked"
-    messageKey="frameleaf_bulk_remove_from_locked_confirm"
-    onConfirm={() => submitDialog('remove-from-locked')}
-  />
 {/if}
 
 <style>

@@ -18,6 +18,7 @@ import { DB } from 'src/schema/index.js';
 import { MemoryExportTable } from 'src/schema/tables/memory-export.table.js';
 import { MemoryTable } from 'src/schema/tables/memory.table.js';
 import { asUuid, getHiddenContentFilter, withHiddenContentFilter } from 'src/utils/database.js';
+import { isTimelineVisible } from 'src/utils/locked.js';
 
 type MemoryPrivacyOptions = HiddenContentQueryOptions;
 
@@ -30,6 +31,8 @@ export class MemoryRepository implements IBulkAsset {
       .deleteFrom('memory_asset')
       .using('asset')
       .whereRef('memory_asset.assetId', '=', 'asset.id')
+      // Stored visibility only, as upstream: a locked asset (FL-34) keeps its place in its memories and
+      // every memory read hides it while it is locked, so unlocking it brings it back, as for albums.
       .where('asset.visibility', '!=', AssetVisibility.Timeline)
       .execute();
 
@@ -75,7 +78,7 @@ export class MemoryRepository implements IBulkAsset {
                 .innerJoin('asset', 'asset.id', 'memory_asset.assetId')
                 .select('memory_asset.memoriesId')
                 .whereRef('memory_asset.memoriesId', '=', 'memory.id')
-                .where('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+                .where(isTimelineVisible('asset'))
                 .where('asset.deletedAt', 'is', null)
                 .$call((qb) => withHiddenContentFilter(qb, options)),
             ),
@@ -109,7 +112,7 @@ export class MemoryRepository implements IBulkAsset {
             .selectAll('asset')
             .innerJoin('memory_asset', 'asset.id', 'memory_asset.assetId')
             .whereRef('memory_asset.memoriesId', '=', 'memory.id')
-            .where('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+            .where(isTimelineVisible('asset'))
             .where('asset.deletedAt', 'is', null)
             .$call((qb) => withHiddenContentFilter(qb, options))
             .where((eb) =>
@@ -373,7 +376,7 @@ export class MemoryRepository implements IBulkAsset {
             .innerJoin('memory_asset', 'asset.id', 'memory_asset.assetId')
             .whereRef('memory_asset.memoriesId', '=', 'memory.id')
             .orderBy('asset.fileCreatedAt', 'asc')
-            .where('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+            .where(isTimelineVisible('asset'))
             .where('asset.deletedAt', 'is', null)
             .$call((qb) => withHiddenContentFilter(qb, options)),
         ).as('assets'),
@@ -397,7 +400,7 @@ export class MemoryRepository implements IBulkAsset {
                 .innerJoin('asset', 'asset.id', 'memory_asset.assetId')
                 .select('memory_asset.memoriesId')
                 .whereRef('memory_asset.memoriesId', '=', 'memory.id')
-                .where('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
+                .where(isTimelineVisible('asset'))
                 .where('asset.deletedAt', 'is', null)
                 .$call((qb) => withHiddenContentFilter(qb, options)),
             ),

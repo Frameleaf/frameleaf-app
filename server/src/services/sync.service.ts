@@ -39,6 +39,24 @@ const mapSyncAssetV2 = ({ checksum, thumbhash, ...data }: AssetLike): SyncAssetV
   thumbhash: thumbhash ? hexOrBufferToBase64(thumbhash) : null,
 });
 
+/**
+ * A partner's Locked asset (FL-34) is still streamed, with visibility `locked`, so a device that
+ * already holds it hides it; nothing that describes the picture goes with it.
+ */
+const withoutLockedDetails = <T extends AssetLike>(asset: T): T => ({
+  ...asset,
+  originalFileName: '',
+  thumbhash: null,
+  livePhotoVideoId: null,
+});
+
+/** Exif for a partner's Locked asset (FL-34): only the asset id, every other field blanked. */
+const withoutLockedExif = <T extends { assetId: string }>(exif: T): T =>
+  Object.fromEntries(Object.keys(exif).map((key) => [key, key === 'assetId' ? exif.assetId : null])) as T;
+
+const mapPartnerAsset = ({ isLocked, ...asset }: AssetLike & { isLocked: boolean }) =>
+  mapSyncAssetV2(isLocked ? withoutLockedDetails(asset) : asset);
+
 const isEntityBackfillComplete = (createId: string, checkpoint: SyncAck | undefined): boolean =>
   createId === checkpoint?.updateId && checkpoint.extraId === COMPLETE_ID;
 
@@ -388,7 +406,7 @@ export class SyncService extends BaseService {
           await send(response, {
             type: backfillType,
             ids: [createId, updateId],
-            data: mapSyncAssetV2(data),
+            data: mapPartnerAsset(data),
           });
         }
 
@@ -404,7 +422,7 @@ export class SyncService extends BaseService {
 
     const upserts = this.syncRepository.partnerAsset.getUpserts({ ...options, ack: checkpointMap[upsertType] });
     for await (const { updateId, ...data } of upserts) {
-      await send(response, { type: upsertType, ids: [updateId], data: mapSyncAssetV2(data) });
+      await send(response, { type: upsertType, ids: [updateId], data: mapPartnerAsset(data) });
     }
   }
 
@@ -462,11 +480,12 @@ export class SyncService extends BaseService {
         );
 
         // FL-54: a sharer who hides locations from this user never streams coordinates or place names
-        for await (const { updateId, ...data } of backfill) {
+        for await (const { updateId, isLocked, ...data } of backfill) {
+          const exif = isLocked ? withoutLockedExif(data) : data;
           await send(response, {
             type: backfillType,
             ids: [partner.createId, updateId],
-            data: partner.shareLocation ? data : hideLocation(data),
+            data: partner.shareLocation ? exif : hideLocation(exif),
           });
         }
 
@@ -485,11 +504,12 @@ export class SyncService extends BaseService {
       repository: this.partnerRepository,
     });
     const upserts = this.syncRepository.partnerAssetExif.getUpserts({ ...options, ack: checkpointMap[upsertType] });
-    for await (const { updateId, ownerId, ...data } of upserts) {
+    for await (const { updateId, ownerId, isLocked, ...data } of upserts) {
+      const exif = isLocked ? withoutLockedExif(data) : data;
       await send(response, {
         type: upsertType,
         ids: [updateId],
-        data: locationHiddenOwnerIds.has(ownerId) ? hideLocation(data) : data,
+        data: locationHiddenOwnerIds.has(ownerId) ? hideLocation(exif) : exif,
       });
     }
   }

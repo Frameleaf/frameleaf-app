@@ -15,6 +15,7 @@ import {
   withAlbumVisibility,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
+import { isLocked } from 'src/utils/locked.js';
 import { onStacksJoined } from 'src/utils/locked-stacks.js';
 
 export interface StackSearch extends HiddenContentQueryOptions, LockedVisibilityOptions {
@@ -33,6 +34,8 @@ const withAssets = (eb: ExpressionBuilder<DB, 'stack'>, withTags = false, option
     eb
       .selectFrom('asset')
       .selectAll('asset')
+      // FL-34: the lock, so a response reports `locked` and `mapStack` can leave it out
+      .select(isLocked('asset').as('isLocked'))
       .innerJoinLateral(
         (eb) =>
           eb

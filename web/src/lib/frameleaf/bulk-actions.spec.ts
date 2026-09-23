@@ -39,7 +39,6 @@ describe('bulk action descriptors', () => {
       'change-location',
       'archive',
       'mark-sensitive',
-      'unmark-sensitive',
       'refresh-thumbnails',
       'refresh-metadata',
       'refresh-faces',
@@ -47,6 +46,8 @@ describe('bulk action descriptors', () => {
     ]) {
       expect(ids).toContain(id);
     }
+    // Nothing in this selection is marked, so there is nothing to unmark (FL-34).
+    expect(ids).not.toContain('unmark-sensitive');
     // Trash-only actions stay out of a live selection.
     expect(ids).not.toContain('restore');
     expect(ids).not.toContain('delete-permanently');
@@ -65,9 +66,9 @@ describe('bulk action descriptors', () => {
     // back out, the download, date and location, and the permanent delete — nothing else.
     const ids = available({ assets: [photo('a')], locked: true });
     expect(ids).toEqual(
-      expect.arrayContaining(['remove-from-locked', 'download', 'change-date', 'change-location', 'delete-permanently']),
+      expect.arrayContaining(['unmark-sensitive', 'download', 'change-date', 'change-location', 'delete-permanently']),
     );
-    for (const id of ['favorite', 'create-shared-link', 'delete', 'archive', 'move-to-locked', 'tag']) {
+    for (const id of ['favorite', 'create-shared-link', 'delete', 'archive', 'mark-sensitive', 'tag']) {
       expect(ids).not.toContain(id);
     }
   });
@@ -80,10 +81,15 @@ describe('bulk action descriptors', () => {
     expect(primaryBulkActions(actions, false, true).map((action) => action.id)).toContain('add-to-album');
   });
 
-  it('offers the move into the Locked folder from the ordinary destinations only', () => {
-    expect(available({ assets: [photo('a')] })).toContain('move-to-locked');
-    expect(available({ assets: [photo('a')], trash: true })).not.toContain('move-to-locked');
-    expect(available({ assets: [photo('a')], locked: true })).not.toContain('move-to-locked');
+  it('offers Mark Sensitive from the ordinary destinations only (FL-34)', () => {
+    expect(available({ assets: [photo('a')] })).toContain('mark-sensitive');
+    expect(available({ assets: [photo('a')], trash: true })).not.toContain('mark-sensitive');
+    expect(available({ assets: [photo('a')], locked: true })).not.toContain('mark-sensitive');
+    // an unlocked session shows a marked item in the library, where it can be unmarked but not
+    // archived, which would store another visibility and unlock it
+    const revealed = available({ assets: [photo('a', { isLocked: true })] });
+    expect(revealed).toContain('unmark-sensitive');
+    expect(revealed).not.toContain('archive');
   });
 
   it('leaves a read-only shared link with the download alone', () => {

@@ -60,8 +60,6 @@ export type BulkActionId =
   | 'unarchive'
   | 'mark-sensitive'
   | 'unmark-sensitive'
-  | 'move-to-locked'
-  | 'remove-from-locked'
   | 'remove-from-album'
   | 'set-album-cover'
   | 'remove-from-shared-link'
@@ -336,7 +334,8 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       icon: 'mdiArchiveOutline',
       group: 'visibility',
       undoable: true,
-      available: live && has && (unknown || any((asset) => !asset.isArchived)),
+      // storing another visibility would unlock a revealed sensitive item (FL-34); unmark it first
+      available: live && has && !any((asset) => !!asset.isLocked) && (unknown || any((asset) => !asset.isArchived)),
     },
     {
       id: 'unarchive',
@@ -344,43 +343,27 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       icon: 'mdiArchiveArrowUpOutline',
       group: 'visibility',
       undoable: true,
-      available: live && has && (unknown || any((asset) => !!asset.isArchived)),
+      available: live && has && !any((asset) => !!asset.isLocked) && (unknown || any((asset) => !!asset.isArchived)),
     },
     {
-      // Marking is metadata on the asset; album membership and organization are untouched and no
-      // asset is relocated. "Locked" remains the name of the filtered destination, never this action.
+      // Mark Sensitive is the lock (FL-34, the prototype's `lock`): one lock record per item, metadata
+      // that never relocates it. Album membership and organization are untouched; the item is hidden
+      // everywhere until the session is unlocked, and the Locked view lists it.
       id: 'mark-sensitive',
       labelKey: 'frameleaf_bulk_mark_sensitive',
       icon: 'mdiShieldLockOutline',
       group: 'visibility',
-      undoable: true,
-      available: live && has,
+      available: live && has && (unknown || any((asset) => !asset.isLocked)),
     },
     {
+      // Unmark Sensitive is Unlock: each item goes back exactly where it was. Offered in the Locked view
+      // and wherever an unlocked session shows a marked item.
       id: 'unmark-sensitive',
       labelKey: 'frameleaf_bulk_unmark_sensitive',
       icon: 'mdiShieldOutline',
       group: 'visibility',
       undoable: true,
-      available: live && has,
-    },
-    {
-      // Moving into the Locked folder is a visibility change on the asset, and the only way back
-      // out is the matching action on the Locked destination itself.
-      id: 'move-to-locked',
-      labelKey: 'frameleaf_bulk_move_to_locked',
-      icon: 'mdiLockOutline',
-      group: 'visibility',
-      confirm: true,
-      available: live && has,
-    },
-    {
-      id: 'remove-from-locked',
-      labelKey: 'frameleaf_bulk_remove_from_locked',
-      icon: 'mdiLockOpenVariantOutline',
-      group: 'visibility',
-      confirm: true,
-      available: !readOnly && locked && has,
+      available: !readOnly && has && (locked || (live && (unknown || any((asset) => !!asset.isLocked)))),
     },
     {
       id: 'remove-from-album',
@@ -462,7 +445,7 @@ export const PRIMARY_BULK_ACTIONS: readonly BulkActionId[] = [
 ];
 export const TRASH_PRIMARY_BULK_ACTIONS: readonly BulkActionId[] = ['restore', 'download', 'delete-permanently'];
 export const LOCKED_PRIMARY_BULK_ACTIONS: readonly BulkActionId[] = [
-  'remove-from-locked',
+  'unmark-sensitive',
   'add-to-album',
   'download',
   'delete-permanently',

@@ -17,6 +17,7 @@ import { DB } from 'src/schema/index.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
 import { withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import { isTimelineVisible, visibilityIs } from 'src/utils/locked.js';
 
 export interface MapMarkerSearchOptions extends HiddenContentQueryOptions {
   isArchived?: boolean;
@@ -92,13 +93,13 @@ export class MapRepository {
       .$if(isArchived === true, (qb) =>
         qb.where((eb) =>
           eb.or([
-            eb('asset.visibility', '=', AssetVisibility.Timeline),
-            eb.and([eb('asset.ownerId', '=', authUserId), eb('asset.visibility', '=', AssetVisibility.Archive)]),
+            isTimelineVisible('asset'),
+            eb.and([eb('asset.ownerId', '=', authUserId), visibilityIs(AssetVisibility.Archive, 'asset')]),
           ]),
         ),
       )
       .$if(isArchived === false || isArchived === undefined, (qb) =>
-        qb.where('asset.visibility', '=', AssetVisibility.Timeline),
+        qb.where(isTimelineVisible('asset')),
       )
       .$if(isFavorite !== undefined, (q) => q.where('isFavorite', '=', isFavorite!))
       .$if(fileCreatedAfter !== undefined, (q) => q.where('fileCreatedAt', '>=', fileCreatedAfter!))
