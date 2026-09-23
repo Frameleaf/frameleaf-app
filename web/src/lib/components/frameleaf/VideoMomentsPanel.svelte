@@ -17,6 +17,7 @@
     formatMomentTime,
     frameImagePath,
     isPlanActive,
+    newRequestKey,
     parseMomentTime,
     planPollDelay,
     staleReasonKey,
@@ -123,7 +124,7 @@
     try {
       follow(
         await createEnrichmentPlan({
-          enrichmentPlanCreateDto: { assetIds: [asset.id], stages, requestKey: crypto.randomUUID() },
+          enrichmentPlanCreateDto: { assetIds: [asset.id], stages, requestKey: newRequestKey() },
         }),
       );
     } catch (error) {
