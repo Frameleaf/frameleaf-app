@@ -193,8 +193,9 @@ describe('Frameleaf primary destinations', () => {
     ]) {
       expect(currentPrimaryDestination(pathname)).toBe('library');
     }
-    // A path that merely starts with "studio" is not Studio, but is still a library screen.
-    expect(currentPrimaryDestination('/studios')).toBe('library');
+    // A path that merely starts with "studio" is not Studio; with no prototype screen of its own it
+    // leaves the switcher without a current item (fc7021f6e9 narrowed Library to the prototype's set).
+    expect(currentPrimaryDestination('/studios')).toBeNull();
   });
 
   it('leaves the switcher without a current item on the prototype screens that are not library/people/explore', () => {
