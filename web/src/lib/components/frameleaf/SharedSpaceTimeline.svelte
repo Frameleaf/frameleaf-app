@@ -1,6 +1,7 @@
 <script lang="ts">
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
+  import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { filterToNew, shouldPageForNew, SPACE_TIMELINE_PAGE } from '$lib/frameleaf/shared-space';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -111,6 +112,7 @@
   <ResultsView
     assets={shown}
     bulkContext={{ albumId: space.id }}
+    downloadFileName={namedArchiveName(space.albumName, $t('frameleaf_archive_name_space'))}
     {tagOptions}
     {albumOptions}
     onEndReached={loadMore}
