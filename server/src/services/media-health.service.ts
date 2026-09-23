@@ -50,6 +50,7 @@ import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getErrorMessage } from 'src/utils/media-health.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
@@ -87,7 +88,7 @@ export class MediaHealthService {
 
   async list(auth: AuthDto, dto: MediaHealthListQueryDto): Promise<MediaHealthListResponseDto> {
     const size = dto.size ?? MEDIA_HEALTH_PAGE_SIZE;
-    const privacy = getHiddenContentQueryOptions(auth);
+    const privacy = this.privacyFor(auth);
     const listOptions = {
       category: dto.category,
       ownerId: auth.user.id,
@@ -155,6 +156,11 @@ export class MediaHealthService {
     return { buckets: buckets.values().toArray(), total, run: run ? this.mapRun(run) : null };
   }
 
+  /** An interactive read's privacy: hidden-content settings, and Locked media only when elevated (FL-34). */
+  private privacyFor(auth: AuthDto) {
+    return { ...getHiddenContentQueryOptions(auth), ...getLockedVisibilityOptions(auth) };
+  }
+
   async startMissingScan(auth: AuthDto, force?: boolean): Promise<MediaHealthScanResponseDto> {
     const { missingRunId } = await this.queueMediaHealthScan(auth.user.id, force);
     return { runId: missingRunId };
@@ -169,7 +175,7 @@ export class MediaHealthService {
     const findings = await this.mediaHealthRepository.getByIds(
       dto.ids,
       auth.user.id,
-      getHiddenContentQueryOptions(auth),
+      this.privacyFor(auth),
     );
     const run = await this.mediaHealthRepository.createRun(
       MediaHealthCategory.Missing,
@@ -198,7 +204,7 @@ export class MediaHealthService {
     const findings = await this.mediaHealthRepository.getByIds(
       dto.ids,
       auth.user.id,
-      getHiddenContentQueryOptions(auth),
+      this.privacyFor(auth),
     );
     await this.mediaHealthRepository.markDismissed(
       findings.map(({ id }) => id),
@@ -207,7 +213,7 @@ export class MediaHealthService {
   }
 
   async relinkMissing(auth: AuthDto, dto: MediaHealthBulkActionDto): Promise<MediaHealthBulkResponseDto> {
-    const privacy = getHiddenContentQueryOptions(auth);
+    const privacy = this.privacyFor(auth);
     const findings = await this.mediaHealthRepository.getByIds(dto.ids, auth.user.id, privacy);
     const assets = await this.mediaHealthRepository.getAssets(
       findings.map(({ assetId }) => assetId),
@@ -300,7 +306,7 @@ export class MediaHealthService {
       throw new ForbiddenException('Elevated PIN session is required to delete corrupt media');
     }
 
-    const privacy = getHiddenContentQueryOptions(auth);
+    const privacy = this.privacyFor(auth);
     const findings = await this.mediaHealthRepository.getByIds(dto.ids, auth.user.id, privacy);
     const now = Date.now();
     const accepted = findings.filter(
