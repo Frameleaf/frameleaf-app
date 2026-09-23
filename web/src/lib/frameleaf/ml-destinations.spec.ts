@@ -4,16 +4,20 @@ import {
   isConsentBlocking,
   isOverBudget,
   ML_WORKLOAD_ORDER,
+  mlDestinationKindLabelKey,
   mlHealthTone,
   mlRefusalLabelKey,
   mlWorkloadLabelKey,
   parseOptionalNumber,
   routableDestinations,
+  workloadBlockedInDraft,
+  workloadsForKind,
 } from '$lib/frameleaf/ml-destinations';
 import {
   MlAdmissionRefusal,
   MlDestinationHealth,
   MlDestinationKind,
+  MlWorkerRole,
   MlWorkload,
   type MlDestinationResponseDto,
 } from '@immich/sdk';
@@ -27,6 +31,8 @@ const destination = (overrides: Partial<MlDestinationResponseDto> = {}): MlDesti
   authTokenConfigured: false,
   enabled: true,
   workloads: [MlWorkload.Face, MlWorkload.Clip],
+  role: MlWorkerRole.LibraryAnalysis,
+  sharesLibraryHardware: false,
   consent: { required: false, acknowledgedAt: null, acknowledgedBy: null },
   costControls: { budgetLimitUsd: null, maxRuntimeMinutes: null, maxUploadBytes: null, spentUsd: 0, budgetWindowDays: 30 },
   health: { status: MlDestinationHealth.Healthy, probedAt: null, summary: null, servedWorkloads: null },
@@ -41,7 +47,19 @@ const runPod = (acknowledgedAt: string | null) =>
     kind: MlDestinationKind.RunPod,
     name: 'RunPod',
     url: null,
-    workloads: [MlWorkload.Face, MlWorkload.RestorationFaithful],
+    workloads: [MlWorkload.Face, MlWorkload.Enrichment],
+    consent: { required: true, acknowledgedAt, acknowledgedBy: acknowledgedAt ? 'admin' : null },
+  });
+
+/** The persistent RunPod restoration worker (FL-72). */
+const runPodVideo = (acknowledgedAt: string | null) =>
+  destination({
+    id: 'runpod-video',
+    kind: MlDestinationKind.RunPodVideo,
+    name: 'RunPod video worker',
+    url: 'https://video-worker.proxy.runpod.net',
+    workloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
+    role: MlWorkerRole.Restoration,
     consent: { required: true, acknowledgedAt, acknowledgedBy: acknowledgedAt ? 'admin' : null },
   });
 
@@ -78,8 +96,8 @@ describe('ml-destinations presentation rules (FL-110)', () => {
   });
 
   it('never lists a cloud destination without consent as routable, even when it is the only one', () => {
-    expect(routableDestinations([runPod(null)], MlWorkload.RestorationFaithful)).toEqual([]);
-    const consented = runPod('2026-09-22T00:00:00.000Z');
+    expect(routableDestinations([runPodVideo(null)], MlWorkload.RestorationFaithful)).toEqual([]);
+    const consented = runPodVideo('2026-09-22T00:00:00.000Z');
     expect(routableDestinations([destination(), consented], MlWorkload.RestorationFaithful)).toEqual([consented]);
   });
 
@@ -111,5 +129,46 @@ describe('ml-destinations presentation rules (FL-110)', () => {
     expect(parseOptionalNumber('25')).toBe(25);
     expect(parseOptionalNumber('-1')).toBeUndefined();
     expect(parseOptionalNumber('abc')).toBeUndefined();
+  });
+
+  it('labels every destination kind, the RunPod video worker included', () => {
+    for (const kind of Object.values(MlDestinationKind)) {
+      expect(mlDestinationKindLabelKey(kind)).toMatch(/^admin\.frameleaf_ml_destination_kind_/);
+    }
+  });
+});
+
+describe('separate library-analysis and restoration workers (FL-72)', () => {
+  it('never offers restoration on the managed RunPod pod or on a worker that also runs library analysis', () => {
+    const legacyPod = destination({
+      ...runPod('2026-09-22T00:00:00.000Z'),
+      workloads: [MlWorkload.RestorationFaithful],
+      role: MlWorkerRole.Restoration,
+    });
+    expect(canRouteTo(legacyPod, MlWorkload.RestorationFaithful)).toBe(false);
+
+    const mixed = destination({ workloads: [MlWorkload.Face, MlWorkload.RestorationFaithful], role: MlWorkerRole.Mixed });
+    expect(canRouteTo(mixed, MlWorkload.RestorationFaithful)).toBe(false);
+    expect(canRouteTo(mixed, MlWorkload.Face)).toBe(true);
+
+    expect(canRouteTo(runPodVideo('2026-09-22T00:00:00.000Z'), MlWorkload.RestorationCreative)).toBe(true);
+  });
+
+  it('offers each kind only the work it may run', () => {
+    expect(workloadsForKind(MlDestinationKind.RunPod)).not.toContain(MlWorkload.RestorationFaithful);
+    expect(workloadsForKind(MlDestinationKind.RunPod)).toContain(MlWorkload.Enrichment);
+    expect(workloadsForKind(MlDestinationKind.RunPodVideo)).toEqual([MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative]);
+    expect(workloadsForKind(MlDestinationKind.Lan)).toEqual([...ML_WORKLOAD_ORDER]);
+  });
+
+  it('closes restoration once library work is ticked, and the reverse', () => {
+    const lan = MlDestinationKind.Lan;
+    expect(workloadBlockedInDraft(lan, [MlWorkload.Face], MlWorkload.RestorationFaithful)).toBe(true);
+    expect(workloadBlockedInDraft(lan, [MlWorkload.Face], MlWorkload.Clip)).toBe(false);
+    expect(workloadBlockedInDraft(lan, [MlWorkload.RestorationCreative], MlWorkload.Ocr)).toBe(true);
+    expect(workloadBlockedInDraft(lan, [MlWorkload.RestorationCreative], MlWorkload.StudioAi)).toBe(false);
+    // Unticking stays possible on a row saved before the rule.
+    expect(workloadBlockedInDraft(lan, [MlWorkload.Face, MlWorkload.RestorationFaithful], MlWorkload.RestorationFaithful)).toBe(false);
+    expect(workloadBlockedInDraft(MlDestinationKind.RunPod, [], MlWorkload.RestorationCreative)).toBe(true);
   });
 });
