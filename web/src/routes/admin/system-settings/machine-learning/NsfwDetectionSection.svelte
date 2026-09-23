@@ -21,7 +21,7 @@
   title={$t('admin.machine_learning_nsfw_detection')}
   subtitle={$t('admin.machine_learning_nsfw_detection_description')}
 >
-  <div class="mt-4 ml-4 flex flex-col gap-4">
+  <div class="flex flex-col gap-4">
     <SettingToggle
       title={$t('admin.machine_learning_nsfw_detection_enabled')}
       subtitle={$t('admin.machine_learning_nsfw_detection_enabled_description')}

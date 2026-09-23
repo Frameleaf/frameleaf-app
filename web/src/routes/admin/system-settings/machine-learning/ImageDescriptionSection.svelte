@@ -221,7 +221,7 @@
   title={$t('admin.machine_learning_image_description')}
   subtitle={$t('admin.machine_learning_image_description_description')}
 >
-  <div class="mt-4 ml-4 flex flex-col gap-4">
+  <div class="flex flex-col gap-4">
     {#if savedImageDescription.pendingRequeueAt}
       <div
         class="flex flex-col gap-2 rounded-md border border-yellow-500/50 bg-yellow-100/40 p-3 text-sm sm:flex-row sm:items-center sm:justify-between dark:bg-yellow-900/20"
@@ -351,7 +351,7 @@
       title={$t('admin.image_description_status_section')}
       subtitle=""
     >
-      <div class="ms-4 mt-4 flex flex-col gap-4">
+      <div class="flex flex-col gap-4">
         {#if descriptionStatsLoading && !descriptionStats}
           <p class="text-sm text-immich-fg/60 dark:text-immich-dark-fg/60">
             {$t('admin.machine_learning_image_description_requeue_modal_loading')}

@@ -64,7 +64,7 @@
   title={$t('admin.machine_learning_runpod_pod_accordion_title')}
   subtitle={$t('admin.machine_learning_runpod_pod_accordion_subtitle')}
 >
-  <div class="ms-4 mt-4 flex flex-col gap-4">
+  <div class="flex flex-col gap-4">
     <RunPodReferralBanner />
 
     <SettingSelect

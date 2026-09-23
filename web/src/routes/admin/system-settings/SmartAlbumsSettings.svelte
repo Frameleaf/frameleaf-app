@@ -66,7 +66,7 @@
 <div>
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
-      <div class="ms-4 mt-4 flex flex-col gap-4">
+      <div class="flex flex-col gap-4">
         <SettingToggle
           title={$t('admin.smart_albums_enabled')}
           subtitle={$t('admin.smart_albums_enabled_description')}
@@ -83,7 +83,7 @@
           {@const kindToggleDisabled = disabled || !smartAlbums.enabled}
           {@const kindFieldsDisabled = disabled || !smartAlbums.enabled || !kindConfig.enabled}
           <SettingGroup key={`smart-albums-${kind}`} title={kindTitle(kind)} subtitle="">
-            <div class="ms-4 mt-4 flex flex-col gap-4">
+            <div class="flex flex-col gap-4">
               <SettingToggle
                 title={$t('admin.smart_albums_kind_enabled')}
                 disabled={kindToggleDisabled}
