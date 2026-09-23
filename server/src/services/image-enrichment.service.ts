@@ -4,21 +4,24 @@ import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
 import type { Insertable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import type { ImageDescriptionResult, NsfwDetectionResult } from 'src/repositories/machine-learning.repository.js';
 import type { JobItem, JobOf } from 'src/types.js';
 import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { OnJob } from 'src/decorators.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   AssetImageEnrichmentAction,
   AssetImageEnrichmentActionRequestDto,
   AssetImageEnrichmentResponseDto,
 } from 'src/dtos/asset.dto.js';
 import {
+  AssetLockReason,
   AssetMetadataKey,
   AssetStatus,
   AssetType,
   AssetVisibility,
+  ImmichWorker,
   JobName,
   JobStatus,
   MlWorkload,
@@ -26,6 +29,7 @@ import {
   QueueName,
   StorageFolder,
 } from 'src/enum.js';
+import { ArgOf } from 'src/repositories/event.repository.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository, PrivacySidecar } from 'src/repositories/fork-privacy.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -34,8 +38,15 @@ import { BaseService } from 'src/services/base.service.js';
 import { IdentityPostValidator } from 'src/services/identity-post-validator.service.js';
 import { ImageDescriptionPromptAssembler, KnownPerson, VideoContext } from 'src/services/prompt-assembler.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
+import { requireElevatedPermission } from 'src/utils/access.js';
 import { updateLockedColumns } from 'src/utils/database.js';
-import { isImageDescriptionEnabled, isNsfwDetectionEnabled, isSmartSearchEnabled } from 'src/utils/misc.js';
+import { isLockedRow } from 'src/utils/locked.js';
+import {
+  isImageDescriptionEnabled,
+  isNsfwDetectionEnabled,
+  isNsfwHidingEnabled,
+  isSmartSearchEnabled,
+} from 'src/utils/misc.js';
 import { upsertTags } from 'src/utils/tag.js';
 
 type EnrichmentReview = {
@@ -192,6 +203,11 @@ export class ImageEnrichmentService extends BaseService {
       throw new BadRequestException('Asset not found');
     }
 
+    // FL-34: marking a locked asset safe unlocks it, which only its owner's elevated session may do
+    if (dto.action === AssetImageEnrichmentAction.MarkSafe && isLockedRow(asset)) {
+      requireElevatedPermission(auth);
+    }
+
     // Queue-only actions don't touch asset_metadata — no lock needed.
     if (dto.action === AssetImageEnrichmentAction.RerunImageDescription) {
       await this.jobRepository.queue({ name: JobName.ImageDescription, data: { id } });
@@ -288,7 +304,102 @@ export class ImageEnrichmentService extends BaseService {
 
     await this.finalizeRepair(id, changed, metadata);
 
+    // FL-34: the sensitive mark is the lock. Marking locks the asset (the owner's own lock), marking it
+    // safe unlocks it, and accepting a sensitive detection locks it as detected. Albums, favourites and
+    // the stored visibility are untouched either way; stacks and live photos move as a whole.
+    if (dto.action === AssetImageEnrichmentAction.MarkNsfw) {
+      await this.lockSensitive([id], AssetLockReason.Marked, auth.user.id);
+    } else if (dto.action === AssetImageEnrichmentAction.MarkSafe) {
+      await this.assetRepository.unlock([id]);
+    } else if (dto.action === AssetImageEnrichmentAction.AcceptNsfwResult && metadata.nsfwDetection?.review?.isNsfw) {
+      await this.lockSensitive([id], AssetLockReason.Detected, auth.user.id);
+    }
+
     return this.toResponse(id, await this.getEnrichmentMetadata(id));
+  }
+
+  /**
+   * Unlock (FL-34): removes the lock, whatever its reason, from assets the caller owns. Only an elevated
+   * session may unlock, since it shows what was hidden. The stored visibility is untouched, so each asset
+   * returns exactly where it was (its albums, the timeline or the archive); stacks and live photos
+   * unlock as a whole. The owner's unlock is also their review: a sensitive verdict on the asset is
+   * overridden (`recordOwnerUnlock`), so a later detection never locks it again.
+   */
+  async unlockAssets(auth: AuthDto, dto: BulkIdsDto): Promise<void> {
+    requireElevatedPermission(auth);
+    await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.ids });
+    const unlocked = await this.assetRepository.unlock(dto.ids);
+    await this.recordOwnerUnlock(auth, unlocked.map(({ assetId }) => assetId));
+  }
+
+  /**
+   * FL-34: after its owner unlocked `assetIds`, records "safe" as their own review on every one the
+   * sensitive-content check still counts as sensitive, so the owner's choice wins over the model:
+   * running detection again never locks it again. The lock itself is already gone; nothing else is
+   * touched. Assets the check does not count as sensitive are left as they are.
+   */
+  async recordOwnerUnlock(auth: AuthDto, assetIds: string[]): Promise<void> {
+    for (const id of assetIds) {
+      const asset = await this.assetRepository.getById(id);
+      if (!asset || asset.ownerId !== auth.user.id) {
+        continue;
+      }
+
+      const metadata = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
+        const m = await this.getEnrichmentMetadata(id, trx);
+        if (this.getEffectiveNsfw(m) !== true) {
+          return;
+        }
+
+        const nsfw = this.ensureManualNsfwMetadata(m, false);
+        nsfw.review = this.getReview(auth, 'marked-safe', false);
+        await this.saveEnrichmentMetadata(id, m, trx);
+        return m;
+      });
+
+      if (metadata) {
+        const changed = await this.clearAppliedNsfwTags(id, asset.ownerId, metadata);
+        await this.finalizeRepair(id, changed, metadata);
+      }
+    }
+  }
+
+  /**
+   * FL-34: switching "hide sensitive detections" on locks what detection had already flagged and no
+   * owner has reviewed, so those photos move to their owners' Locked view instead of staying in view.
+   * Switching it off unlocks nothing: a lock is only ever removed by its owner.
+   */
+  @OnEvent({ name: 'ConfigUpdate', workers: [ImmichWorker.Microservices], server: true })
+  async onConfigUpdate({ oldConfig, newConfig }: ArgOf<'ConfigUpdate'>) {
+    if (!isNsfwHidingEnabled(newConfig.machineLearning) || isNsfwHidingEnabled(oldConfig.machineLearning)) {
+      return;
+    }
+
+    const ids = await this.assetRepository.getUnlockedDetectionIds();
+    for (let index = 0; index < ids.length; index += JOBS_ASSET_PAGINATION_SIZE) {
+      await this.lockSensitive(ids.slice(index, index + JOBS_ASSET_PAGINATION_SIZE), AssetLockReason.Detected, null);
+    }
+  }
+
+  /** Locks `assetIds` as sensitive (FL-34) and releases what a locked photo may no longer be. */
+  private async lockSensitive(assetIds: string[], reason: AssetLockReason, lockedBy: string | null) {
+    const locked = await this.assetRepository.lock(assetIds, reason, lockedBy);
+    if (locked.length > 0) {
+      await this.afterAssetsLocked(locked);
+    }
+  }
+
+  /**
+   * FL-34: a sensitive detection locks the asset as `detected`, reviewable and reversible in the Locked
+   * view, when the administrator has "hide sensitive detections" on. An owner's own review always
+   * wins: an asset they reviewed is never locked by a detection. Never unlocks anything.
+   */
+  private async lockIfDetected(id: string, metadata: EnrichmentMetadata, hideDetections: boolean) {
+    if (!hideDetections || metadata.nsfwDetection?.review || this.getEffectiveNsfw(metadata) !== true) {
+      return;
+    }
+
+    await this.lockSensitive([id], AssetLockReason.Detected, null);
   }
 
   @OnJob({ name: JobName.ImageDescriptionQueueAll, queue: QueueName.ImageDescription })
@@ -408,6 +519,8 @@ export class ImageEnrichmentService extends BaseService {
     if (changed.visible) {
       await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
     }
+
+    await this.lockIfDetected(id, metadata, isNsfwHidingEnabled(machineLearning));
 
     return JobStatus.Success;
   }
@@ -585,6 +698,9 @@ export class ImageEnrichmentService extends BaseService {
         return { metadata: m, previousDescription, previousTagValues };
       },
     );
+
+    // a sensitive verdict from either the detector or the description locks it (FL-34)
+    await this.lockIfDetected(id, metadata, isNsfwHidingEnabled(machineLearning));
 
     if (isSmartSearchEnabled(machineLearning)) {
       await this.upsertDescriptionEmbedding(id, result.description, machineLearning.clip);

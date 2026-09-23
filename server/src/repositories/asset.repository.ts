@@ -77,6 +77,7 @@ import {
 import {
   effectiveVisibility,
   isLocked,
+  isNotLocked,
   isTimelineVisible,
   lockReasonOf,
   lockedForReason,
@@ -844,6 +845,34 @@ export class AssetRepository {
 
       return lockedIds;
     });
+  }
+
+  /**
+   * Assets that sensitive-content detection flagged, that no owner has reviewed and that are not locked
+   * (FL-34): what "hide sensitive detections" locks when it is switched on. Only positive evidence
+   * counts (`asset.is_nsfw`); a manual review, either way, is the owner's and is left alone.
+   */
+  async getUnlockedDetectionIds(): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.is_nsfw', '=', true)
+      .where('asset.deletedAt', 'is', null)
+      .where(isNotLocked('asset'))
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom('asset_metadata')
+              .select('asset_metadata.assetId')
+              .whereRef('asset_metadata.assetId', '=', 'asset.id')
+              .where('asset_metadata.key', '=', AssetMetadataKey.MlEnrichment)
+              .where(sql`asset_metadata.value #> '{nsfwDetection,review}'`, 'is not', null),
+          ),
+        ),
+      )
+      .execute();
+    return rows.map(({ id }) => id);
   }
 
   /**

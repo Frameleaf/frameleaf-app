@@ -4,7 +4,7 @@ import type { UserMetadataItem } from 'src/types.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { UserAdmin } from 'src/database.js';
 import { AuthDto, SignUpDto } from 'src/dtos/auth.dto.js';
-import { AuthType, Permission } from 'src/enum.js';
+import { AuthType, Permission, UserMetadataKey } from 'src/enum.js';
 import { AuthService } from 'src/services/auth.service.js';
 import { ApiKeyFactory } from 'test/factories/api-key.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -555,55 +555,13 @@ describe(AuthService.name, () => {
       });
     });
 
-    it('should hide NSFW assets when configured and the session is not elevated', async () => {
+    it('should leave sensitive media to the lock record instead of the session filter (FL-34)', async () => {
       const session = SessionFactory.create();
       const sessionWithToken = {
         id: session.id,
         updatedAt: session.updatedAt,
         user: UserFactory.create(),
         pinExpiresAt: null,
-        appVersion: null,
-        oauthSid: null,
-      };
-
-      mocks.systemMetadata.get.mockResolvedValue({
-        machineLearning: { nsfwDetection: { hideFromLibrary: true } },
-      });
-      mocks.session.getByToken.mockResolvedValue(sessionWithToken);
-      const hiddenContent = {
-        includeNsfw: true,
-        personIds: [],
-        petIds: [],
-        scope: 'owned',
-        tagIds: [],
-        userId: sessionWithToken.user.id,
-      };
-
-      await expect(
-        sut.authenticate({
-          headers: { cookie: 'immich_access_token=auth_token' },
-          queryParams: {},
-          metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
-        }),
-      ).resolves.toEqual({
-        user: sessionWithToken.user,
-        session: {
-          id: session.id,
-          hasElevatedPermission: false,
-        },
-        hiddenContent,
-        hideNsfwAssets: true,
-        suppressedContent: hiddenContent,
-      });
-    });
-
-    it('should not hide NSFW assets when the PIN session is elevated', async () => {
-      const session = SessionFactory.create();
-      const sessionWithToken = {
-        id: session.id,
-        updatedAt: session.updatedAt,
-        user: UserFactory.create(),
-        pinExpiresAt: DateTime.now().plus({ minutes: 15 }).toJSDate(),
         appVersion: null,
         oauthSid: null,
       };
@@ -619,23 +577,46 @@ describe(AuthService.name, () => {
         metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
       });
 
-      const suppressedContent = {
-        includeNsfw: true,
-        personIds: [],
-        petIds: [],
-        scope: 'owned',
-        tagIds: [],
-        userId: sessionWithToken.user.id,
-      };
       expect(result).toEqual({
         user: sessionWithToken.user,
         session: {
           id: session.id,
-          hasElevatedPermission: true,
+          hasElevatedPermission: false,
         },
-        suppressedContent,
       });
+      expect(result.hiddenContent).toBeUndefined();
       expect(result.hideNsfwAssets).toBeUndefined();
+    });
+
+    it('should keep suppressed people in the session filter without the sensitive flag', async () => {
+      const session = SessionFactory.create();
+      const sessionWithToken = {
+        id: session.id,
+        updatedAt: session.updatedAt,
+        user: UserFactory.create(),
+        pinExpiresAt: null,
+        appVersion: null,
+        oauthSid: null,
+      };
+
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { nsfwDetection: { hideFromLibrary: true } },
+      });
+      mocks.session.getByToken.mockResolvedValue(sessionWithToken);
+      mocks.user.getMetadata.mockResolvedValue([
+        {
+          key: UserMetadataKey.Preferences,
+          value: { privacy: { suppression: { personIds: ['person-1'], tagIds: [], petIds: [], scope: 'owned' } } },
+        },
+      ] as any);
+
+      const result = await sut.authenticate({
+        headers: { cookie: 'immich_access_token=auth_token' },
+        queryParams: {},
+        metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test' },
+      });
+
+      expect(result.hiddenContent).toEqual(expect.objectContaining({ includeNsfw: false, personIds: ['person-1'] }));
     });
 
     it('should extend a near-expiry elevated PIN session to sixty minutes', async () => {

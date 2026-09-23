@@ -127,8 +127,9 @@ const inBatchOrder = (batch: readonly string[], outcomes: readonly Outcome[]): O
  *   are still checked for every item and every batch. The Locked folder's PIN is enforced where it
  *   belongs, at submit: a job that includes Locked items can only be queued from an unlocked
  *   session (see `MediaOperationService.createBulk`).
- * - **Sensitive marking is metadata.** It goes through the enrichment review action, which writes
- *   the manual mark and its tags; no visibility change, no album write, no move to Locked.
+ * - **Sensitive marking is the lock** (FL-34). It goes through the enrichment review action, which
+ *   writes the manual mark and its tags and locks (or, for Unmark, unlocks) the item: a lock record,
+ *   no visibility change, no album write.
  * - **Cancel is honoured between batches** and the items already changed are reported, not hidden.
  * - **A worker that dies** leaves an in-flight marker, and the next claim applies that batch again.
  *   Every action is safe to repeat. The relative date shift is made so: before a batch is marked in
@@ -651,8 +652,8 @@ export class BulkOperationService {
 
       case MediaOperationBulkAction.MarkSensitive:
       case MediaOperationBulkAction.UnmarkSensitive: {
-        // Metadata only: the manual review mark and its tags. Album membership, visibility and the
-        // Locked folder are not touched.
+        // The manual review mark and its tags, and the lock that goes with it (FL-34). Album membership
+        // and the stored visibility are not touched.
         const enrichment =
           action === MediaOperationBulkAction.MarkSensitive
             ? AssetImageEnrichmentAction.MarkNsfw
