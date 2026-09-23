@@ -299,10 +299,12 @@
     }
   };
   const onRootDragOver = (event: DragEvent) => {
-    if (canTakeOut(dragged, currentUserId) && isAlbumDrag(event)) {
-      event.preventDefault();
-      overRoot = true;
+    if (!(canTakeOut(dragged, currentUserId) && isAlbumDrag(event))) {
+      return;
     }
+
+    event.preventDefault();
+    overRoot = true;
   };
   const onRootDrop = async (event: DragEvent) => {
     const albumId = getAlbumDragData(event);
@@ -314,10 +316,12 @@
     }
   };
   const onKeydown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape' && dragged) {
-      endDrag();
-      status = $t('frameleaf_albums_move_cancelled');
+    if (!(event.key === 'Escape' && dragged)) {
+      return;
     }
+
+    endDrag();
+    status = $t('frameleaf_albums_move_cancelled');
   };
 
   const draggedParent = $derived(dragged?.parentId ? find(dragged.parentId) : undefined);

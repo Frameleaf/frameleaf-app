@@ -159,11 +159,13 @@
   const icon = (name: string) => ICONS[name] ?? mdiDotsHorizontal;
 
   $effect(() => {
-    if (!open) {
-      menuOpen = false;
-      dialog = null;
-      dialogOpen = false;
+    if (open) {
+      return;
     }
+
+    menuOpen = false;
+    dialog = null;
+    dialogOpen = false;
   });
 
   /**
@@ -356,10 +358,12 @@
             aria-controls={menuOpen ? menuId : undefined}
             onclick={() => (menuOpen = !menuOpen)}
             onkeydown={(event) => {
-              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                event.preventDefault();
-                menuOpen = true;
+              if (!(event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                return;
               }
+
+              event.preventDefault();
+              menuOpen = true;
             }}
           >
             <Icon icon={mdiDotsHorizontal} size="1.125rem" />

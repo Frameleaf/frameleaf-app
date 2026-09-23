@@ -168,8 +168,8 @@
     error = '';
     try {
       await action();
-    } catch (cause) {
-      error = failure(cause);
+    } catch (error_) {
+      error = failure(error_);
     } finally {
       busy = false;
     }
@@ -191,9 +191,9 @@
       if (id === selectedId) {
         inventory = loaded;
       }
-    } catch (cause) {
+    } catch (error_) {
       if (id === selectedId) {
-        error = failure(cause);
+        error = failure(error_);
       }
     }
   };
@@ -218,7 +218,7 @@
       const response = await listICloudConnections();
       connections = response.connections;
       enabled = response.enabled;
-      if (!connections.some(({ id }) => id === selectedId)) {
+      if (connections.every(({ id }) => id !== selectedId)) {
         select(connections[0]?.id ?? '');
         return;
       }
@@ -324,8 +324,8 @@
       } else if (connection.lastError) {
         authError = $t(icloudErrorKey(connection.lastError));
       }
-    } catch (cause) {
-      authError = failure(cause);
+    } catch (error_) {
+      authError = failure(error_);
     } finally {
       busy = false;
     }
@@ -416,11 +416,13 @@
 
   // Closing the sign-in dialog, however it closes, forgets what was typed into it.
   $effect(() => {
-    if (!authOpen) {
-      clearSecrets();
-      signInAgain = false;
-      authError = '';
+    if (authOpen) {
+      return;
     }
+
+    clearSecrets();
+    signInAgain = false;
+    authError = '';
   });
 </script>
 

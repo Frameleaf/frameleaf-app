@@ -90,7 +90,7 @@ describe('album targets for Add to album', () => {
     expect(flattenAlbumTargets(family).map(({ id }) => id)).toEqual(['birthday', 'rockies']);
 
     expect(countAlbumTargets(searchAlbumTargets(directory, 'nothing matches this'))).toBe(0);
-    expect(searchAlbumTargets(directory, '   ')).toBe(directory);
+    expect(searchAlbumTargets(directory, ' '.repeat(3))).toBe(directory);
   });
 
   it('pages the rows, heading a collection only above albums that made the page', () => {

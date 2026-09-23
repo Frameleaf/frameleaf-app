@@ -54,7 +54,7 @@ describe('AlbumInlineEdit', () => {
     render(AlbumInlineEdit, { value: 'Iceland', label: 'Edit title', onSave });
 
     const field = await open();
-    await fireEvent.input(field, { target: { value: '   ' } });
+    await fireEvent.input(field, { target: { value: ' '.repeat(3) } });
     await fireEvent.blur(field);
 
     expect(onSave).not.toHaveBeenCalled();

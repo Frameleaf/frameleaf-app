@@ -50,7 +50,7 @@
   const viewInLibrary = () => {
     const session = createLibrarySession();
     session.state.query.filter = { originalPath: { startsWith: tree.path } };
-    const url = writeLibraryView(new URL(Route.photos(), window.location.origin), session.state);
+    const url = writeLibraryView(new URL(Route.photos(), location.origin), session.state);
     void goto(`${url.pathname}${url.search}`);
   };
 </script>

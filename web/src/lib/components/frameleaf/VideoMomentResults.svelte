@@ -30,7 +30,7 @@
     const search = new URLSearchParams();
     for (const [key, value] of Object.entries(authManager.params)) {
       if (value) {
-        search.set(key, String(value));
+        search.set(key, value);
       }
     }
     const text = search.toString();

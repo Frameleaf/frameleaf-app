@@ -71,10 +71,12 @@
   };
 
   const onAssetsTag = async (ids: string[]) => {
-    if (ids.includes(asset.id)) {
-      asset = await getAssetInfo({ id: asset.id });
-      onAssetRefresh?.(asset);
+    if (!ids.includes(asset.id)) {
+      return;
     }
+
+    asset = await getAssetInfo({ id: asset.id });
+    onAssetRefresh?.(asset);
   };
 
   const { Tag } = $derived(getAssetActions($t, asset));

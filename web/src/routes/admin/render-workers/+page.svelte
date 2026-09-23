@@ -50,7 +50,7 @@
   let limitDialog = $state<LimitDialog | null>(null);
 
   const accountsWithoutLimit = $derived(
-    data.users.filter((user) => !user.deletedAt && !limits.users.some((limit) => limit.userId === user.id)),
+    data.users.filter((user) => !user.deletedAt && limits.users.every((limit) => limit.userId !== user.id)),
   );
 
   // Health is derived from `lastSeenAt` against the clock, so the clock has to tick; the rows

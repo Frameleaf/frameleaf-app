@@ -239,19 +239,19 @@ export type ScanState =
   | { kind: 'interrupted'; at: string | null }
   | { kind: 'completed'; at: string | null };
 
-const WORKING: readonly MediaOperationStatus[] = [
+const WORKING: ReadonlySet<MediaOperationStatus> = new Set([
   MediaOperationStatus.Preparing,
   MediaOperationStatus.Rendering,
   MediaOperationStatus.Validating,
   MediaOperationStatus.Cancelling,
-];
+]);
 
 /** A scan or search is still the server's problem: Scan again is held back until it ends. */
 export const isActiveOperation = (operation: MediaHealthOperationDto | null | undefined) =>
   !!operation &&
   (operation.status === MediaOperationStatus.Queued ||
     operation.status === MediaOperationStatus.Paused ||
-    WORKING.includes(operation.status));
+    WORKING.has(operation.status));
 
 /**
  * The scan bar's state, from the latest job and the latest health run of the category. A job that

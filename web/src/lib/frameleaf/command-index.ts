@@ -88,17 +88,13 @@ export interface CommandIndexContext {
  * first entry; it is offered once, as the primary one.
  */
 export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexContext): CommandInput[] => {
-  const pages: CommandInput[] = [];
-
-  for (const item of buildPrimaryDestinations()) {
-    pages.push({
-      id: `primary:${item.id}`,
-      title: $t(item.labelKey),
-      subtitle: $t('frameleaf_search_subtitle_page'),
-      icon: item.icon,
-      href: item.href,
-    });
-  }
+  const pages: CommandInput[] = Array.from(buildPrimaryDestinations(), (item) => ({
+    id: `primary:${item.id}`,
+    title: $t(item.labelKey),
+    subtitle: $t('frameleaf_search_subtitle_page'),
+    icon: item.icon,
+    href: item.href,
+  }));
   const primaryHrefs = new Set(pages.map((page) => page.href));
 
   for (const section of buildRailSections(context.capabilities)) {

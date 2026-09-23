@@ -116,12 +116,12 @@
     }
     const options = [...(root?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])];
     const index = options.indexOf(document.activeElement as HTMLElement);
-    const columns = index >= 0 ? columnsOf(options[index]) : 1;
+    const columns = index === -1 ? 1 : columnsOf(options[index]);
     const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: columns, ArrowUp: -columns }[event.key];
     if (step === undefined) {
       return;
     }
-    if (index < 0) {
+    if (index === -1) {
       if (event.key === 'ArrowDown' && options[0]) {
         event.preventDefault();
         options[0].focus();

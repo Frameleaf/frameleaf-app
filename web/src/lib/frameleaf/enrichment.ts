@@ -107,7 +107,7 @@ export const staleReasonKey: Readonly<Record<EnrichmentStaleReason, Translations
 /** The chosen stages in running order, with everything a chosen stage needs. */
 export const withRequiredStages = (chosen: Iterable<EnrichmentStage>): EnrichmentStage[] => {
   const all = new Set(chosen);
-  for (const stage of [...all]) {
+  for (const stage of all) {
     for (const required of ENRICHMENT_STAGE_REQUIRES[stage]) {
       all.add(required);
     }
@@ -250,7 +250,7 @@ export const newRequestKey = (): string => {
   }
   const bytes = new Uint8Array(16);
   if (globalThis.crypto?.getRandomValues) {
-    globalThis.crypto.getRandomValues(bytes);
+    crypto.getRandomValues(bytes);
   } else {
     for (let index = 0; index < bytes.length; index++) {
       bytes[index] = Math.floor(Math.random() * 256);

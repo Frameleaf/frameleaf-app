@@ -105,10 +105,12 @@ export class ActivitySession {
   }
 
   #stop() {
-    if (this.#timer !== null) {
-      clearTimeout(this.#timer);
-      this.#timer = null;
+    if (this.#timer === null) {
+      return;
     }
+
+    clearTimeout(this.#timer);
+    this.#timer = null;
   }
 
   /** Replace one job with the server's answer, so an action's result shows without a full reload. */

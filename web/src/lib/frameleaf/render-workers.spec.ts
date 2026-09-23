@@ -277,7 +277,7 @@ describe('parseWorkerForm', () => {
   });
 
   it('refuses by field: empty name, no scopes, sub-minute evidence window, worker concurrency of zero', () => {
-    expect(parseWorkerForm({ ...filled, name: '   ' })).toEqual({ ok: false, field: 'name' });
+    expect(parseWorkerForm({ ...filled, name: ' '.repeat(3) })).toEqual({ ok: false, field: 'name' });
     expect(parseWorkerForm({ ...filled, kinds: [] })).toEqual({ ok: false, field: 'kinds' });
     expect(parseWorkerForm({ ...filled, conformanceMaxAgeHours: '0.01' })).toEqual({
       ok: false,

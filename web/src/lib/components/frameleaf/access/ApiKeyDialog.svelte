@@ -56,10 +56,12 @@
   const listId = $props.id();
 
   $effect(() => {
-    if (!open) {
-      secret = '';
-      onClose();
+    if (open) {
+      return;
     }
+
+    secret = '';
+    onClose();
   });
 
   const toggle = (permission: Permission, checked: boolean) => {

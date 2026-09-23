@@ -34,7 +34,7 @@
   const actions = $derived.by(() => {
     const list: ErrorPageAction[] = [{ label: $t('frameleaf_error_go_photos'), href: Route.photos(), primary: true }];
     if (kind === 'server') {
-      list.push({ label: $t('frameleaf_error_retry'), onclick: () => globalThis.location.reload() });
+      list.push({ label: $t('frameleaf_error_retry'), onclick: () => location.reload() });
     }
     if (canGoBack) {
       list.push({ label: $t('frameleaf_error_go_back'), onclick: () => history.back() });

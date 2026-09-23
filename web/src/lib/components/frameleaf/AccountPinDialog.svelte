@@ -41,12 +41,14 @@
   const hintId = $props.id();
 
   $effect(() => {
-    if (!open) {
-      // The entered digits never outlive the dialog.
-      pinCode = '';
-      confirmPinCode = '';
-      onClose();
+    if (open) {
+      return;
     }
+
+    // The entered digits never outlive the dialog.
+    pinCode = '';
+    confirmPinCode = '';
+    onClose();
   });
 
   const submit = async (event: SubmitEvent) => {

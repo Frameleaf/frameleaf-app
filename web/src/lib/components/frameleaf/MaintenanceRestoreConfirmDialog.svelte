@@ -26,10 +26,12 @@
   const CONFIRM_WORD = 'RESTORE';
 
   $effect(() => {
-    if (!open) {
-      confirmText = '';
-      restoring = false;
+    if (open) {
+      return;
     }
+
+    confirmText = '';
+    restoring = false;
   });
 
   const confirm = async () => {

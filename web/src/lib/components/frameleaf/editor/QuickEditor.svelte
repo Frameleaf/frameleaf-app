@@ -613,7 +613,7 @@
     event.preventDefault();
     const target = tools[(next + tools.length) % tools.length];
     tool = target.id;
-    (event.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-tool="${target.id}"]`)?.focus();
+    (event.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-tool="${CSS.escape(target.id)}"]`)?.focus();
   };
 
   const dimensions = $derived(asset.width && asset.height ? `${asset.width} × ${asset.height}` : '');
@@ -730,10 +730,12 @@
           onpointerleave={() => (before = false)}
           onpointercancel={() => (before = false)}
           onkeydown={(event) => {
-            if (event.key === ' ' || event.key === 'Enter') {
-              event.preventDefault();
-              before = true;
+            if (!(event.key === ' ' || event.key === 'Enter')) {
+              return;
             }
+
+            event.preventDefault();
+            before = true;
           }}
           onkeyup={(event) => {
             if (event.key === ' ' || event.key === 'Enter') {

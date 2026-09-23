@@ -13,7 +13,7 @@
     step = 1,
     defaultValue = 0,
     disabled = false,
-    format = (v: number) => String(v),
+    format = String,
     onChange,
   }: {
     id: string;

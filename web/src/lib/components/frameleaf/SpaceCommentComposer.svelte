@@ -120,12 +120,14 @@
   // Focusing puts the caret after what is already there, so a reply that starts with an @mention
   // carries straight on after it.
   $effect(() => {
-    if (autofocus && textarea) {
-      textarea.focus();
-      const end = textarea.value.length;
-      textarea.setSelectionRange(end, end);
-      caret = end;
+    if (!(autofocus && textarea)) {
+      return;
     }
+
+    textarea.focus();
+    const end = textarea.value.length;
+    textarea.setSelectionRange(end, end);
+    caret = end;
   });
 
   // The box holds `@{id}` tokens; underneath, the text reads as it will be shown, with names.

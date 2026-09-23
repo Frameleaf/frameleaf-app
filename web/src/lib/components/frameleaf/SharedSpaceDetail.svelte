@@ -195,10 +195,12 @@
   onMount(() =>
     eventManager.on({
       AlbumRemoveAssets: ({ assetIds, albumIds }) => {
-        if (albumIds.includes(space.id)) {
-          photos.remove(assetIds);
-          void onRefresh();
+        if (!albumIds.includes(space.id)) {
+          return;
         }
+
+        photos.remove(assetIds);
+        void onRefresh();
       },
     }),
   );

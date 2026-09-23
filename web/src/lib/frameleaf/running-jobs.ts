@@ -104,7 +104,7 @@ export const operationRow = (operation: RunningJobsResponseDto['operations'][num
     id: `operation:${operation.id}`,
     source: 'operation',
     title: item.title,
-    ...(item.titleKey ? { titleKey: item.titleKey } : {}),
+    ...(item.titleKey && { titleKey: item.titleKey }),
     kindKey: item.kindKey,
     statusKey: item.statusKey,
     tone: item.tone,

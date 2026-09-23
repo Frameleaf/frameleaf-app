@@ -211,12 +211,12 @@ describe('the duplicate review session', () => {
   });
 
   it('makes a v4 idempotency key even where randomUUID is unavailable', () => {
-    const original = globalThis.crypto.randomUUID;
-    Object.defineProperty(globalThis.crypto, 'randomUUID', { value: undefined, configurable: true });
+    const original = crypto.randomUUID;
+    Object.defineProperty(crypto, 'randomUUID', { value: undefined, configurable: true });
     try {
       expect(newRequestId()).toMatch(/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);
     } finally {
-      Object.defineProperty(globalThis.crypto, 'randomUUID', { value: original, configurable: true });
+      Object.defineProperty(crypto, 'randomUUID', { value: original, configurable: true });
     }
   });
 });

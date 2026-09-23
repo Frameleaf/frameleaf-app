@@ -109,7 +109,7 @@ describe('selection is separate from the open item', () => {
   it('tracks playback only for the open item', () => {
     const session = run(createLibrarySession(), { type: 'open', id: 'a', time: 12 }, { type: 'playback', time: 30 });
     expect(session.playbackPosition).toBe(30);
-    expect(reduceLibrarySession(session, { type: 'playback', time: Number.NaN })).toBe(session);
+    expect(reduceLibrarySession(session, { type: 'playback', time: NaN })).toBe(session);
     expect(reduceLibrarySession(session, { type: 'open', id: 'b' }).playbackPosition).toBe(0);
   });
 });

@@ -125,7 +125,7 @@ describe('Locked rules (FL-67)', () => {
     it('offers to create a tag only when no tag has that full path', () => {
       expect(canCreateTag(tags, 'Pets')).toBe(true);
       expect(canCreateTag(tags, 'family/medical')).toBe(false);
-      expect(canCreateTag(tags, '   ')).toBe(false);
+      expect(canCreateTag(tags, ' '.repeat(3))).toBe(false);
       expect(canCreateTag(tags, 'x'.repeat(101))).toBe(false);
     });
   });

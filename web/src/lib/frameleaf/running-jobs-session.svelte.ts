@@ -129,10 +129,12 @@ export class RunningJobsSession {
   }
 
   #stop() {
-    if (this.#timer !== null) {
-      clearTimeout(this.#timer);
-      this.#timer = null;
+    if (this.#timer === null) {
+      return;
     }
+
+    clearTimeout(this.#timer);
+    this.#timer = null;
   }
 
   #listen() {

@@ -45,7 +45,7 @@ describe('formatFileSize', () => {
     expect(formatFileSize(null)).toBeNull();
     expect(formatFileSize(undefined)).toBeNull();
     expect(formatFileSize(-1)).toBeNull();
-    expect(formatFileSize(Number.NaN)).toBeNull();
+    expect(formatFileSize(NaN)).toBeNull();
   });
 });
 

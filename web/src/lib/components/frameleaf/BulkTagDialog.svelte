@@ -39,7 +39,7 @@
       .slice(0, 8),
   );
   let canCreate = $derived(
-    !!needle && !options.some((option) => option.name.toLowerCase() === needle) && !chosenNames.has(needle),
+    !!needle && options.every((option) => option.name.toLowerCase() !== needle) && !chosenNames.has(needle),
   );
   let suggestions: (TagOption & { isNew?: boolean })[] = $derived([
     ...matches,
@@ -58,20 +58,33 @@
   const remove = (name: string) => (chosen = chosen.filter((tag) => tag.name !== name));
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      active = Math.min(suggestions.length - 1, highlighted + 1);
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      active = Math.max(0, highlighted - 1);
-    } else if (event.key === 'Enter') {
-      // Enter chooses from the list; it must not submit the form with a half-typed tag.
-      event.preventDefault();
-      if (suggestions.length > 0) {
-        add(suggestions[highlighted]);
+    switch (event.key) {
+      case 'ArrowDown': {
+        event.preventDefault();
+        active = Math.min(suggestions.length - 1, highlighted + 1);
+
+        break;
       }
-    } else if (event.key === 'Backspace' && !query && chosen.length > 0) {
-      remove(chosen.at(-1)!.name);
+      case 'ArrowUp': {
+        event.preventDefault();
+        active = Math.max(0, highlighted - 1);
+
+        break;
+      }
+      case 'Enter': {
+        // Enter chooses from the list; it must not submit the form with a half-typed tag.
+        event.preventDefault();
+        if (suggestions.length > 0) {
+          add(suggestions[highlighted]);
+        }
+
+        break;
+      }
+      default: {
+        if (event.key === 'Backspace' && !query && chosen.length > 0) {
+          remove(chosen.at(-1)!.name);
+        }
+      }
     }
   };
 

@@ -59,7 +59,7 @@ export const buildPrimaryDestinations = (): PrimaryDestination[] => [
   { id: 'activity', labelKey: 'activity', icon: mdiProgressClock, href: Route.activity() },
 ];
 
-const pathOf = (href: string) => href.split('?')[0].split('#')[0];
+const pathOf = (href: string) => href.split('?', 1)[0].split('#', 1)[0];
 
 const isWithin = (pathname: string, root: string) => pathname === root || pathname.startsWith(`${root}/`);
 
@@ -79,7 +79,7 @@ export const isSettingsRoute = (pathname: string): boolean => SETTINGS_ROOTS.som
  * Opening one specific album or space (`navigateCollection` in App.jsx) lands back on the
  * library screen, so only the index itself — not its children — is excluded.
  */
-const LIBRARY_INDEX_ROOTS = [pathOf(Route.albums()), pathOf(Route.sharing())];
+const LIBRARY_INDEX_ROOTS = new Set([pathOf(Route.albums()), pathOf(Route.sharing())]);
 
 /**
  * Roots that are the prototype's "library" screen: every named collection reached through
@@ -137,7 +137,7 @@ export const currentPrimaryDestination = (pathname: string): PrimaryDestinationI
   if (pathname === PEOPLE_ROOT) {
     return 'library';
   }
-  if (LIBRARY_INDEX_ROOTS.includes(pathname)) {
+  if (LIBRARY_INDEX_ROOTS.has(pathname)) {
     return null;
   }
   if (LIBRARY_ROOTS.some((root) => isWithin(pathname, root))) {
@@ -333,7 +333,7 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
  * to All albums).
  */
 export const isDestinationCurrent = (pathname: string, destination: RailDestination) => {
-  const href = destination.href.split('?')[0].split('#')[0];
+  const href = destination.href.split('?', 1)[0].split('#', 1)[0];
 
   if (pathname === href) {
     return true;

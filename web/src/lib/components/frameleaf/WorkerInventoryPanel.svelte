@@ -110,10 +110,12 @@
 
   let lastKey = refreshKey;
   $effect(() => {
-    if (refreshKey !== lastKey) {
-      lastKey = refreshKey;
-      void reload();
+    if (refreshKey === lastKey) {
+      return;
     }
+
+    lastKey = refreshKey;
+    void reload();
   });
 
   /* ---------------- check capabilities ---------------- */
@@ -489,7 +491,7 @@
         {#each sections.libraryWorkers as entry (entry.id)}
           {#snippet libraryActions()}
             {@render checkButton(entry)}
-            <Button onclick={() => document.getElementById('ml-destinations')?.scrollIntoView()}>
+            <Button onclick={() => document.querySelector('#ml-destinations')?.scrollIntoView()}>
               {$t('admin.frameleaf_workers_manage')}
             </Button>
           {/snippet}
@@ -549,7 +551,7 @@
         {/each}
       </div>
       <div class="actions">
-        <Button onclick={() => document.getElementById('ml-destinations')?.scrollIntoView()}>
+        <Button onclick={() => document.querySelector('#ml-destinations')?.scrollIntoView()}>
           {$t('admin.frameleaf_workers_open_video_profile')}
         </Button>
         <a class="link" href={Route.systemSettings({ isOpen: OpenQueryParam.IMAGE_DESCRIPTION })}>
@@ -566,7 +568,7 @@
           {#each sections.mixedWorkers as entry (entry.id)}
             {#snippet mixedActions()}
               {@render checkButton(entry)}
-              <Button onclick={() => document.getElementById('ml-destinations')?.scrollIntoView()}>
+              <Button onclick={() => document.querySelector('#ml-destinations')?.scrollIntoView()}>
                 {$t('admin.frameleaf_workers_manage')}
               </Button>
             {/snippet}

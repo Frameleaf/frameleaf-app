@@ -50,7 +50,7 @@ const candidate = (overrides: Partial<PetCandidateResponseDto> = {}): PetCandida
 describe('pet names', () => {
   it('treats a blank name as not named yet', () => {
     expect(isUnnamedPet(pet({ name: '' }))).toBe(true);
-    expect(isUnnamedPet(pet({ name: '   ' }))).toBe(true);
+    expect(isUnnamedPet(pet({ name: ' '.repeat(3) }))).toBe(true);
     expect(isUnnamedPet(pet({ name: 'Biscuit' }))).toBe(false);
   });
 
@@ -85,7 +85,7 @@ describe('species', () => {
   });
 
   it('offers every species the contract allows', () => {
-    expect([...petSpeciesOptions()].sort()).toEqual([...Object.values(PetSpecies)].sort());
+    expect([...petSpeciesOptions()].sort()).toEqual(Object.values(PetSpecies).sort());
   });
 });
 

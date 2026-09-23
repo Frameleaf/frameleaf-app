@@ -134,8 +134,8 @@
       });
       review = { ...reviewed, rows: frozen };
       reviewOpen = true;
-    } catch (cause) {
-      error = failureMessage(cause);
+    } catch (error_) {
+      error = failureMessage(error_);
     } finally {
       busy = false;
     }
@@ -161,8 +161,8 @@
       error = '';
       reviewOpen = false;
       review = null;
-    } catch (cause) {
-      error = failureMessage(cause);
+    } catch (error_) {
+      error = failureMessage(error_);
       reviewOpen = false;
       review = null;
     } finally {
@@ -185,8 +185,8 @@
       }
       undoIds = null;
       notice = $t('frameleaf_large_files_undone');
-    } catch (cause) {
-      error = failureMessage(cause);
+    } catch (error_) {
+      error = failureMessage(error_);
     } finally {
       busy = false;
     }

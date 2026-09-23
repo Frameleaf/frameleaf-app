@@ -112,7 +112,7 @@ describe('account preferences (FL-77)', () => {
       expect(gibToArchiveSize(0.5)).toBe(GIB / 2);
       expect(gibToArchiveSize(1e-9)).toBe(1);
       expect(gibToArchiveSize(null)).toBeNull();
-      expect(gibToArchiveSize(Number.NaN)).toBeNull();
+      expect(gibToArchiveSize(NaN)).toBeNull();
     });
 
     it('never re-sends an unchanged arbitrary size', () => {

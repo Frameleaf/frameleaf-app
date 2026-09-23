@@ -49,11 +49,14 @@ export const sanitizeArchiveSegment = (input: string | null | undefined): string
   if (!input) {
     return '';
   }
-  const withoutDiacritics = input.normalize('NFKD').replace(COMBINING_MARKS, '');
-  const asciiOnly = withoutDiacritics.replace(NON_ASCII_PRINTABLE, '');
-  const withoutReserved = asciiOnly.replace(RESERVED_CHARACTERS, ' ');
-  const hyphenated = withoutReserved.replace(SEPARATOR_RUN, '-').replace(HYPHEN_RUN, '-').replace(EDGE_HYPHENS, '');
-  return hyphenated.slice(0, SEGMENT_MAX_LENGTH).replace(EDGE_HYPHENS, '');
+  const withoutDiacritics = input.normalize('NFKD').replaceAll(COMBINING_MARKS, '');
+  const asciiOnly = withoutDiacritics.replaceAll(NON_ASCII_PRINTABLE, '');
+  const withoutReserved = asciiOnly.replaceAll(RESERVED_CHARACTERS, ' ');
+  const hyphenated = withoutReserved
+    .replaceAll(SEPARATOR_RUN, '-')
+    .replaceAll(HYPHEN_RUN, '-')
+    .replaceAll(EDGE_HYPHENS, '');
+  return hyphenated.slice(0, SEGMENT_MAX_LENGTH).replaceAll(EDGE_HYPHENS, '');
 };
 
 /** The local calendar date as `YYYY-MM-DD`, for a destination whose own name would not otherwise
@@ -104,8 +107,8 @@ export const buildArchiveName = (
     parts.push(formatArchiveDate(now));
   }
 
-  const joined = parts.join('-').replace(HYPHEN_RUN, '-').replace(EDGE_HYPHENS, '');
-  return joined.slice(0, maxLength).replace(EDGE_HYPHENS, '') || ASCII_SAFE_FALLBACK;
+  const joined = parts.join('-').replaceAll(HYPHEN_RUN, '-').replaceAll(EDGE_HYPHENS, '');
+  return joined.slice(0, maxLength).replaceAll(EDGE_HYPHENS, '') || ASCII_SAFE_FALLBACK;
 };
 
 /**

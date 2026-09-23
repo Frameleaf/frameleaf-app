@@ -59,13 +59,15 @@
   const others = $derived(othersOf(collection, currentUserId));
 
   const onDragOver = (event: DragEvent) => {
-    if (acceptsDrop && isAlbumDrag(event)) {
-      event.preventDefault();
-      if (event.dataTransfer) {
-        event.dataTransfer.dropEffect = 'move';
-      }
-      over = true;
+    if (!(acceptsDrop && isAlbumDrag(event))) {
+      return;
     }
+
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+    over = true;
   };
 
   const onDragLeave = (event: DragEvent) => {

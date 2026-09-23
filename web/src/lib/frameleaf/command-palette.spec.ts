@@ -102,7 +102,7 @@ describe('scoreCommand', () => {
   });
 
   it('scores nothing for an empty query', () => {
-    expect(scoreCommand(find(index(), 'pages:photos'), '   ')).toBe(0);
+    expect(scoreCommand(find(index(), 'pages:photos'), ' '.repeat(3))).toBe(0);
   });
 
   it('folds diacritics and case', () => {

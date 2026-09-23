@@ -214,7 +214,7 @@
    */
   const bulkContext = $derived({
     albumId: isCollection ? null : albumId,
-    ...(isSpaceViewer ? { spaceViewerMatching: true } : {}),
+    ...(isSpaceViewer && { spaceViewerMatching: true }),
   });
 
   const collectionTimelineAssets = $derived(collectionAssets.map((asset) => toTimelineAsset(asset)));

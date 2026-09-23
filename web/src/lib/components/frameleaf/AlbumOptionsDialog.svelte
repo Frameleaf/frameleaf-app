@@ -25,10 +25,12 @@
   let saving = $state(false);
 
   $effect(() => {
-    if (open) {
-      order = album.order ?? AssetOrder.Desc;
-      activityEnabled = album.isActivityEnabled;
+    if (!open) {
+      return;
     }
+
+    order = album.order ?? AssetOrder.Desc;
+    activityEnabled = album.isActivityEnabled;
   });
 
   const save = async () => {

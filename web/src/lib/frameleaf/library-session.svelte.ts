@@ -364,7 +364,7 @@ export class LibrarySessionStore {
   restorePlayback(durationInSeconds?: number | null) {
     const stored = this.#session.playbackPosition;
     const duration = Number(durationInSeconds);
-    const limit = Number.isFinite(duration) && duration > 0 ? duration : Number.POSITIVE_INFINITY;
+    const limit = Number.isFinite(duration) && duration > 0 ? duration : Infinity;
     const clamped = Number.isFinite(stored) ? Math.min(Math.max(0, stored), limit) : 0;
     if (clamped !== stored) {
       this.dispatch({ type: 'playback', time: clamped });

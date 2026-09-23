@@ -55,7 +55,7 @@ describe('CredentialDialog (FL-67)', () => {
   it('refuses a blank value', async () => {
     render(CredentialDialog, { name: ConfigCredential.SmtpPassword, onClose: vi.fn() });
 
-    await fireEvent.input(valueInput(), { target: { value: '   ' } });
+    await fireEvent.input(valueInput(), { target: { value: ' '.repeat(3) } });
 
     expect(saveButton().hasAttribute('disabled')).toBe(true);
     expect(updateConfigCredential).not.toHaveBeenCalled();

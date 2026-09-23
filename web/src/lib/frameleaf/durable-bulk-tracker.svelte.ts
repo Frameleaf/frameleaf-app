@@ -44,11 +44,11 @@ type TrackedJob = {
 
 type Fetch = (operationId: string) => Promise<MediaOperationDetailDto>;
 
-const FINISHED: readonly MediaOperationStatus[] = [
+const FINISHED: ReadonlySet<MediaOperationStatus> = new Set([
   MediaOperationStatus.Completed,
   MediaOperationStatus.Cancelled,
   MediaOperationStatus.Failed,
-];
+]);
 
 /** How often a running job is asked where it is. Matches the pace of Activity's own poll. */
 export const DURABLE_TRACK_POLL_MS = 2500;
@@ -123,7 +123,7 @@ export class DurableBulkTracker {
   }
 
   async #pollAll() {
-    for (const job of [...this.#jobs.values()]) {
+    for (const job of this.#jobs.values()) {
       let detail: MediaOperationDetailDto;
       try {
         detail = await this.#fetch(job.operationId);
@@ -183,7 +183,7 @@ export class DurableBulkTracker {
       }
     }
 
-    if (FINISHED.includes(detail.status)) {
+    if (FINISHED.has(detail.status)) {
       this.#jobs.delete(operationId);
     }
   }
@@ -200,10 +200,12 @@ export class DurableBulkTracker {
   }
 
   #stop() {
-    if (this.#timer !== null) {
-      clearTimeout(this.#timer);
-      this.#timer = null;
+    if (this.#timer === null) {
+      return;
     }
+
+    clearTimeout(this.#timer);
+    this.#timer = null;
   }
 }
 

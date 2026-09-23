@@ -18,10 +18,10 @@ import { getMlCapabilities, type StudioCapabilitiesDto } from '@immich/sdk';
 import { emptyStudioCapabilities, type StudioCapabilities } from './host-contract';
 
 export const toStudioCapabilities = (studio: StudioCapabilitiesDto): StudioCapabilities => ({
-  gpuWorker: studio.gpuWorker === true,
-  renderWorker: studio.renderWorker === true,
-  restorationWorker: studio.restorationWorker === true,
-  transcriptionWorker: studio.transcriptionWorker === true,
+  gpuWorker: studio.gpuWorker,
+  renderWorker: studio.renderWorker,
+  restorationWorker: studio.restorationWorker,
+  transcriptionWorker: studio.transcriptionWorker,
 });
 
 export const probeStudioCapabilities = async (): Promise<StudioCapabilities> => {
