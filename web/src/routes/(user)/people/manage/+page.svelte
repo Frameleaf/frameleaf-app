@@ -51,18 +51,24 @@
   const stopAccess = eventManager.on({
     SessionLocked: retire,
     SessionAccessChanged: ({ isElevated }) => {
-      if (!isElevated) {retire();}
+      if (!isElevated) {
+        retire();
+      }
     },
     UserPinCodeReset: retire,
     AuthLogout: retire,
     SessionDelete: retire,
     AuthUserLoaded: (user) => {
-      if (user.id !== ownerId) {retire();}
+      if (user.id !== ownerId) {
+        retire();
+      }
     },
   });
   $effect(() => {
     const currentId = authManager.authenticated ? authManager.user.id : undefined;
-    if (ownerId && currentId !== ownerId) {retire();}
+    if (ownerId && currentId !== ownerId) {
+      retire();
+    }
   });
   onDestroy(() => {
     retired = true;
@@ -74,21 +80,35 @@
   const pending = $derived(overrides.size);
   const hiddenCount = $derived(people.filter((person) => overrides.get(person.id) ?? person.isHidden).length);
   const leave = () => {
-    if (saving) {return;}
-    if (pending) {confirmLeave = true;}
-    else {void goto('/people');}
+    if (saving) {
+      return;
+    }
+    if (pending) {
+      confirmLeave = true;
+    } else {
+      void goto('/people');
+    }
   };
   const setHiddenOverride = (person: PersonResponseDto, isHidden: boolean) => {
-    if (blocked || saving) {return;}
+    if (blocked || saving) {
+      return;
+    }
     status = '';
-    if (isHidden === person.isHidden) {overrides.delete(person.id);}
-    else {overrides.set(person.id, isHidden);}
+    if (isHidden === person.isHidden) {
+      overrides.delete(person.id);
+    } else {
+      overrides.set(person.id, isHidden);
+    }
   };
   const batch = (action: 'hide' | 'unnamed' | 'show') => {
-    if (blocked || saving) {return;}
+    if (blocked || saving) {
+      return;
+    }
     // These existing bulk controls apply to loaded people, not an all-matching server snapshot.
     for (const person of people) {
-      if (action !== 'unnamed' || isUnnamedPerson(person)) {setHiddenOverride(person, action !== 'show');}
+      if (action !== 'unnamed' || isUnnamedPerson(person)) {
+        setHiddenOverride(person, action !== 'show');
+      }
     }
     status = $t(
       action === 'show'
@@ -99,14 +119,18 @@
     );
   };
   const reset = () => {
-    if (blocked || saving) {return;}
+    if (blocked || saving) {
+      return;
+    }
     overrides.clear();
     failedCount = 0;
     status = $t('frameleaf_people_changes_reverted');
   };
 
   const handleSaveVisibility = async () => {
-    if (blocked || retired || saving || !pending) {return;}
+    if (blocked || retired || saving || !pending) {
+      return;
+    }
     saving = true;
     failedCount = 0;
     const request = new AbortController();
@@ -114,17 +138,25 @@
     const changed = Array.from(overrides, ([id, isHidden]) => ({ id, isHidden }));
     try {
       const results = await updatePeople({ peopleUpdateDto: { people: changed } }, { signal: request.signal });
-      if (request.signal.aborted || retired) {return;}
+      if (request.signal.aborted || retired) {
+        return;
+      }
       const successful = new Set(results.filter(({ success }) => success).map(({ id }) => id));
       const confirmed = changed.filter(({ id }) => successful.has(id));
       for (const { id, isHidden } of confirmed) {
         const person = people.find((person) => person.id === id);
-        if (person) {person.isHidden = isHidden;}
+        if (person) {
+          person.isHidden = isHidden;
+        }
         overrides.delete(id);
       }
       failedCount = changed.length - confirmed.length;
-      if (confirmed.length > 0) {toastManager.primary($t('visibility_changed', { values: { count: confirmed.length } }));}
-      if (!failedCount) {await goto('/people');}
+      if (confirmed.length > 0) {
+        toastManager.primary($t('visibility_changed', { values: { count: confirmed.length } }));
+      }
+      if (!failedCount) {
+        await goto('/people');
+      }
     } catch (error) {
       if (!request.signal.aborted && !retired) {
         failedCount = changed.length;
@@ -138,7 +170,9 @@
     }
   };
   const loadNextPage = async () => {
-    if (!nextPage || loadingPage || blocked || retired) {return;}
+    if (!nextPage || loadingPage || blocked || retired) {
+      return;
+    }
     const page = nextPage;
     const request = new AbortController();
     pageRequest = request;
@@ -146,10 +180,14 @@
     pageFailed = false;
     try {
       const result = await getAllPeople({ withHidden: true, page }, { signal: request.signal });
-      if (request.signal.aborted || retired) {return;}
+      if (request.signal.aborted || retired) {
+        return;
+      }
       const existing = new Set(people.map(({ id }) => id));
       const added = result.people.filter(({ id }) => {
-        if (existing.has(id)) {return false;}
+        if (existing.has(id)) {
+          return false;
+        }
         existing.add(id);
         return true;
       });
