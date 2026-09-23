@@ -3,6 +3,7 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import {
   MlDestinationHealth,
   MlDestinationKind,
+  MlWorkerRole,
   MlWorkload,
   type MlDestinationResponseDto,
   type MlWorkloadRouteDto,
@@ -21,6 +22,8 @@ const destination = (overrides: Partial<MlDestinationResponseDto> = {}): MlDesti
   authTokenConfigured: false,
   enabled: true,
   workloads: [MlWorkload.Face, MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Enrichment],
+  role: MlWorkerRole.LibraryAnalysis,
+  sharesLibraryHardware: false,
   consent: { required: false, acknowledgedAt: null, acknowledgedBy: null },
   costControls: { budgetLimitUsd: null, maxRuntimeMinutes: null, maxUploadBytes: null, spentUsd: 0, budgetWindowDays: 30 },
   health: {
@@ -39,7 +42,8 @@ const runPod = destination({
   kind: MlDestinationKind.RunPod,
   name: 'RunPod',
   url: null,
-  workloads: [MlWorkload.Face, MlWorkload.RestorationFaithful],
+  // FL-72: the managed pod runs library analysis only.
+  workloads: [MlWorkload.Face, MlWorkload.Enrichment],
   consent: { required: true, acknowledgedAt: null, acknowledgedBy: null },
   costControls: { budgetLimitUsd: 25, maxRuntimeMinutes: 120, maxUploadBytes: 500_000_000, spentUsd: 3.5, budgetWindowDays: 30 },
   health: { status: MlDestinationHealth.Unknown, probedAt: null, summary: null, servedWorkloads: null },
@@ -144,5 +148,52 @@ describe('MlDestinationsPanel (FL-110)', () => {
 
     await waitFor(() => expect(sdkMock.probeMlDestination).toHaveBeenCalledWith({ id: runPod.id }));
     expect(sdkMock.probeMlDestination).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds a RunPod video worker with its own URL and restoration work only (FL-72)', async () => {
+    sdkMock.createMlDestination.mockResolvedValue(
+      destination({
+        id: '44444444-4444-4444-8444-444444444444',
+        kind: MlDestinationKind.RunPodVideo,
+        name: 'RunPod video worker',
+        url: 'https://video-worker.proxy.runpod.net',
+        workloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
+        role: MlWorkerRole.Restoration,
+      }),
+    );
+    render(MlDestinationsPanel, { destinations: [destination(), runPod], routes });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Add RunPod video worker' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Add destination' });
+    // Only restoration is offered, already ticked.
+    expect(within(dialog).queryByLabelText('Face recognition')).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Restoration (faithful)')).toBeChecked();
+
+    await fireEvent.input(within(dialog).getByLabelText('URL'), {
+      target: { value: 'https://video-worker.proxy.runpod.net' },
+    });
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(sdkMock.createMlDestination).toHaveBeenCalledWith({
+        mlDestinationCreateDto: expect.objectContaining({
+          kind: MlDestinationKind.RunPodVideo,
+          url: 'https://video-worker.proxy.runpod.net',
+          workloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],
+          sharesLibraryHardware: false,
+        }),
+      }),
+    );
+  });
+
+  it('closes restoration in the form once library work is ticked (FL-72)', async () => {
+    render(MlDestinationsPanel, { destinations: [destination(), runPod], routes });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Add home-network worker' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Add destination' });
+    await fireEvent.click(within(dialog).getByLabelText('Face recognition'));
+
+    expect(within(dialog).getByLabelText('Restoration (faithful)')).toBeDisabled();
+    expect(within(dialog).getByLabelText('Search and similarity')).toBeEnabled();
   });
 });

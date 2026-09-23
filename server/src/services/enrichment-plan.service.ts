@@ -114,7 +114,9 @@ const toOperationDestination = (kind: MlDestinationKind | undefined): MediaOpera
     case MlDestinationKind.Lan: {
       return MediaOperationDestination.Lan;
     }
-    case MlDestinationKind.RunPod: {
+    // FL-72: both RunPod kinds are cloud; neither is ever labelled local.
+    case MlDestinationKind.RunPod:
+    case MlDestinationKind.RunPodVideo: {
       return MediaOperationDestination.RunPod;
     }
     default: {

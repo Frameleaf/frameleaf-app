@@ -36,6 +36,7 @@ import {
 } from 'src/controllers/render-worker.controller.js';
 import { MemoryController } from 'src/controllers/memory.controller.js';
 import { MlDestinationController } from 'src/controllers/ml-destination.controller.js';
+import { WorkerInventoryController } from 'src/controllers/worker-inventory.controller.js';
 import { NotificationAdminController } from 'src/controllers/notification-admin.controller.js';
 import { NotificationController } from 'src/controllers/notification.controller.js';
 import { OAuthController } from 'src/controllers/oauth.controller.js';
@@ -104,6 +105,7 @@ export const controllers = [
   RenderWorkerController,
   MemoryController,
   MlDestinationController,
+  WorkerInventoryController,
   NotificationController,
   NotificationAdminController,
   OAuthController,
