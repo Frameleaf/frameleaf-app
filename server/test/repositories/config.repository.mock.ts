@@ -97,6 +97,8 @@ export const envData: EnvData = {
     },
   },
 
+  appReleases: {},
+
   noColor: false,
 };
 
