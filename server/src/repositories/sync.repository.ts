@@ -11,7 +11,7 @@ import { getHiddenContentFilter, hiddenContentAssetIdExists, withHiddenContentFi
 import {
   effectiveVisibility,
   isDefaultVisible,
-  isNotLocked,
+  isLocked,
   isTimelineVisible,
   notLockedOrOwnedBy,
 } from 'src/utils/locked.js';
@@ -122,8 +122,22 @@ const syncAlbumAsset = (options: HiddenContentQueryOptions) =>
 const syncPartnerAssetColumns = columns.syncPartnerAsset.filter(
   (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId' && column !== 'asset.visibility',
 );
+/**
+ * A partner's Locked asset stays in the partner streams (FL-34) so a device that already holds it
+ * learns it is now `locked` and hides it, exactly as the upstream Locked folder behaved. `isLocked`
+ * lets the service blank its file name, thumbhash, live-photo link and exif before sending; the flag
+ * itself is stripped and never reaches the device.
+ */
+const syncPartnerLocked = () => isLocked('asset').as('isLocked');
+
 const syncPartnerAsset = (options: HiddenContentQueryOptions) =>
-  [...syncPartnerAssetColumns, syncChecksum(), syncLivePhotoVideoId(options), syncVisibility()] as const;
+  [
+    ...syncPartnerAssetColumns,
+    syncChecksum(),
+    syncLivePhotoVideoId(options),
+    syncVisibility(),
+    syncPartnerLocked(),
+  ] as const;
 
 @Injectable()
 export class SyncRepository {
@@ -835,8 +849,6 @@ class PartnerAssetsSync extends BaseSync {
       .select(sql.val(false).as('isFavorite'))
       .select('asset.updateId')
       .where('asset.ownerId', '=', partnerId)
-      // a partner never receives locked media (FL-34)
-      .where(isNotLocked('asset'))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -860,7 +872,6 @@ class PartnerAssetsSync extends BaseSync {
       .where('asset.ownerId', 'in', (eb) =>
         eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
       )
-      .where(isNotLocked('asset'))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -873,8 +884,8 @@ class PartnerAssetExifsSync extends BaseSync {
       .select(columns.syncAssetExif)
       .select('asset_exif.updateId')
       .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
+      .select(syncPartnerLocked())
       .where('asset.ownerId', '=', partnerId)
-      .where(isNotLocked('asset'))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -887,10 +898,10 @@ class PartnerAssetExifsSync extends BaseSync {
       .select('asset_exif.updateId')
       // the service needs the owner to apply per-partner location hiding; it is stripped before sending
       .select('asset.ownerId')
+      .select(syncPartnerLocked())
       .where('asset.ownerId', 'in', (eb) =>
         eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
       )
-      .where(isNotLocked('asset'))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
