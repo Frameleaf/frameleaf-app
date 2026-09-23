@@ -11,7 +11,6 @@ import { MediaOperationRepository } from 'src/repositories/media-operation.repos
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
@@ -22,7 +21,9 @@ const setup = (db?: Kysely<DB>) => {
     real: [],
     mock: [LoggingRepository],
   });
-  return { ctx, sut: ctx.get(MediaOperationRepository) };
+  // The medium factory builds it for real, but its typed dependency list is BaseService's, which
+  // does not name this repository.
+  return { ctx, sut: ctx.get(MediaOperationRepository as never) as MediaOperationRepository };
 };
 
 const LEASE_MS = 60_000;
@@ -378,7 +379,7 @@ describe(MediaOperationRepository.name, () => {
 
       // The worker keeps its lease and learns of the pause from its next write.
       await expect(sut.heartbeat(operation.id, claim!.claimToken, LEASE_MS)).resolves.toBe(true);
-      await expect(sut.settlePause(operation.id, newUuid())).resolves.toBe(false);
+      await expect(sut.settlePause(operation.id, '0195e2a0-0000-7000-8000-0000000000ff')).resolves.toBe(false);
       await expect(sut.settlePause(operation.id, claim!.claimToken)).resolves.toBe(true);
 
       await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
@@ -550,7 +551,11 @@ describe(MediaOperationRepository.name, () => {
         destination: MediaOperationDestination.RunPod,
         remoteJobId: 'runpod-1',
       });
-      await sut.claimNext({ kinds: [MediaOperationKind.StudioExport], workerId: 'worker-a', leaseMs: LEASE_MS });
+      const claim = await sut.claimNext({
+        kinds: [MediaOperationKind.StudioExport],
+        workerId: 'worker-a',
+        leaseMs: LEASE_MS,
+      });
 
       const cancelling = await sut.requestCancel(operation.id, user.id);
       expect(cancelling!.status).toBe(MediaOperationStatus.Cancelling);
@@ -559,7 +564,7 @@ describe(MediaOperationRepository.name, () => {
       // Until the acknowledgement, the remote job is still an open obligation.
       await expect(unreleasedIds(sut, operation.id)).resolves.toHaveLength(1);
 
-      await expect(sut.acknowledgeCancel(operation.id, { released: true })).resolves.toBe(true);
+      await expect(sut.acknowledgeCancel(operation.id, claim!.claimToken, { released: true })).resolves.toBe(true);
       await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
         status: MediaOperationStatus.Cancelled,
       });
@@ -573,9 +578,13 @@ describe(MediaOperationRepository.name, () => {
         destination: MediaOperationDestination.RunPod,
         remoteJobId: 'runpod-2',
       });
-      await sut.claimNext({ kinds: [MediaOperationKind.StudioExport], workerId: 'worker-a', leaseMs: LEASE_MS });
+      const claim = await sut.claimNext({
+        kinds: [MediaOperationKind.StudioExport],
+        workerId: 'worker-a',
+        leaseMs: LEASE_MS,
+      });
       await sut.requestCancel(operation.id, user.id);
-      await sut.acknowledgeCancel(operation.id, { released: false });
+      await sut.acknowledgeCancel(operation.id, claim!.claimToken, { released: false });
 
       await expect(sut.dismiss(operation.id, user.id)).resolves.toBe(true);
       const { items } = await sut.list({ ownerId: user.id, take: 50, skip: 0 });
@@ -918,6 +927,348 @@ describe(MediaOperationRepository.name, () => {
       expect(outcomes.filter((outcome) => 'active' in outcome)).toHaveLength(1);
       const rows = await sut.listRecentOfKind(MediaOperationKind.PhysicalDeduplication, 10);
       expect(rows).toHaveLength(1);
+    });
+  });
+  /**
+   * The job contract gaps closed by FL-43: cancellation races, restarts, worker loss, retry and
+   * changed access, against a real database.
+   */
+  describe('job contract (FL-43)', () => {
+    const lapse = (ctx: ReturnType<typeof setup>['ctx'], id: string) =>
+      ctx.database
+        .updateTable('media_operation')
+        .set({ claimExpiresAt: new Date(Date.now() - 60_000) })
+        .where('id', '=', id)
+        .execute();
+
+    const claimKind = (sut: MediaOperationRepository, kind: MediaOperationKind, workerId: string) =>
+      sut.claimNext({ kinds: [kind], workerId, leaseMs: LEASE_MS });
+
+    /** Take the automatic retry's delay away, so the next claim can happen at once. */
+    const skipRetryDelay = (ctx: ReturnType<typeof setup>['ctx'], id: string) =>
+      ctx.database.updateTable('media_operation').set({ retryAt: null }).where('id', '=', id).execute();
+
+    it('never lets a worker that lost its claim settle the cancel of the claim that replaced it', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id, {
+        destination: MediaOperationDestination.RunPod,
+        remoteJobId: 'runpod-9',
+      });
+      const first = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-a');
+      await lapse(ctx, operation.id);
+      await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
+      const second = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-b');
+      await sut.requestCancel(operation.id, user.id);
+
+      // Worker A wakes up, finds its requeue refused and tries to settle the cancel: refused too.
+      await expect(sut.requeue(operation.id, first!.claimToken, { delayMs: 0 })).resolves.toBe(false);
+      await expect(sut.acknowledgeCancel(operation.id, first!.claimToken, { released: true })).resolves.toBe(false);
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Cancelling,
+        claimToken: second!.claimToken,
+        cancelAcknowledgedAt: null,
+      });
+      await expect(unreleasedIds(sut, operation.id)).resolves.toHaveLength(1);
+
+      // Only the worker actually running it can say it stopped.
+      await expect(sut.acknowledgeCancel(operation.id, second!.claimToken, { released: true })).resolves.toBe(true);
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Cancelled,
+        claimToken: null,
+      });
+      await expect(unreleasedIds(sut, operation.id)).resolves.toHaveLength(0);
+    });
+
+    it('resumes a lost claim of a resumable job twice, then retries it once, then reports it', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      // Even a job that asks for more claims gets two resumes (owner decision, September 22, 2026).
+      const operation = await newOperation(sut, user.id, { maxAttempts: 20 });
+      const statuses: string[] = [];
+
+      for (let lost = 0; lost < 4; lost++) {
+        await skipRetryDelay(ctx, operation.id);
+        const claim = await claimKind(sut, MediaOperationKind.StudioExport, `worker-${lost}`);
+        expect(claim?.operation.id).toBe(operation.id);
+        await lapse(ctx, operation.id);
+        await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
+        const after = await sut.getForOwner(operation.id, user.id);
+        statuses.push(`${after!.status}:${after!.autoRetries}`);
+      }
+
+      expect(statuses).toEqual(['queued:0', 'queued:0', 'queued:1', 'failed:1']);
+    });
+
+    it('treats a lost claim of a job that cannot resume as its one automatic retry, then reports it', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      // A preview starts again from nothing on a new claim, so a lost claim is simply a failure.
+      const operation = await newOperation(sut, user.id, { kind: MediaOperationKind.RestorationPreview });
+      const statuses: string[] = [];
+
+      for (let lost = 0; lost < 2; lost++) {
+        await skipRetryDelay(ctx, operation.id);
+        await claimKind(sut, MediaOperationKind.RestorationPreview, `worker-${lost}`);
+        await lapse(ctx, operation.id);
+        await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
+        const after = await sut.getForOwner(operation.id, user.id);
+        statuses.push(`${after!.status}:${after!.autoRetries}`);
+      }
+
+      expect(statuses).toEqual(['queued:1', 'failed:1']);
+    });
+
+    it('does not count a claim handed back on purpose as a lost one after a restart', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+
+      // Two graceful shutdowns hand the job back with their attempts returned.
+      for (let restart = 0; restart < 2; restart++) {
+        const claim = await claimKind(sut, MediaOperationKind.StudioExport, `worker-${restart}`);
+        await expect(sut.requeue(operation.id, claim!.claimToken, { delayMs: 0, returnAttempt: true })).resolves.toBe(
+          true,
+        );
+      }
+
+      // So the next lost claim still resumes rather than using the automatic retry.
+      await claimKind(sut, MediaOperationKind.StudioExport, 'worker-after-restart');
+      await lapse(ctx, operation.id);
+      await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Queued,
+        autoRetries: 0,
+        attempt: 1,
+      });
+    });
+
+    it('never moves a job back from checking its output to rendering', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      const claim = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-a');
+      await expect(sut.beginValidation(operation.id, claim!.claimToken)).resolves.toBe(true);
+
+      await expect(
+        sut.reportProgress(operation.id, claim!.claimToken, {
+          status: MediaOperationStatus.Rendering,
+          processedUnits: 10,
+          totalUnits: 100,
+          progress: 10,
+        }),
+      ).resolves.toBe(false);
+      await expect(
+        sut.reportProgress(operation.id, claim!.claimToken, {
+          status: MediaOperationStatus.Validating,
+          processedUnits: 100,
+          totalUnits: 100,
+          progress: 100,
+        }),
+      ).resolves.toBe(true);
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Validating,
+      });
+    });
+
+    it("refuses to publish another account's asset, or a deleted one, as the job's result", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { asset: theirs } = await ctx.newAsset({ ownerId: other.id });
+      const { asset: deleted } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
+      const { asset: mine } = await ctx.newAsset({ ownerId: user.id });
+      const operation = await newOperation(sut, user.id);
+      const claim = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-a');
+      await sut.beginValidation(operation.id, claim!.claimToken);
+
+      await expect(sut.isPublishableResult(user.id, theirs.id)).resolves.toBe(false);
+      await expect(sut.complete(operation.id, claim!.claimToken, { resultAssetId: theirs.id })).resolves.toBe(false);
+      await expect(sut.complete(operation.id, claim!.claimToken, { resultAssetId: deleted.id })).resolves.toBe(false);
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Validating,
+        resultAssetId: null,
+      });
+
+      await expect(sut.isPublishableResult(user.id, mine.id)).resolves.toBe(true);
+      await expect(sut.complete(operation.id, claim!.claimToken, { resultAssetId: mine.id })).resolves.toBe(true);
+      await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Completed,
+        resultAssetId: mine.id,
+      });
+    });
+
+    describe('publishValidated', () => {
+      it('publishes nothing once the owner cancelled while the output was being checked', async () => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const operation = await newOperation(sut, user.id);
+        const claim = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-a');
+        await sut.beginValidation(operation.id, claim!.claimToken);
+        await sut.requestCancel(operation.id, user.id);
+
+        const publish = vi.fn().mockResolvedValue(true);
+        await expect(sut.publishValidated(operation.id, claim!.claimToken, publish)).resolves.toBe('lost');
+        expect(publish).not.toHaveBeenCalled();
+        await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+          status: MediaOperationStatus.Cancelling,
+        });
+      });
+
+      it('publishes nothing for a worker whose claim was handed to another', async () => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const operation = await newOperation(sut, user.id);
+        const stale = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-a');
+        await sut.beginValidation(operation.id, stale!.claimToken);
+        await lapse(ctx, operation.id);
+        await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
+        await claimKind(sut, MediaOperationKind.StudioExport, 'worker-b');
+
+        const publish = vi.fn().mockResolvedValue(true);
+        await expect(sut.publishValidated(operation.id, stale!.claimToken, publish)).resolves.toBe('lost');
+        expect(publish).not.toHaveBeenCalled();
+      });
+
+      it('keeps the job validating under its claim when the publication is declined', async () => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const operation = await newOperation(sut, user.id);
+        const claim = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-a');
+        await sut.beginValidation(operation.id, claim!.claimToken);
+
+        await expect(sut.publishValidated(operation.id, claim!.claimToken, () => Promise.resolve(false))).resolves.toBe(
+          'rejected',
+        );
+        await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+          status: MediaOperationStatus.Validating,
+          claimToken: claim!.claimToken,
+        });
+      });
+
+      it('holds off a cancel that arrives during publication until the job has completed', async () => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const operation = await newOperation(sut, user.id);
+        const claim = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-a');
+        await sut.beginValidation(operation.id, claim!.claimToken);
+
+        let cancel: Promise<unknown> | undefined;
+        const outcome = await sut.publishValidated(operation.id, claim!.claimToken, async (trx) => {
+          // The owner presses Cancel while the output is being moved into place.
+          cancel = sut.requestCancel(operation.id, user.id);
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          // The write the publication makes goes through the same transaction.
+          await trx.updateTable('media_operation').set({ progress: 100 }).where('id', '=', operation.id).execute();
+          return true;
+        });
+
+        expect(outcome).toBe('completed');
+        // The cancel waited for the row and then found a finished job: nothing to cancel.
+        await expect(cancel).resolves.toBeUndefined();
+        await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
+          status: MediaOperationStatus.Completed,
+          cancelRequestedAt: null,
+        });
+      });
+    });
+
+    describe('retry lineage', () => {
+      it('queues one retry when two requests race, and answers the second with it', async () => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const failed = await newOperation(sut, user.id);
+        await ctx.database
+          .updateTable('media_operation')
+          .set({ status: MediaOperationStatus.Failed, finishedAt: new Date() })
+          .where('id', '=', failed.id)
+          .execute();
+        const retryOf = (label: string) =>
+          sut.createRetry({
+            ownerId: user.id,
+            kind: MediaOperationKind.StudioExport,
+            destination: MediaOperationDestination.Local,
+            label,
+            retryOfId: failed.id,
+            snapshot: failed.snapshot,
+            settings: failed.settings,
+          });
+
+        const [first, second] = await Promise.all([retryOf('first'), retryOf('second')]);
+
+        expect([first.created, second.created].toSorted((a, b) => Number(a) - Number(b))).toEqual([false, true]);
+        expect(first.operation.id).toBe(second.operation.id);
+        const { items } = await sut.list({ ownerId: user.id, take: 10, skip: 0 });
+        expect(items.filter((item) => item.retryOfId === failed.id)).toHaveLength(1);
+      });
+
+      it('lets a job be retried again once its earlier retry has finished', async () => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const failed = await newOperation(sut, user.id);
+        const input = {
+          ownerId: user.id,
+          kind: MediaOperationKind.StudioExport,
+          destination: MediaOperationDestination.Local,
+          label: 'retry',
+          retryOfId: failed.id,
+          snapshot: {},
+          settings: {},
+        };
+        const { operation: earlier } = await sut.createRetry(input);
+        await sut.requestCancel(earlier.id, user.id);
+
+        const later = await sut.createRetry(input);
+
+        expect(later.created).toBe(true);
+        expect(later.operation.id).not.toBe(earlier.id);
+      });
+    });
+
+    describe('checkpoints after worker loss', () => {
+      it('refuses a chunk from a worker whose claim lapsed and was recovered', async () => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const operation = await newOperation(sut, user.id);
+        const stale = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-a');
+        const chunk = {
+          operationId: operation.id,
+          sequence: 0,
+          chunkKey: 'key-0',
+          inputDigest: 'in',
+          historyDigest: 'history',
+          configDigest: 'config',
+          timebase: '30000/1001',
+          startTicks: '0',
+          endTicks: '1001',
+        };
+        await expect(sut.upsertCheckpoint(operation.id, stale!.claimToken, chunk)).resolves.toBe(true);
+        await lapse(ctx, operation.id);
+        await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
+
+        await expect(sut.upsertCheckpoint(operation.id, stale!.claimToken, chunk)).resolves.toBe(false);
+        await expect(
+          sut.completeCheckpoint(operation.id, stale!.claimToken, {
+            sequence: 0,
+            chunkKey: 'key-0',
+            outputPath: '/tmp/chunk-0',
+            outputChecksum: Buffer.from('00', 'hex'),
+            sizeInBytes: 1,
+          }),
+        ).resolves.toBe(false);
+
+        const replacement = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-b');
+        await expect(sut.upsertCheckpoint(operation.id, replacement!.claimToken, chunk)).resolves.toBe(true);
+        await expect(
+          sut.completeCheckpoint(operation.id, replacement!.claimToken, {
+            sequence: 0,
+            chunkKey: 'key-0',
+            outputPath: '/tmp/chunk-0',
+            outputChecksum: Buffer.from('00', 'hex'),
+            sizeInBytes: 1,
+          }),
+        ).resolves.toBe(true);
+      });
     });
   });
 });

@@ -1,13 +1,14 @@
 <script lang="ts">
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
 </script>
 
 <div class="mt-2">
@@ -22,7 +23,7 @@
         />
       </div>
 
-      <SettingActions bind:configToEdit keys={['metadata']} {disabled} />
+      <SettingActions keys={['metadata']} {disabled} />
     </form>
   </div>
 </div>

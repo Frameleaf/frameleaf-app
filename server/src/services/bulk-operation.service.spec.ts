@@ -637,6 +637,8 @@ describe(BulkOperationService.name, () => {
 
       expect(operations.requeue).toHaveBeenCalledWith(expect.any(String), 'claim', {
         delayMs: MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
+        // Handing the job back for its item retry is not a lost claim (FL-43).
+        returnAttempt: true,
       });
       expect(operations.complete).not.toHaveBeenCalled();
       expect(operations.setBulkResult).toHaveBeenLastCalledWith(
