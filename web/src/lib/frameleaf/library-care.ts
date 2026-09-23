@@ -307,69 +307,6 @@ export const scanState = (
   }
 };
 
-/* ------------------------------------------------------------------ */
-/* The Library Care directory                                          */
-/* ------------------------------------------------------------------ */
-
-export type CareToolGroup = 'organize' | 'repair' | 'import' | 'automate' | 'connect';
-
-/** The prototype's utility groups, in its order. */
-export const CARE_TOOL_GROUPS: readonly CareToolGroup[] = ['organize', 'repair', 'import', 'automate', 'connect'];
-
-export type CareQueue = {
-  id: 'missing' | 'damaged' | 'duplicates' | 'import' | 'enrichment';
-  labelKey: Translations;
-  descriptionKey: Translations;
-  count: number | null;
-  /** Items in the queue that already have what they need to be repaired. */
-  ready?: number;
-  adminOnly: boolean;
-};
-
-/** Library Care's queues as the repair grid shows them. Counts only; nothing here is shown by name. */
-export const careQueues = (summary: MediaHealthSummaryResponseDto | null): CareQueue[] => {
-  const queues = summary?.queues;
-  return [
-    {
-      id: 'missing',
-      labelKey: 'library_care_queue_missing',
-      descriptionKey: 'library_care_queue_missing_description',
-      count: queues?.missing ?? null,
-      ready: queues?.missingVerified,
-      adminOnly: true,
-    },
-    {
-      id: 'damaged',
-      labelKey: 'library_care_queue_damaged',
-      descriptionKey: 'library_care_queue_damaged_description',
-      count: queues ? queues.damagedConfirmed + queues.damagedSuspected + queues.unsupportedRaw : null,
-      ready: queues?.damagedConfirmed,
-      adminOnly: true,
-    },
-    {
-      id: 'duplicates',
-      labelKey: 'library_care_queue_duplicates',
-      descriptionKey: 'library_care_queue_duplicates_description',
-      count: queues?.duplicates ?? null,
-      adminOnly: false,
-    },
-    {
-      id: 'import',
-      labelKey: 'library_care_queue_import',
-      descriptionKey: 'library_care_queue_import_description',
-      count: queues?.importReview ?? null,
-      adminOnly: false,
-    },
-    {
-      id: 'enrichment',
-      labelKey: 'library_care_queue_enrichment',
-      descriptionKey: 'library_care_queue_enrichment_description',
-      count: queues?.enrichmentPending ?? null,
-      adminOnly: false,
-    },
-  ];
-};
-
 /** Bytes for people: the prototype's `formatBytes`, with the unit it chose. */
 export const formatBytes = (bytes: number | null | undefined): string => {
   if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) {
