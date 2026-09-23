@@ -629,6 +629,16 @@ export type AdminConfigDto = {
     trash: AdminConfigTrashDto;
     user: AdminConfigUserDto;
 };
+export type AdminConfigRevisionResponseDto = {
+    config: AdminConfigDto;
+    /** Changes whenever a saved setting changes; send it back as expectedRevision so a save made against older settings is refused */
+    revision: string;
+};
+export type AdminConfigRevisionUpdateDto = {
+    config: AdminConfigDto;
+    /** The revision the changes were made against. When the saved settings no longer match it the update is refused with 409 and nothing is changed */
+    expectedRevision: string;
+};
 export type DatabaseBackupDeleteDto = {
     /** Backup filenames to delete */
     backups: string[];
@@ -6592,6 +6602,34 @@ export function getAdminConfigDefaults(opts?: Oazapfts.RequestOpts) {
     }>("/admin/config/defaults", {
         ...opts
     }));
+}
+/**
+ * Get the admin configuration with its revision
+ */
+export function getAdminConfigWithRevision(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AdminConfigRevisionResponseDto;
+    }>("/admin/config/revision", {
+        ...opts
+    }));
+}
+/**
+ * Update the system configuration if it is unchanged
+ */
+export function updateAdminConfigWithRevision({ adminConfigRevisionUpdateDto }: {
+    adminConfigRevisionUpdateDto: AdminConfigRevisionUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AdminConfigRevisionResponseDto;
+    } | {
+        status: 409;
+    }>("/admin/config/revision", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: adminConfigRevisionUpdateDto
+    })));
 }
 /**
  * Delete database backup
