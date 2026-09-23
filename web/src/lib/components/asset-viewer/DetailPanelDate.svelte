@@ -11,7 +11,6 @@
    * replaying a date the panel never saw would be a guess. A stale asset is reloaded instead.
    */
   import ViewerInlineEditError from '$lib/components/frameleaf/ViewerInlineEditError.svelte';
-  import { trackSessionProtectedModal } from '$lib/frameleaf/session-access.svelte';
   import { classifyInlineEditError, inlineEditRecovery, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import AssetChangeDateModal from '$lib/modals/AssetChangeDateModal.svelte';
@@ -46,7 +45,7 @@
       return;
     }
 
-    const modal = modalManager.open(AssetChangeDateModal, {
+    const succeeded = await modalManager.show(AssetChangeDateModal, {
       asset: toTimelineAsset(asset),
       initialDate: dateTime,
       initialTimeZone: timeZone,
@@ -54,7 +53,6 @@
         failure = classifyInlineEditError(error);
       },
     });
-    const succeeded = await trackSessionProtectedModal(modal.onClose, () => modal.close(false));
 
     if (succeeded) {
       failure = null;

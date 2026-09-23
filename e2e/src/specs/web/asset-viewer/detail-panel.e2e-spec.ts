@@ -1,4 +1,4 @@
-import { AssetMediaResponseDto, LoginResponseDto, SharedLinkType } from '@immich/sdk';
+import { AssetMediaResponseDto, AssetVisibility, LoginResponseDto, SharedLinkType } from '@immich/sdk';
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -163,7 +163,10 @@ test.describe('Detail Panel', () => {
       await utils.setAuthCookies(context, admin.accessToken);
       const pin = { pinCode: '123456' };
       const pinSetup = await page.request.post('/api/auth/pin-code', { data: pin });
-      expect(pinSetup.ok()).toBe(true);
+      if (!pinSetup.ok()) {
+        expect(pinSetup.status()).toBe(400);
+        expect(await pinSetup.text()).toContain('User already has a PIN code');
+      }
       const unlocked = await page.request.post('/api/auth/session/unlock', { data: pin });
       expect(unlocked.ok()).toBe(true);
       await page.goto(`/photos/${asset.id}`);
@@ -225,6 +228,46 @@ test.describe('Detail Panel', () => {
       await expect(shield).toHaveCount(0);
       await expect(page.locator('#datetime')).toHaveCount(0);
       await expect(nativeDialog).toHaveJSProperty('open', false);
+    });
+
+    test('hides a locked asset filename from an open delete confirmation when the tab locks', async ({
+      context,
+      page,
+    }) => {
+      const lockedAsset = await utils.createAsset(admin.accessToken, {
+        visibility: AssetVisibility.Locked,
+        assetData: { filename: 'private-lock-repro.png' },
+      });
+      await utils.setAuthCookies(context, admin.accessToken);
+      const pin = { pinCode: '123456' };
+      const pinSetup = await page.request.post('/api/auth/pin-code', { data: pin });
+      if (!pinSetup.ok()) {
+        expect(pinSetup.status()).toBe(400);
+        expect(await pinSetup.text()).toContain('User already has a PIN code');
+      }
+      const unlocked = await page.request.post('/api/auth/session/unlock', { data: pin });
+      expect(unlocked.ok()).toBe(true);
+      await page.goto(`/photos/${lockedAsset.id}`);
+      await page.waitForSelector('#immich-asset-viewer');
+      await page.keyboard.press('Shift+Delete');
+      const confirmation = page.locator('[role="dialog"]').filter({ hasText: 'private-lock-repro.png' });
+      await expect(confirmation).toBeVisible();
+
+      const lockStatuses: number[] = [];
+      page.on('response', (response) => {
+        if (response.url().endsWith('/api/auth/session/lock')) {
+          lockStatuses.push(response.status());
+        }
+      });
+      await page.evaluate(() => {
+        Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await expect.poll(() => lockStatuses).toContain(204);
+      await expect(page.locator('dialog.session-lock-shield[open]')).toHaveCount(0);
+      await expect(confirmation).toHaveCount(0);
+      await expect(page.locator('body')).not.toContainText('private-lock-repro.png');
+      await expect(page).toHaveURL(/\/photos(?:\?|$)/);
     });
   });
 });

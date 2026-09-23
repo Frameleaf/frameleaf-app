@@ -13,10 +13,12 @@
   import { buildPrimaryDestinations, currentPrimaryDestination } from '$lib/frameleaf/navigation';
   import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
   import {
-    closeSessionProtectedModals,
+    closeSessionModals,
     markSessionLockSucceeded,
+    releaseSessionLock,
     sessionAccess,
     setSessionLockPending,
+    trackSessionModals,
     waitForSessionLockRefreshes,
   } from '$lib/frameleaf/session-access.svelte';
   import '$lib/frameleaf/tokens.css';
@@ -30,7 +32,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import { isAlbumsRoute, isAssetViewerRoute, isLockedFolderRoute, navigate } from '$lib/utils/navigation';
   import { getAuthStatus, lockAuthSession } from '@immich/sdk';
-  import { Icon, IconButton, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { Icon, IconButton, modalManager, Theme as AppTheme, themeManager } from '@immich/ui';
   import {
     mdiBellOutline,
     mdiChevronRight,
@@ -42,6 +44,8 @@
   } from '@mdi/js';
   import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
+
+  trackSessionModals(modalManager);
 
   /**
    * Frameleaf top bar (FL-30), ported from the prototype's `App.jsx` header.
@@ -228,7 +232,7 @@
       try {
         await lockAuthSession({ signal: AbortSignal.timeout(15_000) });
         markSessionLockSucceeded();
-        await closeSessionProtectedModals();
+        await closeSessionModals();
         if (isSensitiveRoute(pathname)) {
           await goto(Route.photos(), { replaceState: true, invalidateAll: true });
         } else if (isAssetViewerRoute(page)) {
@@ -239,11 +243,7 @@
         eventManager.emit('SessionLocked');
         eventManager.emit('SessionAccessChanged', { isElevated: false });
         await waitForSessionLockRefreshes();
-        await closeSessionProtectedModals();
-        for (const dialog of document.querySelectorAll<HTMLDialogElement>('dialog[open]:not(.session-lock-shield)')) {
-          dialog.close();
-        }
-        setSessionLockPending(false);
+        await releaseSessionLock();
       } catch (error) {
         handleError(error, $t('errors.something_went_wrong'));
       } finally {
