@@ -32,6 +32,16 @@ const newTagOfAnotherUser = async (ctx: ReturnType<typeof setup>['ctx']) => {
   return { tag, auth: factory.auth({ user }), otherAuth: factory.auth({ user: otherUser }) };
 };
 
+/** A session that is not unlocked while its owner suppresses these tags (owner decision, September 22, 2026) */
+const lockedAuth = (userId: string, tagIds: string[]) => {
+  const auth = factory.auth({ user: { id: userId } });
+  return {
+    ...auth,
+    hideNsfwAssets: true,
+    hiddenContent: { userId, includeNsfw: false, tagIds, personIds: [], petIds: [], scope: 'owned' as const },
+  };
+};
+
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
@@ -42,7 +52,34 @@ describe(TagService.name, () => {
       const { sut, ctx } = setup();
       const { tag, otherAuth } = await newTagOfAnotherUser(ctx);
 
-      await expect(sut.get(otherAuth, tag.id)).rejects.toThrow('Not found or no tag.read access');
+      await expect(sut.get(otherAuth, tag.id)).rejects.toThrow('Tag not found');
+    });
+
+    it('should answer a suppressed tag, and one nested under it, like a missing tag while locked', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const tags = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['private/nested', 'public'] });
+      const byValue = new Map(tags.map((tag) => [tag.value, tag]));
+      const parent = await ctx.get(TagRepository).getByValue(user.id, 'private');
+      const auth = lockedAuth(user.id, [parent!.id]);
+
+      await expect(sut.get(auth, parent!.id)).rejects.toThrow('Tag not found');
+      await expect(sut.get(auth, byValue.get('private/nested')!.id)).rejects.toThrow('Tag not found');
+      await expect(sut.get(auth, byValue.get('public')!.id)).resolves.toEqual(
+        expect.objectContaining({ value: 'public' }),
+      );
+      await expect(sut.getAll(auth)).resolves.toEqual([expect.objectContaining({ value: 'public' })]);
+    });
+
+    it('should show a suppressed tag once the session is unlocked', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const [tag] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['private'] });
+      const { hiddenContent, ...unlocked } = lockedAuth(user.id, [tag.id]);
+      const auth = { ...unlocked, hideNsfwAssets: undefined, suppressedContent: hiddenContent };
+
+      await expect(sut.get(auth, tag.id)).resolves.toEqual(expect.objectContaining({ id: tag.id }));
+      await expect(sut.getAll(auth)).resolves.toEqual([expect.objectContaining({ id: tag.id })]);
     });
   });
 
@@ -51,9 +88,18 @@ describe(TagService.name, () => {
       const { sut, ctx } = setup();
       const { tag, otherAuth } = await newTagOfAnotherUser(ctx);
 
-      await expect(sut.update(otherAuth, tag.id, { color: '#000000' })).rejects.toThrow(
-        'Not found or no tag.update access',
+      await expect(sut.update(otherAuth, tag.id, { color: '#000000' })).rejects.toThrow('Tag not found');
+    });
+
+    it('should not update a suppressed tag while locked', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const [tag] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['private'] });
+
+      await expect(sut.update(lockedAuth(user.id, [tag.id]), tag.id, { color: '#000000' })).rejects.toThrow(
+        'Tag not found',
       );
+      await expect(ctx.get(TagRepository).get(tag.id)).resolves.toEqual(expect.objectContaining({ color: null }));
     });
   });
 
@@ -62,7 +108,7 @@ describe(TagService.name, () => {
       const { sut, ctx } = setup();
       const { tag, auth, otherAuth } = await newTagOfAnotherUser(ctx);
 
-      await expect(sut.remove(otherAuth, tag.id)).rejects.toThrow('Not found or no tag.delete access');
+      await expect(sut.remove(otherAuth, tag.id)).rejects.toThrow('Tag not found');
       await expect(sut.get(auth, tag.id)).resolves.toEqual(expect.objectContaining({ id: tag.id }));
     });
   });
@@ -73,9 +119,7 @@ describe(TagService.name, () => {
       const { tag, otherAuth } = await newTagOfAnotherUser(ctx);
       const { asset } = await ctx.newAsset({ ownerId: otherAuth.user.id });
 
-      await expect(sut.addAssets(otherAuth, tag.id, { ids: [asset.id] })).rejects.toThrow(
-        'Not found or no tag.asset access',
-      );
+      await expect(sut.addAssets(otherAuth, tag.id, { ids: [asset.id] })).rejects.toThrow('Tag not found');
     });
 
     it('should lock exif column', async () => {
@@ -127,9 +171,7 @@ describe(TagService.name, () => {
       const { asset } = await ctx.newAsset({ ownerId: auth.user.id });
       await sut.addAssets(auth, tag.id, { ids: [asset.id] });
 
-      await expect(sut.removeAssets(otherAuth, tag.id, { ids: [asset.id] })).rejects.toThrow(
-        'Not found or no tag.asset access',
-      );
+      await expect(sut.removeAssets(otherAuth, tag.id, { ids: [asset.id] })).rejects.toThrow('Tag not found');
       await expect(ctx.get(TagRepository).getAssetIds(tag.id, [asset.id])).resolves.toContain(asset.id);
     });
   });

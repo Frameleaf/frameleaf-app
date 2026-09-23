@@ -20,7 +20,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
 import { requireAccess } from 'src/utils/access.js';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getHiddenContentQueryOptions, isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import {
   filterReviewedCandidates,
   normalizePetName,
@@ -119,9 +119,13 @@ export class PetService {
     }
 
     const sources = await this.petRepository.getByIds(auth.user.id, sourceIds);
-    if (sources.length !== sourceIds.length) {
+    if (
+      sources.length !== sourceIds.length ||
+      sourceIds.some((sourceId) => isSuppressedWhileLocked(auth, 'pet', sourceId))
+    ) {
       // Owner-scoped lookup: a missing row is either gone or someone else's, and the
-      // caller is told the same thing either way.
+      // caller is told the same thing either way. A pet suppressed while the session is
+      // not unlocked is told the same again.
       throw new BadRequestException('Pet not found');
     }
 
@@ -180,7 +184,7 @@ export class PetService {
   /** Undo a durable decision. Nothing else removes one. */
   async removeObservation(auth: AuthDto, observationId: string): Promise<void> {
     const observation = await this.petRepository.getObservationById(auth.user.id, observationId);
-    if (!observation) {
+    if (!observation || isSuppressedWhileLocked(auth, 'pet', observation.petId)) {
       throw new NotFoundException('Pet observation not found');
     }
 
@@ -196,8 +200,14 @@ export class PetService {
     ]);
 
     // A pairing the owner has already answered never comes back, whatever model revision
-    // proposed it this time.
-    const unreviewed = sortCandidatesForReview(filterReviewedCandidates(candidates, decisions));
+    // proposed it this time. A proposal naming a pet suppressed while the session is not
+    // unlocked stays out too, since the pet itself is not there.
+    const unreviewed = sortCandidatesForReview(
+      filterReviewedCandidates(
+        candidates.filter((candidate) => !isSuppressedWhileLocked(auth, 'pet', candidate.petId)),
+        decisions,
+      ),
+    );
 
     return {
       candidates: unreviewed.map((candidate) => mapPetCandidate(candidate)),
@@ -272,7 +282,15 @@ export class PetService {
 
   // ---------------------------------------------------------------------------- helpers
 
+  /**
+   * Every read and write of one pet comes through here. While the session is not unlocked a
+   * suppressed pet answers exactly like a missing one (owner decision, September 22, 2026).
+   */
   private async findOrFail(auth: AuthDto, id: string) {
+    if (isSuppressedWhileLocked(auth, 'pet', id)) {
+      throw new NotFoundException('Pet not found');
+    }
+
     const pet = await this.petRepository.getById(auth.user.id, id);
     if (!pet) {
       throw new NotFoundException('Pet not found');
@@ -282,7 +300,7 @@ export class PetService {
 
   private async findCandidateOrFail(auth: AuthDto, id: string) {
     const candidate = await this.petRepository.getCandidateById(auth.user.id, id);
-    if (!candidate) {
+    if (!candidate || isSuppressedWhileLocked(auth, 'pet', candidate.petId)) {
       throw new NotFoundException('Pet recognition candidate not found');
     }
     return candidate;
