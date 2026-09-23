@@ -617,29 +617,14 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [], stream: true })
   streamForImageDescriptionJob(force?: boolean) {
-    // Image descriptions also run on videos that have persisted
-    // duplicate-detection frames (those frames are composited into a grid that
-    // feeds the single-image VLM endpoint). Videos without persisted frames
-    // are excluded — the handler would skip them anyway with
-    // `video-frames-unavailable`.
+    // Image descriptions run on photos and videos. A video is described from its reusable moment
+    // frames (FL-59), which the description job cuts itself when the video has none yet; duplicate
+    // detection is no longer a prerequisite, so videos are not filtered on its frames here.
     return this.assetsWithPreviews()
       .select(['asset.id'])
       // background work includes locked media (owner decision, September 22, 2026): stored visibility only
       .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
-      .where((eb) =>
-        eb.or([
-          eb('asset.type', '=', sql.lit(AssetType.Image)),
-          eb.and([
-            eb('asset.type', '=', sql.lit(AssetType.Video)),
-            eb.exists((qb) =>
-              qb
-                .selectFrom('asset_video_duplicate_frame')
-                .select('asset_video_duplicate_frame.assetId')
-                .whereRef('asset_video_duplicate_frame.assetId', '=', 'asset.id'),
-            ),
-          ]),
-        ]),
-      )
+      .where('asset.type', 'in', [sql.lit(AssetType.Image), sql.lit(AssetType.Video)])
       .$if(!force, (qb) =>
         qb.where((eb) =>
           eb.not(

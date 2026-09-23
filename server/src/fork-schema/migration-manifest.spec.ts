@@ -45,6 +45,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000310-LockWholeStacksAndRecordProfileImageSource')).toBe('legacy-fork');
     expect(classifyMigration('2100000000320-AddAssetLock')).toBe('legacy-fork');
     expect(classifyMigration('2100000000340-AddMediaOperationPause')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000380-AddVideoMomentIndex')).toBe('legacy-fork');
     expect(classifyMigration('2100000000390-AddDuplicateDecision')).toBe('legacy-fork');
     expect(classifyMigration('2100000000400-AddAssetDocumentEdit')).toBe('legacy-fork');
     expect(classifyMigration('2100000000450-AddAdminAuditEvent')).toBe('legacy-fork');
