@@ -148,6 +148,11 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
   lockedOwnerId?: string;
   /** FL-34: with `visibility: locked`, only assets locked for one of these reasons. */
   lockReasons?: AssetLockReason[];
+  /**
+   * FL-34: the owner whose own sensitive marks and detections an ordinary timeline reveals — the viewer,
+   * in an elevated session ("Revealed for this session"). Never set for albums or the Locked view.
+   */
+  revealLockedOwnerId?: string;
 }
 
 export interface TimeBucketOptions extends AssetBuilderOptions {
@@ -1354,7 +1359,9 @@ export class AssetRepository {
             return withBoundingBox(withBoundingCircle, bbox);
           })
           .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
-          .$if(!!options.visibility, (qb) => qb.where(visibilityIs(options.visibility!, 'asset')))
+          .$if(!!options.visibility, (qb) =>
+            qb.where(visibilityIs(options.visibility!, 'asset', options.revealLockedOwnerId)),
+          )
           .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
             qb.where(lockedForReason(options.lockReasons!, 'asset')),
           )
@@ -1468,7 +1475,7 @@ export class AssetRepository {
               )
               .as('ratio'),
           ])
-          .$if(options.visibility === AssetVisibility.Locked, (qb) =>
+          .$if(options.visibility === AssetVisibility.Locked || !!options.revealLockedOwnerId, (qb) =>
             qb.select(lockReasonOf('asset').as('lockReason')),
           )
           .$if(withPlaces && !hidesLocation, (qb) => qb.select(['asset_exif.city', 'asset_exif.country']))
@@ -1481,7 +1488,9 @@ export class AssetRepository {
           )
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
           .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
-          .$if(!!options.visibility, (qb) => qb.where(visibilityIs(options.visibility!, 'asset')))
+          .$if(!!options.visibility, (qb) =>
+            qb.where(visibilityIs(options.visibility!, 'asset', options.revealLockedOwnerId)),
+          )
           .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
             qb.where(lockedForReason(options.lockReasons!, 'asset')),
           )
@@ -1584,7 +1593,7 @@ export class AssetRepository {
             eb.fn.coalesce(eb.fn('array_agg', ['status']), sql.lit('{}')).as('status'),
             eb.fn.coalesce(eb.fn('array_agg', ['thumbhash']), sql.lit('{}')).as('thumbhash'),
           ])
-          .$if(options.visibility === AssetVisibility.Locked, (qb) =>
+          .$if(options.visibility === AssetVisibility.Locked || !!options.revealLockedOwnerId, (qb) =>
             qb.select((eb) => eb.fn.coalesce(eb.fn('array_agg', ['lockReason']), sql.lit('{}')).as('lockReason')),
           )
           .$if(!auth.sharedLink || auth.sharedLink.showExif, (qb) =>

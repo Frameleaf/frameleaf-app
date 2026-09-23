@@ -17,6 +17,7 @@ import {
   isNotLocked,
   lockedForReason,
   notLockedOrOwnedBy,
+  revealedLockScope,
   visibilityIn,
   visibilityIs,
 } from 'src/utils/locked.js';
@@ -68,6 +69,18 @@ describe('the one Locked predicate (FL-34)', () => {
     expect(timeline).toContain('not exists (select 1 from asset_lock');
 
     expect(compile(visibilityIn([], 'asset')).sql).toBe('false');
+  });
+
+  it("reveals only the owner's sensitive marks and detections in an ordinary view, never the old folder", () => {
+    const revealed = compile(revealedLockScope('owner-1', 'asset'));
+    expect(revealed.sql).toContain(`asset_lock.reason in ('marked', 'detected')`);
+    expect(revealed.sql).not.toContain('immich-locked-folder');
+    expect(revealed.parameters).toEqual(['owner-1']);
+    expect(compile(revealedLockScope(undefined, 'asset')).sql).toBe(compile(isNotLocked('asset')).sql);
+
+    const timeline = compile(visibilityIs(AssetVisibility.Timeline, 'asset', 'owner-1')).sql;
+    expect(timeline).toContain(`"asset"."visibility" = 'timeline'`);
+    expect(timeline).toContain(`asset_lock.reason in ('marked', 'detected')`);
   });
 
   it('shows ordinary reads only unlocked Timeline and Archive media', () => {
