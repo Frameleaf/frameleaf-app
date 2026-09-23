@@ -14,8 +14,11 @@ import {
   RenderWorkerSession,
 } from 'src/repositories/render-worker.repository.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
+import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { signInputGrant } from 'src/utils/render-admission.js';
+import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { userStub } from 'test/fixtures/user.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
 
 const OWNER_A = 'owner-a';
@@ -51,7 +54,11 @@ const workerStub = (overrides: Partial<RenderWorker> = {}): RenderWorker =>
     ...overrides,
   }) as unknown as RenderWorker;
 
-const sessionStub = (worker: RenderWorker, token: string, overrides: Partial<RenderWorkerSession> = {}): RenderWorkerSession =>
+const sessionStub = (
+  worker: RenderWorker,
+  token: string,
+  overrides: Partial<RenderWorkerSession> = {},
+): RenderWorkerSession =>
   ({
     id: `session-${token}`,
     workerId: worker.id,
@@ -112,14 +119,86 @@ const operationStub = (overrides: Partial<MediaOperation> = {}): MediaOperation 
     ...overrides,
   }) as unknown as MediaOperation;
 
+/** A Studio export whose immutable snapshot carries the graph FL-90 re-resolves at claim time. */
+const studioOperationStub = (overrides: Partial<MediaOperation> = {}): MediaOperation =>
+  operationStub({
+    id: '0195e2a0-0000-7000-8000-0000000000aa',
+    assetId: null,
+    projectId: 'project-1',
+    snapshot: {
+      engineDigest: 'engine-1',
+      studio: { graph: { sequence: [{ assetId: 'clip-1' }] }, revision: 7, cloudConsent: false },
+    },
+    ...overrides,
+  });
+
+const studioManifestStub = (overrides: Partial<StudioAuthorizedManifest> = {}): StudioAuthorizedManifest => ({
+  schemaVersion: 1,
+  projectId: 'project-1',
+  revision: 7,
+  userId: OWNER_A,
+  destination: StudioDestination.Lan,
+  issuedAt: new Date().toISOString(),
+  expiresAt: new Date(Date.now() + 600_000).toISOString(),
+  complete: true,
+  refusedCount: 0,
+  entries: [
+    {
+      key: 'library-asset:clip-1',
+      kind: StudioResourceKind.LibraryAsset,
+      id: 'clip-1',
+      graphPath: '$.sequence[0]',
+      ownerId: OWNER_A,
+      checksum: 'sum-1',
+      path: '/library/owner-a/clip-1.mov',
+      sourceAccess: 'owner',
+      grant: 'render',
+    },
+    {
+      key: 'font:inter',
+      kind: StudioResourceKind.Font,
+      id: 'inter',
+      graphPath: '$.titles[0].font',
+      ownerId: null,
+      checksum: 'sum-font',
+      path: '/deployment/fonts/inter.ttf',
+      sourceAccess: 'deployment',
+      grant: 'render',
+    },
+    {
+      key: 'preset:transition:Dissolve',
+      kind: StudioResourceKind.Preset,
+      id: 'Dissolve',
+      graphPath: '$.sequence[0].transition',
+      ownerId: null,
+      checksum: null,
+      path: null,
+      sourceAccess: 'deployment',
+      grant: 'none',
+    },
+  ],
+  privacy: { includesSharedSources: false, includesPersonalData: false, originalAccess: false, leavesMachine: false },
+  digest: 'digest-1',
+  ...overrides,
+});
+
 describe(RenderWorkerService.name, () => {
   let sut: RenderWorkerService;
   let mocks: ServiceMocks;
   let workers: RenderWorkerRepository;
   let operations: MediaOperationRepository;
+  let studioResources: {
+    resolveProjectResources: ReturnType<typeof vi.fn>;
+    issueReadGrants: ReturnType<typeof vi.fn>;
+    verifyReadGrant: ReturnType<typeof vi.fn>;
+  };
 
   const workerA = workerStub();
-  const workerB = workerStub({ id: '0195e2a0-0000-7000-8000-00000000bbb2', name: 'Attic GPU', enrolmentSecret: hashed('secret-b') });
+  const workerB = workerStub({
+    id: '0195e2a0-0000-7000-8000-00000000bbb2',
+    name: 'Attic GPU',
+    enrolmentSecret: hashed('secret-b'),
+  });
   const sessionA = sessionStub(workerA, SESSION_A);
   const sessionB = sessionStub(workerB, SESSION_B);
 
@@ -173,6 +252,15 @@ describe(RenderWorkerService.name, () => {
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
     } as unknown as MediaOperationRepository;
 
+    studioResources = {
+      resolveProjectResources: vi.fn(),
+      issueReadGrants: vi.fn().mockReturnValue([]),
+      verifyReadGrant: vi.fn(),
+    };
+    mocks.user.get.mockImplementation((id: string) =>
+      Promise.resolve(id === OWNER_A ? { ...userStub.user1, id: OWNER_A } : undefined),
+    );
+
     sut = new RenderWorkerService(
       mocks.logger as never,
       workers,
@@ -180,6 +268,8 @@ describe(RenderWorkerService.name, () => {
       mocks.crypto as never,
       mocks.access as never,
       mocks.asset as never,
+      mocks.user as never,
+      studioResources as unknown as StudioResourceService,
     );
 
     installSessions({ worker: workerA, session: sessionA }, { worker: workerB, session: sessionB });
@@ -199,7 +289,10 @@ describe(RenderWorkerService.name, () => {
 
       expect(response.enrolmentSecret).toBe(mocks.crypto.randomBytesAsText(32));
       expect(workers.createWorker).toHaveBeenCalledWith(
-        expect.objectContaining({ enrolmentSecret: hashed(response.enrolmentSecret), createdBy: authStub.admin.user.id }),
+        expect.objectContaining({
+          enrolmentSecret: hashed(response.enrolmentSecret),
+          createdBy: authStub.admin.user.id,
+        }),
       );
       expect(response.worker).not.toHaveProperty('enrolmentSecret');
       expect(workers.recordAudit).toHaveBeenCalledWith(
@@ -348,11 +441,15 @@ describe(RenderWorkerService.name, () => {
       expect(claim).not.toHaveProperty('label');
       expect(claim!.inputs).toHaveLength(1);
       expect(claim!.inputs[0]).toEqual(
-        expect.objectContaining({ inputId: 'source', assetId: queued.assetId, role: 'source' }),
+        expect.objectContaining({ inputId: 'source', resourceId: queued.assetId, kind: 'library-asset' }),
       );
+      expect(claim!.inputs[0]).not.toHaveProperty('token');
+      expect(studioResources.resolveProjectResources).not.toHaveBeenCalled();
       expect(claim!.inputs[0].url).toMatch(new RegExp(`^/api/render-workers/operations/${queued.id}/inputs/`));
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(OWNER_A, new Set([queued.assetId]), false);
-      expect(workers.claimQueued).toHaveBeenCalledWith(expect.objectContaining({ id: queued.id, workerId: workerA.id }));
+      expect(workers.claimQueued).toHaveBeenCalledWith(
+        expect.objectContaining({ id: queued.id, workerId: workerA.id }),
+      );
     });
 
     it('issues no grant for an input the owner has lost access to', async () => {
@@ -361,6 +458,136 @@ describe(RenderWorkerService.name, () => {
       const claim = await sut.claim(SESSION_A, {} as never);
 
       expect(claim!.inputs).toEqual([]);
+    });
+
+    describe('Studio operations', () => {
+      const studioOp = studioOperationStub();
+
+      beforeEach(() => {
+        vi.mocked(workers.peekQueued).mockReset();
+        vi.mocked(workers.peekQueued).mockResolvedValueOnce([studioOp] as never).mockResolvedValue([]);
+        vi.mocked(workers.claimQueued).mockImplementation(({ id, workerId }) =>
+          Promise.resolve({
+            operation: studioOperationStub({
+              id,
+              status: MediaOperationStatus.Preparing,
+              claimToken: 'claim-1',
+              claimedBy: workerId,
+              attempt: 1,
+            }) as never,
+            claimToken: 'claim-1',
+          }),
+        );
+        const manifest = studioManifestStub();
+        studioResources.resolveProjectResources.mockResolvedValue({ manifest, refused: [] });
+        studioResources.issueReadGrants.mockReturnValue([
+          {
+            key: 'library-asset:clip-1',
+            kind: StudioResourceKind.LibraryAsset,
+            id: 'clip-1',
+            path: '/library/owner-a/clip-1.mov',
+            token: 'fl90-clip-1',
+            expiresAt: manifest.expiresAt,
+          },
+          {
+            key: 'font:inter',
+            kind: StudioResourceKind.Font,
+            id: 'inter',
+            path: '/deployment/fonts/inter.ttf',
+            token: 'fl90-font',
+            expiresAt: manifest.expiresAt,
+          },
+        ]);
+      });
+
+      it('re-resolves the snapshot graph as the owner and hands out FL-90 grants bound to this worker', async () => {
+        const claim = await sut.claim(SESSION_A, {} as never);
+
+        expect(claim!.operationId).toBe(studioOp.id);
+        expect(studioResources.resolveProjectResources).toHaveBeenCalledWith(
+          expect.objectContaining({ user: expect.objectContaining({ id: OWNER_A }) }),
+          expect.objectContaining({
+            projectId: 'project-1',
+            ownerId: OWNER_A,
+            revision: 7,
+            destination: StudioDestination.Lan,
+            cloudConsent: false,
+          }),
+        );
+        const auth = studioResources.resolveProjectResources.mock.calls[0][0];
+        expect(auth).not.toHaveProperty('sharedLink');
+        expect(auth).not.toHaveProperty('session');
+        expect(studioResources.issueReadGrants).toHaveBeenCalledWith(
+          expect.objectContaining({ digest: 'digest-1' }),
+          expect.objectContaining({ workerId: workerA.id }),
+        );
+        expect(claim!.inputs.map((input) => [input.inputId, input.kind, input.resourceId, input.checksum])).toEqual([
+          ['library-asset:clip-1', StudioResourceKind.LibraryAsset, 'clip-1', 'sum-1'],
+          ['font:inter', StudioResourceKind.Font, 'inter', 'sum-font'],
+        ]);
+        for (const input of claim!.inputs) {
+          expect(input).not.toHaveProperty('token');
+          expect(input).not.toHaveProperty('path');
+          expect(input.url).not.toContain('/library/');
+        }
+        expect(mocks.access.asset.checkOwnerAccess).not.toHaveBeenCalled();
+      });
+
+      it('refuses, without claiming, a job whose manifest is no longer complete and records why', async () => {
+        studioResources.resolveProjectResources.mockResolvedValue({
+          manifest: studioManifestStub({ complete: false, refusedCount: 1, entries: [] }),
+          refused: [
+            {
+              key: 'library-asset:clip-1',
+              kind: StudioResourceKind.LibraryAsset,
+              id: 'clip-1',
+              graphPath: '$',
+              reason: 'no-access',
+              detail: 'Trashed.',
+            },
+          ],
+        });
+
+        const claim = await sut.claim(SESSION_A, {} as never);
+
+        expect(claim).toBeUndefined();
+        expect(workers.claimQueued).not.toHaveBeenCalled();
+        expect(workers.recordRefusal).toHaveBeenCalledWith(studioOp.id, RenderWorkerRefusalReason.ManifestIncomplete);
+        expect(workers.recordAudit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            event: RenderWorkerAuditEvent.ClaimRefused,
+            reason: RenderWorkerRefusalReason.ManifestIncomplete,
+            operationId: studioOp.id,
+            detail: { refused: [{ key: 'library-asset:clip-1', reason: 'no-access' }] },
+          }),
+        );
+        expect(studioResources.issueReadGrants).not.toHaveBeenCalled();
+      });
+
+      it('treats a resolver precondition failure (cloud without consent) as an incomplete manifest', async () => {
+        studioResources.resolveProjectResources.mockRejectedValue(
+          new Error('A cloud destination requires explicit consent'),
+        );
+
+        const claim = await sut.claim(SESSION_A, {} as never);
+
+        expect(claim).toBeUndefined();
+        expect(workers.claimQueued).not.toHaveBeenCalled();
+        expect(workers.recordRefusal).toHaveBeenCalledWith(studioOp.id, RenderWorkerRefusalReason.ManifestIncomplete);
+      });
+
+      it('refuses a job whose owner no longer exists instead of resolving as anyone else', async () => {
+        vi.mocked(workers.peekQueued).mockReset();
+        vi.mocked(workers.peekQueued)
+          .mockResolvedValueOnce([studioOperationStub({ ownerId: OWNER_B })] as never)
+          .mockResolvedValue([]);
+
+        const claim = await sut.claim(SESSION_A, {} as never);
+
+        expect(claim).toBeUndefined();
+        expect(studioResources.resolveProjectResources).not.toHaveBeenCalled();
+        expect(workers.claimQueued).not.toHaveBeenCalled();
+      });
     });
 
     it('applies the tightest of worker, instance and account limits to the claim', async () => {
@@ -469,7 +696,9 @@ describe(RenderWorkerService.name, () => {
       // The repository only answers when id, worker and token all match: this is that contract.
       vi.mocked(workers.getClaimed).mockImplementation((id, workerId, claimToken) =>
         Promise.resolve(
-          id === claimedByA.id && workerId === workerA.id && claimToken === 'claim-1' ? (claimedByA as never) : undefined,
+          id === claimedByA.id && workerId === workerA.id && claimToken === 'claim-1'
+            ? (claimedByA as never)
+            : undefined,
         ),
       );
     });
@@ -490,7 +719,14 @@ describe(RenderWorkerService.name, () => {
     });
 
     it('refuses the claiming worker presenting a stale or guessed token', async () => {
-      await expect(sut.progress(SESSION_A, claimedByA.id, { claimToken: 'claim-0', status: 'rendering', processedUnits: 1, totalUnits: 2 } as never)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        sut.progress(SESSION_A, claimedByA.id, {
+          claimToken: 'claim-0',
+          status: 'rendering',
+          processedUnits: 1,
+          totalUnits: 2,
+        } as never),
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(operations.reportProgress).not.toHaveBeenCalled();
     });
 
@@ -529,7 +765,9 @@ describe(RenderWorkerService.name, () => {
     it('stops an operation over the account’s wall clock on progress', async () => {
       vi.mocked(workers.getLimit).mockImplementation((subject) =>
         Promise.resolve(
-          subject === OWNER_A ? ({ subject, maxConcurrentOperations: 2, maxWallClockMs: '1000', maxOutputBytes: null } as never) : undefined,
+          subject === OWNER_A
+            ? ({ subject, maxConcurrentOperations: 2, maxWallClockMs: '1000', maxOutputBytes: null } as never)
+            : undefined,
         ),
       );
 
@@ -593,21 +831,34 @@ describe(RenderWorkerService.name, () => {
       expect(operations.completeCheckpoint).toHaveBeenCalledWith(
         claimedByA.id,
         'claim-1',
-        expect.objectContaining({ sequence: 0, chunkKey: 'k', outputChecksum: Buffer.from('abcd', 'hex'), sizeInBytes: 42 }),
+        expect.objectContaining({
+          sequence: 0,
+          chunkKey: 'k',
+          outputChecksum: Buffer.from('abcd', 'hex'),
+          sizeInBytes: 42,
+        }),
       );
     });
 
     it('only acknowledges a cancel on a job that is cancelling and held by this worker', async () => {
-      expect(await sut.acknowledgeCancel(SESSION_A, claimedByA.id, { claimToken: 'claim-1', released: true } as never)).toEqual({
+      expect(
+        await sut.acknowledgeCancel(SESSION_A, claimedByA.id, { claimToken: 'claim-1', released: true } as never),
+      ).toEqual({
         accepted: false,
         refusal: null,
       });
       expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
 
       vi.mocked(workers.getClaimed).mockResolvedValue(
-        operationStub({ ...claimedByA, status: MediaOperationStatus.Cancelling, cancelRequestedAt: new Date() }) as never,
+        operationStub({
+          ...claimedByA,
+          status: MediaOperationStatus.Cancelling,
+          cancelRequestedAt: new Date(),
+        }) as never,
       );
-      expect(await sut.acknowledgeCancel(SESSION_A, claimedByA.id, { claimToken: 'claim-1', released: true } as never)).toEqual({
+      expect(
+        await sut.acknowledgeCancel(SESSION_A, claimedByA.id, { claimToken: 'claim-1', released: true } as never),
+      ).toEqual({
         accepted: true,
         refusal: null,
       });
@@ -633,7 +884,13 @@ describe(RenderWorkerService.name, () => {
     };
     const grantFor = (operation: MediaOperation, session: RenderWorkerSession, claimToken = 'claim-1') =>
       signInputGrant(
-        { operationId: operation.id, inputId: 'source', assetId: operation.assetId!, expiresAt: Date.now() + 60_000 },
+        {
+          operationId: operation.id,
+          inputId: 'source',
+          resourceId: operation.assetId!,
+          token: null,
+          expiresAt: Date.now() + 60_000,
+        },
         { claimToken, sessionTokenHash: session.token },
       );
 
@@ -669,7 +926,9 @@ describe(RenderWorkerService.name, () => {
         claimedBy: workerA.id,
       });
       vi.mocked(workers.getClaimedByWorker).mockImplementation((id) =>
-        Promise.resolve(id === otherOp.id ? (otherOp as never) : id === claimedByA.id ? (claimedByA as never) : undefined),
+        Promise.resolve(
+          id === otherOp.id ? (otherOp as never) : id === claimedByA.id ? (claimedByA as never) : undefined,
+        ),
       );
 
       // A grant minted for owner A's job, presented on owner B's job. Cross-user through the worker.
@@ -707,7 +966,8 @@ describe(RenderWorkerService.name, () => {
         {
           operationId: claimedByA.id,
           inputId: 'source',
-          assetId: '33333333-3333-4333-8333-333333333333',
+          resourceId: '33333333-3333-4333-8333-333333333333',
+          token: null,
           expiresAt: Date.now() + 60_000,
         },
         { claimToken: 'claim-1', sessionTokenHash: sessionA.token },
@@ -717,11 +977,142 @@ describe(RenderWorkerService.name, () => {
     });
 
     it('refuses an operation this worker never claimed', async () => {
-      const foreign = operationStub({ id: '0195e2a0-0000-7000-8000-000000000077', claimedBy: workerB.id, claimToken: 'x' });
+      const foreign = operationStub({
+        id: '0195e2a0-0000-7000-8000-000000000077',
+        claimedBy: workerB.id,
+        claimToken: 'x',
+      });
 
       await expect(sut.readInput(SESSION_A, foreign.id, grantFor(foreign, sessionA, 'x'))).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+
+    describe('Studio inputs', () => {
+      const studioClaimed = studioOperationStub({
+        status: MediaOperationStatus.Rendering,
+        claimToken: 'claim-1',
+        claimedBy: workerA.id,
+      });
+      const studioGrant = (input: { inputId: string; resourceId: string; token: string }, claimToken = 'claim-1') =>
+        signInputGrant(
+          { operationId: studioClaimed.id, ...input, expiresAt: Date.now() + 60_000 },
+          { claimToken, sessionTokenHash: sessionA.token },
+        );
+      const verified = (grant: Record<string, unknown>, path: string) => ({
+        valid: true,
+        grant: {
+          v: 1,
+          scope: 'render',
+          projectId: 'project-1',
+          revision: 7,
+          userId: OWNER_A,
+          workerId: workerA.id,
+          manifest: 'digest-1',
+          checksum: null,
+          ownerId: null,
+          ...grant,
+        },
+        path,
+      });
+
+      beforeEach(() => {
+        vi.mocked(workers.getClaimedByWorker).mockImplementation((id, workerId) =>
+          Promise.resolve(id === studioClaimed.id && workerId === workerA.id ? (studioClaimed as never) : undefined),
+        );
+        studioResources.resolveProjectResources.mockResolvedValue({ manifest: studioManifestStub(), refused: [] });
+      });
+
+      it('serves a library source only after FL-90 re-verifies the grant as the owner for this worker', async () => {
+        studioResources.verifyReadGrant.mockResolvedValue(
+          verified(
+            { kind: StudioResourceKind.LibraryAsset, id: 'clip-1', key: 'library-asset:clip-1' },
+            '/library/owner-a/clip-1.mov',
+          ),
+        );
+
+        const file = await sut.readInput(
+          SESSION_A,
+          studioClaimed.id,
+          studioGrant({ inputId: 'library-asset:clip-1', resourceId: 'clip-1', token: 'fl90-clip-1' }),
+        );
+
+        expect(file.path).toBe('/library/owner-a/clip-1.mov');
+        expect(studioResources.verifyReadGrant).toHaveBeenCalledWith('fl90-clip-1', {
+          workerId: workerA.id,
+          auth: expect.objectContaining({ user: expect.objectContaining({ id: OWNER_A }) }),
+        });
+        expect(mocks.asset.getById).not.toHaveBeenCalled();
+      });
+
+      it('resolves a deployment file from a fresh manifest when FL-90 reports it by reference only', async () => {
+        studioResources.verifyReadGrant.mockResolvedValue(
+          verified({ kind: StudioResourceKind.Font, id: 'inter', key: 'font:inter', checksum: 'sum-font' }, ''),
+        );
+
+        const file = await sut.readInput(
+          SESSION_A,
+          studioClaimed.id,
+          studioGrant({ inputId: 'font:inter', resourceId: 'inter', token: 'fl90-font' }),
+        );
+
+        expect(file.path).toBe('/deployment/fonts/inter.ttf');
+        expect(studioResources.resolveProjectResources).toHaveBeenCalledTimes(1);
+      });
+
+      it('refuses a source the owner lost since the claim, even under a valid unexpired grant', async () => {
+        studioResources.verifyReadGrant.mockResolvedValue({ valid: false, reason: 'no-access', detail: 'Relocked.' });
+
+        await expect(
+          sut.readInput(
+            SESSION_A,
+            studioClaimed.id,
+            studioGrant({ inputId: 'library-asset:clip-1', resourceId: 'clip-1', token: 'fl90-clip-1' }),
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      });
+
+      it('refuses an FL-90 grant that names a different resource than the operation grant wraps', async () => {
+        studioResources.verifyReadGrant.mockResolvedValue(
+          verified(
+            { kind: StudioResourceKind.LibraryAsset, id: 'clip-2', key: 'library-asset:clip-2' },
+            '/library/owner-a/clip-2.mov',
+          ),
+        );
+
+        await expect(
+          sut.readInput(
+            SESSION_A,
+            studioClaimed.id,
+            studioGrant({ inputId: 'library-asset:clip-1', resourceId: 'clip-1', token: 'fl90-clip-2' }),
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      });
+
+      it('refuses a preview-scope grant on the input route', async () => {
+        studioResources.verifyReadGrant.mockResolvedValue(
+          verified({ scope: 'preview', kind: StudioResourceKind.RemotePreviewFrame, id: 'digest-1', key: 'x' }, ''),
+        );
+
+        await expect(
+          sut.readInput(
+            SESSION_A,
+            studioClaimed.id,
+            studioGrant({ inputId: 'x', resourceId: 'digest-1', token: 'fl90-preview' }),
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      });
+
+      it('never calls FL-90 for another worker presenting the claiming worker’s grant', async () => {
+        await expect(
+          sut.readInput(
+            SESSION_B,
+            studioClaimed.id,
+            studioGrant({ inputId: 'library-asset:clip-1', resourceId: 'clip-1', token: 'fl90-clip-1' }),
+          ),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(studioResources.verifyReadGrant).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -776,7 +1167,11 @@ describe(RenderWorkerService.name, () => {
         maxOutputBytes: null,
       } as never);
 
-      expect(workers.upsertLimit).toHaveBeenCalledWith(authStub.user1.user.id, authStub.user1.user.id, expect.anything());
+      expect(workers.upsertLimit).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        authStub.user1.user.id,
+        expect.anything(),
+      );
     });
   });
 });

@@ -94,7 +94,11 @@ export type RenderLimits = {
  * not loosen the instance default, and neither loosens the worker: the strictest source wins.
  */
 export const tightestLimits = (...sources: Array<Partial<RenderLimits> | null | undefined>): RenderLimits => {
-  const result: RenderLimits = { maxConcurrentOperations: Number.POSITIVE_INFINITY, maxWallClockMs: null, maxOutputBytes: null };
+  const result: RenderLimits = {
+    maxConcurrentOperations: Number.POSITIVE_INFINITY,
+    maxWallClockMs: null,
+    maxOutputBytes: null,
+  };
 
   for (const source of sources) {
     if (!source) {
@@ -312,7 +316,12 @@ export type RunningLimitsInput = {
  * Is a claimed operation still within its ceilings? Checked on every heartbeat and progress
  * report, so a runaway render is stopped by the server rather than trusted to stop itself.
  */
-export const evaluateRunningLimits = ({ startedAt, outputBytes, limits, now }: RunningLimitsInput): AdmissionDecision => {
+export const evaluateRunningLimits = ({
+  startedAt,
+  outputBytes,
+  limits,
+  now,
+}: RunningLimitsInput): AdmissionDecision => {
   if (limits.maxWallClockMs !== null && startedAt && now.getTime() - startedAt.getTime() > limits.maxWallClockMs) {
     return refuse(RenderWorkerRefusalReason.WallClockExceeded);
   }
