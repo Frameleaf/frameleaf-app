@@ -511,6 +511,7 @@ export type JobItem =
   | { name: JobName.LibraryRemoveAsset; data: ILibraryFileJob }
   | { name: JobName.LibraryDelete; data: IEntityJob }
   | { name: JobName.LibraryScanQueueAll; data?: IBaseJob }
+  | { name: JobName.LibraryScanRun; data?: IBaseJob }
   | { name: JobName.LibraryDeleteCheck; data: IBaseJob }
 
   // Notification
