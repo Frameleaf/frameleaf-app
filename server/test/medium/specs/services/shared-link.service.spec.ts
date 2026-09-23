@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { randomBytes } from 'node:crypto';
-import { SharedLinkType } from 'src/enum.js';
+import { AssetVisibility, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -623,5 +623,68 @@ describe(SharedLinkService.name, () => {
     });
 
     await expect(sut.getMine({ user, sharedLink }, [])).resolves.toHaveProperty('assets', []);
+  });
+
+  describe('Locked media (FL-32)', () => {
+    it('never lists or reaches an album’s Locked members through its shared link', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset: plain } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      for (const asset of [plain, locked]) {
+        await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+      }
+      const { album } = await ctx.newAlbum({ ownerId: user.id }, [plain.id, locked.id]);
+
+      const sharedLink = await ctx.get(SharedLinkRepository).create({
+        key: randomBytes(16),
+        id: factory.uuid(),
+        userId: user.id,
+        albumId: album.id,
+        allowUpload: true,
+        type: SharedLinkType.Album,
+      });
+
+      const response = await sut.get(auth, sharedLink.id);
+      expect(response.album?.assets.map(({ id }) => id)).toEqual([plain.id]);
+
+      const access = ctx.get(AccessRepository);
+      await expect(
+        access.asset.checkSharedLinkAccess(sharedLink.id, new Set([plain.id, locked.id])),
+      ).resolves.toEqual(new Set([plain.id]));
+    });
+
+    it('drops an individually linked asset from the link once it moves into the Locked folder', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+
+      const sharedLink = await ctx.get(SharedLinkRepository).create({
+        key: randomBytes(16),
+        id: factory.uuid(),
+        userId: user.id,
+        allowUpload: true,
+        type: SharedLinkType.Individual,
+        assetIds: [asset.id],
+      });
+
+      await expect(sut.get(auth, sharedLink.id)).resolves.toMatchObject({
+        assets: [expect.objectContaining({ id: asset.id })],
+      });
+
+      await ctx.database
+        .updateTable('asset')
+        .set({ visibility: AssetVisibility.Locked })
+        .where('id', '=', asset.id)
+        .execute();
+
+      await expect(sut.get(auth, sharedLink.id)).resolves.toHaveProperty('assets', []);
+      await expect(
+        ctx.get(AccessRepository).asset.checkSharedLinkAccess(sharedLink.id, new Set([asset.id])),
+      ).resolves.toEqual(new Set());
+    });
   });
 });

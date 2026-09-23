@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Kysely } from 'kysely';
-import { AssetVisibility, SharedLinkType } from 'src/enum.js';
+import { AlbumUserRole, AssetVisibility, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -248,5 +248,52 @@ describe(TimelineService.name, () => {
     const rawResponse = await sut.getTimeBucket(auth, { albumId: album.id, timeBucket: '1970-02-01', isTrashed: true });
     const response = JSON.parse(rawResponse);
     expect(response).not.toEqual(expect.objectContaining({ city: expect.any(Array), country: expect.any(Array) }));
+  });
+
+  describe('Locked media in album timelines (FL-32)', () => {
+    it('counts an album owner’s Locked members only for their elevated session', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const localDateTime = new Date('1970-02-10');
+      const { asset: plain } = await ctx.newAsset({ ownerId: owner.id, localDateTime });
+      const { asset: locked } = await ctx.newAsset({
+        ownerId: owner.id,
+        localDateTime,
+        visibility: AssetVisibility.Locked,
+      });
+      for (const asset of [plain, locked]) {
+        await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+      }
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [plain.id, locked.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Editor });
+
+      const elevatedOwner = factory.auth({ user: { id: owner.id }, session: { hasElevatedPermission: true } });
+      const ordinaryOwner = factory.auth({ user: { id: owner.id } });
+      const elevatedMember = factory.auth({ user: { id: member.id }, session: { hasElevatedPermission: true } });
+
+      await expect(sut.getTimeBuckets(elevatedOwner, { albumId: album.id })).resolves.toEqual([
+        { count: 2, timeBucket: '1970-02-01' },
+      ]);
+      await expect(sut.getTimeBuckets(ordinaryOwner, { albumId: album.id })).resolves.toEqual([
+        { count: 1, timeBucket: '1970-02-01' },
+      ]);
+      await expect(sut.getTimeBuckets(elevatedMember, { albumId: album.id })).resolves.toEqual([
+        { count: 1, timeBucket: '1970-02-01' },
+      ]);
+
+      // an explicit Locked request on the album is the caller's own Locked items, nobody else's
+      await expect(
+        sut.getTimeBuckets(elevatedOwner, { albumId: album.id, visibility: AssetVisibility.Locked }),
+      ).resolves.toEqual([{ count: 1, timeBucket: '1970-02-01' }]);
+      await expect(
+        sut.getTimeBuckets(elevatedMember, { albumId: album.id, visibility: AssetVisibility.Locked }),
+      ).resolves.toEqual([]);
+
+      const bucket = JSON.parse(
+        await sut.getTimeBucket(elevatedMember, { albumId: album.id, timeBucket: '1970-02-01' }),
+      );
+      expect(bucket.id).toEqual([plain.id]);
+    });
   });
 });
