@@ -1,5 +1,5 @@
 <script lang="ts">
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { updateMyPreferences } from '@immich/sdk';
@@ -23,5 +23,5 @@
     {$t('onboarding_privacy_description')}
   </p>
 
-  <SettingSwitch title={$t('gcast_enabled')} subtitle={$t('gcast_enabled_description')} bind:checked={gCastEnabled} />
+  <SettingToggle title={$t('gcast_enabled')} subtitle={$t('gcast_enabled_description')} bind:checked={gCastEnabled} />
 </div>
