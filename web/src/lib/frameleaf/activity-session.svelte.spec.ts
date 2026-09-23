@@ -40,6 +40,7 @@ const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDt
     finishedAt: null,
     createdAt: '2026-09-22T09:49:00.000Z',
     updatedAt: '2026-09-22T09:59:00.000Z',
+    withheld: false,
     ...overrides,
   }) as MediaOperationDto;
 
@@ -156,6 +157,25 @@ describe('ActivitySession', () => {
       status: MediaOperationStatus.Rendering,
       pauseRequestedAt: '2026-09-23T10:00:00.000Z',
     });
+  });
+
+  it('asks again the moment the browser is back online, recovering the exact jobs (FL-43)', async () => {
+    sdkMock.searchMediaOperations.mockRejectedValueOnce(new Error('offline'));
+    const session = new ActivitySession();
+    const stop = session.watch();
+    await vi.waitFor(() => expect(session.unreachable).toBe(true));
+
+    const recovered = operation({ status: MediaOperationStatus.Validating, progress: 97 });
+    sdkMock.searchMediaOperations.mockResolvedValue({ items: [recovered], total: 1 });
+    dispatchEvent(new Event('online'));
+
+    await vi.waitFor(() => expect(session.unreachable).toBe(false));
+    expect(session.operations).toEqual([recovered]);
+    expect(sdkMock.searchMediaOperations).toHaveBeenCalledTimes(2);
+
+    stop();
+    dispatchEvent(new Event('online'));
+    expect(sdkMock.searchMediaOperations).toHaveBeenCalledTimes(2);
   });
 
   it('puts a resumed job back as the server answered (FL-104)', async () => {

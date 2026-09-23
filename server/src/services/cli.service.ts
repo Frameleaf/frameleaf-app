@@ -79,15 +79,15 @@ export class CliService extends BaseService {
   }
 
   async disablePasswordLogin(): Promise<void> {
-    const config = await this.getConfig({ withCache: false });
-    config.passwordLogin.enabled = false;
-    await this.updateConfig(config);
+    await this.updateConfigExclusively((config) => {
+      config.passwordLogin.enabled = false;
+    });
   }
 
   async enablePasswordLogin(): Promise<void> {
-    const config = await this.getConfig({ withCache: false });
-    config.passwordLogin.enabled = true;
-    await this.updateConfig(config);
+    await this.updateConfigExclusively((config) => {
+      config.passwordLogin.enabled = true;
+    });
   }
 
   async disableMaintenanceMode(): Promise<{ alreadyDisabled: boolean }> {
@@ -168,15 +168,15 @@ export class CliService extends BaseService {
   }
 
   async disableOAuthLogin(): Promise<void> {
-    const config = await this.getConfig({ withCache: false });
-    config.oauth.enabled = false;
-    await this.updateConfig(config);
+    await this.updateConfigExclusively((config) => {
+      config.oauth.enabled = false;
+    });
   }
 
   async enableOAuthLogin(): Promise<void> {
-    const config = await this.getConfig({ withCache: false });
-    config.oauth.enabled = true;
-    await this.updateConfig(config);
+    await this.updateConfigExclusively((config) => {
+      config.oauth.enabled = true;
+    });
   }
 
   async getSampleFilePaths(): Promise<string[]> {
