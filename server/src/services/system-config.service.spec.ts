@@ -1,10 +1,11 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { mapConfig } from 'src/dtos/system-config.dto.js';
 import {
   AudioCodec,
   CQMode,
   Colorspace,
+  DatabaseLock,
   HlsVideoResolution,
   ImageFormat,
   LogLevel,
@@ -20,6 +21,7 @@ import {
 } from 'src/enum.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { DeepPartial } from 'src/types.js';
+import { getConfigRevision } from 'src/utils/config.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -1024,6 +1026,83 @@ describe(SystemConfigService.name, () => {
       const persisted = mocks.forkSchema.persistConfig.mock.calls.at(-1);
       const partial = persisted![0] as { machineLearning?: { runpod?: { apiKey?: string } } };
       expect(partial.machineLearning?.runpod?.apiKey).toBe('rp_NEW_value');
+    });
+  });
+
+  describe('settings revision (FL-66)', () => {
+    it('should return the saved config with the revision of the saved settings', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(partialConfig);
+
+      const current = await sut.getAdminConfigWithRevision();
+
+      expect(current.config.trash.days).toBe(10);
+      expect(current.revision).toBe(getConfigRevision(await sut.getConfig({ withCache: false })));
+    });
+
+    it('should report a different revision once a saved setting changes', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(partialConfig);
+      const before = await sut.getAdminConfigWithRevision();
+
+      mocks.systemMetadata.get.mockResolvedValue({ ...partialConfig, trash: { days: 11 } });
+      const after = await sut.getAdminConfigWithRevision();
+
+      expect(after.revision).not.toBe(before.revision);
+    });
+
+    it('should save a draft made against the current revision and return the new revision', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(partialConfig);
+      const { revision } = await sut.getAdminConfigWithRevision();
+
+      const saved = await sut.updateAdminConfigWithRevision({ config: updatedConfig, expectedRevision: revision });
+
+      expect(saved.revision).toBe(getConfigRevision(await sut.getConfig({ withCache: false })));
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.SystemConfigUpdate, expect.any(Function));
+      expect(mocks.forkSchema.persistConfig).toHaveBeenCalled();
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'ConfigUpdate',
+        expect.objectContaining({ newConfig: expect.any(Object) }),
+      );
+    });
+
+    it('should refuse a draft made against settings that changed since, and change nothing', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(partialConfig);
+      const { revision } = await sut.getAdminConfigWithRevision();
+
+      // Another administrator saves in between.
+      mocks.systemMetadata.get.mockResolvedValue({ ...partialConfig, trash: { days: 30 } });
+
+      await expect(
+        sut.updateAdminConfigWithRevision({ config: updatedConfig, expectedRevision: revision }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('ConfigUpdate', expect.anything());
+    });
+
+    it('should check the revision before validating, so a stale draft never reaches the validators', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(partialConfig);
+
+      await expect(
+        sut.updateAdminConfigWithRevision({ config: updatedConfig, expectedRevision: 'stale' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('ConfigValidate', expect.anything());
+    });
+
+    it('should serialize saves without a revision through the same lock', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(partialConfig);
+
+      await sut.updateAdminConfig(updatedConfig);
+
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.SystemConfigUpdate, expect.any(Function));
+    });
+
+    it('should refuse a revisioned save while a config file is in use', async () => {
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ configFile: 'immich-config.json' }));
+      mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify({}));
+
+      await expect(
+        sut.updateAdminConfigWithRevision({ config: defaults, expectedRevision: 'any' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.database.withLock).not.toHaveBeenCalled();
     });
   });
 
