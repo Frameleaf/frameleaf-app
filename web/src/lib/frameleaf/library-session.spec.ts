@@ -1,3 +1,4 @@
+import { ImageEnrichmentFilter } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import { emptyDiscoveryQuery, type DiscoveryQuery } from '$lib/components/discovery/query';
 import {
@@ -9,6 +10,8 @@ import {
   isLibraryFilter,
   libraryPreferenceKey,
   nextAnchor,
+  parseLibraryView,
+  parseLibraryViewValue,
   readLibraryView,
   readLibraryViewValue,
   reduceLibrarySession,
@@ -355,9 +358,58 @@ describe('portable URL state', () => {
   });
 
   it('repairs the legacy rating value earlier prototype links wrote', () => {
+    // FL-48, matching the prototype's `normalizeFilter`: that select was a minimum rating, so the
+    // string it stored means "at least", not "exactly".
     const legacy = { rating: { eq: '4' } } as unknown as DiscoveryQuery['filter'];
     const restored = readLibraryViewValue(viewState({ query: withFilter(legacy) }));
-    expect(restored?.query.filter.rating).toEqual({ eq: 4 });
+    expect(restored?.query.filter.rating).toEqual({ gte: 4 });
+  });
+
+  it('round-trips every part of the query, context included (FL-48)', () => {
+    const state = viewState({
+      scope: { kind: 'space', id: 'space-1' },
+      query: {
+        ...withFilter({
+          personIds: { any: ['p1'], none: ['p2'] },
+          takenAt: { gte: '2026-08-01', lte: '2026-08-31' },
+          rating: { eq: null },
+          or: [{ city: { eq: 'Banff' } }, { hasTags: { eq: false } }],
+        }),
+        text: 'receipt',
+        mode: 'text',
+        textField: 'ocr',
+        queryAssetId: 'asset-1',
+        spaceId: 'space-1',
+        imageEnrichment: ImageEnrichmentFilter.MissingImageDescription,
+        grouping: 'years',
+        view: 'map',
+      },
+    });
+    expect(readLibraryView(writeLibraryView(new URL('http://localhost/photos'), state))).toEqual(state);
+    expect(readLibraryViewValue(state)).toEqual(state);
+  });
+
+  it('tells a newer link apart from a missing or damaged one (FL-48)', () => {
+    const newer = new URL('http://localhost/photos');
+    newer.searchParams.set('fl', JSON.stringify({ ...viewState(), version: 2 }));
+    expect(parseLibraryView(newer)).toEqual({ ok: false, problem: 'unsupported-version' });
+
+    const newerQuery = new URL('http://localhost/photos');
+    newerQuery.searchParams.set(
+      'fl',
+      JSON.stringify(viewState({ query: { ...emptyDiscoveryQuery(), version: 2 } as never })),
+    );
+    expect(parseLibraryView(newerQuery)).toEqual({ ok: false, problem: 'unsupported-version' });
+
+    expect(parseLibraryView(new URL('http://localhost/photos?fl=not-json'))).toEqual({
+      ok: false,
+      problem: 'malformed',
+    });
+    expect(parseLibraryViewValue(viewState({ query: withFilter({ city: { like: 'x' } } as never) }))).toEqual({
+      ok: false,
+      problem: 'invalid',
+    });
+    expect(parseLibraryView(new URL('http://localhost/photos'))).toBeNull();
   });
 
   it('refuses a filter a URL should not be able to inject', () => {

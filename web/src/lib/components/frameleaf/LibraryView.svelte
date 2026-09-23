@@ -41,6 +41,7 @@
   import type { TimelineAsset, TimelineManagerOptions } from '$lib/managers/timeline-manager/types';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { AssetVisibility } from '@immich/sdk';
+  import { toastManager } from '@immich/ui';
   import { onDestroy, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -191,6 +192,17 @@
     }
     restored = true;
     session.restore(page.url, authManager.authenticated ? authManager.user.id : undefined);
+    // FL-48: a link this version cannot read is refused out loud and left in the address bar, rather
+    // than being quietly replaced by the stored view.
+    if (session.refusedView) {
+      toastManager.warning(
+        $t(
+          session.refusedView === 'unsupported-version'
+            ? 'frameleaf_library_bridge_link_newer'
+            : 'frameleaf_library_bridge_link_damaged',
+        ),
+      );
+    }
   });
 
   // Persist the device-local part of the session, and keep the link in step with the view state.
