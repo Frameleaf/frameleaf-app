@@ -128,14 +128,17 @@ export class StackRepository {
         .execute();
 
       // a stack that holds a Locked photo is Locked as a whole (FL-53)
-      await onStacksJoined(tx, [newRecord.id]);
+      const lockedAssetIds = await onStacksJoined(tx, [newRecord.id]);
 
-      return tx
+      const stack = await tx
         .selectFrom('stack')
         .selectAll('stack')
         .select(withAssets)
         .where('id', '=', newRecord.id)
         .executeTakeFirstOrThrow();
+
+      // the photos that became Locked by joining it, for the caller's follow-up
+      return { ...stack, lockedAssetIds };
     });
   }
 

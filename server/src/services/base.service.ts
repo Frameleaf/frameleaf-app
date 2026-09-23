@@ -338,7 +338,6 @@ export class BaseService {
 
   /** Gives another profile picture to every user whose picture was copied from a now Locked photo. */
   protected async replaceLockedProfileImages(): Promise<void> {
-    const config = await this.getConfig({ withCache: true });
     await replaceLockedProfileImages(
       {
         media: this.mediaRepository,
@@ -348,7 +347,7 @@ export class BaseService {
         job: this.jobRepository,
         logger: this.logger,
       },
-      config,
+      () => this.getConfig({ withCache: true }),
     );
   }
 
