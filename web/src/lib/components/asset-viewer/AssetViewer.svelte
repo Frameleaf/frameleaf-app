@@ -43,7 +43,7 @@
     type StackResponseDto,
   } from '@immich/sdk';
   import { CommandPaletteDefaultProvider } from '@immich/ui';
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
   import type { SwipeCustomEvent } from 'svelte-gestures';
   import { t } from 'svelte-i18n';
   import { fly } from 'svelte/transition';
@@ -83,6 +83,11 @@
      * loads a list of its own, so a caller that cannot supply one simply has no filmstrip.
      */
     filmstripAssets?: TimelineAsset[];
+    /**
+     * FL-55: what the activity side panel shows for the open item. A shared space mounts its own
+     * per-item conversation here; without it the panel keeps the album activity viewer.
+     */
+    activityPanel?: Snippet<[AssetResponseDto]>;
   }
 
   let {
@@ -101,6 +106,7 @@
     onClose,
     onRandom,
     filmstripAssets = [],
+    activityPanel,
   }: Props = $props();
 
   const {
@@ -710,13 +716,17 @@
       class="row-span-5 row-start-1 w-90 overflow-y-auto transition-all md:w-115 dark:border-l dark:border-s-immich-dark-gray"
       translate="yes"
     >
-      <ActivityViewer
-        disabled={!album.isActivityEnabled}
-        assetType={asset.type}
-        albumUsers={album.albumUsers}
-        albumId={album.id}
-        assetId={asset.id}
-      />
+      {#if activityPanel}
+        {@render activityPanel(asset)}
+      {:else}
+        <ActivityViewer
+          disabled={!album.isActivityEnabled}
+          assetType={asset.type}
+          albumUsers={album.albumUsers}
+          albumId={album.id}
+          assetId={asset.id}
+        />
+      {/if}
     </div>
   {/if}
 </section>
