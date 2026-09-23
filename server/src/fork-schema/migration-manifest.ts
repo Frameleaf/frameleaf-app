@@ -85,6 +85,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000540-AddPhotoToolsPresetsAndExports',
   '2100000000560-AddOperationalMetricSample',
   '2100000000580-AddStudioExportVersions',
+  '2100000000570-AddWorkflowDefinitions',
   '2100000000590-HardenMediaOperationRetryAndCheckpoints',
   '2100000000610-AddClassificationRule',
 ]);

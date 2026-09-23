@@ -89,9 +89,8 @@ describe('catalog manifests', () => {
     expect(getCatalogTableLocks(originalOfficial)).toEqual(
       [...official.tables, ...forkTables].map(({ identity }) => identity).toSorted(),
     );
-    // 135 public tables, including preservation, classification, analytics and Studio exports,
-    // plus 33 fork tables, including seven iCloud tables and asset_develop_revision.
-    expect(getCatalogTableLocks(fork)).toHaveLength(168);
+    // 137 public tables and 33 fork tables, including workflow definitions and execution details.
+    expect(getCatalogTableLocks(fork)).toHaveLength(170);
     // 66 v3.1.0 public + the 33 fork tables
     expect(getCatalogTableLocks(originalOfficial)).toHaveLength(99);
   });

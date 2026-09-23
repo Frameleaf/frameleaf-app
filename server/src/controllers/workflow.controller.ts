@@ -7,6 +7,7 @@ import {
   WorkflowGetLogsDto,
   WorkflowLogEntryDto,
   WorkflowResponseDto,
+  WorkflowRunParamsDto,
   WorkflowSearchDto,
   WorkflowShareResponseDto,
   WorkflowTriggerResponseDto,
@@ -114,6 +115,19 @@ export class WorkflowController {
   })
   deleteWorkflow(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
     return this.service.delete(auth, id);
+  }
+
+  @Post(':id/runs/:runId/retry')
+  @Authenticated({ permission: Permission.WorkflowUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Retry a workflow run',
+    description:
+      'Run a logged workflow run again, as its next attempt, for the photo or video that started it. The workflow must be enabled and able to run.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  retryWorkflowRun(@Auth() auth: AuthDto, @Param() { id, runId }: WorkflowRunParamsDto): Promise<void> {
+    return this.service.retryRun(auth, id, runId);
   }
 
   @Get(':id/logs')

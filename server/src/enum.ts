@@ -2664,6 +2664,32 @@ export const WorkflowResultSchema = z
   .describe('Workflow run result')
   .meta({ id: 'WorkflowResult' });
 
+/** Why a stored workflow definition cannot run on this server (FL-82). */
+export enum WorkflowIssueCode {
+  TriggerUnavailable = 'trigger_unavailable',
+  MethodUnavailable = 'method_unavailable',
+  MethodIncompatible = 'method_incompatible',
+  ConfigInvalid = 'config_invalid',
+}
+
+export const WorkflowIssueCodeSchema = z
+  .enum(WorkflowIssueCode)
+  .describe('Why a workflow definition cannot run')
+  .meta({ id: 'WorkflowIssueCode' });
+
+/** Why a logged workflow run failed (FL-82). */
+export enum WorkflowRunErrorCode {
+  /** The definition could not run on this server; nothing was executed. */
+  Unsupported = 'unsupported',
+  /** A plugin step failed. */
+  StepFailed = 'step_failed',
+}
+
+export const WorkflowRunErrorCodeSchema = z
+  .enum(WorkflowRunErrorCode)
+  .describe('Why a workflow run failed')
+  .meta({ id: 'WorkflowRunErrorCode' });
+
 export enum SearchOrderField {
   FileCreatedAt = 'fileCreatedAt',
   LocalDateTime = 'localDateTime',

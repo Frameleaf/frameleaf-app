@@ -57,6 +57,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000540-AddPhotoToolsPresetsAndExports')).toBe('legacy-fork');
     expect(classifyMigration('2100000000560-AddOperationalMetricSample')).toBe('legacy-fork');
     expect(classifyMigration('2100000000580-AddStudioExportVersions')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000570-AddWorkflowDefinitions')).toBe('legacy-fork');
     expect(classifyMigration('2100000000590-HardenMediaOperationRetryAndCheckpoints')).toBe('legacy-fork');
     expect(classifyMigration('2100000000610-AddClassificationRule')).toBe('legacy-fork');
   });

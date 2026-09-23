@@ -24,17 +24,34 @@ describe(WorkflowController.name, () => {
   });
 
   describe('POST /workflows', () => {
-    it(`should require a valid trigger`, async () => {
+    it(`should require a trigger`, async () => {
       const { status, body } = await request(ctx.getHttpServer())
         .post(`/workflows`)
-        .send({ trigger: 'invalid' })
+        .send({})
         .set('Authorization', `Bearer token`);
       expect(status).toBe(400);
       expect(body).toEqual(
-        errorDto.validationError([
-          { path: ['trigger'], message: expect.stringContaining('Invalid option: expected one of') },
-        ]),
+        errorDto.validationError([{ path: ['trigger'], message: expect.stringContaining('expected string') }]),
       );
+    });
+
+    it(`should pass an unavailable trigger to the service, which keeps it paused`, async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post(`/workflows`)
+        .send({ trigger: 'Schedule', enabled: false })
+        .set('Authorization', `Bearer token`);
+      expect(status).toBe(201);
+      expect(service.create).toHaveBeenCalledWith(undefined, expect.objectContaining({ trigger: 'Schedule' }));
+    });
+
+    it(`should refuse more than 100 steps`, async () => {
+      const steps = Array.from({ length: 101 }, () => ({ method: 'plugin#method', config: null }));
+      const { status } = await request(ctx.getHttpServer())
+        .post(`/workflows`)
+        .send({ trigger: WorkflowTrigger.AssetCreate, steps })
+        .set('Authorization', `Bearer token`);
+      expect(status).toBe(400);
+      expect(service.create).not.toHaveBeenCalled();
     });
 
     it(`should require a valid enabled value`, async () => {
@@ -55,6 +72,26 @@ describe(WorkflowController.name, () => {
         .set('Authorization', `Bearer token`);
       expect(status).toBe(201);
       expect(service.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /workflows/:id/runs/:runId/retry', () => {
+    it(`should require uuids`, async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post(`/workflows/00000000-0000-4000-8000-000000000000/runs/invalid/retry`)
+        .set('Authorization', `Bearer token`);
+      expect(status).toBe(400);
+      expect(service.retryRun).not.toHaveBeenCalled();
+    });
+
+    it(`should retry a run`, async () => {
+      const id = '00000000-0000-4000-8000-000000000001';
+      const runId = '00000000-0000-4000-8000-000000000002';
+      const { status } = await request(ctx.getHttpServer())
+        .post(`/workflows/${id}/runs/${runId}/retry`)
+        .set('Authorization', `Bearer token`);
+      expect(status).toBe(204);
+      expect(service.retryRun).toHaveBeenCalledWith(undefined, id, runId);
     });
   });
 
