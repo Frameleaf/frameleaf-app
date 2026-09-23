@@ -55,6 +55,7 @@ import { AssetMetadataAuditTable } from 'src/schema/tables/asset-metadata-audit.
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetOcrAuditTable } from 'src/schema/tables/asset-ocr-audit.table.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
+import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
 import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
@@ -106,7 +107,9 @@ import { SessionTable } from 'src/schema/tables/session.table.js';
 import { SharedLinkAssetTable } from 'src/schema/tables/shared-link-asset.table.js';
 import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
 import { SharedSpaceAlbumTable } from 'src/schema/tables/shared-space-album.table.js';
+import { SharedSpaceEventTable } from 'src/schema/tables/shared-space-event.table.js';
 import { SharedSpaceInviteTable } from 'src/schema/tables/shared-space-invite.table.js';
+import { SharedSpaceMentionTable } from 'src/schema/tables/shared-space-mention.table.js';
 import { SharedSpacePersonTable } from 'src/schema/tables/shared-space-person.table.js';
 import { SharedSpaceVisitTable } from 'src/schema/tables/shared-space-visit.table.js';
 import { SmartAlbumAssetTable } from 'src/schema/tables/smart-album-asset.table.js';
@@ -166,6 +169,7 @@ export class ImmichDatabase {
     AssetJobStatusTable,
     AssetOcrTable,
     AssetOcrAuditTable,
+    AssetRestorationTable,
     AssetTable,
     AssetFileTable,
     AssetHealthRunTable,
@@ -212,7 +216,9 @@ export class ImmichDatabase {
     SharedLinkAssetTable,
     SharedLinkTable,
     SharedSpaceAlbumTable,
+    SharedSpaceEventTable,
     SharedSpaceInviteTable,
+    SharedSpaceMentionTable,
     SharedSpacePersonTable,
     SharedSpaceVisitTable,
     SmartAlbumTable,
@@ -310,6 +316,7 @@ export interface DB {
   asset_job_status: AssetJobStatusTable;
   asset_ocr: AssetOcrTable;
   asset_ocr_audit: AssetOcrAuditTable;
+  asset_restoration: AssetRestorationTable;
   asset_audio: AssetAudioTable;
   asset_video: AssetVideoTable;
   asset_keyframe: AssetKeyframeTable;
@@ -373,7 +380,9 @@ export interface DB {
   shared_link: SharedLinkTable;
   shared_link_asset: SharedLinkAssetTable;
   shared_space_album: SharedSpaceAlbumTable;
+  shared_space_event: SharedSpaceEventTable;
   shared_space_invite: SharedSpaceInviteTable;
+  shared_space_mention: SharedSpaceMentionTable;
   shared_space_person: SharedSpacePersonTable;
   shared_space_visit: SharedSpaceVisitTable;
 

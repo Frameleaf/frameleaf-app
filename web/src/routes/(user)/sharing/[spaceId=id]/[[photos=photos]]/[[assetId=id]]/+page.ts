@@ -3,6 +3,7 @@ import {
   AlbumKind,
   getAlbumInfo,
   getAlbumTree,
+  getSharedSpaceActivity,
   getSharedSpaceAlbums,
   getSharedSpaceMembers,
   getSharedSpaceNew,
@@ -42,13 +43,16 @@ export const load = (async ({ params, url, depends }) => {
   await authenticate(url);
   depends('space:data');
 
-  const [space, { members }, tree, { albums: linkedAlbums }, people, newSince] = await Promise.all([
+  // The activity feed's first page rides along so the Activity segment can carry its unread count
+  // from the first paint; the panel itself pages older events on demand.
+  const [space, { members }, tree, { albums: linkedAlbums }, people, newSince, activity] = await Promise.all([
     getAlbumInfo({ id: params.spaceId }),
     getSharedSpaceMembers({ id: params.spaceId }),
     getAlbumTree(),
     getSharedSpaceAlbums({ id: params.spaceId }),
     getSharedSpacePeople({ id: params.spaceId }),
     getSharedSpaceNew({ id: params.spaceId }),
+    getSharedSpaceActivity({ id: params.spaceId }),
   ]).catch((failure: unknown) => {
     if (isHttpError(failure) && isSpaceUnavailableStatus(failure.status)) {
       error(404, SPACE_UNAVAILABLE);
@@ -72,6 +76,7 @@ export const load = (async ({ params, url, depends }) => {
     linkedAlbums,
     people,
     newSince,
+    activity,
     meta: {
       title: space.albumName || $t('frameleaf_spaces_title'),
     },

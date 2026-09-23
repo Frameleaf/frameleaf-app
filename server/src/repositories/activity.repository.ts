@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { type Insertable, type Kysely, type NotNull, sql } from 'kysely';
+import { type Insertable, type Kysely, type NotNull, type Updateable, sql } from 'kysely';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -66,6 +66,37 @@ export class ActivityRepository {
   @GenerateSql({ params: [DummyValue.UUID] })
   async delete(id: string) {
     await this.db.deleteFrom('activity').where('id', '=', asUuid(id)).execute();
+  }
+
+  /** One activity with its author, for the shared space comment endpoints (FL-55). */
+  getById(id: string) {
+    return this.db
+      .selectFrom('activity')
+      .selectAll('activity')
+      .select((eb) =>
+        jsonObjectFrom(eb.selectFrom('user').whereRef('user.id', '=', 'activity.userId').select(columns.user)).as(
+          'user',
+        ),
+      )
+      .$narrowType<{ user: NotNull }>()
+      .where('activity.id', '=', asUuid(id))
+      .executeTakeFirst();
+  }
+
+  /** Rewrite a comment's text. The `updatedAt` trigger records when. */
+  update(id: string, activity: Updateable<ActivityTable>) {
+    return this.db
+      .updateTable('activity')
+      .set(activity)
+      .where('id', '=', asUuid(id))
+      .returningAll()
+      .returning((eb) =>
+        jsonObjectFrom(eb.selectFrom('user').whereRef('user.id', '=', 'activity.userId').select(columns.user)).as(
+          'user',
+        ),
+      )
+      .$narrowType<{ user: NotNull }>()
+      .executeTakeFirstOrThrow();
   }
 
   @GenerateSql({ params: [{ albumId: DummyValue.UUID, assetId: DummyValue.UUID, excludeNsfw: true }] })

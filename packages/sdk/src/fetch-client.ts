@@ -1922,6 +1922,139 @@ export type AssetDevelopRevertDto = {
     /** Rendered revision to make current again; omitted, the original becomes current */
     revisionId?: string;
 };
+export type AssetRestorationRegionDto = {
+    /** Preview area height as a fraction of the frame */
+    h: number;
+    /** Video only: where the preview clip starts. Ignored for stills. */
+    startSeconds?: number;
+    /** Preview area width as a fraction of the frame */
+    w: number;
+    /** Left edge of the preview area as a fraction of the frame width */
+    x: number;
+    /** Top edge of the preview area as a fraction of the frame height */
+    y: number;
+};
+export type AssetRestorationRequestDto = {
+    /** The processing destination this restoration runs on. Required; never inferred. */
+    destinationId: string;
+    /** Preserve fine film grain instead of smoothing it */
+    keepGrain?: boolean;
+    mode: AssetRestorationMode;
+    region?: AssetRestorationRegionDto;
+    /** Upscale factor. Output is additionally capped at 4K. */
+    upscale?: 1 | 2 | 4;
+};
+export type AssetRestorationEstimateDto = {
+    /** Measured upload throughput for this destination and workload, or null with no samples */
+    bytesPerSecond: number | null;
+    /** Approximate bytes the full render sends */
+    fullBytes: number;
+    /** Estimated full render time from measured throughput, or null when nothing is measured */
+    fullSeconds: number | null;
+    /** Approximate bytes the preview sends */
+    previewBytes: number;
+    /** Estimated preview time from measured throughput, or null when nothing is measured */
+    previewSeconds: number | null;
+    /** Successful requests the throughput was measured from */
+    sampleCount: number;
+    /** Length of the measurement window */
+    windowDays: number;
+};
+export type AssetRestorationResponseDto = {
+    /** The job currently running for this restoration, for cancel and retry; null when idle */
+    activeOperationId: string | null;
+    assetId: string;
+    createdAt: string;
+    /** The bound destination, or null once an administrator removed it */
+    destinationId: string | null;
+    destinationKind: MlDestinationKind;
+    destinationName: string;
+    error: string | null;
+    estimate: (AssetRestorationEstimateDto) | null;
+    /** The durable job that renders the full result */
+    fullOperationId: string | null;
+    /** Both preview files exist */
+    hasPreview: boolean;
+    /** The full-resolution result exists */
+    hasResult: boolean;
+    /** Restoration ID */
+    id: string;
+    /** The owner chose this result as the asset’s playback version */
+    isCurrent: boolean;
+    keepGrain: boolean;
+    mode: AssetRestorationMode;
+    /** Model the adapter reported, for provenance */
+    modelName: string | null;
+    modelVersion: string | null;
+    outputHeight: number | null;
+    outputWidth: number | null;
+    previewExpiresAt: string | null;
+    /** The durable job that rendered the preview */
+    previewOperationId: string | null;
+    previewReadyAt: string | null;
+    previewRegion: AssetRestorationRegionDto;
+    restoredAt: string | null;
+    resultExpiresAt: string | null;
+    reviewedAt: string | null;
+    /** Per-asset sequence number, 1 for the first restoration */
+    revision: number;
+    sourceDurationSeconds: number | null;
+    sourceHeight: number;
+    sourceType: AssetRestorationSourceType;
+    sourceWidth: number;
+    status: AssetRestorationStatus;
+    updatedAt: string;
+    upscale: number;
+    workload: MlWorkload;
+};
+export type AssetRestorationListResponseDto = {
+    assetId: string;
+    /** The restoration the owner chose as the playback version; null means the original */
+    currentRestorationId: string | null;
+    /** Every restoration of the asset, newest first */
+    items: AssetRestorationResponseDto[];
+};
+export type AssetRestorationDestinationDto = {
+    /** The server would admit this workload on this destination right now */
+    available: boolean;
+    /** True when no consent is needed or an administrator recorded it */
+    consentGranted: boolean;
+    consentRequired: boolean;
+    estimate: AssetRestorationEstimateDto;
+    health: MlDestinationHealth;
+    id: string;
+    kind: MlDestinationKind;
+    /** Media sent to this destination leaves the network */
+    leavesNetwork: boolean;
+    name: string;
+    /** Why the destination cannot be chosen, or null */
+    refusal: (MlAdmissionRefusal) | null;
+    refusalDetail: string | null;
+};
+export type AssetRestorationOptionsDto = {
+    /** The server has a restoration adapter. False means every request will fail honestly. */
+    adapterInstalled: boolean;
+    assetId: string;
+    destinations: AssetRestorationDestinationDto[];
+    /** Video length; null for stills */
+    durationSeconds: number | null;
+    mode: AssetRestorationMode;
+    /** Height the full render would produce after the 4K cap */
+    outputHeight: number;
+    /** Width the full render would produce after the 4K cap */
+    outputWidth: number;
+    /** Length of a video preview clip; null for stills */
+    previewSeconds: number | null;
+    sourceHeight: number;
+    sourceType: AssetRestorationSourceType;
+    sourceWidth: number;
+    upscale: number;
+    workload: MlWorkload;
+};
+export type AssetRestorationSelectDto = {
+    /** Restored revision to use as the playback version; omitted, the original is used */
+    restorationId?: string;
+};
 export type AssetEditActionItemResponseDto = {
     action: AssetEditAction;
     /** Asset edit ID */
@@ -2893,7 +3026,9 @@ export type StudioPreviewDto = {
     quality: StudioPreviewQuality;
     readyAt: string | null;
     requestedAt: string;
-    /** The exact revision this frame is bound to */
+    /** The stored project revision this frame was rendered for */
+    revision: number;
+    /** Digest of the authorized resolution the frame is bound to; changes with the revision and whenever access is re-resolved */
     revisionDigest: string;
     /** The seek this frame answers */
     seekGeneration: string;
@@ -2906,8 +3041,8 @@ export type StudioPreviewDto = {
     viewportWidth: number;
 };
 export type StudioPreviewResponseDto = {
-    /** The revision the project is on now */
-    currentRevisionDigest: string;
+    /** The stored revision the project is on now */
+    currentRevision: number;
     preview: StudioPreviewDto;
     /** Previews cancelled because the revision advanced */
     supersededPreviewIds: string[];
@@ -2916,8 +3051,8 @@ export type StudioPreviewRequestDto = {
     /** Studio project the frame belongs to */
     projectId: string;
     quality: StudioPreviewQuality;
-    /** Exact graph revision digest the frame is bound to; a superseded revision is refused */
-    revisionDigest: string;
+    /** Stored project revision the frame is bound to; a superseded revision is refused */
+    revision: number;
     /** The client's monotonic seek counter, echoed back on the result */
     seekGeneration?: number;
     time: StudioPreviewTimeDto;
@@ -4806,6 +4941,39 @@ export type SharedSpaceMembersResponseDto = {
     /** Members and pending invitations, owner first */
     members: SharedSpaceMemberResponseDto[];
 };
+export type SharedSpaceEventResponseDto = {
+    /** The comment or like this event announces, if any */
+    activityId: string | null;
+    /** Who did it; null once that account is gone */
+    actor: UserResponseDto | null;
+    /** How many of the items this event is about the reader may see */
+    assetCount: number;
+    /** The items this event is about that the reader may see and that are still in the shared space. Empty for a removal. */
+    assetIds: string[];
+    /** The comment text, for a comment event. Mentions are @{userId} tokens. */
+    comment: string | null;
+    /** When it happened */
+    createdAt: string;
+    /** Event ID */
+    id: string;
+    /** Members named in the comment */
+    mentions: UserResponseDto[];
+    /** A linked album's or person's name as the space knew it, or the new role; null otherwise */
+    subject: string | null;
+    /** The member a member event is about; null otherwise */
+    targetUser: UserResponseDto | null;
+    "type": SharedSpaceEventType;
+};
+export type SharedSpaceActivityResponseDto = {
+    /** Newest first */
+    events: SharedSpaceEventResponseDto[];
+    /** True when older events exist beyond this page */
+    hasMore: boolean;
+    /** When this member last marked the shared space seen; null if they never have */
+    lastVisitedAt: string | null;
+    /** Events by other members since then that this member may see. Capped at 500. */
+    unreadCount: number;
+};
 export type SharedSpaceAlbumResponseDto = {
     /** The linked album name */
     albumName: string;
@@ -4827,6 +4995,40 @@ export type SharedSpaceAlbumResponseDto = {
 export type SharedSpaceAlbumsResponseDto = {
     /** Albums linked into the shared space, by name */
     albums: SharedSpaceAlbumResponseDto[];
+};
+export type SharedSpaceCommentResponseDto = {
+    /** The item commented on; null for a comment on the space itself */
+    assetId: string | null;
+    /** True when the caller may remove the comment */
+    canDelete: boolean;
+    /** True when the caller may change the text */
+    canEdit: boolean;
+    /** The text, with @{userId} mention tokens */
+    comment: string;
+    /** When it was written */
+    createdAt: string;
+    /** Comment ID */
+    id: string;
+    /** Members named in the comment */
+    mentions: UserResponseDto[];
+    /** When it was last edited */
+    updatedAt: string;
+    /** The author */
+    user: UserResponseDto;
+};
+export type SharedSpaceCommentsResponseDto = {
+    /** Oldest first */
+    comments: SharedSpaceCommentResponseDto[];
+};
+export type SharedSpaceCommentCreateDto = {
+    /** The item to comment on. Left out, the comment is on the space itself. */
+    assetId?: string;
+    /** The text. Mention a member with @{userId}; every mention must name a current member. */
+    comment: string;
+};
+export type SharedSpaceCommentUpdateDto = {
+    /** The text. Mention a member with @{userId}; every mention must name a current member. */
+    comment: string;
 };
 export type SharedSpaceNewResponseDto = {
     /** Items other members added since then */
@@ -7490,6 +7692,128 @@ export function downloadAsset({ edited, id, key, slug }: {
         slug
     }))}`, {
         ...opts
+    }));
+}
+/**
+ * List restorations of an asset
+ */
+export function getAssetRestorations({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetRestorationListResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations`, {
+        ...opts
+    }));
+}
+/**
+ * Request a restoration preview
+ */
+export function requestAssetRestoration({ id, assetRestorationRequestDto }: {
+    id: string;
+    assetRestorationRequestDto: AssetRestorationRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssetRestorationResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetRestorationRequestDto
+    })));
+}
+/**
+ * Choose the restoration used for playback
+ */
+export function setCurrentAssetRestoration({ id, assetRestorationSelectDto }: {
+    id: string;
+    assetRestorationSelectDto: AssetRestorationSelectDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetRestorationListResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations/current`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: assetRestorationSelectDto
+    })));
+}
+/**
+ * Get restoration options for an asset
+ */
+export function getAssetRestorationOptions({ id, mode, upscale }: {
+    id: string;
+    mode?: AssetRestorationMode;
+    upscale?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetRestorationOptionsDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations/options${QS.query(QS.explode({
+        mode,
+        upscale
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Discard a restoration
+ */
+export function discardAssetRestoration({ id, restorationId }: {
+    id: string;
+    restorationId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/restorations/${encodeURIComponent(restorationId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Accept a restoration preview
+ */
+export function acceptAssetRestoration({ id, restorationId }: {
+    id: string;
+    restorationId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetRestorationResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations/${encodeURIComponent(restorationId)}/accept`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * View a restoration file
+ */
+export function viewAssetRestorationFile({ id, kind, restorationId }: {
+    id: string;
+    kind?: AssetRestorationFileKind;
+    restorationId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/assets/${encodeURIComponent(id)}/restorations/${encodeURIComponent(restorationId)}/file${QS.query(QS.explode({
+        kind
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Reject a restoration preview
+ */
+export function rejectAssetRestoration({ id, restorationId }: {
+    id: string;
+    restorationId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetRestorationResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations/${encodeURIComponent(restorationId)}/reject`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -10732,6 +11056,24 @@ export function acceptSharedSpaceInvitation({ id }: {
     }));
 }
 /**
+ * What happened in a shared space
+ */
+export function getSharedSpaceActivity({ id, before, take }: {
+    id: string;
+    before?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceActivityResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/activity${QS.query(QS.explode({
+        before,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * List albums linked into a shared space
  */
 export function getSharedSpaceAlbums({ id }: {
@@ -10770,6 +11112,67 @@ export function linkSharedSpaceAlbum({ id, albumId }: {
         ...opts,
         method: "PUT"
     }));
+}
+/**
+ * List comments in a shared space
+ */
+export function getSharedSpaceComments({ id, assetId }: {
+    id: string;
+    assetId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceCommentsResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/comments${QS.query(QS.explode({
+        assetId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Comment in a shared space
+ */
+export function createSharedSpaceComment({ id, sharedSpaceCommentCreateDto }: {
+    id: string;
+    sharedSpaceCommentCreateDto: SharedSpaceCommentCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: SharedSpaceCommentResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/comments`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: sharedSpaceCommentCreateDto
+    })));
+}
+/**
+ * Remove a shared space comment
+ */
+export function deleteSharedSpaceComment({ id, commentId }: {
+    id: string;
+    commentId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Edit a shared space comment
+ */
+export function updateSharedSpaceComment({ id, commentId, sharedSpaceCommentUpdateDto }: {
+    id: string;
+    commentId: string;
+    sharedSpaceCommentUpdateDto: SharedSpaceCommentUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceCommentResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: sharedSpaceCommentUpdateDto
+    })));
 }
 /**
  * Decline a shared space invitation
@@ -12067,6 +12470,20 @@ export enum ReactionType {
     Comment = "comment",
     Like = "like"
 }
+export enum SharedSpaceEventType {
+    AssetsAdded = "AssetsAdded",
+    AssetsRemoved = "AssetsRemoved",
+    AlbumLinked = "AlbumLinked",
+    AlbumUnlinked = "AlbumUnlinked",
+    PersonLinked = "PersonLinked",
+    PersonUnlinked = "PersonUnlinked",
+    MemberJoined = "MemberJoined",
+    MemberLeft = "MemberLeft",
+    MemberRemoved = "MemberRemoved",
+    MemberRoleChanged = "MemberRoleChanged",
+    Comment = "Comment",
+    Like = "Like"
+}
 export enum UserAvatarColor {
     Primary = "primary",
     Pink = "pink",
@@ -12210,6 +12627,7 @@ export enum NotificationType {
     AlbumInvite = "AlbumInvite",
     AlbumUpdate = "AlbumUpdate",
     ClusterGroupRequest = "ClusterGroupRequest",
+    SharedSpaceMention = "SharedSpaceMention",
     Custom = "Custom"
 }
 export enum UserStatus {
@@ -12475,6 +12893,35 @@ export enum AssetDevelopPreset {
 export enum AssetDevelopFileKind {
     Master = "master",
     Preview = "preview"
+}
+export enum AssetRestorationMode {
+    Faithful = "faithful",
+    Creative = "creative"
+}
+export enum AssetRestorationSourceType {
+    Image = "image",
+    Video = "video"
+}
+export enum AssetRestorationStatus {
+    PreviewQueued = "preview_queued",
+    PreviewRendering = "preview_rendering",
+    PreviewReady = "preview_ready",
+    PreviewFailed = "preview_failed",
+    PreviewCancelled = "preview_cancelled",
+    Accepted = "accepted",
+    Restoring = "restoring",
+    Restored = "restored",
+    RestoreFailed = "restore_failed",
+    RestoreCancelled = "restore_cancelled",
+    Rejected = "rejected",
+    Discarded = "discarded",
+    Expired = "expired"
+}
+export enum AssetRestorationFileKind {
+    Before = "before",
+    After = "after",
+    Result = "result",
+    ResultPreview = "result_preview"
 }
 export enum AssetEditAction {
     Crop = "crop",

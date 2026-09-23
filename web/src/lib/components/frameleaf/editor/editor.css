@@ -1032,6 +1032,123 @@
   white-space: nowrap;
 }
 
+/* Restoration (FL-115) ------------------------------------------------ */
+.ed-button.primary {
+  border-color: var(--fl-accent);
+  background: var(--fl-accent);
+  color: var(--fl-accent-text, #fff);
+}
+.ed-button.primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.ed-chip.accent {
+  border-color: var(--fl-accent);
+  color: var(--fl-accent);
+}
+.ed-status.muted {
+  color: var(--fl-viewer-muted);
+}
+.rs-lead {
+  margin: 4px 0 0;
+  color: var(--fl-viewer-muted);
+  font-size: var(--fl-font-small);
+}
+.rs-help {
+  margin: 8px 0 0;
+  color: var(--fl-viewer-muted);
+  font-size: var(--fl-font-micro);
+}
+.rs-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--fl-warning, #d9a441);
+  border-radius: var(--fl-radius-control);
+  background: #d9a44118;
+  color: var(--fl-viewer-text);
+  font-size: var(--fl-font-micro);
+}
+.rs-field {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: var(--fl-font-small);
+}
+.rs-field > span {
+  color: var(--fl-viewer-muted);
+  font-size: var(--fl-font-micro);
+}
+.rs-field select {
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid #ffffff24;
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-viewer-canvas);
+  color: var(--fl-viewer-text);
+  font: inherit;
+  font-size: var(--fl-font-small);
+}
+.rs-check {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: center;
+  margin-top: 12px;
+  font-size: var(--fl-font-small);
+}
+.rs-check small {
+  grid-column: 2;
+  color: var(--fl-viewer-muted);
+  font-size: var(--fl-font-micro);
+}
+.rs-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: var(--fl-font-small);
+}
+.rs-facts dt {
+  color: var(--fl-viewer-muted);
+}
+.rs-facts dd {
+  margin: 0;
+}
+.rs-actions {
+  display: grid;
+  gap: 6px;
+  margin-top: 18px;
+}
+.rs-actions .ed-button {
+  width: 100%;
+}
+.rs-progress {
+  grid-column: 1 / -1;
+  inline-size: 100%;
+  block-size: 4px;
+  accent-color: var(--fl-accent);
+}
+.rs-error {
+  grid-column: 1 / -1;
+  color: var(--fl-danger);
+}
+.ed-version .rs-error,
+.ed-version .rs-progress {
+  margin-top: 4px;
+}
+.ed-shell.video.restoring {
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+.ed-shell.video.restoring .ed-panel {
+  grid-column: 2;
+}
+.ed-restore-stage {
+  position: absolute;
+  inset: 28px;
+}
+
 /* Responsive --------------------------------------------------------- */
 @media (max-width: 1000px) {
   .ed-shell {

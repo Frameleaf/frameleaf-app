@@ -1,7 +1,6 @@
 <script lang="ts">
   import { goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
-  import ActivityViewer from '$lib/components/asset-viewer/ActivityViewer.svelte';
   import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
@@ -13,6 +12,7 @@
   import SharedSpaceNewSince from '$lib/components/frameleaf/SharedSpaceNewSince.svelte';
   import SharedSpacePeople from '$lib/components/frameleaf/SharedSpacePeople.svelte';
   import SharedSpaceTimeline from '$lib/components/frameleaf/SharedSpaceTimeline.svelte';
+  import SpaceMediaComments from '$lib/components/frameleaf/SpaceMediaComments.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { canEdit } from '$lib/frameleaf/album-directory';
   import { SpacePhotoSet } from '$lib/frameleaf/space-photos.svelte';
@@ -21,6 +21,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import {
+    activityUnreadHint,
     canContribute,
     isSpaceOwner,
     newSinceFilter,
@@ -36,6 +37,7 @@
   import type {
     AlbumResponseDto,
     AssetResponseDto,
+    SharedSpaceActivityResponseDto,
     SharedSpaceAlbumResponseDto,
     SharedSpaceMemberResponseDto,
     SharedSpaceNewResponseDto,
@@ -83,6 +85,8 @@
     linkedAlbums?: SharedSpaceAlbumResponseDto[];
     people?: SharedSpacePeopleResponseDto;
     newSince?: SharedSpaceNewResponseDto | null;
+    /** The first page of the activity feed, so the Activity panel opens at once and its badge is right. */
+    activity?: SharedSpaceActivityResponseDto | null;
     /** Re-fetch after a change; the route owns the loader. */
     onRefresh: () => Promise<void> | void;
   }
@@ -95,6 +99,7 @@
     linkedAlbums = [],
     people = { linked: [], candidates: [] },
     newSince = null,
+    activity = null,
     onRefresh,
   }: Props = $props();
 
@@ -116,7 +121,16 @@
     activity: $t('frameleaf_spaces_panel_activity'),
     members: $t('frameleaf_spaces_panel_members'),
   });
-  const panelOptions = $derived(SPACE_PANELS.map((value) => ({ value, label: panelLabels[value] })));
+  // The loader's feed until the member marks the space seen; then the server's newer one.
+  let activityFeed = $derived<SharedSpaceActivityResponseDto | null>(activity);
+  // The Activity segment carries how much has happened since this member last marked the space seen.
+  const panelOptions = $derived(
+    SPACE_PANELS.map((value) => ({
+      value,
+      label: panelLabels[value],
+      hint: value === 'activity' ? activityUnreadHint(activityFeed) : undefined,
+    })),
+  );
 
   // A shallow replace: the address follows the panel without re-running the loader.
   const choosePanel = (next: string) => {
@@ -342,8 +356,11 @@
       {:else if panel === 'activity'}
         <SharedSpaceActivity
           {space}
+          {members}
+          feed={activityFeed}
           onClose={() => choosePanel('timeline')}
           onOpenAsset={(assetId) => void openAsset(assetId)}
+          onMarked={(next) => (activityFeed = next)}
         />
       {:else}
         <SharedSpaceMembers {space} {members} onChanged={onRefresh} />
@@ -353,8 +370,9 @@
 </section>
 
 <!--
-  The space's own viewer. It walks the same photo set the grid draws, and its activity side panel is
-  the space's per-item conversation.
+  The space's own viewer. It walks the same photo set the grid draws, and its side panel is the
+  space's conversation about the open item: comments with @mentions, edit and delete of one's own,
+  and owner/editor moderation, through the shared space comment endpoints.
 -->
 <ResultsAssetViewer
   assets={viewerAssets}
@@ -370,21 +388,8 @@
 />
 
 {#snippet spaceComments(asset: AssetResponseDto)}
-  <!--
-    TODO(FL-55 collaboration): mount the space's per-item comments here, replacing the interim viewer
-    below, as
-      <SpaceMediaComments spaceId={space.id} assetId={asset.id} />
-    from `$lib/components/frameleaf/SpaceMediaComments.svelte` (branch codex/FL-55-space-collaboration).
-    Until it lands, the album activity viewer keeps likes and comments on the item working.
-  -->
   <div class="space-comments" data-space-comments-mount data-space-id={space.id} data-comments-asset-id={asset.id}>
-    <ActivityViewer
-      disabled={!space.isActivityEnabled}
-      assetType={asset.type}
-      albumUsers={space.albumUsers}
-      albumId={space.id}
-      assetId={asset.id}
-    />
+    <SpaceMediaComments spaceId={space.id} assetId={asset.id} onClose={() => assetViewerManager.closeActivityPanel()} />
   </div>
 {/snippet}
 
