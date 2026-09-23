@@ -222,6 +222,8 @@ export class MediaOperationService {
    *   without this a read-only key could queue a delete.
    * - The action's payload is complete and well formed.
    * - The album or tags the action writes to are ones this account may write to.
+   * - A job that reaches Locked items comes from an unlocked session, because the worker that runs
+   *   it can reach them and must not become a way round the PIN.
    *
    * What it deliberately does not check is access to each asset. That is the worker's job, item by
    * item, at the moment it applies the change — access can be revoked between now and then, and a
@@ -254,6 +256,7 @@ export class MediaOperationService {
     }
 
     await this.requireTargetAccess(auth, dto.action, payload);
+    await this.requireUnlockedFor(auth, assetIds);
 
     const snapshot: BulkOperationSnapshot = {
       action: dto.action,
@@ -431,6 +434,7 @@ export class MediaOperationService {
     }
 
     await this.requireTargetAccess(auth, snapshot.action, snapshot.payload);
+    await this.requireUnlockedFor(auth, remaining);
 
     const retrySnapshot: BulkOperationSnapshot = {
       ...snapshot,
@@ -461,6 +465,26 @@ export class MediaOperationService {
 
     this.logger.log(`Bulk media operation ${operation.id} retried as ${retried.id} (${remaining.length} items)`);
     return mapOperation(retried);
+  }
+
+  /**
+   * The Locked folder's PIN, enforced at submit.
+   *
+   * The worker is a system actor that can reach the owner's Locked items (owner decision,
+   * September 22, 2026). That is only safe if nobody can hand it Locked items without having
+   * unlocked the folder first — otherwise this endpoint would be a way round the PIN. So a job that
+   * touches any Locked item must come from an elevated session, exactly as a direct change would.
+   * API keys and ordinary sessions can still queue jobs over everything else.
+   */
+  private async requireUnlockedFor(auth: AuthDto, assetIds: string[]): Promise<void> {
+    if (auth.session?.hasElevatedPermission) {
+      return;
+    }
+
+    const locked = await this.repository.countLockedAssets(auth.user.id, assetIds);
+    if (locked > 0) {
+      throw new ForbiddenException('Unlock the Locked folder to include Locked items in this job');
+    }
   }
 
   /**

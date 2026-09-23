@@ -73,6 +73,7 @@ describe(MediaOperationService.name, () => {
       getUnreleasedRemoteOperations: vi.fn().mockResolvedValue([]),
       getBulkByRequestId: vi.fn().mockResolvedValue(undefined),
       getActiveRetry: vi.fn().mockResolvedValue(undefined),
+      countLockedAssets: vi.fn().mockResolvedValue(0),
     } as unknown as MediaOperationRepository;
 
     sut = new MediaOperationService(mocks.logger as never, repository, mocks.access as never);
@@ -306,6 +307,30 @@ describe(MediaOperationService.name, () => {
       expect(repository.create).toHaveBeenCalledWith(
         expect.objectContaining({ snapshot: expect.objectContaining({ apiKeyId: apiKey.id }) }),
       );
+    });
+
+    it('refuses Locked items from a session that has not been unlocked', async () => {
+      vi.mocked(repository.countLockedAssets).mockResolvedValue(1);
+
+      await expect(
+        sut.createBulk(authStub.user1, { action: MediaOperationBulkAction.Favorite, assetIds }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repository.countLockedAssets).toHaveBeenCalledWith(authStub.user1.user.id, assetIds);
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts Locked items from an unlocked session', async () => {
+      vi.mocked(repository.countLockedAssets).mockResolvedValue(2);
+      const auth = { ...authStub.user1, session: { id: newUuid(), hasElevatedPermission: true } };
+
+      await sut.createBulk(auth, {
+        action: MediaOperationBulkAction.ChangeLocation,
+        assetIds,
+        payload: { latitude: 1, longitude: 2 },
+      });
+
+      expect(repository.countLockedAssets).not.toHaveBeenCalled();
+      expect(repository.create).toHaveBeenCalled();
     });
 
     it('never runs on a shared link', async () => {
