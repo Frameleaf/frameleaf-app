@@ -102,6 +102,23 @@ describe('the duplicate review session', () => {
     expect(session.groups.map(({ duplicateId }) => duplicateId)).toEqual(['forest']);
     expect(session.progress.has('lake')).toBe(false);
     expect(session.tracking).toBe(0);
+    // decided in this visit: still counted, and still listed under "All results"
+    expect(session.reviewed.has('lake')).toBe(true);
+    expect(session.allGroups.map(({ duplicateId }) => duplicateId)).toEqual(['forest', 'lake']);
+  });
+
+  it('never starts following again once the page is gone', async () => {
+    await session.decide([lakeDecision]);
+    let answer: (detail: MediaOperationDetailDto) => void = () => {};
+    gateway.getOperation.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+
+    const polling = session.poll();
+    session.destroy();
+    answer(detail({ status: MediaOperationStatus.Completed, processedUnits: '2' }));
+    await polling;
+
+    expect(gateway.getReview).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('shows why a group was not decided, and leaves it in the review', async () => {

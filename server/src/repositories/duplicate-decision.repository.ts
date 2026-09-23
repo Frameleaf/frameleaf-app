@@ -74,6 +74,8 @@ export class DuplicateDecisionRepository {
       .select(['asset.id', 'asset.ownerId'])
       .select((eb) => eb.ref('asset.duplicateId').$castTo<string>().as('duplicateId'))
       .$call(withDefaultVisibility)
+      // the same join the review list and resolve read a group through: a photo without metadata is in neither
+      .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .where('asset.duplicateId', '=', anyUuid(duplicateIds))
       .where('asset.deletedAt', 'is', null)
       .where('asset.stackId', 'is', null)
@@ -196,6 +198,57 @@ export class DuplicateDecisionRepository {
   }
 
   /**
+   * Take these photos out of their group — and only these: a photo that joined the group after the
+   * owner reviewed it, or one the review never showed, stays in it (FL-61 keep-all and stack).
+   */
+  async unlink(ownerId: string, assetIds: string[], duplicateId: string): Promise<void> {
+    if (assetIds.length === 0) {
+      return;
+    }
+
+    await this.db
+      .updateTable('asset')
+      .set({ duplicateId: null })
+      .where('asset.ownerId', '=', asUuid(ownerId))
+      .where('asset.id', '=', anyUuid(assetIds))
+      .where('asset.duplicateId', '=', asUuid(duplicateId))
+      .execute();
+  }
+
+  /** A durable job's status and lineage, for deciding who may carry on a decision it started. */
+  getOperation(id: string): Promise<{ id: string; status: string; retryOfId: string | null } | undefined> {
+    return this.db
+      .selectFrom('media_operation')
+      .select(['media_operation.id', 'media_operation.status', 'media_operation.retryOfId'])
+      .where('media_operation.id', '=', asUuid(id))
+      .executeTakeFirst();
+  }
+
+  /** Hand an unfinished decision to the job that retries the one that started it. */
+  async adopt(id: string, operationId: string): Promise<void> {
+    await this.db
+      .updateTable('duplicate_decision')
+      .set({ operationId })
+      .where('id', '=', id)
+      .where('appliedAt', 'is', null)
+      .execute();
+  }
+
+  /**
+   * Close a decision whose job ended without applying it and that nothing is retrying, so the group
+   * can be decided again. It is closed, not undone: `appliedAt` stays empty, and it is never offered
+   * for undo.
+   */
+  async close(id: string): Promise<void> {
+    await this.db
+      .updateTable('duplicate_decision')
+      .set({ undoneAt: new Date() })
+      .where('id', '=', id)
+      .where('appliedAt', 'is', null)
+      .execute();
+  }
+
+  /**
    * Record a decision before anything is changed. A replayed batch finds the row its first attempt
    * wrote (same job, same group) and gets that back instead of a second one.
    */
@@ -283,31 +336,27 @@ export class DuplicateDecisionRepository {
   }
 
   /**
-   * Claim a decision for an undo job. Succeeds when nothing is undoing it yet, or when this same job
-   * already is (a replayed batch). Returns false when another undo has it or it is already undone.
+   * Claim a decision for an undo job. Succeeds when nothing is undoing it yet, when this same job
+   * already is (a replayed batch), or when `takeOverFrom` — an undo job that has ended without
+   * finishing — held it. Returns false when a running undo has it or it is already undone.
    */
-  async beginUndo(id: string, undoOperationId: string): Promise<boolean> {
+  async beginUndo(id: string, undoOperationId: string, takeOverFrom?: string): Promise<boolean> {
     const row = await this.db
       .updateTable('duplicate_decision')
       .set({ undoOperationId })
       .where('id', '=', id)
       .where('undoneAt', 'is', null)
       .where('appliedAt', 'is not', null)
-      .where((eb) => eb.or([eb('undoOperationId', 'is', null), eb('undoOperationId', '=', undoOperationId)]))
+      .where((eb) =>
+        eb.or([
+          eb('undoOperationId', 'is', null),
+          eb('undoOperationId', '=', undoOperationId),
+          ...(takeOverFrom ? [eb('undoOperationId', '=', takeOverFrom)] : []),
+        ]),
+      )
       .returning('id')
       .executeTakeFirst();
     return !!row;
-  }
-
-  /** Give up an undo claim that found the group changed, so a later undo may try again. */
-  async releaseUndo(id: string, undoOperationId: string): Promise<void> {
-    await this.db
-      .updateTable('duplicate_decision')
-      .set({ undoOperationId: null })
-      .where('id', '=', id)
-      .where('undoOperationId', '=', undoOperationId)
-      .where('undoneAt', 'is', null)
-      .execute();
   }
 
   async markUndone(id: string): Promise<void> {

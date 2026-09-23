@@ -77,13 +77,6 @@ const MediaOperationBulkItemSchema = z
   .meta({ id: 'MediaOperationBulkItemDto' });
 
 /**
- * The payload a bulk action needs beyond its asset ids.
- *
- * Every field is optional here and required by the action that uses it; the service rejects a
- * submission whose action has no payload to work with rather than running it over the library with
- * a default.
- */
-/**
  * One duplicate group of a `resolve-duplicates` or `undo-duplicates` job (FL-61): the complete group
  * as the owner reviewed it and what they decided. The job's `assetIds` are these members, group by
  * group, and the worker compares each group with its current members before it changes anything.
@@ -101,6 +94,13 @@ const MediaOperationDuplicateGroupSchema = z
   })
   .meta({ id: 'MediaOperationDuplicateGroupDto' });
 
+/**
+ * The payload a bulk action needs beyond its asset ids.
+ *
+ * Every field is optional here and required by the action that uses it; the service rejects a
+ * submission whose action has no payload to work with rather than running it over the library with
+ * a default.
+ */
 const MediaOperationBulkPayloadSchema = z
   .object({
     albumId: z.uuidv4().optional(),

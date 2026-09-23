@@ -33,6 +33,7 @@
     suggestedKeeper,
     toggleKeepers,
     usesContactSheet,
+    type GroupProgress,
     type ReviewDecision,
     type ReviewFilter,
     type ReviewGroup,
@@ -119,25 +120,32 @@
   );
   onDestroy(() => session.destroy());
 
-  const groups = $derived(filterReviewGroups(session.groups, { query, filter, progress: session.progress }));
+  /** Each group's state on the page: a running or failed job, or decided in this visit. */
+  const progressView = $derived(
+    new Map<string, GroupProgress>([
+      ...[...session.reviewed.keys()].map((id): [string, GroupProgress] => [id, { state: 'done' }]),
+      ...session.progress,
+    ]),
+  );
+  const groups = $derived(filterReviewGroups(session.allGroups, { query, filter, progress: progressView }));
   const active = $derived(groups.find((group) => group.duplicateId === activeId) ?? groups[0]);
   /** The group in front, by id only: a refresh that re-reads the same group must not reset the choice. */
   const activeKey = $derived(active?.duplicateId ?? '');
-  const activeProgress = $derived(active ? session.progress.get(active.duplicateId) : undefined);
+  const activeProgress = $derived(active ? progressView.get(active.duplicateId) : undefined);
   const actionable = $derived(!!active && isActionable(active, activeProgress));
   const burst = $derived(isBurst(active));
   const contactSheet = $derived(usesContactSheet(active));
   const suggestedId = $derived(active ? suggestedKeeper(active) : null);
   const focused = $derived(active?.assets.find((asset) => asset.id === focusedId) ?? active?.assets[0]);
-  const actionableOf = (group: ReviewGroup) => isActionable(group, session.progress.get(group.duplicateId));
+  const actionableOf = (group: ReviewGroup) => isActionable(group, progressView.get(group.duplicateId));
   const eligible = $derived(groups.filter((group) => actionableOf(group)));
   const selectedGroups = $derived(
     groups.filter((group) => selected.includes(group.duplicateId) && actionableOf(group)),
   );
   const recommended = $derived(
-    selectedGroups.filter((group) => canSuggest(group, session.progress.get(group.duplicateId))),
+    selectedGroups.filter((group) => canSuggest(group, progressView.get(group.duplicateId))),
   );
-  const reviewed = $derived([...session.progress.values()].filter((progress) => progress.state === 'done').length);
+  const reviewed = $derived(session.reviewed.size);
   const currentIndex = $derived(active ? groups.findIndex((group) => group.duplicateId === active.duplicateId) : -1);
   const visibleStart = $derived(Math.max(0, Math.floor(scrollTop / DUPLICATE_QUEUE_ROW_HEIGHT) - 3));
   const visibleEnd = $derived(
@@ -378,7 +386,7 @@
   };
 
   const rowStatus = (group: ReviewGroup) => {
-    const progress = session.progress.get(group.duplicateId);
+    const progress = progressView.get(group.duplicateId);
     if (progress?.state === 'pending') {
       return $t('frameleaf_duplicates_status_processing');
     }
@@ -545,7 +553,7 @@
       >
         <div style:height="{groups.length * DUPLICATE_QUEUE_ROW_HEIGHT}px" style:position="relative">
           {#each groups.slice(visibleStart, visibleEnd) as group, offset (group.duplicateId)}
-            {@const progress = session.progress.get(group.duplicateId)}
+            {@const progress = progressView.get(group.duplicateId)}
             <div
               class="fl-dr-queue-row"
               class:active={active?.duplicateId === group.duplicateId}

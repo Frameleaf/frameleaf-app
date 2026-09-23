@@ -92,6 +92,12 @@ export class DuplicateReviewSession {
   history = $state<DuplicateDecisionHistoryDto>({ recent: [], active: [] });
   /** Per group, by duplicate id. Reactive: a queue row re-renders when its entry changes. */
   readonly progress = new SvelteMap<string, GroupProgress>();
+  /**
+   * Groups decided in this visit, as they were when they left the review. The server no longer lists
+   * them, so this is what keeps the "reviewed" count and the "All results" filter honest after a
+   * refresh. A group that comes back (an undo) leaves it again.
+   */
+  readonly reviewed = new SvelteMap<string, ReviewGroup>();
   /** True while an undo job this page submitted is running. */
   undoing = $state(false);
   loading = $state(false);
@@ -102,6 +108,8 @@ export class DuplicateReviewSession {
   #gateway: DuplicateReviewGateway;
   #pollMs: number;
   #onSettled?: (outcome: { action: MediaOperationBulkAction; failed: number }) => void;
+  /** Set once the page is gone: an answer still in flight must not start following again. */
+  #destroyed = false;
 
   constructor(
     initial: { groups: ReviewGroup[]; history: DuplicateDecisionHistoryDto },
@@ -126,6 +134,12 @@ export class DuplicateReviewSession {
   /** The decision jobs an undo can reach, newest first. */
   get undoable(): DuplicateDecisionBatchDto[] {
     return undoableBatches(this.history.recent);
+  }
+
+  /** The server's groups, then the ones decided in this visit that it no longer lists. */
+  get allGroups(): ReviewGroup[] {
+    const present = new Set(this.groups.map((group) => group.duplicateId));
+    return [...this.groups, ...[...this.reviewed.values()].filter((group) => !present.has(group.duplicateId))];
   }
 
   /** How many jobs this page is following. */
@@ -176,10 +190,19 @@ export class DuplicateReviewSession {
 
   /** Read the review and its history again from the server. */
   async refresh(): Promise<void> {
+    if (this.#destroyed) {
+      return;
+    }
     this.loading = true;
     try {
       const [groups, history] = await Promise.all([this.#gateway.getReview(), this.#gateway.getHistory()]);
+      if (this.#destroyed) {
+        return;
+      }
       this.groups = groups;
+      for (const group of groups) {
+        this.reviewed.delete(group.duplicateId);
+      }
       this.history = history;
       // a finished group has left the review; anything still running keeps its loader
       const present = new Set(groups.map((group) => group.duplicateId));
@@ -206,6 +229,7 @@ export class DuplicateReviewSession {
 
   /** Stop following. For leaving the page and for tests. */
   destroy() {
+    this.#destroyed = true;
     if (this.#timer !== null) {
       clearTimeout(this.#timer);
       this.#timer = null;
@@ -229,6 +253,9 @@ export class DuplicateReviewSession {
 
   /** Follow the jobs the server says are still running, so their groups keep their loaders. */
   #resumeActive() {
+    if (this.#destroyed) {
+      return;
+    }
     for (const operation of this.history.active) {
       if (this.#jobs.has(operation.operationId)) {
         continue;
@@ -250,6 +277,9 @@ export class DuplicateReviewSession {
   async #pollAll() {
     let finished = false;
     for (const [operationId, job] of [...this.#jobs.entries()]) {
+      if (this.#destroyed) {
+        return;
+      }
       let detail: MediaOperationDetailDto;
       try {
         detail = await this.#gateway.getOperation(operationId);
@@ -275,8 +305,17 @@ export class DuplicateReviewSession {
 
   /** Fold one answer from the server into the groups. Returns true when the job has finished. */
   apply(operationId: string, job: TrackedJob, detail: MediaOperationDetailDto): boolean {
+    if (this.#destroyed) {
+      return false;
+    }
     if (job.action === MediaOperationBulkAction.ResolveDuplicates) {
       for (const [duplicateId, progress] of groupProgressFrom(job.groups, detail)) {
+        if (progress?.state === 'done') {
+          const group = this.groups.find((candidate) => candidate.duplicateId === duplicateId);
+          if (group) {
+            this.reviewed.set(duplicateId, group);
+          }
+        }
         if (progress) {
           this.progress.set(duplicateId, progress);
         } else {
@@ -297,7 +336,7 @@ export class DuplicateReviewSession {
   }
 
   #schedule() {
-    if (this.#timer !== null || this.#jobs.size === 0) {
+    if (this.#destroyed || this.#timer !== null || this.#jobs.size === 0) {
       return;
     }
     this.#timer = setTimeout(() => {
