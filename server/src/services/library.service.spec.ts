@@ -5,7 +5,7 @@ import type { ILibraryBulkIdsJob, ILibraryFileJob } from 'src/types.js';
 import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { mapLibrary } from 'src/dtos/library.dto.js';
-import { AssetType, CronJob, ImmichWorker, JobName, JobStatus } from 'src/enum.js';
+import { AdminAuditAction, AssetType, CronJob, ImmichWorker, JobName, JobStatus } from 'src/enum.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -1301,6 +1301,62 @@ describe(LibraryService.name, () => {
           },
         ],
       });
+    });
+  });
+
+  describe('administrator history (FL-76)', () => {
+    const entry = (library: { id: string; name: string; ownerId: string }, action: AdminAuditAction) => ({
+      userId: library.ownerId,
+      actorId: authStub.admin.user.id,
+      libraryId: library.id,
+      action,
+      subject: library.name,
+      detail: null,
+    });
+
+    it("records a new library in its owner's history", async () => {
+      const library = factory.library();
+      mocks.library.create.mockResolvedValue(library);
+
+      await sut.create({ ownerId: library.ownerId }, authStub.admin);
+
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([entry(library, AdminAuditAction.LibraryCreated)]);
+    });
+
+    it('records a settings change', async () => {
+      const library = factory.library();
+      mocks.library.get.mockResolvedValue(library);
+      mocks.library.update.mockResolvedValue(library);
+
+      await sut.update(library.id, { name: library.name }, authStub.admin);
+
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([entry(library, AdminAuditAction.LibraryUpdated)]);
+    });
+
+    it('records a scan request', async () => {
+      const library = factory.library();
+      mocks.library.get.mockResolvedValue(library);
+
+      await sut.queueScan(library.id, authStub.admin);
+
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([entry(library, AdminAuditAction.LibraryScanQueued)]);
+    });
+
+    it('records a removal', async () => {
+      const library = factory.library();
+      mocks.library.get.mockResolvedValue(library);
+
+      await sut.delete(library.id, authStub.admin);
+
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([entry(library, AdminAuditAction.LibraryDeleted)]);
+    });
+
+    it('records nothing for a library that does not exist', async () => {
+      mocks.library.get.mockResolvedValue(void 0);
+
+      await expect(sut.queueScan(newUuid(), authStub.admin)).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.adminAudit.create).not.toHaveBeenCalled();
     });
   });
 });

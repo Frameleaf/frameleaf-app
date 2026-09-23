@@ -1,5 +1,6 @@
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
+import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
@@ -77,6 +78,7 @@ import { TagRepository } from 'src/repositories/tag.repository.js';
 import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
+import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
 import { VideoStreamRepository } from 'src/repositories/video-stream.repository.js';
 import { ViewRepository } from 'src/repositories/view-repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
@@ -91,6 +93,7 @@ export const repositories = [
   ICloudSyncRepository,
   AccessRepository,
   ActivityRepository,
+  AdminAuditRepository,
   AlbumRepository,
   AlbumUserRepository,
   ApiKeyRepository,
@@ -163,6 +166,7 @@ export const repositories = [
   UserRepository,
   ViewRepository,
   VersionHistoryRepository,
+  VideoMomentRepository,
   VideoStreamRepository,
   WebsocketRepository,
   WorkflowRepository,

@@ -193,6 +193,32 @@
         },
         "type": "object"
       },
+      "AdminAuditAction": {
+        "description": "What an administrator did to an account or one of its libraries",
+        "enum": [
+          "account-created",
+          "account-updated",
+          "admin-granted",
+          "admin-revoked",
+          "quota-changed",
+          "storage-label-changed",
+          "password-reset",
+          "pin-set",
+          "pin-reset",
+          "session-revoked",
+          "preferences-updated",
+          "casting-disabled",
+          "casting-allowed",
+          "account-deleted",
+          "account-removal-scheduled",
+          "account-restored",
+          "library-created",
+          "library-updated",
+          "library-scan-queued",
+          "library-deleted"
+        ],
+        "type": "string"
+      },
       "AdminConfigAdvancedPromptDto": {
         "properties": {
           "enabled": {
@@ -8193,6 +8219,990 @@
         ],
         "type": "object"
       },
+      "EnrichmentStage": {
+        "description": "Enrichment plan stage",
+        "enum": [
+          "frames",
+          "locked-check",
+          "description",
+          "moment-index",
+          "moment-captions"
+        ],
+        "type": "string"
+      },
+      "EnrichmentItemState": {
+        "description": "Enrichment plan item state",
+        "enum": [
+          "queued",
+          "running",
+          "skipped",
+          "failed",
+          "completed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "VideoMomentSource": {
+        "description": "Video moment source",
+        "enum": [
+          "generated",
+          "manual"
+        ],
+        "type": "string"
+      },
+      "EnrichmentStaleReason": {
+        "description": "Why a generated result is out of date",
+        "enum": [
+          "source-changed",
+          "identity-changed",
+          "config-changed"
+        ],
+        "type": "string"
+      },
+      "EnrichmentPreviewStatus": {
+        "description": "Enrichment preview sample status",
+        "enum": [
+          "success",
+          "failed",
+          "skipped"
+        ],
+        "type": "string"
+      },
+      "VideoMomentIndexState": {
+        "description": "Whether the video has current reusable frames",
+        "enum": [
+          "none",
+          "ready",
+          "stale"
+        ],
+        "type": "string"
+      },
+      "VideoMomentMatch": {
+        "description": "What a moment search hit matched on",
+        "enum": [
+          "visual",
+          "caption",
+          "transcript"
+        ],
+        "type": "string"
+      },
+      "EnrichmentDestinationAdmissionDto": {
+        "properties": {
+          "admitted": {
+            "type": "boolean"
+          },
+          "refusal": {
+            "description": "Stable refusal code when it would not",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "admitted",
+          "refusal"
+        ],
+        "type": "object"
+      },
+      "EnrichmentDestinationOptionDto": {
+        "properties": {
+          "cloud": {
+            "description": "Sends media off this network; needs recorded consent",
+            "type": "boolean"
+          },
+          "enrichment": {
+            "$ref": "#/components/schemas/EnrichmentDestinationAdmissionDto"
+          },
+          "health": {
+            "$ref": "#/components/schemas/MlDestinationHealth"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MlDestinationKind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "search": {
+            "$ref": "#/components/schemas/EnrichmentDestinationAdmissionDto"
+          }
+        },
+        "required": [
+          "cloud",
+          "enrichment",
+          "health",
+          "id",
+          "kind",
+          "name",
+          "search"
+        ],
+        "type": "object"
+      },
+      "EnrichmentOptionsResponseDto": {
+        "properties": {
+          "defaultStages": {
+            "description": "Stages a new plan starts with; never moment captions",
+            "items": {
+              "$ref": "#/components/schemas/EnrichmentStage"
+            },
+            "type": "array"
+          },
+          "descriptionEnabled": {
+            "type": "boolean"
+          },
+          "destinations": {
+            "items": {
+              "$ref": "#/components/schemas/EnrichmentDestinationOptionDto"
+            },
+            "type": "array"
+          },
+          "framesPerVideo": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "lockedCheckEnabled": {
+            "type": "boolean"
+          },
+          "maxAssets": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "maxSamples": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "modelName": {
+            "description": "Saved description model",
+            "type": "string"
+          },
+          "routes": {
+            "description": "The destinations library work is routed to; a plan uses these unless another is chosen",
+            "properties": {
+              "enrichment": {
+                "format": "uuid",
+                "nullable": true,
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "search": {
+                "format": "uuid",
+                "nullable": true,
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "enrichment",
+              "search"
+            ],
+            "type": "object"
+          },
+          "searchEnabled": {
+            "type": "boolean"
+          },
+          "searchModelName": {
+            "description": "Saved search model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "defaultStages",
+          "descriptionEnabled",
+          "destinations",
+          "framesPerVideo",
+          "lockedCheckEnabled",
+          "maxAssets",
+          "maxSamples",
+          "modelName",
+          "routes",
+          "searchEnabled",
+          "searchModelName"
+        ],
+        "type": "object"
+      },
+      "EnrichmentPreviewRequestDto": {
+        "properties": {
+          "assetIds": {
+            "description": "Samples to describe; run one at a time",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 6,
+            "minItems": 1,
+            "type": "array"
+          },
+          "destinationId": {
+            "description": "Destination to run on; the routed one when omitted",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "fallbackModelName": {
+            "type": "string"
+          },
+          "modelName": {
+            "description": "Draft model; the saved one when omitted",
+            "minLength": 1,
+            "type": "string"
+          },
+          "prompt": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminConfigImageDescriptionPromptDto"
+              }
+            ],
+            "description": "Draft prompt; the saved one when omitted"
+          }
+        },
+        "required": [
+          "assetIds"
+        ],
+        "type": "object"
+      },
+      "EnrichmentPreviewSampleDto": {
+        "properties": {
+          "ambiguousReferences": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "candidate": {
+            "description": "What the draft produced; stored nowhere",
+            "nullable": true,
+            "type": "string"
+          },
+          "current": {
+            "description": "The stored generated description, unchanged",
+            "nullable": true,
+            "type": "string"
+          },
+          "durationMs": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "frameCount": {
+            "description": "Video frames the draft saw; 0 for a photo",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "hallucinatedNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "message": {
+            "nullable": true,
+            "type": "string"
+          },
+          "reasonKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/EnrichmentPreviewStatus"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "ambiguousReferences",
+          "assetId",
+          "candidate",
+          "current",
+          "durationMs",
+          "frameCount",
+          "hallucinatedNames",
+          "message",
+          "reasonKey",
+          "status",
+          "tags",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "EnrichmentPreviewResponseDto": {
+        "properties": {
+          "cloud": {
+            "type": "boolean"
+          },
+          "destinationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "destinationName": {
+            "type": "string"
+          },
+          "modelName": {
+            "type": "string"
+          },
+          "samples": {
+            "items": {
+              "$ref": "#/components/schemas/EnrichmentPreviewSampleDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cloud",
+          "destinationId",
+          "destinationName",
+          "modelName",
+          "samples"
+        ],
+        "type": "object"
+      },
+      "EnrichmentPlanCreateDto": {
+        "properties": {
+          "assetIds": {
+            "description": "The frozen set, in order; never re-resolved",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "destinationId": {
+            "description": "Destination for descriptions, checks and captions",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "requestKey": {
+            "description": "Client idempotency key; submitting the same key again returns the existing plan",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "searchDestinationId": {
+            "description": "Destination for search embeddings",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "stages": {
+            "description": "Chosen stages; the ones they need are added",
+            "items": {
+              "$ref": "#/components/schemas/EnrichmentStage"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetIds",
+          "stages"
+        ],
+        "type": "object"
+      },
+      "EnrichmentPlanStageOutcomeDto": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "message": {
+            "nullable": true,
+            "type": "string"
+          },
+          "reasonKey": {
+            "nullable": true,
+            "type": "string"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/EnrichmentStage"
+          },
+          "state": {
+            "$ref": "#/components/schemas/EnrichmentItemState"
+          }
+        },
+        "required": [
+          "at",
+          "message",
+          "reasonKey",
+          "stage",
+          "state"
+        ],
+        "type": "object"
+      },
+      "EnrichmentPlanItemDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "retryPending": {
+            "description": "Waiting for its one automatic retry",
+            "type": "boolean"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/EnrichmentPlanStageOutcomeDto"
+            },
+            "type": "array"
+          },
+          "state": {
+            "$ref": "#/components/schemas/EnrichmentItemState"
+          }
+        },
+        "required": [
+          "assetId",
+          "retryPending",
+          "stages",
+          "state"
+        ],
+        "type": "object"
+      },
+      "EnrichmentPlanCountsDto": {
+        "properties": {
+          "cancelled": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "completed": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "queued": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "running": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cancelled",
+          "completed",
+          "failed",
+          "queued",
+          "running",
+          "skipped",
+          "total"
+        ],
+        "type": "object"
+      },
+      "EnrichmentPlanDestinationDto": {
+        "properties": {
+          "cloud": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cloud",
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "EnrichmentPlanResponseDto": {
+        "properties": {
+          "addedStages": {
+            "description": "Stages run only because a chosen stage needs them",
+            "items": {
+              "$ref": "#/components/schemas/EnrichmentStage"
+            },
+            "type": "array"
+          },
+          "configHash": {
+            "type": "string"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/EnrichmentPlanCountsDto"
+          },
+          "enrichmentDestination": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EnrichmentPlanDestinationDto"
+              }
+            ],
+            "nullable": true
+          },
+          "hiddenCount": {
+            "description": "Locked items not listed because this session is not unlocked",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EnrichmentPlanItemDto"
+            },
+            "type": "array"
+          },
+          "modelName": {
+            "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/MediaOperationDto"
+          },
+          "requestedStages": {
+            "items": {
+              "$ref": "#/components/schemas/EnrichmentStage"
+            },
+            "type": "array"
+          },
+          "searchDestination": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EnrichmentPlanDestinationDto"
+              }
+            ],
+            "nullable": true
+          },
+          "searchModelName": {
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/EnrichmentStage"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "addedStages",
+          "configHash",
+          "counts",
+          "enrichmentDestination",
+          "hiddenCount",
+          "items",
+          "modelName",
+          "operation",
+          "requestedStages",
+          "searchDestination",
+          "searchModelName",
+          "stages"
+        ],
+        "type": "object"
+      },
+      "VideoMomentFrameDto": {
+        "properties": {
+          "frameIndex": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "height": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "indexed": {
+            "description": "Has a search embedding from the saved search model",
+            "type": "boolean"
+          },
+          "isCover": {
+            "type": "boolean"
+          },
+          "rank": {
+            "description": "1 is the best frame",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "score": {
+            "format": "double",
+            "type": "number"
+          },
+          "timestampMs": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "width": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frameIndex",
+          "height",
+          "id",
+          "indexed",
+          "isCover",
+          "rank",
+          "score",
+          "timestampMs",
+          "width"
+        ],
+        "type": "object"
+      },
+      "VideoMomentDto": {
+        "properties": {
+          "caption": {
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "endMs": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "frameId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/VideoMomentSource"
+          },
+          "staleReason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EnrichmentStaleReason"
+              }
+            ],
+            "nullable": true
+          },
+          "timestampMs": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "transcript": {
+            "description": "Typed by the owner; never generated",
+            "nullable": true,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "caption",
+          "createdAt",
+          "endMs",
+          "frameId",
+          "id",
+          "source",
+          "staleReason",
+          "timestampMs",
+          "transcript",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "VideoMomentsResponseDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "captionModel": {
+            "nullable": true,
+            "type": "string"
+          },
+          "captionedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "coverFrameId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "coverTimestampMs": {
+            "description": "The owner's chosen cover time; null means the best frame",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "embeddingModel": {
+            "nullable": true,
+            "type": "string"
+          },
+          "extractorVersion": {
+            "nullable": true,
+            "type": "string"
+          },
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/VideoMomentFrameDto"
+            },
+            "type": "array"
+          },
+          "framesExtractedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "indexedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "moments": {
+            "items": {
+              "$ref": "#/components/schemas/VideoMomentDto"
+            },
+            "type": "array"
+          },
+          "staleReason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EnrichmentStaleReason"
+              }
+            ],
+            "nullable": true
+          },
+          "state": {
+            "$ref": "#/components/schemas/VideoMomentIndexState"
+          }
+        },
+        "required": [
+          "assetId",
+          "captionModel",
+          "captionedAt",
+          "coverFrameId",
+          "coverTimestampMs",
+          "embeddingModel",
+          "extractorVersion",
+          "frames",
+          "framesExtractedAt",
+          "indexedAt",
+          "moments",
+          "staleReason",
+          "state"
+        ],
+        "type": "object"
+      },
+      "VideoMomentCoverDto": {
+        "properties": {
+          "timestampMs": {
+            "description": "Time of the chosen frame; null returns to the best frame",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "timestampMs"
+        ],
+        "type": "object"
+      },
+      "VideoMomentCreateDto": {
+        "properties": {
+          "caption": {
+            "maxLength": 500,
+            "nullable": true,
+            "type": "string"
+          },
+          "endMs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "timestampMs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "transcript": {
+            "maxLength": 20000,
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "timestampMs"
+        ],
+        "type": "object"
+      },
+      "VideoMomentUpdateDto": {
+        "properties": {
+          "caption": {
+            "maxLength": 500,
+            "nullable": true,
+            "type": "string"
+          },
+          "endMs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "timestampMs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "transcript": {
+            "maxLength": 20000,
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "VideoMomentSearchDto": {
+        "properties": {
+          "limit": {
+            "default": 24,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "VideoMomentSearchHitDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "caption": {
+            "nullable": true,
+            "type": "string"
+          },
+          "frameId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "match": {
+            "$ref": "#/components/schemas/VideoMomentMatch"
+          },
+          "momentId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "score": {
+            "description": "Higher is closer",
+            "format": "double",
+            "type": "number"
+          },
+          "timestampMs": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetId",
+          "caption",
+          "frameId",
+          "match",
+          "momentId",
+          "score",
+          "timestampMs"
+        ],
+        "type": "object"
+      },
+      "VideoMomentSearchResponseDto": {
+        "properties": {
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/VideoMomentSearchHitDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "hits"
+        ],
+        "type": "object"
+      },
       "DuplicateReviewGroupDto": {
         "properties": {
           "assets": {
@@ -9103,92 +10113,6 @@
         ],
         "type": "object"
       },
-      "ICloudLibraryArea": {
-        "enum": [
-          "private",
-          "shared"
-        ],
-        "type": "string"
-      },
-      "ICloudReviewKind": {
-        "enum": [
-          "review",
-          "failed",
-          "unsupported",
-          "kept-trashed",
-          "source-removed"
-        ],
-        "type": "string"
-      },
-      "ICloudSyncRunDto": {
-        "properties": {
-          "createdAt": {
-            "type": "string"
-          },
-          "errorCode": {
-            "description": "Stable failure code, translated by the client",
-            "nullable": true,
-            "type": "string"
-          },
-          "finishedAt": {
-            "nullable": true,
-            "type": "string"
-          },
-          "id": {
-            "description": "Media operation ID of the run",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "type": "string"
-          },
-          "pauseRequested": {
-            "description": "A pause was asked for and the worker has not reached it yet",
-            "type": "boolean"
-          },
-          "processedUnits": {
-            "description": "Resources settled so far",
-            "type": "integer"
-          },
-          "progress": {
-            "description": "0 to 100, from resources settled out of those known so far",
-            "type": "number"
-          },
-          "retrying": {
-            "description": "Back in the queue for its automatic retry after a failure",
-            "type": "boolean"
-          },
-          "startedAt": {
-            "nullable": true,
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/MediaOperationStatus"
-          },
-          "totalUnits": {
-            "description": "Resources known so far; null until the inventory is counted",
-            "nullable": true,
-            "type": "integer"
-          },
-          "waiting": {
-            "description": "Handed back to wait for the provider or a backed-off item",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "createdAt",
-          "errorCode",
-          "finishedAt",
-          "id",
-          "pauseRequested",
-          "processedUnits",
-          "progress",
-          "retrying",
-          "startedAt",
-          "status",
-          "totalUnits",
-          "waiting"
-        ],
-        "type": "object"
-      },
       "IdFilter": {
         "properties": {
           "eq": {
@@ -9267,6 +10191,10 @@
           "description": {
             "type": "string"
           },
+          "destinationId": {
+            "description": "The processing destination that generated the description",
+            "type": "string"
+          },
           "environment": {
             "type": "string"
           },
@@ -9311,6 +10239,14 @@
           "skipReason": {
             "description": "Machine-readable reason when status === \"skipped\"",
             "type": "string"
+          },
+          "staleReason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EnrichmentStaleReason"
+              }
+            ],
+            "description": "Set when the generated description is out of date: the original was replaced, confirmed names changed, or the saved prompt changed"
           },
           "status": {
             "enum": [
@@ -10307,6 +11243,13 @@
               "$ref": "#/components/schemas/MediaHealthBulkResultDto"
             },
             "type": "array"
+          },
+          "operationId": {
+            "description": "The durable job applying the accepted findings, in Activity; null when none was accepted",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
           }
         },
         "required": [
@@ -10375,15 +11318,46 @@
             "format": "double",
             "nullable": true,
             "type": "number"
+          },
+          "checksumMatch": {
+            "description": "The candidate has exactly the checksum recorded for the original",
+            "type": "boolean"
+          },
+          "chosen": {
+            "description": "The reviewer chose this candidate for the finding",
+            "type": "boolean"
+          },
+          "decodeValid": {
+            "description": "The candidate decoded successfully; null when not checked",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "rootId": {
+            "description": "Search location the candidate was found in",
+            "nullable": true,
+            "type": "string"
+          },
+          "rootKind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaHealthRootKind"
+              }
+            ],
+            "nullable": true
           }
         },
         "required": [
           "candidatePath",
           "checkedAt",
+          "checksumMatch",
+          "chosen",
+          "decodeValid",
           "evidence",
           "healthId",
           "id",
           "resolution",
+          "rootId",
+          "rootKind",
           "status",
           "visualMatchScore"
         ],
@@ -10594,6 +11568,13 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "operationId": {
+            "description": "The durable job doing the work, in Activity",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
           }
         },
         "required": [
@@ -10687,7 +11668,10 @@
           "refresh-faces",
           "relink-live-photo",
           "resolve-duplicates",
-          "undo-duplicates"
+          "undo-duplicates",
+          "relink-missing-media",
+          "recover-damaged-media",
+          "trash-damaged-media"
         ],
         "type": "string"
       },
@@ -10807,6 +11791,13 @@
             "maximum": 180,
             "minimum": -180,
             "type": "number"
+          },
+          "mediaHealth": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationMediaHealthEntryDto"
+            },
+            "maxItems": 1000,
+            "type": "array"
           },
           "minutes": {
             "description": "Relative shift in minutes, for `dateMode: shift`",
@@ -11493,6 +12484,8 @@
           "bulk",
           "studio_bundle_export",
           "studio_bundle_import",
+          "enrichment_plan",
+          "media_health",
           "icloud_sync"
         ],
         "type": "string"
@@ -25489,6 +26482,83 @@
         },
         "type": "object"
       },
+      "UserAdminHistoryEventResponseDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/AdminAuditAction"
+          },
+          "actorId": {
+            "description": "The administrator who did it; null once that account is gone",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "actorName": {
+            "description": "That administrator's name; null once that account is gone",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When it happened",
+            "format": "date-time",
+            "type": "string"
+          },
+          "detail": {
+            "description": "What the action carries: a quota in bytes, a storage label, a recovery period in days, a device name or the changed preference sections; null otherwise",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Event ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "libraryId": {
+            "description": "The library a library event is about; null for account events and once the library is gone",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "subject": {
+            "description": "The account's or library's name at the time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "actorId",
+          "actorName",
+          "createdAt",
+          "detail",
+          "id",
+          "libraryId",
+          "subject"
+        ],
+        "type": "object"
+      },
+      "UserAdminHistoryResponseDto": {
+        "properties": {
+          "events": {
+            "description": "Newest first",
+            "items": {
+              "$ref": "#/components/schemas/UserAdminHistoryEventResponseDto"
+            },
+            "type": "array"
+          },
+          "hasMore": {
+            "description": "True when older events exist beyond this page",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "events",
+          "hasMore"
+        ],
+        "type": "object"
+      },
       "UserAdminResponseDto": {
         "properties": {
           "avatarColor": {
@@ -28128,6 +29198,519 @@
           "num"
         ],
         "type": "object"
+      },
+      "MediaHealthRootDto": {
+        "properties": {
+          "id": {
+            "description": "Search location ID",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MediaHealthRootKind"
+          },
+          "label": {
+            "type": "string"
+          },
+          "paths": {
+            "description": "Folders searched, for review",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "paths"
+        ],
+        "type": "object"
+      },
+      "MediaHealthRootsResponseDto": {
+        "properties": {
+          "roots": {
+            "items": {
+              "$ref": "#/components/schemas/MediaHealthRootDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "roots"
+        ],
+        "type": "object"
+      },
+      "MediaHealthOperationMode": {
+        "description": "A library scan or a search for originals",
+        "enum": [
+          "scan",
+          "locate"
+        ],
+        "type": "string"
+      },
+      "MediaHealthOperationDto": {
+        "properties": {
+          "autoRetries": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "cancelRequestedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Media operation ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/MediaHealthOperationMode"
+          },
+          "pauseRequestedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "processedUnits": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "progress": {
+            "format": "double",
+            "type": "number"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "totalUnits": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "autoRetries",
+          "cancelRequestedAt",
+          "createdAt",
+          "error",
+          "finishedAt",
+          "id",
+          "mode",
+          "pauseRequestedAt",
+          "processedUnits",
+          "progress",
+          "status",
+          "totalUnits",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "MediaHealthActivityAction": {
+        "description": "What the job did",
+        "enum": [
+          "scan",
+          "locate",
+          "relink-missing-media",
+          "recover-damaged-media",
+          "trash-damaged-media"
+        ],
+        "type": "string"
+      },
+      "MediaHealthActivityDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/MediaHealthActivityAction"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Media operation ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "items": {
+            "description": "Items the job covered",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "action",
+          "createdAt",
+          "finishedAt",
+          "id",
+          "items",
+          "status"
+        ],
+        "type": "object"
+      },
+      "MediaHealthQueuesDto": {
+        "properties": {
+          "damagedConfirmed": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "damagedSuspected": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "duplicates": {
+            "description": "Duplicate groups waiting for review",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "enrichmentPending": {
+            "description": "Items whose metadata has not been read yet",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "importReview": {
+            "description": "Imported items that need review; null when unavailable",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "missing": {
+            "description": "Missing originals that still need a decision",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "missingVerified": {
+            "description": "Missing originals with a verified exact copy",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "unsupportedRaw": {
+            "description": "Kept apart from damage: the decoder cannot read the format",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "damagedConfirmed",
+          "damagedSuspected",
+          "duplicates",
+          "enrichmentPending",
+          "importReview",
+          "missing",
+          "missingVerified",
+          "unsupportedRaw"
+        ],
+        "type": "object"
+      },
+      "MediaHealthRunsDto": {
+        "properties": {
+          "corrupt": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaHealthRunResponseDto"
+              }
+            ],
+            "nullable": true
+          },
+          "missing": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaHealthRunResponseDto"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "corrupt",
+          "missing"
+        ],
+        "type": "object"
+      },
+      "MediaHealthSummaryResponseDto": {
+        "properties": {
+          "operation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaHealthOperationDto"
+              }
+            ],
+            "nullable": true
+          },
+          "queues": {
+            "$ref": "#/components/schemas/MediaHealthQueuesDto"
+          },
+          "recent": {
+            "items": {
+              "$ref": "#/components/schemas/MediaHealthActivityDto"
+            },
+            "type": "array"
+          },
+          "recoveryAvailable": {
+            "description": "At least one recovery location is configured for this reader",
+            "type": "boolean"
+          },
+          "runs": {
+            "$ref": "#/components/schemas/MediaHealthRunsDto"
+          }
+        },
+        "required": [
+          "operation",
+          "queues",
+          "recent",
+          "recoveryAvailable",
+          "runs"
+        ],
+        "type": "object"
+      },
+      "MediaHealthRootKind": {
+        "description": "Kind of search location",
+        "enum": [
+          "managed",
+          "library",
+          "recovery"
+        ],
+        "type": "string"
+      },
+      "MediaHealthLocateDto": {
+        "properties": {
+          "ids": {
+            "description": "Media health finding IDs",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "rootIds": {
+            "description": "Search locations; library storage and external libraries when omitted",
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "type": "object"
+      },
+      "MediaHealthCandidateChoiceDto": {
+        "properties": {
+          "candidateId": {
+            "description": "Candidate ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "findingId": {
+            "description": "Media health finding ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidateId",
+          "findingId"
+        ],
+        "type": "object"
+      },
+      "MediaHealthChooseCandidatesDto": {
+        "properties": {
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/MediaHealthCandidateChoiceDto"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "choices"
+        ],
+        "type": "object"
+      },
+      "MediaHealthRecoverDto": {
+        "properties": {
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/MediaHealthCandidateChoiceDto"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "confirmed": {
+            "description": "Must be true: the reviewer checked the checksum and decode evidence and keeps the damaged source",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "choices",
+          "confirmed"
+        ],
+        "type": "object"
+      },
+      "MediaOperationMediaHealthEntryDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "candidateId": {
+            "description": "Reviewed candidate ID, for a relink or a recovery",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "findingId": {
+            "description": "Media health finding ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "findingId"
+        ],
+        "type": "object"
+      },
+      "ICloudLibraryArea": {
+        "enum": [
+          "private",
+          "shared"
+        ],
+        "type": "string"
+      },
+      "ICloudReviewKind": {
+        "enum": [
+          "review",
+          "failed",
+          "unsupported",
+          "kept-trashed",
+          "source-removed"
+        ],
+        "type": "string"
+      },
+      "ICloudSyncRunDto": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "errorCode": {
+            "description": "Stable failure code, translated by the client",
+            "nullable": true,
+            "type": "string"
+          },
+          "finishedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Media operation ID of the run",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "pauseRequested": {
+            "description": "A pause was asked for and the worker has not reached it yet",
+            "type": "boolean"
+          },
+          "processedUnits": {
+            "description": "Resources settled so far",
+            "type": "integer"
+          },
+          "progress": {
+            "description": "0 to 100, from resources settled out of those known so far",
+            "type": "number"
+          },
+          "retrying": {
+            "description": "Back in the queue for its automatic retry after a failure",
+            "type": "boolean"
+          },
+          "startedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "totalUnits": {
+            "description": "Resources known so far; null until the inventory is counted",
+            "nullable": true,
+            "type": "integer"
+          },
+          "waiting": {
+            "description": "Handed back to wait for the provider or a backed-off item",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "createdAt",
+          "errorCode",
+          "finishedAt",
+          "id",
+          "pauseRequested",
+          "processedUnits",
+          "progress",
+          "retrying",
+          "startedAt",
+          "status",
+          "totalUnits",
+          "waiting"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -30515,6 +32098,86 @@
           }
         ],
         "summary": "Retrieve calendar heatmap activity",
+        "tags": [
+          "Users (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Stable"
+          }
+        ],
+        "x-immich-permission": "adminUser.read",
+        "x-immich-state": "Stable"
+      }
+    },
+    "/admin/users/{id}/history": {
+      "get": {
+        "description": "What administrators did to a specific user and their libraries, newest first: account creation, profile, role, quota and storage label changes, password and PIN resets, signed-out devices, preference changes, deletion and restore, and library changes and scans. Page with `before` and `take`.",
+        "operationId": "getUserHistoryAdmin",
+        "parameters": [
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Only events older than this event, for paging",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Page size, 50 by default",
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAdminHistoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve user history",
         "tags": [
           "Users (admin)"
         ],
@@ -37818,6 +39481,660 @@
         "x-immich-state": "Stable"
       }
     },
+    "/enrichment/frames/{id}": {
+      "get": {
+        "description": "The image of one reusable video frame, under the same access as its video.",
+        "operationId": "getVideoMomentFrame",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a video moment frame",
+        "tags": [
+          "Enrichment"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/enrichment/moments/search": {
+      "post": {
+        "description": "Finds timestamped moments inside your videos by meaning, against the frame index, and by words in captions and typed transcripts.",
+        "operationId": "searchVideoMoments",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoMomentSearchDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoMomentSearchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Search video moments",
+        "tags": [
+          "Enrichment"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/enrichment/options": {
+      "get": {
+        "description": "The processing destinations an enrichment preview or plan may use, with whether each would take the work now, the routed destinations and the saved models.",
+        "operationId": "getEnrichmentOptions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrichmentOptionsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get enrichment options",
+        "tags": [
+          "Enrichment"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/enrichment/plans": {
+      "post": {
+        "description": "Runs the chosen stages, and the ones they need, on a frozen list of assets in the background, pinned to the destinations and configuration admitted now. Moment captions are never added unless chosen. Submitting the same requestKey again returns the existing plan.",
+        "operationId": "createEnrichmentPlan",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrichmentPlanCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrichmentPlanResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Queue an enrichment plan",
+        "tags": [
+          "Enrichment"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/enrichment/plans/{id}": {
+      "get": {
+        "description": "The plan with every asset and stage: queued, running, skipped, failed, completed or cancelled. Read from the durable record, so it is the same after a reload. Cancel, pause, resume and retry are the media operation routes.",
+        "operationId": "getEnrichmentPlan",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrichmentPlanResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get an enrichment plan",
+        "tags": [
+          "Enrichment"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/enrichment/preview": {
+      "post": {
+        "description": "Describes a few samples with a draft model or prompt, one at a time, on a named destination. Nothing is written: stored descriptions, tags, Locked state, embeddings and frames are unchanged.",
+        "operationId": "previewEnrichment",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrichmentPreviewRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrichmentPreviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Preview an enrichment change",
+        "tags": [
+          "Enrichment"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/enrichment/videos/{id}/cover": {
+      "put": {
+        "description": "Keeps the chosen frame as a time in the video, so it survives the frames being cut again. Null returns to the best-ranked frame.",
+        "operationId": "setVideoMomentCover",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoMomentCoverDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoMomentsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Choose a video cover frame",
+        "tags": [
+          "Enrichment"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/enrichment/videos/{id}/moments": {
+      "get": {
+        "description": "The reusable frames of a video ranked best first, its cover, its generated and manual moments, and what they were made from, with any that are out of date marked.",
+        "operationId": "getVideoMoments",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoMomentsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get video moments",
+        "tags": [
+          "Enrichment"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Adds your own moment, with an optional title and typed transcript. Refreshing never removes it.",
+        "operationId": "createVideoMoment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoMomentCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoMomentDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add a video moment",
+        "tags": [
+          "Enrichment"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/enrichment/videos/{id}/moments/{momentId}": {
+      "delete": {
+        "description": "Removes one of your own moments. Generated moments are refreshed, not deleted.",
+        "operationId": "deleteVideoMoment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Asset ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "momentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a video moment",
+        "tags": [
+          "Enrichment"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Edits one of your own moments. Generated moments are refreshed, not edited.",
+        "operationId": "updateVideoMoment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Asset ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "momentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoMomentUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoMomentDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update a video moment",
+        "tags": [
+          "Enrichment"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/faces": {
       "get": {
         "description": "Retrieve all faces belonging to an asset.",
@@ -38422,53 +40739,6 @@
                 }
               }
             },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "tags": [
-          "ICloud Sync"
-        ],
-        "x-immich-history": [
-          {
-            "version": "v3.2.0",
-            "state": "Added"
-          },
-          {
-            "version": "v3.2.0",
-            "state": "Alpha"
-          }
-        ],
-        "x-immich-state": "Alpha"
-      }
-    },
-    "/icloud-sync/connections/{id}/remove": {
-      "post": {
-        "operationId": "removeICloudConnection",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
             "description": ""
           }
         },
@@ -39516,11 +41786,50 @@
         "operationId": "list",
         "parameters": [
           {
+            "name": "allAccounts",
+            "required": false,
+            "in": "query",
+            "description": "Review every account; administrators only",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "category",
             "required": false,
             "in": "query",
             "schema": {
               "$ref": "#/components/schemas/MediaHealthCategory"
+            }
+          },
+          {
+            "name": "needsAttention",
+            "required": false,
+            "in": "query",
+            "description": "Only findings that still need a decision",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "ownerId",
+            "required": false,
+            "in": "query",
+            "description": "Account to review; administrators only for another account",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "integer"
             }
           },
           {
@@ -39733,14 +42042,14 @@
     },
     "/media-health/missing/locate": {
       "post": {
-        "description": "Queue exact-checksum candidate discovery across managed user storage.",
+        "description": "Queue a durable exact-checksum search of the chosen locations for missing originals or copies of confirmed damage.",
         "operationId": "locateMissing",
         "parameters": [],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/MediaHealthBulkActionDto"
+                "$ref": "#/components/schemas/MediaHealthLocateDto"
               }
             }
           },
@@ -39788,7 +42097,7 @@
     },
     "/media-health/missing/relink": {
       "post": {
-        "description": "Relink owned missing assets to validated candidate files.",
+        "description": "Queue a durable job relinking missing originals to their verified exact copies.",
         "operationId": "relinkMissing",
         "parameters": [],
         "requestBody": {
@@ -56913,6 +59222,274 @@
         ],
         "x-immich-state": "Alpha"
       }
+    },
+    "/media-health/candidates/choose": {
+      "post": {
+        "description": "Record which verified exact copy each missing original should be relinked to.",
+        "operationId": "chooseCandidates",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaHealthChooseCandidatesDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaHealthBulkResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Choose media health candidates",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/corrupt/recover": {
+      "post": {
+        "description": "Queue a durable job replacing confirmed damage with an exact, decoded copy while keeping the damaged file.",
+        "operationId": "recoverDamaged",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaHealthRecoverDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaHealthBulkResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Recover damaged media from a verified copy",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/roots": {
+      "get": {
+        "description": "Locations the caller may search for exact copies of missing or damaged originals.",
+        "operationId": "getRoots",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaHealthRootsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List Library Care search locations",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-health/summary": {
+      "get": {
+        "description": "Queue sizes for missing, damaged, duplicate, import and enrichment work, the latest scan or search, and recent Library Care jobs.",
+        "operationId": "getSummary",
+        "parameters": [
+          {
+            "name": "allAccounts",
+            "required": false,
+            "in": "query",
+            "description": "Review every account; administrators only",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "ownerId",
+            "required": false,
+            "in": "query",
+            "description": "Account to review; administrators only for another account",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaHealthSummaryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get Library Care summary",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/icloud-sync/connections/{id}/remove": {
+      "post": {
+        "operationId": "removeICloudConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
     }
   },
   "servers": [
@@ -56984,6 +59561,10 @@
     {
       "name": "Duplicates",
       "description": "Endpoints for managing and identifying duplicate assets."
+    },
+    {
+      "name": "Enrichment",
+      "description": "Enrichment previews, durable enrichment plans and timestamped video moments. A preview runs a draft prompt or model on chosen samples without writing anything; a plan runs chosen stages on a frozen set of assets through the destinations pinned when it was queued."
     },
     {
       "name": "Faces",

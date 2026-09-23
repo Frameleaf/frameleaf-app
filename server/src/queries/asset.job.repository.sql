@@ -1087,20 +1087,7 @@ where
       and "asset_file"."type" = $2
   )
   and "asset"."visibility" in ('archive', 'timeline')
-  and (
-    "asset"."type" = 'IMAGE'
-    or (
-      "asset"."type" = 'VIDEO'
-      and exists (
-        select
-          "asset_video_duplicate_frame"."assetId"
-        from
-          "asset_video_duplicate_frame"
-        where
-          "asset_video_duplicate_frame"."assetId" = "asset"."id"
-      )
-    )
-  )
+  and "asset"."type" in ('IMAGE', 'VIDEO')
   and not exists (
     select
       "asset_metadata"."assetId"

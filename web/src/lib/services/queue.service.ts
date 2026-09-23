@@ -19,6 +19,7 @@ import {
   mdiFileXmlBox,
   mdiFolderMove,
   mdiImageSearch,
+  mdiImageSearchOutline,
   mdiImageBrokenVariant,
   mdiLibraryShelves,
   mdiOcr,
@@ -40,6 +41,7 @@ import { goto } from '$app/navigation';
 import { OpenQueryParam } from '$lib/constants';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { queueManager } from '$lib/managers/queue-manager.svelte';
+import EnrichmentTasksModal from '$lib/modals/EnrichmentTasksModal.svelte';
 import JobCreateModal from '$lib/modals/JobCreateModal.svelte';
 import { Route } from '$lib/route';
 import type { HeaderButtonActionItem } from '$lib/types';
@@ -79,7 +81,16 @@ export const getQueuesActions = ($t: MessageFormatter, queues: QueueResponseDto[
     onAction: () => goto(Route.systemSettings({ isOpen: OpenQueryParam.JOB })),
   };
 
-  return { ResumePaused, ManageConcurrency, CreateJob };
+  // Design template `JobsManager.jsx`: "Enrichment tasks" sits between Concurrency and Create
+  // job in the header actions (FL-59 follow-up).
+  const EnrichmentTasks: ActionItem = {
+    icon: mdiImageSearchOutline,
+    title: $t('admin.enrichment_tasks'),
+    description: $t('admin.enrichment_tasks_description'),
+    onAction: () => modalManager.show(EnrichmentTasksModal, {}),
+  };
+
+  return { ResumePaused, ManageConcurrency, EnrichmentTasks, CreateJob };
 };
 
 export const getQueueActions = ($t: MessageFormatter, queue: QueueResponseDto) => {
