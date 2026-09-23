@@ -74,11 +74,15 @@
 
   const selectEverythingLoaded = () => librarySession.selectAll(shown.map(({ id }) => id));
 
-  onMount(() => {
-    // The set outlives this panel: coming back to it, or closing the viewer, keeps what is loaded.
-    if (photos.page === 0 && !photos.loading) {
-      void photos.load(1);
+  // The set outlives this panel: coming back to it, or closing the viewer, keeps what is loaded. A
+  // new set (another space, or the owner changed the order) starts from its first page.
+  $effect(() => {
+    if (photos.page === 0 && !photos.loading && !photos.failed) {
+      untrack(() => void photos.load(1));
     }
+  });
+
+  onMount(() => {
     void getAllTags()
       .then((tags) => (tagOptions = tags.map(({ id, value }) => ({ id, name: value }))))
       .catch(() => {
