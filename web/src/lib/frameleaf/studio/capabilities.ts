@@ -17,13 +17,20 @@
 import { getMlCapabilities, type StudioCapabilitiesDto } from '@immich/sdk';
 import { emptyStudioCapabilities, type StudioCapabilities } from './host-contract';
 
+/**
+ * Only a literal `true` confirms a capability: a missing or malformed field is absent. The server
+ * snapshot has no analysis or generation row yet, so those stay false.
+ */
+/** The snapshot crosses the network, so its declared booleans are checked, not trusted. */
+const confirmed = (value: unknown): boolean => value === true;
+
 export const toStudioCapabilities = (studio: StudioCapabilitiesDto): StudioCapabilities => ({
   analysisWorker: false,
   generationWorker: false,
-  gpuWorker: studio.gpuWorker,
-  renderWorker: studio.renderWorker,
-  restorationWorker: studio.restorationWorker,
-  transcriptionWorker: studio.transcriptionWorker,
+  gpuWorker: confirmed(studio.gpuWorker),
+  renderWorker: confirmed(studio.renderWorker),
+  restorationWorker: confirmed(studio.restorationWorker),
+  transcriptionWorker: confirmed(studio.transcriptionWorker),
 });
 
 export const probeStudioCapabilities = async (): Promise<StudioCapabilities> => {

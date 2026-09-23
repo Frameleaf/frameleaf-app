@@ -466,11 +466,11 @@ describe(ICloudSyncService.name, () => {
 
       const active = operation({ status: MediaOperationStatus.Queued });
       repository.latestOperation.mockResolvedValue(active);
-      operations.requestPause.mockResolvedValue({ ...active, status: MediaOperationStatus.Paused });
+      operations.requestPause.mockResolvedValue(operation({ status: MediaOperationStatus.Paused }));
       await sut.control(auth, 'connection', { action: 'pause' });
       expect(operations.requestPause).toHaveBeenCalledWith('run', 'owner', [MediaOperationKind.ICloudSync]);
 
-      operations.requestCancel.mockResolvedValue({ ...active, status: MediaOperationStatus.Cancelled });
+      operations.requestCancel.mockResolvedValue(operation({ status: MediaOperationStatus.Cancelled }));
       await sut.control(auth, 'connection', { action: 'cancel' });
       expect(operations.requestCancel).toHaveBeenCalledWith('run', 'owner');
       expect(repository.endRun).toHaveBeenCalledWith('connection', 'cancelled');

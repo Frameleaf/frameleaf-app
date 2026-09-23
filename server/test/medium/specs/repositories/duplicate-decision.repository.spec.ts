@@ -32,7 +32,7 @@ beforeAll(async () => {
 });
 
 describe(DuplicateDecisionRepository.name, () => {
-  const newJob = async (ctx: ReturnType<typeof setup>['ctx'], ownerId: string, groups: unknown[] = []) =>
+  const newJob = (ctx: ReturnType<typeof setup>['ctx'], ownerId: string, groups: unknown[] = []) =>
     ctx.get(MediaOperationRepository).create({
       ownerId,
       kind: MediaOperationKind.Bulk,

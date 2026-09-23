@@ -1,8 +1,5 @@
-import { Kysely, sql } from 'kysely';
-import {
-  type LockedCondition,
-  repairLockedCoverReferences,
-} from './2100000000300-ClearLockedCoverReferences.ts';
+import { sql } from 'kysely';
+import type { Kysely, RawBuilder } from 'kysely';
 
 /**
  * One Locked state (owner decision, September 22, 2026, FL-34).
@@ -184,4 +181,176 @@ const isPrivacySidecarAuthoritative = async (db: Kysely<any>) => {
 
   const { rows } = await sql<{ phase: string | null }>`SELECT phase FROM immich_fork.state WHERE id = 1`.execute(db);
   return rows[0]?.phase === 'active';
+};
+
+// The repair of 2100000000300, copied here so this migration stays self-contained (migrations never import
+// one another). It must keep behaving exactly as it did when 2100000000300 shipped.
+
+/** How a repair recognises a Locked photo. */
+type LockedCondition = {
+  /** A subquery listing the ids of every Locked asset. */
+  lockedIds: RawBuilder<unknown>;
+  /** The `asset` row in scope is Locked. */
+  assetLocked: RawBuilder<boolean>;
+  /** The `asset` row in scope is not Locked. */
+  assetNotLocked: RawBuilder<boolean>;
+};
+
+/** The repair itself, for whichever Locked state `locked` describes. */
+async function repairLockedCoverReferences(db: Kysely<any>, locked: LockedCondition): Promise<void> {
+  const rules = await getRules(db);
+  const { rank, sensitive, visibleToEveryone } = rules;
+
+  await sql`
+    UPDATE "album"
+    SET "albumThumbnailAssetId" = (
+      SELECT "album_asset"."assetId"
+      FROM "album_asset"
+      INNER JOIN "asset" ON "album_asset"."assetId" = "asset"."id"
+      WHERE "album_asset"."albumId" = "album"."id"
+        AND "asset"."deletedAt" IS NULL
+        AND ${locked.assetNotLocked}
+        AND (NOT ${isSharedAlbum} OR ${visibleToEveryone})
+      ORDER BY ${sensitive} ASC, ${rank} DESC, "asset"."fileCreatedAt" DESC
+      LIMIT 1
+    )
+    WHERE "albumThumbnailAssetId" IN (${locked.lockedIds})
+  `.execute(db);
+
+  await sql`
+    UPDATE "shared_space_person"
+    SET "coverAssetId" = (
+      SELECT "asset"."id"
+      FROM "asset"
+      INNER JOIN "album_asset" ON "album_asset"."assetId" = "asset"."id"
+      INNER JOIN "asset_face" ON "asset_face"."assetId" = "asset"."id"
+      WHERE "album_asset"."albumId" = "shared_space_person"."albumId"
+        AND "asset_face"."personGroupId" = "shared_space_person"."personGroupId"
+        AND "asset"."visibility" IN ('archive', 'timeline')
+        AND ${locked.assetNotLocked}
+        AND "asset"."deletedAt" IS NULL
+        AND ${visibleToEveryone}
+        AND "asset_face"."deletedAt" IS NULL
+        AND "asset_face"."isVisible" IS TRUE
+      ORDER BY ${rank} DESC, "asset"."fileCreatedAt" DESC
+      LIMIT 1
+    )
+    WHERE "coverAssetId" IN (${locked.lockedIds})
+  `.execute(db);
+
+  await sql`
+    UPDATE "person"
+    SET
+      "faceAssetId" = (
+        SELECT "asset_face"."id"
+        FROM "asset_face"
+        INNER JOIN "asset" ON "asset"."id" = "asset_face"."assetId"
+        WHERE "asset_face"."personGroupId" = "person"."personGroupId"
+          AND "asset_face"."deletedAt" IS NULL
+          AND "asset_face"."isVisible" IS TRUE
+          AND "asset"."deletedAt" IS NULL
+          AND ${locked.assetNotLocked}
+        ORDER BY ${sensitive} ASC, ${rank} DESC, "asset"."fileCreatedAt" DESC
+        LIMIT 1
+      ),
+      "thumbnailPath" = ''
+    WHERE "faceAssetId" IN (
+      SELECT "asset_face"."id"
+      FROM "asset_face"
+      INNER JOIN "asset"
+        ON "asset"."id" = "asset_face"."assetId"
+        AND ${locked.assetLocked}
+    )
+  `.execute(db);
+
+  await sql`
+    UPDATE "pet"
+    SET
+      "featuredAssetId" = (
+        SELECT "asset"."id"
+        FROM "pet_observation"
+        INNER JOIN "asset" ON "asset"."id" = "pet_observation"."assetId"
+        WHERE "pet_observation"."petId" = "pet"."id"
+          AND "pet_observation"."state" = 'confirmed'
+          AND "asset"."ownerId" = "pet"."ownerId"
+          AND "asset"."deletedAt" IS NULL
+          AND ${locked.assetNotLocked}
+        ORDER BY ${sensitive} ASC, ${rank} DESC, "asset"."fileCreatedAt" DESC
+        LIMIT 1
+      ),
+      "updatedAt" = now()
+    WHERE "featuredAssetId" IN (${locked.lockedIds})
+  `.execute(db);
+}
+
+/** A photo is marked as a Best Photo from this score up (a frozen copy of `BEST_PHOTOS_MIN_SCORE`). */
+const BEST_PHOTOS_MIN_SCORE = 0.9;
+
+/** Someone besides its owner sees the album row in scope and so its cover. */
+const isSharedAlbum = sql<boolean>`(
+  "album"."kind" = 'space'
+  OR EXISTS (
+    SELECT 1 FROM "album_user" WHERE "album_user"."albumId" = "album"."id" AND "album_user"."role" != 'owner'
+  )
+  OR EXISTS (SELECT 1 FROM "shared_space_album" WHERE "shared_space_album"."linkedAlbumId" = "album"."id")
+  OR EXISTS (SELECT 1 FROM "shared_link" WHERE "shared_link"."albumId" = "album"."id")
+)`;
+
+type Rules = {
+  /** Sort key, descending: a Best Photo's score, -1 for every other photo. */
+  rank: RawBuilder<number>;
+  /** Sort key, ascending: whether the photo is sensitive. */
+  sensitive: RawBuilder<boolean>;
+  /** Whether every member of a shared context may see the photo. */
+  visibleToEveryone: RawBuilder<boolean>;
+};
+
+/** The rules for the `asset` row in scope, read from the schema phase the server is in. */
+const getRules = async (db: Kysely<any>): Promise<Rules> => {
+  const phase = await getForkSchemaPhase(db);
+  const scores = phase === 'active' ? sql`immich_fork.asset_best_photo_score` : sql`public.asset_best_photo_score`;
+  const rank = sql<number>`coalesce((
+    SELECT best_photo.score
+    FROM ${scores} AS best_photo
+    WHERE best_photo."assetId" = "asset"."id" AND best_photo.score >= ${sql.lit(BEST_PHOTOS_MIN_SCORE)}
+  ), -1)`;
+
+  // Mirrors `nsfwAssetIdExists` for the phases in which it reads a sensitive flag.
+  if (['legacy', 'dual-write', 'ready'].includes(phase)) {
+    const sensitive = sql<boolean>`"asset"."is_nsfw"`;
+    return { rank, sensitive, visibleToEveryone: sql<boolean>`NOT ${sensitive}` };
+  }
+
+  if (phase === 'active') {
+    const sensitive = sql<boolean>`NOT EXISTS (
+      SELECT 1 FROM immich_fork.asset_privacy AS privacy_asset
+      WHERE privacy_asset."assetId" = "asset"."id" AND privacy_asset."isNsfw" = false
+    )`;
+    return { rank, sensitive, visibleToEveryone: sql<boolean>`NOT ${sensitive}` };
+  }
+
+  // Undetermined: only a Best Photo on the Timeline that is not flagged sensitive.
+  return {
+    rank,
+    sensitive: sql<boolean>`"asset"."is_nsfw"`,
+    visibleToEveryone: sql<boolean>`(
+      "asset"."visibility" = 'timeline' AND NOT "asset"."is_nsfw" AND ${rank} >= 0
+    )`,
+  };
+};
+
+const getForkSchemaPhase = async (db: Kysely<any>): Promise<string> => {
+  const {
+    rows: [schema],
+  } = await sql<{ stateTable: string | null }>`SELECT to_regclass('immich_fork.state')::text AS "stateTable"`.execute(
+    db,
+  );
+  if (!schema?.stateTable) {
+    return 'legacy';
+  }
+
+  const {
+    rows: [state],
+  } = await sql<{ phase: string }>`SELECT phase FROM immich_fork.state WHERE id = 1`.execute(db);
+  return state?.phase ?? 'inactive';
 };
