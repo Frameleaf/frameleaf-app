@@ -23,6 +23,7 @@
     type SettingsHostSection,
   } from '$lib/frameleaf/settings-areas';
   import { QueryParameter } from '$lib/constants';
+  import { Route } from '$lib/route';
   import { Icon } from '@immich/ui';
   import {
     mdiBackupRestore,
@@ -205,6 +206,14 @@
         <p class="overline">{groupCopy[SETTINGS_AREAS.find((item) => item.id === area)?.group ?? 'library']}</p>
         <h2>{areaCopy[area].title}</h2>
         <p class="description">{areaCopy[area].description}</p>
+        {#if area === 'care'}
+          <!-- The prototype's health and duplicate sections open the Library Care tools (FL-69). -->
+          <div class="area-actions">
+            <a href={Route.missingMediaUtility()}>{$t('library_care_review_missing')}</a>
+            <a href={Route.corruptMediaUtility()}>{$t('library_care_review_damaged')}</a>
+            <a href={Route.duplicatesUtility()}>{$t('library_care_open_duplicates')}</a>
+          </div>
+        {/if}
       </header>
       <div class="sections">
         {#each areaSections as section (section.key)}
@@ -353,6 +362,23 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
+  }
+  .area-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+  .area-actions a {
+    padding: 0.4375rem 0.6875rem;
+    color: var(--fl-text);
+    text-decoration: none;
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+  }
+  .area-actions a:hover {
+    background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
   }
   @media (max-width: 56rem) {
     .host {
