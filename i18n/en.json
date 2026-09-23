@@ -3140,6 +3140,7 @@
   "frameleaf_render_workers_health_unreachable": "Unreachable",
   "frameleaf_render_workers_kind_bulk": "Bulk operation",
   "frameleaf_render_workers_kind_enrichment_plan": "Enrichment",
+  "frameleaf_render_workers_kind_media_health": "Library Care",
   "frameleaf_render_workers_kind_quick_edit": "Quick edit",
   "frameleaf_render_workers_kind_restoration": "Restoration",
   "frameleaf_render_workers_kind_restoration_preview": "Restoration preview",

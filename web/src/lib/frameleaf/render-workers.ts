@@ -160,7 +160,24 @@ export const operationKindKey: Readonly<Record<MediaOperationKind, Translations>
   [MediaOperationKind.StudioBundleExport]: 'frameleaf_render_workers_kind_studio_bundle_export',
   [MediaOperationKind.StudioBundleImport]: 'frameleaf_render_workers_kind_studio_bundle_import',
   [MediaOperationKind.EnrichmentPlan]: 'frameleaf_render_workers_kind_enrichment_plan',
+  [MediaOperationKind.MediaHealth]: 'frameleaf_render_workers_kind_media_health',
 };
+
+/**
+ * The kinds a render worker can be scoped to (FL-73): the renders. Bulk jobs, portable project
+ * bundles, enrichment plans, Library Care and other server-side jobs run on this server's own
+ * workers and are never offered to a remote renderer. {@link operationKindKey} still names every
+ * kind, because a worker enrolled before this list existed may carry one in its saved scope.
+ */
+export const RENDER_WORKER_KINDS: readonly MediaOperationKind[] = [
+  MediaOperationKind.StudioExport,
+  MediaOperationKind.StudioPreview,
+  MediaOperationKind.Restoration,
+  MediaOperationKind.RestorationPreview,
+  MediaOperationKind.QuickEdit,
+];
+
+export const isRenderWorkerKind = (kind: MediaOperationKind) => RENDER_WORKER_KINDS.includes(kind);
 
 export const auditEventKey: Readonly<Record<RenderWorkerAuditEvent, Translations>> = {
   [RenderWorkerAuditEvent.Enrolled]: 'frameleaf_render_workers_event_enrolled',
@@ -376,7 +393,8 @@ export const workerFormFrom = (worker: RenderWorkerDto | null | undefined): Rend
   return {
     name: worker.name,
     destination: worker.destination,
-    kinds: [...worker.kinds],
+    // A scope saved before RENDER_WORKER_KINDS existed keeps only its renders when edited (FL-73).
+    kinds: worker.kinds.filter((kind) => isRenderWorkerKind(kind)),
     engineDigest: worker.engineDigest ?? '',
     conformanceMaxAgeHours: String(msToHours(worker.conformanceMaxAgeMs) ?? ''),
     gpuMemoryGiB: String(bytesToGiB(worker.gpuMemoryBytes) ?? ''),
@@ -403,7 +421,7 @@ export const parseWorkerForm = (form: RenderWorkerForm): ParsedWorkerForm => {
   if (!Object.values(MediaOperationDestination).includes(form.destination)) {
     return { ok: false, field: 'destination' };
   }
-  const kinds = [...new Set(form.kinds)];
+  const kinds = [...new Set(form.kinds)].filter((kind) => isRenderWorkerKind(kind));
   if (kinds.length === 0) {
     return { ok: false, field: 'kinds' };
   }
