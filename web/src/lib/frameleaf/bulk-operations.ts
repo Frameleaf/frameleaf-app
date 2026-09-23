@@ -130,6 +130,18 @@ export type BulkRunContext = {
   currentUserId?: string;
   /** Owners of the selected assets, when the caller has them loaded. */
   ownerById?: Record<string, string>;
+  /** The view the action runs from, for what leaves it afterwards (FL-34). */
+  view?: BulkView;
+};
+
+/**
+ * The view a bulk action runs from (FL-34), as far as Locked items go: whether it is the Locked view,
+ * and whether it reveals the owner's marked and detected items to an unlocked session (the main
+ * timeline, `revealsLocks`).
+ */
+export type BulkView = {
+  isLocked: boolean;
+  revealsLocks: boolean;
 };
 
 export type BulkRunOptions = {
@@ -1041,12 +1053,25 @@ const REMOVES_FROM_VIEW: ReadonlySet<BulkActionId> = new Set<BulkActionId>([
   'delete-permanently',
   'restore',
   'remove-from-album',
-  // Marking hides an item from the view it was run from; unmarking takes it out of the Locked view.
-  'mark-sensitive',
-  'unmark-sensitive',
 ]);
 
-export const removesFromView = (action: BulkActionId): boolean => REMOVES_FROM_VIEW.has(action);
+/**
+ * Whether a finished item has left `view`. Marking sensitive (FL-34) hides an item everywhere except
+ * the Locked view and a view that reveals the owner's marks, where it stays; unmarking only takes it
+ * out of the Locked view.
+ */
+export const removesFromView = (
+  action: BulkActionId,
+  view: BulkView = { isLocked: false, revealsLocks: false },
+): boolean => {
+  if (action === 'mark-sensitive') {
+    return !view.isLocked && !view.revealsLocks;
+  }
+  if (action === 'unmark-sensitive') {
+    return view.isLocked;
+  }
+  return REMOVES_FROM_VIEW.has(action);
+};
 
 /**
  * Where one item of a durable job stands, as the page shows it.
