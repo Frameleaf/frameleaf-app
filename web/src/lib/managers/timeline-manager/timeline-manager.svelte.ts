@@ -1,10 +1,16 @@
-import { AssetOrder, getAssetInfo, getTimeBuckets, TimeBucketDateType, type AssetResponseDto } from '@immich/sdk';
+import {
+  AssetOrder,
+  AssetVisibility,
+  getAssetInfo,
+  getTimeBuckets,
+  TimeBucketDateType,
+  type AssetResponseDto,
+} from '@immich/sdk';
 import { clamp, isEqual } from 'lodash-es';
 import { SvelteDate, SvelteSet } from 'svelte/reactivity';
 import { VirtualScrollManager } from '$lib/managers/VirtualScrollManager/VirtualScrollManager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import { GroupInsertionCache } from '$lib/managers/timeline-manager/group-insertion-cache.svelte';
 import { updateTimelineMonthViewportProximity } from '$lib/managers/timeline-manager/internal/intersection-support.svelte';
 import { updateGeometry } from '$lib/managers/timeline-manager/internal/layout-support.svelte';
@@ -508,11 +514,10 @@ export class TimelineManager extends VirtualScrollManager {
     return [...result.notUpdated];
   }
 
-  // Only remove locally when the server would actually hide the asset from this
-  // view. That means NSFW hiding is enabled globally AND this view isn't the
-  // suppressed/review view (which exists to surface hidden assets).
+  // Marking an item sensitive locks it (FL-34), so every view drops it except the Locked view, which
+  // is where it now lives.
   #handleMarkNsfw(ids: string[]) {
-    if (!featureFlagsManager.value.nsfwHiding || this.#options.suppressedOnly) {
+    if (this.#options.visibility === AssetVisibility.Locked) {
       return;
     }
     for (const id of ids) {

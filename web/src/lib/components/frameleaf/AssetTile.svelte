@@ -14,6 +14,7 @@
   import TileJobState from '$lib/components/frameleaf/TileJobState.svelte';
   import { ProjectionType } from '$lib/constants';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
+  import { lockReasonBadge } from '$lib/frameleaf/locked-view';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
@@ -95,6 +96,8 @@
   );
   const stackCount = $derived(asset.stack?.assetCount ?? 0);
   const isLocked = $derived(asset.visibility === AssetVisibility.Locked);
+  // FL-34: in the Locked view the badge says why the item is locked
+  const lockBadge = $derived(lockReasonBadge(asset.lockReason));
   const isArchived = $derived(asset.visibility === AssetVisibility.Archive);
   // Production stores durations in milliseconds on the timeline model, as the upstream thumbnail does.
   const durationSeconds = $derived(asset.duration ? Number(asset.duration) / 1000 : 0);
@@ -327,9 +330,9 @@
         </span>
       {/if}
       {#if isLocked || sensitive}
-        {@const label = isLocked ? $t('frameleaf_library_badge_locked') : $t('frameleaf_library_badge_sensitive')}
+        {@const label = isLocked ? $t(lockBadge.labelKey) : $t('frameleaf_library_badge_sensitive')}
         <span class="fl-badge fl-badge-icon" title={label}>
-          <Icon icon={mdiShieldLockOutline} size="13" />
+          <Icon icon={isLocked ? lockBadge.icon : mdiShieldLockOutline} size="13" />
           <span class="fl-sr">{label}</span>
         </span>
       {/if}

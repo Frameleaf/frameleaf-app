@@ -34,6 +34,8 @@ const gateway = () =>
     updateAssets: vi.fn().mockResolvedValue(undefined),
     updateAsset: vi.fn().mockResolvedValue(undefined),
     updateAssetImageEnrichment: vi.fn().mockResolvedValue(undefined),
+    lockAssets: vi.fn().mockResolvedValue(undefined),
+    unlockAssets: vi.fn().mockResolvedValue(undefined),
     addAssetsToAlbum: vi.fn(),
     removeAssetFromAlbum: vi.fn(),
     updateAlbumInfo: vi.fn().mockResolvedValue(undefined),
@@ -96,6 +98,19 @@ describe('bulk actions bind to existing endpoints', () => {
     expect(api.updateAssets).not.toHaveBeenCalled();
     expect(api.addAssetsToAlbum).not.toHaveBeenCalled();
     expect(result.undo?.action).toBe('unmark-sensitive');
+  });
+
+  it('locks through the lock record and never writes a visibility (FL-34)', async () => {
+    await runBulkAction('move-to-locked', ['a', 'b'], { gateway: api });
+    expect(api.lockAssets).toHaveBeenCalledWith({ bulkIdsDto: { ids: ['a', 'b'] } });
+    expect(api.updateAssets).not.toHaveBeenCalled();
+    expect(api.removeAssetFromAlbum).not.toHaveBeenCalled();
+  });
+
+  it('unlocks through the unlock action, which returns each item where it was (FL-34)', async () => {
+    await runBulkAction('remove-from-locked', ['a'], { gateway: api });
+    expect(api.unlockAssets).toHaveBeenCalledWith({ bulkIdsDto: { ids: ['a'] } });
+    expect(api.updateAssets).not.toHaveBeenCalled();
   });
 
   it('trashes through delete and undoes through restore', async () => {

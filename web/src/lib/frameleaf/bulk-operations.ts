@@ -9,6 +9,7 @@ import {
   createStack,
   deleteAssets,
   deleteStacks,
+  lockAssets,
   MediaOperationBulkAction,
   MediaOperationItemStatus,
   MediaOperationStatus,
@@ -20,6 +21,7 @@ import {
   searchAssets,
   searchSmart,
   SharedLinkType,
+  unlockAssets,
   untagAssets,
   updateAlbumInfo,
   updateAsset,
@@ -148,6 +150,9 @@ export type BulkGateway = {
   updateAssets: typeof updateAssets;
   updateAsset: typeof updateAsset;
   updateAssetImageEnrichment: typeof updateAssetImageEnrichment;
+  /** Lock and Unlock (FL-34). */
+  lockAssets: typeof lockAssets;
+  unlockAssets: typeof unlockAssets;
   addAssetsToAlbum: typeof addAssetsToAlbum;
   removeAssetFromAlbum: typeof removeAssetFromAlbum;
   updateAlbumInfo: typeof updateAlbumInfo;
@@ -177,6 +182,8 @@ export const createBulkGateway = (
   updateAssets,
   updateAsset,
   updateAssetImageEnrichment,
+  lockAssets,
+  unlockAssets,
   addAssetsToAlbum,
   removeAssetFromAlbum,
   updateAlbumInfo,
@@ -657,13 +664,11 @@ export const runBulkAction = async (
       }
     }
 
-    /* PUT /assets — the Locked folder is a visibility, exactly as the legacy action set it. */
+    /* POST /assets/lock and /assets/unlock — Locked is a lock record (FL-34), never a visibility. */
     case 'move-to-locked':
     case 'remove-from-locked': {
-      const visibility = action === 'move-to-locked' ? AssetVisibility.Locked : AssetVisibility.Timeline;
-      return finish(
-        await runInChunks(runner, (batch) => gateway.updateAssets({ assetBulkUpdateDto: { ids: batch, visibility } })),
-      );
+      const write = action === 'move-to-locked' ? gateway.lockAssets : gateway.unlockAssets;
+      return finish(await runInChunks(runner, (batch) => write({ bulkIdsDto: { ids: batch } })));
     }
 
     /* PUT /assets/:id — the Live Photo link lives on the still, one asset at a time. */

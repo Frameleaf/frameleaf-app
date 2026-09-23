@@ -38,8 +38,7 @@ describe('bulk action descriptors', () => {
       'change-description',
       'change-location',
       'archive',
-      'mark-sensitive',
-      'unmark-sensitive',
+      'move-to-locked',
       'refresh-thumbnails',
       'refresh-metadata',
       'refresh-faces',
@@ -47,6 +46,9 @@ describe('bulk action descriptors', () => {
     ]) {
       expect(ids).toContain(id);
     }
+    // One lock (FL-34): Mark Sensitive is the same lock, so it is no longer offered separately.
+    expect(ids).not.toContain('mark-sensitive');
+    expect(ids).not.toContain('unmark-sensitive');
     // Trash-only actions stay out of a live selection.
     expect(ids).not.toContain('restore');
     expect(ids).not.toContain('delete-permanently');
@@ -110,7 +112,7 @@ describe('bulk action descriptors', () => {
 
   it('withholds the actions that need the individual items from a snapshot selection', () => {
     const ids = available({ count: 4000, snapshot: true });
-    expect(ids).toEqual(expect.arrayContaining(['favorite', 'archive', 'tag', 'delete', 'mark-sensitive']));
+    expect(ids).toEqual(expect.arrayContaining(['favorite', 'archive', 'tag', 'delete', 'move-to-locked']));
     for (const id of ['stack', 'unstack', 'link-live-photo', 'unlink-live-photo', 'set-album-cover']) {
       expect(ids).not.toContain(id);
     }
