@@ -4958,6 +4958,228 @@ export type StackUpdateDto = {
     /** Primary asset ID */
     primaryAssetId?: string;
 };
+export type StudioProjectLeaseDto = {
+    /** Pause in editing after which the client saves */
+    autosaveDebounceMs: number;
+    /** When the current lease lapses */
+    expiresAt: string | null;
+    /** A live lease belongs to another editor instance */
+    heldByAnother: boolean;
+    /** This client holds the write lease */
+    heldByYou: boolean;
+    /** Lease length the server grants */
+    leaseMs: number;
+    /** How often the holder should renew */
+    renewMs: number;
+};
+export type StudioProjectDto = {
+    access: StudioProjectAccess;
+    createdAt: string;
+    /** Studio project ID */
+    id: string;
+    lease: StudioProjectLeaseDto;
+    name: string;
+    /** The only account that may write */
+    ownerId: string;
+    /** Head revision number; 0 until the first save */
+    revision: number;
+    /** Shared space whose members may review the project */
+    spaceId: string | null;
+    updatedAt: string;
+};
+export type StudioProjectListResponseDto = {
+    items: StudioProjectDto[];
+    /** Matching projects, before paging */
+    total: number;
+};
+export type StudioProjectEnvelopeDto = {
+    /** The engine that produced the graph; `freecut` */
+    engine: string;
+    /** Pinned engine revision the editor was built from */
+    engineRevision: string;
+    /** Opaque engine document, stored and returned byte for byte */
+    graph: {
+        [key: string]: any;
+    };
+    /** Envelope shape version; the server accepts exactly one */
+    schemaVersion: number;
+};
+export type StudioProjectResourcesDto = {
+    /** When the resolution ran */
+    checkedAt: string;
+    /** Every referenced source resolved for the acting account */
+    complete: boolean;
+    /** References that were refused for the acting account */
+    refusedCount: number;
+};
+export type StudioProjectDetailDto = {
+    access: StudioProjectAccess;
+    createdAt: string;
+    /** Key-sorted SHA-256 of the head envelope; null when withheld */
+    digest: string | null;
+    envelope: (StudioProjectEnvelopeDto) | null;
+    /** Studio project ID */
+    id: string;
+    lease: StudioProjectLeaseDto;
+    name: string;
+    /** The only account that may write */
+    ownerId: string;
+    resources: (StudioProjectResourcesDto) | null;
+    /** Head revision number; 0 until the first save */
+    revision: number;
+    /** Shared space whose members may review the project */
+    spaceId: string | null;
+    updatedAt: string;
+    /** The graph was withheld because a source is unavailable to you */
+    withheld: boolean;
+};
+export type StudioProjectCreateDto = {
+    /** This editor instance; it receives the lease */
+    clientId: string;
+    /** An initial document, saved as revision 1 */
+    envelope?: StudioProjectEnvelopeDto;
+    name: string;
+    /** Idempotency key for the initial save */
+    requestKey?: string;
+    /** Share the project with a shared space for review */
+    spaceId?: string | null;
+};
+export type StudioProjectUpdateDto = {
+    name?: string;
+    /** Set or clear the reviewing shared space */
+    spaceId?: string | null;
+};
+export type StudioProjectLeaseRequestDto = {
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    clientId: string;
+    /** Take a live lease away from another of your editor instances; never implicit */
+    takeover?: boolean;
+};
+export type StudioCommandSummaryDto = {
+    /** Command id to how many times it appeared */
+    counts: {
+        [key: string]: number;
+    };
+    /** Commands in the batch */
+    total: number;
+};
+export type StudioProjectSaveResponseDto = {
+    /** Digest of the head envelope */
+    digest: string;
+    lease: StudioProjectLeaseDto;
+    /** This request key was already accepted; the earlier result is returned */
+    replayed: boolean;
+    /** The head after this request */
+    revision: number;
+    /** The revision row; null when nothing was written */
+    revisionId: string | null;
+    /** The document equals the head, so no revision was written */
+    unchanged: boolean;
+};
+export type StudioProjectSaveDto = {
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    clientId: string;
+    envelope: StudioProjectEnvelopeDto;
+    /** The head this document was built on */
+    expectedRevision: number;
+    /** Stable per attempt; a retry carries the same key */
+    requestKey: string;
+    summary?: StudioCommandSummaryDto;
+};
+export type StudioProjectRevisionDto = {
+    authorId: string | null;
+    createdAt: string;
+    /** Null for a reviewer; the digest travels with the graph */
+    digest: string | null;
+    graphBytes: number;
+    id: string;
+    /** Set when this revision restored an earlier one */
+    restoredFromRevision: number | null;
+    revision: number;
+    summary: StudioCommandSummaryDto;
+};
+export type StudioProjectHistoryResponseDto = {
+    /** Newest first */
+    items: StudioProjectRevisionDto[];
+    total: number;
+};
+export type StudioProjectRestoreDto = {
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    clientId: string;
+    /** The current head; the restore appends after it */
+    expectedRevision: number;
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    requestKey: string;
+    /** The historical revision to bring back */
+    revision: number;
+};
+export type StudioProjectRevisionDetailDto = {
+    authorId: string | null;
+    createdAt: string;
+    /** Null for a reviewer; the digest travels with the graph */
+    digest: string | null;
+    envelope: (StudioProjectEnvelopeDto) | null;
+    graphBytes: number;
+    id: string;
+    resources: (StudioProjectResourcesDto) | null;
+    /** Set when this revision restored an earlier one */
+    restoredFromRevision: number | null;
+    revision: number;
+    summary: StudioCommandSummaryDto;
+    withheld: boolean;
+};
+export type StudioProjectDiffDto = {
+    added: number;
+    /** Size change of the serialized graph */
+    byteDelta: number;
+    changed: number;
+    /** Commands the saves between the two revisions reported */
+    commands: StudioCommandSummaryDto;
+    from: number;
+    /** The two envelopes have the same digest */
+    identical: boolean;
+    /** Changed graph paths, aggregated and capped */
+    paths: string[];
+    removed: number;
+    to: number;
+    /** More paths changed than are listed */
+    truncated: boolean;
+};
+export type StudioTimeDto = {
+    /** Denominator */
+    den: number;
+    /** Numerator; zero is the start of the sequence */
+    num: number;
+};
+export type StudioCommentDto = {
+    authorId: string;
+    createdAt: string;
+    id: string;
+    projectId: string;
+    resolvedAt: string | null;
+    resolvedById: string | null;
+    /** The revision the reviewer was looking at */
+    revision: number;
+    text: string;
+    time: StudioTimeDto;
+    updatedAt: string;
+};
+export type StudioCommentListResponseDto = {
+    /** Oldest first */
+    items: StudioCommentDto[];
+    total: number;
+};
+export type StudioCommentCreateDto = {
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    requestKey?: string;
+    revision: number;
+    text: string;
+    time: StudioTimeDto;
+};
+export type StudioCommentUpdateDto = {
+    resolved?: boolean;
+    text?: string;
+};
 export type SyncAckDeleteDto = {
     /** Sync entity types to delete acks for */
     types?: SyncEntityType[];
@@ -10761,6 +10983,251 @@ export function removeAssetFromStack({ assetId, id }: {
     }));
 }
 /**
+ * List Studio projects
+ */
+export function searchStudioProjects({ skip, take }: {
+    skip?: number;
+    take?: number;
+} = {}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectListResponseDto;
+    }>(`/studio/projects${QS.query(QS.explode({
+        skip,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Create a Studio project
+ */
+export function createStudioProject({ studioProjectCreateDto }: {
+    studioProjectCreateDto: StudioProjectCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioProjectDetailDto;
+    }>("/studio/projects", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioProjectCreateDto
+    })));
+}
+/**
+ * Get a Studio project
+ */
+export function getStudioProject({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectDetailDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Update a Studio project
+ */
+export function updateStudioProject({ id, studioProjectUpdateDto }: {
+    id: string;
+    studioProjectUpdateDto: StudioProjectUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: studioProjectUpdateDto
+    })));
+}
+/**
+ * Delete a Studio project
+ */
+export function deleteStudioProject({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/studio/projects/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * List Studio review comments
+ */
+export function getStudioProjectComments({ id, skip, take }: {
+    id: string;
+    skip?: number;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioCommentListResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/comments${QS.query(QS.explode({
+        skip,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Add a Studio review comment
+ */
+export function addStudioProjectComment({ id, studioCommentCreateDto }: {
+    id: string;
+    studioCommentCreateDto: StudioCommentCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioCommentDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/comments`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioCommentCreateDto
+    })));
+}
+/**
+ * Update a Studio review comment
+ */
+export function updateStudioProjectComment({ commentId, id, studioCommentUpdateDto }: {
+    commentId: string;
+    id: string;
+    studioCommentUpdateDto: StudioCommentUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioCommentDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: studioCommentUpdateDto
+    })));
+}
+/**
+ * Remove a Studio review comment
+ */
+export function removeStudioProjectComment({ commentId, id }: {
+    commentId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/studio/projects/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Acquire or renew the write lease
+ */
+export function acquireStudioProjectLease({ id, studioProjectLeaseRequestDto }: {
+    id: string;
+    studioProjectLeaseRequestDto: StudioProjectLeaseRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectLeaseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/lease`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioProjectLeaseRequestDto
+    })));
+}
+/**
+ * Release the write lease
+ */
+export function releaseStudioProjectLease({ id, studioProjectLeaseRequestDto }: {
+    id: string;
+    studioProjectLeaseRequestDto: StudioProjectLeaseRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/studio/projects/${encodeURIComponent(id)}/lease/release`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioProjectLeaseRequestDto
+    })));
+}
+/**
+ * Restore a Studio project revision
+ */
+export function restoreStudioProjectRevision({ id, studioProjectRestoreDto }: {
+    id: string;
+    studioProjectRestoreDto: StudioProjectRestoreDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioProjectSaveResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/restore`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioProjectRestoreDto
+    })));
+}
+/**
+ * Save a Studio project revision
+ */
+export function saveStudioProjectRevision({ id, studioProjectSaveDto }: {
+    id: string;
+    studioProjectSaveDto: StudioProjectSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioProjectSaveResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/revisions`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioProjectSaveDto
+    })));
+}
+/**
+ * List Studio project history
+ */
+export function getStudioProjectHistory({ id, skip, take }: {
+    id: string;
+    skip?: number;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectHistoryResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/revisions${QS.query(QS.explode({
+        skip,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get a Studio project revision
+ */
+export function getStudioProjectRevision({ id, revision }: {
+    id: string;
+    revision: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectRevisionDetailDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/revisions/${encodeURIComponent(revision)}`, {
+        ...opts
+    }));
+}
+/**
+ * Compare two Studio project revisions
+ */
+export function diffStudioProjectRevision({ against, id, revision }: {
+    against: number;
+    id: string;
+    revision: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectDiffDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/revisions/${encodeURIComponent(revision)}/diff${QS.query(QS.explode({
+        against
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Delete acknowledgements
  */
 export function deleteSyncAck({ syncAckDeleteDto }: {
@@ -12503,6 +12970,10 @@ export enum AssetIdErrorReason {
     Duplicate = "duplicate",
     NoPermission = "no_permission",
     NotFound = "not_found"
+}
+export enum StudioProjectAccess {
+    Owner = "owner",
+    Reviewer = "reviewer"
 }
 export enum SyncEntityType {
     AuthUserV1 = "AuthUserV1",
