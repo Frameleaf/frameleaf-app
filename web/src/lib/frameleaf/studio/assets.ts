@@ -22,6 +22,7 @@
 import { AssetMediaSize, AssetTypeEnum, AssetVisibility, type AssetResponseDto } from '@immich/sdk';
 import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
 import type { StudioAssetRef } from './host-contract';
+import { fromMilliseconds } from './rational-time';
 
 /** Whether an asset may be offered to the editor at all. */
 export const isStudioEligibleAsset = (asset: AssetResponseDto): boolean =>
@@ -37,8 +38,10 @@ export const toStudioAsset = (asset: AssetResponseDto): StudioAssetRef => {
     id: asset.id,
     kind: isVideo ? 'video' : 'image',
     name: asset.originalFileName,
-    // The DTO carries milliseconds; the timeline works in seconds.
-    durationSeconds: isVideo && asset.duration !== null ? asset.duration / 1000 : null,
+    // FL-93: the DTO carries whole milliseconds and the timeline works in seconds, but the
+    // conversion is exact rather than a division — 12500 ms is 25/2 s, and 1 ms is 1/1000 s
+    // instead of a float that is already wrong before anything is placed on a track.
+    duration: isVideo && asset.duration !== null ? fromMilliseconds(asset.duration) : null,
     thumbnailUrl: getAssetMediaUrl({ id: asset.id, cacheKey, size: AssetMediaSize.Thumbnail }),
     previewUrl: getAssetMediaUrl({ id: asset.id, cacheKey, size: AssetMediaSize.Preview }),
     playbackUrl: isVideo ? getAssetPlaybackUrl({ id: asset.id, cacheKey }) : null,
