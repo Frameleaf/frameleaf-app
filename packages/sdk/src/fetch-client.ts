@@ -5841,7 +5841,7 @@ export type TrashItemResponseDto = {
     id: string;
     /** Locked media; only listed for its owner in an unlocked session */
     isLocked: boolean;
-    /** The original is missing from an external library */
+    /** The library scan found this external original missing and manages it; trash actions do not change it */
     isOffline: boolean;
     /** Original file name */
     originalFileName: string;

@@ -65,7 +65,9 @@ const TrashItemResponseSchema = z
     fileSizeInByte: z.int().min(0).nullable().describe('Size of the original, in bytes, when known'),
     trashedAt: z.string().meta({ format: 'date-time' }).nullable().describe('When the item was moved to the trash'),
     isLocked: z.boolean().describe('Locked media; only listed for its owner in an unlocked session'),
-    isOffline: z.boolean().describe('The original is missing from an external library'),
+    isOffline: z
+      .boolean()
+      .describe('The library scan found this external original missing and manages it; trash actions do not change it'),
   })
   .meta({ id: 'TrashItemResponseDto' });
 

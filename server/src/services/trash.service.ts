@@ -13,7 +13,7 @@ import {
   TrashReviewResponseDto,
   TrashSummaryResponseDto,
 } from 'src/dtos/trash.dto.js';
-import { JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
+import { AssetStatus, JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
@@ -69,7 +69,8 @@ export class TrashService extends BaseService {
         fileSizeInByte: item.fileSizeInByte === null ? null : toByteCount(item.fileSizeInByte),
         trashedAt: item.deletedAt ? new Date(item.deletedAt).toISOString() : null,
         isLocked: !!item.isLocked,
-        isOffline: !!item.isOffline,
+        // only the library scan's missing originals; one the owner trashed is an ordinary trash item
+        isOffline: !!item.isOffline && item.status === AssetStatus.Active,
       })),
       total,
       nextPage: hasNextPage ? String(page + 1) : null,
@@ -95,11 +96,26 @@ export class TrashService extends BaseService {
   }
 
   /**
+   * Moving to the trash needs the trash. With it turned off a deletion is permanent, which is a
+   * different decision with its own confirmation, so a large-file review refuses rather than hiding it.
+   */
+  private async requireTrashFor(action: TrashReviewAction) {
+    if (action !== TrashReviewAction.Trash) {
+      return;
+    }
+    const { trash } = await this.getConfig({ withCache: true });
+    if (!trash.enabled) {
+      throw new BadRequestException('Trash is turned off');
+    }
+  }
+
+  /**
    * Resolve the set an action would change and fingerprint it. A chosen item that is not in the
    * state the action starts from (already restored, already deleted, locked or hidden since it was
    * shown) makes the review fail, so the person is never shown a count the apply would not match.
    */
   async review(auth: AuthDto, dto: TrashReviewDto): Promise<TrashReviewResponseDto> {
+    await this.requireTrashFor(dto.action);
     const ids = await this.chosenIds(auth, dto.action, dto.ids);
     const rows = await this.trashRepository.getReviewRows(auth.user.id, dto.action, ids, this.scopeOf(auth));
 
@@ -124,6 +140,7 @@ export class TrashService extends BaseService {
    * session that is no longer unlocked — is a conflict and nothing changes.
    */
   async apply(auth: AuthDto, dto: TrashApplyDto): Promise<TrashResponseDto> {
+    await this.requireTrashFor(dto.action);
     const ids = await this.chosenIds(auth, dto.action, dto.ids);
     const changed = await this.trashRepository.applyReviewed(
       auth.user.id,
