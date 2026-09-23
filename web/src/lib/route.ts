@@ -137,6 +137,8 @@ export const Route = {
   systemSettings: (params?: { isOpen?: OpenQueryParam }) => '/admin/system-settings' + asQueryString(params),
   systemStatistics: () => '/admin/server-status',
   systemMaintenance: (params?: { continue?: string }) => '/admin/maintenance' + asQueryString(params),
+  /** Processing destinations (FL-110): where machine-learning work may run, with consent and cost controls. */
+  systemProcessingDestinations: () => '/admin/processing-destinations',
   systemMaintenanceIntegrityReport: ({ reportType }: { reportType: IntegrityReport }) =>
     `/admin/maintenance/integrity-report/${reportType}`,
 
