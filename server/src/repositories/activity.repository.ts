@@ -3,6 +3,7 @@ import { type Insertable, type Kysely, type NotNull, type Updateable, sql } from
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetVisibility } from 'src/enum.js';
@@ -10,11 +11,21 @@ import { DB } from 'src/schema/index.js';
 import { ActivityTable } from 'src/schema/tables/activity.table.js';
 import { asUuid, dummy, withHiddenContentFilter } from 'src/utils/database.js';
 
-export interface ActivitySearch extends HiddenContentQueryOptions {
+export interface ActivitySearch extends HiddenContentQueryOptions, LockedVisibilityOptions {
   albumId?: string;
   assetId?: string | null;
   userId?: string;
   isLiked?: boolean;
+  /**
+   * Skip the Locked filter. Only for a lookup of the caller's own reactions (the duplicate-like check),
+   * which never reaches another person.
+   */
+  includeLocked?: boolean;
+}
+
+interface ActivityStatisticsOptions extends HiddenContentQueryOptions, LockedVisibilityOptions {
+  albumId: string;
+  assetId?: string;
 }
 
 @Injectable()
@@ -43,6 +54,17 @@ export class ActivityRepository {
       .$if(!!albumId, (qb) => qb.where('activity.albumId', '=', albumId!))
       .$if(isLiked !== undefined, (qb) => qb.where('activity.isLiked', '=', isLiked!))
       .where('asset.deletedAt', 'is', null)
+      // reactions on a Locked item stay with its owner's elevated session: another member never
+      // learns the item's id or what was said about it (owner decision, September 22, 2026)
+      .$if(!options.includeLocked, (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            eb('asset.id', 'is', null),
+            eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
+            ...(options.lockedOwnerId ? [eb('asset.ownerId', '=', options.lockedOwnerId)] : []),
+          ]),
+        ),
+      )
       .$call((qb) => withHiddenContentFilter(qb, options))
       .orderBy('activity.createdAt', 'asc')
       .execute();
@@ -103,11 +125,9 @@ export class ActivityRepository {
   async getStatistics({
     albumId,
     assetId,
+    lockedOwnerId,
     ...options
-  }: {
-    albumId: string;
-    assetId?: string;
-  } & HiddenContentQueryOptions): Promise<{ comments: number; likes: number }> {
+  }: ActivityStatisticsOptions): Promise<{ comments: number; likes: number }> {
     const result = await this.db
       .selectFrom('activity')
       .select((eb) => [
@@ -119,12 +139,12 @@ export class ActivityRepository {
       .$if(!!assetId, (qb) => qb.where('activity.assetId', '=', assetId!))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where('activity.albumId', '=', albumId)
-      .where(({ or, and, eb }) =>
-        or([
-          and([eb('asset.deletedAt', 'is', null), eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked))]),
-          eb('asset.id', 'is', null),
-        ]),
-      )
+      .where(({ or, and, eb }) => {
+        // counted exactly as `search` lists: a Locked item's reactions only for its owner's elevated session
+        const notLocked = eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked));
+        const visible = lockedOwnerId ? or([notLocked, eb('asset.ownerId', '=', lockedOwnerId)]) : notLocked;
+        return or([and([eb('asset.deletedAt', 'is', null), visible]), eb('asset.id', 'is', null)]);
+      })
       .executeTakeFirstOrThrow();
 
     return result;

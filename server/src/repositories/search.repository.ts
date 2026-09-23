@@ -152,8 +152,18 @@ type BaseAssetSearchOptions = SearchDateOptions &
   SearchOcrOptions &
   SearchImageEnrichmentOptions;
 
+export interface SearchLockedOwnerOptions {
+  /**
+   * The one owner whose Locked media a search may return: the viewer, in an elevated session. Server
+   * derived, never client controlled. Left out, no Locked media comes back; another owner's (a
+   * partner's, an album member's) never does.
+   */
+  lockedOwnerId?: string;
+}
+
 export type AssetSearchOptions = Omit<BaseAssetSearchOptions, 'visibility'> &
-  SearchRelationOptions & { visibility?: AssetVisibility | 'not-locked' };
+  SearchRelationOptions &
+  SearchLockedOwnerOptions & { visibility?: AssetVisibility | 'not-locked' };
 
 export type AssetSearchBuilderOptions = Omit<AssetSearchOptions, 'orderDirection'>;
 
@@ -186,7 +196,8 @@ export type SmartSearchOptions = SearchDateOptions &
   SearchPetOptions &
   SearchTagOptions &
   SearchOcrOptions &
-  SearchImageEnrichmentOptions & { visibility?: AssetVisibility | 'not-locked'; viewingUserId?: string };
+  SearchImageEnrichmentOptions &
+  SearchLockedOwnerOptions & { visibility?: AssetVisibility | 'not-locked'; viewingUserId?: string };
 
 export type OcrSearchOptions = SearchDateOptions & SearchOcrOptions;
 

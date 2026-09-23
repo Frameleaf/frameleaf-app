@@ -97,8 +97,9 @@
    * The floating selection bar (FL-32), ported from `design/frameleaf/template/src/SelectionBar.jsx`.
    *
    * It owns presentation and payload collection only. Every action is handed to `onAction`, which
-   * the library view binds to `runBulkAction`; the bar never calls an endpoint itself, so there is
-   * one place where an action is bound and one place where its failures are reported.
+   * the library view binds to `runBulkAction`; the bar never runs an action itself, so there is
+   * one place where an action is bound and one place where its failures are reported. The only read
+   * it makes is the Add to album picker loading the album list it offers.
    *
    * September 22, 2026 revision: the bar carries the complete bulk set, nothing is selected on
    * load, and "select everything matching" offers a scope-bound snapshot that runs in the
@@ -112,7 +113,6 @@
     assets = [],
     context = {},
     tagOptions = [],
-    albumOptions = [],
     operations = [],
     /** The last completed action that can be reversed. */
     undoLabel,
@@ -129,7 +129,6 @@
     assets?: BulkAsset[];
     context?: Omit<BulkActionContext, 'assets' | 'count'>;
     tagOptions?: { id: string; name: string }[];
-    albumOptions?: { id: string; name: string; count?: number }[];
     operations?: BulkOperationRecord[];
     undoLabel?: string;
     onAction: (id: BulkActionId, payload?: BulkPayload) => void;
@@ -414,7 +413,6 @@
 {:else if dialog === 'add-to-album'}
   <BulkAlbumDialog
     {count}
-    albums={albumOptions}
     bind:open={dialogOpen}
     onSubmit={(payload) => submitDialog('add-to-album', payload)}
   />
