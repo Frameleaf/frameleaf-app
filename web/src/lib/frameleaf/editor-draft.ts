@@ -108,6 +108,25 @@ export function changeDraft(draft: EditorDraft, patch: Partial<EditorRecipe>): E
   };
 }
 
+/**
+ * Opens the draft on the recipe the server returned. Adjustments made while that request was in
+ * flight were made against the defaults; they are replayed on top of the loaded recipe (one undo
+ * step back to it) rather than silently discarded.
+ */
+export function rebaseDraft(draft: EditorDraft, loaded: unknown): EditorDraft {
+  const base = createDraft(loaded);
+  if (draft.undo.length === 0 && draft.redo.length === 0) {
+    return base;
+  }
+  const defaults = initialRecipe();
+  const edits = Object.fromEntries(
+    (Object.keys(draft.recipe) as (keyof EditorRecipe)[])
+      .filter((key) => JSON.stringify(draft.recipe[key]) !== JSON.stringify(defaults[key]))
+      .map((key) => [key, draft.recipe[key]]),
+  ) as Partial<EditorRecipe>;
+  return changeDraft(base, edits);
+}
+
 const travel = (draft: EditorDraft, source: 'undo' | 'redo'): EditorDraft => {
   const target = source === 'undo' ? 'redo' : 'undo';
   if (draft[source].length === 0) {
