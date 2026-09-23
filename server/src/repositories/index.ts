@@ -56,6 +56,7 @@ import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
+import { PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
@@ -146,6 +147,7 @@ export const repositories = [
   PartnerRepository,
   PersonRepository,
   PetRepository,
+  PhotoToolsRepository,
   PhysicalFileRepository,
   PluginRepository,
   ProcessRepository,

@@ -136,6 +136,7 @@ import {
   TakeoutPairTable,
   TakeoutSourceTable,
 } from 'src/schema/tables/takeout.table.js';
+import { DevelopExportTable, DevelopPresetTable } from 'src/schema/tables/photo-tools.table.js';
 import { UserAuditTable } from 'src/schema/tables/user-audit.table.js';
 import { UserMetadataAuditTable } from 'src/schema/tables/user-metadata-audit.table.js';
 import { UserMetadataTable } from 'src/schema/tables/user-metadata.table.js';
@@ -255,6 +256,8 @@ export class ImmichDatabase {
     TakeoutItemTable,
     TakeoutPairTable,
     TakeoutAlbumTable,
+    DevelopPresetTable,
+    DevelopExportTable,
     SessionSyncCheckpointTable,
     SystemMetadataTable,
     TagTable,
@@ -442,6 +445,9 @@ export interface DB {
   takeout_item: TakeoutItemTable;
   takeout_pair: TakeoutPairTable;
   takeout_source: TakeoutSourceTable;
+
+  develop_export: DevelopExportTable;
+  develop_preset: DevelopPresetTable;
 
   tag: TagTable;
   tag_asset: TagAssetTable;

@@ -1,13 +1,18 @@
-import { AssetDevelopPreset } from 'src/dtos/asset-develop.dto.js';
+import { type AssetDevelopMask, AssetDevelopMaskKind, AssetDevelopPreset } from 'src/dtos/asset-develop.dto.js';
 import {
   DEVELOP_SLIDER_KEYS,
+  applyDevelopMasks,
   applyDevelopTone,
   buildToneLuts,
   createNoise,
   defaultDevelopRecipe,
   effectiveDevelop,
+  identityMaskMapping,
+  isActiveMask,
   isIdentityDevelop,
+  maskWeight,
   normalizeCrop,
+  normalizeDevelopMasks,
   normalizeDevelopRecipe,
   planDevelopDetail,
   planDevelopGeometry,
@@ -104,7 +109,8 @@ describe('develop recipe', () => {
   describe('geometry', () => {
     it('matches the prototype cover scale for a straightened frame', () => {
       expect(straightenScale(1600, 1200, 0)).toBe(1);
-      expect(straightenScale(1600, 1200, 10)).toBeCloseTo(1.1147, 3);
+      // max((w·cos + h·sin) / w, (w·sin + h·cos) / h) = max(1.1147, 1.2163), as the prototype computes it
+      expect(straightenScale(1600, 1200, 10)).toBeCloseTo(1.2163, 3);
       expect(straightenScale(0, 0, 10)).toBe(1);
     });
 
@@ -217,6 +223,122 @@ describe('develop recipe', () => {
         height: 300,
       });
       expect(soft.clarity).toBeUndefined();
+    });
+  });
+  describe('selective masks (FL-64)', () => {
+    const mask = (overrides: Partial<AssetDevelopMask> = {}): AssetDevelopMask => ({
+      id: 'm1',
+      name: null,
+      kind: AssetDevelopMaskKind.Radial,
+      enabled: true,
+      invert: false,
+      x: 0.5,
+      y: 0.5,
+      radiusX: 0.25,
+      radiusY: 0.25,
+      endX: 0.5,
+      endY: 1,
+      feather: 0,
+      amount: 100,
+      adjustments: {
+        exposure: 1,
+        contrast: 0,
+        highlights: 0,
+        shadows: 0,
+        whites: 0,
+        blacks: 0,
+        temperature: 0,
+        tint: 0,
+        vibrance: 0,
+        saturation: 0,
+        dehaze: 0,
+      },
+      ...overrides,
+    });
+
+    it('normalizes stored masks: clamps, fills defaults, drops malformed and duplicate ones, keeps at most eight', () => {
+      const masks = normalizeDevelopMasks([
+        { id: 'a', kind: AssetDevelopMaskKind.Radial, x: 4, radiusX: 0, adjustments: { exposure: 9 } },
+        { id: 'a', kind: AssetDevelopMaskKind.Linear, x: 0, y: 0 },
+        { id: '', kind: AssetDevelopMaskKind.Radial },
+        { id: 'b', kind: 'brush' },
+        null,
+        ...Array.from({ length: 10 }, (_, i) => ({ id: `n${i}`, kind: AssetDevelopMaskKind.Linear })),
+      ]);
+      expect(masks).toHaveLength(8);
+      expect(masks[0]).toMatchObject({ id: 'a', x: 1, radiusX: 0.01, enabled: true, feather: 50, amount: 100 });
+      expect(masks[0].adjustments.exposure).toBe(2);
+      expect(masks[0].adjustments.contrast).toBe(0);
+      expect(masks.map((item) => item.id)).not.toContain('b');
+      expect(normalizeDevelopMasks('nope')).toEqual([]);
+      expect(normalizeDevelopRecipe({}).masks).toEqual([]);
+    });
+
+    it('weights a radial mask by its feathered ellipse and a linear mask along its gradient', () => {
+      const radial = mask({ feather: 50 });
+      expect(maskWeight(radial, 0.5, 0.5)).toBe(1);
+      expect(maskWeight(radial, 0.5 + 0.25 * 0.4, 0.5)).toBe(1);
+      expect(maskWeight(radial, 0.5 + 0.25 * 0.75, 0.5)).toBeGreaterThan(0);
+      expect(maskWeight(radial, 0.5 + 0.25 * 0.75, 0.5)).toBeLessThan(1);
+      expect(maskWeight(radial, 0.9, 0.9)).toBe(0);
+      expect(maskWeight({ ...radial, invert: true }, 0.9, 0.9)).toBe(1);
+
+      const linear = mask({ kind: AssetDevelopMaskKind.Linear, x: 0.5, y: 0, endX: 0.5, endY: 1 });
+      expect(maskWeight(linear, 0.2, 0)).toBe(1);
+      expect(maskWeight(linear, 0.2, 0.5)).toBeCloseTo(0.5, 5);
+      expect(maskWeight(linear, 0.2, 1)).toBe(0);
+      expect(maskWeight(linear, 0.2, -0.5)).toBe(1);
+    });
+
+    it('treats a disabled, zero-amount or no-op mask as inactive and leaves the pixels alone', () => {
+      expect(isActiveMask(mask())).toBe(true);
+      expect(isActiveMask(mask({ enabled: false }))).toBe(false);
+      expect(isActiveMask(mask({ amount: 0 }))).toBe(false);
+      expect(isActiveMask(mask({ adjustments: { ...mask().adjustments, exposure: 0 } }))).toBe(false);
+      const pixels = grey(4, 4);
+      const before = Uint8Array.from(pixels);
+      applyDevelopMasks(pixels, { width: 4, height: 4, channels: 3 }, [mask({ enabled: false })]);
+      expect(pixels).toEqual(before);
+      expect(isIdentityDevelop({ ...defaultDevelopRecipe(), masks: [mask({ enabled: false })] })).toBe(true);
+      expect(isIdentityDevelop({ ...defaultDevelopRecipe(), masks: [mask()] })).toBe(false);
+    });
+
+    it('brightens only inside a hard-edged radial mask, scaled by its amount', () => {
+      const info = { width: 8, height: 8, channels: 3 } as const;
+      const full = grey(8, 8);
+      applyDevelopMasks(full, info, [mask()]);
+      const centre = (4 * 8 + 4) * 3;
+      expect(full[centre]).toBeGreaterThan(128);
+      expect(full[0]).toBe(128);
+
+      const half = grey(8, 8);
+      applyDevelopMasks(half, info, [mask({ amount: 50 })]);
+      expect(half[centre]).toBeGreaterThan(128);
+      expect(half[centre]).toBeLessThan(full[centre]);
+    });
+
+    it('keeps a mask on the same content through the crop and the straighten', () => {
+      // A 100×100 frame cropped to its right half, with a mask over the content at (75, 50).
+      // Straightening turns that content about the frame centre and scales it to cover the
+      // frame; the mask follows it to wherever it lands in the output.
+      const info = { width: 50, height: 100, channels: 3 } as const;
+      for (const straighten of [0, 12]) {
+        const pixels = grey(50, 100);
+        applyDevelopMasks(pixels, info, [mask({ x: 0.75, radiusX: 0.05, radiusY: 0.05 })], {
+          oriented: { width: 100, height: 100 },
+          extract: { left: 50, top: 0 },
+          straighten,
+        });
+        const theta = (straighten * Math.PI) / 180;
+        const scale = straightenScale(100, 100, straighten);
+        const landedX = Math.floor(50 + scale * 25 * Math.cos(theta) - 50);
+        const landedY = Math.floor(50 + scale * 25 * Math.sin(theta));
+        const at = (x: number, y: number) => pixels[(y * 50 + x) * 3];
+        expect(at(landedX, landedY)).toBeGreaterThan(128);
+        expect(at(2, 50)).toBe(128);
+        expect(at(25, 5)).toBe(128);
+      }
+      expect(identityMaskMapping(10, 20)).toEqual({ oriented: { width: 10, height: 20 }, extract: { left: 0, top: 0 }, straighten: 0 });
     });
   });
 });

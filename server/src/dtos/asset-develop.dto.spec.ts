@@ -1,4 +1,5 @@
 import {
+  AssetDevelopMaskKind,
   AssetDevelopPreset,
   AssetDevelopPreviewDto,
   AssetDevelopRecipeSchema,
@@ -41,5 +42,45 @@ describe('AssetDevelopRecipeDto', () => {
     const preview = AssetDevelopPreviewDto.schema.safeParse({ recipe: { version: 1 } });
     expect(preview.data).toMatchObject({ size: 1280 });
     expect(AssetDevelopPreviewDto.schema.safeParse({ recipe: { version: 1 }, size: 64 }).success).toBe(false);
+  });
+
+  it('accepts selective masks with defaults and rejects malformed ones (FL-64)', () => {
+    const parsed = AssetDevelopRecipeSchema.safeParse({
+      version: 1,
+      masks: [{ id: 'sky', kind: AssetDevelopMaskKind.Linear, x: 0.5, y: 0, adjustments: { exposure: -0.5 } }],
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.masks[0]).toMatchObject({
+      enabled: true,
+      invert: false,
+      endX: 0.5,
+      endY: 1,
+      feather: 50,
+      amount: 100,
+      adjustments: { exposure: -0.5, contrast: 0 },
+    });
+    expect(AssetDevelopRecipeSchema.safeParse({ version: 1 }).data?.masks).toEqual([]);
+
+    const radial = { id: 'a', kind: AssetDevelopMaskKind.Radial, x: 0.5, y: 0.5 };
+    expect(AssetDevelopRecipeSchema.safeParse({ version: 1, masks: [radial, radial] }).success).toBe(false);
+    expect(
+      AssetDevelopRecipeSchema.safeParse({ version: 1, masks: [{ ...radial, kind: 'brush' }] }).success,
+    ).toBe(false);
+    expect(
+      AssetDevelopRecipeSchema.safeParse({ version: 1, masks: [{ ...radial, adjustments: { clarity: 20 } }] }).data
+        ?.masks[0].adjustments,
+    ).not.toHaveProperty('clarity');
+    expect(
+      AssetDevelopRecipeSchema.safeParse({
+        version: 1,
+        masks: [{ id: 'l', kind: AssetDevelopMaskKind.Linear, x: 0.5, y: 0.5, endX: 0.5, endY: 0.5 }],
+      }).success,
+    ).toBe(false);
+    expect(
+      AssetDevelopRecipeSchema.safeParse({
+        version: 1,
+        masks: Array.from({ length: 9 }, (_, i) => ({ ...radial, id: `m${i}` })),
+      }).success,
+    ).toBe(false);
   });
 });
