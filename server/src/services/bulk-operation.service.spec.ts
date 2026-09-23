@@ -71,6 +71,7 @@ describe(BulkOperationService.name, () => {
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
       settlePause: vi.fn().mockResolvedValue(true),
       getDateTimeOriginals: vi.fn().mockResolvedValue(new Map()),
+      getLockedAssetIds: vi.fn().mockResolvedValue(new Set()),
     } as unknown as MediaOperationRepository;
     assets = {
       updateAll: vi.fn().mockResolvedValue(undefined),
@@ -160,6 +161,34 @@ describe(BulkOperationService.name, () => {
 
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(ownerId, new Set(snapshot.assetIds), true);
       expect(assets.updateAll).toHaveBeenCalledWith(auth, { ids: snapshot.assetIds, isFavorite: true });
+    });
+
+    it('skips items locked after a job submitted without the PIN was queued (FL-34)', async () => {
+      const auth = (await sut.authFor(ownerId))!;
+      const snapshot = snapshotOf({ action: MediaOperationBulkAction.Archive });
+      const [lockedSince, ...rest] = snapshot.assetIds;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+      vi.mocked(operations.getLockedAssetIds).mockResolvedValue(new Set([lockedSince]));
+
+      const outcomes = await sut.applyBatch(auth, snapshot, snapshot.assetIds);
+
+      expect(assets.updateAll).toHaveBeenCalledWith(auth, expect.objectContaining({ ids: rest }));
+      expect(outcomes).toContainEqual({
+        id: lockedSince,
+        status: MediaOperationItemStatus.Skipped,
+        reasonKey: 'frameleaf_bulk_reason_locked',
+      });
+    });
+
+    it('changes locked items for a job submitted from an unlocked session (FL-34)', async () => {
+      const auth = (await sut.authFor(ownerId))!;
+      const snapshot = snapshotOf({ action: MediaOperationBulkAction.UnmarkSensitive, elevated: true });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+
+      await sut.applyBatch(auth, snapshot, snapshot.assetIds);
+
+      expect(operations.getLockedAssetIds).not.toHaveBeenCalled();
+      expect(enrichment.unlockAssets).toHaveBeenCalledWith(auth, { ids: snapshot.assetIds });
     });
 
     it('names the items a rejected batch actually failed on', async () => {

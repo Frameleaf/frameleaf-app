@@ -2025,6 +2025,7 @@
   "frameleaf_bulk_reason_duplicate": "Already there",
   "frameleaf_bulk_reason_failed": "The server could not complete this one",
   "frameleaf_bulk_reason_interrupted": "The server stopped while changing this one. Check it before changing it again.",
+  "frameleaf_bulk_reason_locked": "Locked after this job started. Unlock Locked items and try again.",
   "frameleaf_bulk_reason_needs_two": "Stacking needs at least two items",
   "frameleaf_bulk_reason_no_permission": "You cannot change this one",
   "frameleaf_bulk_reason_not_durable": "This action cannot run in the background",

@@ -326,6 +326,7 @@ export class MediaOperationService {
       scope: dto.scope,
       requestId: dto.requestId ?? null,
       apiKeyId: auth.apiKey?.id ?? null,
+      elevated: auth.session?.hasElevatedPermission === true,
     };
 
     const created = await this.repository.create({
@@ -559,6 +560,8 @@ export class MediaOperationService {
       // The idempotency key belongs to the original submission, not to this retry.
       requestId: null,
       apiKeyId: auth.apiKey?.id ?? null,
+      // The retry acts with the retrying session's PIN, which was just checked above.
+      elevated: auth.session?.hasElevatedPermission === true,
     };
 
     const retried = await this.repository.create({
