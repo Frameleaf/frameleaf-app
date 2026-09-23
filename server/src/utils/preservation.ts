@@ -214,7 +214,12 @@ const FileDigestSchema = z.object({ sha256: sha256Hex, bytes: z.int().nonnegativ
 export type PreservationFileDigest = z.infer<typeof FileDigestSchema>;
 
 /** What a restoration does with one kind of information, as the package and the product state it. */
-export const PRESERVATION_SUPPORT_LEVELS = ['restored', 'restored-when-empty', 'provenance-only', 'not-included'] as const;
+export const PRESERVATION_SUPPORT_LEVELS = [
+  'restored',
+  'restored-when-empty',
+  'provenance-only',
+  'not-included',
+] as const;
 export type PreservationSupportLevel = (typeof PRESERVATION_SUPPORT_LEVELS)[number];
 
 export const PRESERVATION_SUPPORT_CATEGORIES = [
@@ -316,7 +321,8 @@ export const PreservationManifestSchema = z
   .refine((manifest) => PRESERVATION_INDEX_ENTRY in manifest.files, 'the index must be digested')
   .refine((manifest) => manifest.counts.exported <= PRESERVATION_MAX_ITEMS, 'too many originals for one package')
   .refine(
-    (manifest) => manifest.counts.selected === manifest.counts.exported + manifest.counts.failed + manifest.counts.skipped,
+    (manifest) =>
+      manifest.counts.selected === manifest.counts.exported + manifest.counts.failed + manifest.counts.skipped,
     'counts do not add up',
   )
   .refine((manifest) => manifest.complete === (manifest.counts.failed === 0), 'completeness does not match the counts');
@@ -335,7 +341,10 @@ export const PreservationEntrySchema = z
     metadata: z.object({ path: entryName, sha256: sha256Hex, bytes: z.int().nonnegative() }).strict().nullable(),
   })
   .strict()
-  .refine((entry) => isOriginalEntryFor(entry.original.path, entry.sourceAssetId), 'original path and identity disagree')
+  .refine(
+    (entry) => isOriginalEntryFor(entry.original.path, entry.sourceAssetId),
+    'original path and identity disagree',
+  )
   .refine(
     (entry) => !entry.metadata || entry.metadata.path === preservationEntryNames(entry.sourceAssetId, '').metadata,
     'sidecar path and identity disagree',
@@ -518,7 +527,10 @@ export const checkPreservationJson = <T>(schema: z.ZodType<T>, bytes: Buffer): P
   const checked = schema.safeParse(parsed);
   if (!checked.success) {
     const issue = checked.error.issues[0];
-    return { ok: false, detail: `${issue?.path.join('.') || 'document'}: ${issue?.message ?? 'invalid'}`.slice(0, 200) };
+    return {
+      ok: false,
+      detail: `${issue?.path.join('.') || 'document'}: ${issue?.message ?? 'invalid'}`.slice(0, 200),
+    };
   }
   return { ok: true, value: checked.data };
 };
@@ -558,7 +570,10 @@ export const orderPreservationAlbums = (albums: readonly PreservationAlbum[]): P
     if (album.parentId) {
       const parent = byId.get(album.parentId);
       if (!parent) {
-        throw new PreservationPackageError('package_albums_invalid', 'An album names a parent the package does not list');
+        throw new PreservationPackageError(
+          'package_albums_invalid',
+          'An album names a parent the package does not list',
+        );
       }
       visit(parent);
     }
@@ -603,7 +618,9 @@ export const describePreservationScope = (scope: {
   if (scope.assetIds) {
     return `${scope.assetIds.length} chosen items`;
   }
-  const keys = Object.keys(scope.filter ?? {}).filter((key) => (scope.filter as Record<string, unknown>)[key] !== undefined);
+  const keys = Object.keys(scope.filter ?? {}).filter(
+    (key) => (scope.filter as Record<string, unknown>)[key] !== undefined,
+  );
   return keys.length === 0 ? 'Whole library' : `Library items matching: ${keys.sort().join(', ')}`;
 };
 
@@ -668,7 +685,9 @@ export const GENERATED_DESCRIPTION_MARK = 'AI description:';
  * adds its text as a separate paragraph that starts with {@link GENERATED_DESCRIPTION_MARK}; every
  * other paragraph is the owner's.
  */
-export const splitDescription = (description: string | null | undefined): { manual: string | null; generated: string[] } => {
+export const splitDescription = (
+  description: string | null | undefined,
+): { manual: string | null; generated: string[] } => {
   const manual: string[] = [];
   const generated: string[] = [];
   for (const part of (description ?? '').split(/\n{2,}/)) {
@@ -706,7 +725,12 @@ export const compareWithLibrary = (
 ): PreservationComparison => {
   const conflicts: PreservationConflict[] = [];
   const fills: PreservationConflictField[] = [];
-  const consider = (field: PreservationConflictField, archived: string | null, current: string | null, same: boolean) => {
+  const consider = (
+    field: PreservationConflictField,
+    archived: string | null,
+    current: string | null,
+    same: boolean,
+  ) => {
     if (archived === null || same) {
       return;
     }
@@ -718,7 +742,12 @@ export const compareWithLibrary = (
   };
 
   const date = sidecar.dates.dateTimeOriginal;
-  consider('date', date, library.dateTimeOriginal, !!date && !!library.dateTimeOriginal && sameInstant(date, library.dateTimeOriginal));
+  consider(
+    'date',
+    date,
+    library.dateTimeOriginal,
+    !!date && !!library.dateTimeOriginal && sameInstant(date, library.dateTimeOriginal),
+  );
 
   const description = manualDescription(sidecar);
   // Only the owner's own paragraphs are compared: a generated paragraph is neither side's to restore.
@@ -741,7 +770,12 @@ export const compareWithLibrary = (
 
   const rating = restorableRating(sidecar.rating);
   const currentRating = restorableRating(library.rating);
-  consider('rating', rating === null ? null : String(rating), currentRating === null ? null : String(currentRating), rating === currentRating);
+  consider(
+    'rating',
+    rating === null ? null : String(rating),
+    currentRating === null ? null : String(currentRating),
+    rating === currentRating,
+  );
 
   if (sidecar.isFavorite && !library.isFavorite) {
     fills.push('favorite');
@@ -836,7 +870,10 @@ export type PreservationRestoreSnapshot = {
   requestKey: string | null;
 };
 
-export type PreservationSnapshot = PreservationExportSnapshot | PreservationVerifySnapshot | PreservationRestoreSnapshot;
+export type PreservationSnapshot =
+  | PreservationExportSnapshot
+  | PreservationVerifySnapshot
+  | PreservationRestoreSnapshot;
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -846,7 +883,8 @@ const uuidPattern = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i
 /** A job's snapshot, read back defensively: the column is data, not a contract. */
 export const parsePreservationSnapshot = (kind: string, value: unknown): PreservationSnapshot => {
   const snapshot = asRecord(value);
-  const packageId = typeof snapshot.packageId === 'string' && uuidPattern.test(snapshot.packageId) ? snapshot.packageId : '';
+  const packageId =
+    typeof snapshot.packageId === 'string' && uuidPattern.test(snapshot.packageId) ? snapshot.packageId : '';
   const requestKey = typeof snapshot.requestKey === 'string' ? snapshot.requestKey : null;
   if (!packageId) {
     throw new PreservationPackageError('package_unavailable', 'The job does not name a package');

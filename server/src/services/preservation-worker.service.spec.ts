@@ -254,7 +254,10 @@ describe(PreservationWorkerService.name, () => {
 
       expect(outcome).toBe('failed');
       expect(files.removeFile).toHaveBeenCalledWith(expect.stringContaining(`originals/${item.sourceAssetId}.jpg`));
-      expect(repository.finishItem).toHaveBeenCalledWith(item.id, expect.objectContaining({ reasonKey: 'checksum_mismatch' }));
+      expect(repository.finishItem).toHaveBeenCalledWith(
+        item.id,
+        expect.objectContaining({ reasonKey: 'checksum_mismatch' }),
+      );
     });
 
     it('stops the whole job when the disk is full, after recording the item', async () => {
@@ -273,14 +276,19 @@ describe(PreservationWorkerService.name, () => {
       files.copyOriginal.mockRejectedValue(Object.assign(new Error('no space'), { code: 'ENOSPC' }));
 
       await expect(worker().exportItem(packageOf(), item)).rejects.toThrow('no space');
-      expect(repository.finishItem).toHaveBeenCalledWith(item.id, expect.objectContaining({ reasonKey: 'package_no_space' }));
+      expect(repository.finishItem).toHaveBeenCalledWith(
+        item.id,
+        expect.objectContaining({ reasonKey: 'package_no_space' }),
+      );
     });
   });
 
   describe('restore', () => {
     it('matches an original the library already holds and never uploads a second copy', async () => {
       const existing = newUuid();
-      repository.findByChecksum.mockResolvedValue([{ id: existing, deletedAt: null, createdAt: new Date('2020-01-01') }]);
+      repository.findByChecksum.mockResolvedValue([
+        { id: existing, deletedAt: null, createdAt: new Date('2020-01-01') },
+      ]);
       const item = restoreItemOf();
 
       const outcome = await worker().restoreItem(contextOf(), item);
@@ -297,7 +305,10 @@ describe(PreservationWorkerService.name, () => {
 
       expect(await worker().restoreItem(contextOf(), item)).toBe('failed');
       expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
-      expect(repository.updateRestoreItem).toHaveBeenCalledWith(item.id, expect.objectContaining({ state: 'failed', reasonKey: 'asset_in_trash' }));
+      expect(repository.updateRestoreItem).toHaveBeenCalledWith(
+        item.id,
+        expect.objectContaining({ state: 'failed', reasonKey: 'asset_in_trash' }),
+      );
     });
 
     it('adds a new original through the upload path, Locked from the start when the package says so', async () => {
@@ -336,7 +347,10 @@ describe(PreservationWorkerService.name, () => {
       );
       expect(repository.updateRestoreItem).toHaveBeenLastCalledWith(
         item.id,
-        expect.objectContaining({ state: 'restored', findings: expect.arrayContaining(['generated_description_provenance']) }),
+        expect.objectContaining({
+          state: 'restored',
+          findings: expect.arrayContaining(['generated_description_provenance']),
+        }),
       );
     });
 
@@ -354,7 +368,9 @@ describe(PreservationWorkerService.name, () => {
 
     it('keeps the library’s values where they differ unless the owner chose the package’s', async () => {
       const existing = newUuid();
-      repository.findByChecksum.mockResolvedValue([{ id: existing, deletedAt: null, createdAt: new Date('2020-01-01') }]);
+      repository.findByChecksum.mockResolvedValue([
+        { id: existing, deletedAt: null, createdAt: new Date('2020-01-01') },
+      ]);
       repository.getLibraryState.mockResolvedValue(
         library({ description: 'Mine now', dateTimeOriginal: '2024-06-01T10:00:00.000Z' }),
       );
@@ -368,7 +384,9 @@ describe(PreservationWorkerService.name, () => {
 
     it('locks a matched original the package says is Locked, and never unlocks one', async () => {
       const existing = newUuid();
-      repository.findByChecksum.mockResolvedValue([{ id: existing, deletedAt: null, createdAt: new Date('2020-01-01') }]);
+      repository.findByChecksum.mockResolvedValue([
+        { id: existing, deletedAt: null, createdAt: new Date('2020-01-01') },
+      ]);
       const item = restoreItemOf();
       item.sidecar = sidecarOf(item.sourceAssetId, {
         description: null,
@@ -381,12 +399,14 @@ describe(PreservationWorkerService.name, () => {
       assets.update.mockClear();
       repository.getLibraryState.mockResolvedValue(library({ locked: true }));
       const unlockedInPackage = restoreItemOf();
-      unlockedInPackage.sidecar = sidecarOf(unlockedInPackage.sourceAssetId, { description: null }) as unknown as Record<
-        string,
-        unknown
-      >;
+      const withoutDescription = sidecarOf(unlockedInPackage.sourceAssetId, { description: null });
+      unlockedInPackage.sidecar = withoutDescription as unknown as Record<string, unknown>;
       await worker().restoreItem(contextOf(), unlockedInPackage);
-      expect(assets.update).not.toHaveBeenCalledWith(expect.anything(), existing, expect.objectContaining({ visibility: expect.anything() }));
+      expect(assets.update).not.toHaveBeenCalledWith(
+        expect.anything(),
+        existing,
+        expect.objectContaining({ visibility: expect.anything() }),
+      );
     });
   });
 

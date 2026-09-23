@@ -314,7 +314,12 @@ export class PreservationFileRepository {
         createWriteStream(temporary, { flags: 'wx', mode: 0o600 }),
       );
       const after = await stat(source);
-      if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ino !== after.ino || bytes !== before.size) {
+      if (
+        before.size !== after.size ||
+        before.mtimeMs !== after.mtimeMs ||
+        before.ino !== after.ino ||
+        bytes !== before.size
+      ) {
         throw new PreservationPackageError('original_changed', 'The original changed while it was copied');
       }
       await this.sync(temporary);
@@ -349,7 +354,10 @@ export class PreservationFileRepository {
       output.end();
       await closed;
       if (digests.bytes !== expected.bytes || digests.sha256 !== expected.sha256 || digests.sha1 !== expected.sha1) {
-        throw new PreservationPackageError('original_changed', 'The original in the package does not match its checksum');
+        throw new PreservationPackageError(
+          'original_changed',
+          'The original in the package does not match its checksum',
+        );
       }
       await this.sync(temporary);
       await rename(temporary, destination);
@@ -496,7 +504,9 @@ export class PreservationFileRepository {
    * link, and entirely outside the server's managed media storage, which the server never reads
    * as a package source. Returns the real path and its form.
    */
-  async resolveServerPackage(path: string): Promise<{ path: string; format: 'directory' | 'zip'; size: number | null }> {
+  async resolveServerPackage(
+    path: string,
+  ): Promise<{ path: string; format: 'directory' | 'zip'; size: number | null }> {
     let info;
     try {
       info = await lstat(path);
@@ -509,7 +519,10 @@ export class PreservationFileRepository {
     const resolved = await realpath(path);
     const managed = await realpath(StorageCore.getMediaLocation());
     if (resolved === managed || resolved.startsWith(managed + sep) || managed.startsWith(resolved + sep)) {
-      throw new PreservationPackageError('package_path_managed', 'A package must be outside the server’s media storage');
+      throw new PreservationPackageError(
+        'package_path_managed',
+        'A package must be outside the server’s media storage',
+      );
     }
     if (info.isDirectory()) {
       return { path: resolved, format: 'directory', size: null };
