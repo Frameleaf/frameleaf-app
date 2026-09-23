@@ -90,6 +90,9 @@
   const iconOnly = $derived($sidebarCollapsed && mediaQueryManager.isFullSidebar);
 
   const isAlbumCurrent = (node: FrameleafAlbumNode) => pathname.startsWith(Route.viewAlbum({ id: node.id }));
+  // A shared space has its own page and is still browsed through the album view, so either is "here".
+  const isSpaceCurrent = (node: FrameleafAlbumNode) =>
+    isAlbumCurrent(node) || pathname.startsWith(Route.viewSharedSpace({ id: node.id }));
   const isCollectionCurrent = (collection: FrameleafAlbumNode) =>
     isAlbumCurrent(collection) || collection.children.some((child) => isAlbumCurrent(child));
 
@@ -133,6 +136,16 @@
 
 {#snippet albumLink(node: FrameleafAlbumNode)}
   {@render railLink(node.name, albumIconPath(node.icon), Route.viewAlbum({ id: node.id }), isAlbumCurrent(node), true)}
+{/snippet}
+
+{#snippet spaceLink(node: FrameleafAlbumNode)}
+  {@render railLink(
+    node.name,
+    albumIconPath(node.icon),
+    Route.viewSharedSpace({ id: node.id }),
+    isSpaceCurrent(node),
+    true,
+  )}
 {/snippet}
 
 <Sidebar ariaLabel={$t('primary')}>
@@ -209,7 +222,7 @@
 
       {#if section.id === 'spaces' && !iconOnly}
         {#each tree.spaces as space (space.id)}
-          {@render albumLink(space)}
+          {@render spaceLink(space)}
         {/each}
       {/if}
     {/each}

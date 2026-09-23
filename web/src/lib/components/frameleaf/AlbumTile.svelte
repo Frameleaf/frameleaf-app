@@ -43,7 +43,11 @@
   }: Props = $props();
 
   const name = $derived(album.albumName || $t('unnamed_album'));
-  const href = $derived(hrefOverride ?? Route.viewAlbum({ id: album.id }));
+  // A shared space opens on its own page, whose panels include the photos; everything else on the album view.
+  const href = $derived(
+    hrefOverride ??
+      (album.kind === AlbumKind.Space ? Route.viewSharedSpace({ id: album.id }) : Route.viewAlbum({ id: album.id })),
+  );
   const cover = $derived(
     album.albumThumbnailAssetId
       ? getAssetMediaUrl({ id: album.albumThumbnailAssetId, size: AssetMediaSize.Thumbnail })
