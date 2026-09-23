@@ -177,7 +177,10 @@ export const MediaOperationSchema = z
     status: MediaOperationStatusSchema,
     destination: MediaOperationDestinationSchema,
     destinationDetail: z.string().nullable().describe('Which worker or endpoint the destination resolved to'),
-    label: z.string().describe('What the person sees in Activity'),
+    label: z.string().describe('What the person sees in Activity; empty when withheld'),
+    withheld: z
+      .boolean()
+      .describe('The job is about a Locked item this session has not unlocked; its label and snapshot are withheld'),
     assetId: z.uuidv4().nullable().describe('Source asset, when the workload has exactly one'),
     resultAssetId: z.uuidv4().nullable().describe('The asset a completed job published'),
     retryOfId: z.uuidv7().nullable().describe('The job this one retries'),

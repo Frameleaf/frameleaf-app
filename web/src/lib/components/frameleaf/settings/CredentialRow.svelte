@@ -12,6 +12,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import CredentialDialog from '$lib/components/frameleaf/settings/CredentialDialog.svelte';
   import { CREDENTIALS, isCredentialConfigured, withCredentialState } from '$lib/frameleaf/credentials';
+  import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
@@ -36,7 +37,16 @@
   const stateText = $derived(configured ? $t('frameleaf_credentials_stored') : $t('frameleaf_credentials_not_set'));
   let working = $state(false);
 
-  const replace = () => modalManager.show(CredentialDialog, { name });
+  // FL-66: a credential change is its own write, never part of the settings draft. Afterwards the
+  // draft follows the saved settings so its baseline shows the credential as stored or cleared.
+  const settingsDraft = getSystemConfigDraft();
+
+  const replace = async () => {
+    const saved = await modalManager.show(CredentialDialog, { name });
+    if (saved) {
+      void settingsDraft?.refresh();
+    }
+  };
 
   const clear = async () => {
     const label = $t(definition.labelKey);
@@ -55,6 +65,7 @@
       const response = await deleteConfigCredential({ name });
       const next = withCredentialState(systemConfigManager.value, name, response.configured);
       eventManager.emit('SystemConfigUpdate', next);
+      void settingsDraft?.refresh();
       toastManager.primary($t('frameleaf_credentials_cleared', { values: { name: label } }));
     } catch (error) {
       handleError(error, $t('frameleaf_credentials_clear_failed'));
