@@ -2,7 +2,13 @@ import { modalManager } from '@immich/ui';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
-import { sessionAccess, setSessionLockPending, trackSessionLockRefresh } from '$lib/frameleaf/session-access.svelte';
+import {
+  sessionAccess,
+  setSessionLockPending,
+  trackSessionLockRefresh,
+  trackSessionUnlock,
+} from '$lib/frameleaf/session-access.svelte';
+import { requestSessionLock } from '$lib/frameleaf/session-lock';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import AssetDeleteConfirmModal from '$lib/modals/AssetDeleteConfirmModal.svelte';
@@ -56,6 +62,21 @@ afterEach(() => {
 });
 
 describe('TopBar session privacy', () => {
+  it('ignores a stale elevated auth-status response after the root locks without TopBar', async () => {
+    const auth = deferred<ReturnType<typeof authStatus>>();
+    sdkMock.getAuthStatus.mockReturnValue(auth.promise as never);
+    sdkMock.lockAuthSession.mockResolvedValue(undefined as never);
+    const view = render(TopBarTestHarness);
+    await waitFor(() => expect(sdkMock.getAuthStatus).toHaveBeenCalledOnce());
+
+    await requestSessionLock();
+    auth.resolve(authStatus(true));
+    await Promise.resolve();
+    expect(sessionAccess.lockPending).toBe(false);
+    expect(sessionAccess.isElevated).toBe(false);
+    view.unmount();
+  });
+
   it('hides immediately while auth status and lock are pending, then ignores the stale elevated response', async () => {
     const auth = deferred<ReturnType<typeof authStatus>>();
     const lock = deferred<void>();
@@ -135,6 +156,26 @@ describe('TopBar session privacy', () => {
     await waitFor(() => expect(sessionAccess.lockPending).toBe(false));
     expect(sdkMock.getAuthStatus).not.toHaveBeenCalled();
     expect(sessionStorage.getItem('frameleaf:session-lock-pending')).toBeNull();
+    view.unmount();
+  });
+
+  it('waits for an abandoned PIN unlock to settle before requesting a lock', async () => {
+    sdkMock.getAuthStatus.mockResolvedValue(authStatus(true) as never);
+    sdkMock.lockAuthSession.mockResolvedValue(undefined as never);
+    const view = render(TopBarTestHarness);
+    await screen.findByRole('button', { name: en.frameleaf_locked_hide_content });
+    const unlock = deferred<void>();
+    void trackSessionUnlock(unlock.promise);
+    setSessionLockPending(true);
+
+    const locking = sessionAccess.retryLock?.();
+    await Promise.resolve();
+    expect(sdkMock.lockAuthSession).not.toHaveBeenCalled();
+    expect(sessionAccess.lockPending).toBe(true);
+    unlock.resolve();
+    await locking;
+    expect(sdkMock.lockAuthSession).toHaveBeenCalledOnce();
+    expect(sessionAccess.lockPending).toBe(false);
     view.unmount();
   });
 
