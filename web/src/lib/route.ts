@@ -103,6 +103,10 @@ export const Route = {
   viewPerson: ({ id }: { id: string }, params?: { previousRoute?: string; action?: 'merge' }) =>
     `/people/${id}` + asQueryString(params),
 
+  // documents (FL-63)
+  documents: (params?: { query?: string }) => '/documents' + asQueryString(params),
+  viewDocumentAsset: ({ id }: { id: string }) => `/documents/photos/${id}`,
+
   // pets
   pets: () => '/pets',
   viewPet: ({ id }: { id: string }) => `/pets/${id}`,

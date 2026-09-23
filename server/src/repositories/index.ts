@@ -16,6 +16,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { DocumentRepository } from 'src/repositories/document.repository.js';
 import { DownloadRepository } from 'src/repositories/download.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { EmailRepository } from 'src/repositories/email.repository.js';
@@ -104,6 +105,7 @@ export const repositories = [
   CronRepository,
   CryptoRepository,
   DatabaseRepository,
+  DocumentRepository,
   DownloadRepository,
   DuplicateRepository,
   EmailRepository,
