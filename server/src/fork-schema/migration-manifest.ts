@@ -77,6 +77,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000390-AddDuplicateDecision',
   '2100000000400-AddAssetDocumentEdit',
   '2100000000450-AddAdminAuditEvent',
+  '2100000000500-AddVideoMomentFrameVectorIndex',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(
