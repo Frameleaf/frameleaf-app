@@ -57,6 +57,7 @@
     list as listMediaHealth,
     locateMissing,
     MediaHealthCategory,
+    MediaHealthOperationMode,
     MediaHealthRootKind,
     MediaHealthStatus,
     MediaOperationStatus,
@@ -151,7 +152,7 @@
   const operation = $derived(summary.operation);
   const active = $derived(isActiveOperation(operation));
   const recoveryRows = $derived(recovery ? rows.filter((row) => recovery!.ids.includes(row.id)) : []);
-  const searchingForRecovery = $derived(active && operation?.mode === 'locate');
+  const searchingForRecovery = $derived(active && operation?.mode === MediaHealthOperationMode.Locate);
   const trashRows = $derived(trashable(chosen));
   const locatableRows = $derived(locatable(chosen));
 
@@ -522,7 +523,9 @@
           : $t('library_care_pause_scan')}
       </Button>
       <Button disabled={busy || !!operation.cancelRequestedAt} onclick={cancelScan}>
-        {operation.mode === 'locate' ? $t('library_care_cancel_search') : $t('library_care_cancel_scan')}
+        {operation.mode === MediaHealthOperationMode.Locate
+          ? $t('library_care_cancel_search')
+          : $t('library_care_cancel_scan')}
       </Button>
     {/if}
     <Button onclick={() => goto(Route.activity({ filter: 'running' }))}>{$t('library_care_view_jobs')}</Button>
