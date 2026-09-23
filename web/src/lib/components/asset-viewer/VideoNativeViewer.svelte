@@ -2,6 +2,7 @@
   import FaceEditor from '$lib/components/asset-viewer/face-editor/FaceEditor.svelte';
   import VideoRemoteViewer from '$lib/components/asset-viewer/VideoRemoteViewer.svelte';
   import { assetViewerFadeDuration } from '$lib/constants';
+  import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { castManager } from '$lib/managers/cast-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -243,6 +244,19 @@
 
   onMount(() => {
     showVideo = true;
+  });
+
+  // FL-59: a moment chosen in the moments panel or in moment search starts the video there.
+  $effect(() => {
+    if (!hasLoadedMetadata || !videoPlayer || videoSeek.pending?.assetId !== assetId) {
+      return;
+    }
+    const seconds = videoSeek.take(assetId);
+    if (seconds !== null) {
+      videoPlayer.currentTime = Number.isFinite(videoPlayer.duration)
+        ? Math.min(seconds, videoPlayer.duration)
+        : seconds;
+    }
   });
 
   $effect(() => {
