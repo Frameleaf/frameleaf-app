@@ -131,6 +131,38 @@ test("local builds retain projects/storage and keep ordinary ML separate from Ru
   assert.equal(dev.services["immich-server"].environment.IMMICH_BUILD, "");
 });
 
+test("the restoration overlay adds a separate worker and leaves library analysis alone (FL-72)", () => {
+  const overlay = compose("docker/docker-compose.restoration.yml");
+  assert.deepEqual(Object.keys(overlay.services), ["frameleaf-restoration"]);
+  const worker = overlay.services["frameleaf-restoration"];
+  assert.equal(worker.container_name, "frameleaf_restoration");
+  // Built from source: no restoration image is published until a model is qualified.
+  assert.equal(worker.build.dockerfile, "Dockerfile.video-restoration");
+  assert.equal(worker.build.target, "worker");
+  assert.doesNotMatch(worker.image, /^ghcr\.io\//);
+  // Reached on the Compose network only, with its own bearer and read-only model inputs.
+  assert.equal(worker.ports, undefined);
+  assert.equal(
+    worker.environment.IMMICH_ML_AUTH_TOKEN,
+    "${FRAMELEAF_RESTORATION_TOKEN:-}",
+  );
+  assert.ok(
+    worker.volumes.some((volume) =>
+      volume.endsWith(":/restoration/config:ro"),
+    ),
+  );
+  assert.ok(
+    worker.volumes.some((volume) =>
+      volume.endsWith(":/restoration/weights:ro"),
+    ),
+  );
+  // Its own GPU, chosen by the operator, never "any GPU" next to the ML container.
+  const [gpu] = worker.deploy.resources.reservations.devices;
+  assert.deepEqual(gpu.device_ids, ["${FRAMELEAF_RESTORATION_GPU:-0}"]);
+  assert.equal(gpu.count, undefined);
+  assert.ok(Object.hasOwn(overlay.volumes, "restoration-work"));
+});
+
 function metadata(path, inputs) {
   const variables = { ...inputs };
   const result = {};
