@@ -1,0 +1,81 @@
+import { Injectable } from '@nestjs/common';
+import { OnEvent } from 'src/decorators.js';
+import { ImmichWorker } from 'src/enum.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaOperationRecovery, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+
+/** How often lapsed claims are recovered. */
+export const MEDIA_OPERATION_SWEEP_MS = 60_000;
+
+/** What a job whose worker vanished and that has no retry left is reported with. */
+export const MEDIA_OPERATION_LEASE_EXPIRED = {
+  errorCode: 'lease_expired',
+  error: 'The worker stopped responding before the job finished and it ran out of attempts',
+} as const;
+
+/**
+ * The one recovery pass for media operations (FL-104).
+ *
+ * A claim whose lease lapsed — the worker died, the server restarted, the network went — is judged
+ * here and nowhere else, for every kind: bulk, render worker jobs (Studio exports and previews,
+ * quick edits), restorations and Studio bundles. It returns to the queue while it has attempts
+ * left, gets its one automatic retry when it has not, and fails only after that; see
+ * `MediaOperationRepository.recoverExpiredClaims`.
+ *
+ * No worker owns this, on purpose. When each runner swept its own kinds, two passes could judge
+ * the same lapsed claim by different rules; a single neutral owner means one answer. Several
+ * microservices processes may each run the pass: every write is a guarded UPDATE, so a row is
+ * recovered once whichever process gets to it first.
+ */
+@Injectable()
+export class MediaOperationSweepService {
+  private timer?: ReturnType<typeof setInterval>;
+  private active?: Promise<MediaOperationRecovery | undefined>;
+
+  constructor(
+    private logger: LoggingRepository,
+    private operations: MediaOperationRepository,
+  ) {
+    this.logger.setContext(MediaOperationSweepService.name);
+  }
+
+  /** Starts at once as well as on the interval, so a restart settles what it left behind promptly. */
+  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
+  onBootstrap() {
+    this.timer ??= setInterval(() => void this.tick(), MEDIA_OPERATION_SWEEP_MS);
+    void this.tick();
+  }
+
+  @OnEvent({ name: 'AppShutdown' })
+  async onShutdown() {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = undefined;
+    }
+    await this.active;
+  }
+
+  /** Never overlaps itself: a tick while a pass is running waits for the next interval. */
+  tick(): Promise<MediaOperationRecovery | undefined> {
+    this.active ??= this.sweep()
+      .catch((error) => {
+        this.logger.warn(`Media operation recovery failed: ${error}`);
+        return undefined;
+      })
+      .finally(() => {
+        this.active = undefined;
+      });
+    return this.active;
+  }
+
+  async sweep(): Promise<MediaOperationRecovery> {
+    const recovered = await this.operations.recoverExpiredClaims(MEDIA_OPERATION_LEASE_EXPIRED);
+    const { requeued, retried, failed, abandonedCancels } = recovered;
+    if (requeued || retried || failed || abandonedCancels) {
+      this.logger.log(
+        `Recovered media operations: ${requeued} requeued, ${retried} retrying, ${failed} failed, ${abandonedCancels} cancelled`,
+      );
+    }
+    return recovered;
+  }
+}
