@@ -964,6 +964,11 @@ export enum MediaOperationKind {
   StudioBundleExport = 'studio_bundle_export',
   /** A portable Studio project bundle read back into a new project of the importer's (FL-91). */
   StudioBundleImport = 'studio_bundle_import',
+  /**
+   * One run of an iCloud Photos connection (FL-68): inventory, transfers and reconciliation. The
+   * connection's own tables are its checkpoints, so a claim resumes wherever the last one stopped.
+   */
+  ICloudSync = 'icloud_sync',
 }
 
 export const MediaOperationKindSchema = z
