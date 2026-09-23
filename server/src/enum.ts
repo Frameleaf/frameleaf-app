@@ -1097,6 +1097,20 @@ export enum MediaOperationKind {
    * so it can pause, survive a restart and carry on without applying anything twice.
    */
   PhysicalDeduplication = 'physical_deduplication',
+  /**
+   * A preservation package written from a frozen selection of the owner's originals (FL-74):
+   * independent copies with checksums, metadata sidecars, albums, people, tags and edit recipes.
+   */
+  PreservationExport = 'preservation_export',
+  /** A preservation package's files checked against its manifest, item by item (FL-74). */
+  PreservationVerify = 'preservation_verify',
+  /**
+   * A package read for restoration (FL-74): verified and compared with the library, item by item,
+   * so the owner can review conflicts. Nothing in the library is written.
+   */
+  PreservationReview = 'preservation_review',
+  /** A reviewed package restored into the owner's library, never over an existing original (FL-74). */
+  PreservationRestore = 'preservation_restore',
 }
 
 export const MediaOperationKindSchema = z
@@ -2340,6 +2354,7 @@ export enum ApiTag {
   People = 'People',
   Pets = 'Pets',
   Plugins = 'Plugins',
+  Preservation = 'Preservation',
   Queues = 'Queues',
   RunPod = 'RunPod (admin)',
   Search = 'Search',

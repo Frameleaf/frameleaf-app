@@ -32,6 +32,11 @@ describe('Frameleaf settings areas', () => {
     expect(areaForSection('unknown')).toBeUndefined();
   });
 
+  it('keeps Originals & preservation with imports and database backups (FL-74)', () => {
+    expect(areaForSection('preservation')).toBe('backup');
+    expect(resolveSettingsArea({ isOpen: 'preservation' })).toBe('backup');
+  });
+
   describe(resolveSettingsArea.name, () => {
     it('prefers an explicit area, then the first known isOpen key, then the default', () => {
       expect(resolveSettingsArea({ area: 'server' })).toBe('server');
