@@ -679,3 +679,24 @@ where
   "person"."personGroupId" in ($1)
 order by
   "person"."ownerId"
+
+-- PersonRepository.getCorrections
+select
+  "asset_face"."id",
+  "asset_face"."assetId",
+  "asset_face"."correctedAt"
+from
+  "asset"
+  inner join "asset_face" on "asset_face"."assetId" = "asset"."id"
+where
+  (
+    "asset"."visibility" != 'locked'
+    or "asset"."ownerId" = $1
+  )
+  and "asset_face"."personGroupId" = $2
+  and "asset_face"."deletedAt" is null
+  and "asset_face"."correctedAt" is not null
+order by
+  "asset_face"."correctedAt" desc
+limit
+  $3

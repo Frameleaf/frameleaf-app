@@ -49,6 +49,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { getDimensions } from 'src/utils/asset.util.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, findOrFail, isFacialRecognitionEnabled } from 'src/utils/misc.js';
 import { Point, transformPoints } from 'src/utils/transform.js';
@@ -131,7 +132,8 @@ export class PersonService extends BaseService {
   /** FL-57: correction history for a person's faces (see `PersonRepository.getCorrections`). */
   async getCorrectionHistory(auth: AuthDto, personGroupId: string): Promise<PersonCorrectionsResponseDto> {
     await this.requireAccess({ auth, permission: Permission.PersonRead, ids: [personGroupId] });
-    const corrections = await this.personRepository.getCorrections(personGroupId);
+    // a face on Locked media names that media's id: only its owner's elevated session sees it
+    const corrections = await this.personRepository.getCorrections(personGroupId, getLockedVisibilityOptions(auth));
     return { corrections: corrections.map((face) => mapCorrection(face)) };
   }
 

@@ -2,7 +2,7 @@ import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
 import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { AssetFaceCreateDto } from 'src/dtos/person.dto.js';
-import { AssetFileType, AssetMetadataKey, JobName } from 'src/enum.js';
+import { AssetFileType, AssetMetadataKey, AssetVisibility, JobName } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -179,6 +179,54 @@ describe(PersonService.name, () => {
       await expect(sut.getThumbnail(hiddenAuth, person.personGroupId)).resolves.toEqual(
         expect.objectContaining({ path: '/person/thumbnail.jpg' }),
       );
+    });
+  });
+
+  describe('Locked media (FL-34)', () => {
+    it("lists a corrected face on Locked media only for that media's owner in an elevated session", async () => {
+      const { sut, ctx } = setup();
+      const personRepo = ctx.get(PersonRepository);
+      const { user: user1 } = await ctx.newUser();
+      const { user: user2 } = await ctx.newUser({ clusterGroupId: user1.clusterGroupId });
+      const { person } = await ctx.newPerson({ ownerId: user1.id });
+      await ctx.newPerson({ ownerId: user2.id, personGroupId: person.personGroupId });
+
+      const { asset: locked1 } = await ctx.newAsset({ ownerId: user1.id, visibility: AssetVisibility.Locked });
+      const { asset: locked2 } = await ctx.newAsset({ ownerId: user2.id, visibility: AssetVisibility.Locked });
+      const { asset: timeline2 } = await ctx.newAsset({ ownerId: user2.id });
+      for (const asset of [locked1, locked2, timeline2]) {
+        const { assetFace } = await ctx.newAssetFace({ assetId: asset.id });
+        await personRepo.reassignFace(assetFace.id, person.personGroupId);
+      }
+
+      const assetIds = async (auth: ReturnType<typeof factory.auth>) => {
+        const { corrections } = await sut.getCorrectionHistory(auth, person.personGroupId);
+        return corrections.map(({ assetId }) => assetId).sort();
+      };
+
+      await expect(assetIds(factory.auth({ user: user1 }))).resolves.toEqual([timeline2.id]);
+      await expect(
+        assetIds(factory.auth({ user: user1, session: { hasElevatedPermission: true } })),
+      ).resolves.toEqual([locked1.id, timeline2.id].sort());
+      await expect(
+        assetIds(factory.auth({ user: user2, session: { hasElevatedPermission: true } })),
+      ).resolves.toEqual([locked2.id, timeline2.id].sort());
+    });
+
+    it("reaches a face on the caller's own Locked media only from an elevated session", async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      const { assetFace } = await ctx.newAssetFace({ assetId: asset.id });
+
+      await expect(sut.deleteFace(factory.auth({ user }), assetFace.id, { force: false })).rejects.toThrow(
+        'Not found or no face.delete access',
+      );
+      await expect(
+        sut.deleteFace(factory.auth({ user, session: { hasElevatedPermission: true } }), assetFace.id, {
+          force: false,
+        }),
+      ).resolves.toBeUndefined();
     });
   });
 

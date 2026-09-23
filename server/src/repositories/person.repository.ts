@@ -19,7 +19,9 @@ import {
   removeUndefinedKeys,
   withFilePath,
   withHiddenContentFilter,
+  withLockedOwnerScope,
 } from 'src/utils/database.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
 
 export interface PersonSearchOptions extends HiddenContentQueryOptions {
@@ -876,11 +878,17 @@ export class PersonRepository {
    * FL-57: correction history for a person — faces explicitly moved onto them by a
    * human (see `reassignFace` above), most recent first. Machine-learning-only
    * assignments (never corrected) do not appear here.
+   *
+   * A person group spans every account in its cluster, so its faces sit on several owners' media.
+   * A face on Locked media is listed only for that media's owner in an elevated session
+   * (`lockedOwnerId`): nobody else learns the Locked item's id (FL-34).
    */
-  @GenerateSql({ params: [DummyValue.UUID] })
-  getCorrections(personGroupId: string) {
+  @GenerateSql({ params: [DummyValue.UUID, { lockedOwnerId: DummyValue.UUID }] })
+  getCorrections(personGroupId: string, options: LockedVisibilityOptions = {}) {
     return this.db
-      .selectFrom('asset_face')
+      .selectFrom('asset')
+      .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
+      .innerJoin('asset_face', 'asset_face.assetId', 'asset.id')
       .select(['asset_face.id', 'asset_face.assetId', 'asset_face.correctedAt'])
       .where('asset_face.personGroupId', '=', personGroupId)
       .where('asset_face.deletedAt', 'is', null)
