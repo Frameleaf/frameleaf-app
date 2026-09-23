@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
 import sanitize from 'sanitize-filename';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ClassConstructor } from 'src/types.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { UserAdmin } from 'src/database.js';
+import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
@@ -337,6 +339,27 @@ export class BaseService {
       assetIds,
     );
     await this.replaceLockedProfileImages();
+  }
+
+  /**
+   * Pushes the current state of `assetIds` to `ownerId`'s other open sessions over the websocket
+   * (`on_asset_update`). Used so a move into or out of the Locked folder — including the rest of a
+   * stack a direct move carries along (FL-53, `locked-stacks.ts`) — is reflected in every open web
+   * client at once, not only in the tab that made the change and not only for the asset named directly.
+   */
+  protected async notifyAssetsUpdated(assetIds: string[], ownerId: string): Promise<void> {
+    if (assetIds.length === 0) {
+      return;
+    }
+
+    const assets = (await this.assetRepository.getByIdsWithAllRelationsButStacks(assetIds, ownerId)) ?? [];
+    for (const asset of assets) {
+      this.websocketRepository.clientSend(
+        'on_asset_update',
+        ownerId,
+        mapAsset(asset, { auth: { user: { id: ownerId } } as AuthDto }),
+      );
+    }
   }
 
   /** Gives another profile picture to every user whose picture was copied from a now Locked photo. */
