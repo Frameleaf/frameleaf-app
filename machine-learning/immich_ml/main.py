@@ -293,6 +293,23 @@ def ping() -> PlainTextResponse:
     return PlainTextResponse("pong")
 
 
+# The workloads this container serves (FL-110). The server's destination model asks every
+# endpoint what it can run before admitting a request, instead of inferring capability from
+# a successful /ping. This container is the ordinary /predict service: it serves the library
+# workloads and nothing else. Restoration and Studio AI need dedicated workers that publish
+# their own capabilities; listing them here would be a false claim.
+#
+# Public contract — KEEP IN SYNC WITH ``server/src/enum.ts`` (``MlWorkload``,
+# ``LIBRARY_ML_WORKLOADS``) and ``MachineLearningRepository.probe``.
+SERVED_WORKLOADS: tuple[str, ...] = ("face", "clip", "ocr", "enrichment")
+PREDICT_PROTOCOL = "predict-v1"
+
+
+@app.get("/capabilities")
+def capabilities() -> ORJSONResponse:
+    return ORJSONResponse({"protocol": PREDICT_PROTOCOL, "workloads": list(SERVED_WORKLOADS)})
+
+
 @app.get("/hardware")
 def hardware() -> ORJSONResponse:
     """Report available hardware acceleration providers.
