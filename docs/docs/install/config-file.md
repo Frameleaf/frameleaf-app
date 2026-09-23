@@ -144,6 +144,7 @@ The default configuration looks like this:
       "modelName": "buffalo_l"
     },
     "ocr": {
+      "documentFields": false,
       "enabled": true,
       "maxResolution": 736,
       "minDetectionScore": 0.5,
