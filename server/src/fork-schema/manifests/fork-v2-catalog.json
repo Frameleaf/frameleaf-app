@@ -133,6 +133,10 @@
       "identity": "immich_fork.asset_develop_revision.assetId"
     },
     {
+      "definition": "integer|not null|0||",
+      "identity": "immich_fork.asset_develop_revision.attempts"
+    },
+    {
       "definition": "boolean|not null|false||",
       "identity": "immich_fork.asset_develop_revision.cancelRequested"
     },
@@ -145,6 +149,14 @@
       "identity": "immich_fork.asset_develop_revision.error"
     },
     {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.exportId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.fileName"
+    },
+    {
       "definition": "integer|nullable|||",
       "identity": "immich_fork.asset_develop_revision.height"
     },
@@ -155,6 +167,10 @@
     {
       "definition": "boolean|not null|false||",
       "identity": "immich_fork.asset_develop_revision.isCurrent"
+    },
+    {
+      "definition": "text|not null|'recipe'::text||",
+      "identity": "immich_fork.asset_develop_revision.kind"
     },
     {
       "definition": "text|nullable|||",
@@ -193,8 +209,20 @@
       "identity": "immich_fork.asset_develop_revision.rendererVersion"
     },
     {
+      "definition": "bytea|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.renditionChecksum"
+    },
+    {
       "definition": "integer|not null|||",
       "identity": "immich_fork.asset_develop_revision.revision"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.software"
+    },
+    {
+      "definition": "bytea|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.sourceChecksum"
     },
     {
       "definition": "text|not null|'saved'::text||",
@@ -2607,6 +2635,54 @@
     {
       "definition": "uuid|not null|immich_uuid_v7()||",
       "identity": "public.cluster_group.updateId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.develop_export.assetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.develop_export.createdAt"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.develop_export.fileName"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.develop_export.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.develop_export.ownerId"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "public.develop_export.sourceChecksum"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.develop_preset.createdAt"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.develop_preset.id"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.develop_preset.name"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.develop_preset.ownerId"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.develop_preset.settings"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.develop_preset.updatedAt"
     },
     {
       "definition": "timestamp with time zone|nullable|||",
@@ -5639,6 +5715,18 @@
       "identity": "immich_fork.asset_develop_revision.asset_develop_revision_assetId_revision_key"
     },
     {
+      "definition": "CHECK (attempts >= 0)",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_attempts_check"
+    },
+    {
+      "definition": "CHECK (\"fileName\" IS NULL OR length(\"fileName\") >= 1 AND length(\"fileName\") <= 255)",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_fileName_check"
+    },
+    {
+      "definition": "CHECK (kind = ANY (ARRAY['recipe'::text, 'external'::text]))",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_kind_check"
+    },
+    {
       "definition": "CHECK (label IS NULL OR length(label) >= 1 AND length(label) <= 120)",
       "identity": "immich_fork.asset_develop_revision.asset_develop_revision_label_check"
     },
@@ -5657,6 +5745,10 @@
     {
       "definition": "CHECK (revision >= 1)",
       "identity": "immich_fork.asset_develop_revision.asset_develop_revision_revision_check"
+    },
+    {
+      "definition": "CHECK (software IS NULL OR length(software) >= 1 AND length(software) <= 120)",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_software_check"
     },
     {
       "definition": "CHECK (status = ANY (ARRAY['saved'::text, 'queued'::text, 'rendering'::text, 'rendered'::text, 'failed'::text, 'cancelled'::text]))",
@@ -6361,6 +6453,30 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.cluster_group.cluster_group_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.develop_export.develop_export_assetId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.develop_export.develop_export_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.develop_export.develop_export_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.develop_preset.develop_preset_ownerId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"ownerId\", name)",
+      "identity": "public.develop_preset.develop_preset_ownerId_name_uq"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.develop_preset.develop_preset_pkey"
     },
     {
       "definition": "UNIQUE (\"operationId\", \"duplicateId\")",
@@ -9479,6 +9595,30 @@
       "identity": "public.cluster_group.cluster_group_updateId_idx"
     },
     {
+      "definition": "CREATE INDEX \"develop_export_assetId_idx\" ON public.develop_export USING btree (\"assetId\")",
+      "identity": "public.develop_export.develop_export_assetId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"develop_export_ownerId_idx\" ON public.develop_export USING btree (\"ownerId\")",
+      "identity": "public.develop_export.develop_export_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX develop_export_pkey ON public.develop_export USING btree (id)",
+      "identity": "public.develop_export.develop_export_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"develop_preset_ownerId_idx\" ON public.develop_preset USING btree (\"ownerId\")",
+      "identity": "public.develop_preset.develop_preset_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"develop_preset_ownerId_name_uq\" ON public.develop_preset USING btree (\"ownerId\", name)",
+      "identity": "public.develop_preset.develop_preset_ownerId_name_uq"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX develop_preset_pkey ON public.develop_preset USING btree (id)",
+      "identity": "public.develop_preset.develop_preset_pkey"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX \"duplicate_decision_operationId_duplicateId_uq\" ON public.duplicate_decision USING btree (\"operationId\", \"duplicateId\")",
       "identity": "public.duplicate_decision.duplicate_decision_operationId_duplicateId_uq"
     },
@@ -11140,6 +11280,14 @@
     {
       "definition": "table",
       "identity": "public.cluster_group_request"
+    },
+    {
+      "definition": "table",
+      "identity": "public.develop_export"
+    },
+    {
+      "definition": "table",
+      "identity": "public.develop_preset"
     },
     {
       "definition": "table",
