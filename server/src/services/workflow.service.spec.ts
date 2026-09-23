@@ -220,14 +220,30 @@ describe(WorkflowService.name, () => {
 
     it('keeps a stored credential the edit leaves out, for the same step and method', async () => {
       await sut.update(auth, workflowId, {
-        steps: [{ id: stepId, method: 'immich-plugin-core#webhook', config: { url: 'https://hooks.example.test/v2' } }],
+        steps: [
+          {
+            id: stepId,
+            method: 'immich-plugin-core#webhook',
+            config: { url: 'https://hooks.example.test', headerName: 'Authorization' },
+          },
+        ],
       });
 
       const replacement = mocks.workflow.update.mock.calls[0]![2];
       expect(replacement!.definition.steps[0]!.config).toEqual({
-        url: 'https://hooks.example.test/v2',
+        url: 'https://hooks.example.test',
+        headerName: 'Authorization',
         headerValue: 'Bearer s3cret',
       });
+    });
+
+    it('requires a credential again when the destination changes', async () => {
+      await expect(
+        sut.update(auth, workflowId, {
+          steps: [{ id: stepId, method: 'immich-plugin-core#webhook', config: { url: 'https://other.test' } }],
+        }),
+      ).rejects.toThrow(/Re-enter stored credentials/);
+      expect(mocks.workflow.update).not.toHaveBeenCalled();
     });
 
     it('replaces or clears a credential that is sent', async () => {
@@ -248,6 +264,81 @@ describe(WorkflowService.name, () => {
 
       const replacement = mocks.workflow.update.mock.calls[0]![2];
       expect(replacement!.definition.steps[0]!.config).toEqual({ url: 'https://other.test' });
+    });
+
+    it('keeps two different webhook credentials with their ids when the steps are reordered', async () => {
+      const secondId = newUuid();
+      mocks.workflow.get.mockResolvedValue(
+        stored({
+          definition: {
+            ...secretDefinition,
+            steps: [
+              { ...secretDefinition.steps[0], config: { url: 'https://a.test', headerValue: 'secret-a' } },
+              {
+                ...secretDefinition.steps[0],
+                id: secondId,
+                config: { url: 'https://b.test', headerValue: 'secret-b' },
+              },
+            ],
+          },
+        }) as never,
+      );
+
+      await sut.update(auth, workflowId, {
+        steps: [
+          { id: secondId, method: 'immich-plugin-core#webhook', config: { url: 'https://b.test' } },
+          { id: stepId, method: 'immich-plugin-core#webhook', config: { url: 'https://a.test' } },
+        ],
+      });
+
+      expect(
+        mocks.workflow.update.mock.calls[0]![2]!.definition.steps.map(({ id, config }) => ({ id, config })),
+      ).toEqual([
+        { id: secondId, config: { url: 'https://b.test', headerValue: 'secret-b' } },
+        { id: stepId, config: { url: 'https://a.test', headerValue: 'secret-a' } },
+      ]);
+    });
+
+    it('does not restore a credential twice from a duplicate step id', async () => {
+      await sut.update(auth, workflowId, {
+        steps: [
+          {
+            id: stepId,
+            method: 'immich-plugin-core#webhook',
+            config: { url: 'https://hooks.example.test', headerName: 'Authorization' },
+          },
+          { id: stepId, method: 'immich-plugin-core#webhook', config: { url: 'https://other.test' } },
+        ],
+      });
+      const steps = mocks.workflow.update.mock.calls[0]![2]!.definition.steps;
+      expect(steps[0]!.config).toMatchObject({ headerValue: 'Bearer s3cret' });
+      expect(steps[1]!.id).not.toBe(stepId);
+      expect(steps[1]!.config).toEqual({ url: 'https://other.test' });
+    });
+
+    it('rejects prototype keys on create and credential restoration without changing Object.prototype', async () => {
+      const malicious = JSON.parse('{"nested":{"__proto__":{"token":"probe"}}}') as Record<string, unknown>;
+      await expect(
+        sut.create(auth, {
+          trigger: WorkflowTrigger.AssetCreate,
+          enabled: false,
+          steps: [{ method: 'immich-plugin-core#webhook', config: malicious }],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.workflow.create).not.toHaveBeenCalled();
+
+      mocks.workflow.get.mockResolvedValue(
+        stored({
+          definition: { ...secretDefinition, steps: [{ ...secretDefinition.steps[0], config: malicious }] },
+        }) as never,
+      );
+      await expect(
+        sut.update(auth, workflowId, {
+          steps: [{ id: stepId, method: 'immich-plugin-core#webhook', config: {} }],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.workflow.update).not.toHaveBeenCalled();
+      expect(Object.hasOwn(Object.prototype, 'token')).toBe(false);
     });
   });
 

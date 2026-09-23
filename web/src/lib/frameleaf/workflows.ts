@@ -82,6 +82,7 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' &&
   !Array.isArray(value) &&
   [Object.prototype, null].includes(Object.getPrototypeOf(value));
+const UNSAFE_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
 /** A copy of a JSON value; unlike `structuredClone` it also copies reactive state proxies. */
 // eslint-disable-next-line unicorn/prefer-structured-clone -- structuredClone throws on Svelte state proxies
@@ -120,7 +121,10 @@ export function parseWorkflowDefinition(raw: unknown): Record<string, unknown> &
       return;
     }
     if (isPlainObject(item)) {
-      for (const child of Object.values(item)) {
+      for (const [key, child] of Object.entries(item)) {
+        if (UNSAFE_KEYS.has(key)) {
+          throw new Error('Workflow definitions cannot contain prototype keys.');
+        }
         check(child, depth + 1);
       }
       return;
@@ -167,10 +171,19 @@ export function parseWorkflowDefinition(raw: unknown): Record<string, unknown> &
 /** A draft from a complete definition document, keeping every field this app does not use. */
 export function draftFromDocument(raw: unknown, previous?: WorkflowDraft): WorkflowDraft {
   const value = parseWorkflowDefinition(raw);
-  const steps = (value.steps as Record<string, unknown>[]).map((step, index) => {
-    const before = previous?.steps[index];
-    // editing the JSON keeps a step's identity (and its stored credential) while its method is unchanged
-    const same = before && before.method === step.method;
+  const previousById = new Map(previous?.steps.filter((step) => step.id).map((step) => [step.id, step]));
+  const seenIds = new Set<string>();
+  const steps = (value.steps as Record<string, unknown>[]).map((step) => {
+    const id = typeof step.id === 'string' ? step.id : undefined;
+    const before = id && !seenIds.has(id) ? previousById.get(id) : undefined;
+    if (id) {
+      seenIds.add(id);
+    }
+    // A JSON edit carries a stored credential only with its explicit step id and unchanged public config.
+    const same =
+      before &&
+      before.method === step.method &&
+      JSON.stringify(withoutCredentials(before.config)) === JSON.stringify(withoutCredentials(step.config ?? null));
     return {
       id: same ? before.id : undefined,
       method: step.method as string,
@@ -202,6 +215,7 @@ export function draftToDocument(draft: WorkflowDraft): Record<string, unknown> {
     logging: draft.logging,
     steps: draft.steps.map((step) => ({
       ...step.extra,
+      ...(step.id && { id: step.id }),
       method: step.method,
       config: step.config,
       ...(!step.enabled && { enabled: false }),
@@ -228,7 +242,7 @@ export function exportDraft(draft: WorkflowDraft): Record<string, unknown> {
   const { enabled: _, ...document } = draftToDocument(draft);
   return {
     ...document,
-    steps: (document.steps as Record<string, unknown>[]).map((step) => ({
+    steps: (document.steps as Record<string, unknown>[]).map(({ id: _, ...step }) => ({
       ...step,
       config: withoutCredentials(step.config),
     })),
