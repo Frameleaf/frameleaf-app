@@ -6,8 +6,8 @@
   import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
   import SettingTextarea from '$lib/components/frameleaf/settings/SettingTextarea.svelte';
   import { SettingInputFieldType } from '$lib/constants';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import SmartAlbumReevaluateModal from '$lib/modals/SmartAlbumReevaluateModal.svelte';
   import { Button, modalManager, toastManager } from '@immich/ui';
   import { mdiRefresh } from '@mdi/js';
@@ -16,8 +16,9 @@
   import { fade } from 'svelte/transition';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
+  const config = $derived(settingsDraft.baseline);
 
   const smartAlbums = $derived(configToEdit.smartAlbums!);
   const savedSmartAlbums = $derived(config.smartAlbums!);
@@ -187,7 +188,7 @@
           </Button>
         </div>
 
-        <SettingActions bind:configToEdit keys={['smartAlbums']} {disabled} />
+        <SettingActions keys={['smartAlbums']} {disabled} />
       </div>
     </form>
   </div>

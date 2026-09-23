@@ -1,4 +1,8 @@
-import { MachineLearningHardwareAcceleration, Mode as RunPodMode } from '@immich/sdk';
+import {
+  MachineLearningHardwareAcceleration,
+  Mode as RunPodMode,
+  type AdminConfigMachineLearningDto,
+} from '@immich/sdk';
 
 /**
  * Hardware acceleration value map keeping the SDK enum hidden behind a
@@ -145,3 +149,15 @@ export const formatDuration = (seconds: number): string => {
 
 /** Local-format ISO timestamps, with a dash for null/undefined. */
 export const formatTimestamp = (iso: string | null | undefined): string => (iso ? new Date(iso).toLocaleString() : '—');
+
+/**
+ * Caps the matching frames of enhanced video duplicate detection at the frame count. Applied once
+ * before saving (FL-66: from the settings page, so it runs whichever area is open), not while
+ * typing, so a two-digit frame count is never clobbered between keystrokes.
+ */
+export const clampEnhancedVideoFrames = (machineLearning: AdminConfigMachineLearningDto) => {
+  const enhancedVideo = machineLearning.duplicateDetection.enhancedVideo;
+  if (enhancedVideo.minMatchingFrames > enhancedVideo.frameCount) {
+    enhancedVideo.minMatchingFrames = enhancedVideo.frameCount;
+  }
+};

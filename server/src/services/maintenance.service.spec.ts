@@ -99,6 +99,12 @@ describe(MaintenanceService.name, () => {
               "readable": true,
               "writable": false,
             },
+            {
+              "files": 2,
+              "folder": "exports",
+              "readable": true,
+              "writable": false,
+            },
           ],
         }
       `);

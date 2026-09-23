@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
+import { cloneDeep } from 'lodash-es';
 import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ClassConstructor } from 'src/types.js';
@@ -8,6 +9,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { UserAdmin } from 'src/database.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
+import { DatabaseLock } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
@@ -72,7 +74,7 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access.js';
-import { getConfig, updateConfig } from 'src/utils/config.js';
+import { getConfig, readConfig, updateConfig } from 'src/utils/config.js';
 import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
 import { MlSelectionRequest, routedMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
 import { replaceLockedProfileImages } from 'src/utils/profile-image.js';
@@ -310,6 +312,26 @@ export class BaseService {
 
   updateConfig(newConfig: SystemConfig) {
     return updateConfig(this.configRepos, newConfig);
+  }
+
+  /** FL-66: the saved configuration straight from storage, for revision checks and updates. */
+  readConfigForUpdate() {
+    return readConfig(this.configRepos);
+  }
+
+  /**
+   * FL-66: change the saved system configuration as one step. It holds the settings lock that
+   * every administrator save holds, and starts from the configuration read straight from storage
+   * under it, so neither this change nor an administrator's save can overwrite the other.
+   */
+  updateConfigExclusively(change: (config: SystemConfig) => void) {
+    return this.databaseRepository.withLock(DatabaseLock.SystemConfigUpdate, async () => {
+      const oldConfig = await this.readConfigForUpdate();
+      const next = cloneDeep(oldConfig);
+      change(next);
+      const newConfig = await this.updateConfig(next);
+      return { oldConfig, newConfig };
+    });
   }
 
   /**

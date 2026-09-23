@@ -655,6 +655,7 @@ export class ImageEnrichmentService extends BaseService {
           modelName: machineLearning.nsfwDetection.modelName,
           updatedAt: new Date().toISOString(),
           error: getErrorMessage(error),
+          ...(m.nsfwDetection?.review && { review: m.nsfwDetection.review }),
         };
         await this.saveEnrichmentMetadata(id, m, trx);
       });
@@ -668,6 +669,8 @@ export class ImageEnrichmentService extends BaseService {
       const m = await this.getEnrichmentMetadata(id, trx);
       const appliedTagHash = m.nsfwDetection?.status === 'success' ? m.nsfwDetection.appliedTagHash : undefined;
       const appliedTagValues = m.nsfwDetection?.status === 'success' ? m.nsfwDetection.appliedTagValues : undefined;
+      // FL-34: the owner's review outlives every later detection, so a new result never erases it
+      const review = m.nsfwDetection?.review;
       m.nsfwDetection = {
         status: 'success',
         modelName: machineLearning.nsfwDetection.modelName,
@@ -676,6 +679,7 @@ export class ImageEnrichmentService extends BaseService {
         appliedTagHash,
         appliedTagValues,
         provenance: { destinationId, ...(options.configHash && { planConfigHash: options.configHash }) },
+        ...(review && { review }),
       };
       await this.saveEnrichmentMetadata(id, m, trx);
       return m;
@@ -783,6 +787,7 @@ export class ImageEnrichmentService extends BaseService {
             modelName: machineLearning.nsfwDetection.modelName,
             updatedAt: new Date().toISOString(),
             error: getErrorMessage(error),
+            ...(m.nsfwDetection?.review && { review: m.nsfwDetection.review }),
           };
           await this.saveEnrichmentMetadata(id, m, trx);
         });
@@ -885,6 +890,7 @@ export class ImageEnrichmentService extends BaseService {
             result: nsfw,
             appliedTagHash,
             appliedTagValues,
+            ...(m.nsfwDetection?.review && { review: m.nsfwDetection.review }),
           };
         }
 

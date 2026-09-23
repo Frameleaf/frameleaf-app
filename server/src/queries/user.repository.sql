@@ -352,6 +352,12 @@ where
 -- UserRepository.getProfileImageReplacement
 SELECT
   to_regclass('immich_fork.state')::text AS "stateTable"
+SELECT
+  phase
+FROM
+  immich_fork.state
+WHERE
+  id = 1
 select
   "asset"."id",
   "asset_file"."path"

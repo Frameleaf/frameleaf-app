@@ -6,6 +6,7 @@ import {
   type StoredChunk,
   canDismissMediaOperation,
   canPauseMediaOperation,
+  canResumeLostClaim,
   canResumeMediaOperation,
   canRetryMediaOperation,
   canReuseChunk,
@@ -114,6 +115,10 @@ describe('pause and resume (FL-104)', () => {
     expect(isPausableMediaOperationKind(MediaOperationKind.MediaHealth)).toBe(true);
     expect(isPausableMediaOperationKind(MediaOperationKind.ICloudSync)).toBe(true);
     expect(isPausableMediaOperationKind(MediaOperationKind.PhysicalDeduplication)).toBe(true);
+    expect(isPausableMediaOperationKind(MediaOperationKind.PreservationExport)).toBe(true);
+    expect(isPausableMediaOperationKind(MediaOperationKind.PreservationVerify)).toBe(true);
+    expect(isPausableMediaOperationKind(MediaOperationKind.PreservationReview)).toBe(true);
+    expect(isPausableMediaOperationKind(MediaOperationKind.PreservationRestore)).toBe(true);
     expect(isPausableMediaOperationKind(MediaOperationKind.StudioPreview)).toBe(false);
     expect(isPausableMediaOperationKind(MediaOperationKind.RestorationPreview)).toBe(false);
     expect(isPausableMediaOperationKind(MediaOperationKind.QuickEdit)).toBe(false);
@@ -168,6 +173,31 @@ describe('automatic retry (FL-104)', () => {
   it('gives every job exactly one automatic retry, after a delay', () => {
     expect(MEDIA_OPERATION_AUTO_RETRIES).toBe(1);
     expect(MEDIA_OPERATION_AUTO_RETRY_DELAY_MS).toBeGreaterThan(0);
+  });
+});
+
+describe('lost claims (FL-43)', () => {
+  it('resumes a resumable kind at most twice, whatever its maxAttempts', () => {
+    const job = (attempt: number, maxAttempts = 20) => ({
+      kind: MediaOperationKind.StudioExport,
+      attempt,
+      maxAttempts,
+    });
+    expect([1, 2, 3].map((attempt) => canResumeLostClaim(job(attempt)))).toEqual([true, true, false]);
+    // A lower allowance still wins.
+    expect(canResumeLostClaim(job(1, 1))).toBe(false);
+  });
+
+  it('never resumes a kind that would start again from nothing', () => {
+    for (const kind of [
+      MediaOperationKind.StudioPreview,
+      MediaOperationKind.RestorationPreview,
+      MediaOperationKind.QuickEdit,
+      MediaOperationKind.StudioBundleExport,
+      MediaOperationKind.StudioBundleImport,
+    ]) {
+      expect(canResumeLostClaim({ kind, attempt: 1, maxAttempts: 3 })).toBe(false);
+    }
   });
 });
 

@@ -32,6 +32,11 @@ describe('Frameleaf settings areas', () => {
     expect(areaForSection('unknown')).toBeUndefined();
   });
 
+  it('keeps Originals & preservation with imports and database backups (FL-74)', () => {
+    expect(areaForSection('preservation')).toBe('backup');
+    expect(resolveSettingsArea({ isOpen: 'preservation' })).toBe('backup');
+  });
+
   describe(resolveSettingsArea.name, () => {
     it('prefers an explicit area, then the first known isOpen key, then the default', () => {
       expect(resolveSettingsArea({ area: 'server' })).toBe('server');
@@ -59,6 +64,13 @@ describe('Frameleaf settings areas', () => {
     it('returns the area sections in area order and skips keys with no component', () => {
       expect(sectionsForArea(sections, 'storage').map((s) => s.key)).toEqual(['storage-template', 'trash']);
       expect(sectionsForArea(sections, 'care')).toEqual([]);
+    });
+
+    it('keeps the change history as its own personal area without settings forms (FL-66)', () => {
+      const history = SETTINGS_AREAS.find((area) => area.id === 'history');
+      expect(history).toEqual({ id: 'history', group: 'personal', sections: [] });
+      expect(sectionsForArea(sections, 'history')).toEqual([]);
+      expect(resolveSettingsArea({ area: 'history' })).toBe('history');
     });
   });
 });

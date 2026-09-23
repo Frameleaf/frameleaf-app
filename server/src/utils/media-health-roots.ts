@@ -33,12 +33,18 @@ export const MANAGED_ROOT_ID = 'managed';
 
 export const libraryRootId = (libraryId: string) => `library:${libraryId}`;
 
+/** A location's path without a trailing separator, so `/mnt/backup/` and `/mnt/backup` are one location. */
+const normalizeRootPath = (rootPath: string) => {
+  const normalized = path.normalize(rootPath);
+  return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized;
+};
+
 /**
  * A recovery root is named by its path, not its position, so reordering the configuration never
  * turns a saved choice into a different location.
  */
 export const recoveryRootId = (rootPath: string) =>
-  `recovery:${createHash('sha1').update(path.normalize(rootPath)).digest('hex').slice(0, 12)}`;
+  `recovery:${createHash('sha1').update(normalizeRootPath(rootPath)).digest('hex').slice(0, 12)}`;
 
 export const rootKindOf = (rootId: string): MediaHealthRootKind | undefined => {
   if (rootId === MANAGED_ROOT_ID) {

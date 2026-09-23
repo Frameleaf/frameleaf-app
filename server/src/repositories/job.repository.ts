@@ -306,7 +306,8 @@ export class JobRepository {
    * only makes a progress bar less exact, so it is logged and never allowed to fail the job.
    */
   private recordQueueRunJob(queueName: QueueName) {
-    void this.queueRunClient(queueName)
+    // a count that cannot be made (no queue yet, Redis away) never breaks the listener that records it
+    void Promise.try(() => this.queueRunClient(queueName))
       .then((client) => client.hincrby(this.queueRunKey(queueName), 'processed', 1))
       .catch((error) => this.logger.debug(`Unable to count a finished ${queueName} job: ${error}`));
 
@@ -554,6 +555,10 @@ export class JobRepository {
       }
       case JobName.StorageTemplateMigrationSingle: {
         return { jobId: item.data.id };
+      }
+      case JobName.AssetDevelopRender: {
+        // The automatic retry of a failed render waits before it is claimed (FL-64).
+        return item.data.delay ? { delay: item.data.delay } : null;
       }
       case JobName.PersonGenerateThumbnail: {
         return { priority: 1 };
