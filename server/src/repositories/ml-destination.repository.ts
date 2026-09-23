@@ -1,0 +1,202 @@
+import { Injectable } from '@nestjs/common';
+import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
+import { InjectKysely } from 'nestjs-kysely';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js';
+import { DB } from 'src/schema/index.js';
+import {
+  MlDestinationTable,
+  MlWorkloadAccountingTable,
+  MlWorkloadRouteTable,
+} from 'src/schema/tables/ml-destination.table.js';
+
+export type MlDestinationRow = Selectable<MlDestinationTable>;
+export type MlWorkloadRouteRow = Selectable<MlWorkloadRouteTable>;
+export type MlWorkloadAccountingRow = Selectable<MlWorkloadAccountingTable>;
+
+export type MlDestinationInsert = {
+  kind: MlDestinationKind;
+  name: string;
+  url: string | null;
+  authToken: string | null;
+  enabled: boolean;
+  workloads: MlWorkload[];
+  budgetLimitUsd: number | null;
+  maxRuntimeMinutes: number | null;
+  maxUploadBytes: number | null;
+};
+
+export type MlDestinationPatch = Partial<MlDestinationInsert> & {
+  consentAcknowledgedAt?: Date | null;
+  consentAcknowledgedBy?: string | null;
+};
+
+export type MlProbeRecord = {
+  health: MlDestinationHealth;
+  summary: string | null;
+  workloads: MlWorkload[] | null;
+  probedAt: Date;
+};
+
+export type MlAccountingInsert = {
+  destinationId: string;
+  destinationKind: MlDestinationKind;
+  workload: MlWorkload;
+  jobId: string | null;
+  jobName: string | null;
+  bytesSent: number;
+  bytesReceived: number;
+  durationMs: number;
+  outcome: 'success' | 'failure';
+  costUsd: number | null;
+  startedAt: Date;
+  finishedAt: Date;
+};
+
+/** Measured throughput for one destination and workload, from the accounting rows. */
+export type MlThroughputSample = {
+  sampleCount: number;
+  bytesSent: number;
+  durationMs: number;
+  spentUsd: number;
+};
+
+const toJson = (value: unknown) => sql`${JSON.stringify(value)}::jsonb`;
+
+/**
+ * Storage for machine-learning destinations, workload routes and per-request accounting
+ * (FL-110). Selection and admission live in `src/utils/ml-destination.ts`; this class only
+ * reads and writes rows.
+ */
+@Injectable()
+export class MlDestinationRepository {
+  constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  @GenerateSql()
+  getAll(): Promise<MlDestinationRow[]> {
+    return this.db.selectFrom('ml_destination').selectAll().orderBy('kind', 'asc').orderBy('name', 'asc').execute();
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getById(id: string): Promise<MlDestinationRow | undefined> {
+    return this.db.selectFrom('ml_destination').selectAll().where('id', '=', id).executeTakeFirst();
+  }
+
+  @GenerateSql({ params: [DummyValue.STRING, DummyValue.STRING] })
+  getByUrl(kind: MlDestinationKind, url: string): Promise<MlDestinationRow | undefined> {
+    return this.db
+      .selectFrom('ml_destination')
+      .selectAll()
+      .where('kind', '=', kind)
+      .where('url', '=', url)
+      .executeTakeFirst();
+  }
+
+  async create(destination: MlDestinationInsert): Promise<MlDestinationRow> {
+    const values: Insertable<MlDestinationTable> = {
+      ...destination,
+      workloads: toJson(destination.workloads) as unknown as MlWorkload[],
+    };
+    return this.db.insertInto('ml_destination').values(values).returningAll().executeTakeFirstOrThrow();
+  }
+
+  async update(id: string, patch: MlDestinationPatch): Promise<MlDestinationRow> {
+    const values: Updateable<MlDestinationTable> = {
+      ...patch,
+      workloads: patch.workloads === undefined ? undefined : (toJson(patch.workloads) as unknown as MlWorkload[]),
+      updatedAt: new Date(),
+    };
+    return this.db
+      .updateTable('ml_destination')
+      .set(values)
+      .where('id', '=', id)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async delete(id: string): Promise<void> {
+    await this.db.deleteFrom('ml_destination').where('id', '=', id).execute();
+  }
+
+  async recordProbe(id: string, probe: MlProbeRecord): Promise<void> {
+    await this.db
+      .updateTable('ml_destination')
+      .set({
+        lastProbeAt: probe.probedAt,
+        lastProbeHealth: probe.health,
+        lastProbeSummary: probe.summary,
+        lastProbeWorkloads:
+          probe.workloads === null ? null : (toJson(probe.workloads) as unknown as MlWorkload[]),
+      })
+      .where('id', '=', id)
+      .execute();
+  }
+
+  @GenerateSql()
+  getRoutes(): Promise<MlWorkloadRouteRow[]> {
+    return this.db.selectFrom('ml_workload_route').selectAll().orderBy('workload', 'asc').execute();
+  }
+
+  @GenerateSql({ params: [DummyValue.STRING] })
+  getRoute(workload: MlWorkload): Promise<MlWorkloadRouteRow | undefined> {
+    return this.db.selectFrom('ml_workload_route').selectAll().where('workload', '=', workload).executeTakeFirst();
+  }
+
+  async setRoute(workload: MlWorkload, destinationId: string): Promise<void> {
+    await this.db
+      .insertInto('ml_workload_route')
+      .values({ workload, destinationId, updatedAt: new Date() })
+      .onConflict((oc) => oc.column('workload').doUpdateSet({ destinationId, updatedAt: new Date() }))
+      .execute();
+  }
+
+  @GenerateSql({ params: [DummyValue.STRING] })
+  async clearRoute(workload: MlWorkload): Promise<void> {
+    await this.db.deleteFrom('ml_workload_route').where('workload', '=', workload).execute();
+  }
+
+  async recordAccounting(entry: MlAccountingInsert): Promise<void> {
+    await this.db.insertInto('ml_workload_accounting').values(entry).execute();
+  }
+
+  /**
+   * Successful requests since `since` for one destination, optionally one workload. Bytes
+   * and duration are summed so callers can derive a measured throughput, and cost is summed
+   * for budget checks.
+   */
+  async getThroughput(destinationId: string, since: Date, workload?: MlWorkload): Promise<MlThroughputSample> {
+    let query = this.db
+      .selectFrom('ml_workload_accounting')
+      .select((eb) => [
+        eb.fn.countAll<number>().as('sampleCount'),
+        eb.fn.coalesce(eb.fn.sum<number>('bytesSent'), sql<number>`0`).as('bytesSent'),
+        eb.fn.coalesce(eb.fn.sum<number>('durationMs'), sql<number>`0`).as('durationMs'),
+        eb.fn.coalesce(eb.fn.sum<number>('costUsd'), sql<number>`0`).as('spentUsd'),
+      ])
+      .where('destinationId', '=', destinationId)
+      .where('outcome', '=', 'success')
+      .where('startedAt', '>=', since);
+    if (workload) {
+      query = query.where('workload', '=', workload);
+    }
+    const row = await query.executeTakeFirstOrThrow();
+    return {
+      sampleCount: Number(row.sampleCount),
+      bytesSent: Number(row.bytesSent),
+      durationMs: Number(row.durationMs),
+      spentUsd: Number(row.spentUsd),
+    };
+  }
+
+  /** Total attributed spend for a destination since `since`, across every outcome. */
+  async getSpend(destinationId: string, since: Date): Promise<number> {
+    const row = await this.db
+      .selectFrom('ml_workload_accounting')
+      .select((eb) => eb.fn.coalesce(eb.fn.sum<number>('costUsd'), sql<number>`0`).as('spentUsd'))
+      .where('destinationId', '=', destinationId)
+      .where('startedAt', '>=', since)
+      .executeTakeFirstOrThrow();
+    return Number(row.spentUsd);
+  }
+}

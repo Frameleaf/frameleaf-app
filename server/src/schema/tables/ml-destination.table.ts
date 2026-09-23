@@ -1,0 +1,154 @@
+import {
+  Check,
+  Column,
+  CreateDateColumn,
+  ForeignKeyColumn,
+  Index,
+  PrimaryColumn,
+  PrimaryGeneratedColumn,
+  Table,
+  UpdateDateColumn,
+} from '@immich/sql-tools';
+import type { Generated, Int8, Timestamp } from '@immich/sql-tools';
+import { MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
+
+/**
+ * One place machine-learning work may run (FL-110). Mirrors migration
+ * 2100000000140-CreateMlDestinations.
+ *
+ * `authToken` is a bearer credential for LAN workers and is never returned by the API;
+ * RunPod destinations carry no URL or token here because both come from the RunPod state
+ * machine at selection time. `workloads` is the admin's allow-list; `lastProbeWorkloads`
+ * is what the worker itself reported, and admission requires both.
+ */
+@Table('ml_destination')
+// Mirrors the CHECK created in migration 2100000000140; the comparer strips parens.
+@Check({
+  name: 'ml_destination_kind_check',
+  expression: `kind = ANY (ARRAY['local'::text, 'lan'::text, 'runpod'::text])`,
+})
+export class MlDestinationTable {
+  @PrimaryGeneratedColumn()
+  id!: Generated<string>;
+
+  @Column({ type: 'text' })
+  kind!: MlDestinationKind;
+
+  @Column({ type: 'text' })
+  name!: string;
+
+  @Column({ type: 'text', nullable: true })
+  url!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  authToken!: string | null;
+
+  @Column({ type: 'boolean', default: true })
+  enabled!: Generated<boolean>;
+
+  /** Allowed workloads, stored as a JSON array of `MlWorkload` values. */
+  @Column({ type: 'jsonb', default: '[]' })
+  workloads!: Generated<MlWorkload[]>;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  consentAcknowledgedAt!: Timestamp | null;
+
+  @ForeignKeyColumn(() => UserTable, { nullable: true, onDelete: 'SET NULL', onUpdate: 'CASCADE' })
+  consentAcknowledgedBy!: string | null;
+
+  @Column({ type: 'double precision', nullable: true })
+  budgetLimitUsd!: number | null;
+
+  @Column({ type: 'integer', nullable: true })
+  maxRuntimeMinutes!: number | null;
+
+  @Column({ type: 'bigint', nullable: true })
+  maxUploadBytes!: Int8 | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  lastProbeAt!: Timestamp | null;
+
+  @Column({ type: 'text', default: MlDestinationHealth.Unknown })
+  lastProbeHealth!: Generated<MlDestinationHealth>;
+
+  @Column({ type: 'text', nullable: true })
+  lastProbeSummary!: string | null;
+
+  /** Workloads the worker reported on its last probe, or null when it never answered. */
+  @Column({ type: 'jsonb', nullable: true })
+  lastProbeWorkloads!: MlWorkload[] | null;
+
+  @CreateDateColumn()
+  createdAt!: Generated<Timestamp>;
+
+  @UpdateDateColumn()
+  updatedAt!: Generated<Timestamp>;
+}
+
+/**
+ * The explicit destination for each library workload. The admin sets a route; a job whose
+ * workload has no route is refused rather than sent anywhere.
+ */
+@Table('ml_workload_route')
+export class MlWorkloadRouteTable {
+  @PrimaryColumn({ type: 'text' })
+  workload!: MlWorkload;
+
+  @ForeignKeyColumn(() => MlDestinationTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' })
+  destinationId!: string;
+
+  @UpdateDateColumn()
+  updatedAt!: Generated<Timestamp>;
+}
+
+/**
+ * One record per request sent to a destination: job identity, destination, bytes and
+ * duration. This is the accounting FL-115 reads for measured estimates and billing limits.
+ */
+@Index({ columns: ['destinationId', 'startedAt'] })
+@Table('ml_workload_accounting')
+export class MlWorkloadAccountingTable {
+  @PrimaryGeneratedColumn()
+  id!: Generated<string>;
+
+  @ForeignKeyColumn(() => MlDestinationTable, { nullable: true, onDelete: 'SET NULL', onUpdate: 'CASCADE' })
+  destinationId!: string | null;
+
+  @Column({ type: 'text' })
+  destinationKind!: MlDestinationKind;
+
+  @Column({ type: 'text' })
+  workload!: MlWorkload;
+
+  @Column({ type: 'text', nullable: true })
+  jobId!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  jobName!: string | null;
+
+  @Column({ type: 'bigint', default: 0 })
+  bytesSent!: Generated<Int8>;
+
+  @Column({ type: 'bigint', default: 0 })
+  bytesReceived!: Generated<Int8>;
+
+  @Column({ type: 'integer', default: 0 })
+  durationMs!: Generated<number>;
+
+  @Column({ type: 'text' })
+  outcome!: 'success' | 'failure';
+
+  /** Cost attributed to this request from the destination's hourly rate, or null when the rate is unknown. */
+  @Column({ type: 'double precision', nullable: true })
+  costUsd!: number | null;
+
+  @Column({ type: 'timestamp with time zone' })
+  startedAt!: Timestamp;
+
+  @Column({ type: 'timestamp with time zone' })
+  finishedAt!: Timestamp;
+
+  @CreateDateColumn()
+  createdAt!: Generated<Timestamp>;
+}
