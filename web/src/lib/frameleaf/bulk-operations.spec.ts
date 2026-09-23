@@ -1,6 +1,7 @@
 import {
   AssetJobName,
   AssetVisibility,
+  ImageEnrichmentFilter,
   MediaOperationBulkAction,
   MediaOperationItemStatus,
   MediaOperationStatus,
@@ -60,9 +61,10 @@ const viewState = (patch: Partial<LibraryViewState> = {}): LibraryViewState => (
   ...patch,
 });
 
+// FL-48: a structured search pages by cursor, so the next page is announced as `nextCursor`
 const page = (ids: string[], nextPage: string | null, total = ids.length) => ({
   albums: { items: [], count: 0, total: 0, facets: [], nextPage: null, nextCursor: null },
-  assets: { items: ids.map((id) => ({ id })), count: ids.length, total, facets: [], nextPage, nextCursor: null },
+  assets: { items: ids.map((id) => ({ id })), count: ids.length, total, facets: [], nextPage, nextCursor: nextPage },
 });
 
 describe('bulk actions bind to existing endpoints', () => {
@@ -281,26 +283,49 @@ describe('a matching set is bound to the scope it was taken from', () => {
         filter: {
           isFavorite: { eq: true },
           albumIds: { any: ['album-1'] },
-          // A view that says nothing about visibility means the timeline, not everything unlocked.
+          // A view that says nothing about visibility means the timeline, not everything unlocked,
+          // and nothing from the trash, which a structured search would otherwise include (FL-48).
           visibility: { eq: AssetVisibility.Timeline },
+          trashedAt: { eq: null },
         },
         size: 250,
       },
     });
   });
 
+  it('keeps the query album condition and requires the scope on top of it (FL-48)', () => {
+    const search = snapshotSearch(
+      viewState({
+        scope: { kind: 'album', id: 'album-1' },
+        query: { ...emptyDiscoveryQuery(), filter: { albumIds: { none: ['album-2'] } } },
+      }),
+    );
+    expect(search.kind === 'metadata' && search.dto.filter?.albumIds).toEqual({ none: ['album-2'], all: ['album-1'] });
+  });
+
   it('includes trashed assets when the view filters on the trash date', () => {
     const search = snapshotSearch(
       viewState({ query: { ...emptyDiscoveryQuery(), filter: { trashedAt: { gte: '2026-01-01' } } } }),
     );
+    // FL-48: the trash condition itself includes the trash; the deprecated `withDeleted` the server
+    // refuses beside a filter is not sent, and the calendar day goes out as the datetime it means.
     expect(search).toEqual({
       kind: 'metadata',
       dto: {
-        filter: { trashedAt: { gte: '2026-01-01' }, visibility: { eq: AssetVisibility.Timeline } },
+        filter: { trashedAt: { gte: '2026-01-01T00:00:00.000Z' }, visibility: { eq: AssetVisibility.Timeline } },
         size: 250,
-        withDeleted: true,
       },
     });
+  });
+
+  it('carries the enrichment facet and the similar-photo reference instead of widening the set (FL-48)', () => {
+    const enriched = snapshotSearch(
+      viewState({ query: { ...emptyDiscoveryQuery(), imageEnrichment: ImageEnrichmentFilter.NsfwReview } }),
+    );
+    expect(enriched).toMatchObject({ kind: 'metadata', dto: { imageEnrichment: ImageEnrichmentFilter.NsfwReview } });
+
+    const similar = snapshotSearch(viewState({ query: { ...emptyDiscoveryQuery(), queryAssetId: 'asset-1' } }));
+    expect(similar).toMatchObject({ kind: 'smart', dto: { queryAssetId: 'asset-1' } });
   });
 
   it('refuses a locked view, whose visibility depends on an elevated session', () => {
@@ -319,7 +344,7 @@ describe('a matching set is bound to the scope it was taken from', () => {
     );
     expect(search).toEqual({
       kind: 'metadata',
-      dto: { filter: { visibility: { eq: AssetVisibility.Archive } }, size: 250 },
+      dto: { filter: { visibility: { eq: AssetVisibility.Archive }, trashedAt: { eq: null } }, size: 250 },
     });
   });
 
@@ -328,9 +353,20 @@ describe('a matching set is bound to the scope it was taken from', () => {
       kind: 'unsupported',
       reasonKey: 'frameleaf_bulk_reason_scope_unsupported',
     });
+    // FL-48: a text search names its field, so it becomes that field's condition...
     expect(
-      snapshotSearch(viewState({ query: { ...emptyDiscoveryQuery(), text: 'lake', mode: 'text' } })),
-    ).toEqual({ kind: 'unsupported', reasonKey: 'frameleaf_bulk_reason_text_query_unsupported' });
+      snapshotSearch(viewState({ query: { ...emptyDiscoveryQuery(), text: 'lake', mode: 'text', textField: 'ocr' } })),
+    ).toMatchObject({ kind: 'metadata', dto: { filter: { ocr: { matches: 'lake' } } } });
+    // ...unless the filter already constrains that field, where a second condition would change the set.
+    const constrained = {
+      ...emptyDiscoveryQuery(),
+      text: 'lake',
+      filter: { originalFileName: { like: 'IMG' } },
+    };
+    expect(snapshotSearch(viewState({ query: constrained }))).toEqual({
+      kind: 'unsupported',
+      reasonKey: 'frameleaf_bulk_reason_text_query_unsupported',
+    });
     expect(snapshotSearch(viewState({ query: { ...emptyDiscoveryQuery(), text: 'lake', mode: 'smart' } })).kind).toBe(
       'smart',
     );
@@ -344,7 +380,14 @@ describe('a matching set is bound to the scope it was taken from', () => {
     const frozen = viewState({ query: { ...emptyDiscoveryQuery(), filter: { isFavorite: { eq: true } } } });
     const snapshot = await resolveMatchingIds(frozen, { gateway: api });
     expect(snapshot).toEqual({ ids: ['a', 'b', 'c'], total: 3, truncated: false, cancelled: false });
-    expect(vi.mocked(api.searchAssets).mock.calls.map(([argument]) => argument.metadataSearchDto.page)).toEqual([1, 2]);
+    // FL-48: a structured search pages by cursor; the deprecated `page` is refused beside a filter.
+    expect(vi.mocked(api.searchAssets).mock.calls.map(([argument]) => argument.metadataSearchDto.cursor)).toEqual([
+      undefined,
+      '2',
+    ]);
+    expect(vi.mocked(api.searchAssets).mock.calls.some(([argument]) => 'page' in argument.metadataSearchDto)).toBe(
+      false,
+    );
   });
 
   it('stops collecting at the client bound and says so', async () => {
@@ -360,7 +403,7 @@ describe('a matching set is bound to the scope it was taken from', () => {
     await expect(countMatching(state, api)).resolves.toBe(4200);
     expect(api.searchAssetStatistics).toHaveBeenCalledWith({
       statisticsSearchDto: {
-        filter: { isFavorite: { eq: true }, visibility: { eq: AssetVisibility.Timeline } },
+        filter: { isFavorite: { eq: true }, visibility: { eq: AssetVisibility.Timeline }, trashedAt: { eq: null } },
       },
     });
   });
@@ -379,6 +422,7 @@ describe('a matching set is bound to the scope it was taken from', () => {
     expect(vi.mocked(api.searchAssets).mock.calls[0][0].metadataSearchDto.filter).toEqual({
       isFavorite: { eq: true },
       visibility: { eq: AssetVisibility.Timeline },
+      trashedAt: { eq: null },
     });
     expect(api.updateAssets).toHaveBeenCalledWith({
       assetBulkUpdateDto: { ids: ['a', 'b'], visibility: AssetVisibility.Archive },
