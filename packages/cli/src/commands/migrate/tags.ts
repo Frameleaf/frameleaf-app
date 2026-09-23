@@ -68,14 +68,22 @@ export async function migrateTags(
         }
       }
       const bAssetIds: string[] = [];
+      let pending = 0;
       for (const aId of direct) {
         const bId = ledger.bId(aId);
         if (bId) {
           bAssetIds.push(bId);
+        } else if (ledger.hasAsset(aId)) {
+          pending++;
         }
       }
       for (const part of chunk(bAssetIds, 500)) {
         await to.bulkTagAssets([bTagId], part);
+      }
+      if (pending > 0) {
+        // Tagging is idempotent; stay pending until every tagged asset is on the destination.
+        controller.log(`tag ${tag.value}: ${pending} asset(s) not on destination yet`);
+        continue;
       }
       ledger.setTagAssigned(tag.aId);
       controller.log(`tags assigned: ${tag.value}`);

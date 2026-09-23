@@ -6,7 +6,7 @@
  */
 import type { Component } from 'svelte';
 
-export type SettingsGroupId = 'library' | 'server';
+export type SettingsGroupId = 'library' | 'server' | 'personal';
 
 /** One settings form as the host renders it: an existing system-config section with its copy. */
 export type SettingsHostSection = {
@@ -18,7 +18,16 @@ export type SettingsHostSection = {
 };
 
 export type SettingsAreaId =
-  'storage' | 'backup' | 'intelligence' | 'editing' | 'care' | 'processing' | 'security' | 'notifications' | 'server';
+  | 'storage'
+  | 'backup'
+  | 'intelligence'
+  | 'editing'
+  | 'care'
+  | 'processing'
+  | 'security'
+  | 'notifications'
+  | 'server'
+  | 'history';
 
 export type SettingsAreaDefinition = {
   id: SettingsAreaId;
@@ -37,9 +46,12 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   { id: 'security', group: 'server', sections: ['authentication'] },
   { id: 'notifications', group: 'server', sections: ['notifications'] },
   { id: 'server', group: 'server', sections: ['server', 'version-check', 'logging', 'location', 'theme'] },
+  // FL-66: the template's "Change history" area. It holds no settings form; the host shows the
+  // saved settings changes there.
+  { id: 'history', group: 'personal', sections: [] },
 ]);
 
-export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = Object.freeze(['library', 'server']);
+export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = Object.freeze(['library', 'server', 'personal']);
 
 export const DEFAULT_SETTINGS_AREA: SettingsAreaId = 'storage';
 

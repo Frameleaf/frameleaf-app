@@ -486,6 +486,7 @@ A run that reaches the end performs an audit that re-checks **every single sourc
 ```text
 ──────── Migration summary ────────
 Assets:  512773/512773 on B   (0 failed, 0 missing)
+Verified on B by checksum: 512773/512773
 Albums:  184/184   Tags: 96/96
 Stacks:  312/312   People: 47/47
 Audit report: ./immich-migrate.sqlite.audit.json
@@ -536,7 +537,9 @@ Anything short of `PASS` names the specific assets still missing, both on screen
 | ---------------------------- | ----------------------------------------------------------------- |
 | `--from-url`, `--from-key`   | Source server API URL and that user's API key                     |
 | `--to-url`, `--to-key`       | Destination server API URL and that user's API key                |
+| `--preflight`                | Check connections, key permissions, owners and ledger; no changes |
 | `-n, --dry-run`              | Preview what would move; writes nothing to the destination        |
+| `--verify`                   | Re-audit an existing ledger against the destination only          |
 | `--serve`                    | Serve the progress dashboard on `127.0.0.1`                       |
 | `--port <number>`            | Dashboard port (default `2285`)                                   |
 | `-c, --concurrency <number>` | Assets transferred in parallel (default: CPU cores − 1)           |
@@ -545,7 +548,7 @@ Anything short of `PASS` names the specific assets still missing, both on screen
 | `--include-trashed`          | Also migrate trashed assets                                       |
 | `--no-faces`                 | Skip people and face migration                                    |
 
-Run `node packages/cli/dist/index.js migrate --help` for the full list.
+Run `node packages/cli/dist/index.js migrate --help` for the full list. The step-by-step operator guide, including how to review the audit report in **Administration → Maintenance**, is [Server-to-server migration](docs/docs/administration/server-migration.md).
 
 <br/>
 <a href="https://immich.app">
