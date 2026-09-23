@@ -11,19 +11,20 @@
    * Either way, a pair the server refuses — already changed, deleted, claimed by another pair —
    * is reported and stays in the list rather than silently disappearing.
    */
+  import ToolButton from '$lib/components/frameleaf/Button.svelte';
   import BulkFormDialog from '$lib/components/frameleaf/BulkFormDialog.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import TileJobState from '$lib/components/frameleaf/TileJobState.svelte';
-  import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { AssetMediaSize, LivePhotoMatchConfidence, type LivePhotoCandidateDto } from '@immich/sdk';
-  import { Button, Icon, Text } from '@immich/ui';
-  import { mdiInformationOutline, mdiMotionPlayOutline, mdiPlayCircleOutline } from '@mdi/js';
+  import { Icon, Text } from '@immich/ui';
+  import { mdiPlayCircleOutline } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
-  import type { PageData } from './$types';
+  import type { UtilityData } from '$lib/frameleaf/utilities-load';
+  type PageData = Extract<UtilityData, { tool: 'live-photos' }>;
 
   interface Props {
     data: PageData;
@@ -126,114 +127,63 @@
   };
 </script>
 
-<UserPageLayout title={data.meta.title}>
-  <div class="m-auto mt-5 flex w-full max-w-4xl flex-col gap-4 px-2">
-    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <div class="flex flex-col gap-1">
-        <Text size="large" fontWeight="bold">{$t('relink_live_photos')}</Text>
-        <Text size="small" color="muted">{$t('relink_live_photos_description')}</Text>
-      </div>
-
-      {#if highConfidence.length > 0}
-        <Button size="small" loading={bulk.busy} onclick={() => openReview(highConfidence)}>
-          <Icon icon={mdiMotionPlayOutline} size="20" />
-          {$t('live_photos_relink_all', { values: { count: highConfidence.length } })}
-        </Button>
-      {/if}
-    </div>
-
-    {#if candidates.length === 0}
-      <div class="rounded-3xl border border-gray-300 p-8 text-center dark:border-immich-dark-gray">
-        <Text color="muted">{$t('live_photos_no_candidates')}</Text>
-      </div>
-    {:else}
-      <div class="flex flex-col gap-3">
-        {#each candidates as candidate (pairKey(candidate))}
-          {@const isHigh = candidate.confidence === LivePhotoMatchConfidence.High}
-          {@const pending = pendingPhotoIds.has(candidate.photo.id)}
-          {@const failure = failureReasons.get(candidate.photo.id)}
-          <div class="flex items-center gap-4 rounded-2xl border border-gray-300 p-3 dark:border-immich-dark-gray">
-            <div class="relative flex shrink-0 gap-2">
-              <img
-                src={getAssetMediaUrl({ id: candidate.photo.id, size: AssetMediaSize.Preview })}
-                alt={candidate.photo.originalFileName}
-                class="size-20 rounded-lg object-cover"
-                draggable="false"
-              />
-              <div class="relative">
-                <img
-                  src={getAssetMediaUrl({ id: candidate.video.id, size: AssetMediaSize.Preview })}
-                  alt={candidate.video.originalFileName}
-                  class="size-20 rounded-lg object-cover"
-                  draggable="false"
-                />
-                <div class="absolute inset-0 flex items-center justify-center">
-                  <Icon icon={mdiPlayCircleOutline} size="28" class="text-white drop-shadow-sm" />
-                </div>
-              </div>
-              {#if pending}
-                <div class="absolute top-1 right-1">
-                  <TileJobState job={{ state: 'pending' }} label={$t('frameleaf_bulk_tile_processing')} />
-                </div>
-              {/if}
-            </div>
-
-            <div class="flex min-w-0 flex-1 flex-col gap-1">
-              <Text size="small" class="truncate" title={candidate.photo.originalFileName}>
-                {candidate.photo.originalFileName}
-              </Text>
-              <Text size="small" color="muted" class="truncate" title={candidate.video.originalFileName}>
-                {candidate.video.originalFileName}
-              </Text>
-              <span
-                class="mt-1 w-fit rounded-full px-2 py-0.5 text-xs {isHigh
-                  ? 'bg-success/15 text-success'
-                  : 'bg-warning/15 text-warning'}"
-              >
-                {isHigh ? $t('live_photos_confidence_high') : $t('live_photos_confidence_low')}
-              </span>
-              {#if failure}
-                <Text size="small" color="danger">
-                  {$t('frameleaf_bulk_tile_failed', { values: { reason: $t(failure) } })}
-                </Text>
-              {/if}
-            </div>
-
-            <div class="flex shrink-0 flex-col gap-2">
-              <Button
-                size="small"
-                variant="outline"
-                disabled={pending}
-                onclick={() => {
-                  inspect = candidate;
-                  inspectOpen = true;
-                }}
-              >
-                {$t('live_photos_inspect_button')}
-              </Button>
-              <Button
-                size="small"
-                variant={isHigh ? 'filled' : 'outline'}
-                disabled={pending}
-                loading={bulk.busy}
-                onclick={() => openReview([candidate])}
-              >
-                {$t('live_photos_review_pair')}
-              </Button>
-            </div>
-          </div>
-        {/each}
-      </div>
-
-      {#if candidates.some((candidate) => candidate.confidence === LivePhotoMatchConfidence.Low)}
-        <div class="flex items-start gap-2 px-1">
-          <Icon icon={mdiInformationOutline} size="18" class="mt-0.5 shrink-0 text-warning" />
-          <Text size="small" color="muted">{$t('live_photos_low_confidence_hint')}</Text>
-        </div>
-      {/if}
-    {/if}
+<div class="live-photos-tool">
+  <div class="toolbar">
+    <span>{$t('frameleaf_utilities_candidate_pairs', { values: { count: candidates.length } })}</span>
+    <ToolButton
+      variant="primary"
+      disabled={bulk.busy || highConfidence.length === 0}
+      onclick={() => openReview(highConfidence)}>{$t('frameleaf_utilities_link_pairs')}</ToolButton
+    >
   </div>
-</UserPageLayout>
+  <div class="pairs">
+    {#each candidates as candidate (pairKey(candidate))}
+      {@const pending = pendingPhotoIds.has(candidate.photo.id)}
+      {@const failure = failureReasons.get(candidate.photo.id)}
+      <article>
+        <div class="pair-images">
+          <img
+            src={getAssetMediaUrl({ id: candidate.photo.id, size: AssetMediaSize.Preview })}
+            alt={candidate.photo.originalFileName}
+          />
+          <span
+            ><img
+              src={getAssetMediaUrl({ id: candidate.video.id, size: AssetMediaSize.Preview })}
+              alt={candidate.video.originalFileName}
+            /><Icon icon={mdiPlayCircleOutline} size="1.5rem" aria-hidden={true} /></span
+          >
+          {#if pending}<TileJobState job={{ state: 'pending' }} label={$t('frameleaf_bulk_tile_processing')} />{/if}
+        </div>
+        <div class="evidence">
+          <strong>{candidate.photo.originalFileName}</strong>
+          <small>{candidate.video.originalFileName}</small>
+          <p>{candidate.matchReason}</p>
+          <span class="badge" class:warning={candidate.confidence === LivePhotoMatchConfidence.Low}
+            >{$t(
+              candidate.confidence === LivePhotoMatchConfidence.High
+                ? 'live_photos_confidence_high'
+                : 'live_photos_confidence_low',
+            )}</span
+          >
+          {#if failure}<p role="alert">{$t('frameleaf_bulk_tile_failed', { values: { reason: $t(failure) } })}</p>{/if}
+        </div>
+        <div class="actions">
+          <ToolButton
+            disabled={pending}
+            onclick={() => {
+              inspect = candidate;
+              inspectOpen = true;
+            }}>{$t('live_photos_inspect_button')}</ToolButton
+          >
+          <ToolButton disabled={pending || bulk.busy} onclick={() => openReview([candidate])}
+            >{$t('live_photos_review_pair')}</ToolButton
+          >
+        </div>
+      </article>
+    {/each}
+  </div>
+  {#if candidates.length === 0}<p class="empty">{$t('live_photos_no_candidates')}</p>{/if}
+</div>
 
 {#if inspect}
   {@const candidate = inspect}
@@ -269,7 +219,7 @@
       </dl>
     </div>
     <footer class="fl-live-photo-inspect-footer">
-      <Button size="small" onclick={() => (inspectOpen = false)}>{$t('done')}</Button>
+      <ToolButton onclick={() => (inspectOpen = false)}>{$t('done')}</ToolButton>
     </footer>
   </Dialog>
 {/if}
@@ -299,6 +249,108 @@
 {/if}
 
 <style>
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    color: var(--fl-muted);
+    font-size: 0.75rem;
+  }
+  .pairs {
+    display: grid;
+    gap: 0.75rem;
+  }
+  article {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    border: 1px solid var(--fl-border);
+    background: var(--fl-panel);
+    padding: 1.25rem;
+    border-radius: 0.25rem;
+  }
+  .evidence {
+    flex: 1;
+    min-width: 0;
+  }
+  .evidence strong {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+  .evidence small,
+  .evidence p {
+    display: block;
+    color: var(--fl-muted);
+    font-size: 0.6875rem;
+    margin-top: 0.375rem;
+    overflow-wrap: anywhere;
+  }
+  .pair-images {
+    display: flex;
+    gap: 0.375rem;
+    position: relative;
+  }
+  .pair-images img {
+    width: 5.625rem;
+    height: 5.625rem;
+    object-fit: cover;
+    border-radius: 0.125rem;
+  }
+  .pair-images > span {
+    position: relative;
+  }
+  .pair-images :global(svg) {
+    position: absolute;
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+  }
+  .badge {
+    display: inline-block;
+    margin-top: 0.375rem;
+    padding: 0.1875rem 0.4375rem;
+    color: var(--fl-accent);
+    background: color-mix(in srgb, var(--fl-accent) 10%, transparent);
+    border-radius: 0.1875rem;
+    font-size: 0.625rem;
+  }
+  .badge.warning {
+    color: var(--fl-warning);
+  }
+  .actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    font-size: 0.6875rem;
+  }
+  .empty {
+    padding: 2.8125rem 1.25rem;
+    text-align: center;
+    color: var(--fl-muted);
+  }
+  @media (max-width: 68.75rem) {
+    article {
+      flex-wrap: wrap;
+    }
+    .pair-images img {
+      width: 4.375rem;
+      height: 4.375rem;
+    }
+  }
+  @media (max-width: 43.75rem) {
+    article {
+      padding: 0.9375rem;
+      gap: 0.75rem;
+    }
+    .toolbar {
+      flex-wrap: wrap;
+    }
+  }
+
   .fl-live-photo-inspect {
     display: grid;
     grid-template-columns: 1fr 1fr;

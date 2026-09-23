@@ -1,5 +1,4 @@
-import { MediaHealthCategory } from '@immich/sdk';
-import { loadLibraryCareHealth } from '$lib/frameleaf/library-care-load';
+import { redirectUtility } from '$lib/frameleaf/utilities-redirect';
 import type { PageLoad } from './$types';
 
-export const load = (async ({ url }) => loadLibraryCareHealth(url, MediaHealthCategory.Missing)) satisfies PageLoad;
+export const load = (async ({ url }) => redirectUtility(url, 'missing-media')) satisfies PageLoad;
