@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { goto, invalidateAll } from '$app/navigation';
+  import { invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
   import { clickOutside } from '$lib/actions/click-outside';
   import AccountMenu from '$lib/components/frameleaf/AccountMenu.svelte';
@@ -12,15 +12,8 @@
   import SkipLink from '$lib/elements/SkipLink.svelte';
   import { buildPrimaryDestinations, currentPrimaryDestination } from '$lib/frameleaf/navigation';
   import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
-  import {
-    closeSessionModals,
-    markSessionLockSucceeded,
-    releaseSessionLock,
-    sessionAccess,
-    setSessionLockPending,
-    trackSessionModals,
-    waitForSessionLockRefreshes,
-  } from '$lib/frameleaf/session-access.svelte';
+  import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
+  import { requestSessionLock } from '$lib/frameleaf/session-lock';
   import '$lib/frameleaf/tokens.css';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -29,9 +22,8 @@
   import { notificationManager } from '$lib/stores/notification-manager.svelte';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { handlePromiseError } from '$lib/utils';
-  import { handleError } from '$lib/utils/handle-error';
-  import { isAlbumsRoute, isAssetViewerRoute, isLockedFolderRoute, navigate } from '$lib/utils/navigation';
-  import { getAuthStatus, lockAuthSession } from '@immich/sdk';
+  import { isAlbumsRoute, isLockedFolderRoute } from '$lib/utils/navigation';
+  import { getAuthStatus } from '@immich/sdk';
   import { Icon, IconButton, modalManager, Theme as AppTheme, themeManager } from '@immich/ui';
   import {
     mdiBellOutline,
@@ -126,7 +118,7 @@
 
   onMount(() => {
     void refreshNotifications();
-    sessionAccess.retryLock = lockSession;
+    sessionAccess.retryLock = requestSessionLock;
     if (sessionAccess.lockPending) {
       void lockSession();
     } else {
@@ -151,9 +143,6 @@
     addEventListener('online', onVisibilityChange);
 
     return () => {
-      if (sessionAccess.retryLock === lockSession) {
-        sessionAccess.retryLock = undefined;
-      }
       stopRunningJobs();
       stopEvents();
       document.removeEventListener('visibilitychange', onVisibilityChange);
@@ -177,10 +166,11 @@
 
   const refreshAuthStatus = async () => {
     const revision = sessionRevision;
+    const privacyRevision = sessionAccess.revision;
     isSessionLoading = true;
     try {
       const status = await getAuthStatus();
-      if (revision === sessionRevision && !sessionAccess.lockPending) {
+      if (revision === sessionRevision && privacyRevision === sessionAccess.revision && !sessionAccess.lockPending) {
         isElevated = status.isElevated;
         if (document.hidden && isElevated) {
           void lockSession();
@@ -191,11 +181,6 @@
     } finally {
       isSessionLoading = false;
     }
-  };
-
-  const isSensitiveRoute = (pathname: string) => {
-    const roots = [Route.locked(), Route.suppressed()];
-    return roots.some((root) => pathname === root || pathname.startsWith(`${root}/`));
   };
 
   // Unlocking happens in place (the prototype's PIN dialog on the control); the PIN prompt route
@@ -220,37 +205,13 @@
       return lockFlight;
     }
     sessionRevision++;
-    setSessionLockPending(true);
     isElevated = false;
-    sessionAccess.isElevated = false;
     isSessionLoading = true;
     unlockDialogOpen = false;
-    // The root hides the existing page immediately, without unmounting its drafts. It stays
-    // hidden on failure and retries on return/online or through the root's Retry button.
-    const pathname = page.url.pathname;
-    lockFlight = (async () => {
-      try {
-        await lockAuthSession({ signal: AbortSignal.timeout(15_000) });
-        markSessionLockSucceeded();
-        await closeSessionModals();
-        if (isSensitiveRoute(pathname)) {
-          await goto(Route.photos(), { replaceState: true, invalidateAll: true });
-        } else if (isAssetViewerRoute(page)) {
-          await navigate({ targetRoute: 'current', assetId: null }, { replaceState: true, invalidateAll: true });
-        } else {
-          await invalidateAll();
-        }
-        eventManager.emit('SessionLocked');
-        eventManager.emit('SessionAccessChanged', { isElevated: false });
-        await waitForSessionLockRefreshes();
-        await releaseSessionLock();
-      } catch (error) {
-        handleError(error, $t('errors.something_went_wrong'));
-      } finally {
-        isSessionLoading = false;
-        lockFlight = undefined;
-      }
-    })();
+    lockFlight = requestSessionLock().finally(() => {
+      isSessionLoading = false;
+      lockFlight = undefined;
+    });
     return lockFlight;
   };
 
