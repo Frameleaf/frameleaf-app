@@ -28,7 +28,7 @@ describe('Route', () => {
 
   describe(Route.physicalDeduplication.name, () => {
     it('should work', () => {
-      expect(Route.physicalDeduplication()).toBe('/admin/physical-deduplication');
+      expect(Route.physicalDeduplication()).toBe('/user-settings?area=storage&section=deduplication');
     });
   });
 
