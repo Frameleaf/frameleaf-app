@@ -12625,6 +12625,7 @@
           "AlbumUpdate",
           "ClusterGroupRequest",
           "SharedSpaceMention",
+          "SharedSpaceReply",
           "Custom"
         ],
         "type": "string"
@@ -18511,6 +18512,12 @@
             "maxLength": 4000,
             "minLength": 1,
             "type": "string"
+          },
+          "parentId": {
+            "description": "Reply to this comment. Replying to a reply joins the same thread, under its top-level comment. A reply is on the same item as the comment it answers.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
           }
         },
         "required": [
@@ -18557,6 +18564,18 @@
             },
             "type": "array"
           },
+          "parentId": {
+            "description": "The top-level comment this reply answers; null for a top-level comment",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "replyCount": {
+            "description": "How many replies this comment has that the caller can see; always 0 for a reply",
+            "minimum": 0,
+            "type": "integer"
+          },
           "updatedAt": {
             "description": "When it was last edited",
             "format": "date-time",
@@ -18579,6 +18598,8 @@
           "createdAt",
           "id",
           "mentions",
+          "parentId",
+          "replyCount",
           "updatedAt",
           "user"
         ],
@@ -18646,7 +18667,7 @@
             "type": "array"
           },
           "comment": {
-            "description": "The comment text, for a comment event. Mentions are @{userId} tokens.",
+            "description": "The comment text, for a comment or reply event. Mentions are @{userId} tokens.",
             "nullable": true,
             "type": "string"
           },
@@ -18679,7 +18700,7 @@
                 "$ref": "#/components/schemas/UserResponseDto"
               }
             ],
-            "description": "The member a member event is about; null otherwise",
+            "description": "The member a member event is about, or the author of the comment a reply answers; null otherwise",
             "nullable": true
           },
           "type": {
@@ -18719,6 +18740,7 @@
           "MemberRemoved",
           "MemberRoleChanged",
           "Comment",
+          "Reply",
           "Like"
         ],
         "type": "string"
@@ -46707,7 +46729,7 @@
     },
     "/shared-spaces/{id}/comments": {
       "get": {
-        "description": "The comments on one item in the shared space (`assetId`), or on the space itself when `assetId` is left out. Oldest first. Only current members may read them, and an item the caller cannot see is not in the space as far as they are concerned (404). Mentions stay as `@{userId}` tokens in the text and are resolved in `mentions`.",
+        "description": "The comments on one item in the shared space (`assetId`), or on the space itself when `assetId` is left out. Oldest first. Only current members may read them, and an item the caller cannot see is not in the space as far as they are concerned (404). Mentions stay as `@{userId}` tokens in the text and are resolved in `mentions`. Threads are one level deep: a reply names its top-level comment in `parentId`, and a top-level comment carries its `replyCount`.",
         "operationId": "getSharedSpaceComments",
         "parameters": [
           {
@@ -46769,7 +46791,7 @@
         "x-immich-permission": "activity.read"
       },
       "post": {
-        "description": "Write a comment on one item in the shared space, or on the space itself when `assetId` is left out. Commenting must be enabled on the space, and the item must be one the caller can see. Mention a member with `@{userId}`: mentions are by id, never by name, every mention must name a current member (400 otherwise), and each mentioned member other than the author is notified.",
+        "description": "Write a comment on one item in the shared space, or on the space itself when `assetId` is left out. Commenting must be enabled on the space, and the item must be one the caller can see. Mention a member with `@{userId}`: mentions are by id, never by name, every mention must name a current member (400 otherwise), and each mentioned member other than the author is notified. Reply with `parentId`: a reply to a reply joins the same thread under its top-level comment, is on the same item, and notifies the top-level comment’s author in the app.",
         "operationId": "createSharedSpaceComment",
         "parameters": [
           {
@@ -46832,7 +46854,7 @@
     },
     "/shared-spaces/{id}/comments/{commentId}": {
       "delete": {
-        "description": "Remove a comment. Its author may, and so may a shared space owner or editor — that is how a space is moderated. A viewer removes only their own. The comment’s mentions and its entry in the activity feed go with it.",
+        "description": "Remove a comment. Its author may, and so may a shared space owner or editor — that is how a space is moderated. A viewer removes only their own. The comment’s mentions and its entry in the activity feed go with it, and removing a top-level comment removes its replies.",
         "operationId": "deleteSharedSpaceComment",
         "parameters": [
           {
