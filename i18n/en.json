@@ -2520,7 +2520,7 @@
   "frameleaf_spaces_left": "You left {name}",
   "frameleaf_spaces_member_pending": "Invitation sent",
   "frameleaf_spaces_member_removed": "Removed {name}",
-  "frameleaf_spaces_members": "People",
+  "frameleaf_spaces_members": "Members",
   "frameleaf_spaces_members_hint": "The owner of a shared space decides who is in it.",
   "frameleaf_spaces_new": "New shared space",
   "frameleaf_spaces_new_first": "{count, plural, one {# item} other {# items}} added by other members",
