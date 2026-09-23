@@ -291,7 +291,7 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
   const dedup = operation.kind === MediaOperationKind.PhysicalDeduplication;
   const dedupPlan = dedup ? asPlanName(operation.settings?.planId) : null;
   // FL-74: a preservation job copies and checks files; "Rendering" would say something untrue.
-  const workingKey =
+  const workingKey: Translations =
     isPreservationKind(operation.kind) && BULK_WORKING.has(status)
       ? 'frameleaf_activity_bulk_running'
       : `frameleaf_activity_status_${status}`;

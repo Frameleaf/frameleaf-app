@@ -22,6 +22,7 @@ import {
   type PreservationSupportDto,
   type SearchFilter,
 } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 
 /** The design's export stages, in order. */
 export const EXPORT_STEPS = [
@@ -148,13 +149,13 @@ export type Tone = 'accent' | 'teal' | 'blue' | 'warning' | 'danger' | 'neutral'
 /** A package's state as the owner should read it: its job first, then what the files say. */
 export const packageState = (
   item: Pick<PreservationPackageDto, 'status' | 'operation' | 'verification'>,
-): { key: string; tone: Tone } => {
+): { key: Translations; tone: Tone } => {
   const operation = item.operation;
   if (operation && isOperationActive(operation)) {
     if (operation.status === MediaOperationStatus.Paused) {
       return { key: 'frameleaf_preservation_state_paused', tone: 'warning' };
     }
-    return { key: `frameleaf_preservation_state_running_${operation.kind}`, tone: 'blue' };
+    return { key: `frameleaf_preservation_state_running_${operation.kind}` as Translations, tone: 'blue' };
   }
   if (operation?.status === MediaOperationStatus.Failed) {
     return { key: 'frameleaf_preservation_state_failed', tone: 'danger' };
@@ -181,7 +182,7 @@ export const packageState = (
     return { key: 'frameleaf_preservation_state_verified', tone: 'teal' };
   }
   if (item.verification) {
-    return { key: `frameleaf_preservation_state_${item.verification.status}`, tone: 'danger' };
+    return { key: `frameleaf_preservation_state_${item.verification.status}` as Translations, tone: 'danger' };
   }
   // Written, never checked: a ready package is not a verified backup.
   return { key: 'frameleaf_preservation_state_unverified', tone: 'warning' };
@@ -189,7 +190,7 @@ export const packageState = (
 
 export const restoreState = (
   item: Pick<PreservationRestoreDto, 'status' | 'operation'>,
-): { key: string; tone: Tone } => {
+): { key: Translations; tone: Tone } => {
   if (item.operation?.status === MediaOperationStatus.Paused) {
     return { key: 'frameleaf_preservation_state_paused', tone: 'warning' };
   }
@@ -266,11 +267,13 @@ const KNOWN_REASONS = new Set([
   'package_unavailable',
 ]);
 
-export const reasonKey = (code: string | null | undefined): string | null => {
+export const reasonKey = (code: string | null | undefined): Translations | null => {
   if (!code) {
     return null;
   }
-  return KNOWN_REASONS.has(code) ? `frameleaf_preservation_reason_${code}` : 'frameleaf_preservation_reason_other';
+  return KNOWN_REASONS.has(code)
+    ? (`frameleaf_preservation_reason_${code}` as Translations)
+    : 'frameleaf_preservation_reason_other';
 };
 
 const KNOWN_FINDINGS = new Set([
@@ -288,14 +291,16 @@ const KNOWN_FINDINGS = new Set([
   'live_photo_kept',
 ]);
 
-export const findingKey = (finding: string): string =>
-  KNOWN_FINDINGS.has(finding) ? `frameleaf_preservation_finding_${finding}` : 'frameleaf_preservation_finding_other';
+export const findingKey = (finding: string): Translations =>
+  KNOWN_FINDINGS.has(finding)
+    ? (`frameleaf_preservation_finding_${finding}` as Translations)
+    : 'frameleaf_preservation_finding_other';
 
-export const supportLevelKey = (level: PreservationSupportLevel): string =>
-  `frameleaf_preservation_support_${level.replaceAll('-', '_')}`;
+export const supportLevelKey = (level: PreservationSupportLevel): Translations =>
+  `frameleaf_preservation_support_${level.replaceAll('-', '_')}` as Translations;
 
-export const supportCategoryKey = (category: PreservationSupportCategory): string =>
-  `frameleaf_preservation_category_${category}`;
+export const supportCategoryKey = (category: PreservationSupportCategory): Translations =>
+  `frameleaf_preservation_category_${category}` as Translations;
 
 export const supportTone = (level: PreservationSupportLevel): Tone => {
   switch (level) {
@@ -330,7 +335,8 @@ export const groupSupport = (support: PreservationSupportDto[]) => {
     .filter((group) => group.categories.length > 0);
 };
 
-export const conflictFieldKey = (field: PreservationConflictField): string => `frameleaf_preservation_field_${field}`;
+export const conflictFieldKey = (field: PreservationConflictField): Translations =>
+  `frameleaf_preservation_field_${field}` as Translations;
 
 /** A stored byte count, which the API sends as a string so it never loses precision. */
 export const asBytes = (value: string | null | undefined): number | null => {
