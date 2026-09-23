@@ -4,7 +4,7 @@
   import DownloadSettings from './DownloadSettings.svelte';
   import FeatureSettings from './FeatureSettings.svelte';
   import NotificationsSettings from './NotificationsSettings.svelte';
-  import SuppressedContentSettings from './SuppressedContentSettings.svelte';
+  import LockedRulesPanel from '$lib/components/frameleaf/access/LockedRulesPanel.svelte';
   import UserPurchaseSettings from './UserPurchaseSettings.svelte';
   import UserUsageStatistic from './UserUsageStatistic.svelte';
   import { OpenQueryParam, QueryParameter } from '$lib/constants';
@@ -144,11 +144,11 @@
 <SettingGroup
   icon={mdiShieldLockOutline}
   key="suppressed-content"
-  title={$t('suppressed_content')}
-  subtitle={$t('suppressed_content_settings_description')}
+  title={$t('frameleaf_locked_rules_section_title')}
+  subtitle={$t('frameleaf_locked_rules_section_description')}
   autoScrollTo={true}
 >
-  <SuppressedContentSettings />
+  <LockedRulesPanel />
 </SettingGroup>
 
 <SettingGroup
