@@ -2,9 +2,11 @@
   import AppDownloadModal from '$lib/modals/AppDownloadModal.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import ObtainiumConfigModal from '$lib/modals/ObtainiumConfigModal.svelte';
+  import { OpenQueryParam } from '$lib/constants';
   import { Route } from '$lib/route';
   import { Icon, modalManager, Text } from '@immich/ui';
   import {
+    mdiArchiveLockOutline,
     mdiCellphoneArrowDownVariant,
     mdiContentDuplicate,
     mdiCloudDownloadOutline,
@@ -24,6 +26,12 @@
     { href: Route.livePhotosUtility(), icon: mdiMotionPlayOutline, label: $t('relink_live_photos') },
     { href: Route.geolocationUtility(), icon: mdiCrosshairsGps, label: $t('manage_geolocation') },
     { href: Route.icloudSyncUtility(), icon: mdiCloudDownloadOutline, label: $t('icloud_sync.title') },
+    // FL-74: the design's Library Care row "Preservation verification".
+    {
+      href: Route.userSettings({ isOpen: OpenQueryParam.PRESERVATION }),
+      icon: mdiArchiveLockOutline,
+      label: $t('frameleaf_preservation_care_link'),
+    },
     ...(authManager.user.isAdmin
       ? [
           { href: Route.missingMediaUtility(), icon: mdiFileSearchOutline, label: $t('review_missing_media') },
