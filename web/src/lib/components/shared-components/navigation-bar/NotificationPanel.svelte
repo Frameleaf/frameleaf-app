@@ -57,9 +57,10 @@
         break;
       }
 
-      // FL-55: a mention opens the space's own viewer on the item, or the space's activity panel
-      // for a comment on the space itself.
-      case NotificationType.SharedSpaceMention: {
+      // FL-55: a mention or a reply opens the space's own viewer on the item, or the space's activity
+      // panel for a comment on the space itself.
+      case NotificationType.SharedSpaceMention:
+      case NotificationType.SharedSpaceReply: {
         if (typeof notification.data !== 'string') {
           return;
         }

@@ -46,6 +46,8 @@ const comment = (overrides: Partial<SharedSpaceCommentResponseDto> = {}): Shared
   mentions: [],
   canEdit: false,
   canDelete: false,
+  parentId: null,
+  replyCount: 0,
   ...overrides,
 });
 
@@ -122,5 +124,88 @@ describe('SpaceMediaComments', () => {
 
     await waitFor(() => expect(deleteSharedSpaceComment).toHaveBeenCalledWith({ id: 'space-1', commentId: 'gone' }));
     await waitFor(() => expect(screen.queryByText('Gone soon')).toBeNull());
+  });
+
+  describe('threaded replies', () => {
+    const thread = () => [
+      comment({ id: 'root', user: ada, comment: 'Where was this?', replyCount: 2 }),
+      comment({ id: 'r-1', user: bo, comment: 'At the lake', parentId: 'root', createdAt: '2026-09-20T11:00:00.000Z' }),
+      comment({ id: 'r-2', user: ada, comment: 'Of course', parentId: 'root', createdAt: '2026-09-20T12:00:00.000Z' }),
+    ];
+
+    it('folds replies under their comment until "View replies" is pressed', async () => {
+      vi.mocked(getSharedSpaceComments).mockResolvedValue({ comments: thread() });
+
+      render(SpaceMediaComments, { spaceId: 'space-1', assetId: 'asset-1' });
+      await screen.findByText('Where was this?');
+
+      expect(screen.queryByText('At the lake')).toBeNull();
+      const toggle = screen.getByRole('button', { name: 'View 2 replies' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+      await fireEvent.click(toggle);
+
+      expect(await screen.findByText('At the lake')).toBeInTheDocument();
+      expect(screen.getByText('Of course')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: en.frameleaf_spaces_comments_hide_replies })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+    });
+
+    it('replies to a reply in the same thread, starting with a mention of the person answered', async () => {
+      vi.mocked(getSharedSpaceComments).mockResolvedValue({ comments: thread() });
+      vi.mocked(createSharedSpaceComment).mockResolvedValue(
+        comment({ id: 'r-3', user: ada, comment: `@{${boId}} thanks`, parentId: 'root', mentions: [bo] }),
+      );
+
+      render(SpaceMediaComments, { spaceId: 'space-1', assetId: 'asset-1' });
+      await fireEvent.click(await screen.findByRole('button', { name: 'View 2 replies' }));
+      await fireEvent.click(await screen.findByRole('button', { name: 'Reply to Bo' }));
+
+      const box = await screen.findByRole('textbox', { name: en.frameleaf_spaces_comments_reply_placeholder });
+      expect(box).toHaveValue(`@{${boId}} `);
+
+      await fireEvent.input(box, { target: { value: `@{${boId}} thanks` } });
+      await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_spaces_comments_reply_send }));
+
+      await waitFor(() =>
+        expect(createSharedSpaceComment).toHaveBeenCalledWith({
+          id: 'space-1',
+          sharedSpaceCommentCreateDto: { assetId: 'asset-1', comment: `@{${boId}} thanks`, parentId: 'r-1' },
+        }),
+      );
+      expect(await screen.findByText('thanks', { exact: false })).toBeInTheDocument();
+    });
+
+    it('starts a reply to a top-level comment empty', async () => {
+      vi.mocked(getSharedSpaceComments).mockResolvedValue({ comments: [comment({ id: 'root', user: bo })] });
+
+      render(SpaceMediaComments, { spaceId: 'space-1', assetId: 'asset-1' });
+      await fireEvent.click(await screen.findByRole('button', { name: 'Reply to Bo' }));
+
+      expect(await screen.findByRole('textbox', { name: en.frameleaf_spaces_comments_reply_placeholder })).toHaveValue(
+        '',
+      );
+    });
+
+    it('asks the conversation about the space itself when no item is given', async () => {
+      vi.mocked(getSharedSpaceComments).mockResolvedValue({ comments: [] });
+
+      render(SpaceMediaComments, { spaceId: 'space-1' });
+
+      await waitFor(() => expect(getSharedSpaceComments).toHaveBeenCalledWith({ id: 'space-1', assetId: undefined }));
+      expect(await screen.findByText(en.frameleaf_spaces_comments_empty_space)).toBeInTheDocument();
+    });
+
+    it('offers no reply and no composer when comments are turned off, but keeps the thread readable', async () => {
+      vi.mocked(getSharedSpaceComments).mockResolvedValue({ comments: [comment({ id: 'root', user: bo })] });
+
+      render(SpaceMediaComments, { spaceId: 'space-1', assetId: 'asset-1', canComment: false });
+      await screen.findByText('Hello');
+
+      expect(screen.queryByRole('button', { name: 'Reply to Bo' })).toBeNull();
+      expect(screen.getByRole('textbox', { name: en.comments_are_disabled })).toBeDisabled();
+    });
   });
 });

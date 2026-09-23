@@ -8,6 +8,7 @@
     mdiImagePlus,
     mdiInformationOutline,
     mdiMessageBadgeOutline,
+    mdiReply,
     mdiSync,
   } from '@mdi/js';
   import { DateTime } from 'luxon';
@@ -81,6 +82,10 @@
 
       case NotificationType.SharedSpaceMention: {
         return mdiAt;
+      }
+
+      case NotificationType.SharedSpaceReply: {
+        return mdiReply;
       }
 
       default: {
