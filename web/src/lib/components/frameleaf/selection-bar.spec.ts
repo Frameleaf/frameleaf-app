@@ -14,8 +14,9 @@ vi.mock('@immich/sdk', async (importOriginal) => ({
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { id: 'me' } } }));
 
 /**
- * The bar's contract with the library view: it never calls an endpoint, it hands an action and a
- * payload to `onAction`, and it keeps the complete bulk set reachable by keyboard.
+ * The bar's contract with the library view: it never runs an action itself, it hands an action and a
+ * payload to `onAction`, and it keeps the complete bulk set reachable by keyboard. Its one read is
+ * the album list the Add to album picker loads for itself.
  */
 describe('Frameleaf selection bar', () => {
   const onAction = vi.fn();
