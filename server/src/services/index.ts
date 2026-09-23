@@ -9,6 +9,7 @@ import { AssetRestorationService } from 'src/services/asset-restoration.service.
 import { AssetService } from 'src/services/asset.service.js';
 import { AuthAdminService } from 'src/services/auth-admin.service.js';
 import { AuthService } from 'src/services/auth.service.js';
+import { AnalyticsService } from 'src/services/analytics.service.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
 import { BulkOperationService } from 'src/services/bulk-operation.service.js';
 import { CliService } from 'src/services/cli.service.js';
@@ -113,6 +114,7 @@ export const services = [
   AssetService,
   AuthService,
   AuthAdminService,
+  AnalyticsService,
   BestPhotosService,
   BulkOperationService,
   CliService,

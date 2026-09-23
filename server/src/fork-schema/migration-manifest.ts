@@ -81,6 +81,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000490-SeparateRestorationWorkers',
   '2100000000500-AddVideoMomentFrameVectorIndex',
   '2100000000530-ReconcileFrameleafSchemaSnapshots',
+  '2100000000560-AddOperationalMetricSample',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(

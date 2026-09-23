@@ -83,6 +83,7 @@ import { MoveTable } from 'src/schema/tables/move.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
 import { NotificationTable } from 'src/schema/tables/notification.table.js';
 import { OcrSearchTable } from 'src/schema/tables/ocr-search.table.js';
+import { OperationalMetricSampleTable } from 'src/schema/tables/operational-metric-sample.table.js';
 import { PartnerAuditTable } from 'src/schema/tables/partner-audit.table.js';
 import { PartnerTable } from 'src/schema/tables/partner.table.js';
 import { PersonAuditTable } from 'src/schema/tables/person-audit.table.js';
@@ -216,6 +217,7 @@ export class ImmichDatabase {
     NaturalEarthCountriesTable,
     NotificationTable,
     OcrSearchTable,
+    OperationalMetricSampleTable,
     PartnerAuditTable,
     PartnerTable,
     PersonTable,
@@ -382,6 +384,7 @@ export interface DB {
   ml_destination: MlDestinationTable;
   ml_workload_route: MlWorkloadRouteTable;
   ml_workload_accounting: MlWorkloadAccountingTable;
+  operational_metric_sample: OperationalMetricSampleTable;
   partner: PartnerTable;
   partner_audit: PartnerAuditTable;
 
