@@ -107,7 +107,7 @@
   };
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
 <div
   class="ed-crop"
   role="group"
@@ -119,6 +119,7 @@
   onkeydown={nudge}
 >
   {#each CROP_HANDLES as handle (handle)}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <span class="ed-handle {handle}" aria-hidden="true" style={handlePosition(handle)} onpointerdown={beginDrag(handle)}
     ></span>
   {/each}

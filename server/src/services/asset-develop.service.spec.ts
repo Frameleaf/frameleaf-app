@@ -157,11 +157,10 @@ describe(AssetDevelopService.name, () => {
   });
 
   describe('cancel', () => {
-    it('finishes a queued revision immediately and removes its job', async () => {
+    it('finishes a queued revision immediately so the worker skips it', async () => {
       const queued = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued });
       developRepository.get.mockResolvedValue(queued);
       const response = await sut.cancel(authStub.user1, asset.id, queued.id);
-      expect(mocks.job.removeJob).toHaveBeenCalledWith(JobName.AssetDevelopRender, queued.id);
       expect(developRepository.update).toHaveBeenCalledWith(queued.id, {
         status: AssetDevelopRevisionStatus.Cancelled,
         cancelRequested: true,
