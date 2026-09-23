@@ -821,8 +821,12 @@ describe(MediaHealthRepository.name, () => {
       await expect(sut.count({ ownerId: user.id, privacy: ordinary })).resolves.toBe(1);
       await expect(sut.getByIds([lockedFinding.id], user.id, ordinary)).resolves.toEqual([]);
       await expect(sut.getAssets([locked.id], user.id, ordinary)).resolves.toEqual([]);
+      // the row carries the lock, so the response reports it as `locked`
       await expect(sut.getAssets([locked.id], user.id, elevated)).resolves.toEqual([
-        expect.objectContaining({ id: locked.id }),
+        expect.objectContaining({ id: locked.id, isLocked: true }),
+      ]);
+      await expect(sut.getAssets([timeline.id], user.id, elevated)).resolves.toEqual([
+        expect.objectContaining({ id: timeline.id, isLocked: false }),
       ]);
 
       // a background job passes no privacy and still sees the Locked finding
