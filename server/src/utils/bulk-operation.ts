@@ -1,5 +1,12 @@
 import { AssetJobName } from 'src/dtos/asset.dto.js';
 import { AssetVisibility, MediaOperationBulkAction, MediaOperationItemStatus, Permission } from 'src/enum.js';
+import {
+  type DuplicateGroupDecision,
+  duplicateDecisionProblem,
+  duplicateGroupIndex,
+  groupAlignedBatchSize,
+  parseDuplicateGroups,
+} from 'src/utils/duplicate-review.js';
 
 /**
  * The durable rules for a bulk media operation (FL-32), kept free of the database and of NestJS so
@@ -47,6 +54,8 @@ export type BulkOperationPayload = {
   longitude?: number;
   primaryId?: string;
   stackIds?: string[];
+  /** Duplicate review decisions (FL-61): one complete group each, members in job order. */
+  duplicateGroups?: DuplicateGroupDecision[];
 };
 
 /** The immutable request, as stored in `media_operation.snapshot`. */
@@ -531,6 +540,19 @@ export const BULK_ACTION_PERMISSIONS: Readonly<Record<MediaOperationBulkAction, 
   [MediaOperationBulkAction.RefreshMetadata]: [Permission.AssetUpdate],
   [MediaOperationBulkAction.RefreshEncoded]: [Permission.AssetUpdate],
   [MediaOperationBulkAction.RefreshFaces]: [Permission.AssetUpdate],
+  // A decision can trash, stack or merge metadata into the keeper; its undo restores and unstacks.
+  [MediaOperationBulkAction.ResolveDuplicates]: [
+    Permission.DuplicateDelete,
+    Permission.AssetDelete,
+    Permission.AssetUpdate,
+    Permission.StackCreate,
+  ],
+  [MediaOperationBulkAction.UndoDuplicates]: [
+    Permission.DuplicateDelete,
+    Permission.AssetDelete,
+    Permission.AssetUpdate,
+    Permission.StackDelete,
+  ],
 };
 
 /**
@@ -566,7 +588,37 @@ export const BULK_ITEM_PERMISSION: Readonly<Record<MediaOperationBulkAction, Per
   [MediaOperationBulkAction.RefreshMetadata]: Permission.AssetUpdate,
   [MediaOperationBulkAction.RefreshEncoded]: Permission.AssetUpdate,
   [MediaOperationBulkAction.RefreshFaces]: Permission.AssetUpdate,
+  // Duplicate decisions are checked a whole group at a time, as the owner of every photo in it.
+  [MediaOperationBulkAction.ResolveDuplicates]: null,
+  [MediaOperationBulkAction.UndoDuplicates]: null,
 };
+
+/** True for the two actions that work a complete duplicate group at a time (FL-61). */
+export const isDuplicateDecisionAction = (action: MediaOperationBulkAction): boolean =>
+  action === MediaOperationBulkAction.ResolveDuplicates || action === MediaOperationBulkAction.UndoDuplicates;
+
+/**
+ * Which duplicate group each asset of a decision job belongs to, or null for any other action. Built
+ * once per claim: a batch must end on a group boundary (`bulkBatchLength`).
+ */
+export const bulkGroupIndex = (
+  snapshot: Pick<BulkOperationSnapshot, 'action' | 'payload'>,
+): ReadonlyMap<string, string> | null =>
+  isDuplicateDecisionAction(snapshot.action)
+    ? duplicateGroupIndex(parseDuplicateGroups(snapshot.payload.duplicateGroups))
+    : null;
+
+/**
+ * How many of `ids` from `start` the next batch takes. A duplicate decision job never splits a group
+ * across two batches, so its batches end on a group boundary; every other job takes `size`.
+ */
+export const bulkBatchLength = (
+  ids: readonly string[],
+  start: number,
+  size: number,
+  groupIndex: ReadonlyMap<string, string> | null,
+): number =>
+  groupIndex ? groupAlignedBatchSize(ids, start, size, groupIndex) : Math.max(0, Math.min(size, ids.length - start));
 
 export const BULK_ASSET_JOBS: Readonly<Partial<Record<MediaOperationBulkAction, AssetJobName>>> = {
   [MediaOperationBulkAction.RefreshThumbnails]: AssetJobName.REGENERATE_THUMBNAIL,
@@ -675,6 +727,16 @@ export const bulkPayloadProblem = (
     }
     case MediaOperationBulkAction.Unstack: {
       return payload.stackIds && payload.stackIds.length > 0 ? null : 'At least one stack is required for this action';
+    }
+    case MediaOperationBulkAction.ResolveDuplicates:
+    case MediaOperationBulkAction.UndoDuplicates: {
+      const groups = parseDuplicateGroups(payload.duplicateGroups);
+      if (!Array.isArray(payload.duplicateGroups) || groups.length !== payload.duplicateGroups.length) {
+        return 'Every duplicate group needs a group, a decision and its photos';
+      }
+      return duplicateDecisionProblem(groups, assetIds, {
+        undo: action === MediaOperationBulkAction.UndoDuplicates,
+      });
     }
     default: {
       return null;
