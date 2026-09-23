@@ -8,8 +8,8 @@
   import UploadMenuButton from '$lib/components/frameleaf/UploadMenuButton.svelte';
   import NotificationPanel from '$lib/components/shared-components/navigation-bar/NotificationPanel.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
-  import ThemeButton from '$lib/components/shared-components/ThemeButton.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
+  import { buildPrimaryDestinations, currentPrimaryDestination } from '$lib/frameleaf/navigation';
   import '$lib/frameleaf/tokens.css';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -29,6 +29,8 @@
     mdiLockOpenVariantOutline,
     mdiLockOutline,
     mdiMenu,
+    mdiMoonWaningCrescent,
+    mdiWhiteBalanceSunny,
   } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -36,19 +38,32 @@
   /**
    * Frameleaf top bar (FL-30), ported from the prototype's `App.jsx` header.
    *
-   * One search entry, Upload, the activity indicator, Notifications, the Locked toggle
-   * as an icon, theme and the account menu. On phones the bar stays a fixed grid and
-   * the activity indicator is hidden. Every control drives an existing production
-   * service: the Locked toggle is the elevated session, Upload is the upload manager's
-   * file dialog, Notifications is the notification manager.
+   * In the prototype's order: the brand, the Library / Studio / Activity switcher, one search
+   * entry, Upload, the activity indicator, Notifications, the Locked toggle as an icon, the theme
+   * toggle and the account menu. The switcher's items are text only and the current one carries
+   * the accent underline. On phones the bar is a fixed two-row grid: the brand and the controls
+   * on the first row, the switcher and search on the second, and the activity indicator hidden.
+   *
+   * Every control drives an existing production service: the Locked toggle is the elevated
+   * session, Upload is the upload manager's file dialog, Notifications is the notification
+   * manager, and the switcher's destinations come from `navigation.ts`.
    */
 
   type Props = {
     onUploadClick?: () => void;
     noBorder?: boolean;
+    /**
+     * The page shows the library rail, so the phone menu button has something to open. Studio
+     * has no rail, as in the prototype, and passes false rather than leave a button that does
+     * nothing.
+     */
+    hasRail?: boolean;
   };
 
-  let { onUploadClick, noBorder = false }: Props = $props();
+  let { onUploadClick, noBorder = false, hasRail = true }: Props = $props();
+
+  const primaryDestinations = buildPrimaryDestinations();
+  const currentPrimary = $derived(currentPrimaryDestination(page.url.pathname));
 
   let showNotifications = $state(false);
   let isElevated = $state(false);
@@ -56,6 +71,8 @@
 
   const hasUnreadNotifications = $derived(notificationManager.notifications.length > 0);
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
+  // The prototype's theme control is always present and names the theme it switches to.
+  const themeLabel = $derived(appTheme === 'dark' ? $t('light_theme') : $t('dark_theme'));
   const isAdminRoute = $derived(page.url.pathname.startsWith('/admin'));
   const lockedLabel = $derived(isElevated ? $t('lock_sensitive_content') : $t('unlock_sensitive_content'));
   // Matches the drag-and-drop overlay's own defaults (FL-45): uploads made from an album
@@ -143,134 +160,291 @@
       unlockSession();
     }
   };
-
 </script>
 
 <nav
   id="dashboard-navbar"
-  class="frameleaf fl-topbar h-(--navbar-height) w-dvw text-sm max-md:h-(--navbar-height-md)"
+  class="frameleaf fl-topbar h-(--fl-topbar-height) w-dvw text-sm max-md:h-(--fl-topbar-height-phone)"
   class:fl-no-border={noBorder}
   data-theme={appTheme}
 >
   <SkipLink text={$t('skip_to_content')} />
-  <div class="grid h-full grid-cols-[--spacing(32)_auto] items-center py-2 sidebar:grid-cols-[--spacing(64)_auto]">
-    <div class="mx-4 flex flex-row items-center gap-1">
-      <!-- The id matches `menuButtonId` exported by NavigationBar.svelte, which the
-           sidebar focuses when it closes. It is repeated rather than imported so the
-           two shells never import each other. -->
-      <IconButton
-        id="top-menu-button"
-        shape="round"
-        color="secondary"
-        variant="ghost"
-        size="medium"
-        aria-label={$t('main_menu')}
-        icon={mdiMenu}
-        onclick={() => sidebarStore.toggle()}
-        onmousedown={(event: MouseEvent) => {
-          if (sidebarStore.isOpen) {
-            // Stop the event reaching the sidebar's click-outside handler.
-            event.stopPropagation();
-          }
-        }}
-        class="sidebar:hidden"
-      />
-      <a data-sveltekit-preload-data="hover" href={Route.photos()} aria-label={$t('library')}>
+  <div class="fl-topbar-grid">
+    <div class="fl-topbar-lead">
+      {#if hasRail}
+        <!-- The id matches `menuButtonId` exported by NavigationBar.svelte, which the
+             sidebar focuses when it closes. It is repeated rather than imported so the
+             two shells never import each other. -->
+        <IconButton
+          id="top-menu-button"
+          shape="round"
+          color="secondary"
+          variant="ghost"
+          size="medium"
+          aria-label={$t('main_menu')}
+          icon={mdiMenu}
+          onclick={() => sidebarStore.toggle()}
+          onmousedown={(event: MouseEvent) => {
+            if (sidebarStore.isOpen) {
+              // Stop the event reaching the sidebar's click-outside handler.
+              event.stopPropagation();
+            }
+          }}
+          class="sidebar:hidden"
+        />
+      {/if}
+      <a class="fl-topbar-brand" data-sveltekit-preload-data="hover" href={Route.photos()} aria-label={$t('library')}>
         <FrameleafLogo
           variant={mediaQueryManager.isFullSidebar ? 'inline' : 'icon'}
           theme={appTheme}
           decorative
-          class="h-12"
+          class="h-8"
         />
       </a>
     </div>
 
-    <div class="flex min-w-0 justify-between gap-2 pe-4 md:gap-4 md:pe-6">
-      <!--
-        FL-49: exactly one search entry for the whole library, at every width. It opens the
-        Frameleaf search dialog, which now carries the filter panel that the separate
-        search-options modal used to hold. Mounting it once also means one set of keyboard
-        shortcuts: a second instance would open the dialog twice.
-      -->
-      <div class="w-full max-w-5xl min-w-0 flex-1">
-        {#if featureFlagsManager.value.search}
-          <SearchEntry />
-        {/if}
+    <!-- The prototype's `.primary-nav`: the three workspaces, text only, in this order. -->
+    <nav class="fl-primary-nav" aria-label={$t('frameleaf_primary_navigation')}>
+      {#each primaryDestinations as destination (destination.id)}
+        <a
+          href={destination.href}
+          data-sveltekit-preload-data="hover"
+          class:fl-current={currentPrimary === destination.id}
+          aria-current={currentPrimary === destination.id ? 'page' : undefined}
+        >
+          {$t(destination.labelKey)}
+        </a>
+      {/each}
+    </nav>
+
+    <!--
+      FL-49: exactly one search entry for the whole library, at every width. It opens the
+      Frameleaf search dialog, which now carries the filter panel that the separate
+      search-options modal used to hold. Mounting it once also means one set of keyboard
+      shortcuts: a second instance would open the dialog twice.
+    -->
+    <div class="fl-topbar-search">
+      {#if featureFlagsManager.value.search}
+        <SearchEntry />
+      {/if}
+    </div>
+
+    <section class="fl-topbar-actions">
+      {#if onUploadClick && !isAdminRoute}
+        <UploadMenuButton defaultAlbumId={uploadAlbumId} isLockedAssets={uploadIsLocked} />
+      {/if}
+
+      <!-- The activity indicator is desktop only; phones keep the bar to its fixed grid. -->
+      <div class="hidden md:flex">
+        <ActivityIndicator />
       </div>
 
-      <section class="flex min-w-0 place-items-center justify-end gap-1 md:gap-2">
-        {#if onUploadClick && !isAdminRoute}
-          <UploadMenuButton defaultAlbumId={uploadAlbumId} isLockedAssets={uploadIsLocked} />
-        {/if}
-
-        <!-- The activity indicator is desktop only; phones keep the bar to its fixed grid. -->
-        <div class="hidden md:flex">
-          <ActivityIndicator />
-        </div>
-
-        <div
-          use:clickOutside={{
-            onOutclick: () => (showNotifications = false),
-            onEscape: () => (showNotifications = false),
-          }}
-        >
-          <div class="relative">
-            <IconButton
-              shape="round"
-              color={hasUnreadNotifications ? 'primary' : 'secondary'}
-              variant="ghost"
-              size="medium"
-              icon={hasUnreadNotifications ? mdiBellBadge : mdiBellOutline}
-              onclick={() => (showNotifications = !showNotifications)}
-              aria-label={$t('notifications')}
-            />
-            {#if hasUnreadNotifications}
-              <div
-                class="pointer-events-none absolute top-0 right-1 flex size-5 items-center justify-center rounded-full border bg-primary text-[10px] font-bold text-light"
-              >
-                {notificationManager.notifications.length}
-              </div>
-            {/if}
-          </div>
-
-          {#if showNotifications}
-            <NotificationPanel />
+      <div
+        use:clickOutside={{
+          onOutclick: () => (showNotifications = false),
+          onEscape: () => (showNotifications = false),
+        }}
+      >
+        <div class="relative">
+          <IconButton
+            shape="round"
+            color={hasUnreadNotifications ? 'primary' : 'secondary'}
+            variant="ghost"
+            size="medium"
+            icon={hasUnreadNotifications ? mdiBellBadge : mdiBellOutline}
+            onclick={() => (showNotifications = !showNotifications)}
+            aria-label={$t('notifications')}
+          />
+          {#if hasUnreadNotifications}
+            <div
+              class="pointer-events-none absolute top-0 right-1 flex size-5 items-center justify-center rounded-full border bg-primary text-[10px] font-bold text-light"
+            >
+              {notificationManager.notifications.length}
+            </div>
           {/if}
         </div>
 
-        <IconButton
-          color={isElevated ? 'primary' : 'secondary'}
-          shape="round"
-          variant="ghost"
-          size="medium"
-          icon={isElevated ? mdiLockOpenVariantOutline : mdiLockOutline}
-          disabled={isSessionLoading}
-          onclick={toggleSession}
-          title={lockedLabel}
-          aria-label={lockedLabel}
-        />
+        {#if showNotifications}
+          <!-- Anchored to the bar's bottom edge, whatever height the bar has at this width. -->
+          <div class="fl-notifications-panel">
+            <NotificationPanel />
+          </div>
+        {/if}
+      </div>
 
-        <ActionButton action={Cast} />
+      <IconButton
+        color={isElevated ? 'primary' : 'secondary'}
+        shape="round"
+        variant="ghost"
+        size="medium"
+        icon={isElevated ? mdiLockOpenVariantOutline : mdiLockOutline}
+        disabled={isSessionLoading}
+        onclick={toggleSession}
+        title={lockedLabel}
+        aria-label={lockedLabel}
+      />
 
-        <ThemeButton />
+      <!-- Casting is contextual: the button shows only while a cast device is available. -->
+      <ActionButton action={Cast} />
 
-        <AccountMenu
-          {isElevated}
-          {isSessionLoading}
-          onUnlock={unlockSession}
-          onLock={() => handlePromiseError(lockSession())}
-        />
-      </section>
-    </div>
+      <IconButton
+        shape="round"
+        color="secondary"
+        variant="ghost"
+        size="medium"
+        icon={appTheme === 'dark' ? mdiWhiteBalanceSunny : mdiMoonWaningCrescent}
+        onclick={() => themeManager.toggle()}
+        title={themeLabel}
+        aria-label={themeLabel}
+      />
+
+      <AccountMenu
+        {isElevated}
+        {isSessionLoading}
+        onUnlock={unlockSession}
+        onLock={() => handlePromiseError(lockSession())}
+      />
+    </section>
   </div>
 </nav>
 
 <style>
+  /*
+   * The prototype's `.topbar` (styles.css): 56px tall, the brand, then the switcher, then search
+   * pushed toward the controls and capped at 480px. Below Tailwind's `md` the bar becomes the
+   * prototype's phone grid.
+   */
   .fl-topbar {
+    position: relative;
     background: var(--fl-panel);
     border-bottom: 1px solid var(--fl-border);
   }
   .fl-no-border {
     border-bottom: 0;
+  }
+  .fl-topbar-grid {
+    display: flex;
+    align-items: center;
+    gap: 1.125rem;
+    height: 100%;
+    padding: 0 1.5rem 0 1.125rem;
+  }
+  .fl-topbar-lead {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 10.6875rem;
+  }
+  .fl-topbar-brand {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+  .fl-primary-nav {
+    display: flex;
+    align-self: stretch;
+    gap: 0.75rem;
+  }
+  .fl-primary-nav a {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 0 0.75rem;
+    color: var(--fl-muted);
+    font-size: 0.875rem;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: color var(--fl-motion-fast) var(--fl-ease);
+  }
+  .fl-primary-nav a:hover,
+  .fl-primary-nav a.fl-current {
+    color: var(--fl-text);
+  }
+  .fl-primary-nav a.fl-current::after {
+    content: '';
+    position: absolute;
+    left: 0.375rem;
+    right: 0.375rem;
+    bottom: 0;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--fl-accent);
+  }
+  .fl-topbar-search {
+    flex: 1;
+    min-width: 0;
+    max-width: 30rem;
+    margin-left: auto;
+  }
+  .fl-topbar-actions {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+  .fl-notifications-panel {
+    position: absolute;
+    top: 100%;
+    right: 0.5rem;
+    z-index: 1;
+  }
+  /* NotificationPanel places itself for the legacy bar's height; here the anchor above does. */
+  .fl-notifications-panel > :global(*) {
+    position: static;
+    margin-top: 0.5rem;
+  }
+  @media (max-width: 80rem) {
+    .fl-topbar-grid {
+      gap: 0.75rem;
+      padding-right: 1rem;
+    }
+    .fl-primary-nav {
+      gap: 0.125rem;
+    }
+  }
+  @media (max-width: 62.5rem) {
+    .fl-topbar-grid {
+      gap: 0.5rem;
+    }
+  }
+  /* Phones: the prototype's fixed two-row grid. */
+  @media (max-width: 47.99rem) {
+    .fl-topbar-grid {
+      display: grid;
+      grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+      grid-template-rows: 2.8125rem 2.4375rem;
+      grid-template-areas:
+        'lead . actions'
+        'primary search search';
+      column-gap: 0.3125rem;
+      padding: 0.1875rem 0.5rem 0.5rem;
+    }
+    .fl-topbar-lead {
+      grid-area: lead;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .fl-primary-nav {
+      grid-area: primary;
+      gap: 0;
+      min-width: 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .fl-primary-nav a {
+      padding: 0 0.5625rem;
+      font-size: 0.75rem;
+    }
+    .fl-topbar-search {
+      grid-area: search;
+      max-width: none;
+      margin-left: 0;
+    }
+    .fl-topbar-actions {
+      grid-area: actions;
+      gap: 0.125rem;
+    }
   }
 </style>

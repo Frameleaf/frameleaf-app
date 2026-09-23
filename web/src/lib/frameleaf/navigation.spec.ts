@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildPrimaryDestinations,
   buildRailSections,
+  currentPrimaryDestination,
   defaultRailCapabilities,
   isDestinationCurrent,
   type RailCapabilities,
@@ -93,7 +95,6 @@ describe('Frameleaf rail destinations', () => {
       'sharing',
       'pets',
       'places',
-      'studio',
       'workflows',
       'libraryCare',
       'settings',
@@ -130,5 +131,65 @@ describe('Frameleaf rail destinations', () => {
 
     expect(isDestinationCurrent(Route.albums(), allAlbums)).toBe(true);
     expect(isDestinationCurrent(Route.viewAlbum({ id: 'album-id' }), allAlbums)).toBe(false);
+  });
+
+  it('keeps Studio and Activity out of the rail; Tools holds only Workflows and Trash', () => {
+    const tools = buildRailSections(allCapabilities()).find((section) => section.id === 'tools');
+    const hrefs = flatten(allCapabilities()).map((destination) => destination.href);
+
+    expect(tools?.destinations.map((destination) => destination.id)).toEqual(['workflows', 'trash']);
+    expect(hrefs).not.toContain(Route.studioProjects());
+    expect(hrefs).not.toContain(Route.studio());
+    expect(hrefs).not.toContain(Route.activity());
+  });
+});
+
+describe('Frameleaf primary destinations', () => {
+  it('offers Library, Studio and Activity in the prototype order', () => {
+    expect(buildPrimaryDestinations().map((destination) => destination.id)).toEqual(['library', 'studio', 'activity']);
+  });
+
+  it('sends Library home, Studio to the project library and Activity to its page', () => {
+    const hrefs = Object.fromEntries(buildPrimaryDestinations().map(({ id, href }) => [id, href]));
+
+    expect(hrefs).toEqual({
+      library: Route.photos(),
+      studio: Route.studioProjects(),
+      activity: Route.activity(),
+    });
+  });
+
+  it('keeps Studio current in the project library and the editor', () => {
+    expect(currentPrimaryDestination('/studio/projects')).toBe('studio');
+    expect(currentPrimaryDestination('/studio')).toBe('studio');
+  });
+
+  it('keeps Activity current on its page only', () => {
+    expect(currentPrimaryDestination('/activity')).toBe('activity');
+    expect(currentPrimaryDestination('/activity-log')).toBe('library');
+  });
+
+  it('keeps Library current across the library workspace the rail navigates', () => {
+    for (const pathname of [
+      Route.photos(),
+      '/photos/asset-id',
+      Route.albums(),
+      Route.people(),
+      Route.explore(),
+      Route.sharing(),
+      Route.utilities(),
+      Route.trash(),
+      Route.workflows(),
+    ]) {
+      expect(currentPrimaryDestination(pathname)).toBe('library');
+    }
+    // A path that merely starts with "studio" is not Studio.
+    expect(currentPrimaryDestination('/studios')).toBe('library');
+  });
+
+  it('leaves the switcher without a current item in settings and administration', () => {
+    expect(currentPrimaryDestination(Route.userSettings())).toBeNull();
+    expect(currentPrimaryDestination(Route.systemSettings())).toBeNull();
+    expect(currentPrimaryDestination(Route.users())).toBeNull();
   });
 });

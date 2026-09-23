@@ -26655,6 +26655,12 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "autoRetries": {
+            "description": "Automatic retries this job has used; every job gets one before a failure is reported",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
           "error": {
             "nullable": true,
             "type": "string"
@@ -26701,12 +26707,19 @@
             "nullable": true,
             "type": "string"
           },
+          "retryAt": {
+            "description": "When a job waiting for its automatic retry may run again",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
           "status": {
             "$ref": "#/components/schemas/MediaOperationStatus"
           }
         },
         "required": [
           "attempt",
+          "autoRetries",
           "error",
           "errorCode",
           "export",
@@ -26716,6 +26729,7 @@
           "operationId",
           "progress",
           "projectId",
+          "retryAt",
           "status"
         ],
         "type": "object"

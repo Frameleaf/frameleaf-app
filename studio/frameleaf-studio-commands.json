@@ -1280,12 +1280,13 @@
     {
       "capability": null,
       "deliveryPlanIds": ["STU-204"],
-      "description": "Export a validated portable project bundle.",
+      "description": "Export a validated portable project bundle, optionally with copies of the media the person owns.",
       "id": "project.exportBundle",
       "manifestIds": ["readme.projects-storage.5"],
       "mutatesGraph": false,
       "owner": "FL-91",
       "payload": {
+        "includeMedia": "boolean?",
         "sequenceIds": "string[]?"
       },
       "prototypeFunctions": [],
