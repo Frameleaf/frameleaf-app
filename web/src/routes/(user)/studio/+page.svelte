@@ -1,14 +1,16 @@
 <script lang="ts">
   /**
-   * The Studio route (FL-88, `STU-201`).
+   * The Studio route (FL-88, `STU-201`; project persistence FL-89, `STU-202`).
    *
    * Svelte owns everything outside the editor: it authenticates, resolves the handoff
-   * selection, probes what the deployment can run, builds the typed command bridge and
-   * guards navigation while a draft is unsaved. The React editor, when it is part of the
-   * build, is mounted by `StudioHost` into a single element and is handed data and
-   * callbacks only — never the SDK, never a token, never the API base URL.
+   * selection, probes what the deployment can run, builds the typed command bridge, owns the
+   * project session (load, lease, autosave, history, review) and guards navigation while a
+   * draft is unsaved. The React editor, when it is part of the build, is mounted by
+   * `StudioHost` into a single element and is handed data and callbacks only — never the
+   * SDK, never a token, never the API base URL.
    */
-  import { beforeNavigate, goto } from '$app/navigation';
+  import { beforeNavigate, goto, replaceState } from '$app/navigation';
+  import { onDestroy, onMount } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import { toastManager } from '@immich/ui';
   import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
@@ -18,6 +20,7 @@
   import { toStudioAssets } from '$lib/frameleaf/studio/assets';
   import { createStudioBridge } from '$lib/frameleaf/studio/bridge';
   import { probeStudioCapabilities } from '$lib/frameleaf/studio/capabilities';
+  import { pinnedFreecutRevision } from '$lib/frameleaf/studio/engine-loader';
   import {
     emptyStudioCapabilities,
     type StudioAuthContext,
@@ -25,6 +28,11 @@
     type StudioHostServices,
     type StudioProjectHandle,
   } from '$lib/frameleaf/studio/host-contract';
+  import {
+    createStudioProjectSession,
+    STUDIO_DRAFT_PROJECT_ID,
+    type StudioProjectSessionState,
+  } from '$lib/frameleaf/studio/project-session';
   import { getProfileImageUrl } from '$lib/utils';
   import type { PageData } from './$types';
 
@@ -34,6 +42,7 @@
   let online = $state(true);
   let dirty = $state(false);
   let accessLost = $state(false);
+  let sessionState = $state<StudioProjectSessionState | null>(null);
 
   const assets = $derived(toStudioAssets(data.assets));
   const handoffAssetIds = $derived(assets.map((asset) => asset.id));
@@ -50,35 +59,64 @@
   });
 
   /**
-   * The project this session is editing. Durable project storage, the revision chain and
-   * the write lease are FL-89/FL-90's contract; until they land the host opens an in-memory
-   * draft at revision 0 with an empty graph. Nothing writes it anywhere, and no command that
-   * would change it is implemented, so there is no storage here pretending to be a saved
-   * project.
+   * One editor instance. The lease is held per instance, so two tabs of the same account are
+   * two clients; the id is never persisted, because a reload is a new instance by design.
    */
-  const project = $derived<StudioProjectHandle>({
-    id: data.projectId ?? 'draft',
+  const clientId =
+    typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+  /**
+   * The project session (FL-89): durable storage, the immutable revision chain, the write
+   * lease and autosave. `?project=` reopens a saved project; without it the host starts an
+   * in-memory draft that the first save creates on the server.
+   */
+  const session = createStudioProjectSession({
+    clientId,
+    projectId: data.projectId,
     name: $t('frameleaf_studio_untitled_project'),
-    revision: 0,
-    graph: null,
-    hasLease: true,
+    engineRevision: pinnedFreecutRevision,
+    onChange: (next) => {
+      sessionState = next;
+    },
   });
+
+  const project = $derived<StudioProjectHandle>(
+    sessionState?.project ?? {
+      id: data.projectId ?? STUDIO_DRAFT_PROJECT_ID,
+      name: $t('frameleaf_studio_untitled_project'),
+      revision: 0,
+      graph: null,
+      // Nothing may be written before the session has decided who holds the lease.
+      hasLease: false,
+    },
+  );
+
+  const saveStatus = $derived(sessionState?.status ?? 'loading');
+  const forbidden = $derived(saveStatus === 'forbidden');
+  /** Writes are refused while a conflict or a lost lease waits for the person's decision. */
+  const writable = $derived(
+    project.hasLease && saveStatus !== 'conflict' && saveStatus !== 'lease-lost' && saveStatus !== 'loading',
+  );
 
   const bridge = createStudioBridge({
     context: () => ({
       revision: project.revision,
-      hasLease: project.hasLease,
-      hasAccess: !accessLost && authManager.authenticated,
+      hasLease: writable,
+      hasAccess: !accessLost && !forbidden && authManager.authenticated,
       online,
       capabilities,
     }),
     // No handlers yet: every editing command is a typed extension point owned by a later
-    // story, and the bridge rejects each one as `not-implemented` rather than no-op.
+    // story, and the bridge rejects each one as `not-implemented` rather than no-op. A
+    // handler that changes the graph ends by calling `session.stage(graph, [id])`, which is
+    // what turns the change into an autosaved revision.
   });
 
   const services: StudioHostServices = {
     submitCommands: (envelopes) => bridge.submit(envelopes),
-    reloadProject: () => Promise.resolve(project),
+    reloadProject: () => session.reload(),
     resolveAsset: (assetId) => assets.find((asset) => asset.id === assetId),
     notify: (message, tone) => {
       if (tone === 'error') {
@@ -116,17 +154,52 @@
 
   const onBack = () => void goto(Route.photos());
 
-  $effect(() => {
+  const onReload = () => void session.reload();
+  const onReacquire = () => void session.reacquire();
+  const onTakeOver = () => void session.takeOver();
+  const onSaveCopy = async () => {
+    const id = await session.saveAsCopy($t('frameleaf_studio_copy_name', { values: { name: project.name } }));
+    if (!id) {
+      return;
+    }
+    // Same route, new project: the URL follows without re-running the load or remounting.
+    replaceState(Route.studio({ projectId: id, assetIds: handoffAssetIds }), {});
+    toastManager.primary($t('frameleaf_studio_copy_saved'));
+  };
+
+  onMount(() => {
     online = globalThis.navigator?.onLine !== false;
+    void session.open();
+
+    const goOnline = () => {
+      online = true;
+      session.setOnline(true);
+    };
+    const goOffline = () => {
+      online = false;
+      session.setOnline(false);
+    };
+    globalThis.addEventListener('online', goOnline);
+    globalThis.addEventListener('offline', goOffline);
+
+    return () => {
+      globalThis.removeEventListener('online', goOnline);
+      globalThis.removeEventListener('offline', goOffline);
+    };
+  });
+
+  $effect(() => {
     void probeStudioCapabilities().then((next) => {
       capabilities = next;
     });
 
     // Losing the session or relocking must clear private editor state immediately, not on
-    // the next navigation: the host disposes the engine when it hears this.
+    // the next navigation: the host disposes the engine when it hears this, and the project
+    // session gives the lease back and stops listening for responses.
     const lost = () => {
       accessLost = true;
       dirty = false;
+      void session.dispose();
     };
     const unsubscribe = eventManager.on({
       AuthLogout: lost,
@@ -137,11 +210,19 @@
     return () => unsubscribe();
   });
 
+  onDestroy(() => {
+    void session.dispose();
+  });
+
   beforeNavigate((navigation) => {
-    if (!dirty || accessLost) {
+    if (accessLost || forbidden) {
       return;
     }
-    // The engine holds work that is not persisted anywhere. Confirm before it is lost.
+    if (!dirty && !sessionState?.hasDraft) {
+      return;
+    }
+    // The engine, or the session's draft, holds work that is not persisted anywhere. Confirm
+    // before it is lost.
     if (!globalThis.confirm($t('frameleaf_studio_unsaved_confirm'))) {
       navigation.cancel();
     }
@@ -152,7 +233,8 @@
   `droppedAssetCount` keeps the handoff honest: items the person selected that this session
   cannot read are reported in the chrome rather than quietly missing from the bin.
   `onOpenActivity` is deliberately not supplied — the Activity route is FL-104's, so the
-  host renders no link to it.
+  host renders no link to it. `accessLost` also covers a project this account can no longer
+  read, so the forbidden state is shown and the engine disposed.
 -->
 <StudioHost
   {project}
@@ -162,7 +244,15 @@
   {capabilities}
   {services}
   {onBack}
-  {dirty}
-  {accessLost}
+  dirty={dirty || (sessionState?.hasDraft ?? false)}
+  accessLost={accessLost || forbidden}
   droppedAssetCount={data.unavailableAssetCount}
+  {session}
+  {saveStatus}
+  conflict={sessionState?.conflict ?? null}
+  access={sessionState?.access ?? null}
+  {onReload}
+  {onReacquire}
+  {onTakeOver}
+  {onSaveCopy}
 />
