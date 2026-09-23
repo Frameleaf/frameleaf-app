@@ -79,9 +79,7 @@ export const formatLocalDateRange = (startDate: string, endDate: string, locale?
 
 /** A run the Activity page and the player should keep polling. */
 export const isExportActive = (status: MemoryExportStatus): boolean =>
-  status === MemoryExportStatus.Pending ||
-  status === MemoryExportStatus.Running ||
-  status === MemoryExportStatus.Cancelling;
+  [MemoryExportStatus.Pending, MemoryExportStatus.Running, MemoryExportStatus.Cancelling].includes(status);
 
 /** Fraction of the export that is written, 0 to 1. Pending work reads as 0, not as NaN. */
 export const exportProgress = ({ assetCount, processedAssets }: MemoryExportResponseDto): number => {
