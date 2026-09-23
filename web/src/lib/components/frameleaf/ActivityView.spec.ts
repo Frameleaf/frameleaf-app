@@ -43,6 +43,7 @@ const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDt
     finishedAt: null,
     createdAt: '2026-09-22T09:49:00.000Z',
     updatedAt: '2026-09-22T09:59:00.000Z',
+    withheld: false,
     ...overrides,
   }) as MediaOperationDto;
 
@@ -95,8 +96,9 @@ describe('Frameleaf Activity page', () => {
     );
     await mount([operation({ status: MediaOperationStatus.Failed, error: 'The worker stopped responding' })]);
 
+    // The first answer lands after the request is sent; wait for the row rather than racing it.
+    expect(await screen.findByText('The worker stopped responding')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^cancel$/i })).not.toBeInTheDocument();
-    expect(screen.getByText('The worker stopped responding')).toBeInTheDocument();
 
     await fireEvent.click(await screen.findByRole('button', { name: /retry/i }));
     expect(sdkMock.retryMediaOperation).toHaveBeenCalledWith({ id: '0195e2a0-0000-7000-8000-000000000001' });
@@ -122,6 +124,25 @@ describe('Frameleaf Activity page', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: /^resume/i }));
     expect(sdkMock.resumeMediaOperation).toHaveBeenCalledWith({ id: '0195e2a0-0000-7000-8000-000000000001' });
+  });
+
+  it('names a withheld Locked job only as a Locked item (FL-43)', async () => {
+    await mount([operation({ kind: MediaOperationKind.Restoration, label: '', withheld: true })]);
+
+    await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Locked item' })).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /pause “locked item”/i })).toBeInTheDocument();
+  });
+
+  it('keeps the last state on screen while offline and reconnects on request (FL-43)', async () => {
+    sdkMock.searchMediaOperations.mockRejectedValueOnce(new Error('offline'));
+    render(ActivityView, { props: { filter: 'all' } });
+    const reconnect = await screen.findByRole('button', { name: 'Reconnect' });
+
+    sdkMock.searchMediaOperations.mockResolvedValue({ items: [operation()], total: 1 });
+    await fireEvent.click(reconnect);
+
+    await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Summer in the Rockies' })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
   });
 
   it('offers no pause for a kind that runs in one go', async () => {
