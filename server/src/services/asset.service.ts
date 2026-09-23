@@ -244,9 +244,9 @@ export class AssetService extends BaseService {
       await this.assetRepository.updateAll(ids, assetDto);
     }
 
-    if (visibility === AssetVisibility.Locked) {
-      await this.albumRepository.removeAssetsFromAll(ids);
-    }
+    // Moving into the Locked folder keeps album membership (owner decision, September 22, 2026): the
+    // asset stays in its albums and every album read hides it from everyone but its owner's elevated
+    // session, so it is back in place when it leaves the folder. Upstream removed it from all albums here.
 
     await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
   }

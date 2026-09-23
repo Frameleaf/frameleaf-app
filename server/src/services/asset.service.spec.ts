@@ -482,6 +482,18 @@ describe(AssetService.name, () => {
       });
     });
 
+    it('should keep album membership when assets move into the Locked folder (FL-32)', async () => {
+      const auth = authStub.adminWithElevatedPermission;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+
+      await sut.updateAll(auth, { ids: ['asset-1', 'asset-2'], visibility: AssetVisibility.Locked });
+
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1', 'asset-2'], {
+        visibility: AssetVisibility.Locked,
+      });
+      expect(mocks.album.removeAssetsFromAll).not.toHaveBeenCalled();
+    });
+
     it('should not update Assets table if no relevant fields are provided', async () => {
       const auth = AuthFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
