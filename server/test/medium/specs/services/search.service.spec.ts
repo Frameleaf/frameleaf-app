@@ -164,6 +164,66 @@ describe(SearchService.name, () => {
     });
   });
 
+  describe("a partner's Locked media", () => {
+    const partnerLibrary = async (ctx: ReturnType<typeof setup>['ctx']) => {
+      const { user } = await ctx.newUser();
+      const { user: partner } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: partner.id, sharedWithId: user.id });
+
+      const { asset: ownLocked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      const { asset: partnerTimeline } = await ctx.newAsset({ ownerId: partner.id });
+      const { asset: partnerLocked } = await ctx.newAsset({ ownerId: partner.id, visibility: AssetVisibility.Locked });
+      for (const { id } of [ownLocked, partnerTimeline, partnerLocked]) {
+        await ctx.newExif({ assetId: id, fileSizeInByte: 1000 });
+      }
+
+      const elevated = factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } });
+      return { user, partner, ownLocked, partnerTimeline, partnerLocked, elevated };
+    };
+
+    it('never comes back from an elevated metadata search, while the viewer keeps their own', async () => {
+      const { sut, ctx } = setup();
+      const { elevated, ownLocked, partnerTimeline, partnerLocked } = await partnerLibrary(ctx);
+
+      const response = await sut.searchMetadata(elevated, {});
+      const ids = response.assets.items.map(({ id }) => id);
+
+      expect(ids).toEqual(expect.arrayContaining([ownLocked.id, partnerTimeline.id]));
+      expect(ids).not.toContain(partnerLocked.id);
+    });
+
+    it('is not counted, sampled or listed by size in an elevated session', async () => {
+      const { sut, ctx } = setup();
+      const { elevated, partnerLocked } = await partnerLibrary(ctx);
+
+      await expect(sut.searchStatistics(elevated, {})).resolves.toEqual({ total: 2 });
+
+      const random = await sut.searchRandom(elevated, { size: 50 });
+      expect(random.map(({ id }) => id)).not.toContain(partnerLocked.id);
+
+      const large = await sut.searchLargeAssets(elevated, { size: 50 });
+      expect(large.map(({ id }) => id)).not.toContain(partnerLocked.id);
+    });
+
+    it('does not come back even when the partner shares the album it sits in', async () => {
+      const { sut, ctx } = setup();
+      const { user, partner, elevated, partnerTimeline, partnerLocked } = await partnerLibrary(ctx);
+      const { album } = await ctx.newAlbum({ ownerId: partner.id });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: partnerTimeline.id });
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: partnerLocked.id });
+      await ctx.newAlbumUser({ albumId: album.id, userId: user.id, role: AlbumUserRole.Editor });
+
+      const everything = await sut.searchMetadata(elevated, { albumIds: [album.id] });
+      expect(everything.assets.items.map(({ id }) => id)).toEqual([partnerTimeline.id]);
+
+      const lockedOnly = await sut.searchMetadata(elevated, {
+        albumIds: [album.id],
+        visibility: AssetVisibility.Locked,
+      });
+      expect(lockedOnly.assets.items).toEqual([]);
+    });
+  });
+
   describe('withStacked option', () => {
     it('should exclude stacked assets when withStacked is false', async () => {
       const { sut, ctx } = setup();
