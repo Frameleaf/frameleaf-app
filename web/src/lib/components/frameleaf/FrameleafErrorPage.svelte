@@ -33,7 +33,7 @@
 </script>
 
 <svelte:head>
-  <title>{title} – Frameleaf</title>
+  <title>{title} - Frameleaf</title>
 </svelte:head>
 
 {#snippet card()}
