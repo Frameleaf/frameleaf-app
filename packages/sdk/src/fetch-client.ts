@@ -5186,7 +5186,7 @@ export type PreservationRestoreItemDto = {
     id: string;
     /** Locked in the package or in your library; listed only to an unlocked session */
     locked: boolean;
-    match: PreservationRestoreMatch | null;
+    match: (PreservationRestoreMatch) | null;
     name: string | null;
     reasonKey: string | null;
     sourceAssetId: string | null;
@@ -16741,8 +16741,7 @@ export enum PreservationConflictField {
 export enum PreservationRestoreMatch {
     New = "new",
     Existing = "existing",
-    Trashed = "trashed",
-    Null
+    Trashed = "trashed"
 }
 export enum PreservationRestoreItemState {
     Pending = "pending",
