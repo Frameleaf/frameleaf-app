@@ -133,6 +133,32 @@ describe('config controllers', () => {
     });
   });
 
+  describe('GET /admin/config/history (FL-66)', () => {
+    it('should return the settings change history', async () => {
+      const history = {
+        entries: [
+          {
+            id: 'entry-1',
+            createdAt: '2026-09-23T10:00:00.000Z',
+            actorId: 'admin',
+            actorName: 'Admin',
+            changes: [
+              { path: 'trash.days', before: '30', after: '12' },
+              { path: 'oauth.clientSecret', before: null, after: null, credential: 'replaced' as const },
+            ],
+            omittedChanges: 0,
+          },
+        ],
+      };
+      service.getConfigHistory.mockResolvedValue(history);
+
+      const { status, body } = await request(ctx.getHttpServer()).get('/admin/config/history');
+
+      expect(status).toBe(200);
+      expect(body).toEqual(history);
+    });
+  });
+
   describe('GET /admin/config/revision (FL-66)', () => {
     it('should return the saved config with its revision', async () => {
       service.getAdminConfigWithRevision.mockResolvedValue({ config: validConfig(), revision: 'abc123' });

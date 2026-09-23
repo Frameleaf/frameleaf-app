@@ -15,6 +15,7 @@ import {
   OAuthTokenEndpointAuthMethod,
   QueueName,
   ReleaseChannel,
+  SystemMetadataKey,
   ToneMapping,
   TranscodeHardwareAcceleration,
   TranscodePolicy,
@@ -1367,11 +1368,12 @@ describe(SystemConfigService.name, () => {
       const waiting = new Promise<void>((resolve) => (reached = resolve));
       let held = false;
       mocks.event.emit.mockImplementation(async (...[name]) => {
-        if (name === 'ConfigValidate' && !held) {
-          held = true;
-          reached();
-          await gate;
+        if (name !== 'ConfigValidate' || held) {
+          return;
         }
+        held = true;
+        reached();
+        await gate;
       });
       return { release, waiting };
     };
@@ -1467,6 +1469,96 @@ describe(SystemConfigService.name, () => {
       expect(store.stored().trash?.days).toBe(12);
       expect(store.stored().machineLearning?.runpod?.apiKey).toBe('rp_new');
       expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.SystemConfigUpdate, expect.any(Function));
+    });
+  });
+
+  describe('settings change history (FL-66)', () => {
+    /** Saved settings and history the service really reads back after writing them. */
+    const useStore = (initial: DeepPartial<SystemConfig>) => {
+      let config = cloneDeep(initial);
+      let history: unknown = null;
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(cloneDeep(key === SystemMetadataKey.SystemConfigHistory ? history : config) as never),
+      );
+      mocks.systemMetadata.set.mockImplementation((key, value) => {
+        if (key === SystemMetadataKey.SystemConfigHistory) {
+          history = cloneDeep(value);
+        }
+        return Promise.resolve();
+      });
+      mocks.forkSchema.persistConfig.mockImplementation((partial: DeepPartial<SystemConfig>) => {
+        config = cloneDeep(partial);
+        return Promise.resolve();
+      });
+      return { history: () => history };
+    };
+
+    it('should record a saved change with the administrator and the values before and after', async () => {
+      const store = useStore(partialConfig);
+      const { config, revision } = await sut.getAdminConfigWithRevision();
+
+      await sut.updateAdminConfigWithRevision(
+        { config: { ...config, trash: { ...config.trash, days: 12 } }, expectedRevision: revision },
+        authStub.admin,
+      );
+
+      expect(store.history()).toEqual({
+        entries: [
+          expect.objectContaining({
+            actorId: authStub.admin.user.id,
+            actorName: authStub.admin.user.name,
+            changes: [{ path: 'trash.days', before: '10', after: '12' }],
+            omittedChanges: 0,
+          }),
+        ],
+      });
+      await expect(sut.getConfigHistory()).resolves.toEqual(store.history());
+    });
+
+    it('should record a credential change without its value', async () => {
+      const store = useStore({});
+
+      await sut.setCredential(authStub.admin, ConfigCredential.OAuthClientSecret, { value: 'do-not-record-me' });
+
+      expect(store.history()).toEqual({
+        entries: [
+          expect.objectContaining({
+            changes: [{ path: 'oauth.clientSecret', before: null, after: null, credential: 'replaced' }],
+          }),
+        ],
+      });
+      expect(JSON.stringify(store.history())).not.toContain('do-not-record-me');
+    });
+
+    it('should not record a save that changed nothing', async () => {
+      const store = useStore(partialConfig);
+      const { config, revision } = await sut.getAdminConfigWithRevision();
+
+      await sut.updateAdminConfigWithRevision({ config, expectedRevision: revision }, authStub.admin);
+
+      expect(store.history()).toBeNull();
+    });
+
+    it('should keep the save when the history cannot be written', async () => {
+      useStore(partialConfig);
+      mocks.systemMetadata.set.mockRejectedValue(new Error('disk full'));
+      const { config, revision } = await sut.getAdminConfigWithRevision();
+
+      await expect(
+        sut.updateAdminConfigWithRevision(
+          { config: { ...config, trash: { ...config.trash, days: 12 } }, expectedRevision: revision },
+          authStub.admin,
+        ),
+      ).resolves.toEqual(expect.objectContaining({ revision: expect.any(String) }));
+      expect(mocks.forkSchema.persistConfig).toHaveBeenCalled();
+      expect(mocks.logger.error).toHaveBeenCalled();
+    });
+
+    it('should read an empty history when nothing was recorded', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null);
+
+      await expect(sut.getConfigHistory()).resolves.toEqual({ entries: [] });
+      expect(mocks.systemMetadata.get).toHaveBeenCalledWith(SystemMetadataKey.SystemConfigHistory);
     });
   });
 

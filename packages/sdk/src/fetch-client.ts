@@ -644,6 +644,33 @@ export type ConfigCredentialUpdateDto = {
     /** The new secret. Stored as sent and never returned */
     value: string;
 };
+export type SystemConfigHistoryChangeDto = {
+    /** The value after the change, JSON encoded; null for a credential */
+    after: string | null;
+    /** The value before the change, JSON encoded; null for a credential */
+    before: string | null;
+    credential?: SystemConfigHistoryCredentialChange;
+    /** The changed setting, as a dotted path such as trash.days */
+    path: string;
+};
+export type SystemConfigHistoryEntryDto = {
+    /** The administrator who saved the change */
+    actorId: string | null;
+    /** The administrator's name when the change was saved */
+    actorName: string | null;
+    /** Every changed setting */
+    changes: SystemConfigHistoryChangeDto[];
+    /** When the change was saved (ISO 8601) */
+    createdAt: string;
+    /** Entry ID */
+    id: string;
+    /** Changed settings left out because the entry reached its limit */
+    omittedChanges: number;
+};
+export type SystemConfigHistoryResponseDto = {
+    /** The newest settings changes first */
+    entries: SystemConfigHistoryEntryDto[];
+};
 export type AdminConfigRevisionResponseDto = {
     config: AdminConfigDto;
     /** Changes whenever a saved setting changes; send it back as expectedRevision so a save made against older settings is refused */
@@ -7717,6 +7744,17 @@ export function getAdminConfigDefaults(opts?: Oazapfts.RequestOpts) {
         status: 200;
         data: AdminConfigDto;
     }>("/admin/config/defaults", {
+        ...opts
+    }));
+}
+/**
+ * Get the settings change history
+ */
+export function getAdminConfigHistory(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SystemConfigHistoryResponseDto;
+    }>("/admin/config/history", {
         ...opts
     }));
 }
@@ -14982,6 +15020,10 @@ export enum ConfigCredential {
     OauthClientSecret = "oauth-client-secret",
     RunpodApiKey = "runpod-api-key",
     HuggingfaceToken = "huggingface-token"
+}
+export enum SystemConfigHistoryCredentialChange {
+    Replaced = "replaced",
+    Cleared = "cleared"
 }
 export enum IntegrityReport {
     UntrackedFile = "untracked_file",
