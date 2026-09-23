@@ -63,7 +63,7 @@ jobs:
       - name: Capture automatic server lint fixes
         if: failure()
         run: |
-          pnpm --filter immich lint:fix || true
+          timeout 15m pnpm --filter immich lint:fix || true
           git diff --binary > "$RUNNER_TEMP/server-lint.patch"
       - name: Archive automatic server lint fixes
         if: failure()
@@ -157,7 +157,7 @@ jobs:
       - name: Capture automatic lint fixes
         if: failure()
         run: |
-          pnpm lint:fix || true
+          timeout 15m pnpm lint:fix || true
           git diff --binary > "$RUNNER_TEMP/web-lint.patch"
       - name: Archive automatic lint fixes
         if: failure()
