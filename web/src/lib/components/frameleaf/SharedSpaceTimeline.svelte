@@ -27,6 +27,18 @@
    *
    * The selection bar is FL-32's, bound to the space's scope, so a bulk action here behaves as it
    * does in the album view. Opening an item opens the space's own viewer.
+   *
+   * "Select all N matching" (FL-55 follow-up) uses `ResultsView`'s `selectAllMode="matching"`, the
+   * same `snapshotSearch`/space-as-album-condition machinery the album route's `LibraryView`
+   * uses for a space (`bulk-operations.ts`'s `snapshotSearch` already special-cases
+   * `scope.kind === 'space'`): the bar counts and selects a frozen snapshot of the space's own
+   * scope, and a bulk action run against it goes to the server as a durable, cancellable operation
+   * rather than an explicit id list. It falls back to selecting only what is loaded (as before)
+   * while the "only new since visit" filter narrows the grid to a client-side id set the server
+   * cannot resolve on its own. A viewer's (non-contributor's) matching set is narrowed to download
+   * and add-to-own-album by `spaceViewerMatching`, exactly as the album route's `isSpaceViewer`
+   * narrows it; the server still checks every item's access per item, and another member's Locked
+   * asset is never in a matching set a non-elevated session's search cannot see.
    */
   interface Props {
     space: AlbumResponseDto;
@@ -34,12 +46,21 @@
     photos: SpacePhotoSet;
     /** Only these ids, when a member asked to see what is new; `undefined` shows everything. */
     filter?: Set<string>;
+    /** True when the signed-in person is not an owner or editor of this space (FL-48/FL-55). */
+    isViewer?: boolean;
     onOpen: (asset: TimelineAsset) => void;
     /** A bulk action took items out of the space; the page refreshes its counts. */
     onChanged?: () => Promise<void> | void;
   }
 
-  let { space, photos, filter, onOpen, onChanged }: Props = $props();
+  let { space, photos, filter, isViewer = false, onOpen, onChanged }: Props = $props();
+
+  const bulkContext = $derived({ albumId: space.id, ...(isViewer ? { spaceViewerMatching: true } : {}) });
+
+  // A "select all matching" snapshot is a server-side search over the whole space; the client-side
+  // "only new since visit" id set has no server-side equivalent to intersect it with, so that view
+  // keeps the honest "everything loaded" offer instead of silently widening past what it shows.
+  const selectAllMode = $derived<'matching' | 'loaded'>(filter ? 'loaded' : 'matching');
 
   let tagOptions = $state<{ id: string; name: string }[]>([]);
 
@@ -93,7 +114,8 @@
 <section class="space-timeline" aria-label={$t('frameleaf_spaces_panel_timeline')}>
   <ResultsView
     assets={shown}
-    bulkContext={{ albumId: space.id }}
+    {bulkContext}
+    {selectAllMode}
     downloadFileName={namedArchiveName(space.albumName, $t('frameleaf_archive_name_space'))}
     {tagOptions}
     onEndReached={loadMore}
