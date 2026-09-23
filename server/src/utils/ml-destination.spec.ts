@@ -1,17 +1,32 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MlAdmissionRefusal, MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js';
+import {
+  MlAdmissionRefusal,
+  MlDestinationHealth,
+  MlDestinationKind,
+  MlWorkerAcceleration,
+  MlWorkerReadiness,
+  MlWorkerRole,
+  MlWorkload,
+} from 'src/enum.js';
 import type { MachineLearningRepository, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
 import type { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import {
   MlDestinationNotFoundError,
   MlDestinationRefusedError,
+  accelerationOf,
   evaluateAdmission,
+  hardwareFromProbe,
   hasRequiredConsent,
   healthFromProbe,
+  mlWorkerRoleOf,
+  readinessOf,
   resolveEndpoint,
+  restorationRoleConflict,
   routedMlDestinationId,
+  sameEndpointUrl,
   selectMlDestination,
   summarizeProbe,
+  workloadPolicyProblem,
 } from 'src/utils/ml-destination.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 
@@ -258,5 +273,166 @@ describe('routedMlDestinationId', () => {
     const error = await routedMlDestinationId(d.mlDestinationRepository, MlWorkload.Ocr).catch((error_) => error_);
     expect(error).toBeInstanceOf(MlDestinationRefusedError);
     expect((error as MlDestinationRefusedError).refusal).toBe(MlAdmissionRefusal.WorkloadNotRouted);
+  });
+});
+
+describe('library-analysis and restoration workers stay separate (FL-72)', () => {
+  const restorationProbe = mlProbeStub.restoration;
+
+  it('names a worker by the workloads it is allowed to run', () => {
+    expect(mlWorkerRoleOf([MlWorkload.Face, MlWorkload.Clip])).toBe(MlWorkerRole.LibraryAnalysis);
+    expect(mlWorkerRoleOf([MlWorkload.RestorationCreative])).toBe(MlWorkerRole.Restoration);
+    expect(mlWorkerRoleOf([MlWorkload.StudioAi])).toBe(MlWorkerRole.Studio);
+    expect(mlWorkerRoleOf([MlWorkload.Ocr, MlWorkload.RestorationFaithful])).toBe(MlWorkerRole.Mixed);
+    expect(mlWorkerRoleOf([])).toBe(MlWorkerRole.Unassigned);
+  });
+
+  it('refuses a destination that would run library analysis and restoration together', () => {
+    expect(workloadPolicyProblem(MlDestinationKind.Lan, [MlWorkload.Face, MlWorkload.RestorationFaithful])).toMatch(
+      /not both/,
+    );
+    expect(workloadPolicyProblem(MlDestinationKind.Lan, [MlWorkload.RestorationFaithful])).toBeNull();
+    expect(workloadPolicyProblem(MlDestinationKind.Local, [MlWorkload.Face, MlWorkload.Clip])).toBeNull();
+  });
+
+  it('keeps the managed RunPod pod on library analysis and the RunPod video worker on restoration', () => {
+    expect(workloadPolicyProblem(MlDestinationKind.RunPod, [MlWorkload.RestorationCreative])).toMatch(/library analysis only/);
+    expect(workloadPolicyProblem(MlDestinationKind.RunPod, [MlWorkload.Enrichment])).toBeNull();
+    expect(workloadPolicyProblem(MlDestinationKind.RunPodVideo, [MlWorkload.Clip])).toMatch(/restoration only/);
+    expect(workloadPolicyProblem(MlDestinationKind.RunPodVideo, [MlWorkload.RestorationFaithful])).toBeNull();
+  });
+
+  it('resolves a RunPod video worker to its own URL, never to the published library pod', () => {
+    const published = { url: 'https://endpoint.api.runpod.ai/', authToken: 'rp' };
+    expect(resolveEndpoint(mlDestinationStub.runPodVideoConsented, published)).toEqual({
+      url: mlDestinationStub.runPodVideoConsented.url,
+      authToken: 'video-token',
+    });
+  });
+
+  it('refuses restoration on a row saved before FL-72 that also allows library analysis', () => {
+    const mixed = { ...mlDestinationStub.lan, workloads: [MlWorkload.Face, MlWorkload.RestorationFaithful] };
+    expect(
+      evaluateAdmission({
+        destination: mixed,
+        workload: MlWorkload.RestorationFaithful,
+        endpoint: { url: mixed.url!, authToken: 'lan-token' },
+        probe: restorationProbe,
+        spentUsd: 0,
+      }),
+    ).toMatchObject({ admitted: false, refusal: MlAdmissionRefusal.RoleConflict });
+    // Library analysis on the same row is untouched.
+    expect(
+      evaluateAdmission({
+        destination: mixed,
+        workload: MlWorkload.Face,
+        endpoint: { url: mixed.url!, authToken: 'lan-token' },
+        probe: mlProbeStub.healthy,
+        spentUsd: 0,
+      }),
+    ).toEqual({ admitted: true });
+  });
+
+  it('refuses restoration on the managed RunPod pod even when a row allows it', () => {
+    const legacy = { ...mlDestinationStub.runPodConsented, workloads: [MlWorkload.RestorationCreative] };
+    expect(
+      evaluateAdmission({
+        destination: legacy,
+        workload: MlWorkload.RestorationCreative,
+        endpoint: { url: 'https://endpoint.api.runpod.ai/', authToken: 'rp' },
+        probe: restorationProbe,
+        spentUsd: 0,
+      }),
+    ).toMatchObject({ admitted: false, refusal: MlAdmissionRefusal.RoleConflict });
+  });
+
+  const conflictDeps = (
+    rows: Array<typeof mlDestinationStub.local>,
+    routes: Array<{ workload: MlWorkload; destinationId: string }>,
+  ) => ({
+    mlDestinationRepository: {
+      getById: vi.fn().mockImplementation((id: string) => Promise.resolve(rows.find((row) => row.id === id))),
+      getRoutes: vi.fn().mockResolvedValue(routes),
+    } as unknown as MlDestinationRepository,
+    machineLearningRepository: {
+      getRunPodEndpoint: vi.fn().mockReturnValue(null),
+    } as unknown as MachineLearningRepository,
+  });
+
+  it('allows restoration on its own worker', async () => {
+    const d = conflictDeps(
+      [mlDestinationStub.local, mlDestinationStub.lan],
+      [{ workload: MlWorkload.Face, destinationId: mlDestinationStub.local.id }],
+    );
+    await expect(restorationRoleConflict(d, mlDestinationStub.lan, MlWorkload.RestorationFaithful)).resolves.toBeNull();
+  });
+
+  it('refuses restoration on the endpoint a library workload is routed to, even under another name', async () => {
+    const sameUrl = { ...mlDestinationStub.lan, url: 'http://immich-machine-learning:3003/' };
+    const d = conflictDeps(
+      [mlDestinationStub.local, sameUrl],
+      [{ workload: MlWorkload.Clip, destinationId: mlDestinationStub.local.id }],
+    );
+    await expect(restorationRoleConflict(d, sameUrl, MlWorkload.RestorationFaithful)).resolves.toMatch(/clip/);
+  });
+
+  it('never refuses library work, whatever restoration uses', async () => {
+    const d = conflictDeps([mlDestinationStub.lan], [{ workload: MlWorkload.RestorationFaithful, destinationId: mlDestinationStub.lan.id }]);
+    await expect(restorationRoleConflict(d, mlDestinationStub.local, MlWorkload.Face)).resolves.toBeNull();
+    expect(d.mlDestinationRepository.getRoutes).not.toHaveBeenCalled();
+  });
+
+  it('compares endpoints without caring about a trailing slash', () => {
+    expect(sameEndpointUrl('http://gpu.lan:3004', 'http://GPU.lan:3004/')).toBe(true);
+    expect(sameEndpointUrl('http://gpu.lan:3003', 'http://gpu.lan:3004')).toBe(false);
+  });
+});
+
+describe('worker readiness (FL-72)', () => {
+  const cpuHardware = { preferredAcceleration: 'auto', providers: ['CPUExecutionProvider'], cudaDeviceCount: 0, gpus: [] };
+  const cudaHardware = {
+    preferredAcceleration: 'cuda',
+    providers: ['CUDAExecutionProvider', 'CPUExecutionProvider'],
+    cudaDeviceCount: 1,
+    gpus: [],
+  };
+
+  it('tells a CPU-only worker from an accelerated one and never guesses without facts', () => {
+    expect(accelerationOf(null)).toBe(MlWorkerAcceleration.Unknown);
+    expect(accelerationOf(cpuHardware)).toBe(MlWorkerAcceleration.Cpu);
+    expect(accelerationOf(cudaHardware)).toBe(MlWorkerAcceleration.Gpu);
+    expect(accelerationOf({ ...cpuHardware, gpus: [{ name: 'RTX 4070', memoryTotalBytes: 12e9 }] })).toBe(
+      MlWorkerAcceleration.Gpu,
+    );
+  });
+
+  it('keeps hardware only from a worker that answered', () => {
+    expect(hardwareFromProbe(mlProbeStub.unreachable)).toBeNull();
+    expect(hardwareFromProbe(mlProbeStub.healthy)).toBeNull();
+    expect(
+      hardwareFromProbe({
+        reachable: true,
+        hardware: {
+          providers: ['CPUExecutionProvider'],
+          openvinoDeviceIds: [],
+          torchCudaAvailable: false,
+          cudaDeviceCount: 0,
+          preferredAcceleration: 'auto' as never,
+        },
+      }),
+    ).toEqual(cpuHardware);
+  });
+
+  it('distinguishes unknown, unreachable, not serving, CPU and model-ready', () => {
+    const local = mlDestinationStub.local;
+    expect(readinessOf({ ...local, lastProbeHealth: MlDestinationHealth.Unknown })).toBe(MlWorkerReadiness.Unknown);
+    expect(readinessOf({ ...local, enabled: false })).toBe(MlWorkerReadiness.Disabled);
+    expect(readinessOf({ ...local, lastProbeHealth: MlDestinationHealth.Unhealthy, lastProbeWorkloads: null })).toBe(
+      MlWorkerReadiness.Unreachable,
+    );
+    expect(readinessOf({ ...local, lastProbeWorkloads: [MlWorkload.StudioAi] })).toBe(MlWorkerReadiness.NotServing);
+    expect(readinessOf({ ...local, lastProbeHardware: cpuHardware })).toBe(MlWorkerReadiness.Cpu);
+    expect(readinessOf({ ...local, lastProbeHardware: cudaHardware })).toBe(MlWorkerReadiness.ModelReady);
+    expect(readinessOf({ ...local, lastProbeHardware: null })).toBe(MlWorkerReadiness.ModelReady);
   });
 });

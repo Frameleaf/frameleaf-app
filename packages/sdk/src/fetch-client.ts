@@ -4056,6 +4056,98 @@ export type MemoryUpdateDto = {
     /** Date when memory was seen */
     seenAt?: string;
 };
+export type WorkerWorkloadAdmissionDto = {
+    /** Whether the last check would admit this workload here */
+    admitted: boolean;
+    /** Why it would be refused, or null */
+    detail: string | null;
+    refusal: (MlAdmissionRefusal) | null;
+    workload: MlWorkload;
+};
+export type WorkerGpuDto = {
+    memoryTotalBytes: number;
+    name: string;
+};
+export type WorkerInventoryEntryDto = {
+    acceleration: MlWorkerAcceleration;
+    /** Jobs running here now */
+    activeOperations: number;
+    /** Per allowed workload, from the last check */
+    admission: WorkerWorkloadAdmissionDto[];
+    allowedWorkloads: MlWorkload[];
+    /** Last check or check-in */
+    checkedAt: string | null;
+    /** For a local destination: its URL is still in the machine-learning URL list. Always true otherwise */
+    configured: boolean;
+    /** True when no consent is needed or it is recorded */
+    consentGranted: boolean;
+    credential: WorkerCredentialState;
+    enabled: boolean;
+    /** Largest GPU memory reported or qualified, or null when unknown */
+    gpuMemoryBytes: number | null;
+    /** GPUs the worker reported, with memory; empty when not reported */
+    gpus: WorkerGpuDto[];
+    /** ML destination ID or render worker ID */
+    id: string;
+    /** ML destination kind, or the render worker destination */
+    kind: string;
+    latencyMs: number | null;
+    /** Work sent here leaves the network */
+    leavesNetwork: boolean;
+    /** Render workers: the most they may hold at once */
+    maxConcurrentOperations: number | null;
+    name: string;
+    /** Jobs waiting for this worker */
+    queuedOperations: number;
+    readiness: MlWorkerReadiness;
+    /** Operation kinds a render worker may claim */
+    renderKinds: MediaOperationKind[];
+    /** What an ML destination is for; null for a render worker */
+    role: (MlWorkerRole) | null;
+    /** Workloads whose route names this destination */
+    routedWorkloads: MlWorkload[];
+    /** Workloads the worker reported on its last check, or null when it never answered */
+    servedWorkloads: MlWorkload[] | null;
+    sharesLibraryHardware: boolean;
+    source: WorkerInventorySource;
+    summary: string | null;
+    /** Endpoint URL, or null when there is none to show */
+    url: string | null;
+    /** Full restorations bound here are waiting because library analysis has work */
+    waitingForLibraryAnalysis: boolean;
+};
+export type WorkerQueueBacklogDto = {
+    active: number;
+    paused: boolean;
+    queue: QueueName;
+    waiting: number;
+};
+export type WorkerLibraryRouteDto = {
+    destinationId: string | null;
+    /** Queues whose jobs run this workload */
+    queues: QueueName[];
+    workload: MlWorkload;
+};
+export type WorkerRunnerDto = {
+    activeOperations: number;
+    kinds: MediaOperationKind[];
+    lastHeartbeatAt: string | null;
+    /** The server process holding the claims */
+    workerId: string;
+};
+export type WorkerInventoryResponseDto = {
+    checkedAt: string;
+    /** The machine-learning URL list, in order */
+    configuredUrls: string[];
+    entries: WorkerInventoryEntryDto[];
+    /** Library-analysis jobs active or waiting, not counting paused queues */
+    libraryBacklog: number;
+    libraryQueues: WorkerQueueBacklogDto[];
+    libraryRoutes: WorkerLibraryRouteDto[];
+    machineLearningEnabled: boolean;
+    /** Server processes running restorations now */
+    runners: WorkerRunnerDto[];
+};
 export type MlDestinationConsentDto = {
     /** When an administrator recorded consent, or null */
     acknowledgedAt: string | null;
@@ -4096,6 +4188,9 @@ export type MlDestinationResponseDto = {
     id: string;
     kind: MlDestinationKind;
     name: string;
+    role: MlWorkerRole;
+    /** A restoration worker on the GPU library analysis uses; its full restorations wait for library work */
+    sharesLibraryHardware: boolean;
     updatedAt: string;
     /** Endpoint URL; null for a RunPod destination with no ready worker */
     url: string | null;
@@ -4103,7 +4198,7 @@ export type MlDestinationResponseDto = {
     workloads: MlWorkload[];
 };
 export type MlDestinationCreateDto = {
-    /** Bearer token for a LAN worker (write-only) */
+    /** Bearer token for a LAN or RunPod video worker (write-only) */
     authToken?: string;
     budgetLimitUsd?: number | null;
     enabled?: boolean;
@@ -4111,7 +4206,9 @@ export type MlDestinationCreateDto = {
     maxRuntimeMinutes?: number | null;
     maxUploadBytes?: number | null;
     name: string;
-    /** Required for a LAN destination, optional for a local one, forbidden for RunPod */
+    /** Restoration workers only: full restorations wait while library analysis has work */
+    sharesLibraryHardware?: boolean;
+    /** Required for a LAN or RunPod video destination, optional for a local one, forbidden for RunPod */
     url?: string;
     workloads?: MlWorkload[];
 };
@@ -4169,6 +4266,8 @@ export type MlDestinationUpdateDto = {
     maxRuntimeMinutes?: number | null;
     maxUploadBytes?: number | null;
     name?: string;
+    /** Restoration workers only: full restorations wait while library analysis has work */
+    sharesLibraryHardware?: boolean;
     url?: string | null;
     workloads?: MlWorkload[];
 };
@@ -10725,6 +10824,17 @@ export function createMlDestination({ mlDestinationCreateDto }: {
     })));
 }
 /**
+ * Get the worker inventory
+ */
+export function getWorkerInventory(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: WorkerInventoryResponseDto;
+    }>("/admin/workers", {
+        ...opts
+    }));
+}
+/**
  * Get machine-learning capabilities
  */
 export function getMlCapabilities(opts?: Oazapfts.RequestOpts) {
@@ -14849,7 +14959,8 @@ export enum StudioPreviewStatus {
 export enum MlDestinationKind {
     Local = "local",
     Lan = "lan",
-    RunPod = "runpod"
+    RunPod = "runpod",
+    RunPodVideo = "runpod-video"
 }
 export enum MlWorkload {
     Face = "face",
@@ -14874,7 +14985,38 @@ export enum MlAdmissionRefusal {
     ConsentMissing = "consent-missing",
     BudgetExceeded = "budget-exceeded",
     EndpointUnresolved = "endpoint-unresolved",
-    DestinationUnhealthy = "destination-unhealthy"
+    DestinationUnhealthy = "destination-unhealthy",
+    RoleConflict = "role-conflict"
+}
+export enum MlWorkerRole {
+    LibraryAnalysis = "library-analysis",
+    Restoration = "restoration",
+    Studio = "studio",
+    Mixed = "mixed",
+    Unassigned = "unassigned"
+}
+export enum MlWorkerAcceleration {
+    Unknown = "unknown",
+    Cpu = "cpu",
+    Gpu = "gpu"
+}
+export enum MlWorkerReadiness {
+    Unknown = "unknown",
+    Disabled = "disabled",
+    Unreachable = "unreachable",
+    NotServing = "not-serving",
+    Cpu = "cpu",
+    ModelReady = "model-ready"
+}
+export enum WorkerCredentialState {
+    None = "none",
+    Stored = "stored",
+    Managed = "managed",
+    Enrolled = "enrolled"
+}
+export enum WorkerInventorySource {
+    MlDestination = "ml-destination",
+    RenderWorker = "render-worker"
 }
 export enum RestorationDynamicRange {
     Sdr = "sdr",

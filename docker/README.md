@@ -32,3 +32,7 @@ Existing custom RunPod image settings and remote resource names are retained. Th
 ## Local builds
 
 `docker-compose.prod.yml` and `docker-compose.dev.yml` build local `frameleaf-*:local` images. They retain their existing project names, development volumes and storage paths and are not interchangeable with the release installation file. Ordinary ML builds explicitly use the `prod` stage; the RunPod variant uses `prod-runpod`. Neither a local image name nor successful compilation establishes release, hardware or model qualification.
+
+## Restoration worker
+
+`docker-compose.restoration.yml` adds a separate restoration container (`frameleaf-restoration`, port 3004 on the Compose network) built from `machine-learning/Dockerfile.video-restoration`. Library analysis stays in `immich-machine-learning`; the two never share a worker. Use it from a source checkout with `docker compose -f docker-compose.yml -f docker-compose.restoration.yml up -d`, then add the worker under Administration > Processing destinations. No restoration image is published and the worker is not qualified; see [Workers and endpoints](../docs/docs/administration/workers-and-endpoints.md) and `machine-learning/video-restoration/README.md`.

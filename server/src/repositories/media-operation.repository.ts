@@ -80,6 +80,21 @@ export type MediaOperationListOptions = {
   skip: number;
 };
 
+/** One server process holding claims (FL-72 worker inventory). Identity only, never whose media. */
+export type MediaOperationClaimantRow = {
+  workerId: string;
+  kind: MediaOperationKind;
+  count: number;
+  lastHeartbeatAt: Date | null;
+};
+
+/** Queued and claimed jobs per destination named in the snapshot (FL-72 worker inventory). */
+export type MediaOperationDestinationLoadRow = {
+  destinationId: string;
+  queued: number;
+  active: number;
+};
+
 /** What the admin aggregate may contain: counts, ages and destinations. Never media, never names. */
 export type MediaOperationAggregateRow = {
   kind: MediaOperationKind;
@@ -408,13 +423,23 @@ export class MediaOperationRepository {
    * `FOR UPDATE SKIP LOCKED` is what makes two workers asking at the same time pick two different
    * jobs instead of both picking the oldest. The returned token is the only way to write to the
    * job afterwards.
+   *
+   * `holdBack` leaves jobs of the given kinds whose snapshot names one of the given destinations
+   * queued for now (FL-72: a full restoration on a worker that shares library analysis's GPU waits
+   * while library analysis has work). They are skipped, not failed or moved, and the next claim
+   * without them in `holdBack` takes them in their original order.
    */
   async claimNext(options: {
     kinds: readonly MediaOperationKind[];
     workerId: string;
     leaseMs: number;
+    holdBack?: { kinds: readonly MediaOperationKind[]; destinationIds: readonly string[] };
   }): Promise<{ operation: MediaOperation; claimToken: string } | undefined> {
     const claimToken = randomUUID();
+    const holdBack =
+      options.holdBack && options.holdBack.kinds.length > 0 && options.holdBack.destinationIds.length > 0
+        ? options.holdBack
+        : undefined;
 
     const row = await this.db
       .updateTable('media_operation')
@@ -439,6 +464,11 @@ export class MediaOperationRepository {
           .where('cancelRequestedAt', 'is', null)
           // A requeued job waits out its retry delay before anybody may take it.
           .where((eb) => eb.or([eb('retryAt', 'is', null), eb('retryAt', '<=', sql<Date>`now()`)]))
+          .$if(!!holdBack, (qb) =>
+            qb.where(
+              sql<boolean>`not ("kind" = any(${[...holdBack!.kinds]}::text[]) and coalesce("snapshot"->>'destinationId', '') = any(${[...holdBack!.destinationIds]}::text[]))`,
+            ),
+          )
           .orderBy('createdAt', 'asc')
           .limit(1)
           .forUpdate()
@@ -1163,5 +1193,63 @@ export class MediaOperationRepository {
       count: Number(row.count),
       oldestQueuedAt: (row.oldestQueuedAt as Date | null) ?? null,
     }));
+  }
+
+  /**
+   * Who holds claims on these kinds right now, grouped by worker identity and kind (FL-72). The
+   * worker identity is the claiming process (`restoration:<host>:<pid>` or a render worker id);
+   * no owner, asset or label is read.
+   */
+  async getClaimants(kinds: readonly MediaOperationKind[]): Promise<MediaOperationClaimantRow[]> {
+    if (kinds.length === 0) {
+      return [];
+    }
+    const rows = await this.db
+      .selectFrom('media_operation')
+      .select((eb) => [
+        'claimedBy',
+        'kind',
+        eb.fn.countAll<string>().as('count'),
+        eb.fn.max('heartbeatAt').as('lastHeartbeatAt'),
+      ])
+      .where('kind', 'in', [...kinds])
+      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+      .where('claimedBy', 'is not', null)
+      .groupBy(['claimedBy', 'kind'])
+      .execute();
+
+    return rows.map((row) => ({
+      workerId: row.claimedBy as string,
+      kind: row.kind as MediaOperationKind,
+      count: Number(row.count),
+      lastHeartbeatAt: (row.lastHeartbeatAt as Date | null) ?? null,
+    }));
+  }
+
+  /**
+   * Queued and claimed jobs of these kinds per destination the snapshot names (FL-72). Counts
+   * only; an administrator learns how busy a worker is, not whose media it holds.
+   */
+  async getDestinationLoad(kinds: readonly MediaOperationKind[]): Promise<MediaOperationDestinationLoadRow[]> {
+    if (kinds.length === 0) {
+      return [];
+    }
+    const destinationId = sql<string>`"snapshot"->>'destinationId'`;
+    const rows = await this.db
+      .selectFrom('media_operation')
+      .select([
+        destinationId.as('destinationId'),
+        sql<string>`count(*) filter (where "status" = ${MediaOperationStatus.Queued})`.as('queued'),
+        sql<string>`count(*) filter (where "status" = any(${[...CLAIMED_MEDIA_OPERATION_STATUSES]}::text[]))`.as('active'),
+      ])
+      .where('kind', 'in', [...kinds])
+      .where('status', 'in', [MediaOperationStatus.Queued, ...CLAIMED_MEDIA_OPERATION_STATUSES])
+      .where(destinationId, 'is not', null)
+      .groupBy(destinationId)
+      .execute();
+
+    return rows
+      .map((row) => ({ destinationId: row.destinationId, queued: Number(row.queued), active: Number(row.active) }))
+      .filter((row) => row.queued > 0 || row.active > 0);
   }
 }

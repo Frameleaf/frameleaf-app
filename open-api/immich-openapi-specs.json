@@ -14000,7 +14000,8 @@
           "consent-missing",
           "budget-exceeded",
           "endpoint-unresolved",
-          "destination-unhealthy"
+          "destination-unhealthy",
+          "role-conflict"
         ],
         "type": "string"
       },
@@ -14213,7 +14214,7 @@
       "MlDestinationCreateDto": {
         "properties": {
           "authToken": {
-            "description": "Bearer token for a LAN worker (write-only)",
+            "description": "Bearer token for a LAN or RunPod video worker (write-only)",
             "maxLength": 4096,
             "type": "string"
           },
@@ -14247,8 +14248,12 @@
             "minLength": 1,
             "type": "string"
           },
+          "sharesLibraryHardware": {
+            "description": "Restoration workers only: full restorations wait while library analysis has work",
+            "type": "boolean"
+          },
           "url": {
-            "description": "Required for a LAN destination, optional for a local one, forbidden for RunPod",
+            "description": "Required for a LAN or RunPod video destination, optional for a local one, forbidden for RunPod",
             "format": "uri",
             "type": "string"
           },
@@ -14313,7 +14318,8 @@
         "enum": [
           "local",
           "lan",
-          "runpod"
+          "runpod",
+          "runpod-video"
         ],
         "type": "string"
       },
@@ -14349,6 +14355,13 @@
           "name": {
             "type": "string"
           },
+          "role": {
+            "$ref": "#/components/schemas/MlWorkerRole"
+          },
+          "sharesLibraryHardware": {
+            "description": "A restoration worker on the GPU library analysis uses; its full restorations wait for library work",
+            "type": "boolean"
+          },
           "updatedAt": {
             "type": "string"
           },
@@ -14375,6 +14388,8 @@
           "id",
           "kind",
           "name",
+          "role",
+          "sharesLibraryHardware",
           "updatedAt",
           "url",
           "workloads"
@@ -14414,6 +14429,10 @@
             "maxLength": 80,
             "minLength": 1,
             "type": "string"
+          },
+          "sharesLibraryHardware": {
+            "description": "Restoration workers only: full restorations wait while library analysis has work",
+            "type": "boolean"
           },
           "url": {
             "format": "uri",
@@ -14513,6 +14532,38 @@
           "windowDays"
         ],
         "type": "object"
+      },
+      "MlWorkerAcceleration": {
+        "description": "Acceleration a worker reported on its last check",
+        "enum": [
+          "unknown",
+          "cpu",
+          "gpu"
+        ],
+        "type": "string"
+      },
+      "MlWorkerReadiness": {
+        "description": "State of one worker in the inventory",
+        "enum": [
+          "unknown",
+          "disabled",
+          "unreachable",
+          "not-serving",
+          "cpu",
+          "model-ready"
+        ],
+        "type": "string"
+      },
+      "MlWorkerRole": {
+        "description": "What a worker is for",
+        "enum": [
+          "library-analysis",
+          "restoration",
+          "studio",
+          "mixed",
+          "unassigned"
+        ],
+        "type": "string"
       },
       "MlWorkload": {
         "description": "Machine-learning workload",
@@ -27447,6 +27498,390 @@
         ],
         "type": "string"
       },
+      "WorkerCredentialState": {
+        "description": "How a worker credential is held",
+        "enum": [
+          "none",
+          "stored",
+          "managed",
+          "enrolled"
+        ],
+        "type": "string"
+      },
+      "WorkerGpuDto": {
+        "properties": {
+          "memoryTotalBytes": {
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "memoryTotalBytes",
+          "name"
+        ],
+        "type": "object"
+      },
+      "WorkerInventoryEntryDto": {
+        "properties": {
+          "acceleration": {
+            "$ref": "#/components/schemas/MlWorkerAcceleration"
+          },
+          "activeOperations": {
+            "description": "Jobs running here now",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "admission": {
+            "description": "Per allowed workload, from the last check",
+            "items": {
+              "$ref": "#/components/schemas/WorkerWorkloadAdmissionDto"
+            },
+            "type": "array"
+          },
+          "allowedWorkloads": {
+            "items": {
+              "$ref": "#/components/schemas/MlWorkload"
+            },
+            "type": "array"
+          },
+          "checkedAt": {
+            "description": "Last check or check-in",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "configured": {
+            "description": "For a local destination: its URL is still in the machine-learning URL list. Always true otherwise",
+            "type": "boolean"
+          },
+          "consentGranted": {
+            "description": "True when no consent is needed or it is recorded",
+            "type": "boolean"
+          },
+          "credential": {
+            "$ref": "#/components/schemas/WorkerCredentialState"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "gpuMemoryBytes": {
+            "description": "Largest GPU memory reported or qualified, or null when unknown",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "gpus": {
+            "description": "GPUs the worker reported, with memory; empty when not reported",
+            "items": {
+              "$ref": "#/components/schemas/WorkerGpuDto"
+            },
+            "type": "array"
+          },
+          "id": {
+            "description": "ML destination ID or render worker ID",
+            "type": "string"
+          },
+          "kind": {
+            "description": "ML destination kind, or the render worker destination",
+            "type": "string"
+          },
+          "latencyMs": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "leavesNetwork": {
+            "description": "Work sent here leaves the network",
+            "type": "boolean"
+          },
+          "maxConcurrentOperations": {
+            "description": "Render workers: the most they may hold at once",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "queuedOperations": {
+            "description": "Jobs waiting for this worker",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/MlWorkerReadiness"
+          },
+          "renderKinds": {
+            "description": "Operation kinds a render worker may claim",
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            },
+            "type": "array"
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlWorkerRole"
+              }
+            ],
+            "description": "What an ML destination is for; null for a render worker",
+            "nullable": true
+          },
+          "routedWorkloads": {
+            "description": "Workloads whose route names this destination",
+            "items": {
+              "$ref": "#/components/schemas/MlWorkload"
+            },
+            "type": "array"
+          },
+          "servedWorkloads": {
+            "description": "Workloads the worker reported on its last check, or null when it never answered",
+            "items": {
+              "$ref": "#/components/schemas/MlWorkload"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "sharesLibraryHardware": {
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/components/schemas/WorkerInventorySource"
+          },
+          "summary": {
+            "nullable": true,
+            "type": "string"
+          },
+          "url": {
+            "description": "Endpoint URL, or null when there is none to show",
+            "nullable": true,
+            "type": "string"
+          },
+          "waitingForLibraryAnalysis": {
+            "description": "Full restorations bound here are waiting because library analysis has work",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "acceleration",
+          "activeOperations",
+          "admission",
+          "allowedWorkloads",
+          "checkedAt",
+          "configured",
+          "consentGranted",
+          "credential",
+          "enabled",
+          "gpuMemoryBytes",
+          "gpus",
+          "id",
+          "kind",
+          "latencyMs",
+          "leavesNetwork",
+          "maxConcurrentOperations",
+          "name",
+          "queuedOperations",
+          "readiness",
+          "renderKinds",
+          "role",
+          "routedWorkloads",
+          "servedWorkloads",
+          "sharesLibraryHardware",
+          "source",
+          "summary",
+          "url",
+          "waitingForLibraryAnalysis"
+        ],
+        "type": "object"
+      },
+      "WorkerInventoryResponseDto": {
+        "properties": {
+          "checkedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "configuredUrls": {
+            "description": "The machine-learning URL list, in order",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/WorkerInventoryEntryDto"
+            },
+            "type": "array"
+          },
+          "libraryBacklog": {
+            "description": "Library-analysis jobs active or waiting, not counting paused queues",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "libraryQueues": {
+            "items": {
+              "$ref": "#/components/schemas/WorkerQueueBacklogDto"
+            },
+            "type": "array"
+          },
+          "libraryRoutes": {
+            "items": {
+              "$ref": "#/components/schemas/WorkerLibraryRouteDto"
+            },
+            "type": "array"
+          },
+          "machineLearningEnabled": {
+            "type": "boolean"
+          },
+          "runners": {
+            "description": "Server processes running restorations now",
+            "items": {
+              "$ref": "#/components/schemas/WorkerRunnerDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "checkedAt",
+          "configuredUrls",
+          "entries",
+          "libraryBacklog",
+          "libraryQueues",
+          "libraryRoutes",
+          "machineLearningEnabled",
+          "runners"
+        ],
+        "type": "object"
+      },
+      "WorkerInventorySource": {
+        "description": "Where an inventory entry comes from",
+        "enum": [
+          "ml-destination",
+          "render-worker"
+        ],
+        "type": "string"
+      },
+      "WorkerLibraryRouteDto": {
+        "properties": {
+          "destinationId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "queues": {
+            "description": "Queues whose jobs run this workload",
+            "items": {
+              "$ref": "#/components/schemas/QueueName"
+            },
+            "type": "array"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "destinationId",
+          "queues",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "WorkerQueueBacklogDto": {
+        "properties": {
+          "active": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "queue": {
+            "$ref": "#/components/schemas/QueueName"
+          },
+          "waiting": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active",
+          "paused",
+          "queue",
+          "waiting"
+        ],
+        "type": "object"
+      },
+      "WorkerRunnerDto": {
+        "properties": {
+          "activeOperations": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "kinds": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            },
+            "type": "array"
+          },
+          "lastHeartbeatAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "workerId": {
+            "description": "The server process holding the claims",
+            "type": "string"
+          }
+        },
+        "required": [
+          "activeOperations",
+          "kinds",
+          "lastHeartbeatAt",
+          "workerId"
+        ],
+        "type": "object"
+      },
+      "WorkerWorkloadAdmissionDto": {
+        "properties": {
+          "admitted": {
+            "description": "Whether the last check would admit this workload here",
+            "type": "boolean"
+          },
+          "detail": {
+            "description": "Why it would be refused, or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "refusal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlAdmissionRefusal"
+              }
+            ],
+            "nullable": true
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "admitted",
+          "detail",
+          "refusal",
+          "workload"
+        ],
+        "type": "object"
+      },
       "WorkflowCreateDto": {
         "properties": {
           "description": {
@@ -32609,6 +33044,53 @@
         ],
         "x-immich-permission": "adminUser.read",
         "x-immich-state": "Stable"
+      }
+    },
+    "/admin/workers": {
+      "get": {
+        "description": "Every machine-learning, restoration and render endpoint with its last known state, acceleration, allowed and served workloads, library routes, per-workload admission and load, plus the server processes running restorations. Read-only; nothing is contacted.",
+        "operationId": "getWorkerInventory",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerInventoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the worker inventory",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/albums": {
