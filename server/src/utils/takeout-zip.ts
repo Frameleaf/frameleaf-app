@@ -21,6 +21,8 @@ export type TakeoutZipEntry = {
   uncompressedSize: number;
   crc32: number;
   localHeaderOffset: number;
+  /** Where the next entry's header (or the directory) begins; this entry's data must end before it. */
+  dataLimit: number;
   modifiedAt: Date;
   /** Refused before reading: the entry is encrypted, a link, or uses an unsupported method. */
   refused?: 'encrypted' | 'link' | 'compression';
@@ -287,6 +289,7 @@ export const readTakeoutZipDirectory = async (source: TakeoutZipSource): Promise
       uncompressedSize,
       crc32,
       localHeaderOffset,
+      dataLimit: directoryOffset,
       modifiedAt: zipDosDate(date, time),
       ...(refused ? { refused } : {}),
     });
@@ -300,6 +303,7 @@ export const readTakeoutZipDirectory = async (source: TakeoutZipSource): Promise
     if (previous.localHeaderOffset + LOCAL_MIN + previous.compressedSize > ordered[index].localHeaderOffset) {
       refuse(`${ordered[index].name.slice(0, 80)} overlaps the entry before it`);
     }
+    previous.dataLimit = ordered[index].localHeaderOffset;
   }
 
   return entries;
@@ -314,6 +318,11 @@ export const takeoutZipDataOffset = async (source: TakeoutZipSource, entry: Take
   const start = entry.localHeaderOffset + LOCAL_MIN + header.readUInt16LE(26) + header.readUInt16LE(28);
   if (start + entry.compressedSize > source.size) {
     refuse(`${entry.name.slice(0, 80)} runs past the end of the archive`);
+  }
+  // The local header's own name and extra field count too: data that reaches into the next entry
+  // would let two entries share compressed bytes.
+  if (start + entry.compressedSize > entry.dataLimit) {
+    refuse(`${entry.name.slice(0, 80)} runs into the entry after it`);
   }
   return start;
 };

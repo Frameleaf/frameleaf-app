@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql, Transaction } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AlbumUserRole, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import type { MediaOperation, MediaOperationCreate } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
   TakeoutFileKind,
@@ -68,6 +69,8 @@ export type TakeoutItem = {
   locked: boolean;
   assetId: string | null;
   resultKind: TakeoutResultKind | null;
+  /** Where a run copied the file before creating its asset (see the column). */
+  createPath: string | null;
   error: string | null;
   /** From the file. */
   relativePath: string;
@@ -116,6 +119,9 @@ export type TakeoutAssetState = {
   isFavorite: boolean;
   visibility: string;
   livePhotoVideoId: string | null;
+  originalPath: string;
+  /** The asset has a lock record. */
+  locked: boolean;
 };
 
 export type TakeoutCounts = Record<TakeoutItemState, number> & {
@@ -128,6 +134,15 @@ export type TakeoutCounts = Record<TakeoutItemState, number> & {
 };
 
 const json = (value: unknown) => sql`${JSON.stringify(value)}::text::jsonb`;
+
+/**
+ * An item that must not be named to a session that has not unlocked Locked: it goes into Locked, or
+ * it matched a library photo that is Locked already.
+ */
+const itemIsLocked = (alias: string) =>
+  sql<boolean>`(${sql.ref(`${alias}.locked`)} or exists (
+    select 1 from asset_lock where asset_lock."assetId" = ${sql.ref(`${alias}.assetId`)}
+  ))`;
 
 /** Media operation statuses that still hold an import. */
 const ACTIVE = [
@@ -205,6 +220,7 @@ const mapItem = (row: Record<string, unknown>): TakeoutItem => ({
   locked: row.locked === true,
   assetId: (row.assetId as string | null) ?? null,
   resultKind: (row.resultKind as TakeoutResultKind | null) ?? null,
+  createPath: (row.createPath as string | null) ?? null,
   error: (row.error as string | null) ?? null,
   relativePath: row.relativePath as string,
   folder: row.folder as string,
@@ -239,13 +255,40 @@ export class TakeoutRepository {
   /* Imports                                                             */
   /* ------------------------------------------------------------------ */
 
-  async create(ownerId: string, name: string, options: TakeoutOptions): Promise<TakeoutImport> {
-    const { rows } = await sql<Record<string, unknown>>`
-      insert into takeout_import ("ownerId", "name", "options")
-      values (${ownerId}::uuid, ${name}, ${json(options)})
-      returning *
-    `.execute(this.db);
-    return mapImport(rows[0]);
+  /** A new import, with the server folder it reads from when an administrator chose one. */
+  create(
+    ownerId: string,
+    name: string,
+    options: TakeoutOptions,
+    directory?: { name: string; path: string },
+  ): Promise<TakeoutImport> {
+    return this.db.transaction().execute(async (tx) => {
+      const { rows } = await sql<Record<string, unknown>>`
+        insert into takeout_import ("ownerId", "name", "options")
+        values (${ownerId}::uuid, ${name}, ${json(options)})
+        returning *
+      `.execute(tx);
+      const row = mapImport(rows[0]);
+      if (directory) {
+        await this.addSource(tx, {
+          importId: row.id,
+          name: directory.name,
+          kind: 'directory',
+          path: directory.path,
+          size: 0,
+        });
+      }
+      return row;
+    });
+  }
+
+  /**
+   * Queue a job for the import inside the caller's transaction, so no worker can see the job before
+   * the phase that goes with it has committed.
+   */
+  async insertOperation(tx: Transaction<DB>, operation: MediaOperationCreate): Promise<MediaOperation> {
+    const row = await tx.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
+    return row as unknown as MediaOperation;
   }
 
   async get(ownerId: string, id: string): Promise<TakeoutImport | undefined> {
@@ -419,6 +462,33 @@ export class TakeoutRepository {
     await sql`update takeout_source set path = ${path} where id = ${sourceId}::uuid`.execute(tx);
   }
 
+  /** The staged copies made from one source. */
+  async sourceFilePaths(tx: Kysely<DB>, sourceId: string): Promise<string[]> {
+    const { rows } = await sql<{ path: string }>`
+      select path from takeout_file where "sourceId" = ${sourceId}::uuid
+    `.execute(tx);
+    return rows.map((row) => row.path);
+  }
+
+  /** Bytes of archives the owner has staged in imports that have not finished. */
+  async stagedArchiveBytes(tx: Kysely<DB>, ownerId: string): Promise<number> {
+    const { rows } = await sql<{ total: string | null }>`
+      select coalesce(sum(source.size), 0) as total
+      from takeout_source source
+      inner join takeout_import import on import.id = source."importId"
+      where import."ownerId" = ${ownerId}::uuid and import.phase <> 'completed' and source.kind = 'zip'
+    `.execute(tx);
+    return toNumber(rows[0]?.total);
+  }
+
+  /** Bytes the scan has extracted for an import so far. */
+  async stagedFileBytes(importId: string): Promise<number> {
+    const { rows } = await sql<{ total: string | null }>`
+      select coalesce(sum(size), 0) as total from takeout_file where "importId" = ${importId}::uuid
+    `.execute(this.db);
+    return toNumber(rows[0]?.total);
+  }
+
   async removeSource(tx: Transaction<DB>, sourceId: string): Promise<void> {
     await sql`delete from takeout_source where id = ${sourceId}::uuid`.execute(tx);
   }
@@ -562,7 +632,7 @@ export class TakeoutRepository {
   ): Promise<{ items: TakeoutItem[]; total: number }> {
     const where = sql`item."importId" = ${importId}::uuid
       ${query.state ? sql`and item.state = ${query.state}` : sql``}
-      ${query.includeLocked ? sql`` : sql`and item.locked = false`}`;
+      ${query.includeLocked ? sql`` : sql`and not ${itemIsLocked('item')}`}`;
     const [{ rows }, count] = await Promise.all([
       this.itemSelect(
         this.db,
@@ -640,11 +710,13 @@ export class TakeoutRepository {
     `.execute(tx);
   }
 
-  async countReview(tx: Kysely<DB>, importId: string): Promise<number> {
-    const { rows } = await sql<{ total: string }>`
-      select count(*) as total from takeout_item where "importId" = ${importId}::uuid and state = 'review'
+  /** Items waiting for a decision, and how many of them a locked session cannot see. */
+  async countReview(tx: Kysely<DB>, importId: string): Promise<{ total: number; locked: number }> {
+    const { rows } = await sql<{ total: string; locked: string }>`
+      select count(*) as total, count(*) filter (where ${itemIsLocked('takeout_item')}) as locked
+      from takeout_item where "importId" = ${importId}::uuid and state = 'review'
     `.execute(tx);
-    return toNumber(rows[0]?.total);
+    return { total: toNumber(rows[0]?.total), locked: toNumber(rows[0]?.locked) };
   }
 
   /**
@@ -652,9 +724,9 @@ export class TakeoutRepository {
    * and before `itemAsset` finds the checksum in the library on its next attempt, and this tells it
    * the asset is its own creation rather than a photo that was already there.
    */
-  async itemCreating(itemId: string): Promise<void> {
+  async itemCreating(itemId: string, createPath: string): Promise<void> {
     await sql`
-      update takeout_item set state = 'importing', "resultKind" = coalesce("resultKind", 'created'), "updatedAt" = now()
+      update takeout_item set state = 'importing', "createPath" = ${createPath}, "updatedAt" = now()
       where id = ${itemId}::uuid
     `.execute(this.db);
   }
@@ -676,7 +748,7 @@ export class TakeoutRepository {
   async counts(importId: string): Promise<TakeoutCounts> {
     const [states, files, pairs, rejected] = await Promise.all([
       sql<{ state: TakeoutItemState; total: string; locked: string }>`
-        select state, count(*) as total, count(*) filter (where locked) as locked
+        select state, count(*) as total, count(*) filter (where ${itemIsLocked('takeout_item')}) as locked
         from takeout_item where "importId" = ${importId}::uuid group by state
       `.execute(this.db),
       sql<{ total: string }>`select count(*) as total from takeout_file where "importId" = ${importId}::uuid`.execute(
@@ -744,11 +816,16 @@ export class TakeoutRepository {
     return { matchedOriginals: toNumber(rows[0]?.matched), newAssets: toNumber(rows[0]?.fresh) };
   }
 
-  async albums(importId: string): Promise<Array<{ folder: string; count: number }>> {
+  /**
+   * The export's folders with their item counts. For a session that has not unlocked Locked, Locked
+   * items are not counted, and a folder holding only Locked items is not listed.
+   */
+  async albums(importId: string, includeLocked: boolean): Promise<Array<{ folder: string; count: number }>> {
     const { rows } = await sql<{ folder: string; count: string }>`
       select file.folder, count(*) as count
       from takeout_item item inner join takeout_file file on file.id = item.id
       where item."importId" = ${importId}::uuid and file.folder <> ''
+        ${includeLocked ? sql`` : sql`and not ${itemIsLocked('item')}`}
       group by file.folder order by file.folder
     `.execute(this.db);
     return rows.map((row) => ({ folder: row.folder, count: toNumber(row.count) }));
@@ -772,7 +849,7 @@ export class TakeoutRepository {
   ): Promise<{ pairs: TakeoutPair[]; total: number }> {
     const where = sql`pair."importId" = ${importId}::uuid
       ${query.state ? sql`and pair.state = ${query.state}` : sql``}
-      ${query.includeLocked ? sql`` : sql`and photo_item.locked = false and video_item.locked = false`}`;
+      ${query.includeLocked ? sql`` : sql`and not ${itemIsLocked('photo_item')} and not ${itemIsLocked('video_item')}`}`;
     const from = sql`
       from takeout_pair pair
       inner join takeout_item photo_item on photo_item.id = pair."photoItemId"
@@ -874,25 +951,42 @@ export class TakeoutRepository {
   }
 
   /**
-   * Record the album a folder became. When another run recorded one first and it is still usable,
-   * that one wins and is returned, so two runs never leave the owner with two albums for one folder.
+   * Record the album a folder became, unless another run recorded a usable one first: the album that
+   * is recorded is returned, and the caller removes its own when it lost. A mapping whose album was
+   * deleted, or is no longer the owner's, is replaced.
    */
   async setAlbumFor(ownerId: string, folder: string, albumId: string): Promise<string> {
-    const existing = await this.getAlbumFor(ownerId, folder);
-    if (existing) {
-      return existing;
-    }
-    await sql`
-      insert into takeout_album ("ownerId", folder, "albumId") values (${ownerId}::uuid, ${folder}, ${albumId}::uuid)
-      on conflict ("ownerId", folder) do update set "albumId" = excluded."albumId"
-    `.execute(this.db);
-    return albumId;
+    return this.db.transaction().execute(async (tx) => {
+      await sql`
+        delete from takeout_album mapping
+        where mapping."ownerId" = ${ownerId}::uuid and mapping.folder = ${folder}
+          and not exists (
+            select 1 from album
+            inner join album_user owner on owner."albumId" = album.id and owner."userId" = ${ownerId}::uuid
+              and owner.role = ${AlbumUserRole.Owner}
+            where album.id = mapping."albumId" and album."deletedAt" is null
+          )
+      `.execute(tx);
+      const { rows } = await sql<{ albumId: string }>`
+        insert into takeout_album ("ownerId", folder, "albumId") values (${ownerId}::uuid, ${folder}, ${albumId}::uuid)
+        on conflict ("ownerId", folder) do nothing
+        returning "albumId"
+      `.execute(tx);
+      if (rows[0]) {
+        return rows[0].albumId;
+      }
+      const { rows: existing } = await sql<{ albumId: string }>`
+        select "albumId" from takeout_album where "ownerId" = ${ownerId}::uuid and folder = ${folder}
+      `.execute(tx);
+      return existing[0]?.albumId ?? albumId;
+    });
   }
 
   async getAssetState(assetId: string): Promise<TakeoutAssetState | undefined> {
     const { rows } = await sql<Record<string, unknown>>`
       select asset.id, asset."ownerId", asset."deletedAt", asset."isFavorite", asset.visibility, asset."livePhotoVideoId",
-             asset_exif.description, asset_exif.latitude, asset_exif.longitude
+             asset."originalPath", asset_exif.description, asset_exif.latitude, asset_exif.longitude,
+             exists (select 1 from asset_lock where asset_lock."assetId" = asset.id) as locked
       from asset left join asset_exif on asset_exif."assetId" = asset.id
       where asset.id = ${assetId}::uuid
     `.execute(this.db);
@@ -910,6 +1004,8 @@ export class TakeoutRepository {
       isFavorite: row.isFavorite === true,
       visibility: row.visibility as string,
       livePhotoVideoId: (row.livePhotoVideoId as string | null) ?? null,
+      originalPath: row.originalPath as string,
+      locked: row.locked === true,
     };
   }
 }

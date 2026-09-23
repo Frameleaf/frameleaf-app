@@ -52982,7 +52982,7 @@
           },
           {
             "name": "offset",
-            "required": false,
+            "required": true,
             "in": "query",
             "description": "Byte offset of this chunk",
             "schema": {

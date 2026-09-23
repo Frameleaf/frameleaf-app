@@ -220,6 +220,14 @@ export class TakeoutItemTable {
   @Column({ nullable: true })
   resultKind!: TakeoutResultKind | null;
 
+  /**
+   * The library path a run copied this item to before creating its asset. A later run that finds an
+   * asset with the item's checksum counts it as this import's own creation only when the asset is at
+   * this path; otherwise the photo was already in the library and is only matched.
+   */
+  @Column({ nullable: true })
+  createPath!: string | null;
+
   @Column({ type: 'text', nullable: true })
   error!: string | null;
 
