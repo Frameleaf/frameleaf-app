@@ -442,6 +442,11 @@
     if (!shortcut) {
       return;
     }
+    // FL-61: while Compare is open only Escape (back to the results) reaches the library; selecting,
+    // grouping or acting on the selection underneath would change what is being compared
+    if (comparing && shortcut.id !== 'close') {
+      return;
+    }
     switch (shortcut.id) {
       case 'help': {
         event.preventDefault();

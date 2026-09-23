@@ -14,6 +14,7 @@ import {
   DuplicateGroupBlock,
   DuplicateGroupKind,
   MediaOperationItemStatus,
+  MediaOperationStatus,
   Permission,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -41,6 +42,7 @@ import {
   parseDuplicateGroups,
 } from 'src/utils/duplicate-review.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
+import { isActiveMediaOperation } from 'src/utils/media-operation.js';
 
 /** How many recent decision jobs the review keeps undoable across a reload. */
 export const DUPLICATE_DECISION_HISTORY = 10;
@@ -62,7 +64,7 @@ export const DuplicateDecisionReason = {
 } as const;
 
 type KeeperStates = Record<string, DuplicateKeeperState>;
-type DecisionState = { before?: KeeperStates; after?: KeeperStates };
+type DecisionState = { before?: KeeperStates; after?: KeeperStates; permanent?: boolean };
 
 const sameSet = (left: readonly string[], right: readonly string[]) => {
   const a = new Set(left);
@@ -87,8 +89,11 @@ const keeperStatesOf = (map: Map<string, DuplicateKeeperState>): KeeperStates =>
 
 const readState = (decision: DuplicateDecision): DecisionState => {
   const state = (decision.state ?? {}) as DecisionState;
-  return { before: state.before ?? {}, after: state.after ?? {} };
+  return { before: state.before ?? {}, after: state.after ?? {}, permanent: state.permanent === true };
 };
+
+/** How far a job's retry lineage is followed back when deciding whether it may carry on a decision. */
+const LINEAGE_DEPTH = 10;
 
 /**
  * Duplicate review decisions (FL-61): the review list, the history an undo is made from, and the
@@ -211,9 +216,12 @@ export class DuplicateDecisionService {
     const locked = getLockedOwnerId(auth) ? new Set<string>() : await this.repository.getLockedIds([...ids]);
     const visible = (memberIds: readonly string[]) => memberIds.every((id) => !locked.has(id));
 
+    const running = new Set(operations.map(({ id }) => id));
     const batches = new Map<string, DuplicateDecisionBatchDto>();
     for (const decision of decisions) {
-      if (!decision.operationId || !visible(decision.memberIds)) {
+      // a decision its job closed without applying never happened as far as the owner is concerned
+      const closed = !decision.appliedAt && !!decision.undoneAt;
+      if (!decision.operationId || closed || !visible(decision.memberIds)) {
         continue;
       }
       const createdAt = new Date(decision.createdAt as unknown as string | Date).toISOString();
@@ -232,10 +240,13 @@ export class DuplicateDecisionService {
         trashAssetIds: decision.trashAssetIds,
         applied: !!decision.appliedAt,
         undone: !!decision.undoneAt,
-        undoing: !!decision.undoOperationId && !decision.undoneAt,
+        // an undo whose job ended without finishing no longer holds the decision (`beginUndo`)
+        undoing: !!decision.undoOperationId && !decision.undoneAt && running.has(decision.undoOperationId),
       };
       batch.groups.push(group);
-      batch.undoable = batch.undoable && group.applied && !group.undone && !group.undoing;
+      // with the trash off the removed copies were deleted for good: nothing to bring back
+      const permanent = readState(decision).permanent === true;
+      batch.undoable = batch.undoable && group.applied && !group.undone && !group.undoing && !permanent;
       if (createdAt > batch.createdAt) {
         batch.createdAt = createdAt;
       }
@@ -280,14 +291,25 @@ export class DuplicateDecisionService {
     }
 
     if (!decision) {
-      // a job that failed as a whole may have left this group half decided; the retry finishes it,
-      // but only when it is the same decision — a different one is for the owner to review again
+      // Another job started this group and did not finish it. A retry of that job finishes it — the
+      // same decision only; a job still running elsewhere keeps it; and a job that ended with nobody
+      // retrying it gives it up, so the group can be decided again (from what it is now: whatever
+      // that job did change is caught by the membership check below).
       const unfinished = await this.repository.getUnfinished(ownerId, group.duplicateId);
       if (unfinished) {
-        if (!this.samePlan(unfinished, group)) {
+        const claim = await this.claimOf(unfinished, operationId);
+        if (claim === 'running') {
           return skipped(ids, DuplicateDecisionReason.Changed);
         }
-        decision = unfinished;
+        if (claim === 'retry') {
+          if (!this.samePlan(unfinished, group)) {
+            return skipped(ids, DuplicateDecisionReason.Changed);
+          }
+          await this.repository.adopt(unfinished.id, operationId);
+          decision = { ...unfinished, operationId };
+        } else {
+          await this.repository.close(unfinished.id);
+        }
       }
     }
 
@@ -327,6 +349,32 @@ export class DuplicateDecisionService {
     return ok(ids);
   }
 
+  /**
+   * Who may carry on a decision another job started: a retry of that job (`retry`), nobody while that
+   * job is still running (`running`), or anybody once it has ended with no retry (`abandoned`).
+   */
+  private async claimOf(decision: DuplicateDecision, operationId: string): Promise<'retry' | 'running' | 'abandoned'> {
+    if (!decision.operationId) {
+      return 'abandoned';
+    }
+
+    let current = await this.repository.getOperation(operationId);
+    for (let depth = 0; current?.retryOfId && depth < LINEAGE_DEPTH; depth++) {
+      if (current.retryOfId === decision.operationId) {
+        return 'retry';
+      }
+      current = await this.repository.getOperation(current.retryOfId);
+    }
+
+    return (await this.isRunning(decision.operationId)) ? 'running' : 'abandoned';
+  }
+
+  /** Whether a durable job is still queued, running, paused or waiting for its automatic retry. */
+  private async isRunning(operationId: string): Promise<boolean> {
+    const operation = await this.repository.getOperation(operationId);
+    return !!operation && isActiveMediaOperation(operation.status as MediaOperationStatus);
+  }
+
   /** Whether a recorded decision is the same one this group asks for. */
   private samePlan(decision: DuplicateDecision, group: DuplicateGroupDecision): boolean {
     const keep = group.decision === DuplicateDecisionKind.KeepAll ? group.memberIds : group.keepAssetIds;
@@ -346,8 +394,10 @@ export class DuplicateDecisionService {
    */
   private async checkGroup(auth: AuthDto, group: DuplicateGroupDecision): Promise<string | null> {
     const members = await this.repository.getGroupMembers([group.duplicateId]);
-    if (members.some((member) => member.ownerId !== auth.user.id)) {
-      return DuplicateDecisionReason.NotOwner;
+    // a group that does not exist and one holding another account's photo answer the same way, so a
+    // crafted group id tells nobody anything
+    if (members.length === 0 || members.some((member) => member.ownerId !== auth.user.id)) {
+      return DuplicateDecisionReason.NotFound;
     }
     const memberIds = members.map(({ id }) => id);
     if (!sameSet(memberIds, group.memberIds)) {
@@ -384,20 +434,32 @@ export class DuplicateDecisionService {
    */
   private async applyRecorded(auth: AuthDto, decision: DuplicateDecision): Promise<string | null> {
     let stackId: string | null = decision.stackId;
+    let permanent = false;
+
+    // Whatever is resumed, the group may hold nothing the owner did not review: a photo that joined
+    // it since, or one the review never showed, is never kept, stacked or trashed on their behalf.
+    const current = (await this.repository.getGroupMembers([decision.duplicateId])).map(({ id }) => id);
+    if (current.some((id) => !decision.memberIds.includes(id))) {
+      return 'A photo joined this duplicate group while the decision was being applied';
+    }
 
     switch (decision.decision) {
       case DuplicateDecisionKind.Keepers: {
-        const problem = await this.applyKeepers(auth, decision);
+        const problem = await this.applyKeepers(auth, decision, current);
         if (problem) {
           return problem;
         }
+        // with the trash off, resolve deletes for good; such a decision can never be undone
+        const trashed = await this.repository.getAssetStates(decision.trashAssetIds);
+        permanent =
+          trashed.length < decision.trashAssetIds.length ||
+          trashed.some((state) => state.status === AssetStatus.Deleted);
         break;
       }
 
       case DuplicateDecisionKind.KeepAll: {
-        if (await this.hasMembers(decision.duplicateId)) {
-          await this.duplicates.delete(auth, decision.duplicateId);
-        }
+        // dismiss exactly the reviewed photos; `DuplicateService.delete` would take the whole group
+        await this.repository.unlink(auth.user.id, decision.memberIds, decision.duplicateId);
         break;
       }
 
@@ -412,7 +474,7 @@ export class DuplicateDecisionService {
       decision.decision === DuplicateDecisionKind.Keepers
         ? keeperStatesOf(await this.repository.getKeeperStates(decision.keepAssetIds))
         : {};
-    await this.repository.markApplied(decision.id, { stackId, state: { before, after } });
+    await this.repository.markApplied(decision.id, { stackId, state: { before, after, permanent } });
     return null;
   }
 
@@ -423,14 +485,12 @@ export class DuplicateDecisionService {
    * On a replay only the photos still in the group are sent: a keeper the first attempt already
    * released is not sent again, so its metadata is not merged twice.
    */
-  private async applyKeepers(auth: AuthDto, decision: DuplicateDecision): Promise<string | null> {
-    const current = (await this.repository.getGroupMembers([decision.duplicateId])).map(({ id }) => id);
-
+  private async applyKeepers(
+    auth: AuthDto,
+    decision: DuplicateDecision,
+    current: readonly string[],
+  ): Promise<string | null> {
     if (current.length > 0) {
-      if (current.some((id) => !decision.memberIds.includes(id))) {
-        return 'A photo joined this duplicate group while the decision was being applied';
-      }
-
       const keepAssetIds = decision.keepAssetIds.filter((id) => current.includes(id));
       const trashAssetIds = decision.trashAssetIds.filter((id) => current.includes(id));
       const [result] = await this.duplicates.resolve(auth, {
@@ -461,7 +521,9 @@ export class DuplicateDecisionService {
     const stackIds = new Set(states.map((state) => state.stackId));
     let stackId = stackIds.size === 1 ? [...stackIds][0] : null;
 
-    if (!stackId || states.length !== decision.memberIds.length) {
+    // a replay finds the stack its first attempt made: every reviewed photo, and nothing else
+    const made = stackId ? sameSet(await this.repository.getStackAssetIds(stackId), decision.memberIds) : false;
+    if (!stackId || !made || states.length !== decision.memberIds.length) {
       const primary = duplicateStackPrimary(decision);
       const stack = await this.stacks.create(auth, {
         assetIds: [primary, ...decision.memberIds.filter((id) => id !== primary)],
@@ -469,14 +531,9 @@ export class DuplicateDecisionService {
       stackId = stack.id;
     }
 
-    if (states.some((state) => state.duplicateId === decision.duplicateId)) {
-      await this.duplicates.delete(auth, decision.duplicateId);
-    }
+    // dismiss exactly the reviewed photos from the group
+    await this.repository.unlink(auth.user.id, decision.memberIds, decision.duplicateId);
     return stackId;
-  }
-
-  private async hasMembers(duplicateId: string): Promise<boolean> {
-    return (await this.repository.getGroupMembers([duplicateId])).length > 0;
   }
 
   /* ------------------------------------------------------------------------ */
@@ -497,17 +554,28 @@ export class DuplicateDecisionService {
     if (decision.undoneAt) {
       return decision.undoOperationId === operationId ? ok(ids) : skipped(ids, DuplicateDecisionReason.Undone);
     }
+    if (readState(decision).permanent) {
+      return skipped(ids, DuplicateDecisionReason.Deleted);
+    }
     if (!decision.appliedAt) {
       return skipped(ids, DuplicateDecisionReason.Changed);
     }
 
-    // a replayed batch carries on with the undo it started; a new one checks first and claims it
+    // A replayed batch carries on with the undo it started. So does a new undo when the one that
+    // started it has ended without finishing: that undo was checked, and every step is safe to repeat,
+    // while checking again would read its half-done work as a change. A new undo checks and claims.
     if (decision.undoOperationId !== operationId) {
-      const refusal = await this.checkUndo(auth, decision);
-      if (refusal) {
-        return skipped(ids, refusal);
+      const stalled = !!decision.undoOperationId && !(await this.isRunning(decision.undoOperationId));
+      if (decision.undoOperationId && !stalled) {
+        return skipped(ids, DuplicateDecisionReason.Undone);
       }
-      if (!(await this.repository.beginUndo(decision.id, operationId))) {
+      if (!stalled) {
+        const refusal = await this.checkUndo(auth, decision);
+        if (refusal) {
+          return skipped(ids, refusal);
+        }
+      }
+      if (!(await this.repository.beginUndo(decision.id, operationId, decision.undoOperationId ?? undefined))) {
         return skipped(ids, DuplicateDecisionReason.Undone);
       }
     }
@@ -539,7 +607,7 @@ export class DuplicateDecisionService {
         return trashed.has(id) ? DuplicateDecisionReason.Deleted : DuplicateDecisionReason.UndoChanged;
       }
       if (state.ownerId !== auth.user.id) {
-        return DuplicateDecisionReason.NotOwner;
+        return DuplicateDecisionReason.NotFound;
       }
       if (state.duplicateId && state.duplicateId !== decision.duplicateId) {
         return DuplicateDecisionReason.UndoChanged;
