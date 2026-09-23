@@ -12,6 +12,7 @@ import {
   MediaOperationBulkAction,
   MediaOperationItemStatus,
   MediaOperationStatus,
+  relinkLivePhotos,
   removeAssetFromAlbum,
   removeSharedLinkAssets,
   restoreAssets,
@@ -115,6 +116,8 @@ export type BulkPayload = {
   videoId?: string;
   fileName?: string;
   force?: boolean;
+  /** Still + video pairs for a batch Live Photo relink (FL-70). */
+  pairs?: { photoId: string; videoId: string }[];
 };
 
 export type BulkProgress = {
@@ -173,6 +176,8 @@ export type BulkGateway = {
   untagAssets: typeof untagAssets;
   upsertTags: typeof upsertTags;
   runAssetJobs: typeof runAssetJobs;
+  /** The Live Photo relink endpoint, shared by the immediate and durable paths (FL-70). */
+  relinkLivePhotos: typeof relinkLivePhotos;
   createSharedLink: typeof createSharedLink;
   removeSharedLinkAssets: typeof removeSharedLinkAssets;
   searchAssets: typeof searchAssets;
@@ -203,6 +208,7 @@ export const createBulkGateway = (
   untagAssets,
   upsertTags,
   runAssetJobs,
+  relinkLivePhotos,
   createSharedLink,
   removeSharedLinkAssets,
   searchAssets,
@@ -696,6 +702,37 @@ export const runBulkAction = async (
     }
 
     /*
+     * POST /live-photo/relink — the batch candidate review page (FL-70). `ids` is every still in the
+     * frozen selection; `payload.pairs` names each one's video. The endpoint answers per pair, so an
+     * already-changed or now-invalid pair is reported rather than silently dropped or reapplied.
+     */
+    case 'relink-live-photo': {
+      const pairs = (payload?.pairs ?? []).filter((pair) => ids.includes(pair.photoId));
+      if (pairs.length === 0) {
+        return summarize(action, all.length, outcomes, false);
+      }
+      try {
+        const { results } = await gateway.relinkLivePhotos({
+          livePhotoRelinkDto: { pairs: pairs.map(({ photoId, videoId }) => ({ photoId, videoId })) },
+        });
+        report(results.length);
+        const mapped = results.map((result) =>
+          result.success
+            ? ok(result.photoId)
+            : {
+                id: result.photoId,
+                status: 'failed' as const,
+                reasonKey: 'frameleaf_bulk_reason_live_photo_relink_rejected',
+                message: result.error,
+              },
+        );
+        return finish({ outcomes: mapped, cancelled: false });
+      } catch (error) {
+        return finish({ outcomes: pairs.map(({ photoId }) => failed(photoId, error)), cancelled: false });
+      }
+    }
+
+    /*
      * POST /assets/lock and /assets/unlock — Mark Sensitive is the lock (FL-34): a lock record, never a
      * visibility or an album change. Only Unmark is undone here: undoing a mark would need the PIN.
      */
@@ -923,6 +960,7 @@ export const DURABLE_BULK_ACTIONS: Readonly<Partial<Record<BulkActionId, MediaOp
   'refresh-metadata': MediaOperationBulkAction.RefreshMetadata,
   'refresh-encoded': MediaOperationBulkAction.RefreshEncoded,
   'refresh-faces': MediaOperationBulkAction.RefreshFaces,
+  'relink-live-photo': MediaOperationBulkAction.RelinkLivePhoto,
 };
 
 export const durableBulkAction = (action: BulkActionId): MediaOperationBulkAction | null =>
@@ -968,6 +1006,11 @@ export const toDurablePayload = (payload: BulkPayload | undefined, tagIds?: stri
   }
   if (source.stackIds && source.stackIds.length > 0) {
     result.stackIds = source.stackIds;
+  }
+  if (source.pairs && source.pairs.length > 0) {
+    // Realistic selections are far below `DURABLE_BULK_MAX_ITEMS` (candidates are capped server side
+    // at 200), so every pair always lands in the job's one and only part.
+    result.pairs = source.pairs;
   }
   return result;
 };
