@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { randomBytes } from 'node:crypto';
-import { AssetVisibility, SharedLinkType } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -676,9 +676,8 @@ describe(SharedLinkService.name, () => {
       });
 
       await ctx.database
-        .updateTable('asset')
-        .set({ visibility: AssetVisibility.Locked })
-        .where('id', '=', asset.id)
+        .insertInto('asset_lock')
+        .values({ assetId: asset.id, reason: AssetLockReason.Marked, lockedBy: null })
         .execute();
 
       await expect(sut.get(auth, sharedLink.id)).resolves.toHaveProperty('assets', []);
@@ -709,9 +708,8 @@ describe(SharedLinkService.name, () => {
       });
 
       await ctx.database
-        .updateTable('asset')
-        .set({ visibility: AssetVisibility.Locked })
-        .where('id', '=', theirs.id)
+        .insertInto('asset_lock')
+        .values({ assetId: theirs.id, reason: AssetLockReason.Marked, lockedBy: null })
         .execute();
 
       const updated = await sut.update(auth, sharedLink.id, { description: 'Lake day' });
