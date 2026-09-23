@@ -26,6 +26,7 @@
     "check:all": "pnpm run check:code && pnpm run test:cov",
     "test": "vitest --config test/vitest.config.mjs",
     "test:cov": "vitest --config test/vitest.config.mjs --coverage",
+    "test:runtime": "pnpm run build && node --test test/runtime/*.test.mjs",
     "test:medium": "vitest --config test/vitest.config.medium.mjs",
     "migrations:debug": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/immich} migrations generate --debug",
     "migrations:generate": "sql-tools -u ${DB_URL:-postgres://postgres:postgres@localhost:5432/immich} migrations generate",
