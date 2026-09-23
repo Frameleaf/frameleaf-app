@@ -218,6 +218,74 @@ describe(WorkflowService.name, () => {
       expect(JSON.stringify(await sut.share(auth, workflowId))).not.toContain('s3cret');
     });
 
+    describe('in additional fields', () => {
+      const withExtraSecrets = {
+        ...secretDefinition,
+        extra: { integration: { apiKey: 'workflow-key-1', region: 'eu' } },
+        steps: [{ ...secretDefinition.steps[0], extra: { remote: { token: 'step-token-1', label: 'hook' } } }],
+      };
+
+      beforeEach(() => {
+        mocks.workflow.get.mockResolvedValue(stored({ definition: withExtraSecrets }) as never);
+      });
+
+      it('never returns a credential-shaped value kept in extra', async () => {
+        const response = await sut.get(auth, workflowId);
+        const shared = await sut.share(auth, workflowId);
+        mocks.workflow.search.mockResolvedValue([stored({ definition: withExtraSecrets })] as never);
+        const listed = await sut.search(auth, {});
+
+        expect(response.extra).toEqual({ integration: { region: 'eu' } });
+        expect(response.steps[0]!.extra).toEqual({ remote: { label: 'hook' } });
+        for (const body of [response, shared, listed]) {
+          expect(JSON.stringify(body)).not.toContain('workflow-key-1');
+          expect(JSON.stringify(body)).not.toContain('step-token-1');
+        }
+      });
+
+      it('keeps the stored extra credentials when the returned definition is saved back', async () => {
+        const response = await sut.get(auth, workflowId);
+
+        await sut.update(auth, workflowId, {
+          extra: response.extra,
+          steps: response.steps.map(({ id, method, extra }) => ({
+            id,
+            method,
+            config: { url: 'https://hooks.example.test', headerName: 'Authorization' },
+            extra,
+          })),
+        });
+
+        const replacement = mocks.workflow.update.mock.calls[0]![2]!.definition;
+        expect(replacement.extra).toEqual({ integration: { apiKey: 'workflow-key-1', region: 'eu' } });
+        expect(replacement.steps[0]!.extra).toEqual({ remote: { token: 'step-token-1', label: 'hook' } });
+        expect(replacement.steps[0]!.config).toMatchObject({ headerValue: 'Bearer s3cret' });
+      });
+
+      it('keeps the workflow extra credentials when only the steps are saved', async () => {
+        await sut.update(auth, workflowId, {
+          steps: [
+            {
+              id: stepId,
+              method: 'immich-plugin-core#webhook',
+              config: { url: 'https://hooks.example.test', headerName: 'Authorization' },
+            },
+          ],
+        });
+
+        const replacement = mocks.workflow.update.mock.calls[0]![2]!.definition;
+        expect(replacement.extra).toEqual(withExtraSecrets.extra);
+      });
+
+      it('replaces an extra credential that is sent', async () => {
+        await sut.update(auth, workflowId, { extra: { integration: { apiKey: 'workflow-key-2', region: 'eu' } } });
+
+        expect(mocks.workflow.update.mock.calls[0]![2]!.definition.extra).toEqual({
+          integration: { apiKey: 'workflow-key-2', region: 'eu' },
+        });
+      });
+    });
+
     it('keeps a stored credential the edit leaves out, for the same step and method', async () => {
       await sut.update(auth, workflowId, {
         steps: [
