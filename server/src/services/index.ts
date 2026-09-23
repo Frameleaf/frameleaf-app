@@ -1,5 +1,6 @@
 import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumService } from 'src/services/album.service.js';
+import { AnalyticsService } from 'src/services/analytics.service.js';
 import { ApiKeyService } from 'src/services/api-key.service.js';
 import { ApiService } from 'src/services/api.service.js';
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
@@ -11,6 +12,7 @@ import { AuthAdminService } from 'src/services/auth-admin.service.js';
 import { AuthService } from 'src/services/auth.service.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
 import { BulkOperationService } from 'src/services/bulk-operation.service.js';
+import { ClassificationService } from 'src/services/classification.service.js';
 import { CliService } from 'src/services/cli.service.js';
 import { ClusterGroupService } from 'src/services/cluster-group.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
@@ -33,6 +35,7 @@ import { ICloudSyncService } from 'src/services/icloud-sync.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { JobService } from 'src/services/job.service.js';
+import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
 import { MaintenanceService } from 'src/services/maintenance.service.js';
@@ -53,9 +56,12 @@ import { OcrService } from 'src/services/ocr.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { PetService } from 'src/services/pet.service.js';
+import { PhotoToolsService } from 'src/services/photo-tools.service.js';
 import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
 import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
 import { PluginService } from 'src/services/plugin.service.js';
+import { PreservationWorkerService } from 'src/services/preservation-worker.service.js';
+import { PreservationService } from 'src/services/preservation.service.js';
 import { QueueService } from 'src/services/queue.service.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
@@ -72,6 +78,7 @@ import { StackService } from 'src/services/stack.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
+import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
@@ -113,7 +120,9 @@ export const services = [
   AssetService,
   AuthService,
   AuthAdminService,
+  AnalyticsService,
   BestPhotosService,
+  ClassificationService,
   BulkOperationService,
   CliService,
   DatabaseBackupService,
@@ -131,6 +140,7 @@ export const services = [
   IntegrityService,
   HlsService,
   JobService,
+  LibraryScanService,
   LibraryService,
   LivePhotoService,
   MaintenanceService,
@@ -139,6 +149,7 @@ export const services = [
   MediaHealthService,
   MediaOperationService,
   MediaOperationSweepService,
+  PhotoToolsService,
   RenderWorkerService,
   MediaService,
   MemoryService,
@@ -155,6 +166,8 @@ export const services = [
   PhysicalDeduplicationPlanService,
   PhysicalDeduplicationService,
   PluginService,
+  PreservationService,
+  PreservationWorkerService,
   QueueService,
   RunPodService,
   RestorationWorkerService,
@@ -168,6 +181,7 @@ export const services = [
   SmartInfoService,
   ZeroShotTaggingService,
   StackService,
+  StudioExportService,
   StudioPreviewService,
   StorageService,
   StorageTemplateService,

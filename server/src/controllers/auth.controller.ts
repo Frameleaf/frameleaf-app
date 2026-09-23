@@ -42,6 +42,7 @@ export class AuthController {
     const body = await this.service.login(loginCredential, loginDetails);
     return respondWithCookie(res, body, {
       isSecure: loginDetails.isSecure,
+      rememberMe: loginCredential.rememberMe,
       values: [
         { key: ImmichCookie.AccessToken, value: body.accessToken },
         { key: ImmichCookie.AuthType, value: AuthType.Password },

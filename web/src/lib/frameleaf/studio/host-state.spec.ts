@@ -20,8 +20,13 @@ const capable = {
   transcriptionWorker: true,
 };
 
-const run = (...events: StudioHostEvent[]): StudioHostState =>
-  events.reduce((state, event) => reduceStudioHost(state, event), initialStudioHostState());
+const run = (...events: StudioHostEvent[]): StudioHostState => {
+  let state = initialStudioHostState();
+  for (const event of events) {
+    state = reduceStudioHost(state, event);
+  }
+  return state;
+};
 
 describe('studio host state', () => {
   it('starts loading and reaches ready once the engine mounts', () => {

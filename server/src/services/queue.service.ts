@@ -337,6 +337,10 @@ export class QueueService extends BaseService {
       jobs.push({ name: JobName.FacialRecognitionQueueAll, data: { force: false, nightly: true } });
     }
 
+    // FL-79: the local analytics collector runs every night. It only reads counts and sizes and
+    // writes them to this server's database; it has no setting because it never leaves the host.
+    jobs.push({ name: JobName.AnalyticsCollect });
+
     await this.jobRepository.queueAll(jobs);
   }
 }

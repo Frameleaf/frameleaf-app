@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Translations } from 'svelte-i18n';
   /**
    * Library Care: the Utilities directory the rail's Library Care entry opens (FL-69).
    *
@@ -9,15 +10,16 @@
    * Locked media is never counted, and the reader's own only in an unlocked session.
    *
    * Missing media and Damaged media stay administrator tools, as the prototype marks them.
+   * Preservation verification (FL-74) is every account's own, like the prototype's Library Care row.
    */
+  import { OpenQueryParam } from '$lib/constants';
   import { careQueues, CARE_TOOL_GROUPS, type CareQueue, type CareToolGroup } from '$lib/frameleaf/library-care';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import AppDownloadModal from '$lib/modals/AppDownloadModal.svelte';
-  import ObtainiumConfigModal from '$lib/modals/ObtainiumConfigModal.svelte';
   import { Route } from '$lib/route';
   import type { MediaHealthSummaryResponseDto } from '@immich/sdk';
-  import { Icon, modalManager } from '@immich/ui';
+  import { Icon } from '@immich/ui';
   import {
+    mdiArchiveLockOutline,
     mdiChevronRight,
     mdiCloudOutline,
     mdiCompare,
@@ -40,10 +42,9 @@
     id: string;
     group: CareToolGroup;
     icon: string;
-    titleKey: string;
-    descriptionKey: string;
-    href?: string;
-    onclick?: () => void;
+    titleKey: Translations;
+    descriptionKey: Translations;
+    href: string;
     adminOnly?: boolean;
   };
 
@@ -107,6 +108,16 @@
       href: Route.icloudSyncUtility(),
     },
     {
+      // FL-74: the prototype's Library Care row "Preservation verification". Packages live in
+      // Settings → Import & protection → Originals & preservation, where this opens.
+      id: 'preservation',
+      group: 'import',
+      icon: mdiArchiveLockOutline,
+      titleKey: 'frameleaf_preservation_care_link',
+      descriptionKey: 'library_care_tool_preservation_description',
+      href: Route.userSettings({ isOpen: OpenQueryParam.PRESERVATION }),
+    },
+    {
       id: 'workflows',
       group: 'automate',
       icon: mdiTuneVariant,
@@ -120,7 +131,7 @@
       icon: mdiDevices,
       titleKey: 'library_care_tool_downloads',
       descriptionKey: 'library_care_tool_downloads_description',
-      onclick: () => void modalManager.show(AppDownloadModal, {}),
+      href: Route.downloadsUtility(),
     },
     {
       id: 'obtainium',
@@ -128,7 +139,7 @@
       icon: mdiDownload,
       titleKey: 'library_care_tool_obtainium',
       descriptionKey: 'library_care_tool_obtainium_description',
-      onclick: () => void modalManager.show(ObtainiumConfigModal, {}),
+      href: Route.obtainiumUtility(),
     },
   ];
 
@@ -179,25 +190,14 @@
         <ul class="tools">
           {#each groupTools as tool (tool.id)}
             <li>
-              {#if tool.href}
-                <a class="tool" href={tool.href}>
-                  <Icon icon={tool.icon} size="1.375rem" aria-hidden={true} />
-                  <span>
-                    <strong>{$t(tool.titleKey)}</strong>
-                    <small>{$t(tool.descriptionKey)}</small>
-                  </span>
-                  <Icon icon={mdiChevronRight} size="1.125rem" aria-hidden={true} />
-                </a>
-              {:else}
-                <button type="button" class="tool" onclick={tool.onclick}>
-                  <Icon icon={tool.icon} size="1.375rem" aria-hidden={true} />
-                  <span>
-                    <strong>{$t(tool.titleKey)}</strong>
-                    <small>{$t(tool.descriptionKey)}</small>
-                  </span>
-                  <Icon icon={mdiChevronRight} size="1.125rem" aria-hidden={true} />
-                </button>
-              {/if}
+              <a class="tool" href={tool.href}>
+                <Icon icon={tool.icon} size="1.375rem" aria-hidden={true} />
+                <span>
+                  <strong>{$t(tool.titleKey)}</strong>
+                  <small>{$t(tool.descriptionKey)}</small>
+                </span>
+                <Icon icon={mdiChevronRight} size="1.125rem" aria-hidden={true} />
+              </a>
             </li>
           {/each}
         </ul>

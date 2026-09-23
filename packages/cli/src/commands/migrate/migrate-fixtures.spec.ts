@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { stripTypeScriptTypes } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import type { AuditReport } from 'src/commands/migrate/audit';
 import { ServerClient } from 'src/commands/migrate/client';
 import { Controller } from 'src/commands/migrate/controller';
@@ -541,9 +541,13 @@ describe('migrate against disposable source/destination fixtures', () => {
       reason: 'not-linked',
     });
 
-    // The web Maintenance parser is the consumer of this file; load it from the web package.
+    // Load the standalone web consumer without requiring SvelteKit-generated files in CLI CI.
+    const parserSource = readFileSync(
+      join(import.meta.dirname, '../../../../../web/src/lib/frameleaf/migration-report.ts'),
+      'utf8',
+    );
     const parser = (await import(
-      pathToFileURL(join(import.meta.dirname, '../../../../../web/src/lib/frameleaf/migration-report.ts')).href
+      `data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(parserSource, { mode: 'transform' })).toString('base64')}`
     )) as { parseMigrationReport: (raw: string) => { ok: boolean; error?: string } };
     expect(parser.parseMigrationReport(text)).toMatchObject({ ok: true });
   });

@@ -1,3 +1,5 @@
+import type { Translations } from 'svelte-i18n';
+
 /**
  * Failure handling shared by every inline edit in the Frameleaf information panel (FL-36).
  *
@@ -96,7 +98,7 @@ export const inlineEditRecovery = (failure: InlineEditFailure): InlineEditRecove
 };
 
 /** The translated explanation shown beside the control that failed. */
-export const inlineEditMessageKey = (failure: InlineEditFailure): string => `frameleaf_info_error_${failure}`;
+export const inlineEditMessageKey = (failure: InlineEditFailure): Translations => `frameleaf_info_error_${failure}`;
 
 export type InlineEditOutcome<T> =
   { ok: true; value: T } | { ok: false; failure: InlineEditFailure; recovery: InlineEditRecovery; error: unknown };

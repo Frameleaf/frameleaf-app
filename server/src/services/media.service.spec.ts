@@ -24,7 +24,7 @@ import {
 } from 'src/enum.js';
 import { MediaService } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
-import { FRAMELEAF_RENDERER } from 'src/utils/media-policy.js';
+import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -2437,18 +2437,39 @@ describe(MediaService.name, () => {
     const audioStream = probeStub.audioStreamAac.audioStream ?? undefined;
     const format = { ...probeStub.audioStreamAac.format, duration: 5 };
 
+    // FL-17/FL-39: every edited master is rendered under the color decision made for its source
+    const editCommand = (config: any, edits: any[], stream: any, audio: any, fmt: any) =>
+      (sut as any).getVideoEditCommand(
+        config,
+        edits,
+        stream,
+        audio,
+        fmt,
+        resolveEditedMasterColorPolicy(stream, config),
+      );
+    const editPlan = (config: any, edits: any[], stream: any, audio: any, fmt: any) =>
+      (sut as any).getVideoEditCommandPlan(
+        config,
+        edits,
+        stream,
+        audio,
+        fmt,
+        resolveEditedMasterColorPolicy(stream, config),
+      );
     const getPlan = (ffmpeg: Partial<SystemConfig['ffmpeg']>, edits: any[]) =>
-      (sut as any).getVideoEditCommandPlan({ ...defaults.ffmpeg, ...ffmpeg }, edits, videoStream, audioStream, format);
+      editPlan({ ...defaults.ffmpeg, ...ffmpeg }, edits, videoStream, audioStream, format);
 
     it('should preserve edited dimensions independently of playback resolution', () => {
       const source = { ...videoStream, width: 3840, height: 2160, rotation: 0 };
       const edits = [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }];
       const commands = ['480', '720', '1080', 'original'].map((targetResolution) =>
-        (sut as any).getVideoEditCommand({ ...defaults.ffmpeg, targetResolution }, edits, source, audioStream, format),
+        editCommand({ ...defaults.ffmpeg, targetResolution }, edits, source, audioStream, format),
       );
 
       for (const command of commands) {
-        expect(getFilterOption(command.outputOptions)).toBe('transpose=1');
+        // FL-39: a right-angle turn alone is written to the display matrix; every packet is kept
+        expect(command.inputOptions).toEqual(expect.arrayContaining(['-display_rotation']));
+        expect(command.outputOptions).toEqual(expect.arrayContaining(['-c', 'copy']));
         expect(command).toEqual(commands[0]);
       }
       expect((sut as any).getVideoEditDimensions(edits, source)).toEqual({ width: 2160, height: 3840 });
@@ -2462,12 +2483,12 @@ describe(MediaService.name, () => {
         { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
       ];
       expect((sut as any).getVideoEditDimensions(edits, portrait)).toEqual({ width: 500, height: 1000 });
-      const command = (sut as any).getVideoEditCommand(defaults.ffmpeg, edits, portrait, audioStream, format);
+      const command = editCommand(defaults.ffmpeg, edits, portrait, audioStream, format);
       expect(getFilterOption(command.outputOptions)).toBe('crop=1000:500:0:0,transpose=1');
     });
 
     it('should build a complex filter graph for speed segments with audio', () => {
-      const command = (sut as any).getVideoEditCommand(
+      const command = editCommand(
         defaults.ffmpeg,
         [
           { action: AssetEditAction.Speed, parameters: { rate: 0.5, startMs: 1000, endMs: 3000 } },
@@ -2494,7 +2515,7 @@ describe(MediaService.name, () => {
     });
 
     it('should offset text overlay timing after trimming video', () => {
-      const command = (sut as any).getVideoEditCommand(
+      const command = editCommand(
         defaults.ffmpeg,
         [
           { action: AssetEditAction.Trim, parameters: { startMs: 1000, endMs: 5000 } },
@@ -2520,7 +2541,7 @@ describe(MediaService.name, () => {
           parameters: { text: 'Hello', x: 0.5, y: 0.5, startMs: 3000, endMs: 4000, size: 0.06, color: '#ffffff' },
         },
       ];
-      const command = (sut as any).getVideoEditCommand(defaults.ffmpeg, edits, videoStream, audioStream, format);
+      const command = editCommand(defaults.ffmpeg, edits, videoStream, audioStream, format);
       const filterComplexIndex = command.outputOptions.indexOf('-filter_complex');
       const filterGraph = command.outputOptions[filterComplexIndex + 1];
 
@@ -2537,7 +2558,8 @@ describe(MediaService.name, () => {
       expect(plan.command.inputOptions).not.toEqual(expect.arrayContaining(['-hwaccel']));
       expect(plan.command.inputOptions).not.toEqual(expect.arrayContaining(['-init_hw_device']));
       expect(plan.command.outputOptions).toEqual(
-        expect.arrayContaining(['-c:v', 'h264', '-preset', 'ultrafast', '-crf', '23']),
+        // FL-39: the edited master is never encoded below the master quality cap, whatever the playback crf
+        expect.arrayContaining(['-c:v', 'h264', '-preset', 'ultrafast', '-crf', String(EDITED_MASTER_MAX_CRF)]),
       );
       expect(getFilterOption(plan.command.outputOptions)).toBe('crop=300:200:2:4');
     });
@@ -2560,7 +2582,7 @@ describe(MediaService.name, () => {
     });
 
     it('should retain source autorotation when hardware encoding a portrait trim', () => {
-      const plan = (sut as any).getVideoEditCommandPlan(
+      const plan = editPlan(
         { ...defaults.ffmpeg, accel: TranscodeHardwareAcceleration.Nvenc, accelDecode: true },
         [{ action: AssetEditAction.Trim, parameters: { startMs: 1000, endMs: 3000 } }],
         { ...videoStream, rotation: 90 },
@@ -2601,25 +2623,17 @@ describe(MediaService.name, () => {
       },
     );
 
-    it('should append preset, thread, and bitrate options for edited video output', () => {
+    it('should append preset and thread options but never the playback bitrate cap to an edited master', () => {
       const plan = getPlan({ maxBitrate: '10000k', threads: 2 }, [
         { action: AssetEditAction.Trim, parameters: { startMs: 1000, endMs: 3000 } },
       ]);
 
       expect(plan.command.outputOptions).toEqual(
-        expect.arrayContaining([
-          '-preset',
-          'ultrafast',
-          '-threads',
-          '2',
-          '-crf',
-          '23',
-          '-maxrate',
-          '10000k',
-          '-bufsize',
-          '20000k',
-        ]),
+        expect.arrayContaining(['-preset', 'ultrafast', '-threads', '2', '-crf', String(EDITED_MASTER_MAX_CRF)]),
       );
+      // FL-39: the playback transcode settings describe a proxy; they never cap the edited master
+      expect(plan.command.outputOptions).not.toContain('-maxrate');
+      expect(plan.command.outputOptions).not.toContain('-bufsize');
     });
   });
 

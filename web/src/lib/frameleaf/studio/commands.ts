@@ -1,3 +1,4 @@
+import type { Translations } from 'svelte-i18n';
 /**
  * The canonical Studio command vocabulary (FL-88 host boundary, FL-92 contract).
  *
@@ -1310,12 +1311,12 @@ export type StudioCommandResult =
       idempotencyKey: string;
       reason: StudioCommandRejectionReason;
       /** i18n key describing the rejection to a person. */
-      messageKey: string;
+      messageKey: Translations;
       /** Populated for `stale-revision` so the editor can reconcile. */
       revision?: number;
     };
 
-const rejectionMessageKeys: Record<StudioCommandRejectionReason, string> = {
+const rejectionMessageKeys: Record<StudioCommandRejectionReason, Translations> = {
   invalid: 'frameleaf_studio_command_invalid',
   'unknown-command': 'frameleaf_studio_command_invalid',
   'not-implemented': 'frameleaf_studio_command_not_implemented',

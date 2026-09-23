@@ -362,7 +362,7 @@ function printPreflight(options: MigrateOptions, from: ServerClient, to: ServerC
 
 /**
  * `--verify`: re-audit an existing ledger against the destination only. Use it right
- * before retiring the source, or to regenerate the report file for the web Maintenance area.
+ * before retiring the source, or to regenerate the report file for the web migration checklist.
  * It never contacts the source and never transfers; it refuses a different destination.
  */
 export async function verifyLedger(

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Translations } from 'svelte-i18n';
   import { goto } from '$app/navigation';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -82,7 +83,7 @@
     });
   };
 
-  const run = async (item: ActivityItem, action: () => Promise<unknown>, announceKey: string) => {
+  const run = async (item: ActivityItem, action: () => Promise<unknown>, announceKey: Translations) => {
     busyId = item.id;
     try {
       await action();
@@ -254,7 +255,13 @@
         <div class="body">
           <div class="row">
             <h3>{nameOf(item)}</h3>
-            <span class="chip chip-{item.tone}">{$t(item.statusKey)}</span>
+            <span
+              class="chip"
+              class:chip-info={item.tone === 'info'}
+              class:chip-success={item.tone === 'success'}
+              class:chip-warning={item.tone === 'warning'}
+              class:chip-danger={item.tone === 'danger'}>{$t(item.statusKey)}</span
+            >
           </div>
 
           <p class="meta">

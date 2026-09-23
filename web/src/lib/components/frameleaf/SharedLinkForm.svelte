@@ -115,35 +115,31 @@
     saving = true;
     error = '';
     try {
-      if (editing && link) {
-        const success = await handleUpdateSharedLink(link, {
-          description,
-          slug: slug.trim() || null,
-          allowDownload,
-          allowUpload,
-          showMetadata,
-          expiresAt,
-          password: removePassword ? null : password || undefined,
-        });
-        if (success) {
-          open = false;
-        }
-      } else {
-        const success = await handleCreateSharedLink({
-          type,
-          albumId,
-          assetIds: target?.assetIds,
-          description,
-          slug: slug.trim() || null,
-          allowDownload,
-          allowUpload,
-          showMetadata,
-          expiresAt,
-          password: password || null,
-        });
-        if (success) {
-          open = false;
-        }
+      const success =
+        editing && link
+          ? await handleUpdateSharedLink(link, {
+              description,
+              slug: slug.trim() || null,
+              allowDownload,
+              allowUpload,
+              showMetadata,
+              expiresAt,
+              password: removePassword ? null : password || undefined,
+            })
+          : await handleCreateSharedLink({
+              type,
+              albumId,
+              assetIds: target?.assetIds,
+              description,
+              slug: slug.trim() || null,
+              allowDownload,
+              allowUpload,
+              showMetadata,
+              expiresAt,
+              password: password || null,
+            });
+      if (success) {
+        open = false;
       }
       // The password value never leaves this pending submission; drop it now
       // whether or not the save succeeded.

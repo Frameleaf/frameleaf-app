@@ -301,7 +301,9 @@ export class BulkController {
         succeeded: 0,
         failed: 0,
         skipped: 0,
-        errorKey: reasonKey.startsWith('frameleaf_bulk_reason_') ? reasonKey : 'frameleaf_bulk_reason_failed',
+        errorKey: reasonKey.startsWith('frameleaf_bulk_reason_')
+          ? (reasonKey as Translations)
+          : 'frameleaf_bulk_reason_failed',
       });
     } finally {
       this.#running.delete(requestId);
@@ -323,7 +325,7 @@ export class BulkController {
     signal: AbortSignal,
     { payload, submittedTotal }: { payload?: BulkPayload; submittedTotal: number | null },
   ) {
-    const finishWith = (patch: { cancelled?: boolean; errorKey?: string; truncated?: boolean }) =>
+    const finishWith = (patch: { cancelled?: boolean; errorKey?: Translations; truncated?: boolean }) =>
       this.#dispatch({ type: 'operation-finish', requestId, succeeded: 0, failed: 0, skipped: 0, ...patch });
 
     try {
@@ -366,7 +368,9 @@ export class BulkController {
     } catch (error) {
       const reasonKey = error instanceof Error ? error.message : '';
       finishWith({
-        errorKey: reasonKey.startsWith('frameleaf_bulk_reason_') ? reasonKey : 'frameleaf_bulk_reason_failed',
+        errorKey: reasonKey.startsWith('frameleaf_bulk_reason_')
+          ? (reasonKey as Translations)
+          : 'frameleaf_bulk_reason_failed',
       });
     }
   }

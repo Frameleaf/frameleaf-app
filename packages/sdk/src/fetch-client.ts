@@ -570,10 +570,17 @@ export type AdminConfigSmartAlbumBuiltInDto = {
     screenshots: AdminConfigSmartAlbumKindDto;
     travel: AdminConfigSmartAlbumKindDto;
 };
+export type AdminConfigSmartAlbumRulesDto = {
+    /** The action a new rule starts with */
+    defaultAction: ClassificationRuleAction;
+    /** Whether rules may match visual category phrases */
+    visualCategories: boolean;
+};
 export type AdminConfigSmartAlbumsDto = {
     builtIn: AdminConfigSmartAlbumBuiltInDto;
     /** Master smart-album enabled toggle */
     enabled: boolean;
+    rules?: AdminConfigSmartAlbumRulesDto;
 };
 export type AdminConfigStorageTemplateDto = {
     /** Enabled */
@@ -1604,7 +1611,7 @@ export type AlbumResponseDto = {
     id: string;
     /** Activity feed enabled */
     isActivityEnabled: boolean;
-    /** True when the album is filled by the smart album rules. Only populated by GET /albums/tree. */
+    /** True when the album is filled by smart album rules. Populated by GET /albums/tree and GET /albums/{id}. */
     isSmart?: boolean;
     kind: AlbumKind;
     /** Last modified asset timestamp */
@@ -1614,6 +1621,8 @@ export type AlbumResponseDto = {
     parentId: string | null;
     /** Is shared album */
     shared: boolean;
+    /** Your classification rule behind this smart album, when it is one of yours */
+    smartRuleId?: string | null;
     /** Sibling display position. Lower values appear first. */
     sortOrder: number | null;
     /** Start date (earliest asset) */
@@ -1761,6 +1770,187 @@ export type AlbumUserAddDto = {
 export type AddUsersDto = {
     /** Album users to add */
     albumUsers: AlbumUserAddDto[];
+};
+export type AnalyticsAlbumDto = {
+    id: string;
+    name: string;
+    owned: boolean;
+    ownerName: string;
+    shared: boolean;
+};
+export type AnalyticsAlbumsDto = {
+    /** Albums the viewer owns or belongs to */
+    albums: AnalyticsAlbumDto[];
+    notShared: number;
+    owned: number;
+    ownedShared: number;
+    shared: number;
+    total: number;
+    /** Albums counted but not listed, because the viewer neither owns nor belongs to them */
+    unlisted: number;
+};
+export type AnalyticsCameraDto = {
+    count: number;
+    kind: AnalyticsCameraKind;
+    /** Camera model; null for the other and unknown rows */
+    name: string | null;
+};
+export type AnalyticsDayDto = {
+    /** Items taken on this local date */
+    captured: number;
+    date: string;
+    /** Items added on this UTC date */
+    uploaded: number;
+};
+export type AnalyticsSeriesDefinitionDto = {
+    /** Whether this report carries the series for the selected scope */
+    available: boolean;
+    /** Written by the local nightly collector rather than read live */
+    collected: boolean;
+    /** An estimate, never a charge */
+    estimate: boolean;
+    grain: AnalyticsGrain;
+    id: AnalyticsSeriesId;
+    measurementScope: AnalyticsMeasurementScope;
+    owner: AnalyticsSeriesOwner;
+    /** Selections the series can be read for */
+    scopes: AnalyticsScopeKind[];
+    /** Where the number comes from */
+    source: string;
+    unit: AnalyticsUnit;
+};
+export type AnalyticsHistoryDto = {
+    dayRetentionDays: number;
+    lastObservedAt: string | null;
+    staleAfterHours: number;
+    /** unknown: never collected; stale: last collection is too old */
+    state: AnalyticsState;
+    weekRetentionDays: number;
+};
+export type AnalyticsHostDto = {
+    /** Bytes */
+    capacityBytes: number | null;
+    /** Bytes */
+    freeBytes: number | null;
+    observedAt: string | null;
+    state: AnalyticsState;
+    /** Bytes */
+    volumeUsedBytes: number | null;
+};
+export type AnalyticsMetadataDto = {
+    field: AnalyticsMetadataField;
+    missing: number;
+    present: number;
+    total: number;
+};
+export type AnalyticsProcessingDto = {
+    attempts: number;
+    /** Processing is recorded for the whole server only */
+    available: boolean;
+    completed: number;
+    costedAttempts: number;
+    durationMs: number;
+    /** Estimate from configured hourly rates; never a bill. Null when no attempt had a rate */
+    estimatedCostUsd: number | null;
+    failed: number;
+    /** Attempts without a configured rate; not included in the estimate */
+    uncostedAttempts: number;
+};
+export type AnalyticsBucketDto = {
+    /** Completed processing attempts; null when not available for this scope */
+    completed: number | null;
+    /** Failed processing attempts; null when not available for this scope */
+    failed: number | null;
+    "from": string;
+    /** Library items at the last observation in this period; null when none */
+    items: number | null;
+    /** YYYY-MM for a month, the Monday for a week */
+    key: string;
+    /** Bytes */
+    logicalBytes: number | null;
+    /** When the growth values were read; null for a gap */
+    observedAt: string | null;
+    /** Cut short by the edge of the selected dates */
+    partial: boolean;
+    /** Photos added in this period and still in the library */
+    photos: number;
+    /** Bytes */
+    physicalBytes: number | null;
+    through: string;
+    /** Videos added in this period and still in the library */
+    videos: number;
+};
+export type AnalyticsSummaryDto = {
+    /** Items sharing an original file with another item in this selection */
+    duplicateReferences: number;
+    /** Originals in external libraries, usually outside the library volume */
+    externalLogicalBytes: number;
+    /** Bytes */
+    externalPhysicalBytes: number;
+    /** Original files, Live Photo motion parts included */
+    files: number;
+    /** Photos and videos, Trash included, Locked media and Live Photo motion parts excluded */
+    items: number;
+    /** Every original reference, before physical deduplication */
+    logicalBytes: number;
+    photos: number;
+    /** Original files, each shared file counted once within this selection */
+    physicalBytes: number;
+    /** RAW photos; a subset of photos */
+    raw: number;
+    /** logicalBytes minus physicalBytes of this same selection */
+    savedBytes: number;
+    /** Original files whose size has not been read; excluded from byte totals */
+    unmeasuredFiles: number;
+    /** Bytes */
+    uploadedLogicalBytes: number;
+    /** Bytes */
+    uploadedPhysicalBytes: number;
+    videos: number;
+};
+export type AnalyticsViewDto = {
+    /** Also counted in another view */
+    overlaps: boolean;
+    photos: number;
+    total: number;
+    videos: number;
+    view: AnalyticsView;
+};
+export type AnalyticsReportResponseDto = {
+    albums: AnalyticsAlbumsDto;
+    cameras: AnalyticsCameraDto[];
+    days: AnalyticsDayDto[];
+    definitions: AnalyticsSeriesDefinitionDto[];
+    "from": string;
+    generatedAt: string;
+    history: AnalyticsHistoryDto;
+    host: AnalyticsHostDto;
+    metadata: AnalyticsMetadataDto[];
+    processing: AnalyticsProcessingDto;
+    range: AnalyticsRange;
+    scope: string;
+    scopeKind: AnalyticsScopeKind;
+    /** Account or library name; empty for the whole server */
+    scopeLabel: string;
+    series: AnalyticsBucketDto[];
+    summary: AnalyticsSummaryDto;
+    through: string;
+    views: AnalyticsViewDto[];
+};
+export type AnalyticsScopeOptionDto = {
+    kind: AnalyticsScopeKind;
+    /** Account or library name; empty for the whole server */
+    label: string;
+    libraryId: string | null;
+    /** The account or library has been removed; its items may still count until deleted */
+    removed: boolean;
+    /** The account, or the library owner */
+    userId: string | null;
+    /** The value to pass as `scope` */
+    value: string;
+};
+export type AnalyticsScopesResponseDto = {
+    scopes: AnalyticsScopeOptionDto[];
 };
 export type ApiKeyResponseDto = {
     /** Creation date */
@@ -2136,6 +2326,58 @@ export type AssetDevelopCrop = {
     /** Top edge of the crop as a fraction of the oriented frame height */
     y: number;
 };
+export type AssetDevelopMaskAdjustments = {
+    /** Black point inside the mask */
+    blacks?: number;
+    /** Contrast inside the mask */
+    contrast?: number;
+    /** Dehaze inside the mask */
+    dehaze?: number;
+    /** Exposure in EV inside the mask */
+    exposure?: number;
+    /** Highlights inside the mask */
+    highlights?: number;
+    /** Saturation inside the mask */
+    saturation?: number;
+    /** Shadows inside the mask */
+    shadows?: number;
+    /** White balance shift inside the mask */
+    temperature?: number;
+    /** Tint inside the mask */
+    tint?: number;
+    /** Vibrance inside the mask */
+    vibrance?: number;
+    /** White point inside the mask */
+    whites?: number;
+};
+export type AssetDevelopMask = {
+    adjustments?: AssetDevelopMaskAdjustments;
+    /** How much of the adjustment is applied, as a percentage */
+    amount?: number;
+    /** A disabled mask is kept but not rendered */
+    enabled?: boolean;
+    /** Where a linear mask has faded out, across the frame */
+    endX?: number;
+    /** Where a linear mask has faded out, down the frame */
+    endY?: number;
+    /** Softness of a radial edge as a percentage of the radius */
+    feather?: number;
+    /** Client-chosen identifier, unique within the recipe */
+    id: string;
+    /** Apply the adjustment outside the shape instead of inside */
+    invert?: boolean;
+    kind: AssetDevelopMaskKind;
+    /** Optional name shown in the editor */
+    name?: string | null;
+    /** Horizontal radius of a radial mask as a fraction of the frame width */
+    radiusX?: number;
+    /** Vertical radius of a radial mask as a fraction of the frame height */
+    radiusY?: number;
+    /** Centre (radial) or start (linear) across the oriented frame */
+    x: number;
+    /** Centre (radial) or start (linear) down the oriented frame */
+    y: number;
+};
 export type AssetDevelopRecipeDto = {
     /** Black point */
     blacks?: number;
@@ -2156,6 +2398,8 @@ export type AssetDevelopRecipeDto = {
     grain?: number;
     /** Highlight recovery (negative) or lift (positive) */
     highlights?: number;
+    /** Selective adjustments, applied in order after the global develop */
+    masks?: AssetDevelopMask[];
     /** Luminance noise reduction amount */
     noiseReduction?: number;
     preset?: AssetDevelopPreset;
@@ -2187,10 +2431,16 @@ export type AssetDevelopRecipeDto = {
 export type AssetDevelopRevisionResponseDto = {
     /** Asset this revision belongs to */
     assetId: string;
+    /** Render attempts so far; one automatic retry follows a first failure */
+    attempts: number;
     /** When the version was saved */
     createdAt: string;
     /** Why the last render failed, when it did */
     error: string | null;
+    /** The export of the original an imported version was developed from */
+    exportId: string | null;
+    /** Name of the imported file, for a version developed elsewhere */
+    fileName: string | null;
     /** True once the edited master file exists */
     hasMaster: boolean;
     /** True once the preview file exists */
@@ -2201,6 +2451,7 @@ export type AssetDevelopRevisionResponseDto = {
     id: string;
     /** True for the version the asset currently shows */
     isCurrent: boolean;
+    kind: AssetDevelopRevisionKind;
     /** Name given when the version was saved */
     label: string | null;
     /** Render progress as a percentage */
@@ -2210,8 +2461,14 @@ export type AssetDevelopRevisionResponseDto = {
     renderedAt: string | null;
     /** Identity of the renderer that produced the files, for lineage */
     rendererVersion: string | null;
+    /** SHA-256 (hex) of the edited master file, once it exists */
+    renditionChecksum: string | null;
     /** Per-asset sequence number, 1 for the first saved version */
     revision: number;
+    /** Application an imported version was developed with, when known */
+    software: string | null;
+    /** SHA-256 (hex) of the original this version was rendered or developed from */
+    sourceChecksum: string | null;
     status: AssetDevelopRevisionStatus;
     /** When the revision last changed */
     updatedAt: string;
@@ -2232,6 +2489,34 @@ export type AssetDevelopSaveDto = {
     recipe: AssetDevelopRecipeDto;
     /** Queue the edited master render immediately after saving the recipe */
     render?: boolean;
+};
+export type DevelopExportResponseDto = {
+    /** Asset whose original was exported */
+    assetId: string;
+    /** When the original was exported */
+    createdAt: string;
+    /** File name of the exported original */
+    fileName: string;
+    /** Export ID; quote it when bringing the developed file back */
+    id: string;
+    /** False once the asset original no longer matches the exported bytes; a return is then refused */
+    isCurrentOriginal: boolean;
+    /** SHA-256 (hex) of the original when it was exported */
+    sourceChecksum: string;
+};
+export type AssetDevelopImportDto = {
+    /** The export this file was developed from */
+    exportId?: string;
+    /** The developed file: JPEG, PNG, TIFF, WebP or HEIF */
+    file: Blob;
+    /** Optional name for the new version */
+    label?: string;
+    /** SHA-256 (hex) of the file as the client sent it; a transfer that does not match is refused */
+    renditionChecksum?: string;
+    /** Application the file was developed with */
+    software?: string;
+    /** SHA-256 (hex) of the original the file was developed from */
+    sourceChecksum?: string;
 };
 export type AssetDevelopPreviewDto = {
     recipe: AssetDevelopRecipeDto;
@@ -2594,6 +2879,8 @@ export type LoginCredentialDto = {
     email: string;
     /** User password */
     password: string;
+    /** Persist authentication cookies across browser sessions (default true) */
+    rememberMe?: boolean;
 };
 export type LoginResponseDto = {
     /** Access token */
@@ -2742,6 +3029,201 @@ export type BestPhotosResponseDto = {
     nextPage: string | null;
     total: number;
 };
+export type ClassificationTagDto = {
+    id: string;
+    name: string;
+};
+export type ClassificationContributionDto = {
+    albumId: string;
+    albumName: string;
+    /** True when this rule archived the item */
+    archived: boolean;
+    decision: ClassificationMatchDecision;
+    ruleId: string;
+    score: number | null;
+    /** The tag this rule added, when it added one */
+    tag: (ClassificationTagDto) | null;
+};
+export type ClassificationPreviewDto = {
+    mediaType?: ClassificationMediaType;
+    /** Match any of these people */
+    personIds?: string[];
+    /** How many of the newest items a visual preview reads */
+    sampleSize?: number;
+    /** Match any of these tags, or a tag beneath one of them */
+    tagIds?: string[];
+    /** Taken on or after this day (YYYY-MM-DD) */
+    takenAfter?: string | null;
+    /** Taken on or before this day (YYYY-MM-DD) */
+    takenBefore?: string | null;
+    /** The confidence a visual phrase has to reach */
+    threshold?: number;
+    /** Visual category phrases compared with each item */
+    visualQueries?: string[];
+};
+export type ClassificationScoredAssetDto = {
+    assetId: string;
+    score: number | null;
+};
+export type ClassificationPreviewResponseDto = {
+    /** True when `matched` counts the whole library, false for a bounded sample */
+    exact: boolean;
+    /** The first matches, best first */
+    items: ClassificationScoredAssetDto[];
+    /** Items that match among those read */
+    matched: number;
+    /** Items read: the whole library when exact, otherwise the newest items */
+    sampled: number;
+    /** False when visual phrases cannot be compared right now */
+    visualSearchAvailable: boolean;
+};
+export type ClassificationRuleCountsDto = {
+    accepted: number;
+    matched: number;
+    rejected: number;
+    suggested: number;
+};
+export type ClassificationRuleResponseDto = {
+    action: ClassificationRuleAction;
+    albumId: string;
+    albumName: string;
+    archive: boolean;
+    archiveConsentAt: string | null;
+    counts: ClassificationRuleCountsDto;
+    createdAt: string;
+    enabled: boolean;
+    id: string;
+    lastAppliedAt: string | null;
+    mediaType: ClassificationMediaType;
+    /** Match any of these people */
+    personIds: string[];
+    tag: (ClassificationTagDto) | null;
+    /** Match any of these tags, or a tag beneath one of them */
+    tagIds: string[];
+    /** Taken on or after this day (YYYY-MM-DD) */
+    takenAfter: string | null;
+    /** Taken on or before this day (YYYY-MM-DD) */
+    takenBefore: string | null;
+    /** The confidence a visual phrase has to reach */
+    threshold: number;
+    updatedAt: string;
+    /** Visual category phrases compared with each item */
+    visualQueries: string[];
+};
+export type ClassificationRuleCreateDto = {
+    /** Defaults to the server default rule action */
+    action?: ClassificationRuleAction;
+    /** Name of the smart album */
+    albumName: string;
+    /** Archive matches; requires archiveConsent */
+    archive?: boolean;
+    /** The owner explicitly agrees that matches are archived */
+    archiveConsent?: boolean;
+    /** Description of the smart album */
+    description?: string | null;
+    enabled?: boolean;
+    /** Icon of the smart album */
+    icon?: string;
+    mediaType?: ClassificationMediaType;
+    /** Collection to create the smart album inside */
+    parentId?: string;
+    /** Match any of these people */
+    personIds?: string[];
+    /** Match any of these tags, or a tag beneath one of them */
+    tagIds?: string[];
+    /** The rule-owned tag a match receives; null tags nothing */
+    tagName?: string | null;
+    /** Taken on or after this day (YYYY-MM-DD) */
+    takenAfter?: string | null;
+    /** Taken on or before this day (YYYY-MM-DD) */
+    takenBefore?: string | null;
+    /** The confidence a visual phrase has to reach */
+    threshold?: number;
+    /** Visual category phrases compared with each item */
+    visualQueries?: string[];
+};
+export type ClassificationRuleUpdateDto = {
+    action?: ClassificationRuleAction;
+    /** Archive matches; turning it on requires archiveConsent */
+    archive?: boolean;
+    /** The owner explicitly agrees that matches are archived */
+    archiveConsent?: boolean;
+    /** A disabled rule keeps what it applied and stops changing anything */
+    enabled?: boolean;
+    mediaType?: ClassificationMediaType;
+    /** Match any of these people */
+    personIds?: string[];
+    /** Match any of these tags, or a tag beneath one of them */
+    tagIds?: string[];
+    /** The rule-owned tag a match receives; null tags nothing */
+    tagName?: string | null;
+    /** Taken on or after this day (YYYY-MM-DD) */
+    takenAfter?: string | null;
+    /** Taken on or before this day (YYYY-MM-DD) */
+    takenBefore?: string | null;
+    /** The confidence a visual phrase has to reach */
+    threshold?: number;
+    /** Visual category phrases compared with each item */
+    visualQueries?: string[];
+};
+export type ClassificationApplyDto = {
+    /** Items from the plan; empty records the check when nothing changed */
+    assetIds: string[];
+};
+export type ClassificationApplyResponseDto = {
+    added: number;
+    lastAppliedAt: string;
+    removed: number;
+    suggested: number;
+    unchanged: number;
+};
+export type ClassificationDecisionDto = {
+    assetIds: string[];
+    decision: ClassificationReviewDecision;
+};
+export type ClassificationDecisionResponseDto = {
+    skipped: number;
+    updated: number;
+};
+export type ClassificationMatchDto = {
+    archiveContributed: boolean;
+    assetId: string;
+    decision: ClassificationMatchDecision;
+    score: number | null;
+    tagContributed: boolean;
+    updatedAt: string;
+};
+export type ClassificationMatchPageDto = {
+    items: ClassificationMatchDto[];
+    nextPage: number | null;
+    total: number;
+};
+export type ClassificationPlanResponseDto = {
+    /** Items that would be added or suggested */
+    added: number;
+    /** Every item applying would change, for the apply call or a bulk job */
+    assetIds: string[];
+    /** True when applying must run as a durable bulk job */
+    durable: boolean;
+    /** The first items that would be added */
+    items: ClassificationScoredAssetDto[];
+    /** Items the rule matches now */
+    matched: number;
+    /** Items the rule applied that no longer match */
+    removed: number;
+    /** True when there were more changes than one apply can carry */
+    truncated: boolean;
+    visualSearchAvailable: boolean;
+};
+export type ClassificationSettingsDto = {
+    defaultAction: ClassificationRuleAction;
+    /** Changes above this many run as a durable bulk job */
+    inlineLimit: number;
+    /** Whether rules may use visual category phrases */
+    visualCategories: boolean;
+    /** Whether visual phrases can be compared right now */
+    visualSearchAvailable: boolean;
+};
 export type ClusterGroupRequestResponseDto = {
     /** Cluster group the user is invited to join */
     clusterGroupId: string;
@@ -2864,6 +3346,67 @@ export type UserConfigDto = {
     theme: UserConfigThemeDto;
     trash: UserConfigTrashDto;
     user: UserConfigUserDto;
+};
+export type DevelopPresetSettingsDto = {
+    /** Black point */
+    blacks?: number;
+    /** Local contrast in the midtones */
+    clarity?: number;
+    /** Contrast around middle grey */
+    contrast?: number;
+    /** Haze removal (positive) or addition (negative) */
+    dehaze?: number;
+    /** Exposure in EV; each whole stop doubles the light */
+    exposure?: number;
+    /** Film grain amount */
+    grain?: number;
+    /** Highlight recovery (negative) or lift (positive) */
+    highlights?: number;
+    /** Selective adjustments, applied in order after the global develop */
+    masks?: AssetDevelopMask[];
+    /** Luminance noise reduction amount */
+    noiseReduction?: number;
+    preset?: AssetDevelopPreset;
+    /** How much of the preset is applied, as a percentage */
+    presetStrength?: number;
+    /** Global saturation */
+    saturation?: number;
+    /** Shadow lift (positive) or deepening (negative) */
+    shadows?: number;
+    /** Detail sharpening amount */
+    sharpen?: number;
+    /** Warm (positive) or cool (negative) white balance shift */
+    temperature?: number;
+    /** Magenta (positive) or green (negative) tint */
+    tint?: number;
+    /** Saturation weighted towards muted colours */
+    vibrance?: number;
+    /** Darkened (positive) or lightened (negative) edges */
+    vignette?: number;
+    /** White point */
+    whites?: number;
+};
+export type DevelopPresetResponseDto = {
+    /** When the preset was saved */
+    createdAt: string;
+    /** Preset ID */
+    id: string;
+    /** Preset name */
+    name: string;
+    settings: DevelopPresetSettingsDto;
+    /** When the preset last changed */
+    updatedAt: string;
+};
+export type DevelopPresetCreateDto = {
+    /** Name shown in the presets list; unique per account */
+    name: string;
+    settings: DevelopPresetSettingsDto;
+};
+export type DevelopPresetUpdateDto = {
+    /** Name shown in the presets list; unique per account */
+    name?: string;
+    /** Replaces every stored setting of the preset */
+    settings?: DevelopPresetSettingsDto;
 };
 export type DocumentSearchResponseDto = {
     items: AssetResponseDto[];
@@ -3560,11 +4103,50 @@ export type QueueCommandDto = {
     /** Force the command execution (if applicable) */
     force?: boolean;
 };
+export type LibraryScanResponseDto = {
+    /** New items indexed */
+    added: number;
+    /** Indexed items checked against their folder */
+    checked: number;
+    /** When the scan was asked for */
+    createdAt: string;
+    /** Failure detail for the administrator */
+    error: string | null;
+    /** Stable failure code */
+    errorCode: string | null;
+    /** When the scan ended */
+    finishedAt: string | null;
+    /** Items whose file is missing, marked offline */
+    offlined: number;
+    /** Offline items whose file is back */
+    onlined: number;
+    /** The scan job, a media operation of kind library_scan */
+    operationId: string;
+    /** A pause was asked for and the scan has not reached it yet */
+    pauseRequested: boolean;
+    phase: LibraryScanPhase;
+    /** Files and items handled so far */
+    processedUnits: number;
+    /** Progress, 0 to 100 */
+    progress: number;
+    /** The scan failed once and waits for its automatic retry */
+    retrying: boolean;
+    /** When the scan first started */
+    startedAt: string | null;
+    status: MediaOperationStatus;
+    stopReason: (LibraryScanStopReason) | null;
+    /** Files and items known so far; grows while the folders are read */
+    totalUnits: number;
+    /** Items whose file changed and are read again */
+    updated: number;
+};
 export type LibraryResponseDto = {
     /** Number of assets */
     assetCount: number;
     /** Creation date */
     createdAt: string;
+    /** When removal was confirmed; set while removal is in progress */
+    deletedAt: string | null;
     /** Exclusion patterns */
     exclusionPatterns: string[];
     /** Library ID */
@@ -3577,6 +4159,8 @@ export type LibraryResponseDto = {
     ownerId: string;
     /** Last refresh date */
     refreshedAt: string | null;
+    /** The latest scan, or null if the library was never scanned */
+    scan: (LibraryScanResponseDto) | null;
     /** Last update date */
     updatedAt: string;
 };
@@ -3587,8 +4171,22 @@ export type CreateLibraryDto = {
     importPaths?: string[];
     /** Library name */
     name?: string;
-    /** Owner user ID */
+    /** Owner user ID. Fixed once the library exists. */
     ownerId: string;
+};
+export type ManagedUploadsStatsResponseDto = {
+    /** Account whose uploads these are */
+    ownerId: string;
+    /** Number of photos */
+    photos: number;
+    /** Total number of assets */
+    total: number;
+    /** Storage usage in bytes */
+    usage: number;
+    /** Storage usage in bytes, counting each distinct original file once */
+    usagePhysical: number;
+    /** Number of videos */
+    videos: number;
 };
 export type UpdateLibraryDto = {
     /** Exclusion patterns (max 128) */
@@ -3598,6 +4196,42 @@ export type UpdateLibraryDto = {
     /** Library name */
     name?: string;
 };
+export type LibraryRemovalReviewDto = {
+    /** Albums that lose items */
+    albums: number;
+    /** Detected faces that will be removed with their items */
+    faces: number;
+    /** Library ID */
+    libraryId: string;
+    /** Library name, to be typed to confirm */
+    name: string;
+    /** Items already offline */
+    offline: number;
+    /** Source files in the import folders are never deleted */
+    originalsKept: boolean;
+    /** Owner user ID */
+    ownerId: string;
+    /** Indexed photos that will be removed */
+    photos: number;
+    /** Present this to confirm the removal */
+    reviewToken: string;
+    /** A scan is running and will be stopped */
+    scanActive: boolean;
+    /** Shared links that lose items */
+    sharedLinks: number;
+    /** Indexed items that will be removed */
+    total: number;
+    /** Original bytes those items reference */
+    usage: number;
+    /** Indexed videos that will be removed */
+    videos: number;
+};
+export type LibraryRemovalDto = {
+    /** The library name, typed to confirm */
+    confirmName: string;
+    /** The token from the removal review */
+    reviewToken: string;
+};
 export type LibraryStatsResponseDto = {
     /** Number of photos */
     photos: number;
@@ -3605,6 +4239,8 @@ export type LibraryStatsResponseDto = {
     total: number;
     /** Storage usage in bytes */
     usage: number;
+    /** Storage usage in bytes, counting each distinct original file once */
+    usagePhysical: number;
     /** Number of videos */
     videos: number;
 };
@@ -3621,6 +4257,7 @@ export type ValidateLibraryImportPathResponseDto = {
     isValid: boolean;
     /** Validation message */
     message?: string;
+    reason: LibraryImportPathReason;
 };
 export type ValidateLibraryResponseDto = {
     /** Validation results for import paths */
@@ -3883,6 +4520,8 @@ export type MediaOperationLivePhotoPairDto = {
 };
 export type MediaOperationBulkPayloadDto = {
     albumId?: string;
+    /** For `apply-classification-rule`: the rule to apply to the items (FL-60) */
+    classificationRuleId?: string;
     dateMode?: DateMode;
     dateTimeOriginal?: string;
     description?: string;
@@ -4349,6 +4988,8 @@ export type OAuthBackchannelLogoutDto = {
 export type OAuthCallbackDto = {
     /** OAuth code verifier (PKCE) */
     codeVerifier?: string;
+    /** Persist authentication cookies across browser sessions (default true) */
+    rememberMe?: boolean;
     /** OAuth state parameter */
     state?: string;
     /** OAuth callback URL */
@@ -4612,6 +5253,8 @@ export type PetObservationCreateDto = {
     imageWidth?: number;
 };
 export type PluginMethodResponseDto = {
+    /** Hosts this method may send requests to; empty when it cannot reach other servers */
+    allowedHosts: string[];
     /** Description */
     description: string;
     hostFunctions: boolean;
@@ -4671,257 +5314,71 @@ export type PluginTemplateResponseDto = {
     /** Ui hints, for example "smart-album" */
     uiHints: string[];
 };
-export type PublicConfigOAuthDto = {
-    /** Auto launch */
-    autoLaunch: boolean;
-    /** Button text */
-    buttonText: string;
-    /** Enabled */
-    enabled: boolean;
+export type PreservationPackageCountsDto = {
+    copied: number;
+    failed: number;
+    listed: number;
+    locked: number;
+    pending: number;
+    skipped: number;
+    total: number;
 };
-export type PublicConfigPasswordLoginDto = {
-    /** Enabled */
-    enabled: boolean;
+export type PreservationManifestSummaryDto = {
+    /** Every selected item was written; a complete package can still be damaged later */
+    complete: boolean;
+    createdAt: string;
+    exported: number;
+    failed: number;
+    includeLocked: boolean;
+    includeMetadata: boolean;
+    locked: number;
+    /** The package’s own identity, from its manifest */
+    packageId: string;
+    producerVersion: string;
+    scopeDescription: string;
+    skipped: number;
 };
-export type PublicConfigServerDto = {
-    /** Login page message */
-    loginPageMessage: string;
+export type PreservationSupportDto = {
+    category: PreservationSupportCategory;
+    level: PreservationSupportLevel;
 };
-export type PublicConfigThemeDto = {
-    /** Custom CSS for theming */
-    customCss: string;
+export type PreservationVerificationDto = {
+    changed: number;
+    checked: number;
+    /** Index documents whose digest no longer matches */
+    documentsChanged: string[];
+    finishedAt: string;
+    missing: number;
+    ok: number;
+    reasonKey: string | null;
+    status: PreservationVerificationStatus;
+    /** Files in the package its manifest does not account for */
+    unexpected: number;
 };
-export type PublicConfigDto = {
-    oauth: PublicConfigOAuthDto;
-    passwordLogin: PublicConfigPasswordLoginDto;
-    server: PublicConfigServerDto;
-    theme: PublicConfigThemeDto;
-};
-export type QueueResponseDto = {
-    /** Whether the queue is paused */
-    isPaused: boolean;
-    name: QueueName;
-    statistics: QueueStatisticsDto;
-};
-export type QueueUpdateDto = {
-    /** Whether to pause the queue */
-    isPaused?: boolean;
-};
-export type QueueDeleteDto = {
-    /** If true, will also remove failed jobs from the queue. */
-    failed?: boolean;
-};
-export type QueueJobResponseDto = {
-    /** Job data payload */
-    data: {
-        [key: string]: any;
-    };
-    /** Job ID */
-    id?: string;
-    name: JobName;
-    /** Job creation timestamp */
-    timestamp: number;
-};
-export type RenderWorkerAdmissionDto = {
-    /** Encoder and decoder names the check verified */
-    codecs?: string[];
-    /** When the conformance check ran */
-    conformanceReportedAt: string;
-    /** Digest of the engine and patches actually loaded */
-    engineDigest: string;
-    enrolmentSecret: string;
-    /** GPU memory measured by the conformance check */
-    gpuMemoryBytes: string | null;
-    /** True when the renderer is a software or fallback device */
-    softwareRenderer: boolean;
-    workerId: string;
-};
-export type RenderWorkerSessionDto = {
-    expiresAt: string;
-    /** How often the worker should heartbeat a held claim */
-    heartbeatIntervalMs: number;
-    /** How long a claim lasts without a heartbeat */
-    leaseMs: number;
-    scopes: MediaOperationKind[];
-    /** Present as the x-frameleaf-worker-session header on every worker call */
-    sessionToken: string;
-    workerId: string;
-};
-export type RenderWorkerClaimRequestDto = {
-    /** Narrow the claim to these kinds */
-    kinds?: MediaOperationKind[];
-};
-export type RenderWorkerInputGrantDto = {
-    /** Digest the manifest was resolved against, when known */
-    checksum: string | null;
-    expiresAt: string;
-    /** FL-90 resource key, or `source` for a single-asset workload */
-    inputId: string;
-    /** Resource class: library-asset, edited-master, font, lut, … */
-    kind: string;
-    /** Asset or resource id. Never a path */
-    resourceId: string;
-    /** Relative URL, valid for this claim only and only until expiresAt */
-    url: string;
-};
-export type RenderWorkerClaimLimitsDto = {
-    maxOutputBytes: string | null;
-    maxWallClockMs: string | null;
-};
-export type RenderWorkerClaimDto = {
-    attempt: number;
-    checkpoints: MediaOperationCheckpointDto[];
-    /** Required on every write to this operation */
-    claimToken: string;
-    inputs: RenderWorkerInputGrantDto[];
-    kind: MediaOperationKind;
-    leaseMs: number;
-    limits: RenderWorkerClaimLimitsDto;
-    operationId: string;
-    projectId: string | null;
-    revisionId: string | null;
-    settings: {
-        [key: string]: any;
-    };
-    snapshot: {
-        [key: string]: any;
-    };
-};
-export type RenderWorkerCancelAckDto = {
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    /** True when remote resources are confirmed gone */
-    released: boolean;
-};
-export type RenderWorkerWriteResultDto = {
-    accepted: boolean;
-    refusal: (RenderWorkerRefusalReason) | null;
-};
-export type RenderWorkerCheckpointPlanDto = {
-    chunkKey: string;
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    configDigest: string;
-    endTicks: string;
-    historyDigest: string;
-    inputDigest: string;
-    prerollTicks?: string;
-    requiresSequentialContext?: boolean;
-    seed: string | null;
-    sequence: number;
-    startTicks: string;
-    timebase: string;
-};
-export type RenderWorkerCheckpointCompleteDto = {
-    /** Must match the planned chunk; a re-planned chunk cannot be completed */
-    chunkKey: string;
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    outputChecksum: string;
-    outputPath: string;
-    sizeInBytes: string;
-};
-export type RenderWorkerCompleteDto = {
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    resultAssetId: string | null;
-};
-export type RenderWorkerFailDto = {
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    error: string;
-    errorCode: string;
-};
-export type RenderWorkerHeartbeatDto = {
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    /** Total output bytes produced so far */
-    outputBytes?: string;
-};
-export type RenderWorkerHeartbeatResponseDto = {
-    /** The owner asked to stop; acknowledge with cancel-ack */
-    cancelRequested: boolean;
-    leaseExtended: boolean;
-    leaseMs: number;
-    /** The owner paused the job and its claim has been handed back; stop without reporting a failure */
-    pauseRequested: boolean;
-    /** Set when a limit stopped the operation */
-    refusal: (RenderWorkerRefusalReason) | null;
-};
-export type RenderWorkerProgressDto = {
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    outputBytes?: string;
-    processedUnits: number;
-    status: Status3;
-    totalUnits: number | null;
-};
-export type RunPodBackfillResultDto = {
-    enqueued: string[];
-    skipped: string[];
-};
-export type RunPodConnectionTestDto = {
-    /** API key to verify (overrides the stored key for the test) */
-    apiKey?: string;
-};
-export type RunPodConnectionResultDto = {
-    message?: string;
-    ok: boolean;
-};
-export type RunPodStateDto = {
-    endpointId?: string;
-    endpointUrl?: string;
-    errorMessage?: string;
-    estimatedCostUsd?: number;
-    gpuTypeId?: string;
-    /** Serverless idle timeout; may be null when not yet provisioned. */
-    idleTimeoutSeconds?: number | null;
-    imageName?: string;
-    instanceTag?: string;
-    lastBusyAt?: string;
-    maxRuntimeHours?: number;
-    mlUrl?: string;
-    podCreatedAt?: string;
-    podId?: string;
-    pricePerHour?: number;
-    runningSince?: string;
-    status: Status4;
-    stoppedAt?: string;
-    templateId?: string;
-    unhealthySince?: string;
-    workerReady?: boolean;
-    /** Serverless workersMax; may be null when not yet provisioned. */
-    workersMax?: number | null;
-    /** Serverless workersMin; may be null when not yet provisioned. */
-    workersMin?: number | null;
-};
-export type RunPodGpuTypeDto = {
-    communityCloud?: boolean;
-    displayName: string;
+export type PreservationPackageDto = {
+    counts: PreservationPackageCountsDto;
+    createdAt: string;
+    downloadable: boolean;
+    /** When an uploaded package is discarded */
+    expiresAt: string | null;
+    format: PreservationPackageFormat;
     id: string;
-    memoryInGb: number;
-    pricePerHour?: number | null;
-    secureCloud?: boolean;
-};
-export type RunPodProvisionDto = {
-    /** User confirms image previews will be sent to RunPod (must be true to launch) */
-    acknowledgeDataPrivacy: true;
-    gpuCount?: number;
-    /** RunPod GPU type ID, e.g. "NVIDIA RTX A5000" */
-    gpuTypeId: string;
-    /** Override the configured image */
-    imageName?: string;
-    maxRuntimeHours?: number;
-};
-export type AskSearchDto = {
-    /** Search language code */
-    language?: string;
-    /** Page number */
-    page?: number;
-    /** Natural language Ask Search query */
-    query: string;
-    /** Number of results to return */
-    size?: number;
+    includeLocked: boolean;
+    includeMetadata: boolean;
+    /** It holds Locked items: downloading it needs an unlocked session */
+    lockedContent: boolean;
+    manifest: (PreservationManifestSummaryDto) | null;
+    name: string;
+    /** The newest job on this package */
+    operation: (MediaOperationDto) | null;
+    origin: PreservationPackageOrigin;
+    restorable: boolean;
+    scopeDescription: string | null;
+    sizeBytes: string | null;
+    status: PreservationPackageStatus;
+    support: PreservationSupportDto[];
+    updatedAt: string;
+    verification: (PreservationVerificationDto) | null;
 };
 export type IdsFilter = {
     all?: string[];
@@ -5082,6 +5539,433 @@ export type SearchFilter = {
     "type"?: EnumFilterAssetType;
     updatedAt?: DateFilter;
     visibility?: EnumFilterAssetVisibility;
+};
+export type PreservationScopeDto = {
+    /** Exactly these items of yours, instead of a filter */
+    assetIds?: string[];
+    /** Your items matching these conditions; the whole library when empty */
+    filter?: SearchFilter;
+};
+export type PreservationExportCreateDto = {
+    /** Include your Locked items. Needs an unlocked session; they are restored Locked. */
+    includeLocked?: boolean;
+    /** Include metadata sidecars, albums, people, tags and edit recipes. Checksums are always included. */
+    includeMetadata?: boolean;
+    name: string;
+    /** Idempotency key; a repeated submit answers with the first package */
+    requestKey?: string;
+    scope?: PreservationScopeDto;
+};
+export type PreservationItemDto = {
+    assetId: string | null;
+    error: string | null;
+    id: string;
+    locked: boolean;
+    name: string | null;
+    reasonKey: string | null;
+    sha256: string | null;
+    sizeBytes: string | null;
+    sourceAssetId: string | null;
+    state: PreservationItemState;
+    verifyState: (PreservationVerifyState) | null;
+};
+export type PreservationItemsResponseDto = {
+    items: PreservationItemDto[];
+    total: number;
+};
+export type PreservationPreviewDto = {
+    /** Count Locked items as included; needs an unlocked session */
+    includeLocked?: boolean;
+    scope?: PreservationScopeDto;
+};
+export type PreservationPreviewResponseDto = {
+    bytes: string;
+    /** Free space where the package would be written */
+    freeBytes: string | null;
+    includedBytes: string;
+    /** Items the export would include */
+    includedItems: number;
+    /** Items matching, Locked ones not counted */
+    items: number;
+    /** This session is unlocked, so Locked items may be included */
+    lockedAllowed: boolean;
+    lockedBytes: string;
+    /** Locked items matching */
+    lockedItems: number;
+    maxItems: number;
+    support: PreservationSupportDto[];
+    withinLimit: boolean;
+};
+export type PreservationRestoreCountsDto = {
+    conflicts: number;
+    /** Originals the library already holds; they are matched, never copied again */
+    existing: number;
+    failed: number;
+    findings: number;
+    locked: number;
+    matched: number;
+    /** Originals the library does not hold */
+    "new": number;
+    pending: number;
+    ready: number;
+    restored: number;
+    skipped: number;
+    total: number;
+    /** Originals the library holds in the trash; restore them from the trash first */
+    trashed: number;
+};
+export type PreservationRestoreDto = {
+    /** Albums and collections in the package */
+    albums: number;
+    conflictDefault: PreservationDecision;
+    counts: PreservationRestoreCountsDto;
+    createdAt: string;
+    id: string;
+    name: string;
+    /** The newest job on this restoration */
+    operation: (MediaOperationDto) | null;
+    packageId: string | null;
+    /** Named people in the package */
+    people: number;
+    reasonKey: string | null;
+    restoreEditRecipes: boolean;
+    status: PreservationRestoreStatus;
+    support: PreservationSupportDto[];
+    updatedAt: string;
+};
+export type PreservationRestoreCreateDto = {
+    /** What to do where the package and the library disagree and you have not chosen; `keep` when omitted */
+    conflictDefault?: PreservationDecision;
+    name?: string;
+    packageId: string;
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    requestKey?: string;
+    /** Restore edit recipes; edited versions are rendered again */
+    restoreEditRecipes?: boolean;
+};
+export type PreservationItemDecisionsDto = {
+    decisions: {
+        [key: string]: PreservationDecision;
+    };
+    id: string;
+};
+export type PreservationDecisionsUpdateDto = {
+    conflictDefault?: PreservationDecision;
+    items?: PreservationItemDecisionsDto[];
+    restoreEditRecipes?: boolean;
+};
+export type PreservationConflictDto = {
+    /** The package’s value */
+    archived: string | null;
+    /** The library’s value */
+    current: string | null;
+    /** Your choice; the restoration default applies when null */
+    decision: (PreservationDecision) | null;
+    field: PreservationConflictField;
+};
+export type PreservationRestoreItemDto = {
+    applied: boolean;
+    assetId: string | null;
+    conflicts: PreservationConflictDto[];
+    error: string | null;
+    /** Translation keys for what the restore left for you to look at */
+    findings: string[];
+    id: string;
+    /** Locked in the package or in your library; listed only to an unlocked session */
+    locked: boolean;
+    match: (PreservationRestoreMatch) | null;
+    name: string | null;
+    reasonKey: string | null;
+    sourceAssetId: string | null;
+    state: PreservationRestoreItemState;
+};
+export type PreservationRestoreItemsResponseDto = {
+    items: PreservationRestoreItemDto[];
+    total: number;
+};
+export type PreservationServerPackageCreateDto = {
+    name?: string;
+    /** A package directory or ZIP file on this server, outside its media storage */
+    path: string;
+};
+export type PreservationUploadCreateDto = {
+    /** A `.frameleaf-preservation.zip` package */
+    file: Blob;
+};
+export type PublicConfigOAuthDto = {
+    /** Auto launch */
+    autoLaunch: boolean;
+    /** Button text */
+    buttonText: string;
+    /** Enabled */
+    enabled: boolean;
+};
+export type PublicConfigPasswordLoginDto = {
+    /** Enabled */
+    enabled: boolean;
+};
+export type PublicConfigServerDto = {
+    /** Login page message */
+    loginPageMessage: string;
+};
+export type PublicConfigThemeDto = {
+    /** Custom CSS for theming */
+    customCss: string;
+};
+export type PublicConfigDto = {
+    oauth: PublicConfigOAuthDto;
+    passwordLogin: PublicConfigPasswordLoginDto;
+    server: PublicConfigServerDto;
+    theme: PublicConfigThemeDto;
+};
+export type QueueResponseDto = {
+    /** Whether the queue is paused */
+    isPaused: boolean;
+    name: QueueName;
+    statistics: QueueStatisticsDto;
+};
+export type QueueUpdateDto = {
+    /** Whether to pause the queue */
+    isPaused?: boolean;
+};
+export type QueueDeleteDto = {
+    /** If true, will also remove failed jobs from the queue. */
+    failed?: boolean;
+};
+export type QueueJobResponseDto = {
+    /** Job data payload */
+    data: {
+        [key: string]: any;
+    };
+    /** Job ID */
+    id?: string;
+    name: JobName;
+    /** Job creation timestamp */
+    timestamp: number;
+};
+export type RenderWorkerAdmissionDto = {
+    /** Encoder and decoder names the check verified */
+    codecs?: string[];
+    /** When the conformance check ran */
+    conformanceReportedAt: string;
+    /** Digest of the engine and patches actually loaded */
+    engineDigest: string;
+    enrolmentSecret: string;
+    /** GPU memory measured by the conformance check */
+    gpuMemoryBytes: string | null;
+    /** True when the renderer is a software or fallback device */
+    softwareRenderer: boolean;
+    workerId: string;
+};
+export type RenderWorkerSessionDto = {
+    expiresAt: string;
+    /** How often the worker should heartbeat a held claim */
+    heartbeatIntervalMs: number;
+    /** How long a claim lasts without a heartbeat */
+    leaseMs: number;
+    scopes: MediaOperationKind[];
+    /** Present as the x-frameleaf-worker-session header on every worker call */
+    sessionToken: string;
+    workerId: string;
+};
+export type RenderWorkerClaimRequestDto = {
+    /** Narrow the claim to these kinds */
+    kinds?: MediaOperationKind[];
+};
+export type RenderWorkerInputGrantDto = {
+    /** Digest the manifest was resolved against, when known */
+    checksum: string | null;
+    expiresAt: string;
+    /** FL-90 resource key, or `source` for a single-asset workload */
+    inputId: string;
+    /** Resource class: library-asset, edited-master, font, lut, … */
+    kind: string;
+    /** Asset or resource id. Never a path */
+    resourceId: string;
+    /** Relative URL, valid for this claim only and only until expiresAt */
+    url: string;
+};
+export type RenderWorkerClaimLimitsDto = {
+    maxOutputBytes: string | null;
+    maxWallClockMs: string | null;
+};
+export type RenderWorkerClaimDto = {
+    attempt: number;
+    checkpoints: MediaOperationCheckpointDto[];
+    /** Required on every write to this operation */
+    claimToken: string;
+    inputs: RenderWorkerInputGrantDto[];
+    kind: MediaOperationKind;
+    leaseMs: number;
+    limits: RenderWorkerClaimLimitsDto;
+    operationId: string;
+    projectId: string | null;
+    revisionId: string | null;
+    settings: {
+        [key: string]: any;
+    };
+    snapshot: {
+        [key: string]: any;
+    };
+};
+export type RenderWorkerCancelAckDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    /** True when remote resources are confirmed gone */
+    released: boolean;
+};
+export type RenderWorkerWriteResultDto = {
+    accepted: boolean;
+    refusal: (RenderWorkerRefusalReason) | null;
+};
+export type RenderWorkerCheckpointPlanDto = {
+    chunkKey: string;
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    configDigest: string;
+    endTicks: string;
+    historyDigest: string;
+    inputDigest: string;
+    prerollTicks?: string;
+    requiresSequentialContext?: boolean;
+    seed: string | null;
+    sequence: number;
+    startTicks: string;
+    timebase: string;
+};
+export type RenderWorkerCheckpointCompleteDto = {
+    /** Must match the planned chunk; a re-planned chunk cannot be completed */
+    chunkKey: string;
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    outputChecksum: string;
+    outputPath: string;
+    sizeInBytes: string;
+};
+export type RenderWorkerOutputDto = {
+    /** SHA-256 of the whole file */
+    checksum: string;
+    /** `video/mp4`, `video/webm` or `video/quicktime` */
+    contentType: string;
+    /** Absolute path inside the render directory the claim named */
+    path: string;
+    /** What the worker calls a copy it kept; it is asked to delete it until it acknowledges */
+    remoteRef?: string | null;
+    sizeInBytes: string;
+};
+export type RenderWorkerCompleteDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    /** Required for a Studio export */
+    output?: RenderWorkerOutputDto;
+    /** Must be null for a Studio export: its result is adopted by publication, never named by a worker */
+    resultAssetId: string | null;
+};
+export type RenderWorkerFailDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    error: string;
+    errorCode: string;
+};
+export type RenderWorkerHeartbeatDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    /** Total output bytes produced so far */
+    outputBytes?: string;
+};
+export type RenderWorkerHeartbeatResponseDto = {
+    /** The owner asked to stop; acknowledge with cancel-ack */
+    cancelRequested: boolean;
+    leaseExtended: boolean;
+    leaseMs: number;
+    /** The owner paused the job and its claim has been handed back; stop without reporting a failure */
+    pauseRequested: boolean;
+    /** Set when a limit stopped the operation */
+    refusal: (RenderWorkerRefusalReason) | null;
+};
+export type RenderWorkerProgressDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    outputBytes?: string;
+    processedUnits: number;
+    status: Status3;
+    totalUnits: number | null;
+};
+export type RenderWorkerRemoteReferenceDto = {
+    id: string;
+    /** The render job */
+    operationId: string;
+    reason: StudioExportRemoteReason;
+    /** The copy to delete, for a `delete` reference */
+    remoteRef: string | null;
+    requestedAt: string;
+};
+export type RunPodBackfillResultDto = {
+    enqueued: string[];
+    skipped: string[];
+};
+export type RunPodConnectionTestDto = {
+    /** API key to verify (overrides the stored key for the test) */
+    apiKey?: string;
+};
+export type RunPodConnectionResultDto = {
+    message?: string;
+    ok: boolean;
+};
+export type RunPodStateDto = {
+    endpointId?: string;
+    endpointUrl?: string;
+    errorMessage?: string;
+    estimatedCostUsd?: number;
+    gpuTypeId?: string;
+    /** Serverless idle timeout; may be null when not yet provisioned. */
+    idleTimeoutSeconds?: number | null;
+    imageName?: string;
+    instanceTag?: string;
+    lastBusyAt?: string;
+    maxRuntimeHours?: number;
+    mlUrl?: string;
+    podCreatedAt?: string;
+    podId?: string;
+    pricePerHour?: number;
+    runningSince?: string;
+    status: Status4;
+    stoppedAt?: string;
+    templateId?: string;
+    unhealthySince?: string;
+    workerReady?: boolean;
+    /** Serverless workersMax; may be null when not yet provisioned. */
+    workersMax?: number | null;
+    /** Serverless workersMin; may be null when not yet provisioned. */
+    workersMin?: number | null;
+};
+export type RunPodGpuTypeDto = {
+    communityCloud?: boolean;
+    displayName: string;
+    id: string;
+    memoryInGb: number;
+    pricePerHour?: number | null;
+    secureCloud?: boolean;
+};
+export type RunPodProvisionDto = {
+    /** User confirms image previews will be sent to RunPod (must be true to launch) */
+    acknowledgeDataPrivacy: true;
+    gpuCount?: number;
+    /** RunPod GPU type ID, e.g. "NVIDIA RTX A5000" */
+    gpuTypeId: string;
+    /** Override the configured image */
+    imageName?: string;
+    maxRuntimeHours?: number;
+};
+export type AskSearchDto = {
+    /** Search language code */
+    language?: string;
+    /** Page number */
+    page?: number;
+    /** Natural language Ask Search query */
+    query: string;
+    /** Number of results to return */
+    size?: number;
 };
 export type SearchOrder = {
     direction?: AssetOrder;
@@ -5612,6 +6496,26 @@ export type ServerApkLinksDto = {
     universal: string;
     /** APK download link for x86_64 architecture */
     x86_64: string;
+};
+export type ServerAppReleasesResponseDto = {
+    /** Android application */
+    android: {
+        /** Android package id of the signed release */
+        appId?: string;
+        /** Whether a signed Android release is configured for this server */
+        available: boolean;
+        /** Signed APK downloads for this server version */
+        links?: ServerApkLinksDto;
+        /** SHA-256 fingerprint of the release signing certificate, as AA:BB:... */
+        signingCertificateSha256?: string;
+    };
+    /** iOS application */
+    ios: {
+        /** Whether an iOS release is configured for this server */
+        available: boolean;
+        /** App Store or TestFlight page */
+        url?: string;
+    };
 };
 export type ServerConfigDto = {
     /** Canonical default for the image-description advanced raw prompt template */
@@ -6171,6 +7075,45 @@ export type StudioBundleUploadDto = {
     sizeBytes: string;
     sources: StudioBundleSourceDto[];
 };
+export type StudioExportSettingsDto = {
+    color: StudioExportColor;
+    format: StudioExportFormat;
+    resolution: StudioExportResolution;
+};
+export type StudioExportVersionDto = {
+    cancelledAt: string | null;
+    contentType: string | null;
+    createdAt: string;
+    destination: MediaOperationDestination;
+    error: string | null;
+    errorCode: string | null;
+    /** Export version ID */
+    id: string;
+    /** At least one source is shared with you rather than yours */
+    includesSharedSources: boolean;
+    /** The result inherited a lock from a Locked or sensitive source */
+    locked: boolean;
+    /** Null once the project was deleted for good */
+    projectId: string | null;
+    publishOperationId: string | null;
+    publishedAt: string | null;
+    renderOperationId: string | null;
+    /** The asset a `library` result became */
+    resultAssetId: string | null;
+    /** The project revision that was rendered */
+    revision: number;
+    /** Where the published result lives */
+    scope: (StudioExportScope) | null;
+    /** The result inherited sensitive evidence from a source */
+    sensitive: boolean;
+    settings: StudioExportSettingsDto;
+    sizeInBytes: string | null;
+    /** Library sources the result was made from */
+    sourceCount: number;
+    state: StudioExportVersionState;
+    /** The version number, once published */
+    version: number | null;
+};
 export type StudioPreviewTimeDto = {
     /** Time denominator; must be positive */
     denominator: string;
@@ -6401,6 +7344,29 @@ export type StudioProjectDuplicateDto = {
     /** Name of the copy; the client supplies the translated default */
     name?: string;
 };
+export type StudioExportListResponseDto = {
+    items: StudioExportVersionDto[];
+    /** Matching versions, before paging */
+    total: number;
+};
+export type StudioExportCreateDto = {
+    /** You agree to the media leaving your network for this export */
+    cloudConsent?: boolean;
+    color: StudioExportColor;
+    /** Where it renders. A cloud destination needs `cloudConsent` */
+    destination: MediaOperationDestination;
+    /** The revision you are looking at; a newer head refuses the export with `409` instead of rendering it */
+    expectedRevision?: number;
+    format: StudioExportFormat;
+    /** Idempotency key; a repeated submit answers with the first export */
+    requestKey?: string;
+    resolution: StudioExportResolution;
+};
+export type StudioExportCreateResponseDto = {
+    /** The render job; follow it in Activity */
+    operation: MediaOperationDto;
+    version: StudioExportVersionDto;
+};
 export type StudioProjectLeaseRequestDto = {
     /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
     clientId: string;
@@ -6550,7 +7516,7 @@ export type MachineLearningHardwareResponseDto = {
 };
 export type SmartAlbumReevaluateRequestDto = {
     /** Optional built-in kind to scope the re-evaluation to. Omit to re-evaluate every enabled kind. */
-    kind?: Kind3;
+    kind?: SmartAlbumBuiltInKind;
 };
 export type SmartAlbumReevaluateResponseDto = {
     /** Whether the re-evaluate job was newly enqueued (false = already in-flight) */
@@ -6975,15 +7941,30 @@ export type CreateProfileImageResponseDto = {
     /** User ID */
     userId: string;
 };
-export type WorkflowStepDto = {
-    /** Step configuration */
+export type WorkflowIssueDto = {
+    code: WorkflowIssueCode;
+    /** What prevents the workflow from running */
+    message: string;
+    /** Index of the step the issue belongs to */
+    step?: number;
+};
+export type WorkflowStepResponseDto = {
+    /** Step configuration, without stored credential values */
     config: {
         [key: string]: any;
     } | null;
     /** Step is enabled */
-    enabled?: boolean;
-    /** Step plugin method */
+    enabled: boolean;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra: {
+        [key: string]: any;
+    };
+    /** Step ID */
+    id: string;
+    /** Step plugin method, as plugin#method */
     method: string;
+    /** Configuration paths (keys joined with ".") holding a stored credential that is never returned */
+    storedSecrets: string[];
 };
 export type WorkflowResponseDto = {
     /** Creation date */
@@ -6992,31 +7973,57 @@ export type WorkflowResponseDto = {
     description: string | null;
     /** Workflow enabled */
     enabled: boolean;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra: {
+        [key: string]: any;
+    };
     /** Workflow ID */
     id: string;
+    /** What prevents this definition from running on this server; empty when it can run */
+    issues: WorkflowIssueDto[];
     /** Workflow logs run results */
     logging: boolean;
     /** Workflow name */
     name: string | null;
     /** Workflow steps */
-    steps: WorkflowStepDto[];
+    steps: WorkflowStepResponseDto[];
     /** Workflow trigger type */
-    trigger: WorkflowTrigger;
+    trigger: string;
     /** Update date */
     updatedAt: string;
+};
+export type WorkflowStepDto = {
+    /** Step configuration */
+    config: {
+        [key: string]: any;
+    } | null;
+    /** Step is enabled */
+    enabled?: boolean;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra?: {
+        [key: string]: any;
+    };
+    /** Step ID from a previous response. A credential left out of its configuration keeps its stored value */
+    id?: string;
+    /** Step plugin method, as plugin#method */
+    method: string;
 };
 export type WorkflowCreateDto = {
     /** Workflow description */
     description?: string | null;
     /** Workflow enabled */
     enabled?: boolean;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra?: {
+        [key: string]: any;
+    };
     /** Workflow logs run results */
     logging?: boolean;
     /** Workflow name */
     name?: string | null;
     steps?: WorkflowStepDto[];
-    /** Workflow trigger type */
-    trigger: WorkflowTrigger;
+    /** Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled */
+    trigger: string;
 };
 export type WorkflowTriggerResponseDto = {
     /** Trigger type */
@@ -7029,17 +8036,26 @@ export type WorkflowUpdateDto = {
     description?: string | null;
     /** Workflow enabled */
     enabled?: boolean;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra?: {
+        [key: string]: any;
+    };
     /** Workflow logs run results */
     logging?: boolean;
     /** Workflow name */
     name?: string | null;
     steps?: WorkflowStepDto[];
-    /** Workflow trigger type */
-    trigger?: WorkflowTrigger;
+    /** Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled */
+    trigger?: string;
 };
 export type WorkflowLogEntryDto = {
     /** Workflow run date/time */
     at: string;
+    /** 0 for the first attempt, 1 for the automatic retry, then manual retries */
+    attempt: number;
+    /** Why the run failed, without stored credentials */
+    error?: string;
+    errorCode?: WorkflowRunErrorCode;
     /** Workflow log entry ID */
     id: string;
     /** Last step ran, if the workflow ended early */
@@ -7050,28 +8066,38 @@ export type WorkflowLogEntryDto = {
         method: string;
     };
     result: WorkflowResult;
+    /** Run ID shared by every attempt of one run */
+    runId: string;
     /** Workflow trigger data ID */
     triggerDataId?: string;
 };
 export type WorkflowShareStepDto = {
-    /** Step configuration */
+    /** Step configuration, without credentials */
     config: {
         [key: string]: any;
     } | null;
     /** Step is enabled */
     enabled?: boolean;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra: {
+        [key: string]: any;
+    };
     /** Step plugin method */
     method: string;
 };
 export type WorkflowShareResponseDto = {
     /** Workflow description */
     description: string | null;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra: {
+        [key: string]: any;
+    };
     /** Workflow name */
     name: string | null;
     /** Workflow steps */
     steps: WorkflowShareStepDto[];
     /** Workflow trigger type */
-    trigger: WorkflowTrigger;
+    trigger: string;
 };
 export type LicenseResponseDto = UserLicense;
 export type ReleaseEventV1 = {
@@ -8656,6 +9682,34 @@ export function addUsersToAlbum({ id, addUsersDto }: {
     })));
 }
 /**
+ * Retrieve library analytics
+ */
+export function getAnalyticsReport({ range, scope }: {
+    range?: AnalyticsRange;
+    scope?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AnalyticsReportResponseDto;
+    }>(`/analytics${QS.query(QS.explode({
+        range,
+        scope
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * List analytics scopes
+ */
+export function getAnalyticsScopes(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AnalyticsScopesResponseDto;
+    }>("/analytics/scopes", {
+        ...opts
+    }));
+}
+/**
  * List all API keys
  */
 export function getApiKeys(opts?: Oazapfts.RequestOpts) {
@@ -9027,6 +10081,49 @@ export function saveAssetDevelop({ id, assetDevelopSaveDto }: {
         ...opts,
         method: "PUT",
         body: assetDevelopSaveDto
+    })));
+}
+/**
+ * List exports of an original for editing elsewhere
+ */
+export function getAssetDevelopExports({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopExportResponseDto[];
+    }>(`/assets/${encodeURIComponent(id)}/develop/exports`, {
+        ...opts
+    }));
+}
+/**
+ * Export an original for editing elsewhere
+ */
+export function createAssetDevelopExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopExportResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop/exports`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Bring back a file developed elsewhere
+ */
+export function importAssetDevelopRendition({ id, assetDevelopImportDto }: {
+    id: string;
+    assetDevelopImportDto: AssetDevelopImportDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssetDevelopRevisionResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop/imports`, oazapfts.multipart({
+        ...opts,
+        method: "POST",
+        body: assetDevelopImportDto
     })));
 }
 /**
@@ -9670,6 +10767,181 @@ export function getBestPhotos({ includeArchived, limit, minScore, page }: {
     }));
 }
 /**
+ * Retrieve classification contributions for an asset
+ */
+export function getAssetClassifications({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationContributionDto[];
+    }>(`/classification/assets/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Preview a classification rule
+ */
+export function previewClassificationRule({ classificationPreviewDto }: {
+    classificationPreviewDto: ClassificationPreviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationPreviewResponseDto;
+    }>("/classification/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: classificationPreviewDto
+    })));
+}
+/**
+ * List classification rules
+ */
+export function getClassificationRules({ albumId }: {
+    albumId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationRuleResponseDto[];
+    }>(`/classification/rules${QS.query(QS.explode({
+        albumId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Create a classification rule
+ */
+export function createClassificationRule({ classificationRuleCreateDto }: {
+    classificationRuleCreateDto: ClassificationRuleCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ClassificationRuleResponseDto;
+    }>("/classification/rules", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: classificationRuleCreateDto
+    })));
+}
+/**
+ * Delete a classification rule
+ */
+export function deleteClassificationRule({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/classification/rules/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Retrieve a classification rule
+ */
+export function getClassificationRule({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationRuleResponseDto;
+    }>(`/classification/rules/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Update a classification rule
+ */
+export function updateClassificationRule({ id, classificationRuleUpdateDto }: {
+    id: string;
+    classificationRuleUpdateDto: ClassificationRuleUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationRuleResponseDto;
+    }>(`/classification/rules/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: classificationRuleUpdateDto
+    })));
+}
+/**
+ * Apply a classification rule
+ */
+export function applyClassificationRule({ id, classificationApplyDto }: {
+    id: string;
+    classificationApplyDto: ClassificationApplyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationApplyResponseDto;
+    }>(`/classification/rules/${encodeURIComponent(id)}/apply`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: classificationApplyDto
+    })));
+}
+/**
+ * Review classification rule matches
+ */
+export function decideClassificationRuleMatches({ id, classificationDecisionDto }: {
+    id: string;
+    classificationDecisionDto: ClassificationDecisionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationDecisionResponseDto;
+    }>(`/classification/rules/${encodeURIComponent(id)}/decisions`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: classificationDecisionDto
+    })));
+}
+/**
+ * List classification rule matches
+ */
+export function getClassificationRuleMatches({ decision, id, page, size }: {
+    decision?: ClassificationMatchDecision;
+    id: string;
+    page?: number;
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationMatchPageDto;
+    }>(`/classification/rules/${encodeURIComponent(id)}/matches${QS.query(QS.explode({
+        decision,
+        page,
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Plan a classification rule re-evaluation
+ */
+export function planClassificationRule({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationPlanResponseDto;
+    }>(`/classification/rules/${encodeURIComponent(id)}/plan`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Retrieve classification rule settings
+ */
+export function getClassificationSettings(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClassificationSettingsDto;
+    }>("/classification/settings", {
+        ...opts
+    }));
+}
+/**
  * Retrieve cluster group requests
  */
 export function getClusterGroupRequests(opts?: Oazapfts.RequestOpts) {
@@ -9787,6 +11059,59 @@ export function getUserConfigDefaults(opts?: Oazapfts.RequestOpts) {
     }>("/config/defaults", {
         ...opts
     }));
+}
+/**
+ * List develop presets
+ */
+export function getDevelopPresets(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopPresetResponseDto[];
+    }>("/develop-presets", {
+        ...opts
+    }));
+}
+/**
+ * Save a develop preset
+ */
+export function createDevelopPreset({ developPresetCreateDto }: {
+    developPresetCreateDto: DevelopPresetCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopPresetResponseDto;
+    }>("/develop-presets", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: developPresetCreateDto
+    })));
+}
+/**
+ * Delete a develop preset
+ */
+export function deleteDevelopPreset({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/develop-presets/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Update a develop preset
+ */
+export function updateDevelopPreset({ id, developPresetUpdateDto }: {
+    id: string;
+    developPresetUpdateDto: DevelopPresetUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopPresetResponseDto;
+    }>(`/develop-presets/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: developPresetUpdateDto
+    })));
 }
 /**
  * Search documents
@@ -10350,11 +11675,15 @@ export function runQueueCommandLegacy({ name, queueCommandDto }: {
 /**
  * Retrieve libraries
  */
-export function getAllLibraries(opts?: Oazapfts.RequestOpts) {
+export function getAllLibraries({ withDeleted }: {
+    withDeleted?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: LibraryResponseDto[];
-    }>("/libraries", {
+    }>(`/libraries${QS.query(QS.explode({
+        withDeleted
+    }))}`, {
         ...opts
     }));
 }
@@ -10372,6 +11701,17 @@ export function createLibrary({ createLibraryDto }: {
         method: "POST",
         body: createLibraryDto
     })));
+}
+/**
+ * Retrieve managed upload statistics
+ */
+export function getManagedUploadStatistics(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ManagedUploadsStatsResponseDto[];
+    }>("/libraries/managed-uploads", {
+        ...opts
+    }));
 }
 /**
  * Delete a library
@@ -10412,6 +11752,43 @@ export function updateLibrary({ id, updateLibraryDto }: {
         method: "PUT",
         body: updateLibraryDto
     })));
+}
+/**
+ * Review a library removal
+ */
+export function getLibraryRemovalReview({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LibraryRemovalReviewDto;
+    }>(`/libraries/${encodeURIComponent(id)}/removal`, {
+        ...opts
+    }));
+}
+/**
+ * Remove a library
+ */
+export function removeLibrary({ id, libraryRemovalDto }: {
+    id: string;
+    libraryRemovalDto: LibraryRemovalDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/removal`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryRemovalDto
+    })));
+}
+/**
+ * Cancel a library scan
+ */
+export function cancelLibraryScan({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/scan`, {
+        ...opts,
+        method: "DELETE"
+    }));
 }
 /**
  * Scan a library
@@ -11911,6 +13288,266 @@ export function getPlugin({ id }: {
     }));
 }
 /**
+ * List preservation packages
+ */
+export function getPreservationPackages(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PreservationPackageDto[];
+    }>("/preservation/packages", {
+        ...opts
+    }));
+}
+/**
+ * Create a preservation package
+ */
+export function createPreservationPackage({ preservationExportCreateDto }: {
+    preservationExportCreateDto: PreservationExportCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PreservationPackageDto;
+    }>("/preservation/packages", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: preservationExportCreateDto
+    })));
+}
+/**
+ * Remove a preservation package
+ */
+export function removePreservationPackage({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/preservation/packages/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get a preservation package
+ */
+export function getPreservationPackage({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PreservationPackageDto;
+    }>(`/preservation/packages/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Download a preservation package
+ */
+export function downloadPreservationPackage({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/preservation/packages/${encodeURIComponent(id)}/download`, {
+        ...opts
+    }));
+}
+/**
+ * Get a preservation package item report
+ */
+export function getPreservationPackageItems({ id, skip, state, take, verifyState }: {
+    id: string;
+    skip?: number;
+    state?: PreservationItemState;
+    take?: number;
+    verifyState?: PreservationVerifyState;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PreservationItemsResponseDto;
+    }>(`/preservation/packages/${encodeURIComponent(id)}/items${QS.query(QS.explode({
+        skip,
+        state,
+        take,
+        verifyState
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Download a preservation manifest
+ */
+export function downloadPreservationManifest({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/preservation/packages/${encodeURIComponent(id)}/manifest`, {
+        ...opts
+    }));
+}
+/**
+ * Retry a preservation export
+ */
+export function retryPreservationPackage({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaOperationDto;
+    }>(`/preservation/packages/${encodeURIComponent(id)}/retry`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Verify a preservation package
+ */
+export function verifyPreservationPackage({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaOperationDto;
+    }>(`/preservation/packages/${encodeURIComponent(id)}/verify`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Preview a preservation export
+ */
+export function previewPreservationExport({ preservationPreviewDto }: {
+    preservationPreviewDto: PreservationPreviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PreservationPreviewResponseDto;
+    }>("/preservation/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: preservationPreviewDto
+    })));
+}
+/**
+ * List restorations
+ */
+export function getPreservationRestores(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PreservationRestoreDto[];
+    }>("/preservation/restores", {
+        ...opts
+    }));
+}
+/**
+ * Start a restoration
+ */
+export function createPreservationRestore({ preservationRestoreCreateDto }: {
+    preservationRestoreCreateDto: PreservationRestoreCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PreservationRestoreDto;
+    }>("/preservation/restores", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: preservationRestoreCreateDto
+    })));
+}
+/**
+ * Get a restoration
+ */
+export function getPreservationRestore({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PreservationRestoreDto;
+    }>(`/preservation/restores/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Restore a reviewed package
+ */
+export function applyPreservationRestore({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaOperationDto;
+    }>(`/preservation/restores/${encodeURIComponent(id)}/apply`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Record restoration choices
+ */
+export function updatePreservationRestoreDecisions({ id, preservationDecisionsUpdateDto }: {
+    id: string;
+    preservationDecisionsUpdateDto: PreservationDecisionsUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PreservationRestoreDto;
+    }>(`/preservation/restores/${encodeURIComponent(id)}/decisions`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: preservationDecisionsUpdateDto
+    })));
+}
+/**
+ * Get restoration items
+ */
+export function getPreservationRestoreItems({ filter, id, skip, take }: {
+    filter?: PreservationRestoreItemFilter;
+    id: string;
+    skip?: number;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PreservationRestoreItemsResponseDto;
+    }>(`/preservation/restores/${encodeURIComponent(id)}/items${QS.query(QS.explode({
+        filter,
+        skip,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Register a preservation package on the server
+ */
+export function registerPreservationServerPackage({ preservationServerPackageCreateDto }: {
+    preservationServerPackageCreateDto: PreservationServerPackageCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PreservationPackageDto;
+    }>("/preservation/server-packages", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: preservationServerPackageCreateDto
+    })));
+}
+/**
+ * Upload a preservation package
+ */
+export function uploadPreservationPackage({ preservationUploadCreateDto }: {
+    preservationUploadCreateDto: PreservationUploadCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PreservationPackageDto;
+    }>("/preservation/uploads", oazapfts.multipart({
+        ...opts,
+        method: "POST",
+        body: preservationUploadCreateDto
+    })));
+}
+/**
  * Get the public configuration
  */
 export function getPublicConfig(opts?: Oazapfts.RequestOpts) {
@@ -12213,6 +13850,40 @@ export function validateRenderOperation({ id, xFrameleafWorkerSession, renderWor
             "x-frameleaf-worker-session": xFrameleafWorkerSession
         })
     })));
+}
+/**
+ * List what this worker must stop or delete
+ */
+export function getRenderRemoteReferences({ xFrameleafWorkerSession }: {
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerRemoteReferenceDto[];
+    }>("/render-workers/remote-references", {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    }));
+}
+/**
+ * Acknowledge a remote reference
+ */
+export function acknowledgeRenderRemoteReference({ id, xFrameleafWorkerSession }: {
+    id: string;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/remote-references/${encodeURIComponent(id)}/acknowledge`, {
+        ...opts,
+        method: "POST",
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    }));
 }
 /**
  * Enqueue all ML backfill jobs
@@ -12599,7 +14270,20 @@ export function getApkLinks(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: ServerApkLinksDto;
+    } | {
+        status: 404;
     }>("/server/apk-links", {
+        ...opts
+    }));
+}
+/**
+ * Get app releases
+ */
+export function getAppReleases(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ServerAppReleasesResponseDto;
+    }>("/server/app-releases", {
         ...opts
     }));
 }
@@ -13389,6 +15073,32 @@ export function getStudioBundleUpload({ id }: {
     }));
 }
 /**
+ * Get a Studio export
+ */
+export function getStudioExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioExportVersionDto;
+    }>(`/studio/exports/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Download a Studio export kept with its project
+ */
+export function downloadStudioExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/studio/exports/${encodeURIComponent(id)}/download`, {
+        ...opts
+    }));
+}
+/**
  * Request a Studio preview frame
  */
 export function requestStudioPreview({ studioPreviewRequestDto }: {
@@ -13629,6 +15339,40 @@ export function duplicateStudioProject({ id, studioProjectDuplicateDto }: {
         ...opts,
         method: "POST",
         body: studioProjectDuplicateDto
+    })));
+}
+/**
+ * List a Studio project’s exports
+ */
+export function getStudioExports({ id, skip, take }: {
+    id: string;
+    skip?: number;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioExportListResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/exports${QS.query(QS.explode({
+        skip,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Export a Studio project
+ */
+export function createStudioExport({ id, studioExportCreateDto }: {
+    id: string;
+    studioExportCreateDto: StudioExportCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioExportCreateResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/exports`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioExportCreateDto
     })));
 }
 /**
@@ -14889,6 +16633,18 @@ export function getWorkflowLogs({ before, id, limit, result }: {
     }));
 }
 /**
+ * Retry a workflow run
+ */
+export function retryWorkflowRun({ id, runId }: {
+    id: string;
+    runId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/workflows/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/retry`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Retrieve a workflow
  */
 export function getWorkflowForShare({ id }: {
@@ -15019,6 +16775,10 @@ export enum OAuthTokenEndpointAuthMethod {
     ClientSecretPost = "client_secret_post",
     ClientSecretBasic = "client_secret_basic"
 }
+export enum ClassificationRuleAction {
+    Review = "review",
+    Tag = "tag"
+}
 export enum ConfigCredential {
     SmtpPassword = "smtp-password",
     OauthClientSecret = "oauth-client-secret",
@@ -15094,7 +16854,8 @@ export enum MediaOperationBulkAction {
     UndoDuplicates = "undo-duplicates",
     RelinkMissingMedia = "relink-missing-media",
     RecoverDamagedMedia = "recover-damaged-media",
-    TrashDamagedMedia = "trash-damaged-media"
+    TrashDamagedMedia = "trash-damaged-media",
+    ApplyClassificationRule = "apply-classification-rule"
 }
 export enum MediaOperationDestination {
     Local = "local",
@@ -15114,7 +16875,13 @@ export enum MediaOperationKind {
     MediaHealth = "media_health",
     IcloudSync = "icloud_sync",
     TakeoutImport = "takeout_import",
-    PhysicalDeduplication = "physical_deduplication"
+    PhysicalDeduplication = "physical_deduplication",
+    LibraryScan = "library_scan",
+    PreservationExport = "preservation_export",
+    PreservationVerify = "preservation_verify",
+    PreservationReview = "preservation_review",
+    PreservationRestore = "preservation_restore",
+    StudioExportPublish = "studio_export_publish"
 }
 export enum MediaOperationStatus {
     Queued = "queued",
@@ -15209,6 +16976,7 @@ export enum AdminAuditAction {
     LibraryCreated = "library-created",
     LibraryUpdated = "library-updated",
     LibraryScanQueued = "library-scan-queued",
+    LibraryScanCancelled = "library-scan-cancelled",
     LibraryDeleted = "library-deleted"
 }
 export enum AssetOrder {
@@ -15318,6 +17086,71 @@ export enum BulkIdErrorReason {
     NotFound = "not_found",
     Unknown = "unknown",
     Validation = "validation"
+}
+export enum AnalyticsRange {
+    $90Days = "90days",
+    Year = "year"
+}
+export enum AnalyticsCameraKind {
+    Model = "model",
+    Other = "other",
+    Unknown = "unknown"
+}
+export enum AnalyticsGrain {
+    Snapshot = "snapshot",
+    Day = "day"
+}
+export enum AnalyticsSeriesId {
+    LibraryItems = "library.items",
+    LibraryPhotos = "library.photos",
+    LibraryVideos = "library.videos",
+    LibraryLogicalBytes = "library.logicalBytes",
+    LibraryPhysicalBytes = "library.physicalBytes",
+    HostVolumeUsedBytes = "host.volumeUsedBytes",
+    HostCapacityBytes = "host.capacityBytes",
+    LibraryArrivals = "library.arrivals",
+    LibraryCaptures = "library.captures",
+    ProcessingCompleted = "processing.completed",
+    ProcessingFailed = "processing.failed",
+    ProcessingEstimatedCostUsd = "processing.estimatedCostUsd"
+}
+export enum AnalyticsMeasurementScope {
+    Selection = "selection",
+    Host = "host"
+}
+export enum AnalyticsSeriesOwner {
+    Library = "library",
+    Host = "host",
+    Processing = "processing"
+}
+export enum AnalyticsScopeKind {
+    Host = "host",
+    Account = "account",
+    Library = "library"
+}
+export enum AnalyticsUnit {
+    Items = "items",
+    Bytes = "bytes",
+    Attempts = "attempts",
+    Usd = "usd"
+}
+export enum AnalyticsState {
+    Measured = "measured",
+    Stale = "stale",
+    Unknown = "unknown"
+}
+export enum AnalyticsMetadataField {
+    CaptureDate = "captureDate",
+    Location = "location",
+    CameraModel = "cameraModel",
+    AiDescription = "aiDescription",
+    Checksum = "checksum"
+}
+export enum AnalyticsView {
+    Timeline = "timeline",
+    Favorites = "favorites",
+    Archive = "archive",
+    Trash = "trash"
 }
 export enum Permission {
     All = "all",
@@ -15516,6 +17349,14 @@ export enum AssetJobName {
     RegenerateThumbnail = "regenerate-thumbnail",
     TranscodeVideo = "transcode-video"
 }
+export enum AssetDevelopRevisionKind {
+    Recipe = "recipe",
+    External = "external"
+}
+export enum AssetDevelopMaskKind {
+    Radial = "radial",
+    Linear = "linear"
+}
 export enum AssetDevelopPreset {
     Original = "Original",
     Vivid = "Vivid",
@@ -15636,6 +17477,21 @@ export enum AssetMediaSize {
     Fullsize = "fullsize",
     Preview = "preview",
     Thumbnail = "thumbnail"
+}
+export enum ClassificationMatchDecision {
+    Matched = "matched",
+    Suggested = "suggested",
+    Accepted = "accepted",
+    Rejected = "rejected"
+}
+export enum ClassificationMediaType {
+    Any = "any",
+    Photo = "photo",
+    Video = "video"
+}
+export enum ClassificationReviewDecision {
+    Accepted = "accepted",
+    Rejected = "rejected"
 }
 export enum DocumentField {
     Date = "date",
@@ -15764,7 +17620,8 @@ export enum ManualJobName {
     IntegrityChecksumMismatchRefresh = "integrity-checksum-mismatch-refresh",
     IntegrityMissingFilesDeleteAll = "integrity-missing-files-delete-all",
     IntegrityUntrackedFilesDeleteAll = "integrity-untracked-files-delete-all",
-    IntegrityChecksumMismatchDeleteAll = "integrity-checksum-mismatch-delete-all"
+    IntegrityChecksumMismatchDeleteAll = "integrity-checksum-mismatch-delete-all",
+    AnalyticsCollect = "analytics-collect"
 }
 export enum MemoryExportFormat {
     Archive = "archive"
@@ -15783,6 +17640,31 @@ export enum QueueCommand {
     Resume = "resume",
     Empty = "empty",
     ClearFailed = "clear-failed"
+}
+export enum LibraryScanPhase {
+    Crawl = "crawl",
+    Check = "check",
+    Done = "done"
+}
+export enum LibraryScanStopReason {
+    PathsChanged = "paths_changed",
+    LibraryRemoved = "library_removed",
+    OwnerDeleted = "owner_deleted"
+}
+export enum LibraryImportPathReason {
+    Valid = "valid",
+    NotAbsolute = "not_absolute",
+    InvalidCharacters = "invalid_characters",
+    ParentTraversal = "parent_traversal",
+    UploadFolder = "upload_folder",
+    ContainsUploadFolder = "contains_upload_folder",
+    NotFound = "not_found",
+    NotDirectory = "not_directory",
+    NotReadable = "not_readable",
+    Unavailable = "unavailable",
+    Duplicate = "duplicate",
+    Nested = "nested",
+    OtherLibrary = "other_library"
 }
 export enum LivePhotoMatchConfidence {
     High = "high",
@@ -15907,6 +17789,109 @@ export enum WorkflowTrigger {
     AssetMetadataExtraction = "AssetMetadataExtraction",
     AssetTagged = "AssetTagged"
 }
+export enum PreservationPackageFormat {
+    Directory = "directory",
+    Zip = "zip"
+}
+export enum PreservationPackageOrigin {
+    Export = "export",
+    Upload = "upload",
+    Server = "server"
+}
+export enum PreservationPackageStatus {
+    Building = "building",
+    Ready = "ready",
+    Incomplete = "incomplete",
+    Unreadable = "unreadable",
+    Removed = "removed"
+}
+export enum PreservationSupportCategory {
+    Originals = "originals",
+    Dates = "dates",
+    Places = "places",
+    Descriptions = "descriptions",
+    Ratings = "ratings",
+    Favorites = "favorites",
+    Archive = "archive",
+    Locked = "locked",
+    Albums = "albums",
+    Tags = "tags",
+    People = "people",
+    EditRecipes = "editRecipes",
+    LivePhotos = "livePhotos",
+    Stacks = "stacks",
+    DocumentCorrections = "documentCorrections",
+    MomentNotes = "momentNotes",
+    GeneratedDescriptions = "generatedDescriptions",
+    GeneratedMoments = "generatedMoments",
+    CameraDetails = "cameraDetails",
+    Sharing = "sharing",
+    Pets = "pets",
+    StudioProjects = "studioProjects",
+    Memories = "memories"
+}
+export enum PreservationSupportLevel {
+    Restored = "restored",
+    RestoredWhenEmpty = "restored-when-empty",
+    ProvenanceOnly = "provenance-only",
+    NotIncluded = "not-included"
+}
+export enum PreservationVerificationStatus {
+    Verified = "verified",
+    Problems = "problems",
+    Unreadable = "unreadable"
+}
+export enum PreservationItemState {
+    Pending = "pending",
+    Copied = "copied",
+    Failed = "failed",
+    Skipped = "skipped",
+    Listed = "listed"
+}
+export enum PreservationVerifyState {
+    Ok = "ok",
+    Missing = "missing",
+    Changed = "changed"
+}
+export enum PreservationDecision {
+    Keep = "keep",
+    Replace = "replace"
+}
+export enum PreservationRestoreStatus {
+    Reviewing = "reviewing",
+    Ready = "ready",
+    Restoring = "restoring",
+    Completed = "completed",
+    Unreadable = "unreadable"
+}
+export enum PreservationRestoreItemFilter {
+    Conflicts = "conflicts",
+    Failed = "failed",
+    Findings = "findings"
+}
+export enum PreservationConflictField {
+    Date = "date",
+    Description = "description",
+    Location = "location",
+    Rating = "rating",
+    Favorite = "favorite",
+    Archive = "archive",
+    EditRecipe = "editRecipe"
+}
+export enum PreservationRestoreMatch {
+    New = "new",
+    Existing = "existing",
+    Trashed = "trashed"
+}
+export enum PreservationRestoreItemState {
+    Pending = "pending",
+    Ready = "ready",
+    Failed = "failed",
+    Creating = "creating",
+    Restored = "restored",
+    Matched = "matched",
+    Skipped = "skipped"
+}
 export enum QueueJobStatus {
     Active = "active",
     Failed = "failed",
@@ -15917,6 +17902,7 @@ export enum QueueJobStatus {
 }
 export enum JobName {
     ICloudSync = "ICloudSync",
+    AnalyticsCollect = "AnalyticsCollect",
     ForkSchemaBackfill = "ForkSchemaBackfill",
     AssetDelete = "AssetDelete",
     AssetDeleteCheck = "AssetDeleteCheck",
@@ -15957,6 +17943,7 @@ export enum JobName {
     LibrarySyncFilesQueueAll = "LibrarySyncFilesQueueAll",
     LibrarySyncFiles = "LibrarySyncFiles",
     LibraryScanQueueAll = "LibraryScanQueueAll",
+    LibraryScanRun = "LibraryScanRun",
     HlsSessionCleanup = "HlsSessionCleanup",
     MemoryCleanup = "MemoryCleanup",
     MemoryGenerate = "MemoryGenerate",
@@ -16006,6 +17993,10 @@ export enum JobName {
 export enum Status3 {
     Preparing = "preparing",
     Rendering = "rendering"
+}
+export enum StudioExportRemoteReason {
+    Cancel = "cancel",
+    Delete = "delete"
 }
 export enum Status4 {
     Idle = "idle",
@@ -16078,6 +18069,34 @@ export enum StudioBundleSourceResolution {
     Kept = "kept",
     Suggested = "suggested",
     Missing = "missing"
+}
+export enum StudioExportScope {
+    Library = "library",
+    Project = "project"
+}
+export enum StudioExportColor {
+    Preserve = "preserve",
+    Hdr10 = "hdr10",
+    DolbyVision = "dolby-vision"
+}
+export enum StudioExportFormat {
+    Mp4HevcMain10 = "mp4-hevc-main10",
+    Mp4H264 = "mp4-h264",
+    WebmAv1 = "webm-av1",
+    Prores422Hq = "prores-422-hq"
+}
+export enum StudioExportResolution {
+    $720P = "720p",
+    $1080P = "1080p",
+    $1440P = "1440p",
+    $2160P = "2160p"
+}
+export enum StudioExportVersionState {
+    Rendering = "rendering",
+    Staged = "staged",
+    Published = "published",
+    Failed = "failed",
+    Cancelled = "cancelled"
 }
 export enum StudioPreviewQuality {
     Draft = "draft",
@@ -16200,7 +18219,7 @@ export enum SyncRequestType {
     AssetFacesV3 = "AssetFacesV3",
     UserMetadataV1 = "UserMetadataV1"
 }
-export enum Kind3 {
+export enum SmartAlbumBuiltInKind {
     Travel = "travel",
     Documents = "documents",
     Screenshots = "screenshots",
@@ -16292,10 +18311,20 @@ export enum TrashItemSort {
     Size = "size",
     Name = "name"
 }
+export enum WorkflowIssueCode {
+    TriggerUnavailable = "trigger_unavailable",
+    MethodUnavailable = "method_unavailable",
+    MethodIncompatible = "method_incompatible",
+    ConfigInvalid = "config_invalid"
+}
 export enum WorkflowResult {
     Completed = "completed",
     Halted = "halted",
     Error = "error"
+}
+export enum WorkflowRunErrorCode {
+    Unsupported = "unsupported",
+    StepFailed = "step_failed"
 }
 export enum ReleaseType {
     Major = "major",

@@ -200,7 +200,7 @@
   >
     <div class="fl-drop-frame" aria-hidden="true"></div>
     <div class="fl-drop-card">
-      <Icon icon={mdiCloudUploadOutline} size={40} aria-hidden="true" />
+      <Icon icon={mdiCloudUploadOutline} size="40" aria-hidden="true" />
       <strong>{$t('frameleaf_transfer_drop_title')}</strong>
       <span>{$t('frameleaf_transfer_drop_hint')}</span>
     </div>
