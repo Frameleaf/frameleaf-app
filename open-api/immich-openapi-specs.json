@@ -16054,6 +16054,312 @@
         "x-immich-state": "Stable"
       }
     },
+    "/shared-spaces/invitations": {
+      "get": {
+        "description": "Shared spaces the authenticated user has been invited to and has not answered. Each entry is the same safe preview as GET /shared-spaces/{id}/preview: no assets, and counts that exclude media marked sensitive and Locked media.",
+        "operationId": "getSharedSpaceInvitations",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SharedSpacePreviewResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List shared space invitations",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
+      }
+    },
+    "/shared-spaces/{id}/accept": {
+      "post": {
+        "description": "Join the shared space with the role its owner offered. The role comes from the stored invitation, never from the request. This is the only way to become a member of a space.",
+        "operationId": "acceptSharedSpaceInvitation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Accept a shared space invitation",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "albumUser.update"
+      }
+    },
+    "/shared-spaces/{id}/invitation": {
+      "delete": {
+        "description": "Decline the invitation. Nothing else changes: the shared space and its photos are untouched, and the owner may invite again later.",
+        "operationId": "declineSharedSpaceInvitation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Decline a shared space invitation",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "albumUser.delete"
+      }
+    },
+    "/shared-spaces/{id}/invitations/{userId}": {
+      "delete": {
+        "description": "Withdraw a pending invitation. Only the shared space owner can do this, and it only reaches people who have not joined; removing a member is DELETE /albums/{id}/user/{userId}.",
+        "operationId": "removeSharedSpaceInvitation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "description": "The invited user",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Withdraw a shared space invitation",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "albumUser.delete"
+      }
+    },
+    "/shared-spaces/{id}/members": {
+      "get": {
+        "description": "Everyone in the shared space and everyone invited to it who has not answered. Any member may read the roster; only the owner may change it.",
+        "operationId": "getSharedSpaceMembers",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSpaceMembersResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List shared space members",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
+      }
+    },
+    "/shared-spaces/{id}/preview": {
+      "get": {
+        "description": "What the shared space exposes, for someone holding an invitation to it or already in it. The preview carries no asset: no ids, no thumbnails, no file names, no people and no places. Counts and dates exclude media marked sensitive and Locked media. Anyone without an invitation or membership gets 404.",
+        "operationId": "getSharedSpacePreview",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSpacePreviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Preview a shared space",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
+      }
+    },
     "/stacks": {
       "delete": {
         "description": "Delete multiple stacks by providing a list of stack IDs.",
@@ -20224,6 +20530,10 @@
     {
       "name": "Shared links",
       "description": "A shared link is a public url that provides access to a specific album, asset, or collection of assets. A shared link can be protected with a password, include a specific slug, allow or disallow downloads, and optionally include an expiration date."
+    },
+    {
+      "name": "Shared spaces",
+      "description": "A shared space is a top-level album that a group of people share. Its members hold the album roles - owner, editor or viewer - and somebody joins only by accepting an invitation, which they can preview first."
     },
     {
       "name": "Stacks",
@@ -34235,6 +34545,137 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "SharedSpaceMemberResponseDto": {
+        "properties": {
+          "invitedAt": {
+            "description": "When a pending invitation was sent",
+            "format": "date-time",
+            "type": "string"
+          },
+          "pending": {
+            "description": "True while the invitation has not been accepted",
+            "type": "boolean"
+          },
+          "role": {
+            "$ref": "#/components/schemas/AlbumUserRole"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserResponseDto"
+          }
+        },
+        "required": [
+          "pending",
+          "role",
+          "user"
+        ],
+        "type": "object"
+      },
+      "SharedSpaceMembersResponseDto": {
+        "properties": {
+          "members": {
+            "description": "Members and pending invitations, owner first",
+            "items": {
+              "$ref": "#/components/schemas/SharedSpaceMemberResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "members"
+        ],
+        "type": "object"
+      },
+      "SharedSpacePreviewResponseDto": {
+        "properties": {
+          "accepted": {
+            "description": "True once the recipient has joined the space",
+            "type": "boolean"
+          },
+          "albumName": {
+            "description": "Shared space name",
+            "type": "string"
+          },
+          "assetCount": {
+            "description": "Items the recipient would see. Media marked sensitive, and Locked media, are not counted.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "description": {
+            "description": "Shared space description",
+            "type": "string"
+          },
+          "endDate": {
+            "description": "Latest item date, sensitive and Locked media excluded",
+            "format": "date-time",
+            "type": "string"
+          },
+          "icon": {
+            "description": "Icon: a Material Design Icons name (null = default icon)",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Shared space ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "invitedAt": {
+            "description": "When the invitation was sent",
+            "format": "date-time",
+            "type": "string"
+          },
+          "invitedBy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserResponseDto"
+              }
+            ],
+            "description": "Who sent the invitation",
+            "nullable": true
+          },
+          "memberCount": {
+            "description": "People already in the shared space, including its owner",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "owner": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserResponseDto"
+              }
+            ],
+            "description": "Who owns the shared space"
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AlbumUserRole"
+              }
+            ],
+            "description": "The role the recipient gets on accept"
+          },
+          "startDate": {
+            "description": "Earliest item date, sensitive and Locked media excluded",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accepted",
+          "albumName",
+          "assetCount",
+          "description",
+          "icon",
+          "id",
+          "invitedAt",
+          "invitedBy",
+          "memberCount",
+          "owner",
+          "role"
+        ],
         "type": "object"
       },
       "SignUpDto": {
