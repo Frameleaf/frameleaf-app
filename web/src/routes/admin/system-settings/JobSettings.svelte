@@ -2,15 +2,16 @@
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
   import { SettingInputFieldType } from '$lib/constants';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { QueueName, type AdminConfigJobDto } from '@immich/sdk';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
+  const config = $derived(settingsDraft.baseline);
 
   const queueNames = [
     QueueName.ThumbnailGeneration,
@@ -90,7 +91,7 @@
         </div>
       {/each}
 
-      <SettingActions bind:configToEdit keys={['job']} {disabled} />
+      <SettingActions keys={['job']} {disabled} />
     </form>
   </div>
 </div>

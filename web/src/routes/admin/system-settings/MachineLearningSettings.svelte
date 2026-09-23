@@ -1,7 +1,7 @@
 <script lang="ts">
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { getMachineLearningHardware, MachineLearningHardwareAcceleration } from '@immich/sdk';
   import { isEqual } from 'lodash-es';
   import { onDestroy, onMount } from 'svelte';
@@ -22,8 +22,9 @@
   import SmartSearchSection from './machine-learning/SmartSearchSection.svelte';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
+  const config = $derived(settingsDraft.baseline);
   // Optional-with-default zod fields land in the generated DTO as
   // `string | undefined`. The server always materialises them, but the
   // password bindings below need a plain string. Backfill on load so the
@@ -195,7 +196,7 @@
         {disabled}
       />
 
-      <SettingActions bind:configToEdit keys={['machineLearning']} {disabled} onBeforeSave={validateBeforeSave} />
+      <SettingActions keys={['machineLearning']} {disabled} onBeforeSave={validateBeforeSave} />
     </form>
   </div>
 </div>

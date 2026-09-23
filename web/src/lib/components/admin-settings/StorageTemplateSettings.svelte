@@ -7,6 +7,7 @@
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
@@ -35,14 +36,18 @@
   const { minified = false, duration = 500, saveOnClose = false }: Props = $props();
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
-  let physicalDeduplication = $state(configToEdit.physicalDeduplication ?? { enabled: false, masterUserId: null });
+  // On the settings page this form edits the one settings draft (FL-66). Onboarding uses it on
+  // its own, with a local copy that is saved when the step closes.
+  const settingsDraft = getSystemConfigDraft();
+  const standalone = $state(settingsDraft ? undefined : systemConfigManager.cloneValue());
+  const configToEdit = $derived(settingsDraft ? settingsDraft.draft : standalone!);
+  const config = $derived(settingsDraft ? settingsDraft.baseline : systemConfigManager.value);
+  const physicalDeduplication = $derived(configToEdit.physicalDeduplication ?? { enabled: false, masterUserId: null });
   const savedPhysicalDeduplication = $derived(config.physicalDeduplication ?? { enabled: false, masterUserId: null });
 
-  $effect(() => {
-    configToEdit.physicalDeduplication = physicalDeduplication;
-  });
+  const setPhysicalDeduplication = (patch: Partial<typeof physicalDeduplication>) => {
+    configToEdit.physicalDeduplication = { ...physicalDeduplication, ...patch };
+  };
 
   const bubble = createBubbler();
   let templateOptions: SystemConfigTemplateStorageOptionDto | undefined = $state();
@@ -112,7 +117,7 @@
   // The retained account is saved here; previewing and applying a plan live on the
   // Physical deduplication page, which reads this saved value.
   const handlePhysicalDeduplicationMasterSelection = (value: string | number) => {
-    physicalDeduplication.masterUserId = value ? String(value) : null;
+    setPhysicalDeduplication({ masterUserId: value ? String(value) : null });
   };
 
   const masterOptions = $derived([
@@ -129,7 +134,7 @@
   });
 
   onDestroy(async () => {
-    if (saveOnClose) {
+    if (saveOnClose && !settingsDraft) {
       await handleSystemConfigSave({ storageTemplate: configToEdit.storageTemplate });
     }
   });
@@ -183,7 +188,8 @@
             title={$t('admin.physical_deduplication_enable')}
             {disabled}
             subtitle={$t('admin.physical_deduplication_description')}
-            bind:checked={physicalDeduplication.enabled}
+            checked={physicalDeduplication.enabled}
+            onToggle={(enabled) => setPhysicalDeduplication({ enabled })}
             isEdited={physicalDeduplication.enabled !== savedPhysicalDeduplication.enabled}
           />
 
@@ -335,7 +341,7 @@
       {/if}
 
       {#if !minified}
-        <SettingActions bind:configToEdit keys={['storageTemplate', 'physicalDeduplication']} {disabled} />
+        <SettingActions keys={['storageTemplate', 'physicalDeduplication']} {disabled} />
       {/if}
     </div>
   {/await}

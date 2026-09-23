@@ -3,6 +3,7 @@
   import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
+  import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import ImageDescriptionRequeueModal from '$lib/modals/ImageDescriptionRequeueModal.svelte';
   import {
     getImageDescriptionRequeueEstimate,
@@ -174,6 +175,8 @@
 
   // Description status panel state ────────────────────────────────────────
 
+  const settingsDraft = getSystemConfigDraft();
+
   let descriptionStats = $state<ImageDescriptionRequeueEstimateDto | undefined>(undefined);
   let descriptionStatsError = $state<string | undefined>(undefined);
   let descriptionStatsLoading = $state(false);
@@ -213,6 +216,9 @@
     // Refresh the stats panel so pendingRequeueAt + counts update without a
     // page reload, regardless of whether the prior fetch completed.
     void loadDescriptionStats();
+    // The re-queue is a job, not a setting (FL-66): the reminder it writes is picked up as saved
+    // state and never enters the settings draft.
+    void settingsDraft?.refresh();
   };
 </script>
 
