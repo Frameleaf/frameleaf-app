@@ -46,6 +46,7 @@ const gateway = () =>
     untagAssets: vi.fn().mockResolvedValue([]),
     upsertTags: vi.fn().mockResolvedValue([]),
     runAssetJobs: vi.fn().mockResolvedValue(undefined),
+    relinkLivePhotos: vi.fn().mockResolvedValue({ results: [] }),
     createSharedLink: vi.fn().mockResolvedValue({ id: 'link-1' }),
     removeSharedLinkAssets: vi.fn(),
     searchAssets: vi.fn(),
@@ -173,6 +174,53 @@ describe('bulk actions bind to existing endpoints', () => {
 
   it('refuses to run an action whose payload is missing', async () => {
     await expect(runBulkAction('add-to-album', ['a'], { gateway: api })).rejects.toThrow(/albumId/);
+  });
+
+  it('relinks a batch of still + video pairs and reports each pair on its own (FL-70)', async () => {
+    vi.mocked(api.relinkLivePhotos).mockResolvedValue({
+      results: [
+        { photoId: 'photo-a', videoId: 'video-a', success: true },
+        { photoId: 'photo-b', videoId: 'video-b', success: false, error: 'Video is already linked to another image' },
+      ],
+    } as never);
+
+    const result = await runBulkAction('relink-live-photo', ['photo-a', 'photo-b'], {
+      gateway: api,
+      payload: {
+        pairs: [
+          { photoId: 'photo-a', videoId: 'video-a' },
+          { photoId: 'photo-b', videoId: 'video-b' },
+        ],
+      },
+    });
+
+    expect(api.relinkLivePhotos).toHaveBeenCalledWith({
+      livePhotoRelinkDto: {
+        pairs: [
+          { photoId: 'photo-a', videoId: 'video-a' },
+          { photoId: 'photo-b', videoId: 'video-b' },
+        ],
+      },
+    });
+    expect(result.succeeded).toEqual(['photo-a']);
+    expect(result.failed).toEqual([
+      expect.objectContaining({
+        id: 'photo-b',
+        status: 'failed',
+        message: 'Video is already linked to another image',
+      }),
+    ]);
+  });
+
+  it('drops a pair whose photo is not part of this selection before asking the server', async () => {
+    await runBulkAction('relink-live-photo', ['photo-a'], {
+      gateway: api,
+      payload: { pairs: [{ photoId: 'photo-a', videoId: 'video-a' }, { photoId: 'photo-b', videoId: 'video-b' }] },
+    });
+
+    expect(api.relinkLivePhotos).toHaveBeenCalledWith({
+      livePhotoRelinkDto: { pairs: [{ photoId: 'photo-a', videoId: 'video-a' }] },
+    });
   });
 });
 
@@ -423,6 +471,13 @@ describe('durable bulk operations', () => {
   it('sends only the payload fields the server knows, and keeps an empty description', () => {
     expect(toDurablePayload({ description: '', fileName: 'x', force: true })).toEqual({ description: '' });
     expect(toDurablePayload({ dateMode: 'shift', minutes: -30 })).toEqual({ dateMode: 'shift', minutes: -30 });
+  });
+
+  it('carries still + video pairs through to the durable payload (FL-70)', () => {
+    expect(durableBulkAction('relink-live-photo')).toBe(MediaOperationBulkAction.RelinkLivePhoto);
+    const pairs = [{ photoId: 'a', videoId: 'x' }];
+    expect(toDurablePayload({ pairs })).toEqual({ pairs });
+    expect(toDurablePayload({})).toEqual({});
   });
 
   it('creates typed tags first and sends their ids', async () => {
