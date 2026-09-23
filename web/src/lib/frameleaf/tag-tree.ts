@@ -108,6 +108,21 @@ function resolveParentId(tagId: string, byTagId: Map<string, TagResponseDto>): s
   return tag.parentId;
 }
 
+/**
+ * Whether a tags-page address names something in the tag list: a tag's full value, or a path that
+ * a tag's value continues. An empty path is the page with nothing selected, which always exists.
+ *
+ * The list leaves out a tag the owner suppressed (and every tag nested under it) while the session
+ * is not unlocked, so an address for one is not found, exactly like an address for a deleted tag.
+ */
+export const tagPathExists = (tags: readonly TagResponseDto[], path: string): boolean => {
+  const trimmed = path.replaceAll(/^\/+|\/+$/g, '');
+  if (trimmed === '') {
+    return true;
+  }
+  return tags.some((tag) => tag.value === trimmed || tag.value.startsWith(`${trimmed}/`));
+};
+
 /** The node's ancestors, root first, followed by the node itself. */
 export const tagBreadcrumbs = (node: FrameleafTagNode): FrameleafTagNode[] => {
   const chain: FrameleafTagNode[] = [];
