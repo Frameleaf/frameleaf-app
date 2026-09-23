@@ -12018,6 +12018,7 @@
           "AlbumInvite",
           "AlbumUpdate",
           "ClusterGroupRequest",
+          "SharedSpaceMention",
           "Custom"
         ],
         "type": "string"
@@ -16850,6 +16851,39 @@
         },
         "type": "object"
       },
+      "SharedSpaceActivityResponseDto": {
+        "properties": {
+          "events": {
+            "description": "Newest first",
+            "items": {
+              "$ref": "#/components/schemas/SharedSpaceEventResponseDto"
+            },
+            "type": "array"
+          },
+          "hasMore": {
+            "description": "True when older events exist beyond this page",
+            "type": "boolean"
+          },
+          "lastVisitedAt": {
+            "description": "When this member last marked the shared space seen; null if they never have",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "unreadCount": {
+            "description": "Events by other members since then that this member may see. Capped at 500.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "events",
+          "hasMore",
+          "lastVisitedAt",
+          "unreadCount"
+        ],
+        "type": "object"
+      },
       "SharedSpaceAlbumResponseDto": {
         "properties": {
           "albumName": {
@@ -16924,6 +16958,231 @@
           "albums"
         ],
         "type": "object"
+      },
+      "SharedSpaceCommentCreateDto": {
+        "properties": {
+          "assetId": {
+            "description": "The item to comment on. Left out, the comment is on the space itself.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "comment": {
+            "description": "The text. Mention a member with @{userId}; every mention must name a current member.",
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "comment"
+        ],
+        "type": "object"
+      },
+      "SharedSpaceCommentResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "The item commented on; null for a comment on the space itself",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "canDelete": {
+            "description": "True when the caller may remove the comment",
+            "type": "boolean"
+          },
+          "canEdit": {
+            "description": "True when the caller may change the text",
+            "type": "boolean"
+          },
+          "comment": {
+            "description": "The text, with @{userId} mention tokens",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When it was written",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Comment ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "mentions": {
+            "description": "Members named in the comment",
+            "items": {
+              "$ref": "#/components/schemas/UserResponseDto"
+            },
+            "type": "array"
+          },
+          "updatedAt": {
+            "description": "When it was last edited",
+            "format": "date-time",
+            "type": "string"
+          },
+          "user": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserResponseDto"
+              }
+            ],
+            "description": "The author"
+          }
+        },
+        "required": [
+          "assetId",
+          "canDelete",
+          "canEdit",
+          "comment",
+          "createdAt",
+          "id",
+          "mentions",
+          "updatedAt",
+          "user"
+        ],
+        "type": "object"
+      },
+      "SharedSpaceCommentUpdateDto": {
+        "properties": {
+          "comment": {
+            "description": "The text. Mention a member with @{userId}; every mention must name a current member.",
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "comment"
+        ],
+        "type": "object"
+      },
+      "SharedSpaceCommentsResponseDto": {
+        "properties": {
+          "comments": {
+            "description": "Oldest first",
+            "items": {
+              "$ref": "#/components/schemas/SharedSpaceCommentResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "comments"
+        ],
+        "type": "object"
+      },
+      "SharedSpaceEventResponseDto": {
+        "properties": {
+          "activityId": {
+            "description": "The comment or like this event announces, if any",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "actor": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserResponseDto"
+              }
+            ],
+            "description": "Who did it; null once that account is gone",
+            "nullable": true
+          },
+          "assetCount": {
+            "description": "How many of the items this event is about the reader may see",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "assetIds": {
+            "description": "The items this event is about that the reader may see and that are still in the shared space. Empty for a removal.",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "comment": {
+            "description": "The comment text, for a comment event. Mentions are @{userId} tokens.",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When it happened",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Event ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "mentions": {
+            "description": "Members named in the comment",
+            "items": {
+              "$ref": "#/components/schemas/UserResponseDto"
+            },
+            "type": "array"
+          },
+          "subject": {
+            "description": "A linked album's or person's name as the space knew it, or the new role; null otherwise",
+            "nullable": true,
+            "type": "string"
+          },
+          "targetUser": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserResponseDto"
+              }
+            ],
+            "description": "The member a member event is about; null otherwise",
+            "nullable": true
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SharedSpaceEventType"
+              }
+            ]
+          }
+        },
+        "required": [
+          "activityId",
+          "actor",
+          "assetCount",
+          "assetIds",
+          "comment",
+          "createdAt",
+          "id",
+          "mentions",
+          "subject",
+          "targetUser",
+          "type"
+        ],
+        "type": "object"
+      },
+      "SharedSpaceEventType": {
+        "description": "Shared space event type",
+        "enum": [
+          "AssetsAdded",
+          "AssetsRemoved",
+          "AlbumLinked",
+          "AlbumUnlinked",
+          "PersonLinked",
+          "PersonUnlinked",
+          "MemberJoined",
+          "MemberLeft",
+          "MemberRemoved",
+          "MemberRoleChanged",
+          "Comment",
+          "Like"
+        ],
+        "type": "string"
       },
       "SharedSpaceMemberResponseDto": {
         "properties": {
@@ -42094,6 +42353,80 @@
         "x-immich-permission": "albumUser.update"
       }
     },
+    "/shared-spaces/{id}/activity": {
+      "get": {
+        "description": "The shared space’s activity feed, newest first: items added and removed, albums and people linked and unlinked, members joining, leaving, being removed or changing role, comments and likes — by every member. Only current members may read it. Every event is narrowed to the caller before it is sent: an item the caller cannot see (Locked, marked sensitive, hidden by their own settings, or no longer in the space) is never named, and an event with nothing visible left is not sent at all, so nothing can be inferred from a count. `unreadCount` is the events by other members since the caller last marked the space seen, computed the same way. Page with `before` and `take`.",
+        "operationId": "getSharedSpaceActivity",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Only events before this moment, for paging",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Page size, 50 by default",
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSpaceActivityResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "What happened in a shared space",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
+      }
+    },
     "/shared-spaces/{id}/albums": {
       "get": {
         "description": "The albums members have linked into the shared space, one level: a space links albums, never another space and never a collection. A link is a reference, not a move and not a share — the album keeps its owner, its members, its access rules and its place in its owner’s tree, and this response grants no access to it. The count and the tile picture come only from items that are in both the album and the space, with media marked sensitive and Locked media excluded.",
@@ -42264,6 +42597,260 @@
           }
         ],
         "x-immich-permission": "album.update"
+      }
+    },
+    "/shared-spaces/{id}/comments": {
+      "get": {
+        "description": "The comments on one item in the shared space (`assetId`), or on the space itself when `assetId` is left out. Oldest first. Only current members may read them, and an item the caller cannot see is not in the space as far as they are concerned (404). Mentions stay as `@{userId}` tokens in the text and are resolved in `mentions`.",
+        "operationId": "getSharedSpaceComments",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "assetId",
+            "required": false,
+            "in": "query",
+            "description": "Comments on this item. Left out, the comments on the space itself.",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSpaceCommentsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List comments in a shared space",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "activity.read"
+      },
+      "post": {
+        "description": "Write a comment on one item in the shared space, or on the space itself when `assetId` is left out. Commenting must be enabled on the space, and the item must be one the caller can see. Mention a member with `@{userId}`: mentions are by id, never by name, every mention must name a current member (400 otherwise), and each mentioned member other than the author is notified.",
+        "operationId": "createSharedSpaceComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedSpaceCommentCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSpaceCommentResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Comment in a shared space",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "activity.create"
+      }
+    },
+    "/shared-spaces/{id}/comments/{commentId}": {
+      "delete": {
+        "description": "Remove a comment. Its author may, and so may a shared space owner or editor — that is how a space is moderated. A viewer removes only their own. The comment’s mentions and its entry in the activity feed go with it.",
+        "operationId": "deleteSharedSpaceComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "commentId",
+            "required": true,
+            "in": "path",
+            "description": "The comment",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a shared space comment",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "activity.delete"
+      },
+      "put": {
+        "description": "Change what a comment says. Only its author may. Mentions are re-read from the new text under the same rules, and members newly mentioned are notified.",
+        "operationId": "updateSharedSpaceComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "commentId",
+            "required": true,
+            "in": "path",
+            "description": "The comment",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedSpaceCommentUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSpaceCommentResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Edit a shared space comment",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "activity.update"
       }
     },
     "/shared-spaces/{id}/invitation": {
