@@ -138,20 +138,30 @@ with
         where
           (asset."localDateTime" at time zone 'UTC')::date = today.date
           and "asset"."ownerId" = any ($4::uuid[])
-          and "asset"."visibility" = $5
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and exists (
             select
             from
               "asset_file"
             where
               "assetId" = "asset"."id"
-              and "asset_file"."type" = $6
+              and "asset_file"."type" = $5
           )
           and "asset"."deletedAt" is null
         order by
           (asset."localDateTime" at time zone 'UTC')::date desc
         limit
-          $7
+          $6
       ) as "a" on true
   )
 select
@@ -169,7 +179,15 @@ order by
 
 -- AssetRepository.getByIds
 select
-  "asset".*
+  "asset".*,
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked"
 from
   "asset"
 where
@@ -178,6 +196,14 @@ where
 -- AssetRepository.getByIdsWithAllRelationsButStacks
 select
   "asset".*,
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -311,7 +337,15 @@ limit
 
 -- AssetRepository.getById
 select
-  "asset".*
+  "asset".*,
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked"
 from
   "asset"
 where
@@ -491,7 +525,17 @@ with
       "asset"
     where
       "asset"."deletedAt" is null
-      and "asset"."visibility" in ('archive', 'timeline')
+      and (
+        "asset"."visibility" in ('archive', 'timeline')
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
   )
 select
   ("timeBucket" AT TIME ZONE 'UTC')::date::text as "timeBucket",
@@ -509,7 +553,20 @@ with
     select
       "asset"."duration",
       "asset"."id",
-      "asset"."visibility",
+      (
+        case
+          when "asset"."visibility" = 'hidden' then "asset"."visibility"
+          when exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          ) then 'locked'::asset_visibility_enum
+          else "asset"."visibility"
+        end
+      ) as "visibility",
       asset."isFavorite"
       and asset."ownerId" = $1 as "isFavorite",
       asset.type = 'IMAGE' as "isImage",
@@ -554,12 +611,37 @@ with
           "stacked"."stackId" = "asset"."stackId"
           and "stacked"."deletedAt" is null
           and "stacked"."visibility" = $2
+          and exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "stacked"."id"
+          ) = exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
         group by
           "stacked"."stackId"
       ) as "stacked_assets" on true
     where
       "asset"."deletedAt" is null
-      and "asset"."visibility" in ('archive', 'timeline')
+      and (
+        "asset"."visibility" in ('archive', 'timeline')
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
       and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $3
       and not exists (
         select
@@ -625,11 +707,21 @@ from
   inner join "cities" on "asset_exif"."city" = "cities"."city"
 where
   "ownerId" = $2::uuid
-  and "visibility" = $3
-  and "type" = $4
+  and (
+    "asset"."visibility" = 'timeline'
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
+  and "type" = $3
   and "deletedAt" is null
 limit
-  $5
+  $4
 
 -- AssetRepository.getRecentlyCreatedAssetIds
 select
@@ -639,13 +731,23 @@ from
   "asset"
 where
   "ownerId" = $1::uuid
-  and "asset"."visibility" = $2
-  and "type" = $3
+  and (
+    "asset"."visibility" = 'timeline'
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
+  and "type" = $2
   and "deletedAt" is null
 order by
   "value" desc
 limit
-  $4
+  $3
 
 -- AssetRepository.getNsfwAssetIds
 select

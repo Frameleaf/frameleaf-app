@@ -635,6 +635,15 @@ export type AdminConfigDto = {
     trash: AdminConfigTrashDto;
     user: AdminConfigUserDto;
 };
+export type ConfigCredentialResponseDto = {
+    /** Whether a value is stored. The value itself is never returned */
+    configured: boolean;
+    name: ConfigCredential;
+};
+export type ConfigCredentialUpdateDto = {
+    /** The new secret. Stored as sent and never returned */
+    value: string;
+};
 export type DatabaseBackupDeleteDto = {
     /** Backup filenames to delete */
     backups: string[];
@@ -750,28 +759,140 @@ export type TestEmailResponseDto = {
     /** Email message ID */
     messageId: string;
 };
-export type PhysicalDeduplicationRetainedDto = {
-    /** Asset that keeps the original file */
-    assetId: string;
-    /** Whether the requesting administrator may view this asset and its thumbnail */
-    canView: boolean;
-    /** Hex-encoded SHA-1 checksum of the original file */
-    checksum: string;
-    /** Copies this retained original would share that are Locked media of another account; counted, never named (FL-73) */
+export type PhysicalDeduplicationApplyRequestDto = {
+    /** `APPLY <planId>`, typed by the administrator */
+    confirmation: string;
+    /** Retained originals whose group the administrator decided to leave as they are */
+    excludedRetainedAssetIds?: string[];
+    /** The fingerprint of the plan on screen, from the preview */
+    fingerprint: string;
+    /** From the review of this plan */
+    reviewToken: string;
+};
+export type MediaOperationBulkSummaryDto = {
+    action: MediaOperationBulkAction;
+    /** Items the server attempted and could not apply; a retry covers these */
+    failed: number;
+    itemsTruncated: boolean;
+    /** Items in the frozen set */
+    requested: number;
+    /** Items that failed and were given their one automatic retry */
+    retried: number;
+    /** Items refused before anything changed, e.g. no access */
+    skipped: number;
+    snapshotTruncated: boolean;
+    succeeded: number;
+};
+export type MediaOperationEstimateDto = {
+    /** Configured cloud rate detail, when one applies */
+    cloudCost: {
+        [key: string]: any;
+    } | null;
+    /** Measured estimate of remaining work */
+    seconds: number;
+    /** Estimated output size */
+    sizeBytes: string | null;
+};
+export type MediaOperationDto = {
+    /** Source asset, when the workload has exactly one */
+    assetId: string | null;
+    attempt: number;
+    /** Automatic retries this job has used; every job gets one before a failure is reported */
+    autoRetries: number;
+    bulk: (MediaOperationBulkSummaryDto) | null;
+    cancelAcknowledgedAt: string | null;
+    cancelRequestedAt: string | null;
+    createdAt: string;
+    destination: MediaOperationDestination;
+    /** Which worker or endpoint the destination resolved to */
+    destinationDetail: string | null;
+    /** Operator detail about a failure; on a queued job, the failure it is being retried after */
+    error: string | null;
+    /** Stable code the client turns into a message */
+    errorCode: string | null;
+    estimate: (MediaOperationEstimateDto) | null;
+    finishedAt: string | null;
+    /** Media operation ID */
+    id: string;
+    kind: MediaOperationKind;
+    /** What the person sees in Activity */
+    label: string;
+    maxAttempts: number;
+    /** Whether this kind of job can pause and carry on later; one-shot kinds cannot */
+    pausable: boolean;
+    /** When the owner asked to pause; a running job keeps working until its next checkpoint */
+    pauseRequestedAt: string | null;
+    processedUnits: string;
+    /** Percent complete, from counted work */
+    progress: number;
+    projectId: string | null;
+    /** The asset a completed job published */
+    resultAssetId: string | null;
+    /** When a job waiting for its automatic retry may run again */
+    retryAt: string | null;
+    /** The job this one retries */
+    retryOfId: string | null;
+    revisionId: string | null;
+    /** User-visible render settings */
+    settings: {
+        [key: string]: any;
+    };
+    startedAt: string | null;
+    status: MediaOperationStatus;
+    totalUnits: string | null;
+    updatedAt: string;
+};
+export type PhysicalDeduplicationReviewRequestDto = {
+    /** Retained originals whose group the administrator decided to leave as they are */
+    excludedRetainedAssetIds?: string[];
+    /** The fingerprint of the plan on screen, from the preview */
+    fingerprint: string;
+};
+export type PhysicalDeduplicationReviewResponseDto = {
+    /** The phrase to type to apply this plan */
+    confirmation: string;
+    /** Copies the reviewed plan will share */
+    copies: number;
+    estimatedBytes: number;
+    excludedRetainedAssetIds: string[];
+    fingerprint: string;
+    /** Copies in the reviewed plan that are Locked media of another account; counted, never named */
     hiddenCopies: number;
-    originalFileName: string;
-    /** Path of the retained original file */
-    originalPath: string;
-    /** Owner of the retained asset (the retained account) */
-    ownerId: string;
-    /** Display name of the retained account */
-    ownerName: string;
-    /** Assets that would reference this original after the plan is applied */
-    referencesAfter: number;
-    /** Assets that reference this original before the plan is applied (including the retained asset) */
-    referencesBefore: number;
-    sizeInBytes: number;
-    "type": AssetTypeEnum;
+    planId: string;
+    retainedOriginals: number;
+    /** Binds the plan to these per-group decisions; applying must present it */
+    reviewToken: string;
+    reviewedAt: string;
+};
+export type PhysicalDeduplicationApplyDto = {
+    alreadyApplied: number;
+    applied: number;
+    createdAt: string;
+    error: string | null;
+    estimatedBytes: number;
+    failed: number;
+    fingerprint: string;
+    finishedAt: string | null;
+    /** Whether the requesting administrator applied it */
+    mine: boolean;
+    /** The media operation applying the plan */
+    operationId: string;
+    pauseRequested: boolean;
+    planId: string;
+    processed: number;
+    progress: number;
+    /** Bytes actually removed from disk so far */
+    reclaimedBytes: number;
+    /** Administrator who applied the plan; the job is theirs to pause or cancel */
+    requestedById: string;
+    requestedByName: string;
+    /** Waiting for its one automatic retry */
+    retrying: boolean;
+    /** Copies left alone because their evidence changed */
+    skipped: number;
+    status: MediaOperationStatus;
+    /** Copies in the reviewed plan */
+    total: number;
 };
 export type PhysicalDeduplicationCopyDto = {
     /** Duplicate asset owned by a non-retained account */
@@ -793,6 +914,29 @@ export type PhysicalDeduplicationCopyDto = {
     reason: (PhysicalDeduplicationSkipReason) | null;
     /** Retained original this copy matches, if any */
     retainedAssetId: string | null;
+    sizeInBytes: number;
+    "type": AssetTypeEnum;
+};
+export type PhysicalDeduplicationRetainedDto = {
+    /** Asset that keeps the original file */
+    assetId: string;
+    /** Whether the requesting administrator may view this asset and its thumbnail */
+    canView: boolean;
+    /** Hex-encoded SHA-1 checksum of the original file */
+    checksum: string;
+    /** Copies this retained original would share that are Locked media of another account; counted, never named (FL-73) */
+    hiddenCopies: number;
+    originalFileName: string;
+    /** Path of the retained original file */
+    originalPath: string;
+    /** Owner of the retained asset (the retained account) */
+    ownerId: string;
+    /** Display name of the retained account */
+    ownerName: string;
+    /** Assets that would reference this original after the plan is applied */
+    referencesAfter: number;
+    /** Assets that reference this original before the plan is applied (including the retained asset) */
+    referencesBefore: number;
     sizeInBytes: number;
     "type": AssetTypeEnum;
 };
@@ -826,36 +970,6 @@ export type PhysicalDeduplicationPlanDto = {
     skippedExternal: number;
     skippedMissingMaster: number;
 };
-export type PhysicalDeduplicationApplyDto = {
-    alreadyApplied: number;
-    applied: number;
-    createdAt: string;
-    error: string | null;
-    estimatedBytes: number;
-    failed: number;
-    finishedAt: string | null;
-    fingerprint: string;
-    /** Whether the requesting administrator applied it */
-    mine: boolean;
-    /** The media operation applying the plan */
-    operationId: string;
-    pauseRequested: boolean;
-    planId: string;
-    processed: number;
-    progress: number;
-    /** Bytes actually removed from disk so far */
-    reclaimedBytes: number;
-    /** Administrator who applied the plan; the job is theirs to pause or cancel */
-    requestedById: string;
-    requestedByName: string;
-    /** Waiting for its one automatic retry */
-    retrying: boolean;
-    /** Copies left alone because their evidence changed */
-    skipped: number;
-    status: MediaOperationStatus;
-    /** Copies in the reviewed plan */
-    total: number;
-};
 export type PhysicalDeduplicationPreviewResponseDto = {
     /** Recently applied plans, newest first (FL-73) */
     applies: PhysicalDeduplicationApplyDto[];
@@ -876,37 +990,96 @@ export type PhysicalDeduplicationPreviewRequestDto = {
     /** Limit the review to copies owned by this account */
     scopeUserId?: string;
 };
-export type PhysicalDeduplicationReviewRequestDto = {
-    /** Retained originals whose group the administrator decided to leave as they are */
-    excludedRetainedAssetIds?: string[];
-    /** The fingerprint of the plan on screen, from the preview */
-    fingerprint: string;
+export type RenderWorkerDto = {
+    /** Operations the worker currently holds */
+    activeOperations: number;
+    /** Oldest conformance evidence admission accepts, in milliseconds */
+    conformanceMaxAgeMs: number;
+    createdAt: string;
+    destination: MediaOperationDestination;
+    /** Engine and patch digest the worker must keep reporting */
+    engineDigest: string | null;
+    /** GPU memory the worker was qualified with, in bytes */
+    gpuMemoryBytes: string | null;
+    /** Render worker ID */
+    id: string;
+    /** Operation kinds this worker may claim */
+    kinds: MediaOperationKind[];
+    lastAdmittedAt: string | null;
+    lastSeenAt: string | null;
+    /** Operations this worker may hold at once */
+    maxConcurrentOperations: number;
+    /** Most output bytes one operation may produce here */
+    maxOutputBytes: string | null;
+    /** Longest one operation may run here, in milliseconds */
+    maxWallClockMs: string | null;
+    /** What the administrator calls this worker */
+    name: string;
+    revokedAt: string | null;
+    status: RenderWorkerStatus;
+    updatedAt: string;
 };
-export type PhysicalDeduplicationReviewResponseDto = {
-    /** The phrase to type to apply this plan */
-    confirmation: string;
-    /** Copies the reviewed plan will share */
-    copies: number;
-    estimatedBytes: number;
-    excludedRetainedAssetIds: string[];
-    fingerprint: string;
-    /** Copies in the reviewed plan that are Locked media of another account; counted, never named */
-    hiddenCopies: number;
-    planId: string;
-    retainedOriginals: number;
-    reviewedAt: string;
-    /** Binds the plan to these per-group decisions; applying must present it */
-    reviewToken: string;
+export type RenderWorkerCreateDto = {
+    conformanceMaxAgeMs?: number;
+    destination: MediaOperationDestination;
+    engineDigest?: string | null;
+    gpuMemoryBytes?: string | null;
+    /** Operation kinds this worker may claim */
+    kinds: MediaOperationKind[];
+    maxConcurrentOperations?: number;
+    maxOutputBytes?: string | null;
+    maxWallClockMs?: string | null;
+    name: string;
 };
-export type PhysicalDeduplicationApplyRequestDto = {
-    /** `APPLY <planId>`, typed by the administrator */
-    confirmation: string;
-    /** Retained originals whose group the administrator decided to leave as they are */
-    excludedRetainedAssetIds?: string[];
-    /** The fingerprint of the plan on screen, from the preview */
-    fingerprint: string;
-    /** From the review of this plan */
-    reviewToken: string;
+export type RenderWorkerCreateResponseDto = {
+    /** Shown once. Give it to the worker; the server keeps only its hash */
+    enrolmentSecret: string;
+    worker: RenderWorkerDto;
+};
+export type RenderWorkerAuditDto = {
+    /** The administrator who acted, when one did */
+    actorId: string | null;
+    createdAt: string;
+    /** Operator detail. Never a secret, never a path */
+    detail: {
+        [key: string]: any;
+    } | null;
+    event: RenderWorkerAuditEvent;
+    id: string;
+    operationId: string | null;
+    reason: (RenderWorkerRefusalReason) | null;
+    workerId: string | null;
+};
+export type RenderWorkerLimitDto = {
+    /** Operations one account may have claimed at once */
+    maxConcurrentOperations: number;
+    maxOutputBytes: string | null;
+    maxWallClockMs: string | null;
+    /** `instance` for the default, otherwise a user ID */
+    subject: string;
+    updatedAt: string;
+    userId: string | null;
+};
+export type RenderWorkerLimitsResponseDto = {
+    instance: RenderWorkerLimitDto;
+    users: RenderWorkerLimitDto[];
+};
+export type RenderWorkerLimitUpdateDto = {
+    maxConcurrentOperations: number;
+    maxOutputBytes: string | null;
+    maxWallClockMs: string | null;
+    /** Omit or null for the instance default */
+    userId?: string | null;
+};
+export type RenderWorkerUpdateDto = {
+    conformanceMaxAgeMs?: number;
+    engineDigest?: string | null;
+    gpuMemoryBytes?: string | null;
+    kinds?: MediaOperationKind[];
+    maxConcurrentOperations?: number;
+    maxOutputBytes?: string | null;
+    maxWallClockMs?: string | null;
+    name?: string;
 };
 export type UserLicense = {
     /** Activation date */
@@ -1266,18 +1439,101 @@ export type AssetStatsResponseDto = {
     /** Number of videos */
     videos: number;
 };
+export type WorkerWorkloadAdmissionDto = {
+    /** Whether the last check would admit this workload here */
+    admitted: boolean;
+    /** Why it would be refused, or null */
+    detail: string | null;
+    refusal: (MlAdmissionRefusal) | null;
+    workload: MlWorkload;
+};
+export type WorkerGpuDto = {
+    memoryTotalBytes: number;
+    name: string;
+};
+export type WorkerInventoryEntryDto = {
+    acceleration: MlWorkerAcceleration;
+    /** Jobs running here now */
+    activeOperations: number;
+    /** Per allowed workload, from the last check */
+    admission: WorkerWorkloadAdmissionDto[];
+    allowedWorkloads: MlWorkload[];
+    /** Last check or check-in */
+    checkedAt: string | null;
+    /** For a local destination: its URL is still in the machine-learning URL list. Always true otherwise */
+    configured: boolean;
+    /** True when no consent is needed or it is recorded */
+    consentGranted: boolean;
+    credential: WorkerCredentialState;
+    enabled: boolean;
+    /** Largest GPU memory reported or qualified, or null when unknown */
+    gpuMemoryBytes: number | null;
+    /** GPUs the worker reported, with memory; empty when not reported */
+    gpus: WorkerGpuDto[];
+    /** ML destination ID or render worker ID */
+    id: string;
+    /** ML destination kind, or the render worker destination */
+    kind: string;
+    latencyMs: number | null;
+    /** Work sent here leaves the network */
+    leavesNetwork: boolean;
+    /** Render workers: the most they may hold at once */
+    maxConcurrentOperations: number | null;
+    name: string;
+    /** Jobs waiting for this worker */
+    queuedOperations: number;
+    readiness: MlWorkerReadiness;
+    /** Operation kinds a render worker may claim */
+    renderKinds: MediaOperationKind[];
+    /** What an ML destination is for; null for a render worker */
+    role: (MlWorkerRole) | null;
+    /** Workloads whose route names this destination */
+    routedWorkloads: MlWorkload[];
+    /** Workloads the worker reported on its last check, or null when it never answered */
+    servedWorkloads: MlWorkload[] | null;
+    sharesLibraryHardware: boolean;
+    source: WorkerInventorySource;
+    summary: string | null;
+    /** Endpoint URL, or null when there is none to show */
+    url: string | null;
+    /** Full restorations bound here are waiting because library analysis has work */
+    waitingForLibraryAnalysis: boolean;
+};
+export type WorkerQueueBacklogDto = {
+    active: number;
+    paused: boolean;
+    queue: QueueName;
+    waiting: number;
+};
+export type WorkerLibraryRouteDto = {
+    destinationId: string | null;
+    /** Queues whose jobs run this workload */
+    queues: QueueName[];
+    workload: MlWorkload;
+};
+export type WorkerRunnerDto = {
+    activeOperations: number;
+    kinds: MediaOperationKind[];
+    lastHeartbeatAt: string | null;
+    /** The server process holding the claims */
+    workerId: string;
+};
+export type WorkerInventoryResponseDto = {
+    checkedAt: string;
+    /** The machine-learning URL list, in order */
+    configuredUrls: string[];
+    entries: WorkerInventoryEntryDto[];
+    /** Library-analysis jobs active or waiting, not counting paused queues */
+    libraryBacklog: number;
+    libraryQueues: WorkerQueueBacklogDto[];
+    libraryRoutes: WorkerLibraryRouteDto[];
+    machineLearningEnabled: boolean;
+    /** Server processes running restorations now */
+    runners: WorkerRunnerDto[];
+};
 export type AlbumUserResponseDto = {
     role: AlbumUserRole;
     user: UserResponseDto;
-};
-export type ConfigCredentialResponseDto = {
-    /** Whether a value is stored. The value itself is never returned */
-    configured: boolean;
-    name: ConfigCredential;
-};
-export type ConfigCredentialUpdateDto = {
-    /** The new secret. Stored as sent and never returned */
-    value: string;
 };
 export type ContributorCountResponseDto = {
     /** Number of assets contributed */
@@ -1731,28 +1987,6 @@ export type PersonResponseDto = {
     /** Last update date */
     updatedAt?: string;
 };
-export type PersonMergeSuggestionDto = {
-    /** Face embedding distance between the two people (lower is more similar) */
-    distance: number;
-    person: PersonResponseDto;
-    suggestion: PersonResponseDto;
-};
-export type MergeSuggestionsResponseDto = {
-    /** Suggested pairs of people that may be the same person */
-    suggestions: PersonMergeSuggestionDto[];
-};
-export type PersonCorrectionDto = {
-    /** Asset the corrected face belongs to */
-    assetId: string;
-    /** When the manual correction was made */
-    correctedAt: string;
-    /** Face ID */
-    faceId: string;
-};
-export type PersonCorrectionsResponseDto = {
-    /** Manual face corrections for this person, most recent first */
-    corrections: PersonCorrectionDto[];
-};
 export type AssetStackResponseDto = {
     /** Number of assets in stack */
     assetCount: number;
@@ -1853,6 +2087,122 @@ export type UpdateAssetDto = {
     rating?: number | null;
     visibility?: AssetVisibility;
 };
+export type AssetDevelopCrop = {
+    /** Crop height as a fraction of the frame */
+    h: number;
+    /** Crop width as a fraction of the frame */
+    w: number;
+    /** Left edge of the crop as a fraction of the oriented frame width */
+    x: number;
+    /** Top edge of the crop as a fraction of the oriented frame height */
+    y: number;
+};
+export type AssetDevelopRecipeDto = {
+    /** Black point */
+    blacks?: number;
+    /** Local contrast in the midtones */
+    clarity?: number;
+    /** Contrast around middle grey */
+    contrast?: number;
+    crop?: AssetDevelopCrop;
+    /** Haze removal (positive) or addition (negative) */
+    dehaze?: number;
+    /** Exposure in EV; each whole stop doubles the light */
+    exposure?: number;
+    /** Mirror left to right */
+    flipHorizontal?: boolean;
+    /** Mirror top to bottom */
+    flipVertical?: boolean;
+    /** Film grain amount */
+    grain?: number;
+    /** Highlight recovery (negative) or lift (positive) */
+    highlights?: number;
+    /** Luminance noise reduction amount */
+    noiseReduction?: number;
+    preset?: AssetDevelopPreset;
+    /** How much of the preset is applied, as a percentage */
+    presetStrength?: number;
+    /** Quarter-turn rotation in degrees, clockwise */
+    rotation?: number;
+    /** Global saturation */
+    saturation?: number;
+    /** Shadow lift (positive) or deepening (negative) */
+    shadows?: number;
+    /** Detail sharpening amount */
+    sharpen?: number;
+    /** Straighten angle in degrees, applied before the crop */
+    straighten?: number;
+    /** Warm (positive) or cool (negative) white balance shift */
+    temperature?: number;
+    /** Magenta (positive) or green (negative) tint */
+    tint?: number;
+    /** Recipe contract version */
+    version: Version;
+    /** Saturation weighted towards muted colours */
+    vibrance?: number;
+    /** Darkened (positive) or lightened (negative) edges */
+    vignette?: number;
+    /** White point */
+    whites?: number;
+};
+export type AssetDevelopRevisionResponseDto = {
+    /** Asset this revision belongs to */
+    assetId: string;
+    /** When the version was saved */
+    createdAt: string;
+    /** Why the last render failed, when it did */
+    error: string | null;
+    /** True once the edited master file exists */
+    hasMaster: boolean;
+    /** True once the preview file exists */
+    hasPreview: boolean;
+    /** Height of the edited master in pixels */
+    height: number | null;
+    /** Develop revision ID */
+    id: string;
+    /** True for the version the asset currently shows */
+    isCurrent: boolean;
+    /** Name given when the version was saved */
+    label: string | null;
+    /** Render progress as a percentage */
+    progress: number;
+    recipe: AssetDevelopRecipeDto;
+    /** When the render finished */
+    renderedAt: string | null;
+    /** Identity of the renderer that produced the files, for lineage */
+    rendererVersion: string | null;
+    /** Per-asset sequence number, 1 for the first saved version */
+    revision: number;
+    status: AssetDevelopRevisionStatus;
+    /** When the revision last changed */
+    updatedAt: string;
+    /** Width of the edited master in pixels */
+    width: number | null;
+};
+export type AssetDevelopResponseDto = {
+    /** Asset ID these revisions belong to */
+    assetId: string;
+    /** The revision the asset currently shows; null means the original */
+    currentRevisionId: string | null;
+    /** Every saved version of the recipe, newest first */
+    revisions: AssetDevelopRevisionResponseDto[];
+};
+export type AssetDevelopSaveDto = {
+    /** Optional name for the saved version */
+    label?: string;
+    recipe: AssetDevelopRecipeDto;
+    /** Queue the edited master render immediately after saving the recipe */
+    render?: boolean;
+};
+export type AssetDevelopPreviewDto = {
+    recipe: AssetDevelopRecipeDto;
+    /** Longest edge of the preview in pixels; the original is never upscaled */
+    size?: number;
+};
+export type AssetDevelopRevertDto = {
+    /** Rendered revision to make current again; omitted, the original becomes current */
+    revisionId?: string;
+};
 export type CropParameters = {
     /** Height of the crop */
     height: number;
@@ -1931,255 +2281,6 @@ export type SpeedParameters = {
     rate: number;
     /** Speed segment start time in milliseconds */
     startMs?: number;
-};
-export type AssetDevelopCrop = {
-    /** Crop height as a fraction of the frame */
-    h: number;
-    /** Crop width as a fraction of the frame */
-    w: number;
-    /** Left edge of the crop as a fraction of the oriented frame width */
-    x: number;
-    /** Top edge of the crop as a fraction of the oriented frame height */
-    y: number;
-};
-export type AssetDevelopRecipeDto = {
-    /** Black point */
-    blacks?: number;
-    /** Local contrast in the midtones */
-    clarity?: number;
-    /** Contrast around middle grey */
-    contrast?: number;
-    crop?: AssetDevelopCrop;
-    /** Haze removal (positive) or addition (negative) */
-    dehaze?: number;
-    /** Exposure in EV; each whole stop doubles the light */
-    exposure?: number;
-    /** Mirror left to right */
-    flipHorizontal?: boolean;
-    /** Mirror top to bottom */
-    flipVertical?: boolean;
-    /** Film grain amount */
-    grain?: number;
-    /** Highlight recovery (negative) or lift (positive) */
-    highlights?: number;
-    /** Luminance noise reduction amount */
-    noiseReduction?: number;
-    preset?: AssetDevelopPreset;
-    /** How much of the preset is applied, as a percentage */
-    presetStrength?: number;
-    /** Quarter-turn rotation in degrees, clockwise */
-    rotation?: number;
-    /** Global saturation */
-    saturation?: number;
-    /** Shadow lift (positive) or deepening (negative) */
-    shadows?: number;
-    /** Detail sharpening amount */
-    sharpen?: number;
-    /** Straighten angle in degrees, applied before the crop */
-    straighten?: number;
-    /** Warm (positive) or cool (negative) white balance shift */
-    temperature?: number;
-    /** Magenta (positive) or green (negative) tint */
-    tint?: number;
-    /** Recipe contract version */
-    version: 1;
-    /** Saturation weighted towards muted colours */
-    vibrance?: number;
-    /** Darkened (positive) or lightened (negative) edges */
-    vignette?: number;
-    /** White point */
-    whites?: number;
-};
-export type AssetDevelopRevisionResponseDto = {
-    /** Asset this revision belongs to */
-    assetId: string;
-    /** When the version was saved */
-    createdAt: string;
-    /** Why the last render failed, when it did */
-    error: string | null;
-    /** True once the edited master file exists */
-    hasMaster: boolean;
-    /** True once the preview file exists */
-    hasPreview: boolean;
-    /** Height of the edited master in pixels */
-    height: number | null;
-    /** Develop revision ID */
-    id: string;
-    /** True for the version the asset currently shows */
-    isCurrent: boolean;
-    /** Name given when the version was saved */
-    label: string | null;
-    /** Render progress as a percentage */
-    progress: number;
-    recipe: AssetDevelopRecipeDto;
-    /** When the render finished */
-    renderedAt: string | null;
-    /** Identity of the renderer that produced the files, for lineage */
-    rendererVersion: string | null;
-    /** Per-asset sequence number, 1 for the first saved version */
-    revision: number;
-    status: AssetDevelopRevisionStatus;
-    /** When the revision last changed */
-    updatedAt: string;
-    /** Width of the edited master in pixels */
-    width: number | null;
-};
-export type AssetDevelopResponseDto = {
-    /** Asset ID these revisions belong to */
-    assetId: string;
-    /** The revision the asset currently shows; null means the original */
-    currentRevisionId: string | null;
-    /** Every saved version of the recipe, newest first */
-    revisions: AssetDevelopRevisionResponseDto[];
-};
-export type AssetDevelopSaveDto = {
-    /** Optional name for the saved version */
-    label?: string;
-    recipe: AssetDevelopRecipeDto;
-    /** Queue the edited master render immediately after saving the recipe */
-    render?: boolean;
-};
-export type AssetDevelopPreviewDto = {
-    recipe: AssetDevelopRecipeDto;
-    /** Longest edge of the preview in pixels; the original is never upscaled */
-    size?: number;
-};
-export type AssetDevelopRevertDto = {
-    /** Rendered revision to make current again; omitted, the original becomes current */
-    revisionId?: string;
-};
-export type AssetRestorationRegionDto = {
-    /** Preview area height as a fraction of the frame */
-    h: number;
-    /** Video only: where the preview clip starts. Ignored for stills. */
-    startSeconds?: number;
-    /** Preview area width as a fraction of the frame */
-    w: number;
-    /** Left edge of the preview area as a fraction of the frame width */
-    x: number;
-    /** Top edge of the preview area as a fraction of the frame height */
-    y: number;
-};
-export type AssetRestorationRequestDto = {
-    /** The processing destination this restoration runs on. Required; never inferred. */
-    destinationId: string;
-    /** Preserve fine film grain instead of smoothing it */
-    keepGrain?: boolean;
-    mode: AssetRestorationMode;
-    region?: AssetRestorationRegionDto;
-    /** Upscale factor. Output is additionally capped at 4K. */
-    upscale?: 1 | 2 | 4;
-};
-export type AssetRestorationEstimateDto = {
-    /** Measured upload throughput for this destination and workload, or null with no samples */
-    bytesPerSecond: number | null;
-    /** Approximate bytes the full render sends */
-    fullBytes: number;
-    /** Estimated full render time from measured throughput, or null when nothing is measured */
-    fullSeconds: number | null;
-    /** Approximate bytes the preview sends */
-    previewBytes: number;
-    /** Estimated preview time from measured throughput, or null when nothing is measured */
-    previewSeconds: number | null;
-    /** Successful requests the throughput was measured from */
-    sampleCount: number;
-    /** Length of the measurement window */
-    windowDays: number;
-};
-export type AssetRestorationResponseDto = {
-    /** The job currently running for this restoration, for cancel and retry; null when idle */
-    activeOperationId: string | null;
-    assetId: string;
-    createdAt: string;
-    /** The bound destination, or null once an administrator removed it */
-    destinationId: string | null;
-    destinationKind: MlDestinationKind;
-    destinationName: string;
-    error: string | null;
-    estimate: (AssetRestorationEstimateDto) | null;
-    /** The durable job that renders the full result */
-    fullOperationId: string | null;
-    /** Both preview files exist */
-    hasPreview: boolean;
-    /** The full-resolution result exists */
-    hasResult: boolean;
-    /** Restoration ID */
-    id: string;
-    /** The owner chose this result as the asset’s playback version */
-    isCurrent: boolean;
-    keepGrain: boolean;
-    mode: AssetRestorationMode;
-    /** Model the adapter reported, for provenance */
-    modelName: string | null;
-    modelVersion: string | null;
-    outputHeight: number | null;
-    outputWidth: number | null;
-    previewExpiresAt: string | null;
-    /** The durable job that rendered the preview */
-    previewOperationId: string | null;
-    previewReadyAt: string | null;
-    previewRegion: AssetRestorationRegionDto;
-    restoredAt: string | null;
-    resultExpiresAt: string | null;
-    reviewedAt: string | null;
-    /** Per-asset sequence number, 1 for the first restoration */
-    revision: number;
-    sourceDurationSeconds: number | null;
-    sourceHeight: number;
-    sourceType: AssetRestorationSourceType;
-    sourceWidth: number;
-    status: AssetRestorationStatus;
-    updatedAt: string;
-    upscale: number;
-    workload: MlWorkload;
-};
-export type AssetRestorationListResponseDto = {
-    assetId: string;
-    /** The restoration the owner chose as the playback version; null means the original */
-    currentRestorationId: string | null;
-    /** Every restoration of the asset, newest first */
-    items: AssetRestorationResponseDto[];
-};
-export type AssetRestorationDestinationDto = {
-    /** The server would admit this workload on this destination right now */
-    available: boolean;
-    /** True when no consent is needed or an administrator recorded it */
-    consentGranted: boolean;
-    consentRequired: boolean;
-    estimate: AssetRestorationEstimateDto;
-    health: MlDestinationHealth;
-    id: string;
-    kind: MlDestinationKind;
-    /** Media sent to this destination leaves the network */
-    leavesNetwork: boolean;
-    name: string;
-    /** Why the destination cannot be chosen, or null */
-    refusal: (MlAdmissionRefusal) | null;
-    refusalDetail: string | null;
-};
-export type AssetRestorationOptionsDto = {
-    /** Always true since the restoration adapter ships with the server; whether a model can run is reported per destination. */
-    adapterInstalled: boolean;
-    assetId: string;
-    destinations: AssetRestorationDestinationDto[];
-    /** Video length; null for stills */
-    durationSeconds: number | null;
-    mode: AssetRestorationMode;
-    /** Height the full render would produce after the 4K cap */
-    outputHeight: number;
-    /** Width the full render would produce after the 4K cap */
-    outputWidth: number;
-    /** Length of a video preview clip; null for stills */
-    previewSeconds: number | null;
-    sourceHeight: number;
-    sourceType: AssetRestorationSourceType;
-    sourceWidth: number;
-    upscale: number;
-    workload: MlWorkload;
-};
-export type AssetRestorationSelectDto = {
-    /** Restored revision to use as the playback version; omitted, the original is used */
-    restorationId?: string;
 };
 export type AssetEditActionItemResponseDto = {
     action: AssetEditAction;
@@ -2299,6 +2400,139 @@ export type AssetOcrResponseDto = {
     y3: number;
     /** Normalized y coordinate of box corner 4 (0-1) */
     y4: number;
+};
+export type AssetRestorationEstimateDto = {
+    /** Measured upload throughput for this destination and workload, or null with no samples */
+    bytesPerSecond: number | null;
+    /** Approximate bytes the full render sends */
+    fullBytes: number;
+    /** Estimated full render time from measured throughput, or null when nothing is measured */
+    fullSeconds: number | null;
+    /** Approximate bytes the preview sends */
+    previewBytes: number;
+    /** Estimated preview time from measured throughput, or null when nothing is measured */
+    previewSeconds: number | null;
+    /** Successful requests the throughput was measured from */
+    sampleCount: number;
+    /** Length of the measurement window */
+    windowDays: number;
+};
+export type AssetRestorationRegionDto = {
+    /** Preview area height as a fraction of the frame */
+    h: number;
+    /** Video only: where the preview clip starts. Ignored for stills. */
+    startSeconds?: number;
+    /** Preview area width as a fraction of the frame */
+    w: number;
+    /** Left edge of the preview area as a fraction of the frame width */
+    x: number;
+    /** Top edge of the preview area as a fraction of the frame height */
+    y: number;
+};
+export type AssetRestorationResponseDto = {
+    /** The job currently running for this restoration, for cancel and retry; null when idle */
+    activeOperationId: string | null;
+    assetId: string;
+    createdAt: string;
+    /** The bound destination, or null once an administrator removed it */
+    destinationId: string | null;
+    destinationKind: MlDestinationKind;
+    destinationName: string;
+    error: string | null;
+    estimate: (AssetRestorationEstimateDto) | null;
+    /** The durable job that renders the full result */
+    fullOperationId: string | null;
+    /** Both preview files exist */
+    hasPreview: boolean;
+    /** The full-resolution result exists */
+    hasResult: boolean;
+    /** Restoration ID */
+    id: string;
+    /** The owner chose this result as the asset’s playback version */
+    isCurrent: boolean;
+    keepGrain: boolean;
+    mode: AssetRestorationMode;
+    /** Model the adapter reported, for provenance */
+    modelName: string | null;
+    modelVersion: string | null;
+    outputHeight: number | null;
+    outputWidth: number | null;
+    previewExpiresAt: string | null;
+    /** The durable job that rendered the preview */
+    previewOperationId: string | null;
+    previewReadyAt: string | null;
+    previewRegion: AssetRestorationRegionDto;
+    restoredAt: string | null;
+    resultExpiresAt: string | null;
+    reviewedAt: string | null;
+    /** Per-asset sequence number, 1 for the first restoration */
+    revision: number;
+    sourceDurationSeconds: number | null;
+    sourceHeight: number;
+    sourceType: AssetRestorationSourceType;
+    sourceWidth: number;
+    status: AssetRestorationStatus;
+    updatedAt: string;
+    upscale: number;
+    workload: MlWorkload;
+};
+export type AssetRestorationListResponseDto = {
+    assetId: string;
+    /** The restoration the owner chose as the playback version; null means the original */
+    currentRestorationId: string | null;
+    /** Every restoration of the asset, newest first */
+    items: AssetRestorationResponseDto[];
+};
+export type AssetRestorationRequestDto = {
+    /** The processing destination this restoration runs on. Required; never inferred. */
+    destinationId: string;
+    /** Preserve fine film grain instead of smoothing it */
+    keepGrain?: boolean;
+    mode: AssetRestorationMode;
+    region?: AssetRestorationRegionDto;
+    /** Upscale factor. Output is additionally capped at 4K. */
+    upscale?: 1 | 2 | 4;
+};
+export type AssetRestorationSelectDto = {
+    /** Restored revision to use as the playback version; omitted, the original is used */
+    restorationId?: string;
+};
+export type AssetRestorationDestinationDto = {
+    /** The server would admit this workload on this destination right now */
+    available: boolean;
+    /** True when no consent is needed or an administrator recorded it */
+    consentGranted: boolean;
+    consentRequired: boolean;
+    estimate: AssetRestorationEstimateDto;
+    health: MlDestinationHealth;
+    id: string;
+    kind: MlDestinationKind;
+    /** Media sent to this destination leaves the network */
+    leavesNetwork: boolean;
+    name: string;
+    /** Why the destination cannot be chosen, or null */
+    refusal: (MlAdmissionRefusal) | null;
+    refusalDetail: string | null;
+};
+export type AssetRestorationOptionsDto = {
+    /** Always true since the restoration adapter ships with the server; whether a model can run is reported per destination. */
+    adapterInstalled: boolean;
+    assetId: string;
+    destinations: AssetRestorationDestinationDto[];
+    /** Video length; null for stills */
+    durationSeconds: number | null;
+    mode: AssetRestorationMode;
+    /** Height the full render would produce after the 4K cap */
+    outputHeight: number;
+    /** Width the full render would produce after the 4K cap */
+    outputWidth: number;
+    /** Length of a video preview clip; null for stills */
+    previewSeconds: number | null;
+    sourceHeight: number;
+    sourceType: AssetRestorationSourceType;
+    sourceWidth: number;
+    upscale: number;
+    workload: MlWorkload;
 };
 export type SignUpDto = {
     /** User email */
@@ -2744,6 +2978,41 @@ export type DuplicateResponseDto = {
     /** Suggested asset IDs to keep based on file size and EXIF data */
     suggestedKeepAssetIds: string[];
 };
+export type DuplicateActiveGroupDto = {
+    duplicateId: string;
+    memberIds: string[];
+};
+export type DuplicateActiveOperationDto = {
+    action: MediaOperationBulkAction;
+    groups: DuplicateActiveGroupDto[];
+    operationId: string;
+};
+export type DuplicateDecisionGroupDto = {
+    applied: boolean;
+    decision: DuplicateDecisionKind;
+    decisionId: string;
+    duplicateId: string;
+    keepAssetIds: string[];
+    memberIds: string[];
+    trashAssetIds: string[];
+    /** An undo job has started on this decision */
+    undoing: boolean;
+    undone: boolean;
+};
+export type DuplicateDecisionBatchDto = {
+    createdAt: string;
+    groups: DuplicateDecisionGroupDto[];
+    /** The durable job that applied these decisions */
+    operationId: string;
+    /** Every decision of the job is applied and none has been undone */
+    undoable: boolean;
+};
+export type DuplicateDecisionHistoryDto = {
+    /** Decision and undo jobs still running */
+    active: DuplicateActiveOperationDto[];
+    /** The most recent decision jobs, newest first */
+    recent: DuplicateDecisionBatchDto[];
+};
 export type DuplicateResolveGroupDto = {
     duplicateId: string;
     /** Asset IDs to keep */
@@ -2754,6 +3023,45 @@ export type DuplicateResolveGroupDto = {
 export type DuplicateResolveDto = {
     /** List of duplicate groups to resolve */
     groups: DuplicateResolveGroupDto[];
+};
+export type DuplicateReviewQualityDto = {
+    assetId: string;
+    /** Evidence for or against keeping this copy */
+    reasons: DuplicateQualityReason[];
+};
+export type DuplicateReviewGroupDto = {
+    /** The photos of the group this session may see */
+    assets: AssetResponseDto[];
+    blockedReason: (DuplicateGroupBlock) | null;
+    /** Duplicate group ID */
+    duplicateId: string;
+    /** Whether this session may decide the group */
+    editable: boolean;
+    /** Photos of the group this session does not see */
+    hiddenMemberCount: number;
+    kind: DuplicateGroupKind;
+    qualities: DuplicateReviewQualityDto[];
+    /** The suggested keeper, from resolution, format and original provenance. Never set for a burst */
+    suggestedKeepAssetIds: string[];
+    /** Size of the originals shown, in bytes */
+    totalBytes: number;
+};
+export type VideoMomentSearchDto = {
+    limit?: number;
+    query: string;
+};
+export type VideoMomentSearchHitDto = {
+    assetId: string;
+    caption: string | null;
+    frameId: string | null;
+    match: VideoMomentMatch;
+    momentId: string | null;
+    /** Higher is closer */
+    score: number;
+    timestampMs: number;
+};
+export type VideoMomentSearchResponseDto = {
+    hits: VideoMomentSearchHitDto[];
 };
 export type EnrichmentDestinationAdmissionDto = {
     admitted: boolean;
@@ -2881,23 +3189,6 @@ export type EnrichmentPreviewResponseDto = {
     modelName: string;
     samples: EnrichmentPreviewSampleDto[];
 };
-export type VideoMomentSearchDto = {
-    limit?: number;
-    query: string;
-};
-export type VideoMomentSearchHitDto = {
-    assetId: string;
-    caption: string | null;
-    frameId: string | null;
-    match: VideoMomentMatch;
-    momentId: string | null;
-    /** Higher is closer */
-    score: number;
-    timestampMs: number;
-};
-export type VideoMomentSearchResponseDto = {
-    hits: VideoMomentSearchHitDto[];
-};
 export type VideoMomentCoverDto = {
     /** Time of the chosen frame; null returns to the best frame */
     timestampMs: number | null;
@@ -2955,63 +3246,6 @@ export type VideoMomentUpdateDto = {
     endMs?: number | null;
     timestampMs?: number;
     transcript?: string | null;
-};
-export type DuplicateActiveGroupDto = {
-    duplicateId: string;
-    memberIds: string[];
-};
-export type DuplicateActiveOperationDto = {
-    action: MediaOperationBulkAction;
-    groups: DuplicateActiveGroupDto[];
-    operationId: string;
-};
-export type DuplicateDecisionGroupDto = {
-    applied: boolean;
-    decision: DuplicateDecisionKind;
-    decisionId: string;
-    duplicateId: string;
-    keepAssetIds: string[];
-    memberIds: string[];
-    trashAssetIds: string[];
-    /** An undo job has started on this decision */
-    undoing: boolean;
-    undone: boolean;
-};
-export type DuplicateDecisionBatchDto = {
-    createdAt: string;
-    groups: DuplicateDecisionGroupDto[];
-    /** The durable job that applied these decisions */
-    operationId: string;
-    /** Every decision of the job is applied and none has been undone */
-    undoable: boolean;
-};
-export type DuplicateDecisionHistoryDto = {
-    /** Decision and undo jobs still running */
-    active: DuplicateActiveOperationDto[];
-    /** The most recent decision jobs, newest first */
-    recent: DuplicateDecisionBatchDto[];
-};
-export type DuplicateReviewQualityDto = {
-    assetId: string;
-    /** Evidence for or against keeping this copy */
-    reasons: DuplicateQualityReason[];
-};
-export type DuplicateReviewGroupDto = {
-    /** The photos of the group this session may see */
-    assets: AssetResponseDto[];
-    blockedReason: (DuplicateGroupBlock) | null;
-    /** Duplicate group ID */
-    duplicateId: string;
-    /** Whether this session may decide the group */
-    editable: boolean;
-    /** Photos of the group this session does not see */
-    hiddenMemberCount: number;
-    kind: DuplicateGroupKind;
-    qualities: DuplicateReviewQualityDto[];
-    /** The suggested keeper, from resolution, format and original provenance. Never set for a burst */
-    suggestedKeepAssetIds: string[];
-    /** Size of the originals shown, in bytes */
-    totalBytes: number;
 };
 export type AssetFaceResponseDto = {
     /** Bounding box X1 coordinate */
@@ -3222,6 +3456,41 @@ export type QueuesResponseLegacyDto = {
     videoDuplicateDetection: QueueResponseLegacyDto;
     workflow: QueueResponseLegacyDto;
 };
+export type JobCreateDto = {
+    name: ManualJobName;
+};
+export type MemoryExportResponseDto = {
+    /** Number of assets in the export */
+    assetCount: number;
+    /** When the export was requested */
+    createdAt: string;
+    /** Failure reason, when the export failed */
+    error: string | null;
+    /** When the archive is deleted */
+    expiresAt: string | null;
+    /** When the export reached a terminal state */
+    finishedAt: string | null;
+    format: MemoryExportFormat;
+    /** Export ID */
+    id: string;
+    /** Whether the archive can be downloaded right now */
+    isDownloadable: boolean;
+    /** Memory the export was requested for */
+    memoryId: string;
+    /** Owner user ID */
+    ownerId: string;
+    /** Number of assets written so far */
+    processedAssets: number;
+    /** Size of the finished archive */
+    sizeInBytes: number | null;
+    /** When the worker picked the export up */
+    startedAt: string | null;
+    status: MemoryExportStatus;
+    /** The memory's title when the export was requested */
+    title: string;
+    /** Last update date */
+    updatedAt: string;
+};
 export type QueueRunDto = {
     /** Jobs running now */
     active: number;
@@ -3246,9 +3515,6 @@ export type RunningJobsResponseDto = {
     operations: MediaOperationDto[];
     /** Server job queues with work; always empty for non-administrators */
     queues: QueueRunDto[];
-};
-export type JobCreateDto = {
-    name: ManualJobName;
 };
 export type QueueCommandDto = {
     command: QueueCommand;
@@ -3435,11 +3701,14 @@ export type MediaHealthListResponseDto = {
     run: (MediaHealthRunResponseDto) | null;
     total: number;
 };
-export type MediaHealthDeleteCorruptDto = {
-    /** Typed confirmation text */
-    confirmText: string;
-    /** Media health finding IDs */
-    ids: string[];
+export type MediaHealthCandidateChoiceDto = {
+    /** Candidate ID */
+    candidateId: string;
+    /** Media health finding ID */
+    findingId: string;
+};
+export type MediaHealthChooseCandidatesDto = {
+    choices: MediaHealthCandidateChoiceDto[];
 };
 export type MediaHealthBulkResultDto = {
     error?: string;
@@ -3452,14 +3721,11 @@ export type MediaHealthBulkResponseDto = {
     operationId?: string | null;
     results: MediaHealthBulkResultDto[];
 };
-export type MediaHealthCandidateChoiceDto = {
-    /** Candidate ID */
-    candidateId: string;
-    /** Media health finding ID */
-    findingId: string;
-};
-export type MediaHealthChooseCandidatesDto = {
-    choices: MediaHealthCandidateChoiceDto[];
+export type MediaHealthDeleteCorruptDto = {
+    /** Typed confirmation text */
+    confirmText: string;
+    /** Media health finding IDs */
+    ids: string[];
 };
 export type MediaHealthRecoverDto = {
     choices: MediaHealthCandidateChoiceDto[];
@@ -3546,198 +3812,10 @@ export type MediaHealthSummaryResponseDto = {
     recoveryAvailable: boolean;
     runs: MediaHealthRunsDto;
 };
-export type MediaOperationEstimateDto = {
-    /** Configured cloud rate detail, when one applies */
-    cloudCost: ({
-        [key: string]: any;
-    }) | null;
-    /** Measured estimate of remaining work */
-    seconds: number;
-    /** Estimated output size */
-    sizeBytes: string | null;
-};
-export type MediaOperationBulkSummaryDto = {
-    action: MediaOperationBulkAction;
-    /** Items the server attempted and could not apply; a retry covers these */
-    failed: number;
-    itemsTruncated: boolean;
-    /** Items in the frozen set */
-    requested: number;
-    /** Items that failed and were given their one automatic retry */
-    retried: number;
-    /** Items refused before anything changed, e.g. no access */
-    skipped: number;
-    snapshotTruncated: boolean;
-    succeeded: number;
-};
-export type MediaOperationDto = {
-    /** Source asset, when the workload has exactly one */
-    assetId: string | null;
-    attempt: number;
-    /** Automatic retries this job has used; every job gets one before a failure is reported */
-    autoRetries: number;
-    bulk: (MediaOperationBulkSummaryDto) | null;
-    cancelAcknowledgedAt: string | null;
-    cancelRequestedAt: string | null;
-    createdAt: string;
-    destination: MediaOperationDestination;
-    /** Which worker or endpoint the destination resolved to */
-    destinationDetail: string | null;
-    /** Operator detail about a failure; on a queued job, the failure it is being retried after */
-    error: string | null;
-    /** Stable code the client turns into a message */
-    errorCode: string | null;
-    estimate: (MediaOperationEstimateDto) | null;
-    finishedAt: string | null;
-    /** Media operation ID */
-    id: string;
-    kind: MediaOperationKind;
-    /** What the person sees in Activity */
-    label: string;
-    maxAttempts: number;
-    /** Whether this kind of job can pause and carry on later; one-shot kinds cannot */
-    pausable: boolean;
-    /** When the owner asked to pause; a running job keeps working until its next checkpoint */
-    pauseRequestedAt: string | null;
-    processedUnits: string;
-    /** Percent complete, from counted work */
-    progress: number;
-    projectId: string | null;
-    /** The asset a completed job published */
-    resultAssetId: string | null;
-    /** When a job waiting for its automatic retry may run again */
-    retryAt: string | null;
-    /** The job this one retries */
-    retryOfId: string | null;
-    revisionId: string | null;
-    /** User-visible render settings */
-    settings: {
-        [key: string]: any;
-    };
-    startedAt: string | null;
-    status: MediaOperationStatus;
-    totalUnits: string | null;
-    updatedAt: string;
-};
 export type MediaOperationListResponseDto = {
     items: MediaOperationDto[];
     /** Matching jobs, before paging */
     total: number;
-};
-export type MediaOperationAggregateDto = {
-    count: number;
-    destination: MediaOperationDestination;
-    kind: MediaOperationKind;
-    oldestCreatedAt: string | null;
-    status: MediaOperationStatus;
-};
-export type MediaOperationStatisticsDto = {
-    /** Jobs the server is still working on */
-    active: number;
-    buckets: MediaOperationAggregateDto[];
-    failed: number;
-    /** Remote jobs whose cleanup has not been acknowledged */
-    unreleasedRemote: number;
-};
-export type MediaOperationCheckpointDto = {
-    /** Digest over every input to this chunk; the reuse key */
-    chunkKey: string;
-    completedAt: string | null;
-    /** Chunk end, in ticks of the timebase */
-    endTicks: string;
-    /** Checkpoint ID */
-    id: string;
-    /** A render may not start inside this chunk */
-    requiresSequentialContext: boolean;
-    /** Chunk order within the render */
-    sequence: number;
-    sizeInBytes: string | null;
-    /** Chunk start, in ticks of the timebase */
-    startTicks: string;
-    state: MediaOperationCheckpointState;
-    /** Rational timebase for the tick range, e.g. 30000/1001 */
-    timebase: string;
-};
-export type MediaOperationBulkItemDto = {
-    /** Asset ID */
-    id: string;
-    /** Operator detail from the server */
-    message: string | null;
-    /** Stable key the client turns into a message */
-    reasonKey: string | null;
-    status: MediaOperationItemStatus;
-};
-export type MediaOperationDetailDto = (MediaOperationDto) & {
-    bulkItems: MediaOperationBulkItemDto[];
-    /** Asset IDs waiting for their automatic retry */
-    bulkRetryPending: string[];
-    checkpoints: MediaOperationCheckpointDto[];
-    /** The immutable binding the render was bound to */
-    snapshot: {
-        [key: string]: any;
-    };
-};
-export type StudioPreviewTimeDto = {
-    /** Time denominator; must be positive */
-    denominator: string;
-    /** Time numerator, in seconds over the denominator */
-    numerator: string;
-};
-export type StudioPreviewDto = {
-    contentType: string | null;
-    /** Stable code the client turns into a message */
-    errorCode: string | null;
-    /** Revision-bound entity tag for the frame endpoint */
-    etag: string;
-    expiresAt: string | null;
-    framePts: string | null;
-    framePtsTimebase: string | null;
-    /** Preview frame ID */
-    id: string;
-    /** The durable job rendering this frame, when one has been created */
-    operationId: string | null;
-    projectId: string;
-    quality: StudioPreviewQuality;
-    readyAt: string | null;
-    requestedAt: string;
-    /** The stored project revision this frame was rendered for */
-    revision: number;
-    /** Digest of the authorized resolution the frame is bound to; changes with the revision and whenever access is re-resolved */
-    revisionDigest: string;
-    /** The seek this frame answers */
-    seekGeneration: string;
-    sizeInBytes: string | null;
-    status: StudioPreviewStatus;
-    time: StudioPreviewTimeDto;
-    /** The frame is an explicitly tone-mapped SDR rendering; never the colour authority */
-    toneMapped: boolean;
-    viewportHeight: number;
-    viewportWidth: number;
-};
-export type StudioPreviewResponseDto = {
-    /** The stored revision the project is on now */
-    currentRevision: number;
-    preview: StudioPreviewDto;
-    /** Previews cancelled because the revision advanced */
-    supersededPreviewIds: string[];
-};
-export type StudioPreviewRequestDto = {
-    /** Studio project the frame belongs to */
-    projectId: string;
-    quality: StudioPreviewQuality;
-    /** Stored project revision the frame is bound to; a superseded revision is refused */
-    revision: number;
-    /** The client's monotonic seek counter, echoed back on the result */
-    seekGeneration?: number;
-    time: StudioPreviewTimeDto;
-    viewportHeight: number;
-    viewportWidth: number;
-};
-export type MediaOperationLivePhotoPairDto = {
-    /** Still image asset ID */
-    photoId: string;
-    /** Motion video asset ID */
-    videoId: string;
 };
 export type MediaOperationDuplicateGroupDto = {
     decision: DuplicateDecisionKind;
@@ -3757,6 +3835,12 @@ export type MediaOperationMediaHealthEntryDto = {
     candidateId?: string;
     /** Media health finding ID */
     findingId: string;
+};
+export type MediaOperationLivePhotoPairDto = {
+    /** Still image asset ID */
+    photoId: string;
+    /** Motion video asset ID */
+    videoId: string;
 };
 export type MediaOperationBulkPayloadDto = {
     albumId?: string;
@@ -3792,234 +3876,104 @@ export type MediaOperationBulkCreateDto = {
     /** The client could not resolve the whole matching set */
     truncated?: boolean;
 };
-export type RenderWorkerDto = {
-    /** Operations the worker currently holds */
-    activeOperations: number;
-    /** Oldest conformance evidence admission accepts, in milliseconds */
-    conformanceMaxAgeMs: number;
-    createdAt: string;
+export type MediaOperationAggregateDto = {
+    count: number;
     destination: MediaOperationDestination;
-    /** Engine and patch digest the worker must keep reporting */
-    engineDigest: string | null;
-    /** GPU memory the worker was qualified with, in bytes */
-    gpuMemoryBytes: string | null;
-    /** Render worker ID */
-    id: string;
-    /** Operation kinds this worker may claim */
-    kinds: MediaOperationKind[];
-    lastAdmittedAt: string | null;
-    lastSeenAt: string | null;
-    /** Operations this worker may hold at once */
-    maxConcurrentOperations: number;
-    /** Most output bytes one operation may produce here */
-    maxOutputBytes: string | null;
-    /** Longest one operation may run here, in milliseconds */
-    maxWallClockMs: string | null;
-    /** What the administrator calls this worker */
-    name: string;
-    revokedAt: string | null;
-    status: RenderWorkerStatus;
-    updatedAt: string;
-};
-export type RenderWorkerCreateDto = {
-    conformanceMaxAgeMs?: number;
-    destination: MediaOperationDestination;
-    engineDigest?: string | null;
-    gpuMemoryBytes?: string | null;
-    /** Operation kinds this worker may claim */
-    kinds: MediaOperationKind[];
-    maxConcurrentOperations?: number;
-    maxOutputBytes?: string | null;
-    maxWallClockMs?: string | null;
-    name: string;
-};
-export type RenderWorkerCreateResponseDto = {
-    /** Shown once. Give it to the worker; the server keeps only its hash */
-    enrolmentSecret: string;
-    worker: RenderWorkerDto;
-};
-export type RenderWorkerAuditDto = {
-    /** The administrator who acted, when one did */
-    actorId: string | null;
-    createdAt: string;
-    /** Operator detail. Never a secret, never a path */
-    detail: {
-        [key: string]: any;
-    } | null;
-    event: RenderWorkerAuditEvent;
-    id: string;
-    operationId: string | null;
-    reason: (RenderWorkerRefusalReason) | null;
-    workerId: string | null;
-};
-export type RenderWorkerLimitDto = {
-    /** Operations one account may have claimed at once */
-    maxConcurrentOperations: number;
-    maxOutputBytes: string | null;
-    maxWallClockMs: string | null;
-    /** `instance` for the default, otherwise a user ID */
-    subject: string;
-    updatedAt: string;
-    userId: string | null;
-};
-export type RenderWorkerLimitsResponseDto = {
-    instance: RenderWorkerLimitDto;
-    users: RenderWorkerLimitDto[];
-};
-export type RenderWorkerLimitUpdateDto = {
-    maxConcurrentOperations: number;
-    maxOutputBytes: string | null;
-    maxWallClockMs: string | null;
-    /** Omit or null for the instance default */
-    userId?: string | null;
-};
-export type RenderWorkerUpdateDto = {
-    conformanceMaxAgeMs?: number;
-    engineDigest?: string | null;
-    gpuMemoryBytes?: string | null;
-    kinds?: MediaOperationKind[];
-    maxConcurrentOperations?: number;
-    maxOutputBytes?: string | null;
-    maxWallClockMs?: string | null;
-    name?: string;
-};
-export type RenderWorkerAdmissionDto = {
-    /** Encoder and decoder names the check verified */
-    codecs?: string[];
-    /** When the conformance check ran */
-    conformanceReportedAt: string;
-    /** Digest of the engine and patches actually loaded */
-    engineDigest: string;
-    enrolmentSecret: string;
-    /** GPU memory measured by the conformance check */
-    gpuMemoryBytes: string | null;
-    /** True when the renderer is a software or fallback device */
-    softwareRenderer: boolean;
-    workerId: string;
-};
-export type RenderWorkerSessionDto = {
-    expiresAt: string;
-    /** How often the worker should heartbeat a held claim */
-    heartbeatIntervalMs: number;
-    /** How long a claim lasts without a heartbeat */
-    leaseMs: number;
-    scopes: MediaOperationKind[];
-    /** Present as the x-frameleaf-worker-session header on every worker call */
-    sessionToken: string;
-    workerId: string;
-};
-export type RenderWorkerInputGrantDto = {
-    /** Digest the manifest was resolved against, when known */
-    checksum: string | null;
-    expiresAt: string;
-    /** FL-90 resource key, or `source` for a single-asset workload */
-    inputId: string;
-    /** Resource class: library-asset, edited-master, font, lut, … */
-    kind: string;
-    /** Asset or resource id. Never a path */
-    resourceId: string;
-    /** Relative URL, valid for this claim only and only until expiresAt */
-    url: string;
-};
-export type RenderWorkerClaimLimitsDto = {
-    maxOutputBytes: string | null;
-    maxWallClockMs: string | null;
-};
-export type RenderWorkerClaimDto = {
-    attempt: number;
-    checkpoints: MediaOperationCheckpointDto[];
-    /** Required on every write to this operation */
-    claimToken: string;
-    inputs: RenderWorkerInputGrantDto[];
     kind: MediaOperationKind;
-    leaseMs: number;
-    limits: RenderWorkerClaimLimitsDto;
-    operationId: string;
+    oldestCreatedAt: string | null;
+    status: MediaOperationStatus;
+};
+export type MediaOperationStatisticsDto = {
+    /** Jobs the server is still working on */
+    active: number;
+    buckets: MediaOperationAggregateDto[];
+    failed: number;
+    /** Remote jobs whose cleanup has not been acknowledged */
+    unreleasedRemote: number;
+};
+export type MediaOperationBulkItemDto = {
+    /** Asset ID */
+    id: string;
+    /** Operator detail from the server */
+    message: string | null;
+    /** Stable key the client turns into a message */
+    reasonKey: string | null;
+    status: MediaOperationItemStatus;
+};
+export type MediaOperationCheckpointDto = {
+    /** Digest over every input to this chunk; the reuse key */
+    chunkKey: string;
+    completedAt: string | null;
+    /** Chunk end, in ticks of the timebase */
+    endTicks: string;
+    /** Checkpoint ID */
+    id: string;
+    /** A render may not start inside this chunk */
+    requiresSequentialContext: boolean;
+    /** Chunk order within the render */
+    sequence: number;
+    sizeInBytes: string | null;
+    /** Chunk start, in ticks of the timebase */
+    startTicks: string;
+    state: MediaOperationCheckpointState;
+    /** Rational timebase for the tick range, e.g. 30000/1001 */
+    timebase: string;
+};
+export type MediaOperationDetailDto = {
+    /** Source asset, when the workload has exactly one */
+    assetId: string | null;
+    attempt: number;
+    /** Automatic retries this job has used; every job gets one before a failure is reported */
+    autoRetries: number;
+    bulk: (MediaOperationBulkSummaryDto) | null;
+    bulkItems: MediaOperationBulkItemDto[];
+    /** Asset IDs waiting for their automatic retry */
+    bulkRetryPending: string[];
+    cancelAcknowledgedAt: string | null;
+    cancelRequestedAt: string | null;
+    checkpoints: MediaOperationCheckpointDto[];
+    createdAt: string;
+    destination: MediaOperationDestination;
+    /** Which worker or endpoint the destination resolved to */
+    destinationDetail: string | null;
+    /** Operator detail about a failure; on a queued job, the failure it is being retried after */
+    error: string | null;
+    /** Stable code the client turns into a message */
+    errorCode: string | null;
+    estimate: (MediaOperationEstimateDto) | null;
+    finishedAt: string | null;
+    /** Media operation ID */
+    id: string;
+    kind: MediaOperationKind;
+    /** What the person sees in Activity */
+    label: string;
+    maxAttempts: number;
+    /** Whether this kind of job can pause and carry on later; one-shot kinds cannot */
+    pausable: boolean;
+    /** When the owner asked to pause; a running job keeps working until its next checkpoint */
+    pauseRequestedAt: string | null;
+    processedUnits: string;
+    /** Percent complete, from counted work */
+    progress: number;
     projectId: string | null;
+    /** The asset a completed job published */
+    resultAssetId: string | null;
+    /** When a job waiting for its automatic retry may run again */
+    retryAt: string | null;
+    /** The job this one retries */
+    retryOfId: string | null;
     revisionId: string | null;
+    /** User-visible render settings */
     settings: {
         [key: string]: any;
     };
     snapshot: {
         [key: string]: any;
     };
-};
-export type RenderWorkerClaimRequestDto = {
-    /** Narrow the claim to these kinds */
-    kinds?: MediaOperationKind[];
-};
-export type RenderWorkerWriteResultDto = {
-    accepted: boolean;
-    refusal: (RenderWorkerRefusalReason) | null;
-};
-export type RenderWorkerCancelAckDto = {
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    /** True when remote resources are confirmed gone */
-    released: boolean;
-};
-export type RenderWorkerCheckpointPlanDto = {
-    chunkKey: string;
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    configDigest: string;
-    endTicks: string;
-    historyDigest: string;
-    inputDigest: string;
-    prerollTicks?: string;
-    requiresSequentialContext?: boolean;
-    seed: string | null;
-    sequence: number;
-    startTicks: string;
-    timebase: string;
-};
-export type RenderWorkerCheckpointCompleteDto = {
-    /** Must match the planned chunk; a re-planned chunk cannot be completed */
-    chunkKey: string;
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    outputChecksum: string;
-    outputPath: string;
-    sizeInBytes: string;
-};
-export type RenderWorkerCompleteDto = {
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    resultAssetId: string | null;
-};
-export type RenderWorkerFailDto = {
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    error: string;
-    errorCode: string;
-};
-export type RenderWorkerHeartbeatResponseDto = {
-    /** The owner asked to stop; acknowledge with cancel-ack */
-    cancelRequested: boolean;
-    leaseExtended: boolean;
-    leaseMs: number;
-    /** The owner paused the job and its claim has been handed back; stop without reporting a failure */
-    pauseRequested: boolean;
-    /** Set when a limit stopped the operation */
-    refusal: (RenderWorkerRefusalReason) | null;
-};
-export type RenderWorkerHeartbeatDto = {
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    /** Total output bytes produced so far */
-    outputBytes?: string;
-};
-export type RenderWorkerProgressDto = {
-    /** The claim token this operation was handed out with */
-    claimToken: string;
-    outputBytes?: string;
-    processedUnits: number;
-    status: "preparing" | "rendering";
-    totalUnits: number | null;
-};
-export type OnThisDayDto = {
-    /** Year for on this day memory */
-    year: number;
+    startedAt: string | null;
+    status: MediaOperationStatus;
+    totalUnits: string | null;
+    updatedAt: string;
 };
 export type MemoryStoryPlaceDto = {
     /** City */
@@ -4037,7 +3991,7 @@ export type EventStoryDto = {
     /** Last local day of the event, 'yyyy-MM-dd' */
     endDate: string;
     /** Discriminator for an event story */
-    kind: "event_story";
+    kind: Kind;
     place?: MemoryStoryPlaceDto;
     /** First local day of the event, 'yyyy-MM-dd' */
     startDate: string;
@@ -4050,48 +4004,17 @@ export type YearInReviewDto = {
     /** Number of assets captured that year */
     assetCount: number;
     /** Discriminator for a year in review recap */
-    kind: "year_in_review";
+    kind: Kind2;
     /** Number of distinct months represented */
     monthCount: number;
     /** Calendar year being recapped */
     year: number;
 };
+export type OnThisDayDto = {
+    /** Year for on this day memory */
+    year: number;
+};
 export type MemoryData = EventStoryDto | YearInReviewDto | OnThisDayDto;
-export type MemoryExportResponseDto = {
-    /** Number of assets in the export */
-    assetCount: number;
-    /** When the export was requested */
-    createdAt: string;
-    /** Failure reason, when the export failed */
-    error: string | null;
-    /** When the archive is deleted */
-    expiresAt: string | null;
-    /** When the export reached a terminal state */
-    finishedAt: string | null;
-    format: MemoryExportFormat;
-    /** Export ID */
-    id: string;
-    /** Whether the archive can be downloaded right now */
-    isDownloadable: boolean;
-    /** Memory the export was requested for */
-    memoryId: string;
-    /** Owner user ID */
-    ownerId: string;
-    /** Number of assets written so far */
-    processedAssets: number;
-    /** Size of the finished archive */
-    sizeInBytes: number | null;
-    /** When the worker picked the export up */
-    startedAt: string | null;
-    status: MemoryExportStatus;
-    /** The memory's title when the export was requested */
-    title: string;
-    /** Last update date */
-    updatedAt: string;
-};
-export type MemoryExportCreateDto = {
-    format?: MemoryExportFormat;
-};
 export type MemoryResponseDto = {
     assets: AssetResponseDto[];
     /** Creation date */
@@ -4145,97 +4068,9 @@ export type MemoryUpdateDto = {
     /** Date when memory was seen */
     seenAt?: string;
 };
-export type WorkerWorkloadAdmissionDto = {
-    /** Whether the last check would admit this workload here */
-    admitted: boolean;
-    /** Why it would be refused, or null */
-    detail: string | null;
-    refusal: (MlAdmissionRefusal) | null;
-    workload: MlWorkload;
-};
-export type WorkerGpuDto = {
-    memoryTotalBytes: number;
-    name: string;
-};
-export type WorkerInventoryEntryDto = {
-    acceleration: MlWorkerAcceleration;
-    /** Jobs running here now */
-    activeOperations: number;
-    /** Per allowed workload, from the last check */
-    admission: WorkerWorkloadAdmissionDto[];
-    allowedWorkloads: MlWorkload[];
-    /** Last check or check-in */
-    checkedAt: string | null;
-    /** For a local destination: its URL is still in the machine-learning URL list. Always true otherwise */
-    configured: boolean;
-    /** True when no consent is needed or it is recorded */
-    consentGranted: boolean;
-    credential: WorkerCredentialState;
-    enabled: boolean;
-    /** Largest GPU memory reported or qualified, or null when unknown */
-    gpuMemoryBytes: number | null;
-    /** GPUs the worker reported, with memory; empty when not reported */
-    gpus: WorkerGpuDto[];
-    /** ML destination ID or render worker ID */
-    id: string;
-    /** ML destination kind, or the render worker destination */
-    kind: string;
-    latencyMs: number | null;
-    /** Work sent here leaves the network */
-    leavesNetwork: boolean;
-    /** Render workers: the most they may hold at once */
-    maxConcurrentOperations: number | null;
-    name: string;
-    /** Jobs waiting for this worker */
-    queuedOperations: number;
-    readiness: MlWorkerReadiness;
-    /** Operation kinds a render worker may claim */
-    renderKinds: MediaOperationKind[];
-    /** What an ML destination is for; null for a render worker */
-    role: (MlWorkerRole) | null;
-    /** Workloads whose route names this destination */
-    routedWorkloads: MlWorkload[];
-    /** Workloads the worker reported on its last check, or null when it never answered */
-    servedWorkloads: MlWorkload[] | null;
-    sharesLibraryHardware: boolean;
-    source: WorkerInventorySource;
-    summary: string | null;
-    /** Endpoint URL, or null when there is none to show */
-    url: string | null;
-    /** Full restorations bound here are waiting because library analysis has work */
-    waitingForLibraryAnalysis: boolean;
-};
-export type WorkerQueueBacklogDto = {
-    active: number;
-    paused: boolean;
-    queue: QueueName;
-    waiting: number;
-};
-export type WorkerLibraryRouteDto = {
-    destinationId: string | null;
-    /** Queues whose jobs run this workload */
-    queues: QueueName[];
-    workload: MlWorkload;
-};
-export type WorkerRunnerDto = {
-    activeOperations: number;
-    kinds: MediaOperationKind[];
-    lastHeartbeatAt: string | null;
-    /** The server process holding the claims */
-    workerId: string;
-};
-export type WorkerInventoryResponseDto = {
-    checkedAt: string;
-    /** The machine-learning URL list, in order */
-    configuredUrls: string[];
-    entries: WorkerInventoryEntryDto[];
-    /** Library-analysis jobs active or waiting, not counting paused queues */
-    libraryBacklog: number;
-    libraryQueues: WorkerQueueBacklogDto[];
-    libraryRoutes: WorkerLibraryRouteDto[];
-    machineLearningEnabled: boolean;
-    /** Server processes running restorations now */
-    runners: WorkerRunnerDto[];
+export type MemoryExportCreateDto = {
+    /** Export format, defaults to an archive of the originals */
+    format?: MemoryExportFormat;
 };
 export type MlDestinationConsentDto = {
     /** When an administrator recorded consent, or null */
@@ -4301,6 +4136,16 @@ export type MlDestinationCreateDto = {
     url?: string;
     workloads?: MlWorkload[];
 };
+export type StudioCapabilitiesDto = {
+    /** False until the Studio render worker admission (FL-95, FL-104) reports one */
+    gpuWorker: boolean;
+    /** False until the Studio render worker admission (FL-95, FL-104) reports one */
+    renderWorker: boolean;
+    /** A destination can serve a restoration workload right now */
+    restorationWorker: boolean;
+    /** A destination can serve the Studio AI workload right now */
+    transcriptionWorker: boolean;
+};
 export type MlCapabilityDestinationDto = {
     /** Enabled, healthy on the last probe, consented and reporting this workload */
     available: boolean;
@@ -4318,16 +4163,6 @@ export type MlWorkloadCapabilityDto = {
     /** Destination library jobs use for this workload, or null */
     routedDestinationId: string | null;
     workload: MlWorkload;
-};
-export type StudioCapabilitiesDto = {
-    /** False until the Studio render worker admission (FL-95, FL-104) reports one */
-    gpuWorker: boolean;
-    /** False until the Studio render worker admission (FL-95, FL-104) reports one */
-    renderWorker: boolean;
-    /** A destination can serve a restoration workload right now */
-    restorationWorker: boolean;
-    /** A destination can serve the Studio AI workload right now */
-    transcriptionWorker: boolean;
 };
 export type MlCapabilitiesResponseDto = {
     /** When this snapshot was assembled */
@@ -4360,6 +4195,11 @@ export type MlDestinationUpdateDto = {
     url?: string | null;
     workloads?: MlWorkload[];
 };
+export type MlAdmissionRequestDto = {
+    /** Job the admission is for, recorded with the accounting row */
+    jobId?: string;
+    workload: MlWorkload;
+};
 export type MlThroughputEstimateDto = {
     /** Measured throughput for this destination and workload, or null with no samples */
     bytesPerSecond: number | null;
@@ -4372,11 +4212,6 @@ export type MlAdmissionResponseDto = {
     estimate: MlThroughputEstimateDto;
     health: MlDestinationHealthStateDto;
     kind: MlDestinationKind;
-    workload: MlWorkload;
-};
-export type MlAdmissionRequestDto = {
-    /** Job the admission is for, recorded with the accounting row */
-    jobId?: string;
     workload: MlWorkload;
 };
 export type MlDestinationConsentRequestDto = {
@@ -4550,6 +4385,18 @@ export type MergePersonDto = {
     /** Person IDs to merge */
     ids: string[];
 };
+export type PersonMergeSuggestionDto = {
+    /** Face embedding distance between the two people (lower is more similar) */
+    distance: number;
+    /** The person being reviewed */
+    person: PersonResponseDto;
+    /** The suggested match for that person */
+    suggestion: PersonResponseDto;
+};
+export type MergeSuggestionsResponseDto = {
+    /** Suggested pairs of people that may be the same person */
+    suggestions: PersonMergeSuggestionDto[];
+};
 export type PersonUpdateDto = {
     /** Person date of birth */
     birthDate?: string | null;
@@ -4563,6 +4410,18 @@ export type PersonUpdateDto = {
     isHidden?: boolean;
     /** Person name */
     name?: string;
+};
+export type PersonCorrectionDto = {
+    /** Asset the corrected face belongs to */
+    assetId: string;
+    /** When the manual correction was made */
+    correctedAt: string;
+    /** Face ID */
+    faceId: string;
+};
+export type PersonCorrectionsResponseDto = {
+    /** Manual face corrections for this person, most recent first */
+    corrections: PersonCorrectionDto[];
 };
 export type AssetFaceUpdateItem = {
     /** Asset ID */
@@ -4610,66 +4469,7 @@ export type PetCreateDto = {
     isHidden?: boolean;
     /** Pet name */
     name?: string;
-    species: PetSpecies;
-};
-export type PetUpdateDto = {
-    /** Pet date of birth */
-    birthDate?: string | null;
-    /** Asset used as the pet thumbnail */
-    featuredAssetId?: string | null;
-    /** Mark as favorite */
-    isFavorite?: boolean;
-    /** Pet visibility (hidden) */
-    isHidden?: boolean;
-    /** Pet name */
-    name?: string;
     species?: PetSpecies;
-};
-export type PetMergeDto = {
-    /** Pet IDs to merge into this pet */
-    ids: string[];
-};
-export type PetObservationResponseDto = {
-    /** Asset ID */
-    assetId: string;
-    /** Region X1, in source pixels */
-    boundingBoxX1: number | null;
-    /** Region X2, in source pixels */
-    boundingBoxX2: number | null;
-    /** Region Y1, in source pixels */
-    boundingBoxY1: number | null;
-    /** Region Y2, in source pixels */
-    boundingBoxY2: number | null;
-    /** Creation date */
-    createdAt: string;
-    /** Observation ID */
-    id: string;
-    /** Height of the image the region was drawn on */
-    imageHeight: number | null;
-    /** Width of the image the region was drawn on */
-    imageWidth: number | null;
-    /** Pet ID */
-    petId: string;
-    source: PetObservationSource;
-    state: PetObservationState;
-    /** Last update date */
-    updatedAt: string;
-};
-export type PetObservationCreateDto = {
-    /** Asset the pet appears in */
-    assetId: string;
-    /** Region X1, in source pixels */
-    boundingBoxX1?: number;
-    /** Region X2, in source pixels */
-    boundingBoxX2?: number;
-    /** Region Y1, in source pixels */
-    boundingBoxY1?: number;
-    /** Region Y2, in source pixels */
-    boundingBoxY2?: number;
-    /** Height of the image the region was drawn on */
-    imageHeight?: number;
-    /** Width of the image the region was drawn on */
-    imageWidth?: number;
 };
 export type PetCandidateResponseDto = {
     /** Asset the proposal is about */
@@ -4682,7 +4482,7 @@ export type PetCandidateResponseDto = {
     boundingBoxY1: number;
     /** Region Y2, in source pixels */
     boundingBoxY2: number;
-    /** The detector’s species guess, which is never the pet’s species */
+    /** The detector's species guess, which is never the pet's species */
     detectedSpecies: string | null;
     /** Candidate ID */
     id: string;
@@ -4710,6 +4510,65 @@ export type PetCandidateListResponseDto = {
 export type PetCandidateReviewDto = {
     /** Pet to assign instead of the proposed one */
     petId?: string;
+};
+export type PetObservationResponseDto = {
+    /** Asset ID */
+    assetId: string;
+    /** Region X1, in source pixels */
+    boundingBoxX1: number | null;
+    /** Region X2, in source pixels */
+    boundingBoxX2: number | null;
+    /** Region Y1, in source pixels */
+    boundingBoxY1: number | null;
+    /** Region Y2, in source pixels */
+    boundingBoxY2: number | null;
+    /** Creation date */
+    createdAt: string;
+    /** Observation ID */
+    id: string;
+    /** Height of the image the region was drawn on */
+    imageHeight: number | null;
+    /** Width of the image the region was drawn on */
+    imageWidth: number | null;
+    /** Pet ID */
+    petId: string;
+    source: PetObservationSource;
+    state: PetObservationState;
+    /** Last update date */
+    updatedAt: string;
+};
+export type PetUpdateDto = {
+    /** Pet date of birth */
+    birthDate?: string | null;
+    /** Asset used as the pet thumbnail */
+    featuredAssetId?: string | null;
+    /** Mark as favorite */
+    isFavorite?: boolean;
+    /** Pet visibility (hidden) */
+    isHidden?: boolean;
+    /** Pet name */
+    name?: string;
+    species?: PetSpecies;
+};
+export type PetMergeDto = {
+    /** Pet IDs to merge into this pet */
+    ids: string[];
+};
+export type PetObservationCreateDto = {
+    /** Asset the pet appears in */
+    assetId: string;
+    /** Region X1, in source pixels */
+    boundingBoxX1?: number;
+    /** Region X2, in source pixels */
+    boundingBoxX2?: number;
+    /** Region Y1, in source pixels */
+    boundingBoxY1?: number;
+    /** Region Y2, in source pixels */
+    boundingBoxY2?: number;
+    /** Height of the image the region was drawn on */
+    imageHeight?: number;
+    /** Width of the image the region was drawn on */
+    imageWidth?: number;
 };
 export type PluginMethodResponseDto = {
     /** Description */
@@ -4822,6 +4681,140 @@ export type QueueJobResponseDto = {
     /** Job creation timestamp */
     timestamp: number;
 };
+export type RenderWorkerAdmissionDto = {
+    /** Encoder and decoder names the check verified */
+    codecs?: string[];
+    /** When the conformance check ran */
+    conformanceReportedAt: string;
+    /** Digest of the engine and patches actually loaded */
+    engineDigest: string;
+    enrolmentSecret: string;
+    /** GPU memory measured by the conformance check */
+    gpuMemoryBytes: string | null;
+    /** True when the renderer is a software or fallback device */
+    softwareRenderer: boolean;
+    workerId: string;
+};
+export type RenderWorkerSessionDto = {
+    expiresAt: string;
+    /** How often the worker should heartbeat a held claim */
+    heartbeatIntervalMs: number;
+    /** How long a claim lasts without a heartbeat */
+    leaseMs: number;
+    scopes: MediaOperationKind[];
+    /** Present as the x-frameleaf-worker-session header on every worker call */
+    sessionToken: string;
+    workerId: string;
+};
+export type RenderWorkerClaimRequestDto = {
+    /** Narrow the claim to these kinds */
+    kinds?: MediaOperationKind[];
+};
+export type RenderWorkerInputGrantDto = {
+    /** Digest the manifest was resolved against, when known */
+    checksum: string | null;
+    expiresAt: string;
+    /** FL-90 resource key, or `source` for a single-asset workload */
+    inputId: string;
+    /** Resource class: library-asset, edited-master, font, lut, … */
+    kind: string;
+    /** Asset or resource id. Never a path */
+    resourceId: string;
+    /** Relative URL, valid for this claim only and only until expiresAt */
+    url: string;
+};
+export type RenderWorkerClaimLimitsDto = {
+    maxOutputBytes: string | null;
+    maxWallClockMs: string | null;
+};
+export type RenderWorkerClaimDto = {
+    attempt: number;
+    checkpoints: MediaOperationCheckpointDto[];
+    /** Required on every write to this operation */
+    claimToken: string;
+    inputs: RenderWorkerInputGrantDto[];
+    kind: MediaOperationKind;
+    leaseMs: number;
+    limits: RenderWorkerClaimLimitsDto;
+    operationId: string;
+    projectId: string | null;
+    revisionId: string | null;
+    settings: {
+        [key: string]: any;
+    };
+    snapshot: {
+        [key: string]: any;
+    };
+};
+export type RenderWorkerCancelAckDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    /** True when remote resources are confirmed gone */
+    released: boolean;
+};
+export type RenderWorkerWriteResultDto = {
+    accepted: boolean;
+    refusal: (RenderWorkerRefusalReason) | null;
+};
+export type RenderWorkerCheckpointPlanDto = {
+    chunkKey: string;
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    configDigest: string;
+    endTicks: string;
+    historyDigest: string;
+    inputDigest: string;
+    prerollTicks?: string;
+    requiresSequentialContext?: boolean;
+    seed: string | null;
+    sequence: number;
+    startTicks: string;
+    timebase: string;
+};
+export type RenderWorkerCheckpointCompleteDto = {
+    /** Must match the planned chunk; a re-planned chunk cannot be completed */
+    chunkKey: string;
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    outputChecksum: string;
+    outputPath: string;
+    sizeInBytes: string;
+};
+export type RenderWorkerCompleteDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    resultAssetId: string | null;
+};
+export type RenderWorkerFailDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    error: string;
+    errorCode: string;
+};
+export type RenderWorkerHeartbeatDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    /** Total output bytes produced so far */
+    outputBytes?: string;
+};
+export type RenderWorkerHeartbeatResponseDto = {
+    /** The owner asked to stop; acknowledge with cancel-ack */
+    cancelRequested: boolean;
+    leaseExtended: boolean;
+    leaseMs: number;
+    /** The owner paused the job and its claim has been handed back; stop without reporting a failure */
+    pauseRequested: boolean;
+    /** Set when a limit stopped the operation */
+    refusal: (RenderWorkerRefusalReason) | null;
+};
+export type RenderWorkerProgressDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    outputBytes?: string;
+    processedUnits: number;
+    status: Status3;
+    totalUnits: number | null;
+};
 export type RunPodBackfillResultDto = {
     enqueued: string[];
     skipped: string[];
@@ -4851,7 +4844,7 @@ export type RunPodStateDto = {
     podId?: string;
     pricePerHour?: number;
     runningSince?: string;
-    status: Status3;
+    status: Status4;
     stoppedAt?: string;
     templateId?: string;
     unhealthySince?: string;
@@ -5774,177 +5767,6 @@ export type SessionUpdateDto = {
     /** Reset pending sync state */
     isPendingSyncReset?: boolean;
 };
-export type SharedSpacePreviewResponseDto = {
-    /** True once the recipient has joined the space */
-    accepted: boolean;
-    /** Shared space name */
-    albumName: string;
-    /** Items the recipient would see. Media marked sensitive, and Locked media, are not counted. */
-    assetCount: number;
-    /** Shared space description */
-    description: string;
-    /** Latest item date, sensitive and Locked media excluded */
-    endDate?: string;
-    /** Icon: a Material Design Icons name (null = default icon) */
-    icon: string | null;
-    /** Shared space ID */
-    id: string;
-    /** When the invitation was sent */
-    invitedAt: string;
-    /** Who sent the invitation */
-    invitedBy: UserResponseDto | null;
-    /** People already in the shared space, including its owner */
-    memberCount: number;
-    /** Who owns the shared space */
-    owner: UserResponseDto;
-    /** The role the recipient gets on accept */
-    role: AlbumUserRole;
-    /** Earliest item date, sensitive and Locked media excluded */
-    startDate?: string;
-};
-export type SharedSpaceMemberResponseDto = {
-    /** When a pending invitation was sent */
-    invitedAt?: string;
-    /** True while the invitation has not been accepted */
-    pending: boolean;
-    role: AlbumUserRole;
-    user: UserResponseDto;
-};
-export type SharedSpaceMembersResponseDto = {
-    /** Members and pending invitations, owner first */
-    members: SharedSpaceMemberResponseDto[];
-};
-export type SharedSpaceEventResponseDto = {
-    /** The comment or like this event announces, if any */
-    activityId: string | null;
-    /** Who did it; null once that account is gone */
-    actor: UserResponseDto | null;
-    /** How many of the items this event is about the reader may see */
-    assetCount: number;
-    /** The items this event is about that the reader may see and that are still in the shared space. Empty for a removal. */
-    assetIds: string[];
-    /** The comment text, for a comment or reply event. Mentions are @{userId} tokens. */
-    comment: string | null;
-    /** When it happened */
-    createdAt: string;
-    /** Event ID */
-    id: string;
-    /** Members named in the comment */
-    mentions: UserResponseDto[];
-    /** A linked album's or person's name as the space knew it, or the new role; null otherwise */
-    subject: string | null;
-    /** The member a member event is about, or the author of the comment a reply answers; null otherwise */
-    targetUser: UserResponseDto | null;
-    "type": SharedSpaceEventType;
-};
-export type SharedSpaceActivityResponseDto = {
-    /** Newest first */
-    events: SharedSpaceEventResponseDto[];
-    /** True when older events exist beyond this page */
-    hasMore: boolean;
-    /** When this member last marked the shared space seen; null if they never have */
-    lastVisitedAt: string | null;
-    /** Events by other members since then that this member may see. Capped at 500. */
-    unreadCount: number;
-};
-export type SharedSpaceAlbumResponseDto = {
-    /** The linked album name */
-    albumName: string;
-    /** Items that are in both this album and the shared space. Media marked sensitive, and Locked media, are not counted. */
-    assetCount: number;
-    /** True when the caller may remove this link */
-    canUnlink: boolean;
-    /** Icon: a Material Design Icons name (null = default icon) */
-    icon: string | null;
-    /** The linked album ID */
-    id: string;
-    /** When the album was linked */
-    linkedAt: string;
-    /** The member who linked this album */
-    linkedBy: UserResponseDto | null;
-    /** An item that is already in the shared space, used as the tile picture */
-    thumbnailAssetId: string | null;
-};
-export type SharedSpaceAlbumsResponseDto = {
-    /** Albums linked into the shared space, by name */
-    albums: SharedSpaceAlbumResponseDto[];
-};
-export type SharedSpaceCommentResponseDto = {
-    /** The item commented on; null for a comment on the space itself */
-    assetId: string | null;
-    /** True when the caller may remove the comment */
-    canDelete: boolean;
-    /** True when the caller may change the text */
-    canEdit: boolean;
-    /** The text, with @{userId} mention tokens */
-    comment: string;
-    /** When it was written */
-    createdAt: string;
-    /** Comment ID */
-    id: string;
-    /** Members named in the comment */
-    mentions: UserResponseDto[];
-    /** The top-level comment this reply answers; null for a top-level comment */
-    parentId: string | null;
-    /** How many replies this comment has that the caller can see; always 0 for a reply */
-    replyCount: number;
-    /** When it was last edited */
-    updatedAt: string;
-    /** The author */
-    user: UserResponseDto;
-};
-export type SharedSpaceCommentsResponseDto = {
-    /** Oldest first */
-    comments: SharedSpaceCommentResponseDto[];
-};
-export type SharedSpaceCommentCreateDto = {
-    /** The item to comment on. Left out, the comment is on the space itself. */
-    assetId?: string;
-    /** The text. Mention a member with @{userId}; every mention must name a current member. */
-    comment: string;
-    /** Reply to this comment. Replying to a reply joins the same thread, under its top-level comment. A reply is on the same item as the comment it answers. */
-    parentId?: string;
-};
-export type SharedSpaceCommentUpdateDto = {
-    /** The text. Mention a member with @{userId}; every mention must name a current member. */
-    comment: string;
-};
-export type SharedSpaceNewResponseDto = {
-    /** Items other members added since then */
-    assetCount: number;
-    /** Up to 500 of those items, so the timeline can show exactly what is new */
-    assetIds: string[];
-    /** When this member last marked the shared space seen; null if they never have */
-    lastVisitedAt: string | null;
-};
-export type SharedSpacePersonResponseDto = {
-    /** Items in the shared space that show this person. Media marked sensitive, and Locked media, are not counted. */
-    assetCount: number;
-    /** True when the caller may remove this link */
-    canUnlink: boolean;
-    /** An item already in the shared space that shows this person, used as the tile picture */
-    coverAssetId: string | null;
-    /** The link ID. Not a person ID: a person is never disclosed across a space. */
-    id: string;
-    /** When the person was linked */
-    linkedAt: string;
-    /** The member who linked this person */
-    linkedBy: UserResponseDto;
-    /** The name this shared space uses, independent of the owner's own name for them */
-    name: string;
-};
-export type SharedSpacePeopleResponseDto = {
-    /** People of the caller's own that appear in the shared space and are not linked yet. Only the caller's own people are ever listed here. */
-    candidates: PersonResponseDto[];
-    /** People published into the shared space */
-    linked: SharedSpacePersonResponseDto[];
-};
-export type SharedSpacePersonLinkDto = {
-    /** The name the shared space will use. Defaults to the caller's own name for them. */
-    name?: string;
-    /** A person of the caller's own to publish into the shared space */
-    personId: string;
-};
 export type SharedLinkResponseDto = {
     album?: AlbumResponseDto;
     /** Allow downloads */
@@ -6024,6 +5846,177 @@ export type AssetIdsResponseDto = {
     /** Whether operation succeeded */
     success: boolean;
 };
+export type SharedSpacePreviewResponseDto = {
+    /** True once the recipient has joined the space */
+    accepted: boolean;
+    /** Shared space name */
+    albumName: string;
+    /** Items the recipient would see. Media marked sensitive, and Locked media, are not counted. */
+    assetCount: number;
+    /** Shared space description */
+    description: string;
+    /** Latest item date, sensitive and Locked media excluded */
+    endDate?: string;
+    /** Icon: a Material Design Icons name (null = default icon) */
+    icon: string | null;
+    /** Shared space ID */
+    id: string;
+    /** When the invitation was sent */
+    invitedAt: string;
+    /** Who sent the invitation */
+    invitedBy: (UserResponseDto) | null;
+    /** People already in the shared space, including its owner */
+    memberCount: number;
+    /** Who owns the shared space */
+    owner: UserResponseDto;
+    /** The role the recipient gets on accept */
+    role: AlbumUserRole;
+    /** Earliest item date, sensitive and Locked media excluded */
+    startDate?: string;
+};
+export type SharedSpaceEventResponseDto = {
+    /** The comment or like this event announces, if any */
+    activityId: string | null;
+    /** Who did it; null once that account is gone */
+    actor: (UserResponseDto) | null;
+    /** How many of the items this event is about the reader may see */
+    assetCount: number;
+    /** The items this event is about that the reader may see and that are still in the shared space. Empty for a removal. */
+    assetIds: string[];
+    /** The comment text, for a comment or reply event. Mentions are @{userId} tokens. */
+    comment: string | null;
+    /** When it happened */
+    createdAt: string;
+    /** Event ID */
+    id: string;
+    /** Members named in the comment */
+    mentions: UserResponseDto[];
+    /** A linked album's or person's name as the space knew it, or the new role; null otherwise */
+    subject: string | null;
+    /** The member a member event is about, or the author of the comment a reply answers; null otherwise */
+    targetUser: (UserResponseDto) | null;
+    "type": SharedSpaceEventType;
+};
+export type SharedSpaceActivityResponseDto = {
+    /** Newest first */
+    events: SharedSpaceEventResponseDto[];
+    /** True when older events exist beyond this page */
+    hasMore: boolean;
+    /** When this member last marked the shared space seen; null if they never have */
+    lastVisitedAt: string | null;
+    /** Events by other members since then that this member may see. Capped at 500. */
+    unreadCount: number;
+};
+export type SharedSpaceAlbumResponseDto = {
+    /** The linked album name */
+    albumName: string;
+    /** Items that are in both this album and the shared space. Media marked sensitive, and Locked media, are not counted. */
+    assetCount: number;
+    /** True when the caller may remove this link */
+    canUnlink: boolean;
+    /** Icon: a Material Design Icons name (null = default icon) */
+    icon: string | null;
+    /** The linked album ID */
+    id: string;
+    /** When the album was linked */
+    linkedAt: string;
+    /** The member who linked this album */
+    linkedBy: (UserResponseDto) | null;
+    /** An item that is already in the shared space, used as the tile picture */
+    thumbnailAssetId: string | null;
+};
+export type SharedSpaceAlbumsResponseDto = {
+    /** Albums linked into the shared space, by name */
+    albums: SharedSpaceAlbumResponseDto[];
+};
+export type SharedSpaceCommentResponseDto = {
+    /** The item commented on; null for a comment on the space itself */
+    assetId: string | null;
+    /** True when the caller may remove the comment */
+    canDelete: boolean;
+    /** True when the caller may change the text */
+    canEdit: boolean;
+    /** The text, with @{userId} mention tokens */
+    comment: string;
+    /** When it was written */
+    createdAt: string;
+    /** Comment ID */
+    id: string;
+    /** Members named in the comment */
+    mentions: UserResponseDto[];
+    /** The top-level comment this reply answers; null for a top-level comment */
+    parentId: string | null;
+    /** How many replies this comment has that the caller can see; always 0 for a reply */
+    replyCount: number;
+    /** When it was last edited */
+    updatedAt: string;
+    /** The author */
+    user: UserResponseDto;
+};
+export type SharedSpaceCommentsResponseDto = {
+    /** Oldest first */
+    comments: SharedSpaceCommentResponseDto[];
+};
+export type SharedSpaceCommentCreateDto = {
+    /** The item to comment on. Left out, the comment is on the space itself. */
+    assetId?: string;
+    /** The text. Mention a member with @{userId}; every mention must name a current member. */
+    comment: string;
+    /** Reply to this comment. Replying to a reply joins the same thread, under its top-level comment. A reply is on the same item as the comment it answers. */
+    parentId?: string;
+};
+export type SharedSpaceCommentUpdateDto = {
+    /** The text. Mention a member with @{userId}; every mention must name a current member. */
+    comment: string;
+};
+export type SharedSpaceMemberResponseDto = {
+    /** When a pending invitation was sent */
+    invitedAt?: string;
+    /** True while the invitation has not been accepted */
+    pending: boolean;
+    role: AlbumUserRole;
+    user: UserResponseDto;
+};
+export type SharedSpaceMembersResponseDto = {
+    /** Members and pending invitations, owner first */
+    members: SharedSpaceMemberResponseDto[];
+};
+export type SharedSpaceNewResponseDto = {
+    /** Items other members added since then */
+    assetCount: number;
+    /** Up to 500 of those items, so the timeline can show exactly what is new */
+    assetIds: string[];
+    /** When this member last marked the shared space seen; null if they never have */
+    lastVisitedAt: string | null;
+};
+export type SharedSpacePersonResponseDto = {
+    /** Items in the shared space that show this person. Media marked sensitive, and Locked media, are not counted. */
+    assetCount: number;
+    /** True when the caller may remove this link */
+    canUnlink: boolean;
+    /** An item already in the shared space that shows this person, used as the tile picture */
+    coverAssetId: string | null;
+    /** The link ID. Not a person ID: a person is never disclosed across a space. */
+    id: string;
+    /** When the person was linked */
+    linkedAt: string;
+    /** The member who linked this person */
+    linkedBy: UserResponseDto;
+    /** The name this shared space uses, independent of the owner's own name for them */
+    name: string;
+};
+export type SharedSpacePeopleResponseDto = {
+    /** People of the caller's own that appear in the shared space and are not linked yet. Only the caller's own people are ever listed here. */
+    candidates: PersonResponseDto[];
+    /** People published into the shared space */
+    linked: SharedSpacePersonResponseDto[];
+};
+export type SharedSpacePersonLinkDto = {
+    /** The name the shared space will use. Defaults to the caller's own name for them. */
+    name?: string;
+    /** A person of the caller's own to publish into the shared space */
+    personId: string;
+};
 export type StackResponseDto = {
     assets: AssetResponseDto[];
     /** Stack ID */
@@ -6038,6 +6031,160 @@ export type StackCreateDto = {
 export type StackUpdateDto = {
     /** Primary asset ID */
     primaryAssetId?: string;
+};
+export type StudioBundleImportCreateDto = {
+    /** Source key to an asset of yours to use in its place; every choice is checked for access */
+    mapping?: {
+        [key: string]: string;
+    };
+    /** Name of the new project; the bundle name when omitted */
+    name?: string;
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    requestKey?: string;
+    uploadId: string;
+};
+export type StudioBundleExportResultDto = {
+    /** SHA-256 of the finished file */
+    digest: string;
+    /** The file can still be downloaded */
+    downloadable: boolean;
+    /** Sources copied into the bundle */
+    embedded: number;
+    expiresAt: string;
+    fileName: string;
+    /** Sources that travel as references */
+    referenced: number;
+    sizeBytes: string;
+};
+export type StudioBundleMissingSourceDto = {
+    /** The bundle carries a verified copy that can be added to the library later */
+    embedded: boolean;
+    fileName: string | null;
+    id: string;
+    key: string;
+    kind: string;
+};
+export type StudioBundleImportResultDto = {
+    embeddedVerified: number;
+    kept: number;
+    missing: StudioBundleMissingSourceDto[];
+    /** The project the import created */
+    projectId: string | null;
+    relinked: number;
+};
+export type StudioBundleOperationDto = {
+    attempt: number;
+    /** Automatic retries this job has used; every job gets one before a failure is reported */
+    autoRetries: number;
+    error: string | null;
+    errorCode: string | null;
+    "export": (StudioBundleExportResultDto) | null;
+    "import": (StudioBundleImportResultDto) | null;
+    kind: MediaOperationKind;
+    maxAttempts: number;
+    operationId: string;
+    progress: number;
+    /** The exported project, or the project an import created */
+    projectId: string | null;
+    /** When a job waiting for its automatic retry may run again */
+    retryAt: string | null;
+    status: MediaOperationStatus;
+};
+export type StudioBundleUploadCreateDto = {
+    /** A `.frameleaf-studio.zip` bundle */
+    file: Blob;
+};
+export type StudioBundleSourceDto = {
+    contentType: string | null;
+    fileName: string | null;
+    /** Identifier on the exporting server */
+    id: string;
+    /** Mapping key for the import request */
+    key: string;
+    /** `library-asset` or `edited-master` */
+    kind: string;
+    mode: StudioBundleSourceMode;
+    resolution: StudioBundleSourceResolution;
+    /** Size of the source file, when the exporting server knew it */
+    sizeBytes: string | null;
+    /** An asset of yours with the same content */
+    suggestedAssetId: string | null;
+};
+export type StudioBundleUploadDto = {
+    /** When an import first read it */
+    consumedAt: string | null;
+    /** SHA-256 of the whole file */
+    digest: string;
+    engineRevision: string;
+    /** When the upload is discarded */
+    expiresAt: string;
+    exportedAt: string;
+    /** The file name as uploaded */
+    fileName: string;
+    /** Upload ID, used to start an import */
+    id: string;
+    producerVersion: string;
+    projectName: string;
+    /** The revision the bundle was made from */
+    revision: number;
+    sizeBytes: string;
+    sources: StudioBundleSourceDto[];
+};
+export type StudioPreviewTimeDto = {
+    /** Time denominator; must be positive */
+    denominator: string;
+    /** Time numerator, in seconds over the denominator */
+    numerator: string;
+};
+export type StudioPreviewRequestDto = {
+    /** Studio project the frame belongs to */
+    projectId: string;
+    quality: StudioPreviewQuality;
+    /** Stored project revision the frame is bound to; a superseded revision is refused */
+    revision: number;
+    /** The client's monotonic seek counter, echoed back on the result */
+    seekGeneration?: number;
+    time: StudioPreviewTimeDto;
+    viewportHeight: number;
+    viewportWidth: number;
+};
+export type StudioPreviewDto = {
+    contentType: string | null;
+    /** Stable code the client turns into a message */
+    errorCode: string | null;
+    /** Revision-bound entity tag for the frame endpoint */
+    etag: string;
+    expiresAt: string | null;
+    framePts: string | null;
+    framePtsTimebase: string | null;
+    /** Preview frame ID */
+    id: string;
+    /** The durable job rendering this frame, when one has been created */
+    operationId: string | null;
+    projectId: string;
+    quality: StudioPreviewQuality;
+    readyAt: string | null;
+    requestedAt: string;
+    /** The stored project revision this frame was rendered for */
+    revision: number;
+    /** Digest of the authorized resolution the frame is bound to; changes with the revision and whenever access is re-resolved */
+    revisionDigest: string;
+    /** The seek this frame answers */
+    seekGeneration: string;
+    sizeInBytes: string | null;
+    status: StudioPreviewStatus;
+    time: StudioPreviewTimeDto;
+    /** The frame is an explicitly tone-mapped SDR rendering; never the colour authority */
+    toneMapped: boolean;
+    viewportHeight: number;
+    viewportWidth: number;
+};
+export type StudioPreviewResponseDto = {
+    /** The stored revision the project is on now */
+    currentRevision: number;
+    preview: StudioPreviewDto;
+    /** Previews cancelled because the revision advanced */
+    supersededPreviewIds: string[];
 };
 export type StudioProjectLeaseDto = {
     /** Pause in editing after which the client saves */
@@ -6100,6 +6247,17 @@ export type StudioProjectEnvelopeDto = {
     /** Envelope shape version; the server accepts exactly one */
     schemaVersion: number;
 };
+export type StudioProjectCreateDto = {
+    /** This editor instance; it receives the lease */
+    clientId: string;
+    /** An initial document, saved as revision 1 */
+    envelope?: StudioProjectEnvelopeDto;
+    name: string;
+    /** Idempotency key for the initial save */
+    requestKey?: string;
+    /** Share the project with a shared space for review */
+    spaceId?: string | null;
+};
 export type StudioProjectResourcesDto = {
     /** When the resolution ran */
     checkedAt: string;
@@ -6144,16 +6302,9 @@ export type StudioProjectDetailDto = {
     /** The graph was withheld because a source is unavailable to you */
     withheld: boolean;
 };
-export type StudioProjectCreateDto = {
-    /** This editor instance; it receives the lease */
-    clientId: string;
-    /** An initial document, saved as revision 1 */
-    envelope?: StudioProjectEnvelopeDto;
-    name: string;
-    /** Idempotency key for the initial save */
-    requestKey?: string;
-    /** Share the project with a shared space for review */
-    spaceId?: string | null;
+export type StudioProjectTrashEmptyResponseDto = {
+    /** Projects deleted for good */
+    count: number;
 };
 export type StudioProjectUpdateDto = {
     /** Archive (read-only, off the active shelf) or bring back */
@@ -6164,213 +6315,11 @@ export type StudioProjectUpdateDto = {
     /** A library asset you can read, shown as the poster; null clears it */
     thumbnailAssetId?: string | null;
 };
-export type StudioProjectDuplicateDto = {
-    /** Name of the copy; the client supplies the translated default */
-    name?: string;
-};
-export type StudioProjectTrashEmptyResponseDto = {
-    /** Projects deleted for good */
-    count: number;
-};
 export type StudioBundleExportCreateDto = {
     /** Copy the media you own into the bundle. Shared media always travels as a reference, and nothing Locked is ever copied. */
     includeMedia?: boolean;
     /** Idempotency key; a repeated submit answers with the first job */
     requestKey?: string;
-};
-export type StudioBundleUploadCreateDto = {
-    /** A `.frameleaf-studio.zip` bundle */
-    file: Blob;
-};
-export type StudioBundleSourceDto = {
-    contentType: string | null;
-    fileName: string | null;
-    /** Identifier on the exporting server */
-    id: string;
-    /** Mapping key for the import request */
-    key: string;
-    /** `library-asset` or `edited-master` */
-    kind: string;
-    mode: StudioBundleSourceMode;
-    resolution: StudioBundleSourceResolution;
-    /** Size of the source file, when the exporting server knew it */
-    sizeBytes: string | null;
-    /** An asset of yours with the same content */
-    suggestedAssetId: string | null;
-};
-export type StudioBundleUploadDto = {
-    /** When an import first read it */
-    consumedAt: string | null;
-    /** SHA-256 of the whole file */
-    digest: string;
-    engineRevision: string;
-    /** When the upload is discarded */
-    expiresAt: string;
-    exportedAt: string;
-    /** The file name as uploaded */
-    fileName: string;
-    /** Upload ID, used to start an import */
-    id: string;
-    producerVersion: string;
-    projectName: string;
-    /** The revision the bundle was made from */
-    revision: number;
-    sizeBytes: string;
-    sources: StudioBundleSourceDto[];
-};
-export type StudioBundleImportCreateDto = {
-    /** Source key to an asset of yours to use in its place; every choice is checked for access */
-    mapping?: {
-        [key: string]: string;
-    };
-    /** Name of the new project; the bundle name when omitted */
-    name?: string;
-    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
-    requestKey?: string;
-    uploadId: string;
-};
-export type StudioBundleExportResultDto = {
-    /** SHA-256 of the finished file */
-    digest: string;
-    /** The file can still be downloaded */
-    downloadable: boolean;
-    /** Sources copied into the bundle */
-    embedded: number;
-    expiresAt: string;
-    fileName: string;
-    /** Sources that travel as references */
-    referenced: number;
-    sizeBytes: string;
-};
-export type StudioBundleMissingSourceDto = {
-    /** The bundle carries a verified copy that can be added to the library later */
-    embedded: boolean;
-    fileName: string | null;
-    id: string;
-    key: string;
-    kind: string;
-};
-export type StudioBundleImportResultDto = {
-    embeddedVerified: number;
-    kept: number;
-    missing: StudioBundleMissingSourceDto[];
-    /** The project the import created */
-    projectId: string | null;
-    relinked: number;
-};
-export type StudioBundleOperationDto = {
-    attempt: number;
-    /** Automatic retries this job has used; every job gets one before a failure is reported */
-    autoRetries: number;
-    error: string | null;
-    errorCode: string | null;
-    "export": (StudioBundleExportResultDto) | null;
-    "import": (StudioBundleImportResultDto) | null;
-    kind: MediaOperationKind;
-    maxAttempts: number;
-    operationId: string;
-    progress: number;
-    /** The exported project, or the project an import created */
-    projectId: string | null;
-    /** When a job waiting for its automatic retry may run again */
-    retryAt: string | null;
-    status: MediaOperationStatus;
-};
-export type StudioProjectLeaseRequestDto = {
-    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
-    clientId: string;
-    /** Take a live lease away from another of your editor instances; never implicit */
-    takeover?: boolean;
-};
-export type StudioCommandSummaryDto = {
-    /** Command id to how many times it appeared */
-    counts: {
-        [key: string]: number;
-    };
-    /** Commands in the batch */
-    total: number;
-};
-export type StudioProjectSaveResponseDto = {
-    /** Digest of the head envelope */
-    digest: string;
-    lease: StudioProjectLeaseDto;
-    /** This request key was already accepted; the earlier result is returned */
-    replayed: boolean;
-    /** The head after this request */
-    revision: number;
-    /** The revision row; null when nothing was written */
-    revisionId: string | null;
-    /** The document equals the head, so no revision was written */
-    unchanged: boolean;
-};
-export type StudioProjectSaveDto = {
-    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
-    clientId: string;
-    envelope: StudioProjectEnvelopeDto;
-    /** The head this document was built on */
-    expectedRevision: number;
-    /** Stable per attempt; a retry carries the same key */
-    requestKey: string;
-    summary?: StudioCommandSummaryDto;
-};
-export type StudioProjectRevisionDto = {
-    authorId: string | null;
-    createdAt: string;
-    /** Null for a reviewer; the digest travels with the graph */
-    digest: string | null;
-    graphBytes: number;
-    id: string;
-    /** Set when this revision restored an earlier one */
-    restoredFromRevision: number | null;
-    revision: number;
-    summary: StudioCommandSummaryDto;
-};
-export type StudioProjectHistoryResponseDto = {
-    /** Newest first */
-    items: StudioProjectRevisionDto[];
-    total: number;
-};
-export type StudioProjectRestoreDto = {
-    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
-    clientId: string;
-    /** The current head; the restore appends after it */
-    expectedRevision: number;
-    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
-    requestKey: string;
-    /** The historical revision to bring back */
-    revision: number;
-};
-export type StudioProjectRevisionDetailDto = {
-    authorId: string | null;
-    createdAt: string;
-    /** Null for a reviewer; the digest travels with the graph */
-    digest: string | null;
-    envelope: (StudioProjectEnvelopeDto) | null;
-    graphBytes: number;
-    id: string;
-    resources: (StudioProjectResourcesDto) | null;
-    /** Set when this revision restored an earlier one */
-    restoredFromRevision: number | null;
-    revision: number;
-    summary: StudioCommandSummaryDto;
-    withheld: boolean;
-};
-export type StudioProjectDiffDto = {
-    added: number;
-    /** Size change of the serialized graph */
-    byteDelta: number;
-    changed: number;
-    /** Commands the saves between the two revisions reported */
-    commands: StudioCommandSummaryDto;
-    from: number;
-    /** The two envelopes have the same digest */
-    identical: boolean;
-    /** Changed graph paths, aggregated and capped */
-    paths: string[];
-    removed: number;
-    to: number;
-    /** More paths changed than are listed */
-    truncated: boolean;
 };
 export type StudioTimeDto = {
     /** Denominator */
@@ -6406,6 +6355,106 @@ export type StudioCommentCreateDto = {
 export type StudioCommentUpdateDto = {
     resolved?: boolean;
     text?: string;
+};
+export type StudioProjectDuplicateDto = {
+    /** Name of the copy; the client supplies the translated default */
+    name?: string;
+};
+export type StudioProjectLeaseRequestDto = {
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    clientId: string;
+    /** Take a live lease away from another of your editor instances; never implicit */
+    takeover?: boolean;
+};
+export type StudioProjectRestoreDto = {
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    clientId: string;
+    /** The current head; the restore appends after it */
+    expectedRevision: number;
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    requestKey: string;
+    /** The historical revision to bring back */
+    revision: number;
+};
+export type StudioProjectSaveResponseDto = {
+    /** Digest of the head envelope */
+    digest: string;
+    lease: StudioProjectLeaseDto;
+    /** This request key was already accepted; the earlier result is returned */
+    replayed: boolean;
+    /** The head after this request */
+    revision: number;
+    /** The revision row; null when nothing was written */
+    revisionId: string | null;
+    /** The document equals the head, so no revision was written */
+    unchanged: boolean;
+};
+export type StudioCommandSummaryDto = {
+    /** Command id to how many times it appeared */
+    counts: {
+        [key: string]: number;
+    };
+    /** Commands in the batch */
+    total: number;
+};
+export type StudioProjectRevisionDto = {
+    authorId: string | null;
+    createdAt: string;
+    /** Null for a reviewer; the digest travels with the graph */
+    digest: string | null;
+    graphBytes: number;
+    id: string;
+    /** Set when this revision restored an earlier one */
+    restoredFromRevision: number | null;
+    revision: number;
+    summary: StudioCommandSummaryDto;
+};
+export type StudioProjectHistoryResponseDto = {
+    /** Newest first */
+    items: StudioProjectRevisionDto[];
+    total: number;
+};
+export type StudioProjectSaveDto = {
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    clientId: string;
+    envelope: StudioProjectEnvelopeDto;
+    /** The head this document was built on */
+    expectedRevision: number;
+    /** Stable per attempt; a retry carries the same key */
+    requestKey: string;
+    summary?: StudioCommandSummaryDto;
+};
+export type StudioProjectRevisionDetailDto = {
+    authorId: string | null;
+    createdAt: string;
+    /** Null for a reviewer; the digest travels with the graph */
+    digest: string | null;
+    envelope: (StudioProjectEnvelopeDto) | null;
+    graphBytes: number;
+    id: string;
+    resources: (StudioProjectResourcesDto) | null;
+    /** Set when this revision restored an earlier one */
+    restoredFromRevision: number | null;
+    revision: number;
+    summary: StudioCommandSummaryDto;
+    withheld: boolean;
+};
+export type StudioProjectDiffDto = {
+    added: number;
+    /** Size change of the serialized graph */
+    byteDelta: number;
+    changed: number;
+    /** Commands the saves between the two revisions reported */
+    commands: StudioCommandSummaryDto;
+    "from": number;
+    /** The two envelopes have the same digest */
+    identical: boolean;
+    /** Changed graph paths, aggregated and capped */
+    paths: string[];
+    removed: number;
+    to: number;
+    /** More paths changed than are listed */
+    truncated: boolean;
 };
 export type SyncAckDeleteDto = {
     /** Sync entity types to delete acks for */
@@ -6460,7 +6509,7 @@ export type MachineLearningHardwareResponseDto = {
 };
 export type SmartAlbumReevaluateRequestDto = {
     /** Optional built-in kind to scope the re-evaluation to. Omit to re-evaluate every enabled kind. */
-    kind?: Kind;
+    kind?: Kind3;
 };
 export type SmartAlbumReevaluateResponseDto = {
     /** Whether the re-evaluate job was newly enqueued (false = already in-flight) */
@@ -6528,6 +6577,221 @@ export type TagUpdateDto = {
     /** Tag name */
     name?: string;
 };
+export type TakeoutAlbumDto = {
+    /** Items in the folder */
+    count: number;
+    /** The export folder */
+    folder: string;
+    /** The album name it becomes */
+    name: string;
+    /** Recreated by the next import */
+    selected: boolean;
+    /** One of Google’s automatic year folders */
+    year: boolean;
+};
+export type TakeoutCountsDto = {
+    failed: number;
+    /** Files found in the sources */
+    files: number;
+    /** Items going into Locked, not listed until Locked is unlocked */
+    hiddenLocked: number;
+    imported: number;
+    importing: number;
+    /** Photos and videos */
+    items: number;
+    matched: number;
+    /** Items already in the library, whose album memberships are restored */
+    matchedOriginals: number;
+    /** Items still to import that are not in the library yet */
+    newAssets: number;
+    ready: number;
+    /** Archive entries refused */
+    rejected: number;
+    review: number;
+    skipped: number;
+    /** Possible Live Photo pairs awaiting a decision */
+    suggestedPairs: number;
+    /** Live Photo pairs that could not be linked */
+    unresolvedPairs: number;
+};
+export type TakeoutOptionsResponseDto = {
+    albums: boolean;
+    archive: boolean;
+    dates: boolean;
+    descriptions: boolean;
+    favorites: boolean;
+    locations: boolean;
+    selectedAlbums?: string[];
+    sidecarReview: boolean;
+    updateMatchedMetadata: boolean;
+};
+export type TakeoutSourceResponseDto = {
+    id: string;
+    kind: TakeoutSourceKind;
+    /** The archive’s file name, or the directory’s name */
+    name: string;
+    /** Bytes staged so far; an upload resumes here */
+    received: number;
+    /** Entries refused: unsafe names, links or encryption */
+    rejected: number;
+    /** Every entry has been read */
+    scanned: boolean;
+    /** Declared archive size in bytes; zero for a directory */
+    size: number;
+};
+export type TakeoutResponseDto = {
+    /** What the latest job did or is doing */
+    action: (TakeoutAction) | null;
+    albums: TakeoutAlbumDto[];
+    counts: TakeoutCountsDto;
+    createdAt: string;
+    error: string | null;
+    errorCode: string | null;
+    id: string;
+    name: string;
+    /** The latest job, as Activity lists it */
+    operationId: string | null;
+    options: TakeoutOptionsResponseDto;
+    phase: TakeoutPhase;
+    /** Units the latest job has finished */
+    processed: number;
+    sources: TakeoutSourceResponseDto[];
+    state: TakeoutState;
+    /** Units the latest job knows of so far; grows while a scan reads its sources */
+    total: number | null;
+    updatedAt: string;
+};
+export type TakeoutCreateDto = {
+    /** Administrators only: the directory inside the root, relative to it; empty for the root itself */
+    directory?: string;
+    /** A name for this import */
+    name: string;
+    /** Administrators only: the permitted import root to read a server directory from */
+    rootId?: string;
+};
+export type TakeoutRootDto = {
+    id: string;
+    /** The directory the administrator permitted */
+    path: string;
+};
+export type TakeoutRootsResponseDto = {
+    roots: TakeoutRootDto[];
+};
+export type TakeoutArchiveCreateDto = {
+    /** The archive’s file name */
+    name: string;
+    /** The archive’s size in bytes */
+    size: number;
+};
+export type TakeoutVerifyChunkDto = {
+    /** Byte offset of the range */
+    offset: number;
+    /** SHA-256 of the range, hex */
+    sha256: string;
+    /** Length of the range */
+    size: number;
+};
+export type TakeoutControlDto = {
+    action: TakeoutControlAction;
+};
+export type TakeoutOptionsDto = {
+    /** Recreate album memberships, including for photos already in the library */
+    albums?: boolean;
+    /** Bring over archived photos as archived */
+    archive?: boolean;
+    /** Bring over the dates photos were taken */
+    dates?: boolean;
+    /** Bring over descriptions */
+    descriptions?: boolean;
+    /** Bring over favorites */
+    favorites?: boolean;
+    /** Bring over locations */
+    locations?: boolean;
+    /** Album folders to recreate; omitted means every folder that is not a year folder */
+    selectedAlbums?: string[];
+    /** Hold items whose metadata sidecars disagree for a decision; off imports them without a sidecar */
+    sidecarReview?: boolean;
+    /** Fill metadata missing from photos already in the library; values already there are never replaced */
+    updateMatchedMetadata?: boolean;
+};
+export type TakeoutMetadataDto = {
+    /** Archived in Google Photos */
+    archived?: boolean;
+    /** When Google Photos received the photo (ISO 8601) */
+    createdAt?: string;
+    /** Description */
+    description?: string;
+    /** Favorite in Google Photos */
+    favorite?: boolean;
+    /** Latitude */
+    latitude?: number;
+    /** In the Google Photos Locked Folder; imported into Locked */
+    locked?: boolean;
+    /** Longitude */
+    longitude?: number;
+    /** When the photo was taken (ISO 8601) */
+    takenAt?: string;
+    /** File name Google Photos recorded */
+    title: string;
+    /** In the Google Photos trash; not imported */
+    trashed?: boolean;
+};
+export type TakeoutSidecarCandidateDto = {
+    id: string;
+    metadata: TakeoutMetadataDto;
+    path: string;
+};
+export type TakeoutItemResponseDto = {
+    albums: string[];
+    /** The library item it became or matched, when this session may open it */
+    assetId: string | null;
+    candidates: TakeoutSidecarCandidateDto[];
+    error: string | null;
+    folder: string;
+    id: string;
+    kind: TakeoutItemKind;
+    locked: boolean;
+    metadata: TakeoutMetadataDto;
+    /** Path inside the export */
+    path: string;
+    sidecarId: string | null;
+    size: number;
+    /** The archive or directory the file came from */
+    source: string;
+    state: TakeoutItemState;
+    warnings: TakeoutWarning[];
+};
+export type TakeoutItemsResponseDto = {
+    hiddenLocked: number;
+    items: TakeoutItemResponseDto[];
+    total: number;
+};
+export type TakeoutResolveDto = {
+    /** The sidecar to use; null imports without one */
+    sidecarId?: string | null;
+    /** True leaves the item out of the import; false brings it back */
+    skip?: boolean;
+};
+export type TakeoutPairResponseDto = {
+    error: string | null;
+    photoItemId: string;
+    photoPath: string;
+    state: TakeoutPairState;
+    videoItemId: string;
+    videoPath: string;
+};
+export type TakeoutPairsResponseDto = {
+    pairs: TakeoutPairResponseDto[];
+    total: number;
+};
+export type TakeoutPairDecisionDto = {
+    /** True links them as one Live Photo; false keeps them separate */
+    approve: boolean;
+    /** The still photo */
+    photoItemId: string;
+    /** The motion video */
+    videoItemId: string;
+};
 export type TimeBucketAssetResponseDto = {
     /** Array of city names extracted from EXIF GPS data */
     city?: (string | null)[];
@@ -6554,7 +6818,7 @@ export type TimeBucketAssetResponseDto = {
     /** Array of UTC offset hours at the time each photo was taken. Positive values are east of UTC, negative values are west of UTC. Values may be fractional (e.g., 5.5 for +05:30, -9.75 for -09:45). Applying this offset to 'fileCreatedAt' will give you the time the photo was taken from the photographer's perspective. */
     localOffsetHours: number[];
     /** Why each asset is locked, or null when it is not. Returned with visibility LOCKED and for the timeline of an elevated owner, which reveals their marked and detected items */
-    lockReason?: (AssetLockReason | null)[];
+    lockReason?: ((AssetLockReason) | null)[];
     /** Array of longitude coordinates extracted from EXIF GPS data */
     longitude?: (number | null)[];
     /** Array of owner IDs for each asset */
@@ -6576,16 +6840,16 @@ export type TimeBucketsResponseDto = {
     /** Time bucket identifier in YYYY-MM-DD format representing the start of the time period */
     timeBucket: string;
 };
-export type TrashResponseDto = {
-    /** Number of items in trash */
-    count: number;
-};
 export type TrashApplyDto = {
     action: TrashReviewAction;
     /** The chosen items, for trash, restore and delete. Ignored by restore-all and empty. */
     ids?: string[];
     /** The token returned by the review */
     token: string;
+};
+export type TrashResponseDto = {
+    /** Number of items in trash */
+    count: number;
 };
 export type TrashItemResponseDto = {
     /** Size of the original, in bytes, when known */
@@ -7293,221 +7557,6 @@ export type SyncUserV1 = {
     /** User profile changed at */
     profileChangedAt: string;
 };
-export type TakeoutAlbumDto = {
-    /** Items in the folder */
-    count: number;
-    /** The export folder */
-    folder: string;
-    /** The album name it becomes */
-    name: string;
-    /** Recreated by the next import */
-    selected: boolean;
-    /** One of Google’s automatic year folders */
-    year: boolean;
-};
-export type TakeoutCountsDto = {
-    failed: number;
-    /** Files found in the sources */
-    files: number;
-    /** Items going into Locked, not listed until Locked is unlocked */
-    hiddenLocked: number;
-    imported: number;
-    importing: number;
-    /** Photos and videos */
-    items: number;
-    matched: number;
-    /** Items already in the library, whose album memberships are restored */
-    matchedOriginals: number;
-    /** Items still to import that are not in the library yet */
-    newAssets: number;
-    ready: number;
-    /** Archive entries refused */
-    rejected: number;
-    review: number;
-    skipped: number;
-    /** Possible Live Photo pairs awaiting a decision */
-    suggestedPairs: number;
-    /** Live Photo pairs that could not be linked */
-    unresolvedPairs: number;
-};
-export type TakeoutOptionsResponseDto = {
-    albums: boolean;
-    archive: boolean;
-    dates: boolean;
-    descriptions: boolean;
-    favorites: boolean;
-    locations: boolean;
-    selectedAlbums?: string[];
-    sidecarReview: boolean;
-    updateMatchedMetadata: boolean;
-};
-export type TakeoutSourceResponseDto = {
-    id: string;
-    kind: TakeoutSourceKind;
-    /** The archive’s file name, or the directory’s name */
-    name: string;
-    /** Bytes staged so far; an upload resumes here */
-    received: number;
-    /** Entries refused: unsafe names, links or encryption */
-    rejected: number;
-    /** Every entry has been read */
-    scanned: boolean;
-    /** Declared archive size in bytes; zero for a directory */
-    size: number;
-};
-export type TakeoutResponseDto = {
-    /** What the latest job did or is doing */
-    action: (TakeoutAction) | null;
-    albums: TakeoutAlbumDto[];
-    counts: TakeoutCountsDto;
-    createdAt: string;
-    error: string | null;
-    errorCode: string | null;
-    id: string;
-    name: string;
-    /** The latest job, as Activity lists it */
-    operationId: string | null;
-    options: TakeoutOptionsResponseDto;
-    phase: TakeoutPhase;
-    /** Units the latest job has finished */
-    processed: number;
-    sources: TakeoutSourceResponseDto[];
-    state: TakeoutState;
-    /** Units the latest job knows of so far; grows while a scan reads its sources */
-    total: number | null;
-    updatedAt: string;
-};
-export type TakeoutCreateDto = {
-    /** Administrators only: the directory inside the root, relative to it; empty for the root itself */
-    directory?: string;
-    /** A name for this import */
-    name: string;
-    /** Administrators only: the permitted import root to read a server directory from */
-    rootId?: string;
-};
-export type TakeoutRootDto = {
-    id: string;
-    /** The directory the administrator permitted */
-    path: string;
-};
-export type TakeoutRootsResponseDto = {
-    roots: TakeoutRootDto[];
-};
-export type TakeoutArchiveCreateDto = {
-    /** The archive’s file name */
-    name: string;
-    /** The archive’s size in bytes */
-    size: number;
-};
-export type TakeoutVerifyChunkDto = {
-    /** Byte offset of the range */
-    offset: number;
-    /** SHA-256 of the range, hex */
-    sha256: string;
-    /** Length of the range */
-    size: number;
-};
-export type TakeoutControlDto = {
-    action: TakeoutControlAction;
-};
-export type TakeoutOptionsDto = {
-    /** Recreate album memberships, including for photos already in the library */
-    albums?: boolean;
-    /** Bring over archived photos as archived */
-    archive?: boolean;
-    /** Bring over the dates photos were taken */
-    dates?: boolean;
-    /** Bring over descriptions */
-    descriptions?: boolean;
-    /** Bring over favorites */
-    favorites?: boolean;
-    /** Bring over locations */
-    locations?: boolean;
-    /** Album folders to recreate; omitted means every folder that is not a year folder */
-    selectedAlbums?: string[];
-    /** Hold items whose metadata sidecars disagree for a decision; off imports them without a sidecar */
-    sidecarReview?: boolean;
-    /** Fill metadata missing from photos already in the library; values already there are never replaced */
-    updateMatchedMetadata?: boolean;
-};
-export type TakeoutMetadataDto = {
-    /** Archived in Google Photos */
-    archived?: boolean;
-    /** When Google Photos received the photo (ISO 8601) */
-    createdAt?: string;
-    /** Description */
-    description?: string;
-    /** Favorite in Google Photos */
-    favorite?: boolean;
-    /** Latitude */
-    latitude?: number;
-    /** In the Google Photos Locked Folder; imported into Locked */
-    locked?: boolean;
-    /** Longitude */
-    longitude?: number;
-    /** When the photo was taken (ISO 8601) */
-    takenAt?: string;
-    /** File name Google Photos recorded */
-    title: string;
-    /** In the Google Photos trash; not imported */
-    trashed?: boolean;
-};
-export type TakeoutSidecarCandidateDto = {
-    id: string;
-    metadata: TakeoutMetadataDto;
-    path: string;
-};
-export type TakeoutItemResponseDto = {
-    albums: string[];
-    /** The library item it became or matched, when this session may open it */
-    assetId: string | null;
-    candidates: TakeoutSidecarCandidateDto[];
-    error: string | null;
-    folder: string;
-    id: string;
-    kind: TakeoutItemKind;
-    locked: boolean;
-    metadata: TakeoutMetadataDto;
-    /** Path inside the export */
-    path: string;
-    sidecarId: string | null;
-    size: number;
-    /** The archive or directory the file came from */
-    source: string;
-    state: TakeoutItemState;
-    warnings: TakeoutWarning[];
-};
-export type TakeoutItemsResponseDto = {
-    hiddenLocked: number;
-    items: TakeoutItemResponseDto[];
-    total: number;
-};
-export type TakeoutResolveDto = {
-    /** The sidecar to use; null imports without one */
-    sidecarId?: string | null;
-    /** True leaves the item out of the import; false brings it back */
-    skip?: boolean;
-};
-export type TakeoutPairResponseDto = {
-    error: string | null;
-    photoItemId: string;
-    photoPath: string;
-    state: TakeoutPairState;
-    videoItemId: string;
-    videoPath: string;
-};
-export type TakeoutPairsResponseDto = {
-    pairs: TakeoutPairResponseDto[];
-    total: number;
-};
-export type TakeoutPairDecisionDto = {
-    /** True links them as one Live Photo; false keeps them separate */
-    approve: boolean;
-    /** The still photo */
-    photoItemId: string;
-    /** The motion video */
-    videoItemId: string;
-};
 /**
  * List all activities
  */
@@ -7881,29 +7930,6 @@ export function sendTestEmailAdmin({ adminConfigSmtpDto }: {
     })));
 }
 /**
- * Get physical deduplication preview
- */
-export function getPhysicalDeduplicationPreview(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: PhysicalDeduplicationPreviewResponseDto;
-    }>("/admin/physical-deduplication/preview", {
-        ...opts
-    }));
-}
-/**
- * Request physical deduplication preview
- */
-export function requestPhysicalDeduplicationPreview({ physicalDeduplicationPreviewRequestDto }: {
-    physicalDeduplicationPreviewRequestDto: PhysicalDeduplicationPreviewRequestDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText("/admin/physical-deduplication/preview", oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: physicalDeduplicationPreviewRequestDto
-    })));
-}
-/**
  * Apply a reviewed physical deduplication plan
  */
 export function applyPhysicalDeduplicationPlan({ physicalDeduplicationApplyRequestDto }: {
@@ -7931,6 +7957,29 @@ export function reviewPhysicalDeduplicationPlan({ physicalDeduplicationReviewReq
         ...opts,
         method: "POST",
         body: physicalDeduplicationReviewRequestDto
+    })));
+}
+/**
+ * Get physical deduplication preview
+ */
+export function getPhysicalDeduplicationPreview(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhysicalDeduplicationPreviewResponseDto;
+    }>("/admin/physical-deduplication/preview", {
+        ...opts
+    }));
+}
+/**
+ * Request physical deduplication preview
+ */
+export function requestPhysicalDeduplicationPreview({ physicalDeduplicationPreviewRequestDto }: {
+    physicalDeduplicationPreviewRequestDto: PhysicalDeduplicationPreviewRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/physical-deduplication/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: physicalDeduplicationPreviewRequestDto
     })));
 }
 /**
@@ -8151,7 +8200,8 @@ export function getUserCalendarHeatmapAdmin({ $from, id, to, $type }: {
     }));
 }
 /**
- * Retrieve user history
+ * FL-76: the account detail's Activity tab. What administrators did to this account and its
+ * libraries, newest first, recorded by the services that made each change.
  */
 export function getUserHistoryAdmin({ before, id, take }: {
     before?: string;
@@ -8225,7 +8275,9 @@ export function getUserSessionsAdmin({ id }: {
     }));
 }
 /**
- * Delete a user session
+ * FL-76: `SessionService.delete` only checks `Permission.AuthDeviceDelete` over the caller's
+ * own sessions, so an administrator could never revoke a foreign session through it. This is
+ * the explicit, audited admin path the account detail's Security tab needs instead.
  */
 export function deleteUserSessionAdmin({ id, sessionId }: {
     id: string;
@@ -8253,6 +8305,17 @@ export function getUserStatisticsAdmin({ id, isFavorite, isTrashed, visibility }
         isTrashed,
         visibility
     }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get the worker inventory
+ */
+export function getWorkerInventory(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: WorkerInventoryResponseDto;
+    }>("/admin/workers", {
         ...opts
     }));
 }
@@ -10166,17 +10229,6 @@ export function getQueuesLegacy(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
- * Get running jobs
- */
-export function getRunningJobs(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RunningJobsResponseDto;
-    }>("/jobs/running", {
-        ...opts
-    }));
-}
-/**
  * Create a manual job
  */
 export function createJob({ jobCreateDto }: {
@@ -10187,6 +10239,17 @@ export function createJob({ jobCreateDto }: {
         method: "POST",
         body: jobCreateDto
     })));
+}
+/**
+ * Get running jobs
+ */
+export function getRunningJobs(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RunningJobsResponseDto;
+    }>("/jobs/running", {
+        ...opts
+    }));
 }
 /**
  * Run jobs
@@ -10436,18 +10499,6 @@ export function deleteCorrupt({ mediaHealthDeleteCorruptDto }: {
     })));
 }
 /**
- * Start corrupt media scan
- */
-export function startCorruptScan(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 201;
-        data: MediaHealthScanResponseDto;
-    }>("/media-health/corrupt/scan", {
-        ...opts,
-        method: "POST"
-    }));
-}
-/**
  * Recover damaged media from a verified copy
  */
 export function recoverDamaged({ mediaHealthRecoverDto }: {
@@ -10461,6 +10512,18 @@ export function recoverDamaged({ mediaHealthRecoverDto }: {
         method: "POST",
         body: mediaHealthRecoverDto
     })));
+}
+/**
+ * Start corrupt media scan
+ */
+export function startCorruptScan(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaHealthScanResponseDto;
+    }>("/media-health/corrupt/scan", {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Dismiss media health findings
@@ -10545,219 +10608,6 @@ export function getSummary({ allAccounts, ownerId }: {
     }));
 }
 /**
- * Admit a render worker
- */
-export function admitRenderWorker({ renderWorkerAdmissionDto }: {
-    renderWorkerAdmissionDto: RenderWorkerAdmissionDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 201;
-        data: RenderWorkerSessionDto;
-    }>("/render-workers/admission", oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: renderWorkerAdmissionDto
-    })));
-}
-/**
- * Claim the next admitted operation
- */
-export function claimRenderOperation({ renderWorkerClaimRequestDto, xFrameleafWorkerSession }: {
-    renderWorkerClaimRequestDto: RenderWorkerClaimRequestDto;
-    xFrameleafWorkerSession: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RenderWorkerClaimDto;
-    }>("/render-workers/claims", oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: renderWorkerClaimRequestDto,
-        headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-frameleaf-worker-session": xFrameleafWorkerSession
-        })
-    })));
-}
-/**
- * Acknowledge a cancellation
- */
-export function acknowledgeRenderCancel({ id, renderWorkerCancelAckDto, xFrameleafWorkerSession }: {
-    id: string;
-    renderWorkerCancelAckDto: RenderWorkerCancelAckDto;
-    xFrameleafWorkerSession: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RenderWorkerWriteResultDto;
-    }>(`/render-workers/operations/${encodeURIComponent(id)}/cancel-ack`, oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: renderWorkerCancelAckDto,
-        headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-frameleaf-worker-session": xFrameleafWorkerSession
-        })
-    })));
-}
-/**
- * Plan a render checkpoint
- */
-export function planRenderCheckpoint({ id, renderWorkerCheckpointPlanDto, xFrameleafWorkerSession }: {
-    id: string;
-    renderWorkerCheckpointPlanDto: RenderWorkerCheckpointPlanDto;
-    xFrameleafWorkerSession: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RenderWorkerWriteResultDto;
-    }>(`/render-workers/operations/${encodeURIComponent(id)}/checkpoints`, oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: renderWorkerCheckpointPlanDto,
-        headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-frameleaf-worker-session": xFrameleafWorkerSession
-        })
-    })));
-}
-/**
- * Complete a render checkpoint
- */
-export function completeRenderCheckpoint({ id, sequence, renderWorkerCheckpointCompleteDto, xFrameleafWorkerSession }: {
-    id: string;
-    sequence: number;
-    renderWorkerCheckpointCompleteDto: RenderWorkerCheckpointCompleteDto;
-    xFrameleafWorkerSession: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RenderWorkerWriteResultDto;
-    }>(`/render-workers/operations/${encodeURIComponent(id)}/checkpoints/${encodeURIComponent(sequence)}/complete`, oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: renderWorkerCheckpointCompleteDto,
-        headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-frameleaf-worker-session": xFrameleafWorkerSession
-        })
-    })));
-}
-/**
- * Complete a claimed operation
- */
-export function completeRenderOperation({ id, renderWorkerCompleteDto, xFrameleafWorkerSession }: {
-    id: string;
-    renderWorkerCompleteDto: RenderWorkerCompleteDto;
-    xFrameleafWorkerSession: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RenderWorkerWriteResultDto;
-    }>(`/render-workers/operations/${encodeURIComponent(id)}/complete`, oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: renderWorkerCompleteDto,
-        headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-frameleaf-worker-session": xFrameleafWorkerSession
-        })
-    })));
-}
-/**
- * Fail a claimed operation
- */
-export function failRenderOperation({ id, renderWorkerFailDto, xFrameleafWorkerSession }: {
-    id: string;
-    renderWorkerFailDto: RenderWorkerFailDto;
-    xFrameleafWorkerSession: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RenderWorkerWriteResultDto;
-    }>(`/render-workers/operations/${encodeURIComponent(id)}/fail`, oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: renderWorkerFailDto,
-        headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-frameleaf-worker-session": xFrameleafWorkerSession
-        })
-    })));
-}
-/**
- * Heartbeat a claimed operation
- */
-export function heartbeatRenderOperation({ id, renderWorkerHeartbeatDto, xFrameleafWorkerSession }: {
-    id: string;
-    renderWorkerHeartbeatDto: RenderWorkerHeartbeatDto;
-    xFrameleafWorkerSession: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RenderWorkerHeartbeatResponseDto;
-    }>(`/render-workers/operations/${encodeURIComponent(id)}/heartbeat`, oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: renderWorkerHeartbeatDto,
-        headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-frameleaf-worker-session": xFrameleafWorkerSession
-        })
-    })));
-}
-/**
- * Read an operation input
- */
-export function readRenderOperationInput({ grant, id, xFrameleafWorkerSession }: {
-    grant: string;
-    id: string;
-    xFrameleafWorkerSession: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchBlob<{
-        status: 200;
-        data: Blob;
-    }>(`/render-workers/operations/${encodeURIComponent(id)}/inputs/${encodeURIComponent(grant)}`, {
-        ...opts,
-        headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-frameleaf-worker-session": xFrameleafWorkerSession
-        })
-    }));
-}
-/**
- * Report progress on a claimed operation
- */
-export function reportRenderOperationProgress({ id, renderWorkerProgressDto, xFrameleafWorkerSession }: {
-    id: string;
-    renderWorkerProgressDto: RenderWorkerProgressDto;
-    xFrameleafWorkerSession: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RenderWorkerWriteResultDto;
-    }>(`/render-workers/operations/${encodeURIComponent(id)}/progress`, oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: renderWorkerProgressDto,
-        headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-frameleaf-worker-session": xFrameleafWorkerSession
-        })
-    })));
-}
-/**
- * Begin validating a claimed operation
- */
-export function validateRenderOperation({ id, renderWorkerCompleteDto, xFrameleafWorkerSession }: {
-    id: string;
-    renderWorkerCompleteDto: RenderWorkerCompleteDto;
-    xFrameleafWorkerSession: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: RenderWorkerWriteResultDto;
-    }>(`/render-workers/operations/${encodeURIComponent(id)}/validate`, oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: renderWorkerCompleteDto,
-        headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-frameleaf-worker-session": xFrameleafWorkerSession
-        })
-    })));
-}
-/**
  * List your media operations
  */
 export function searchMediaOperations({ includeDismissed, kind, skip, status, take }: {
@@ -10807,19 +10657,6 @@ export function getMediaOperationStatistics(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
- * Get a media operation
- */
-export function getMediaOperation({ id }: {
-    id: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: MediaOperationDetailDto;
-    }>(`/media-operations/${encodeURIComponent(id)}`, {
-        ...opts
-    }));
-}
-/**
  * Clear a finished media operation
  */
 export function dismissMediaOperation({ id }: {
@@ -10831,58 +10668,16 @@ export function dismissMediaOperation({ id }: {
     }));
 }
 /**
- * Request a Studio preview frame
+ * Get a media operation
  */
-export function requestStudioPreview({ studioPreviewRequestDto }: {
-    studioPreviewRequestDto: StudioPreviewRequestDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: StudioPreviewResponseDto;
-    }>("/studio/previews", oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: studioPreviewRequestDto
-    })));
-}
-/**
- * Get a Studio preview
- */
-export function getStudioPreview({ id }: {
+export function getMediaOperation({ id }: {
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: StudioPreviewDto;
-    }>(`/studio/previews/${encodeURIComponent(id)}`, {
+        data: MediaOperationDetailDto;
+    }>(`/media-operations/${encodeURIComponent(id)}`, {
         ...opts
-    }));
-}
-/**
- * View a Studio preview frame
- */
-export function viewStudioPreviewFrame({ id }: {
-    id: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchBlob<{
-        status: 200;
-        data: Blob;
-    }>(`/studio/previews/${encodeURIComponent(id)}/frame`, {
-        ...opts
-    }));
-}
-/**
- * Cancel a Studio preview
- */
-export function cancelStudioPreview({ id }: {
-    id: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: StudioPreviewDto;
-    }>(`/studio/previews/${encodeURIComponent(id)}`, {
-        ...opts,
-        method: "DELETE"
     }));
 }
 /**
@@ -10988,37 +10783,6 @@ export function createMemory({ memoryCreateDto }: {
     })));
 }
 /**
- * Retrieve memories statistics
- */
-export function memoriesStatistics({ $for, id, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
-    $for?: string;
-    id?: string;
-    isSaved?: boolean;
-    isTrashed?: boolean;
-    isUpcoming?: boolean;
-    order?: MemorySearchOrder;
-    page?: number;
-    size?: number;
-    $type?: MemoryType;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: MemoryStatisticsResponseDto;
-    }>(`/memories/statistics${QS.query(QS.explode({
-        "for": $for,
-        id,
-        isSaved,
-        isTrashed,
-        isUpcoming,
-        order,
-        page,
-        size,
-        "type": $type
-    }))}`, {
-        ...opts
-    }));
-}
-/**
  * Retrieve memory exports
  */
 export function getMemoryExports({ memoryId }: {
@@ -11085,6 +10849,37 @@ export function downloadMemoryExport({ id }: {
     }));
 }
 /**
+ * Retrieve memories statistics
+ */
+export function memoriesStatistics({ $for, id, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
+    $for?: string;
+    id?: string;
+    isSaved?: boolean;
+    isTrashed?: boolean;
+    isUpcoming?: boolean;
+    order?: MemorySearchOrder;
+    page?: number;
+    size?: number;
+    $type?: MemoryType;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryStatisticsResponseDto;
+    }>(`/memories/statistics${QS.query(QS.explode({
+        "for": $for,
+        id,
+        isSaved,
+        isTrashed,
+        isUpcoming,
+        order,
+        page,
+        size,
+        "type": $type
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Delete a memory
  */
 export function deleteMemory({ id }: {
@@ -11141,22 +10936,6 @@ export function removeMemoryAssets({ id, bulkIdsDto }: {
     })));
 }
 /**
- * Export a memory
- */
-export function createMemoryExport({ id, memoryExportCreateDto }: {
-    id: string;
-    memoryExportCreateDto: MemoryExportCreateDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 201;
-        data: MemoryExportResponseDto;
-    }>(`/memories/${encodeURIComponent(id)}/exports`, oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: memoryExportCreateDto
-    })));
-}
-/**
  * Add assets to a memory
  */
 export function addMemoryAssets({ id, bulkIdsDto }: {
@@ -11173,9 +10952,25 @@ export function addMemoryAssets({ id, bulkIdsDto }: {
     })));
 }
 /**
+ * Export a memory
+ */
+export function createMemoryExport({ id, memoryExportCreateDto }: {
+    id: string;
+    memoryExportCreateDto: MemoryExportCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MemoryExportResponseDto;
+    }>(`/memories/${encodeURIComponent(id)}/exports`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: memoryExportCreateDto
+    })));
+}
+/**
  * List machine-learning destinations
  */
-export function listMlDestinations(opts?: Oazapfts.RequestOpts) {
+export function list2(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: MlDestinationResponseDto[];
@@ -11186,7 +10981,7 @@ export function listMlDestinations(opts?: Oazapfts.RequestOpts) {
 /**
  * Create a machine-learning destination
  */
-export function createMlDestination({ mlDestinationCreateDto }: {
+export function create({ mlDestinationCreateDto }: {
     mlDestinationCreateDto: MlDestinationCreateDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -11199,20 +10994,9 @@ export function createMlDestination({ mlDestinationCreateDto }: {
     })));
 }
 /**
- * Get the worker inventory
- */
-export function getWorkerInventory(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: WorkerInventoryResponseDto;
-    }>("/admin/workers", {
-        ...opts
-    }));
-}
-/**
  * Get machine-learning capabilities
  */
-export function getMlCapabilities(opts?: Oazapfts.RequestOpts) {
+export function getCapabilities(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: MlCapabilitiesResponseDto;
@@ -11223,7 +11007,7 @@ export function getMlCapabilities(opts?: Oazapfts.RequestOpts) {
 /**
  * List workload routes
  */
-export function getMlWorkloadRoutes(opts?: Oazapfts.RequestOpts) {
+export function getRoutes(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: MlWorkloadRoutesResponseDto;
@@ -11234,7 +11018,7 @@ export function getMlWorkloadRoutes(opts?: Oazapfts.RequestOpts) {
 /**
  * Route a workload
  */
-export function setMlWorkloadRoute({ workload, mlWorkloadRouteUpdateDto }: {
+export function setRoute({ workload, mlWorkloadRouteUpdateDto }: {
     workload: MlWorkload;
     mlWorkloadRouteUpdateDto: MlWorkloadRouteUpdateDto;
 }, opts?: Oazapfts.RequestOpts) {
@@ -11250,7 +11034,7 @@ export function setMlWorkloadRoute({ workload, mlWorkloadRouteUpdateDto }: {
 /**
  * Delete a machine-learning destination
  */
-export function deleteMlDestination({ id }: {
+export function deleteMlDestinationsById({ id }: {
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchText(`/ml-destinations/${encodeURIComponent(id)}`, {
@@ -11261,7 +11045,7 @@ export function deleteMlDestination({ id }: {
 /**
  * Get a machine-learning destination
  */
-export function getMlDestination({ id }: {
+export function getMlDestinationsById({ id }: {
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -11274,7 +11058,7 @@ export function getMlDestination({ id }: {
 /**
  * Update a machine-learning destination
  */
-export function updateMlDestination({ id, mlDestinationUpdateDto }: {
+export function update({ id, mlDestinationUpdateDto }: {
     id: string;
     mlDestinationUpdateDto: MlDestinationUpdateDto;
 }, opts?: Oazapfts.RequestOpts) {
@@ -11290,7 +11074,7 @@ export function updateMlDestination({ id, mlDestinationUpdateDto }: {
 /**
  * Admit a workload on a destination
  */
-export function admitMlWorkload({ id, mlAdmissionRequestDto }: {
+export function admit({ id, mlAdmissionRequestDto }: {
     id: string;
     mlAdmissionRequestDto: MlAdmissionRequestDto;
 }, opts?: Oazapfts.RequestOpts) {
@@ -11306,7 +11090,7 @@ export function admitMlWorkload({ id, mlAdmissionRequestDto }: {
 /**
  * Revoke consent for a cloud destination
  */
-export function revokeMlDestinationConsent({ id }: {
+export function revokeConsent({ id }: {
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -11320,7 +11104,7 @@ export function revokeMlDestinationConsent({ id }: {
 /**
  * Record consent for a cloud destination
  */
-export function grantMlDestinationConsent({ id, mlDestinationConsentRequestDto }: {
+export function grantConsent({ id, mlDestinationConsentRequestDto }: {
     id: string;
     mlDestinationConsentRequestDto: MlDestinationConsentRequestDto;
 }, opts?: Oazapfts.RequestOpts) {
@@ -11336,7 +11120,7 @@ export function grantMlDestinationConsent({ id, mlDestinationConsentRequestDto }
 /**
  * Probe a machine-learning destination
  */
-export function probeMlDestination({ id }: {
+export function probe({ id }: {
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -11725,6 +11509,19 @@ export function updatePerson({ id, personUpdateDto }: {
     })));
 }
 /**
+ * Get correction history
+ */
+export function getCorrectionHistory({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PersonCorrectionsResponseDto;
+    }>(`/people/${encodeURIComponent(id)}/corrections`, {
+        ...opts
+    }));
+}
+/**
  * Merge people
  */
 export function mergePersonLegacy({ id, mergePersonDto }: {
@@ -11755,19 +11552,6 @@ export function reassignFaces({ id, assetFaceUpdateDto }: {
         method: "PUT",
         body: assetFaceUpdateDto
     })));
-}
-/**
- * Get correction history
- */
-export function getCorrectionHistory({ id }: {
-    id: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
-        data: PersonCorrectionsResponseDto;
-    }>(`/people/${encodeURIComponent(id)}/corrections`, {
-        ...opts
-    }));
 }
 /**
  * Get person statistics
@@ -11882,6 +11666,17 @@ export function deletePetObservation({ id }: {
     }));
 }
 /**
+ * Delete a pet
+ */
+export function deletePet({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/pets/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Retrieve a pet
  */
 export function getPet({ id }: {
@@ -11909,17 +11704,6 @@ export function updatePet({ id, petUpdateDto }: {
         method: "PUT",
         body: petUpdateDto
     })));
-}
-/**
- * Delete a pet
- */
-export function deletePet({ id }: {
-    id: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText(`/pets/${encodeURIComponent(id)}`, {
-        ...opts,
-        method: "DELETE"
-    }));
 }
 /**
  * Merge pets
@@ -12136,6 +11920,219 @@ export function getQueueJobs({ name, status }: {
     }))}`, {
         ...opts
     }));
+}
+/**
+ * Admit a render worker
+ */
+export function admitRenderWorker({ renderWorkerAdmissionDto }: {
+    renderWorkerAdmissionDto: RenderWorkerAdmissionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: RenderWorkerSessionDto;
+    }>("/render-workers/admission", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerAdmissionDto
+    })));
+}
+/**
+ * Claim the next admitted operation
+ */
+export function claimRenderOperation({ xFrameleafWorkerSession, renderWorkerClaimRequestDto }: {
+    xFrameleafWorkerSession: string;
+    renderWorkerClaimRequestDto: RenderWorkerClaimRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerClaimDto;
+    }>("/render-workers/claims", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerClaimRequestDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Acknowledge a cancellation
+ */
+export function acknowledgeRenderCancel({ id, xFrameleafWorkerSession, renderWorkerCancelAckDto }: {
+    id: string;
+    xFrameleafWorkerSession: string;
+    renderWorkerCancelAckDto: RenderWorkerCancelAckDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/cancel-ack`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCancelAckDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Plan a render checkpoint
+ */
+export function planRenderCheckpoint({ id, xFrameleafWorkerSession, renderWorkerCheckpointPlanDto }: {
+    id: string;
+    xFrameleafWorkerSession: string;
+    renderWorkerCheckpointPlanDto: RenderWorkerCheckpointPlanDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/checkpoints`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCheckpointPlanDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Complete a render checkpoint
+ */
+export function completeRenderCheckpoint({ id, sequence, xFrameleafWorkerSession, renderWorkerCheckpointCompleteDto }: {
+    id: string;
+    sequence: number;
+    xFrameleafWorkerSession: string;
+    renderWorkerCheckpointCompleteDto: RenderWorkerCheckpointCompleteDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/checkpoints/${encodeURIComponent(sequence)}/complete`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCheckpointCompleteDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Complete a claimed operation
+ */
+export function completeRenderOperation({ id, xFrameleafWorkerSession, renderWorkerCompleteDto }: {
+    id: string;
+    xFrameleafWorkerSession: string;
+    renderWorkerCompleteDto: RenderWorkerCompleteDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/complete`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCompleteDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Fail a claimed operation
+ */
+export function failRenderOperation({ id, xFrameleafWorkerSession, renderWorkerFailDto }: {
+    id: string;
+    xFrameleafWorkerSession: string;
+    renderWorkerFailDto: RenderWorkerFailDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/fail`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerFailDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Heartbeat a claimed operation
+ */
+export function heartbeatRenderOperation({ id, xFrameleafWorkerSession, renderWorkerHeartbeatDto }: {
+    id: string;
+    xFrameleafWorkerSession: string;
+    renderWorkerHeartbeatDto: RenderWorkerHeartbeatDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerHeartbeatResponseDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/heartbeat`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerHeartbeatDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Read an operation input
+ */
+export function readRenderOperationInput({ grant, id, xFrameleafWorkerSession }: {
+    grant: string;
+    id: string;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/inputs/${encodeURIComponent(grant)}`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    }));
+}
+/**
+ * Report progress on a claimed operation
+ */
+export function reportRenderOperationProgress({ id, xFrameleafWorkerSession, renderWorkerProgressDto }: {
+    id: string;
+    xFrameleafWorkerSession: string;
+    renderWorkerProgressDto: RenderWorkerProgressDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/progress`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerProgressDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Begin validating a claimed operation
+ */
+export function validateRenderOperation({ id, xFrameleafWorkerSession, renderWorkerCompleteDto }: {
+    id: string;
+    xFrameleafWorkerSession: string;
+    renderWorkerCompleteDto: RenderWorkerCompleteDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/validate`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCompleteDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
 }
 /**
  * Enqueue all ML backfill jobs
@@ -12894,7 +12891,7 @@ export function acceptSharedSpaceInvitation({ id }: {
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
-        status: 200;
+        status: 201;
         data: AlbumResponseDto;
     }>(`/shared-spaces/${encodeURIComponent(id)}/accept`, {
         ...opts,
@@ -12904,9 +12901,9 @@ export function acceptSharedSpaceInvitation({ id }: {
 /**
  * What happened in a shared space
  */
-export function getSharedSpaceActivity({ id, before, take }: {
-    id: string;
+export function getSharedSpaceActivity({ before, id, take }: {
     before?: string;
+    id: string;
     take?: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -12935,9 +12932,9 @@ export function getSharedSpaceAlbums({ id }: {
 /**
  * Unlink an album from a shared space
  */
-export function unlinkSharedSpaceAlbum({ id, albumId }: {
-    id: string;
+export function unlinkSharedSpaceAlbum({ albumId, id }: {
     albumId: string;
+    id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/albums/${encodeURIComponent(albumId)}`, {
         ...opts,
@@ -12947,9 +12944,9 @@ export function unlinkSharedSpaceAlbum({ id, albumId }: {
 /**
  * Link an album into a shared space
  */
-export function linkSharedSpaceAlbum({ id, albumId }: {
-    id: string;
+export function linkSharedSpaceAlbum({ albumId, id }: {
     albumId: string;
+    id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
@@ -12962,9 +12959,9 @@ export function linkSharedSpaceAlbum({ id, albumId }: {
 /**
  * List comments in a shared space
  */
-export function getSharedSpaceComments({ id, assetId }: {
-    id: string;
+export function getSharedSpaceComments({ assetId, id }: {
     assetId?: string;
+    id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
@@ -12994,9 +12991,9 @@ export function createSharedSpaceComment({ id, sharedSpaceCommentCreateDto }: {
 /**
  * Remove a shared space comment
  */
-export function deleteSharedSpaceComment({ id, commentId }: {
-    id: string;
+export function deleteSharedSpaceComment({ commentId, id }: {
     commentId: string;
+    id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, {
         ...opts,
@@ -13006,9 +13003,9 @@ export function deleteSharedSpaceComment({ id, commentId }: {
 /**
  * Edit a shared space comment
  */
-export function updateSharedSpaceComment({ id, commentId, sharedSpaceCommentUpdateDto }: {
-    id: string;
+export function updateSharedSpaceComment({ commentId, id, sharedSpaceCommentUpdateDto }: {
     commentId: string;
+    id: string;
     sharedSpaceCommentUpdateDto: SharedSpaceCommentUpdateDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -13312,6 +13309,61 @@ export function getStudioBundleUpload({ id }: {
     }));
 }
 /**
+ * Request a Studio preview frame
+ */
+export function requestStudioPreview({ studioPreviewRequestDto }: {
+    studioPreviewRequestDto: StudioPreviewRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioPreviewResponseDto;
+    }>("/studio/previews", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioPreviewRequestDto
+    })));
+}
+/**
+ * Cancel a Studio preview
+ */
+export function cancelStudioPreview({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioPreviewDto;
+    }>(`/studio/previews/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get a Studio preview
+ */
+export function getStudioPreview({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioPreviewDto;
+    }>(`/studio/previews/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * View a Studio preview frame
+ */
+export function viewStudioPreviewFrame({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/studio/previews/${encodeURIComponent(id)}/frame`, {
+        ...opts
+    }));
+}
+/**
  * List Studio projects
  */
 export function searchStudioProjects({ query, shelf, skip, sort, take }: {
@@ -13320,7 +13372,7 @@ export function searchStudioProjects({ query, shelf, skip, sort, take }: {
     skip?: number;
     sort?: StudioProjectSort;
     take?: number;
-} = {}, opts?: Oazapfts.RequestOpts) {
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: StudioProjectListResponseDto;
@@ -13362,6 +13414,20 @@ export function emptyStudioProjectTrash(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Delete a Studio project
+ */
+export function deleteStudioProject({ id, permanent }: {
+    id: string;
+    permanent?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/studio/projects/${encodeURIComponent(id)}${QS.query(QS.explode({
+        permanent
+    }))}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Get a Studio project
  */
 export function getStudioProject({ id }: {
@@ -13389,20 +13455,6 @@ export function updateStudioProject({ id, studioProjectUpdateDto }: {
         method: "PUT",
         body: studioProjectUpdateDto
     })));
-}
-/**
- * Delete a Studio project
- */
-export function deleteStudioProject({ id, permanent }: {
-    id: string;
-    permanent?: boolean;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText(`/studio/projects/${encodeURIComponent(id)}${QS.query(QS.explode({
-        permanent
-    }))}`, {
-        ...opts,
-        method: "DELETE"
-    }));
 }
 /**
  * Export a Studio project as a bundle
@@ -13455,6 +13507,18 @@ export function addStudioProjectComment({ id, studioCommentCreateDto }: {
     })));
 }
 /**
+ * Remove a Studio review comment
+ */
+export function removeStudioProjectComment({ commentId, id }: {
+    commentId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/studio/projects/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Update a Studio review comment
  */
 export function updateStudioProjectComment({ commentId, id, studioCommentUpdateDto }: {
@@ -13470,18 +13534,6 @@ export function updateStudioProjectComment({ commentId, id, studioCommentUpdateD
         method: "PUT",
         body: studioCommentUpdateDto
     })));
-}
-/**
- * Remove a Studio review comment
- */
-export function removeStudioProjectComment({ commentId, id }: {
-    commentId: string;
-    id: string;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText(`/studio/projects/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, {
-        ...opts,
-        method: "DELETE"
-    }));
 }
 /**
  * Duplicate a Studio project
@@ -13545,22 +13597,6 @@ export function restoreStudioProjectRevision({ id, studioProjectRestoreDto }: {
     })));
 }
 /**
- * Save a Studio project revision
- */
-export function saveStudioProjectRevision({ id, studioProjectSaveDto }: {
-    id: string;
-    studioProjectSaveDto: StudioProjectSaveDto;
-}, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchJson<{
-        status: 201;
-        data: StudioProjectSaveResponseDto;
-    }>(`/studio/projects/${encodeURIComponent(id)}/revisions`, oazapfts.json({
-        ...opts,
-        method: "POST",
-        body: studioProjectSaveDto
-    })));
-}
-/**
  * List Studio project history
  */
 export function getStudioProjectHistory({ id, skip, take }: {
@@ -13577,6 +13613,22 @@ export function getStudioProjectHistory({ id, skip, take }: {
     }))}`, {
         ...opts
     }));
+}
+/**
+ * Save a Studio project revision
+ */
+export function saveStudioProjectRevision({ id, studioProjectSaveDto }: {
+    id: string;
+    studioProjectSaveDto: StudioProjectSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioProjectSaveResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/revisions`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioProjectSaveDto
+    })));
 }
 /**
  * Get a Studio project revision
@@ -14777,21 +14829,6 @@ export enum ReactionType {
     Comment = "comment",
     Like = "like"
 }
-export enum SharedSpaceEventType {
-    AssetsAdded = "AssetsAdded",
-    AssetsRemoved = "AssetsRemoved",
-    AlbumLinked = "AlbumLinked",
-    AlbumUnlinked = "AlbumUnlinked",
-    PersonLinked = "PersonLinked",
-    PersonUnlinked = "PersonUnlinked",
-    MemberJoined = "MemberJoined",
-    MemberLeft = "MemberLeft",
-    MemberRemoved = "MemberRemoved",
-    MemberRoleChanged = "MemberRoleChanged",
-    Comment = "Comment",
-    Reply = "Reply",
-    Like = "Like"
-}
 export enum UserAvatarColor {
     Primary = "primary",
     Pink = "pink",
@@ -14859,12 +14896,6 @@ export enum Colorspace {
     Srgb = "srgb",
     P3 = "p3"
 }
-export enum ConfigCredential {
-    SmtpPassword = "smtp-password",
-    OauthClientSecret = "oauth-client-secret",
-    RunpodApiKey = "runpod-api-key",
-    HuggingfaceToken = "huggingface-token"
-}
 export enum ImageFormat {
     Jpeg = "jpeg",
     Webp = "webp"
@@ -14908,6 +14939,12 @@ export enum OAuthTokenEndpointAuthMethod {
     ClientSecretPost = "client_secret_post",
     ClientSecretBasic = "client_secret_basic"
 }
+export enum ConfigCredential {
+    SmtpPassword = "smtp-password",
+    OauthClientSecret = "oauth-client-secret",
+    RunpodApiKey = "runpod-api-key",
+    HuggingfaceToken = "huggingface-token"
+}
 export enum IntegrityReport {
     UntrackedFile = "untracked_file",
     MissingFile = "missing_file",
@@ -14944,6 +14981,120 @@ export enum NotificationType {
     SharedSpaceMention = "SharedSpaceMention",
     SharedSpaceReply = "SharedSpaceReply",
     Custom = "Custom"
+}
+export enum MediaOperationBulkAction {
+    Favorite = "favorite",
+    Unfavorite = "unfavorite",
+    Archive = "archive",
+    Unarchive = "unarchive",
+    AddToAlbum = "add-to-album",
+    RemoveFromAlbum = "remove-from-album",
+    Tag = "tag",
+    Untag = "untag",
+    ChangeDate = "change-date",
+    ChangeDescription = "change-description",
+    ChangeLocation = "change-location",
+    MarkSensitive = "mark-sensitive",
+    UnmarkSensitive = "unmark-sensitive",
+    Delete = "delete",
+    DeletePermanently = "delete-permanently",
+    Restore = "restore",
+    Stack = "stack",
+    Unstack = "unstack",
+    RefreshThumbnails = "refresh-thumbnails",
+    RefreshMetadata = "refresh-metadata",
+    RefreshEncoded = "refresh-encoded",
+    RefreshFaces = "refresh-faces",
+    RelinkLivePhoto = "relink-live-photo",
+    ResolveDuplicates = "resolve-duplicates",
+    UndoDuplicates = "undo-duplicates",
+    RelinkMissingMedia = "relink-missing-media",
+    RecoverDamagedMedia = "recover-damaged-media",
+    TrashDamagedMedia = "trash-damaged-media"
+}
+export enum MediaOperationDestination {
+    Local = "local",
+    Lan = "lan",
+    Runpod = "runpod"
+}
+export enum MediaOperationKind {
+    StudioExport = "studio_export",
+    StudioPreview = "studio_preview",
+    Restoration = "restoration",
+    RestorationPreview = "restoration_preview",
+    QuickEdit = "quick_edit",
+    Bulk = "bulk",
+    StudioBundleExport = "studio_bundle_export",
+    StudioBundleImport = "studio_bundle_import",
+    EnrichmentPlan = "enrichment_plan",
+    MediaHealth = "media_health",
+    IcloudSync = "icloud_sync",
+    TakeoutImport = "takeout_import",
+    PhysicalDeduplication = "physical_deduplication"
+}
+export enum MediaOperationStatus {
+    Queued = "queued",
+    Preparing = "preparing",
+    Rendering = "rendering",
+    Validating = "validating",
+    Completed = "completed",
+    Cancelling = "cancelling",
+    Cancelled = "cancelled",
+    Failed = "failed",
+    Paused = "paused"
+}
+export enum PhysicalDeduplicationDecision {
+    Share = "share",
+    Skip = "skip"
+}
+export enum PhysicalDeduplicationSkipReason {
+    ExternalLibrary = "external-library",
+    MissingSize = "missing-size",
+    NoRetainedMatch = "no-retained-match",
+    AlreadyShared = "already-shared",
+    RetainedFileMissing = "retained-file-missing"
+}
+export enum AssetTypeEnum {
+    Image = "IMAGE",
+    Video = "VIDEO",
+    Audio = "AUDIO",
+    Other = "OTHER"
+}
+export enum PhysicalDeduplicationPlanMode {
+    DryRun = "dry-run",
+    Apply = "apply"
+}
+export enum RenderWorkerStatus {
+    Active = "active",
+    Revoked = "revoked"
+}
+export enum RenderWorkerAuditEvent {
+    Enrolled = "enrolled",
+    Admitted = "admitted",
+    Refused = "refused",
+    ClaimRefused = "claim_refused",
+    LimitExceeded = "limit_exceeded",
+    Revoked = "revoked",
+    Updated = "updated"
+}
+export enum RenderWorkerRefusalReason {
+    InvalidCredential = "invalid_credential",
+    WorkerRevoked = "worker_revoked",
+    SessionExpired = "session_expired",
+    ConformanceStale = "conformance_stale",
+    ConformanceReplayed = "conformance_replayed",
+    EngineDigestMismatch = "engine_digest_mismatch",
+    SoftwareRenderer = "software_renderer",
+    DestinationMismatch = "destination_mismatch",
+    WorkerMismatch = "worker_mismatch",
+    ScopeExceeded = "scope_exceeded",
+    WorkerConcurrencyExceeded = "worker_concurrency_exceeded",
+    UserConcurrencyExceeded = "user_concurrency_exceeded",
+    GpuMemoryInsufficient = "gpu_memory_insufficient",
+    WallClockExceeded = "wall_clock_exceeded",
+    OutputBytesExceeded = "output_bytes_exceeded",
+    DestinationUnavailable = "destination_unavailable",
+    ManifestIncomplete = "manifest_incomplete"
 }
 export enum UserStatus {
     Active = "active",
@@ -14990,10 +15141,82 @@ export enum AssetVisibility {
     Hidden = "hidden",
     Locked = "locked"
 }
-export enum AssetLockReason {
-    Marked = "marked",
-    Detected = "detected",
-    ImmichLockedFolder = "immich-locked-folder"
+export enum MlWorkerAcceleration {
+    Unknown = "unknown",
+    Cpu = "cpu",
+    Gpu = "gpu"
+}
+export enum MlAdmissionRefusal {
+    DestinationMissing = "destination-missing",
+    DestinationDisabled = "destination-disabled",
+    WorkloadNotRouted = "workload-not-routed",
+    WorkloadNotAllowed = "workload-not-allowed",
+    WorkloadNotServed = "workload-not-served",
+    ConsentMissing = "consent-missing",
+    BudgetExceeded = "budget-exceeded",
+    EndpointUnresolved = "endpoint-unresolved",
+    DestinationUnhealthy = "destination-unhealthy",
+    RoleConflict = "role-conflict"
+}
+export enum MlWorkload {
+    Face = "face",
+    Clip = "clip",
+    Ocr = "ocr",
+    Enrichment = "enrichment",
+    RestorationFaithful = "restoration-faithful",
+    RestorationCreative = "restoration-creative",
+    StudioAi = "studio-ai"
+}
+export enum WorkerCredentialState {
+    None = "none",
+    Stored = "stored",
+    Managed = "managed",
+    Enrolled = "enrolled"
+}
+export enum MlWorkerReadiness {
+    Unknown = "unknown",
+    Disabled = "disabled",
+    Unreachable = "unreachable",
+    NotServing = "not-serving",
+    Cpu = "cpu",
+    ModelReady = "model-ready"
+}
+export enum MlWorkerRole {
+    LibraryAnalysis = "library-analysis",
+    Restoration = "restoration",
+    Studio = "studio",
+    Mixed = "mixed",
+    Unassigned = "unassigned"
+}
+export enum WorkerInventorySource {
+    MlDestination = "ml-destination",
+    RenderWorker = "render-worker"
+}
+export enum QueueName {
+    ThumbnailGeneration = "thumbnailGeneration",
+    MetadataExtraction = "metadataExtraction",
+    VideoConversion = "videoConversion",
+    FaceDetection = "faceDetection",
+    FacialRecognition = "facialRecognition",
+    SmartSearch = "smartSearch",
+    DuplicateDetection = "duplicateDetection",
+    VideoDuplicateDetection = "videoDuplicateDetection",
+    BackgroundTask = "backgroundTask",
+    StorageTemplateMigration = "storageTemplateMigration",
+    Migration = "migration",
+    Search = "search",
+    Sidecar = "sidecar",
+    Library = "library",
+    Notifications = "notifications",
+    BackupDatabase = "backupDatabase",
+    Ocr = "ocr",
+    ImageEnrichment = "imageEnrichment",
+    ImageDescription = "imageDescription",
+    NsfwDetection = "nsfwDetection",
+    MediaHealth = "mediaHealth",
+    Workflow = "workflow",
+    IntegrityCheck = "integrityCheck",
+    Editor = "editor"
 }
 export enum AlbumUserRole {
     Editor = "editor",
@@ -15209,44 +15432,6 @@ export enum AssetJobName {
     RegenerateThumbnail = "regenerate-thumbnail",
     TranscodeVideo = "transcode-video"
 }
-export enum DocumentLineStatus {
-    Recognized = "recognized",
-    Corrected = "corrected",
-    Dismissed = "dismissed",
-    Kept = "kept"
-}
-export enum DocumentField {
-    Date = "date",
-    Total = "total",
-    Reference = "reference",
-    Email = "email",
-    Phone = "phone"
-}
-export enum DocumentFieldStatus {
-    Suggested = "suggested",
-    Confirmed = "confirmed",
-    Corrected = "corrected",
-    Dismissed = "dismissed"
-}
-export enum DocumentEditAction {
-    Confirm = "confirm",
-    Correct = "correct",
-    Dismiss = "dismiss"
-}
-export enum AssetTypeEnum {
-    Image = "IMAGE",
-    Video = "VIDEO",
-    Audio = "AUDIO",
-    Other = "OTHER"
-}
-export enum AssetDevelopRevisionStatus {
-    Saved = "saved",
-    Queued = "queued",
-    Rendering = "rendering",
-    Rendered = "rendered",
-    Failed = "failed",
-    Cancelled = "cancelled"
-}
 export enum AssetDevelopPreset {
     Original = "Original",
     Vivid = "Vivid",
@@ -15258,38 +15443,20 @@ export enum AssetDevelopPreset {
     Noir = "Noir",
     Fade = "Fade"
 }
+export enum Version {
+    $1 = 1
+}
+export enum AssetDevelopRevisionStatus {
+    Saved = "saved",
+    Queued = "queued",
+    Rendering = "rendering",
+    Rendered = "rendered",
+    Failed = "failed",
+    Cancelled = "cancelled"
+}
 export enum AssetDevelopFileKind {
     Master = "master",
     Preview = "preview"
-}
-export enum AssetRestorationMode {
-    Faithful = "faithful",
-    Creative = "creative"
-}
-export enum AssetRestorationSourceType {
-    Image = "image",
-    Video = "video"
-}
-export enum AssetRestorationStatus {
-    PreviewQueued = "preview_queued",
-    PreviewRendering = "preview_rendering",
-    PreviewReady = "preview_ready",
-    PreviewFailed = "preview_failed",
-    PreviewCancelled = "preview_cancelled",
-    Accepted = "accepted",
-    Restoring = "restoring",
-    Restored = "restored",
-    RestoreFailed = "restore_failed",
-    RestoreCancelled = "restore_cancelled",
-    Rejected = "rejected",
-    Discarded = "discarded",
-    Expired = "expired"
-}
-export enum AssetRestorationFileKind {
-    Before = "before",
-    After = "after",
-    Result = "result",
-    ResultPreview = "result_preview"
 }
 export enum AssetEditAction {
     Crop = "crop",
@@ -15309,6 +15476,11 @@ export enum AssetEditAction {
 export enum MirrorAxis {
     Horizontal = "horizontal",
     Vertical = "vertical"
+}
+export enum EnrichmentStaleReason {
+    SourceChanged = "source-changed",
+    IdentityChanged = "identity-changed",
+    ConfigChanged = "config-changed"
 }
 export enum Status {
     Missing = "missing",
@@ -15335,11 +15507,130 @@ export enum AssetImageEnrichmentAction {
     ClearGeneratedDescription = "clear-generated-description",
     ClearGeneratedTags = "clear-generated-tags"
 }
+export enum MlDestinationKind {
+    Local = "local",
+    Lan = "lan",
+    Runpod = "runpod",
+    RunpodVideo = "runpod-video"
+}
+export enum AssetRestorationMode {
+    Faithful = "faithful",
+    Creative = "creative"
+}
+export enum AssetRestorationSourceType {
+    Image = "image",
+    Video = "video"
+}
+export enum AssetRestorationStatus {
+    PreviewQueued = "preview_queued",
+    PreviewRendering = "preview_rendering",
+    PreviewReady = "preview_ready",
+    PreviewFailed = "preview_failed",
+    PreviewCancelled = "preview_cancelled",
+    Accepted = "accepted",
+    Restoring = "restoring",
+    Restored = "restored",
+    RestoreFailed = "restore_failed",
+    RestoreCancelled = "restore_cancelled",
+    Rejected = "rejected",
+    Discarded = "discarded",
+    Expired = "expired"
+}
+export enum MlDestinationHealth {
+    Healthy = "healthy",
+    Unhealthy = "unhealthy",
+    Unknown = "unknown"
+}
+export enum AssetRestorationFileKind {
+    Before = "before",
+    After = "after",
+    Result = "result",
+    ResultPreview = "result_preview"
+}
 export enum AssetMediaSize {
     Original = "original",
     Fullsize = "fullsize",
     Preview = "preview",
     Thumbnail = "thumbnail"
+}
+export enum DocumentField {
+    Date = "date",
+    Total = "total",
+    Reference = "reference",
+    Email = "email",
+    Phone = "phone"
+}
+export enum DocumentFieldStatus {
+    Suggested = "suggested",
+    Confirmed = "confirmed",
+    Corrected = "corrected",
+    Dismissed = "dismissed"
+}
+export enum DocumentLineStatus {
+    Recognized = "recognized",
+    Corrected = "corrected",
+    Dismissed = "dismissed",
+    Kept = "kept"
+}
+export enum DocumentEditAction {
+    Confirm = "confirm",
+    Correct = "correct",
+    Dismiss = "dismiss"
+}
+export enum DuplicateDecisionKind {
+    Keepers = "keepers",
+    KeepAll = "keep-all",
+    Stack = "stack"
+}
+export enum DuplicateGroupBlock {
+    HiddenMembers = "hidden-members",
+    OtherOwner = "other-owner"
+}
+export enum DuplicateGroupKind {
+    Duplicates = "duplicates",
+    Burst = "burst"
+}
+export enum DuplicateQualityReason {
+    OriginalFormat = "original-format",
+    LargestFile = "largest-file",
+    HighestResolution = "highest-resolution",
+    MostMetadata = "most-metadata",
+    CompressedCopy = "compressed-copy",
+    LowerResolution = "lower-resolution"
+}
+export enum VideoMomentMatch {
+    Visual = "visual",
+    Caption = "caption",
+    Transcript = "transcript"
+}
+export enum EnrichmentStage {
+    Frames = "frames",
+    LockedCheck = "locked-check",
+    Description = "description",
+    MomentIndex = "moment-index",
+    MomentCaptions = "moment-captions"
+}
+export enum EnrichmentItemState {
+    Queued = "queued",
+    Running = "running",
+    Skipped = "skipped",
+    Failed = "failed",
+    Completed = "completed",
+    Cancelled = "cancelled"
+}
+export enum EnrichmentPreviewStatus {
+    Success = "success",
+    Failed = "failed",
+    Skipped = "skipped"
+}
+export enum VideoMomentSource {
+    Generated = "generated",
+    Manual = "manual"
+}
+export enum VideoMomentIndexState {
+    None = "none",
+    Ready = "ready",
+    Stale = "stale"
 }
 export enum SourceType {
     MachineLearning = "machine-learning",
@@ -15391,46 +15682,16 @@ export enum ManualJobName {
     IntegrityUntrackedFilesDeleteAll = "integrity-untracked-files-delete-all",
     IntegrityChecksumMismatchDeleteAll = "integrity-checksum-mismatch-delete-all"
 }
-export enum PhysicalDeduplicationDecision {
-    Share = "share",
-    Skip = "skip"
+export enum MemoryExportFormat {
+    Archive = "archive"
 }
-export enum PhysicalDeduplicationSkipReason {
-    ExternalLibrary = "external-library",
-    MissingSize = "missing-size",
-    NoRetainedMatch = "no-retained-match",
-    AlreadyShared = "already-shared",
-    RetainedFileMissing = "retained-file-missing"
-}
-export enum PhysicalDeduplicationPlanMode {
-    DryRun = "dry-run",
-    Apply = "apply"
-}
-export enum QueueName {
-    ThumbnailGeneration = "thumbnailGeneration",
-    MetadataExtraction = "metadataExtraction",
-    VideoConversion = "videoConversion",
-    FaceDetection = "faceDetection",
-    FacialRecognition = "facialRecognition",
-    SmartSearch = "smartSearch",
-    DuplicateDetection = "duplicateDetection",
-    VideoDuplicateDetection = "videoDuplicateDetection",
-    BackgroundTask = "backgroundTask",
-    StorageTemplateMigration = "storageTemplateMigration",
-    Migration = "migration",
-    Search = "search",
-    Sidecar = "sidecar",
-    Library = "library",
-    Notifications = "notifications",
-    BackupDatabase = "backupDatabase",
-    Ocr = "ocr",
-    ImageEnrichment = "imageEnrichment",
-    ImageDescription = "imageDescription",
-    NsfwDetection = "nsfwDetection",
-    MediaHealth = "mediaHealth",
-    Workflow = "workflow",
-    IntegrityCheck = "integrityCheck",
-    Editor = "editor"
+export enum MemoryExportStatus {
+    Pending = "pending",
+    Running = "running",
+    Ready = "ready",
+    Failed = "failed",
+    Cancelling = "cancelling",
+    Cancelled = "cancelled"
 }
 export enum QueueCommand {
     Start = "start",
@@ -15442,25 +15703,6 @@ export enum QueueCommand {
 export enum LivePhotoMatchConfidence {
     High = "high",
     Low = "low"
-}
-export enum PetSpecies {
-    Cat = "cat",
-    Dog = "dog",
-    Bird = "bird",
-    Rabbit = "rabbit",
-    Horse = "horse",
-    Reptile = "reptile",
-    Fish = "fish",
-    SmallMammal = "small_mammal",
-    Other = "other"
-}
-export enum PetObservationSource {
-    Manual = "manual",
-    Review = "review"
-}
-export enum PetObservationState {
-    Confirmed = "confirmed",
-    Rejected = "rejected"
 }
 export enum MediaHealthCategory {
     Missing = "missing",
@@ -15481,15 +15723,15 @@ export enum MediaHealthStatus {
     DeleteQueued = "delete_queued",
     Deleted = "deleted"
 }
-export enum MediaHealthSeverity {
-    Info = "info",
-    Warning = "warning",
-    Critical = "critical"
-}
 export enum MediaHealthRootKind {
     Managed = "managed",
     Library = "library",
     Recovery = "recovery"
+}
+export enum MediaHealthSeverity {
+    Info = "info",
+    Warning = "warning",
+    Critical = "critical"
 }
 export enum MediaHealthOperationMode {
     Scan = "scan",
@@ -15502,146 +15744,35 @@ export enum MediaHealthActivityAction {
     RecoverDamagedMedia = "recover-damaged-media",
     TrashDamagedMedia = "trash-damaged-media"
 }
-export enum MediaOperationKind {
-    StudioExport = "studio_export",
-    StudioPreview = "studio_preview",
-    Restoration = "restoration",
-    RestorationPreview = "restoration_preview",
-    QuickEdit = "quick_edit",
-    Bulk = "bulk",
-    StudioBundleExport = "studio_bundle_export",
-    StudioBundleImport = "studio_bundle_import",
-    EnrichmentPlan = "enrichment_plan",
-    MediaHealth = "media_health",
-    IcloudSync = "icloud_sync",
-    TakeoutImport = "takeout_import",
-    PhysicalDeduplication = "physical_deduplication"
+export enum DateMode {
+    Set = "set",
+    Shift = "shift"
 }
-export enum MediaOperationBulkAction {
-    Favorite = "favorite",
-    Unfavorite = "unfavorite",
-    Archive = "archive",
-    Unarchive = "unarchive",
-    AddToAlbum = "add-to-album",
-    RemoveFromAlbum = "remove-from-album",
-    Tag = "tag",
-    Untag = "untag",
-    ChangeDate = "change-date",
-    ChangeDescription = "change-description",
-    ChangeLocation = "change-location",
-    MarkSensitive = "mark-sensitive",
-    UnmarkSensitive = "unmark-sensitive",
-    Delete = "delete",
-    DeletePermanently = "delete-permanently",
-    Restore = "restore",
-    Stack = "stack",
-    Unstack = "unstack",
-    RefreshThumbnails = "refresh-thumbnails",
-    RefreshMetadata = "refresh-metadata",
-    RefreshEncoded = "refresh-encoded",
-    RefreshFaces = "refresh-faces",
-    RelinkLivePhoto = "relink-live-photo",
-    ResolveDuplicates = "resolve-duplicates",
-    UndoDuplicates = "undo-duplicates",
-    RelinkMissingMedia = "relink-missing-media",
-    RecoverDamagedMedia = "recover-damaged-media",
-    TrashDamagedMedia = "trash-damaged-media"
-}
-export enum MediaOperationStatus {
-    Queued = "queued",
-    Preparing = "preparing",
-    Rendering = "rendering",
-    Validating = "validating",
-    Completed = "completed",
-    Cancelling = "cancelling",
-    Cancelled = "cancelled",
-    Failed = "failed",
-    Paused = "paused"
-}
-export enum MediaOperationDestination {
-    Local = "local",
-    Lan = "lan",
-    RunPod = "runpod"
+export enum MediaOperationItemStatus {
+    Ok = "ok",
+    Skipped = "skipped",
+    Failed = "failed"
 }
 export enum MediaOperationCheckpointState {
     Pending = "pending",
     Complete = "complete",
     Invalid = "invalid"
 }
-export enum StudioPreviewQuality {
-    Draft = "draft",
-    Standard = "standard",
-    Full = "full"
+export enum MemorySearchOrder {
+    Asc = "asc",
+    Desc = "desc",
+    Random = "random"
 }
-export enum StudioPreviewStatus {
-    Pending = "pending",
-    Rendering = "rendering",
-    Ready = "ready",
-    Superseded = "superseded",
-    Failed = "failed",
-    Evicted = "evicted"
+export enum MemoryType {
+    OnThisDay = "on_this_day",
+    EventStory = "event_story",
+    YearInReview = "year_in_review"
 }
-export enum MlDestinationKind {
-    Local = "local",
-    Lan = "lan",
-    RunPod = "runpod",
-    RunPodVideo = "runpod-video"
+export enum Kind {
+    EventStory = "event_story"
 }
-export enum MlWorkload {
-    Face = "face",
-    Clip = "clip",
-    Ocr = "ocr",
-    Enrichment = "enrichment",
-    RestorationFaithful = "restoration-faithful",
-    RestorationCreative = "restoration-creative",
-    StudioAi = "studio-ai"
-}
-export enum MlDestinationHealth {
-    Healthy = "healthy",
-    Unhealthy = "unhealthy",
-    Unknown = "unknown"
-}
-export enum MlAdmissionRefusal {
-    DestinationMissing = "destination-missing",
-    DestinationDisabled = "destination-disabled",
-    WorkloadNotRouted = "workload-not-routed",
-    WorkloadNotAllowed = "workload-not-allowed",
-    WorkloadNotServed = "workload-not-served",
-    ConsentMissing = "consent-missing",
-    BudgetExceeded = "budget-exceeded",
-    EndpointUnresolved = "endpoint-unresolved",
-    DestinationUnhealthy = "destination-unhealthy",
-    RoleConflict = "role-conflict"
-}
-export enum MlWorkerRole {
-    LibraryAnalysis = "library-analysis",
-    Restoration = "restoration",
-    Studio = "studio",
-    Mixed = "mixed",
-    Unassigned = "unassigned"
-}
-export enum MlWorkerAcceleration {
-    Unknown = "unknown",
-    Cpu = "cpu",
-    Gpu = "gpu"
-}
-export enum MlWorkerReadiness {
-    Unknown = "unknown",
-    Disabled = "disabled",
-    Unreachable = "unreachable",
-    NotServing = "not-serving",
-    Cpu = "cpu",
-    ModelReady = "model-ready"
-}
-export enum WorkerCredentialState {
-    None = "none",
-    Stored = "stored",
-    Managed = "managed",
-    Enrolled = "enrolled"
-}
-export enum WorkerInventorySource {
-    MlDestination = "ml-destination",
-    RenderWorker = "render-worker"
+export enum Kind2 {
+    YearInReview = "year_in_review"
 }
 export enum RestorationDynamicRange {
     Sdr = "sdr",
@@ -15661,104 +15792,28 @@ export enum RestorationModelState {
     GpuUnqualified = "gpu-unqualified",
     InsufficientVram = "insufficient-vram"
 }
-export enum DuplicateDecisionKind {
-    Keepers = "keepers",
-    KeepAll = "keep-all",
-    Stack = "stack"
-}
-export enum DuplicateGroupBlock {
-    HiddenMembers = "hidden-members",
-    OtherOwner = "other-owner"
-}
-export enum DuplicateGroupKind {
-    Duplicates = "duplicates",
-    Burst = "burst"
-}
-export enum DuplicateQualityReason {
-    OriginalFormat = "original-format",
-    LargestFile = "largest-file",
-    HighestResolution = "highest-resolution",
-    MostMetadata = "most-metadata",
-    CompressedCopy = "compressed-copy",
-    LowerResolution = "lower-resolution"
-}
-export enum MediaOperationItemStatus {
-    Ok = "ok",
-    Skipped = "skipped",
-    Failed = "failed"
-}
-export enum DateMode {
-    Set = "set",
-    Shift = "shift"
-}
-export enum RenderWorkerStatus {
-    Active = "active",
-    Revoked = "revoked"
-}
-export enum RenderWorkerAuditEvent {
-    Enrolled = "enrolled",
-    Admitted = "admitted",
-    Refused = "refused",
-    ClaimRefused = "claim_refused",
-    LimitExceeded = "limit_exceeded",
-    Revoked = "revoked",
-    Updated = "updated"
-}
-export enum RenderWorkerRefusalReason {
-    InvalidCredential = "invalid_credential",
-    WorkerRevoked = "worker_revoked",
-    SessionExpired = "session_expired",
-    ConformanceStale = "conformance_stale",
-    ConformanceReplayed = "conformance_replayed",
-    EngineDigestMismatch = "engine_digest_mismatch",
-    SoftwareRenderer = "software_renderer",
-    DestinationMismatch = "destination_mismatch",
-    WorkerMismatch = "worker_mismatch",
-    ScopeExceeded = "scope_exceeded",
-    WorkerConcurrencyExceeded = "worker_concurrency_exceeded",
-    UserConcurrencyExceeded = "user_concurrency_exceeded",
-    GpuMemoryInsufficient = "gpu_memory_insufficient",
-    WallClockExceeded = "wall_clock_exceeded",
-    OutputBytesExceeded = "output_bytes_exceeded",
-    DestinationUnavailable = "destination_unavailable",
-    ManifestIncomplete = "manifest_incomplete"
-}
-export enum MemorySearchOrder {
-    Asc = "asc",
-    Desc = "desc",
-    Random = "random"
-}
-export enum MemoryType {
-    OnThisDay = "on_this_day",
-    EventStory = "event_story",
-    YearInReview = "year_in_review"
-}
-export enum MemoryExportFormat {
-    Archive = "archive"
-}
-export enum MemoryExportStatus {
-    Pending = "pending",
-    Running = "running",
-    Ready = "ready",
-    Failed = "failed",
-    Cancelling = "cancelling",
-    Cancelled = "cancelled"
-}
-export enum TrashReviewAction {
-    Trash = "trash",
-    Restore = "restore",
-    RestoreAll = "restore-all",
-    Delete = "delete",
-    Empty = "empty"
-}
-export enum TrashItemSort {
-    Recent = "recent",
-    Size = "size",
-    Name = "name"
-}
 export enum PartnerDirection {
     SharedBy = "shared-by",
     SharedWith = "shared-with"
+}
+export enum PetSpecies {
+    Cat = "cat",
+    Dog = "dog",
+    Bird = "bird",
+    Rabbit = "rabbit",
+    Horse = "horse",
+    Reptile = "reptile",
+    Fish = "fish",
+    SmallMammal = "small_mammal",
+    Other = "other"
+}
+export enum PetObservationSource {
+    Manual = "manual",
+    Review = "review"
+}
+export enum PetObservationState {
+    Confirmed = "confirmed",
+    Rejected = "rejected"
 }
 export enum WorkflowType {
     AssetV1 = "AssetV1"
@@ -15788,6 +15843,7 @@ export enum JobName {
     AssetGenerateVideoDuplicateFramesQueueAll = "AssetGenerateVideoDuplicateFramesQueueAll",
     AssetGenerateVideoDuplicateFrames = "AssetGenerateVideoDuplicateFrames",
     AssetEditThumbnailGeneration = "AssetEditThumbnailGeneration",
+    AssetDevelopRender = "AssetDevelopRender",
     AssetVideoEditGeneration = "AssetVideoEditGeneration",
     AssetEncodeVideoQueueAll = "AssetEncodeVideoQueueAll",
     AssetEncodeVideo = "AssetEncodeVideo",
@@ -15820,6 +15876,7 @@ export enum JobName {
     HlsSessionCleanup = "HlsSessionCleanup",
     MemoryCleanup = "MemoryCleanup",
     MemoryGenerate = "MemoryGenerate",
+    MemoryExport = "MemoryExport",
     NotificationsCleanup = "NotificationsCleanup",
     NotifyUserSignup = "NotifyUserSignup",
     NotifyAlbumInvite = "NotifyAlbumInvite",
@@ -15863,6 +15920,10 @@ export enum JobName {
     IntegrityDeleteReports = "IntegrityDeleteReports"
 }
 export enum Status3 {
+    Preparing = "preparing",
+    Rendering = "rendering"
+}
+export enum Status4 {
     Idle = "idle",
     Provisioning = "provisioning",
     Starting = "starting",
@@ -15910,9 +15971,42 @@ export enum AssetIdErrorReason {
     NoPermission = "no_permission",
     NotFound = "not_found"
 }
-export enum StudioProjectAccess {
-    Owner = "owner",
-    Reviewer = "reviewer"
+export enum SharedSpaceEventType {
+    AssetsAdded = "AssetsAdded",
+    AssetsRemoved = "AssetsRemoved",
+    AlbumLinked = "AlbumLinked",
+    AlbumUnlinked = "AlbumUnlinked",
+    PersonLinked = "PersonLinked",
+    PersonUnlinked = "PersonUnlinked",
+    MemberJoined = "MemberJoined",
+    MemberLeft = "MemberLeft",
+    MemberRemoved = "MemberRemoved",
+    MemberRoleChanged = "MemberRoleChanged",
+    Comment = "Comment",
+    Reply = "Reply",
+    Like = "Like"
+}
+export enum StudioBundleSourceMode {
+    Embedded = "embedded",
+    Reference = "reference"
+}
+export enum StudioBundleSourceResolution {
+    Kept = "kept",
+    Suggested = "suggested",
+    Missing = "missing"
+}
+export enum StudioPreviewQuality {
+    Draft = "draft",
+    Standard = "standard",
+    Full = "full"
+}
+export enum StudioPreviewStatus {
+    Pending = "pending",
+    Rendering = "rendering",
+    Ready = "ready",
+    Superseded = "superseded",
+    Failed = "failed",
+    Evicted = "evicted"
 }
 export enum StudioProjectShelf {
     Active = "active",
@@ -15924,14 +16018,9 @@ export enum StudioProjectSort {
     Recent = "recent",
     Name = "name"
 }
-export enum StudioBundleSourceMode {
-    Embedded = "embedded",
-    Reference = "reference"
-}
-export enum StudioBundleSourceResolution {
-    Kept = "kept",
-    Suggested = "suggested",
-    Missing = "missing"
+export enum StudioProjectAccess {
+    Owner = "owner",
+    Reviewer = "reviewer"
 }
 export enum SyncEntityType {
     AuthUserV1 = "AuthUserV1",
@@ -16027,7 +16116,7 @@ export enum SyncRequestType {
     AssetFacesV3 = "AssetFacesV3",
     UserMetadataV1 = "UserMetadataV1"
 }
-export enum Kind {
+export enum Kind3 {
     Travel = "travel",
     Documents = "documents",
     Screenshots = "screenshots",
@@ -16035,13 +16124,89 @@ export enum Kind {
     Pets = "pets",
     Nature = "nature"
 }
+export enum TakeoutAction {
+    Scan = "scan",
+    Import = "import"
+}
+export enum TakeoutPhase {
+    Sources = "sources",
+    Scanning = "scanning",
+    Review = "review",
+    Importing = "importing",
+    Completed = "completed"
+}
+export enum TakeoutSourceKind {
+    Zip = "zip",
+    Directory = "directory"
+}
+export enum TakeoutState {
+    Sources = "sources",
+    Queued = "queued",
+    Scanning = "scanning",
+    Review = "review",
+    Importing = "importing",
+    Paused = "paused",
+    Cancelling = "cancelling",
+    Cancelled = "cancelled",
+    Failed = "failed",
+    Completed = "completed"
+}
+export enum TakeoutControlAction {
+    Pause = "pause",
+    Resume = "resume",
+    Cancel = "cancel"
+}
+export enum TakeoutItemState {
+    Ready = "ready",
+    Review = "review",
+    Importing = "importing",
+    Imported = "imported",
+    Matched = "matched",
+    Skipped = "skipped",
+    Failed = "failed"
+}
+export enum TakeoutItemKind {
+    Image = "image",
+    Video = "video"
+}
+export enum TakeoutWarning {
+    AmbiguousSidecar = "ambiguous_sidecar",
+    NoSidecar = "no_sidecar",
+    InvalidSidecar = "invalid_sidecar",
+    Trashed = "trashed",
+    Locked = "locked"
+}
+export enum TakeoutPairState {
+    Suggested = "suggested",
+    Approved = "approved",
+    Skipped = "skipped",
+    Linked = "linked",
+    Failed = "failed"
+}
 export enum TimeBucketDateType {
     Added = "added",
     Taken = "taken"
 }
+export enum AssetLockReason {
+    Marked = "marked",
+    Detected = "detected",
+    ImmichLockedFolder = "immich-locked-folder"
+}
 export enum AssetOrderBy {
     TakenAt = "takenAt",
     CreatedAt = "createdAt"
+}
+export enum TrashReviewAction {
+    Trash = "trash",
+    Restore = "restore",
+    RestoreAll = "restore-all",
+    Delete = "delete",
+    Empty = "empty"
+}
+export enum TrashItemSort {
+    Recent = "recent",
+    Size = "size",
+    Name = "name"
 }
 export enum WorkflowResult {
     Completed = "completed",
@@ -16061,102 +16226,4 @@ export enum UserMetadataKey {
     Preferences = "preferences",
     License = "license",
     Onboarding = "onboarding"
-}
-export enum EnrichmentStage {
-    Frames = "frames",
-    LockedCheck = "locked-check",
-    Description = "description",
-    MomentIndex = "moment-index",
-    MomentCaptions = "moment-captions"
-}
-export enum EnrichmentItemState {
-    Queued = "queued",
-    Running = "running",
-    Skipped = "skipped",
-    Failed = "failed",
-    Completed = "completed",
-    Cancelled = "cancelled"
-}
-export enum EnrichmentPreviewStatus {
-    Success = "success",
-    Failed = "failed",
-    Skipped = "skipped"
-}
-export enum VideoMomentMatch {
-    Visual = "visual",
-    Caption = "caption",
-    Transcript = "transcript"
-}
-export enum VideoMomentSource {
-    Generated = "generated",
-    Manual = "manual"
-}
-export enum EnrichmentStaleReason {
-    SourceChanged = "source-changed",
-    IdentityChanged = "identity-changed",
-    ConfigChanged = "config-changed"
-}
-export enum VideoMomentIndexState {
-    None = "none",
-    Ready = "ready",
-    Stale = "stale"
-}
-export enum TakeoutAction {
-    Scan = "scan",
-    Import = "import"
-}
-export enum TakeoutSourceKind {
-    Zip = "zip",
-    Directory = "directory"
-}
-export enum TakeoutPhase {
-    Sources = "sources",
-    Scanning = "scanning",
-    Review = "review",
-    Importing = "importing",
-    Completed = "completed"
-}
-export enum TakeoutState {
-    Sources = "sources",
-    Queued = "queued",
-    Scanning = "scanning",
-    Review = "review",
-    Importing = "importing",
-    Paused = "paused",
-    Cancelling = "cancelling",
-    Cancelled = "cancelled",
-    Failed = "failed",
-    Completed = "completed"
-}
-export enum TakeoutControlAction {
-    Pause = "pause",
-    Resume = "resume",
-    Cancel = "cancel"
-}
-export enum TakeoutItemKind {
-    Image = "image",
-    Video = "video"
-}
-export enum TakeoutItemState {
-    Ready = "ready",
-    Review = "review",
-    Importing = "importing",
-    Imported = "imported",
-    Matched = "matched",
-    Skipped = "skipped",
-    Failed = "failed"
-}
-export enum TakeoutWarning {
-    AmbiguousSidecar = "ambiguous_sidecar",
-    NoSidecar = "no_sidecar",
-    InvalidSidecar = "invalid_sidecar",
-    Trashed = "trashed",
-    Locked = "locked"
-}
-export enum TakeoutPairState {
-    Suggested = "suggested",
-    Approved = "approved",
-    Skipped = "skipped",
-    Linked = "linked",
-    Failed = "failed"
 }
