@@ -50,8 +50,9 @@
 
   const domId = (row: RunningJobRow) => `fl-running-${row.id.replaceAll(/[^a-zA-Z0-9-]/g, '-')}`;
 
+  /** The kind of work, and for a queue what is in hand now; the state itself is the chip. */
   const metaOf = (row: RunningJobRow) => {
-    const parts = [$t(row.kindKey), $t(row.statusKey)];
+    const parts = [$t(row.kindKey)];
     if (row.source === 'queue') {
       parts.push(
         $t('frameleaf_running_queue_counts', {
@@ -139,12 +140,19 @@
       {#each rows as row (row.id)}
         {@const name = titleOf(row)}
         {@const id = domId(row)}
-        <li class="fl-job" class:paused={row.paused} class:pausing={row.pausing}>
+        <li class="fl-job is-{row.tone}" class:paused={row.paused} class:pausing={row.pausing}>
           <a class="fl-job-main" href={row.href} onclick={() => onNavigate?.()}>
             <span class="fl-job-icon" aria-hidden="true"><Icon icon={iconOf(row)} size={18} /></span>
             <span class="fl-job-text">
-              <strong>{name}</strong>
-              <span>{metaOf(row)}</span>
+              <span class="fl-job-row">
+                <strong>{name}</strong>
+                <!-- The prototype's Activity chip: the state in words, with a pulsing dot while work moves. -->
+                <span class="fl-chip fl-chip--{row.tone}">
+                  {#if row.live}<i class="fl-dot" aria-hidden="true"></i>{/if}
+                  {$t(row.statusKey)}
+                </span>
+              </span>
+              <span class="fl-job-meta">{metaOf(row)}</span>
             </span>
           </a>
 
@@ -278,7 +286,10 @@
   .fl-job:hover .fl-job-icon {
     background: var(--fl-panel);
   }
-  .fl-job.paused .fl-job-icon {
+  .fl-job.is-warning .fl-job-icon {
+    color: var(--fl-warning);
+  }
+  .fl-job.is-neutral .fl-job-icon {
     color: var(--fl-muted);
   }
   .fl-job-text {
@@ -293,12 +304,61 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .fl-job-text span {
+  .fl-job-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+  .fl-job-row strong {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .fl-job-meta {
     overflow: hidden;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .fl-chip {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-raised);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-micro);
+    white-space: nowrap;
+  }
+  .fl-job:hover .fl-chip {
+    background: var(--fl-panel);
+  }
+  .fl-chip--info {
+    color: var(--fl-teal);
+  }
+  .fl-chip--success {
+    color: var(--fl-accent);
+  }
+  .fl-chip--warning {
+    color: var(--fl-warning);
+  }
+  .fl-chip--danger {
+    color: var(--fl-danger);
+  }
+  .fl-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: fl-dot-pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes fl-dot-pulse {
+    50% {
+      opacity: 0.35;
+    }
   }
   .fl-job-control {
     display: grid;
@@ -336,21 +396,29 @@
     /* Under the text, not under the icon: the bar belongs to the words above it. */
     padding: 0 0.625rem 0 calc(34px + 1.125rem);
   }
+  /* The prototype's Activity bar: 6px, raised track, teal fill; warning while held, muted queued. */
   .fl-job-bar {
     position: relative;
-    height: 4px;
+    height: 6px;
     overflow: hidden;
-    border-radius: 2px;
-    background: var(--fl-border);
+    border-radius: 3px;
+    background: var(--fl-raised);
+  }
+  .fl-job:hover .fl-job-bar {
+    background: var(--fl-panel);
   }
   .fl-job-bar span {
     display: block;
     height: 100%;
     width: 0;
+    border-radius: 3px;
     background: var(--fl-teal);
-    transition: width var(--fl-motion-slow) var(--fl-ease);
+    transition: width 700ms linear;
   }
-  .fl-job.paused .fl-job-bar span {
+  .fl-job.is-warning .fl-job-bar span {
+    background: var(--fl-warning);
+  }
+  .fl-job.is-neutral .fl-job-bar span {
     background: var(--fl-muted);
   }
   .fl-job-bar.indeterminate span {
@@ -377,6 +445,9 @@
     .fl-job-bar span,
     .fl-job-control {
       transition: none;
+    }
+    .fl-dot {
+      animation: none;
     }
     /* A still stripe says "working, amount unknown" without moving. */
     .fl-job-bar.indeterminate span {

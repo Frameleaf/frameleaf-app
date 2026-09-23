@@ -394,6 +394,7 @@ describe('pause and resume (FL-104)', () => {
 
     expect(item).toMatchObject({
       statusKey: 'frameleaf_activity_status_paused',
+      tone: 'warning',
       paused: true,
       running: false,
       finished: false,
