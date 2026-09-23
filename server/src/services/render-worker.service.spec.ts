@@ -446,7 +446,8 @@ describe(RenderWorkerService.name, () => {
       expect(claim!.inputs[0]).not.toHaveProperty('token');
       expect(studioResources.resolveProjectResources).not.toHaveBeenCalled();
       expect(claim!.inputs[0].url).toMatch(new RegExp(`^/api/render-workers/operations/${queued.id}/inputs/`));
-      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(OWNER_A, new Set([queued.assetId]), false);
+      // Elevated: a Locked source is rendered like any other once its owner submitted the job.
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(OWNER_A, new Set([queued.assetId]), true);
       expect(workers.claimQueued).toHaveBeenCalledWith(
         expect.objectContaining({ id: queued.id, workerId: workerA.id }),
       );
@@ -512,11 +513,15 @@ describe(RenderWorkerService.name, () => {
             revision: 7,
             destination: StudioDestination.Lan,
             cloudConsent: false,
+            backgroundRunner: true,
           }),
         );
+        // The owner's Locked, sensitive and hidden sources resolve for a background task: the
+        // acting session is the worker's, elevated, with no hidden-content filter and no shared link.
         const auth = studioResources.resolveProjectResources.mock.calls[0][0];
         expect(auth).not.toHaveProperty('sharedLink');
-        expect(auth).not.toHaveProperty('session');
+        expect(auth).not.toHaveProperty('hiddenContent');
+        expect(auth.session).toEqual({ id: sessionA.id, hasElevatedPermission: true });
         expect(studioResources.issueReadGrants).toHaveBeenCalledWith(
           expect.objectContaining({ digest: 'digest-1' }),
           expect.objectContaining({ workerId: workerA.id }),
@@ -906,7 +911,7 @@ describe(RenderWorkerService.name, () => {
       const file = await sut.readInput(SESSION_A, claimedByA.id, grantFor(claimedByA, sessionA));
 
       expect(file.path).toBe(asset.originalPath);
-      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(OWNER_A, new Set([claimedByA.assetId]), false);
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(OWNER_A, new Set([claimedByA.assetId]), true);
     });
 
     it('refuses another worker using a grant minted for the claiming worker: cross-worker', async () => {
@@ -1040,7 +1045,11 @@ describe(RenderWorkerService.name, () => {
         expect(file.path).toBe('/library/owner-a/clip-1.mov');
         expect(studioResources.verifyReadGrant).toHaveBeenCalledWith('fl90-clip-1', {
           workerId: workerA.id,
-          auth: expect.objectContaining({ user: expect.objectContaining({ id: OWNER_A }) }),
+          auth: expect.objectContaining({
+            user: expect.objectContaining({ id: OWNER_A }),
+            session: { id: sessionA.id, hasElevatedPermission: true },
+          }),
+          backgroundRunner: true,
         });
         expect(mocks.asset.getById).not.toHaveBeenCalled();
       });
