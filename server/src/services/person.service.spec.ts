@@ -351,7 +351,11 @@ describe(PersonService.name, () => {
 
       mocks.person.getByGroupId.mockResolvedValue(person);
       mocks.person.update.mockResolvedValue(person);
-      mocks.person.getForFeatureFaceUpdate.mockResolvedValue(face);
+      mocks.person.getForFeatureFaceUpdate.mockResolvedValue({
+        id: face.id,
+        ownerId: auth.user.id,
+        visibility: AssetVisibility.Timeline,
+      });
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([face.assetId]));
       mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
 
