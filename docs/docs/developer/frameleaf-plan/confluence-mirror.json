@@ -710,7 +710,7 @@
       "sourceSha256": "68f40f4a1de2791641ab09e386f8d5922b9d6f44498b187fd10ab0bf3e43cf42",
       "title": "Frameleaf Repository Agent Instructions",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440673",
-      "verification": "Version 7 (published from branch claude/frameleaf-design-rules-sep23, commit 7e982c2a93ddbbefc12d06d5892fda87bce42903) carries the September 23, 2026 rules now on the integration branch: do not touch the iOS or Android apps, the September 22 prototype is authoritative, and design adaptation names production Svelte only. FL-44 read the full page back on the integration head and its body and source hash marker match the current AGENTS.md; no write was needed.",
+      "verification": "Version 7 (published from branch claude/frameleaf-design-rules-sep23, commit 7e982c2a93ddbbefc12d06d5892fda87bce42903) carries the September 23, 2026 rules now on the integration branch: do not touch the iOS or Android apps, the September 22 prototype is authoritative, and design adaptation names production Svelte only. FL-44 read back the full page on the integration head and its body and source hash marker match the current AGENTS.md; no write was needed.",
       "verified": true,
       "verifiedAt": "2026-09-23T10:35:01.000Z",
       "version": 7
@@ -763,7 +763,7 @@
       "sourceSha256": "1d64dcbf499b84a94a20744c50fdbbc5227a25e997a1030a38fe3fa4707be69d",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read the full page back on the integration head; every section hash marker matches the current source and no write was needed.",
+      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
       "verified": true,
       "verifiedAt": "2026-09-23T10:35:01.000Z",
       "version": 8
@@ -776,7 +776,7 @@
       "sourceSha256": "1aee3224386aed5ce97f80493d41d6fb6492c792e7d49ca54e08a35674051ecb",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read the full page back on the integration head; every section hash marker matches the current source and no write was needed.",
+      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
       "verified": true,
       "verifiedAt": "2026-09-23T10:35:01.000Z",
       "version": 8
@@ -789,7 +789,7 @@
       "sourceSha256": "936f26b7c0b50e95f7c8ecca35664c8ab4d753283f942a76a3bf918427d59401",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read the full page back on the integration head; every section hash marker matches the current source and no write was needed.",
+      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
       "verified": true,
       "verifiedAt": "2026-09-23T10:35:01.000Z",
       "version": 8
@@ -802,7 +802,7 @@
       "sourceSha256": "5c0e1385563ae9286aeba5a7b5e2f02acfb77012f4edc60639eeadf4f98924a5",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read the full page back on the integration head; every section hash marker matches the current source and no write was needed.",
+      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
       "verified": true,
       "verifiedAt": "2026-09-23T10:35:01.000Z",
       "version": 8
@@ -815,7 +815,7 @@
       "sourceSha256": "5e9bde384f4c89f98e86977e25117394736e392dc7cd6691d62c5bff7fe840de",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read the full page back on the integration head; every section hash marker matches the current source and no write was needed.",
+      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
       "verified": true,
       "verifiedAt": "2026-09-23T10:35:01.000Z",
       "version": 8
@@ -828,7 +828,7 @@
       "sourceSha256": "d8fb86f6284408e6a843f41a7ba8047e1c68f55e8cc8eb0006c198b2ed988744",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read the full page back on the integration head; every section hash marker matches the current source and no write was needed.",
+      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
       "verified": true,
       "verifiedAt": "2026-09-23T10:35:01.000Z",
       "version": 8
