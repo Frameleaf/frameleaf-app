@@ -20,8 +20,24 @@ const setup = (db?: Kysely<DB>) => {
 
 const LEASE_MS = 60_000;
 
+/**
+ * The unreleased-remote query is deliberately global — it is the cleanup pass's view of the whole
+ * instance — so a test that shares the database with its neighbours must look for its own row
+ * rather than counting rows.
+ */
+const unreleasedIds = async (sut: MediaOperationRepository, id: string) =>
+  (await sut.getUnreleasedRemoteOperations(1000)).filter((operation) => operation.id === id);
+
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
+});
+
+/**
+ * Claiming picks the oldest queued job on the instance, so a row left behind by one test would
+ * be handed to the next one. Each test starts from an empty table; checkpoints cascade away.
+ */
+afterEach(async () => {
+  await defaultDatabase.deleteFrom('media_operation').execute();
 });
 
 describe(MediaOperationRepository.name, () => {
@@ -169,7 +185,7 @@ describe(MediaOperationRepository.name, () => {
         error: 'The worker stopped responding',
       });
 
-      expect(result).toEqual({ requeued: 1, failed: 1 });
+      expect(result).toEqual({ requeued: 1, failed: 1, abandonedCancels: 0 });
       await expect(sut.getForOwner(resumable.id, user.id)).resolves.toMatchObject({
         status: MediaOperationStatus.Queued,
         claimToken: null,
@@ -178,6 +194,31 @@ describe(MediaOperationRepository.name, () => {
         status: MediaOperationStatus.Failed,
         errorCode: 'worker_lost',
       });
+    });
+
+    it('settles a cancellation whose worker never came back, without claiming it was acknowledged', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id, {
+        destination: MediaOperationDestination.RunPod,
+        remoteJobId: 'runpod-3',
+      });
+      await sut.claimNext({ kinds: [MediaOperationKind.StudioExport], workerId: 'worker-a', leaseMs: LEASE_MS });
+      await sut.requestCancel(operation.id, user.id);
+      await ctx.database
+        .updateTable('media_operation')
+        .set({ claimExpiresAt: new Date(Date.now() - 60_000) })
+        .where('id', '=', operation.id)
+        .execute();
+
+      const result = await sut.recoverExpiredClaims({ errorCode: 'worker_lost', error: 'gone' });
+
+      expect(result.abandonedCancels).toBe(1);
+      const after = await sut.getForOwner(operation.id, user.id);
+      expect(after!.status).toBe(MediaOperationStatus.Cancelled);
+      // Nobody confirmed the remote stopped, so the obligation survives.
+      expect(after!.cancelAcknowledgedAt).toBeNull();
+      await expect(unreleasedIds(sut, operation.id)).resolves.toHaveLength(1);
     });
   });
 
@@ -207,13 +248,13 @@ describe(MediaOperationRepository.name, () => {
       expect(cancelling!.cancelAcknowledgedAt).toBeNull();
 
       // Until the acknowledgement, the remote job is still an open obligation.
-      await expect(sut.getUnreleasedRemoteOperations(10)).resolves.toHaveLength(1);
+      await expect(unreleasedIds(sut, operation.id)).resolves.toHaveLength(1);
 
       await expect(sut.acknowledgeCancel(operation.id, { released: true })).resolves.toBe(true);
       await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
         status: MediaOperationStatus.Cancelled,
       });
-      await expect(sut.getUnreleasedRemoteOperations(10)).resolves.toHaveLength(0);
+      await expect(unreleasedIds(sut, operation.id)).resolves.toHaveLength(0);
     });
 
     it('keeps an unacknowledged remote job visible after the owner clears it', async () => {
@@ -230,7 +271,7 @@ describe(MediaOperationRepository.name, () => {
       await expect(sut.dismiss(operation.id, user.id)).resolves.toBe(true);
       const { items } = await sut.list({ ownerId: user.id, take: 50, skip: 0 });
       expect(items.map((item) => item.id)).not.toContain(operation.id);
-      await expect(sut.getUnreleasedRemoteOperations(10)).resolves.toHaveLength(1);
+      await expect(unreleasedIds(sut, operation.id)).resolves.toHaveLength(1);
     });
 
     it('refuses to cancel another account’s job', async () => {
