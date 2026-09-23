@@ -82,9 +82,7 @@ describe('job state', () => {
   it('never calls a written package verified until a verification says so', () => {
     expect(packageState(packageOf()).key).toBe('frameleaf_preservation_state_unverified');
     expect(
-      packageState(
-        packageOf({ verification: { status: PreservationVerificationStatus.Verified } as never }),
-      ).key,
+      packageState(packageOf({ verification: { status: PreservationVerificationStatus.Verified } as never })).key,
     ).toBe('frameleaf_preservation_state_verified');
     expect(
       packageState(packageOf({ verification: { status: PreservationVerificationStatus.Problems } as never })),

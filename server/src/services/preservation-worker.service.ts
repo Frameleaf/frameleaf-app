@@ -2,12 +2,12 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { extname, join } from 'node:path';
 import z from 'zod';
+import type { UpdateAssetDto } from 'src/dtos/asset.dto.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
-import type { UpdateAssetDto } from 'src/dtos/asset.dto.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetEditActionItem, AssetEditsCreateDto } from 'src/dtos/editing.dto.js';
 import {
   AlbumKind,
@@ -42,7 +42,6 @@ import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { StackService } from 'src/services/stack.service.js';
 import { cropBoxOf, isRegionInsideCrop } from 'src/utils/documents.js';
-import { canonicalJson } from 'src/utils/studio-project.js';
 import {
   GENERATED_DESCRIPTION_MARK,
   PRESERVATION_ALBUMS_ENTRY,
@@ -94,6 +93,7 @@ import {
   splitDescription,
   verificationStatus,
 } from 'src/utils/preservation.js';
+import { canonicalJson } from 'src/utils/studio-project.js';
 import { upsertTags } from 'src/utils/tag.js';
 
 /** How often the worker looks for queued preservation jobs. */
@@ -130,9 +130,7 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 
 /** Operator detail without server paths: a message may be shown to the owner. */
 const describe = (error: unknown) =>
-  (error instanceof Error ? error.message : String(error))
-    .replaceAll(/(?:\/[\w .@-]+){2,}/g, '[path]')
-    .slice(0, 500);
+  (error instanceof Error ? error.message : String(error)).replaceAll(/(?:\/[\w .@-]+){2,}/g, '[path]').slice(0, 500);
 
 const errnoOf = (error: unknown) => (error as NodeJS.ErrnoException | undefined)?.code;
 
@@ -467,7 +465,7 @@ export class PreservationWorkerService {
         throw new PreservationPackageError('checksum_mismatch', 'The original does not match its library checksum');
       }
 
-      let metadata: PreservationFileDigest & { path: string } | null = null;
+      let metadata: (PreservationFileDigest & { path: string }) | null = null;
       if (found.includeMetadata) {
         const sidecar = await this.buildSidecar(found.ownerId, asset, digests);
         const written = await this.files.writeDocument(join(found.path, names.metadata), preservationJson(sidecar));
@@ -654,7 +652,7 @@ export class PreservationWorkerService {
    * description and its enrichment metadata before that, exactly as enrichment itself reads them.
    */
   private async enrichmentProvenance(assetId: string, description: string | null) {
-    let metadata: Record<string, unknown> | null = null;
+    let metadata: Record<string, unknown> | null;
     let manual: string | null;
     let generated: string[];
     if (await this.enrichment.shouldReadSidecar()) {
@@ -1091,7 +1089,7 @@ export class PreservationWorkerService {
       await this.repository.updatePackage(found.id, {
         verification,
         verifiedAt: new Date(),
-        ...(found.origin === 'export' ? {} : { status: this.readStatus(found) }),
+        ...(found.origin !== 'export' && { status: this.readStatus(found) }),
       });
       await this.finish(operation.id, claimToken, { ...result, phase: 'done', ...verification }, done);
     } finally {
@@ -1120,7 +1118,7 @@ export class PreservationWorkerService {
     await this.repository.updatePackage(found.id, {
       verification,
       verifiedAt: new Date(),
-      ...(found.origin === 'export' ? {} : { status: 'unreadable' }),
+      ...(found.origin !== 'export' && { status: 'unreadable' }),
     });
   }
 
@@ -1431,8 +1429,7 @@ export class PreservationWorkerService {
       if (live) {
         assetId = live.id;
         // Added by an earlier attempt of this item (it recorded the intent first), not one the owner had.
-        created =
-          !!item.creatingAt && new Date(live.createdAt).getTime() >= new Date(item.creatingAt).getTime() - 1000;
+        created = !!item.creatingAt && new Date(live.createdAt).getTime() >= new Date(item.creatingAt).getTime() - 1000;
       } else if (rows.some((row) => row.deletedAt)) {
         throw new PreservationPackageError(
           'asset_in_trash',
@@ -1760,7 +1757,7 @@ export class PreservationWorkerService {
       if (group.members.size < 2) {
         continue;
       }
-      const assetIds = [...group.members.values()];
+      const assetIds = group.members.values().toArray();
       const current = await Promise.all(assetIds.map((id) => this.repository.getOwnedAsset(id, context.ownerId)));
       if (current.some((asset) => !asset || asset.deletedAt || asset.stackId)) {
         continue;
@@ -1896,7 +1893,7 @@ export class PreservationWorkerService {
           kind: album.kind === 'collection' ? AlbumKind.Collection : AlbumKind.Album,
           parentId,
           icon: album.icon,
-          ...(album.order ? { order: album.order === 'asc' ? AssetOrder.Asc : AssetOrder.Desc } : {}),
+          ...(album.order && { order: album.order === 'asc' ? AssetOrder.Asc : AssetOrder.Desc }),
         },
         [],
         [{ userId: ownerId, role: AlbumUserRole.Owner }],

@@ -339,14 +339,14 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
 };
 
 /** The four preservation kinds (FL-74), which Activity lists beside every other job. */
-const PRESERVATION_KINDS: readonly MediaOperationKind[] = [
+const PRESERVATION_KINDS: ReadonlySet<MediaOperationKind> = new Set([
   MediaOperationKind.PreservationExport,
   MediaOperationKind.PreservationVerify,
   MediaOperationKind.PreservationReview,
   MediaOperationKind.PreservationRestore,
-];
+]);
 
-const isPreservationKind = (kind: MediaOperationKind) => PRESERVATION_KINDS.includes(kind);
+const isPreservationKind = (kind: MediaOperationKind) => PRESERVATION_KINDS.has(kind);
 
 /** A finished bundle job's follow-up (FL-91), or nothing for every other kind. */
 const studioBundleOf = (kind: MediaOperationKind): Pick<ActivityItem, 'studioBundle'> => {

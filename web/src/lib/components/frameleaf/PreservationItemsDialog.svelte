@@ -45,7 +45,7 @@
     const request = ++generation;
     loading = true;
     try {
-      const [kind, value] = filter.split(':');
+      const [kind, value] = filter.split(':', 2);
       const result = await getPreservationPackageItems({
         id: item.id,
         skip,

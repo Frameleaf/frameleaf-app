@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { Mock } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { AssetVisibility, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
@@ -21,7 +22,7 @@ import {
 import { newUuid, newUuidV7 } from 'test/small.factory.js';
 import { getMocks } from 'test/utils.js';
 
-type Mocked = Record<string, ReturnType<typeof vi.fn>>;
+type Mocked = Record<string, Mock<(...args: any[]) => any>>;
 
 const sha1 = 'a'.repeat(40);
 const sha256 = 'b'.repeat(64);
@@ -524,7 +525,7 @@ describe(PreservationWorkerService.name, () => {
 
     const memorySource = (entries: Map<string, Buffer>) => ({
       format: 'directory' as const,
-      listEntries: vi.fn(() => Promise.resolve([...entries.keys()])),
+      listEntries: vi.fn(() => Promise.resolve(entries.keys().toArray())),
       has: vi.fn((name: string) => Promise.resolve(entries.has(name))),
       readDocument: vi.fn((name: string, maxBytes: number) => {
         const bytes = entries.get(name);
@@ -606,7 +607,12 @@ describe(PreservationWorkerService.name, () => {
 
     beforeEach(() => {
       files.readLines = vi.fn(
-        async (from: ReturnType<typeof memorySource>, name: string, _max: number, onLine: (line: string) => Promise<void>) => {
+        async (
+          from: ReturnType<typeof memorySource>,
+          name: string,
+          _max: number,
+          onLine: (line: string) => Promise<void>,
+        ) => {
           const bytes = await from.readDocument(name, Number.MAX_SAFE_INTEGER);
           for (const line of bytes.toString('utf8').split('\n')) {
             await onLine(line);
@@ -724,7 +730,9 @@ describe(PreservationWorkerService.name, () => {
           verifyState: null,
         }));
         repository.verificationWork.mockResolvedValueOnce(rows).mockResolvedValue([]);
-        repository.countVerified.mockResolvedValueOnce({ unchecked: 3 }).mockResolvedValue({ ok: 1, missing: 1, changed: 1 });
+        repository.countVerified
+          .mockResolvedValueOnce({ unchecked: 3 })
+          .mockResolvedValue({ ok: 1, missing: 1, changed: 1 });
 
         await sut.run({
           operation: operationOf(MediaOperationKind.PreservationVerify, { packageId: found.id }),
@@ -792,7 +800,12 @@ describe(PreservationWorkerService.name, () => {
         repository.getRestoreById.mockResolvedValue(restore);
         repository.getPackageById.mockResolvedValue(found);
         const items = built.index.map((entry) =>
-          restoreItemOf({ restoreId: restore.id, sourceAssetId: entry.sourceAssetId, state: 'pending', entry } as never),
+          restoreItemOf({
+            restoreId: restore.id,
+            sourceAssetId: entry.sourceAssetId,
+            state: 'pending',
+            entry,
+          } as never),
         );
         repository.reviewWork.mockResolvedValueOnce(items).mockResolvedValue([]);
         repository.countRestoreItems.mockResolvedValue({ total: 3, pending: 3 });

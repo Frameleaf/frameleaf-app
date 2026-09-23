@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -101,12 +101,21 @@ describe(PreservationFileRepository.name, () => {
 
   describe('lines', () => {
     it('writes an index atomically and reads it back line by line with its digest', async () => {
-      async function* pages() {
-        yield ['{"a":1}', '{"b":2}'];
-        yield [];
-        yield ['{"c":3}'];
-      }
-      const written = await sut.writeLines(join(root, 'package', 'assets.jsonl'), pages());
+      const pages = [['{"a":1}', '{"b":2}'], [], ['{"c":3}']];
+      const indexPages: AsyncIterable<string[]> = {
+        [Symbol.asyncIterator]: () => {
+          let next = 0;
+          return {
+            next: () =>
+              Promise.resolve(
+                next < pages.length
+                  ? { value: pages[next++], done: false as const }
+                  : { value: undefined, done: true as const },
+              ),
+          };
+        },
+      };
+      const written = await sut.writeLines(join(root, 'package', 'assets.jsonl'), indexPages);
       expect(written.lines).toBe(3);
 
       const source = await sut.openPackage('directory', join(root, 'package'));

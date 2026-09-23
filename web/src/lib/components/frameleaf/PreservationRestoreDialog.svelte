@@ -460,7 +460,7 @@
             {@const reason = reasonKey(item.reasonKey)}
             <li>
               <p class="item-name">
-                {item.hidden ? $t('frameleaf_preservation_items_locked_name') : (item.name ?? item.sourceAssetId)}
+                {item.name ?? item.sourceAssetId}
                 <small>{$t(`frameleaf_preservation_restore_item_${item.state}`)}</small>
               </p>
               {#if reason}

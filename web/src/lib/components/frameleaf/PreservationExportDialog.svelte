@@ -172,11 +172,13 @@
 
   // A fresh dialog each time it opens: a new request key, the first step, nothing measured yet.
   $effect(() => {
-    if (open) {
-      step = 0;
-      preview = null;
-      requestKey = newRequestKey();
+    if (!open) {
+      return;
     }
+
+    step = 0;
+    preview = null;
+    requestKey = newRequestKey();
   });
 </script>
 

@@ -172,6 +172,10 @@ export const packageState = (
     case PreservationPackageStatus.Removed: {
       return { key: 'frameleaf_preservation_state_removed', tone: 'neutral' };
     }
+    case PreservationPackageStatus.Ready: {
+      // Written in full: what it says next depends on its last verification, below.
+      break;
+    }
   }
   if (item.verification?.status === PreservationVerificationStatus.Verified) {
     return { key: 'frameleaf_preservation_state_verified', tone: 'teal' };
@@ -326,12 +330,11 @@ export const groupSupport = (support: PreservationSupportDto[]) => {
     .filter((group) => group.categories.length > 0);
 };
 
-export const conflictFieldKey = (field: PreservationConflictField): string =>
-  `frameleaf_preservation_field_${field}`;
+export const conflictFieldKey = (field: PreservationConflictField): string => `frameleaf_preservation_field_${field}`;
 
 /** A stored byte count, which the API sends as a string so it never loses precision. */
 export const asBytes = (value: string | null | undefined): number | null => {
-  if (value === null || value === undefined || value === '') {
+  if (!value) {
     return null;
   }
   const parsed = Number(value);

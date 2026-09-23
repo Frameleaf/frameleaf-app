@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AlbumKind, AlbumUserRole, AssetStatus, MediaOperationKind, SourceType, VideoMomentSource } from 'src/enum.js';
 import type { SearchFilter } from 'src/dtos/search.dto.js';
+import { AlbumKind, AlbumUserRole, AssetStatus, MediaOperationKind, SourceType, VideoMomentSource } from 'src/enum.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -126,35 +126,37 @@ export class PreservationRepository {
     includeLocked: boolean,
     maxItems: number,
   ): Promise<{ package: PreservationPackage; items: number } | null> {
-    return this.db.transaction().execute(async (tx) => {
-      const inserted = await tx
-        .insertInto('preservation_package')
-        .values({ ...input, path: '' })
-        .returning('id')
-        .executeTakeFirstOrThrow();
-      // The folder is named after the package, whose id the database assigns.
-      const created = await tx
-        .updateTable('preservation_package')
-        .set({ path: pathFor(inserted.id) })
-        .where('id', '=', inserted.id)
-        .returningAll()
-        .executeTakeFirstOrThrow();
+    return this.db
+      .transaction()
+      .execute(async (tx) => {
+        const inserted = await tx
+          .insertInto('preservation_package')
+          .values({ ...input, path: '' })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        // The folder is named after the package, whose id the database assigns.
+        const created = await tx
+          .updateTable('preservation_package')
+          .set({ path: pathFor(inserted.id) })
+          .where('id', '=', inserted.id)
+          .returningAll()
+          .executeTakeFirstOrThrow();
 
-      const chosen = this.selection(tx, input.ownerId, selection, includeLocked).select((eb) => [
-        sql<string>`${created.id}::uuid`.as('packageId'),
-        eb.ref('asset.id').as('sourceAssetId'),
-        eb.ref('asset.id').as('assetId'),
-        isLocked('asset').as('locked'),
-      ]);
-      await tx
-        .insertInto('preservation_item')
-        .columns(['packageId', 'sourceAssetId', 'assetId', 'locked'])
-        .expression(chosen)
-        .onConflict((oc) => oc.doNothing())
-        .execute();
+        const chosen = this.selection(tx, input.ownerId, selection, includeLocked).select((eb) => [
+          sql<string>`${created.id}::uuid`.as('packageId'),
+          eb.ref('asset.id').as('sourceAssetId'),
+          eb.ref('asset.id').as('assetId'),
+          isLocked('asset').as('locked'),
+        ]);
+        await tx
+          .insertInto('preservation_item')
+          .columns(['packageId', 'sourceAssetId', 'assetId', 'locked'])
+          .expression(chosen)
+          .onConflict((oc) => oc.doNothing())
+          .execute();
 
-      // The video half of a selected Live Photo, when it is the owner's and allowed in this package.
-      await sql`
+        // The video half of a selected Live Photo, when it is the owner's and allowed in this package.
+        await sql`
         insert into preservation_item ("packageId", "sourceAssetId", "assetId", "locked")
         select ${created.id}::uuid, motion.id, motion.id, ${isLocked('motion')}
         from preservation_item item
@@ -167,23 +169,24 @@ export class PreservationRepository {
         on conflict do nothing
       `.execute(tx);
 
-      const counted = await tx
-        .selectFrom('preservation_item')
-        .select((eb) => eb.fn.countAll<string>().as('count'))
-        .where('packageId', '=', created.id)
-        .executeTakeFirstOrThrow();
-      const items = Number(counted.count);
-      if (items > maxItems) {
-        // Rolls the package and its items back.
-        throw new SelectionTooLargeError(items);
-      }
-      return { package: created, items };
-    }).catch((error) => {
-      if (error instanceof SelectionTooLargeError) {
-        return null;
-      }
-      throw error;
-    });
+        const counted = await tx
+          .selectFrom('preservation_item')
+          .select((eb) => eb.fn.countAll<string>().as('count'))
+          .where('packageId', '=', created.id)
+          .executeTakeFirstOrThrow();
+        const items = Number(counted.count);
+        if (items > maxItems) {
+          // Rolls the package and its items back.
+          throw new SelectionTooLargeError(items);
+        }
+        return { package: created, items };
+      })
+      .catch((error) => {
+        if (error instanceof SelectionTooLargeError) {
+          return null;
+        }
+        throw error;
+      });
   }
 
   /* ---------------------------------------------------------------- */
@@ -233,14 +236,14 @@ export class PreservationRepository {
     await this.db
       .updateTable('preservation_package')
       .set({
-        ...(patch.status === undefined ? {} : { status: patch.status }),
-        ...(patch.manifest === undefined ? {} : { manifest: patch.manifest === null ? null : jsonb(patch.manifest) }),
-        ...(patch.verification === undefined
-          ? {}
-          : { verification: patch.verification === null ? null : jsonb(patch.verification) }),
-        ...(patch.verifiedAt === undefined ? {} : { verifiedAt: patch.verifiedAt }),
-        ...(patch.sizeBytes === undefined ? {} : { sizeBytes: patch.sizeBytes }),
-        ...(patch.removedAt === undefined ? {} : { removedAt: patch.removedAt }),
+        ...(patch.status !== undefined && { status: patch.status }),
+        ...(patch.manifest !== undefined && { manifest: patch.manifest === null ? null : jsonb(patch.manifest) }),
+        ...(patch.verification !== undefined && {
+          verification: patch.verification === null ? null : jsonb(patch.verification),
+        }),
+        ...(patch.verifiedAt !== undefined && { verifiedAt: patch.verifiedAt }),
+        ...(patch.sizeBytes !== undefined && { sizeBytes: patch.sizeBytes }),
+        ...(patch.removedAt !== undefined && { removedAt: patch.removedAt }),
       })
       .where('id', '=', id)
       .execute();
@@ -457,8 +460,8 @@ export class PreservationRepository {
       .updateTable('preservation_item')
       .set({
         state: patch.state,
-        ...(patch.entry === undefined ? {} : { entry: patch.entry === null ? null : jsonb(patch.entry) }),
-        ...(patch.locked === undefined ? {} : { locked: patch.locked }),
+        ...(patch.entry !== undefined && { entry: patch.entry === null ? null : jsonb(patch.entry) }),
+        ...(patch.locked !== undefined && { locked: patch.locked }),
         reasonKey: patch.reasonKey ?? null,
         error: patch.error ?? null,
         verifyState: null,
@@ -887,10 +890,10 @@ export class PreservationRepository {
     await this.db
       .updateTable('preservation_restore')
       .set({
-        ...(patch.status === undefined ? {} : { status: patch.status }),
-        ...(patch.packageIdentity === undefined ? {} : { packageIdentity: patch.packageIdentity }),
-        ...(patch.options === undefined ? {} : { options: jsonb(patch.options) }),
-        ...(patch.summary === undefined ? {} : { summary: patch.summary === null ? null : jsonb(patch.summary) }),
+        ...(patch.status !== undefined && { status: patch.status }),
+        ...(patch.packageIdentity !== undefined && { packageIdentity: patch.packageIdentity }),
+        ...(patch.options !== undefined && { options: jsonb(patch.options) }),
+        ...(patch.summary !== undefined && { summary: patch.summary === null ? null : jsonb(patch.summary) }),
       })
       .where('id', '=', id)
       .execute();
@@ -1033,19 +1036,19 @@ export class PreservationRepository {
     await this.db
       .updateTable('preservation_restore_item')
       .set((eb) => ({
-        ...(patch.state === undefined ? {} : { state: patch.state }),
-        ...(patch.match === undefined ? {} : { match: patch.match }),
-        ...(patch.assetId === undefined ? {} : { assetId: patch.assetId }),
-        ...(patch.sidecar === undefined ? {} : { sidecar: patch.sidecar === null ? null : jsonb(patch.sidecar) }),
-        ...(patch.conflicts === undefined
-          ? {}
-          : { conflicts: patch.conflicts === null ? null : jsonb(patch.conflicts) }),
-        ...(patch.findings === undefined ? {} : { findings: patch.findings === null ? null : jsonb(patch.findings) }),
-        ...(patch.reasonKey === undefined ? {} : { reasonKey: patch.reasonKey }),
-        ...(patch.error === undefined ? {} : { error: patch.error }),
-        ...(patch.creatingAt === undefined ? {} : { creatingAt: patch.creatingAt }),
-        ...(patch.appliedAt === undefined ? {} : { appliedAt: patch.appliedAt }),
-        ...(patch.attempt ? { attempts: eb('attempts', '+', 1) } : {}),
+        ...(patch.state !== undefined && { state: patch.state }),
+        ...(patch.match !== undefined && { match: patch.match }),
+        ...(patch.assetId !== undefined && { assetId: patch.assetId }),
+        ...(patch.sidecar !== undefined && { sidecar: patch.sidecar === null ? null : jsonb(patch.sidecar) }),
+        ...(patch.conflicts !== undefined && {
+          conflicts: patch.conflicts === null ? null : jsonb(patch.conflicts),
+        }),
+        ...(patch.findings !== undefined && { findings: patch.findings === null ? null : jsonb(patch.findings) }),
+        ...(patch.reasonKey !== undefined && { reasonKey: patch.reasonKey }),
+        ...(patch.error !== undefined && { error: patch.error }),
+        ...(patch.creatingAt !== undefined && { creatingAt: patch.creatingAt }),
+        ...(patch.appliedAt !== undefined && { appliedAt: patch.appliedAt }),
+        ...(patch.attempt && { attempts: eb('attempts', '+', 1) }),
       }))
       .where('id', '=', id)
       .execute();
@@ -1068,12 +1071,23 @@ export class PreservationRepository {
     if (options.state) {
       query = query.where('state', '=', options.state);
     }
-    if (options.filter === 'conflicts') {
-      query = query.where(sql<boolean>`jsonb_array_length(coalesce("conflicts", '[]'::jsonb)) > 0`);
-    } else if (options.filter === 'failed') {
-      query = query.where('state', '=', 'failed');
-    } else if (options.filter === 'findings') {
-      query = query.where(sql<boolean>`jsonb_array_length(coalesce("findings", '[]'::jsonb)) > 0`);
+    switch (options.filter) {
+      case 'conflicts': {
+        query = query.where(sql<boolean>`jsonb_array_length(coalesce("conflicts", '[]'::jsonb)) > 0`);
+
+        break;
+      }
+      case 'failed': {
+        query = query.where('state', '=', 'failed');
+
+        break;
+      }
+      case 'findings': {
+        query = query.where(sql<boolean>`jsonb_array_length(coalesce("findings", '[]'::jsonb)) > 0`);
+
+        break;
+      }
+      // No default
     }
     const [items, total] = await Promise.all([
       query.selectAll().orderBy('id').limit(options.take).offset(options.skip).execute(),
@@ -1188,15 +1202,17 @@ export class PreservationRepository {
    * owner put there.
    */
   findByChecksum(ownerId: string, sha256: string, sha1: string) {
-    return this.db
-      .selectFrom('asset')
-      .select(['asset.id', 'asset.deletedAt', 'asset.createdAt', isLocked('asset').as('isLocked')])
-      .where('asset.ownerId', '=', ownerId)
-      .where('asset.checksum', 'in', [Buffer.from(sha256, 'hex'), Buffer.from(sha1, 'hex')])
-      // An original in the library first, then one in the trash; the oldest of equals.
-      .orderBy(sql`asset."deletedAt" is not null`)
-      .orderBy('asset.createdAt', 'asc')
-      .execute();
+    return (
+      this.db
+        .selectFrom('asset')
+        .select(['asset.id', 'asset.deletedAt', 'asset.createdAt', isLocked('asset').as('isLocked')])
+        .where('asset.ownerId', '=', ownerId)
+        .where('asset.checksum', 'in', [Buffer.from(sha256, 'hex'), Buffer.from(sha1, 'hex')])
+        // An original in the library first, then one in the trash; the oldest of equals.
+        .orderBy(sql`asset."deletedAt" is not null`)
+        .orderBy('asset.createdAt', 'asc')
+        .execute()
+    );
   }
 
   getOwnedAsset(id: string, ownerId: string) {
@@ -1226,7 +1242,7 @@ export class PreservationRepository {
       .where('asset.id', '=', assetId)
       .executeTakeFirst();
     if (!row) {
-      return undefined;
+      return;
     }
     const editRecipe = await this.getEditRecipe(assetId);
     return {
@@ -1247,7 +1263,11 @@ export class PreservationRepository {
 
   /** Keep the reason a restored lock had in the package; the lock itself was made by the asset service. */
   async setLockReason(assetId: string, reason: string): Promise<void> {
-    await this.db.updateTable('asset_lock').set({ reason: reason as any }).where('assetId', '=', assetId).execute();
+    await this.db
+      .updateTable('asset_lock')
+      .set({ reason: reason as any })
+      .where('assetId', '=', assetId)
+      .execute();
   }
 
   /** An album the owner owns, by id. */
@@ -1417,7 +1437,7 @@ export class PreservationRepository {
         value: edit.value,
         sourceText: null,
         editedById: ownerId,
-        ...(edit.region ?? {}),
+        ...edit.region,
       })
       .onConflict((oc) => oc.columns(['assetId', 'key']).doNothing())
       .executeTakeFirst();
@@ -1436,9 +1456,7 @@ export class PreservationRepository {
       .where('assetId', '=', assetId)
       .where('source', '=', VideoMomentSource.Manual)
       .where('timestampMs', '=', moment.timestampMs)
-      .where((eb) =>
-        moment.caption === null ? eb('caption', 'is', null) : eb('caption', '=', moment.caption),
-      )
+      .where((eb) => (moment.caption === null ? eb('caption', 'is', null) : eb('caption', '=', moment.caption)))
       .executeTakeFirst();
     if (existing) {
       return false;
