@@ -1,5 +1,6 @@
 import { AlbumKind } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
 import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
 import { albumFactory } from '@test-data/factories/album-factory';
@@ -55,7 +56,7 @@ describe('SharedSpaceAddMatching', () => {
     const controller = controllerStub();
     render(SharedSpaceAddMatching, { space, albums: [album], controller });
 
-    await fireEvent.change(screen.getByRole('combobox'), { target: { value: 'album-1' } });
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'album-1');
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_spaces_add_matching_preview }));
     await waitFor(() => expect(controller.count).toHaveBeenCalled());
 

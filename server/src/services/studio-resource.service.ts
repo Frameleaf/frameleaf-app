@@ -916,7 +916,7 @@ export class StudioResourceService extends BaseService {
     try {
       grant = this.cryptoRepository.verifyJwt<StudioReadGrantPayload>(token, this.secret);
     } catch (error: any) {
-      const detail = `${error?.message ?? error}`;
+      const detail = String(error?.message ?? error);
       return { valid: false, reason: /expired/i.test(detail) ? 'expired' : 'invalid-token', detail };
     }
 
@@ -942,9 +942,7 @@ export class StudioResourceService extends BaseService {
     }
 
     if (
-      grant.kind === StudioResourceKind.LibraryAsset ||
-      grant.kind === StudioResourceKind.Audio ||
-      grant.kind === StudioResourceKind.EditedMaster
+      [StudioResourceKind.LibraryAsset, StudioResourceKind.Audio, StudioResourceKind.EditedMaster].includes(grant.kind)
     ) {
       const decisions = await this.decideAssets(auth, new Set([grant.id]), { backgroundRunner });
       const decision = decisions.get(grant.id);
@@ -1028,11 +1026,9 @@ export class StudioResourceService extends BaseService {
       const asset = byId.get(id);
       const isOwner = asset?.ownerId === auth.user.id;
       const isLocked = !!asset && isLockedAssetRow(asset);
-      if (!asset) {
-        decisions.set(id, notFound);
-      } else if (isLocked && !(isOwner && (backgroundRunner || elevatedOwnerId === auth.user.id))) {
-        // someone else's Locked asset, or the owner's own in an ordinary session: indistinguishable
-        // from a missing one, whatever the access query answered
+      if (!asset || (isLocked && !(isOwner && (backgroundRunner || elevatedOwnerId === auth.user.id)))) {
+        // missing, or someone else's Locked asset, or the owner's own in an ordinary session: a Locked
+        // asset is indistinguishable from a missing one, whatever the access query answered
         decisions.set(id, notFound);
       } else if (!allowed.has(id)) {
         decisions.set(

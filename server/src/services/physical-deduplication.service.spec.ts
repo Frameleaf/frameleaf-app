@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import { Readable } from 'node:stream';
 import {
   AssetStatus,
   DatabaseLock,
@@ -66,12 +67,7 @@ const master = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const stream = (...items: unknown[]) =>
-  (async function* () {
-    for (const item of items) {
-      yield item;
-    }
-  })();
+const stream = (...items: unknown[]) => Readable.from(items);
 
 const mockConfig = (
   mocks: ServiceMocks,
@@ -79,7 +75,9 @@ const mockConfig = (
   lastRun: unknown = lastDryRun,
 ) => {
   mocks.systemMetadata.get.mockImplementation((key) =>
-    Promise.resolve(key === SystemMetadataKey.PhysicalDeduplicationMigration ? lastRun : { physicalDeduplication }),
+    Promise.resolve(
+      (key === SystemMetadataKey.PhysicalDeduplicationMigration ? lastRun : { physicalDeduplication }) as never,
+    ),
   );
 };
 

@@ -67,5 +67,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getForFaces: vitest.fn(),
     getForUpdateTags: vitest.fn(),
     getDescriptionStats: vitest.fn(),
+    getEventStoryCandidates: vitest.fn(),
+    getYearInReviewCandidates: vitest.fn(),
   };
 };
