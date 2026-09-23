@@ -50,7 +50,10 @@ const S_IFMT = 0o17_0000;
 const S_IFLNK = 0o12_0000;
 const HOST_UNIX = 3;
 
-/** A central directory larger than this is not a Takeout archive. Takeout parts hold a few hundred thousand entries at most. */
+/**
+ * A central directory larger than this is not a Takeout archive; Takeout parts hold a few hundred
+ * thousand entries at most.
+ */
 export const TAKEOUT_ZIP_MAX_DIRECTORY_BYTES = 256 * 1024 * 1024;
 /** Uncompressed-to-compressed ratio above which a deflated entry is treated as a decompression bomb. */
 export const TAKEOUT_ZIP_MAX_RATIO = 1000;
@@ -106,7 +109,8 @@ const locateDirectory = async (source: TakeoutZipSource) => {
   const tail = await source.read(tailStart, tailLength);
   let eocd = -1;
   for (let index = tail.length - EOCD_MIN; index >= 0; index--) {
-    if (tail.readUInt32LE(index) === EOCD_SIGNATURE && index + EOCD_MIN + tail.readUInt16LE(index + 20) <= tail.length) {
+    const commentLength = index + 22 <= tail.length ? tail.readUInt16LE(index + 20) : 0;
+    if (tail.readUInt32LE(index) === EOCD_SIGNATURE && index + EOCD_MIN + commentLength <= tail.length) {
       eocd = index;
       break;
     }
@@ -233,7 +237,8 @@ export const readTakeoutZipDirectory = async (source: TakeoutZipSource): Promise
       refuse(`The archive’s directory entry ${index} overruns the directory`);
     }
     const name = decodeName(directory.subarray(cursor + CENTRAL_MIN, cursor + CENTRAL_MIN + nameLength), flags);
-    const extra = directory.subarray(cursor + CENTRAL_MIN + nameLength, cursor + CENTRAL_MIN + nameLength + extraLength);
+    const extraStart = cursor + CENTRAL_MIN + nameLength;
+    const extra = directory.subarray(extraStart, extraStart + extraLength);
     cursor = end;
 
     const zip64 = readZip64Extra(extra, {

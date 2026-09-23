@@ -40,7 +40,13 @@ export const TAKEOUT_ITEM_STATES: readonly TakeoutItemState[] = [
   'failed',
 ];
 
-export const TAKEOUT_PAIR_STATES: readonly TakeoutPairState[] = ['suggested', 'approved', 'skipped', 'linked', 'failed'];
+export const TAKEOUT_PAIR_STATES: readonly TakeoutPairState[] = [
+  'suggested',
+  'approved',
+  'skipped',
+  'linked',
+  'failed',
+];
 
 /** The metadata Google Photos exported for one photo or video. */
 export type TakeoutMetadata = {
@@ -450,7 +456,10 @@ const WORKING: readonly MediaOperationStatus[] = [MediaOperationStatus.Rendering
  * reads as its job does: waiting, working, paused, stopping, stopped or failed. A job that completed
  * advanced the phase before it did, so a completed job only ever sits behind the next phase.
  */
-export const takeoutState = (phase: TakeoutPhase, operation?: { status: MediaOperationStatus } | null): TakeoutState => {
+export const takeoutState = (
+  phase: TakeoutPhase,
+  operation?: { status: MediaOperationStatus } | null,
+): TakeoutState => {
   if (phase !== 'scanning' && phase !== 'importing') {
     return phase;
   }
