@@ -7,9 +7,15 @@ import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getPrivacyQueryOptions, requireSuppressedOnlyAccess } from 'src/utils/hidden-content.js';
+import { getLockedOwnerId } from 'src/utils/locked.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLocationHiddenPartnerIds } from 'src/utils/partner-location.js';
 import { requirePetFilterAllowed } from 'src/utils/search-filter.js';
+
+const getRevealOptions = (auth: AuthDto) => {
+  const revealLockedOwnerId = getLockedOwnerId(auth);
+  return revealLockedOwnerId ? { revealLockedOwnerId } : {};
+};
 
 @Injectable()
 export class TimelineService extends BaseService {
@@ -63,6 +69,9 @@ export class TimelineService extends BaseService {
       ...(dto.albumId ? getLockedVisibilityOptions(auth) : {}),
       userIds,
       ...(lockReason ? { lockReasons: [lockReason] } : {}),
+      // FL-34: the owner's own sensitive marks and detections show in their ordinary timeline once the
+      // session is unlocked ("Revealed for this session"); items from the old Locked folder do not
+      ...(!dto.albumId && dto.visibility === AssetVisibility.Timeline ? getRevealOptions(auth) : {}),
       ...(locationHiddenOwnerIds.length > 0 ? { locationHiddenOwnerIds } : {}),
     };
   }

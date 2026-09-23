@@ -446,6 +446,27 @@ describe(TimelineService.name, () => {
       expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
     });
 
+    it("reveals the owner's own sensitive locks in their timeline once unlocked", async () => {
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+
+      await sut.getTimeBuckets(elevated, { visibility: AssetVisibility.Timeline });
+      expect(mocks.asset.getTimeBuckets.mock.calls[0][0].revealLockedOwnerId).toBe(elevated.user.id);
+
+      await sut.getTimeBuckets(authStub.admin, { visibility: AssetVisibility.Timeline });
+      expect(mocks.asset.getTimeBuckets.mock.calls[1][0].revealLockedOwnerId).toBeUndefined();
+    });
+
+    it('reveals nothing through an album or the archive', async () => {
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-id']));
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+
+      await sut.getTimeBuckets(elevated, { albumId: 'album-id', visibility: AssetVisibility.Timeline });
+      await sut.getTimeBuckets(elevated, { visibility: AssetVisibility.Archive });
+
+      expect(mocks.asset.getTimeBuckets.mock.calls[0][0].revealLockedOwnerId).toBeUndefined();
+      expect(mocks.asset.getTimeBuckets.mock.calls[1][0].revealLockedOwnerId).toBeUndefined();
+    });
+
     it('needs the unlocked session for the Locked view, whatever the reason', async () => {
       await expect(
         sut.getTimeBuckets(authStub.admin, {
