@@ -9,6 +9,7 @@ import { Chunked, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js'
 import { MemorySearchDto } from 'src/dtos/memory.dto.js';
 import {
   AssetOrderWithRandom,
+  AssetVisibility,
   MemoryExportStatus,
   MemoryType,
   PetObservationState,
@@ -30,8 +31,9 @@ export class MemoryRepository implements IBulkAsset {
       .deleteFrom('memory_asset')
       .using('asset')
       .whereRef('memory_asset.assetId', '=', 'asset.id')
-      // locked media (FL-34) leaves memories as it always did
-      .where(sql<boolean>`not ${isTimelineVisible('asset')}`)
+      // Stored visibility only, as upstream: a locked asset (FL-34) keeps its place in its memories and
+      // every memory read hides it while it is locked, so unlocking it brings it back, as for albums.
+      .where('asset.visibility', '!=', AssetVisibility.Timeline)
       .execute();
 
     return this.db
