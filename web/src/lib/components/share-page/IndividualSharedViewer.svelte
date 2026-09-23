@@ -7,6 +7,7 @@
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import { AssetAction } from '$lib/constants';
   import '$lib/frameleaf/tokens.css';
+  import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
@@ -38,6 +39,11 @@
    */
   const bulkContext = $derived({ readOnly: true, sharedLinkId: isOwned ? sharedLink.id : null });
 
+  /** FL-45: an individual shared link has no album to name the download after (see AlbumViewer for
+   * that case), but its own description is often set to something descriptive; falls back to the
+   * generic "Shared" label when it is not. */
+  const sharedDownloadFileName = $derived(namedArchiveName(sharedLink.description, $t('frameleaf_archive_name_shared')));
+
   // Local cursor `$state` for the single-asset shared-link path. AssetViewer's
   // `cursor` prop is non-bindable, so the owner of the cursor (this component)
   // must hold the state and update it via the `onAssetUpdate` callback when
@@ -63,7 +69,7 @@
   });
 
   const downloadAssets = async () => {
-    await downloadArchive(`frameleaf-shared`, { assetIds: assets.map((asset) => asset.id) });
+    await downloadArchive(sharedDownloadFileName, { assetIds: assets.map((asset) => asset.id) });
   };
 
   const handleUploadAssets = async (files: File[] = []) => {
@@ -107,6 +113,7 @@
     <ResultsView
       assets={timelineAssets}
       {bulkContext}
+      downloadFileName={sharedDownloadFileName}
       onSelectAll={handleSelectAll}
       onRemoved={handleRemoved}
       onOpen={(asset) => void navigateToAsset(asset)}
