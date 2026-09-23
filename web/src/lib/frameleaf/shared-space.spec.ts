@@ -345,6 +345,18 @@ describe('comments, mentions and the activity feed', () => {
       'frameleaf_spaces_activity_reply_space',
     );
   });
+
+  it('does not say somebody replied to their own comment as if to someone else', () => {
+    expect(spaceEventMessageKey({ type: SharedSpaceEventType.Reply, assetCount: 1, actor: bo, targetUser: bo })).toBe(
+      'frameleaf_spaces_activity_reply_own_item',
+    );
+    expect(spaceEventMessageKey({ type: SharedSpaceEventType.Reply, assetCount: 0, actor: bo, targetUser: bo })).toBe(
+      'frameleaf_spaces_activity_reply_own_space',
+    );
+    expect(spaceEventMessageKey({ type: SharedSpaceEventType.Reply, assetCount: 0, actor: bo, targetUser: ada })).toBe(
+      'frameleaf_spaces_activity_reply_space',
+    );
+  });
 });
 
 describe('threaded replies', () => {
