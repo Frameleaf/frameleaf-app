@@ -657,7 +657,18 @@ where
       "asset_face"
     where
       "asset_face"."personGroupId" = "person"."personGroupId"
-      and "asset_face"."assetId" = any ($1::uuid[])
+      and (
+        "asset_face"."assetId" = any ($1::uuid[])
+        or "asset_face"."assetId" in (
+          select
+            "stacked"."id"
+          from
+            "asset" as "stacked"
+            inner join "asset" as "moved" on "moved"."stackId" = "stacked"."stackId"
+          where
+            "moved"."id" = any ($2::uuid[])
+        )
+      )
   )
 
 -- PersonRepository.getLatestFaceDate
@@ -701,3 +712,24 @@ where
   "person"."personGroupId" in ($1)
 order by
   "person"."ownerId"
+
+-- PersonRepository.getCorrections
+select
+  "asset_face"."id",
+  "asset_face"."assetId",
+  "asset_face"."correctedAt"
+from
+  "asset"
+  inner join "asset_face" on "asset_face"."assetId" = "asset"."id"
+where
+  (
+    "asset"."visibility" != 'locked'
+    or "asset"."ownerId" = $1
+  )
+  and "asset_face"."personGroupId" = $2
+  and "asset_face"."deletedAt" is null
+  and "asset_face"."correctedAt" is not null
+order by
+  "asset_face"."correctedAt" desc
+limit
+  $3

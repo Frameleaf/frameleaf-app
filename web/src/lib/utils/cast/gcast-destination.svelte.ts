@@ -25,7 +25,11 @@ export class GCastDestination implements ICastDestination {
   private currentUrl: string | null = null;
 
   async initialize(): Promise<boolean> {
-    if (!authManager.authenticated || !authManager.preferences.cast.gCastEnabled) {
+    // FL-77: never load the Cast framework while an administrator has turned casting off.
+    const { gCastEnabled, adminDisabled } = authManager.authenticated
+      ? authManager.preferences.cast
+      : { gCastEnabled: false, adminDisabled: true };
+    if (!gCastEnabled || adminDisabled) {
       this.isAvailable = false;
       return false;
     }

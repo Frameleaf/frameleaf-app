@@ -14,7 +14,8 @@ import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js
 import { DB } from 'src/schema/index.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
-import { albumCoverCandidates, automaticAlbumCover } from 'src/utils/album-cover.js';
+import { albumCoverCandidates } from 'src/utils/album-cover.js';
+import { albumCoverReplacement, getBestPhotoScoreTable } from 'src/utils/cover-references.js';
 import { anyUuid, asUuid, dummy, withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 
 export interface AlbumAssetCount {
@@ -594,14 +595,21 @@ export class AlbumRepository {
    * - Setting a thumbnail when none is set and the album contains assets
    * - Replacing a Locked or trashed thumbnail (see `albumCoverCandidates`)
    *
+   * The replacement is the same picker `releaseLockedCoverReferences` uses when a Locked photo
+   * releases the cover it was (FL-53, `albumCoverReplacement`): a Best Photo first, the highest score
+   * first, then the newest; never Locked or trashed, and never sensitive for an album someone besides
+   * its owner sees (a member, a shared link, or one linked into a shared space). One picker, so an
+   * automatic cover never disagrees with what a Locked or trashed cover falls back to.
+   *
    * @returns Amount of updated album thumbnails or undefined when unknown
    */
   async updateThumbnails(): Promise<number | undefined> {
     // Subquery for getting a new thumbnail.
+    const scores = await getBestPhotoScoreTable(this.db);
 
     const result = await this.db
       .updateTable('album')
-      .set((eb) => ({ albumThumbnailAssetId: automaticAlbumCover(eb) }))
+      .set((eb) => ({ albumThumbnailAssetId: albumCoverReplacement(eb, scores) }))
       .where((eb) =>
         eb.or([
           eb.and([

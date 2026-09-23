@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { AuthSession } from 'src/database.js';
 import { PetObservationSource, PetObservationState, PetSpecies } from 'src/enum.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
 import { PET_RECOGNITION_UNAVAILABLE_REASON, PetService } from 'src/services/pet.service.js';
@@ -201,7 +202,40 @@ describe(PetService.name, () => {
       (petRepository.getById as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
       await expect(sut.get(authStub.user1, petId)).rejects.toBeInstanceOf(NotFoundException);
-      expect(petRepository.getById).toHaveBeenCalledWith(ownerId, petId);
+      expect(petRepository.getById).toHaveBeenCalledWith(ownerId, petId, {});
+    });
+  });
+
+  describe('Locked media (FL-34)', () => {
+    it('counts, lists and proposes the caller’s Locked media only in an elevated session', async () => {
+      const elevated = { ...authStub.user1, session: { id: 'session-id', hasElevatedPermission: true } as AuthSession };
+      const locked = { lockedOwnerId: ownerId };
+
+      await sut.getAll(elevated, {});
+      await sut.getObservations(elevated, petId);
+      await sut.getCandidates(elevated, { size: 10 });
+
+      expect(petRepository.getAll).toHaveBeenCalledWith(ownerId, { withHidden: false, ...locked });
+      expect(petRepository.getById).toHaveBeenCalledWith(ownerId, petId, locked);
+      expect(petRepository.getObservations).toHaveBeenCalledWith(ownerId, petId, locked);
+      expect(petRepository.getCandidates).toHaveBeenCalledWith(ownerId, 10, locked);
+    });
+
+    it('leaves Locked media out of an ordinary session', async () => {
+      await sut.getAll(authStub.user1, {});
+      await sut.getObservations(authStub.user1, petId);
+
+      expect(petRepository.getAll).toHaveBeenCalledWith(ownerId, { withHidden: false });
+      expect(petRepository.getObservations).toHaveBeenCalledWith(ownerId, petId, {});
+    });
+
+    it('merges every observation, Locked ones included', async () => {
+      (petRepository.getByIds as ReturnType<typeof vi.fn>).mockResolvedValue([pet({ id: otherPetId })]);
+
+      await sut.merge(authStub.user1, petId, { ids: [otherPetId] });
+
+      expect(petRepository.getObservations).toHaveBeenCalledWith(ownerId, otherPetId, { withLocked: true });
+      expect(petRepository.getObservations).toHaveBeenCalledWith(ownerId, petId, { withLocked: true });
     });
 
     it('answers a pet suppressed while the session is locked exactly like a missing one', async () => {

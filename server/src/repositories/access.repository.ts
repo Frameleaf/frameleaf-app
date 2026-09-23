@@ -10,6 +10,8 @@ import {
   asUuid,
   getHiddenContentFilter,
   hiddenContentAssetIdExists,
+  isMotionOfLockedStill,
+  isNotLockedAsset,
   tagHasVisibleAssetOrNoAssets,
   tagIsSuppressed,
   withDefaultVisibility,
@@ -243,6 +245,8 @@ class AssetAccess {
       .where('asset.id', 'in', [...assetIds])
       .where('asset.ownerId', '=', userId)
       .$if(!hasElevatedPermission, (eb) => eb.where('asset.visibility', '!=', AssetVisibility.Locked))
+      // the motion part of a Locked live photo is as private as the still (FL-34)
+      .$if(!hasElevatedPermission, (qb) => qb.where((eb) => eb.not(isMotionOfLockedStill(eb))))
       .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
       .execute()
       .then((assets) => new Set(assets.map((asset) => asset.id)));
@@ -271,6 +275,8 @@ class AssetAccess {
       )
 
       .where('asset.id', 'in', [...assetIds])
+      // a partner never reaches the motion part of a Locked live photo (FL-34)
+      .where((eb) => eb.not(isMotionOfLockedStill(eb)))
       .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
       .execute()
       .then((assets) => new Set(assets.map((asset) => asset.id)));
@@ -372,6 +378,7 @@ class AssetFileAccess {
       .select('asset_file.id')
       .innerJoin('asset', 'asset.id', 'asset_file.assetId')
       .$if(!hasElevatedPermission, (eb) => eb.where('asset.visibility', '!=', AssetVisibility.Locked))
+      .$if(!hasElevatedPermission, (qb) => qb.where((eb) => eb.not(isMotionOfLockedStill(eb))))
       .where('asset.ownerId', '=', userId)
       .where('asset_file.id', 'in', [...fileIds])
       .execute()
@@ -693,7 +700,12 @@ class PersonAccess {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET, true] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkFaceOwnerAccess(userId: string, assetFaceIds: Set<string>, hideNsfwAssets?: AccessPrivacy) {
+  async checkFaceOwnerAccess(
+    userId: string,
+    assetFaceIds: Set<string>,
+    hideNsfwAssets?: AccessPrivacy,
+    hasElevatedPermission?: boolean,
+  ) {
     if (assetFaceIds.size === 0) {
       return new Set<string>();
     }
@@ -704,6 +716,9 @@ class PersonAccess {
       .leftJoin('asset', (join) => join.onRef('asset.id', '=', 'asset_face.assetId').on('asset.deletedAt', 'is', null))
       .where('asset_face.id', 'in', [...assetFaceIds])
       .where('asset.ownerId', '=', userId)
+      // a face on Locked media is reachable only from its owner's elevated session (FL-34); left out,
+      // the session counts as ordinary
+      .$if(!hasElevatedPermission, (qb) => qb.where((eb) => isNotLockedAsset(eb)))
       .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
       .execute()
       .then((faces) => new Set(faces.map((face) => face.id)));

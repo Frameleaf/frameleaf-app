@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
 import sanitize from 'sanitize-filename';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ClassConstructor } from 'src/types.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { UserAdmin } from 'src/database.js';
+import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
@@ -68,11 +70,13 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access.js';
 import { getConfig, updateConfig } from 'src/utils/config.js';
+import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
 import {
   MlSelectionRequest,
   routedMlDestinationId,
   selectMlDestination,
 } from 'src/utils/ml-destination.js';
+import { replaceLockedProfileImages } from 'src/utils/profile-image.js';
 
 export const BASE_SERVICE_DEPENDENCIES = [
   LoggingRepository,
@@ -322,6 +326,55 @@ export class BaseService {
   protected async selectRoutedMlDestination(request: Omit<MlSelectionRequest, 'destinationId'>) {
     const destinationId = await routedMlDestinationId(this.mlDestinationRepository, request.workload);
     return this.selectMlDestination({ ...request, destinationId });
+  }
+
+  /**
+   * Once a move of `assetIds` into the Locked folder is committed (FL-53): the people whose featured
+   * face was on them, or on another photo of their stacks, get a thumbnail from the face that replaced
+   * it, and profile pictures copied from a photo now Locked are replaced.
+   */
+  protected async afterAssetsLocked(assetIds: string[]): Promise<void> {
+    await queueReleasedPersonThumbnails(
+      { person: this.personRepository, job: this.jobRepository },
+      assetIds,
+    );
+    await this.replaceLockedProfileImages();
+  }
+
+  /**
+   * Pushes the current state of `assetIds` to `ownerId`'s other open sessions over the websocket
+   * (`on_asset_update`). Used so a move into or out of the Locked folder — including the rest of a
+   * stack a direct move carries along (FL-53, `locked-stacks.ts`) — is reflected in every open web
+   * client at once, not only in the tab that made the change and not only for the asset named directly.
+   */
+  protected async notifyAssetsUpdated(assetIds: string[], ownerId: string): Promise<void> {
+    if (assetIds.length === 0) {
+      return;
+    }
+
+    const assets = (await this.assetRepository.getByIdsWithAllRelationsButStacks(assetIds, ownerId)) ?? [];
+    for (const asset of assets) {
+      this.websocketRepository.clientSend(
+        'on_asset_update',
+        ownerId,
+        mapAsset(asset, { auth: { user: { id: ownerId } } as AuthDto }),
+      );
+    }
+  }
+
+  /** Gives another profile picture to every user whose picture was copied from a now Locked photo. */
+  protected async replaceLockedProfileImages(): Promise<void> {
+    await replaceLockedProfileImages(
+      {
+        media: this.mediaRepository,
+        crypto: this.cryptoRepository,
+        storageCore: this.storageCore,
+        user: this.userRepository,
+        job: this.jobRepository,
+        logger: this.logger,
+      },
+      () => this.getConfig({ withCache: true }),
+    );
   }
 
   requireAccess(request: AccessRequest) {

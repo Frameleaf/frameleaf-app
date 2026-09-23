@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Updateable } from 'kysely';
 import { DateTime } from 'luxon';
+import z from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf, UserMetadataItem } from 'src/types.js';
@@ -11,14 +12,16 @@ import { CalendarHeatmapDto, CalendarHeatmapResponseDto } from 'src/dtos/calenda
 import { LicenseKeyDto, LicenseResponseDto } from 'src/dtos/license.dto.js';
 import { OnboardingDto, OnboardingResponseDto } from 'src/dtos/onboarding.dto.js';
 import { UserPreferencesResponseDto, UserPreferencesUpdateDto, mapPreferences } from 'src/dtos/user-preferences.dto.js';
-import { CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
+import { CreateProfileImageDto, CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
 import { UserAdminResponseDto, UserResponseDto, UserUpdateMeDto, mapUser, mapUserAdmin } from 'src/dtos/user.dto.js';
-import { CacheControl, JobName, JobStatus, QueueName, StorageFolder, UserMetadataKey } from 'src/enum.js';
+import { CacheControl, JobName, JobStatus, Permission, QueueName, StorageFolder, UserMetadataKey } from 'src/enum.js';
 import { UserFindOptions } from 'src/repositories/user.repository.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { isLockedAsset } from 'src/utils/locked-state.js';
+import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { findOrFail } from 'src/utils/misc.js';
 import { getPreferences, getPreferencesPartial, mergePreferences } from 'src/utils/preferences.js';
@@ -50,7 +53,8 @@ export class UserService extends BaseService {
   }
 
   getCalendarHeatmap(auth: AuthDto, dto: CalendarHeatmapDto): Promise<CalendarHeatmapResponseDto> {
-    return getCalendarHeatmap(auth.user.id, dto, { asset: this.assetRepository });
+    // the caller's own Locked media counts only once they have unlocked it
+    return getCalendarHeatmap(auth.user.id, dto, { asset: this.assetRepository }, getLockedVisibilityOptions(auth));
   }
 
   async updateMe({ user }: AuthDto, dto: UserUpdateMeDto): Promise<UserAdminResponseDto> {
@@ -86,7 +90,7 @@ export class UserService extends BaseService {
 
   async updateMyPreferences(auth: AuthDto, dto: UserPreferencesUpdateDto) {
     const metadata = await this.userRepository.getMetadata(auth.user.id);
-    const updated = mergePreferences(getPreferences(metadata), dto);
+    const updated = mergePreferences(getPreferences(metadata), dto, 'user');
 
     await this.userRepository.upsertMetadata(auth.user.id, {
       key: UserMetadataKey.Preferences,
@@ -102,8 +106,13 @@ export class UserService extends BaseService {
     return mapUser(user);
   }
 
-  async createProfileImage(auth: AuthDto, file: Express.Multer.File): Promise<CreateProfileImageResponseDto> {
+  async createProfileImage(
+    auth: AuthDto,
+    file: Express.Multer.File,
+    dto: Partial<CreateProfileImageDto> = {},
+  ): Promise<CreateProfileImageResponseDto> {
     const { profileImagePath: oldPath } = await this.findOrFail(auth.user.id, { withDeleted: false });
+    const profileImageAssetId = await this.resolveProfileImageSource(auth, file, dto.assetId);
 
     let profileImagePath: string;
     try {
@@ -121,6 +130,7 @@ export class UserService extends BaseService {
 
     const user = await this.userRepository.update(auth.user.id, {
       profileImagePath,
+      profileImageAssetId,
       profileChangedAt: new Date(),
     });
 
@@ -139,14 +149,59 @@ export class UserService extends BaseService {
     if (user.profileImagePath === '') {
       throw new BadRequestException("Can't delete a missing profile Image");
     }
-    await this.userRepository.update(auth.user.id, { profileImagePath: '', profileChangedAt: new Date() });
+    await this.userRepository.update(auth.user.id, {
+      profileImagePath: '',
+      profileImageAssetId: null,
+      profileChangedAt: new Date(),
+    });
     await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [user.profileImagePath] } });
+  }
+
+  /**
+   * The photo a new profile picture was copied from, when the client names one (FL-53): a photo the
+   * caller may read that is not Locked. It is recorded so the picture can be replaced if that photo
+   * becomes Locked later. The uploaded file is removed when the photo is refused.
+   */
+  private async resolveProfileImageSource(
+    auth: AuthDto,
+    file: Express.Multer.File,
+    assetId: string | undefined,
+  ): Promise<string | null> {
+    if (!assetId) {
+      return null;
+    }
+
+    try {
+      if (!z.uuid().safeParse(assetId).success) {
+        throw new BadRequestException('Invalid profile picture source');
+      }
+
+      await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [assetId] });
+      const asset = await this.assetRepository.getById(assetId);
+      if (!asset) {
+        throw new BadRequestException('Invalid profile picture source');
+      }
+      if (isLockedAsset(asset)) {
+        throw new BadRequestException('A Locked photo cannot be a profile picture');
+      }
+
+      return asset.id;
+    } catch (error) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [file.path] } });
+      throw error;
+    }
   }
 
   async getProfileImage(id: string): Promise<ImmichFileResponse> {
     const user = await this.userRepository.get(id, {});
     if (!user || !user.profileImagePath) {
       this.logger.debug('User or profile image not found');
+      throw new NotFoundException();
+    }
+
+    // a picture copied from a photo that became Locked is never served; it is being replaced (FL-53)
+    if (await this.userRepository.hasLockedProfileImageSource(id)) {
+      this.logger.debug('Profile image was copied from a Locked photo');
       throw new NotFoundException();
     }
 

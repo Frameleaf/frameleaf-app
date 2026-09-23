@@ -1196,8 +1196,8 @@ export const catalogue = [
     prototypeFunctions: [],
     prototypeSource: 'beyond the prototype: portable project bundles',
     manifestIds: ['readme.projects-storage.5'],
-    payload: { sequenceIds: 'string[]?' },
-    description: 'Export a validated portable project bundle.',
+    payload: { sequenceIds: 'string[]?', includeMedia: 'boolean?' },
+    description: 'Export a validated portable project bundle, optionally with copies of the media the person owns.',
   },
   {
     id: 'project.importBundle',
