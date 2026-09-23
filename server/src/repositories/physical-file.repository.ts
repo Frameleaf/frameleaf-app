@@ -645,7 +645,7 @@ export class PhysicalFileRepository {
           ${sizeInBytes},
           ${verifiedPaths},
           ${linkCount},
-          ${JSON.stringify(evidence)}::jsonb,
+          ${JSON.stringify(evidence)}::text::jsonb,
           now(),
           now()
         )
