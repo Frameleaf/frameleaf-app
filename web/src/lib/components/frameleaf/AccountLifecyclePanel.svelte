@@ -30,9 +30,9 @@
   const isSelf = $derived(authManager.user.id === user.id);
 
   const asDate = (value: Date | string) =>
-    DateTime.fromJSDate(value instanceof Date ? value : new Date(value), { locale: $locale }).toLocaleString(
-      DateTime.DATE_MED,
-    );
+    DateTime.fromJSDate(value instanceof Date ? value : new Date(value)).toLocaleString(DateTime.DATE_MED, {
+      locale: $locale,
+    });
 </script>
 
 <div class="danger-zone" aria-label={$t('frameleaf_users_lifecycle_title')}>

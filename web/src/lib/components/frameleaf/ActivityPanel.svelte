@@ -125,6 +125,7 @@
   };
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions (Escape from any control inside closes the panel) -->
 <aside
   class="activity"
   aria-label={$t('frameleaf_album_activity_title')}

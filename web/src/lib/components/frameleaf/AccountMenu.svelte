@@ -130,6 +130,7 @@
       bind:this={menu}
       class="fl-menu"
       role="menu"
+      tabindex="-1"
       aria-label={$t('account_settings')}
       onkeydown={onMenuKeydown}
       use:focusTrap

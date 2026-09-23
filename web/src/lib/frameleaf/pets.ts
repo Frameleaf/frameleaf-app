@@ -5,6 +5,7 @@ import {
   type PetResponseDto,
   type SearchFilter,
 } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 
 /**
  * Frameleaf Pets page (FL-58): small pure helpers shared by the grid and the recognition
@@ -41,7 +42,7 @@ export const sortPets = <T extends { name: string; isFavorite: boolean }>(pets: 
   );
 
 /** The i18n key for a species, so the page never renders a raw enum value. */
-export const speciesLabelKey = (species: PetSpecies): string => `frameleaf_pets_species_${species}`;
+export const speciesLabelKey = (species: PetSpecies): Translations => `frameleaf_pets_species_${species}`;
 
 export const petSpeciesOptions = (): PetSpecies[] => [
   PetSpecies.Dog,
