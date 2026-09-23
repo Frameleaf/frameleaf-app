@@ -20,217 +20,213 @@
 <div>
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
-      <div class="ms-4 mt-4">
-        <SettingGroup
-          key="thumbnail-settings"
-          title={$t('admin.image_thumbnail_title')}
-          subtitle={$t('admin.image_thumbnail_description')}
-        >
-          <SettingSelect
-            label={$t('admin.image_format')}
-            desc={$t('admin.image_format_description')}
-            bind:value={configToEdit.image.thumbnail.format}
-            options={[
-              { value: ImageFormat.Jpeg, text: 'JPEG' },
-              { value: ImageFormat.Webp, text: 'WebP' },
-            ]}
-            name="format"
-            isEdited={configToEdit.image.thumbnail.format !== config.image.thumbnail.format}
-            {disabled}
-            onSelect={(value) => {
-              if (value === ImageFormat.Webp) {
-                configToEdit.image.thumbnail.progressive = false;
-              }
-            }}
-          />
+      <SettingGroup
+        key="thumbnail-settings"
+        title={$t('admin.image_thumbnail_title')}
+        subtitle={$t('admin.image_thumbnail_description')}
+      >
+        <SettingSelect
+          label={$t('admin.image_format')}
+          desc={$t('admin.image_format_description')}
+          bind:value={configToEdit.image.thumbnail.format}
+          options={[
+            { value: ImageFormat.Jpeg, text: 'JPEG' },
+            { value: ImageFormat.Webp, text: 'WebP' },
+          ]}
+          name="format"
+          isEdited={configToEdit.image.thumbnail.format !== config.image.thumbnail.format}
+          {disabled}
+          onSelect={(value) => {
+            if (value === ImageFormat.Webp) {
+              configToEdit.image.thumbnail.progressive = false;
+            }
+          }}
+        />
 
-          <SettingSelect
-            label={$t('admin.image_resolution')}
-            desc={$t('admin.image_resolution_description')}
-            number
-            bind:value={configToEdit.image.thumbnail.size}
-            options={[
-              { value: 1080, text: '1080p' },
-              { value: 720, text: '720p' },
-              { value: 480, text: '480p' },
-              { value: 250, text: '250p' },
-              { value: 200, text: '200p' },
-            ]}
-            name="resolution"
-            isEdited={configToEdit.image.thumbnail.size !== config.image.thumbnail.size}
-            {disabled}
-          />
+        <SettingSelect
+          label={$t('admin.image_resolution')}
+          desc={$t('admin.image_resolution_description')}
+          number
+          bind:value={configToEdit.image.thumbnail.size}
+          options={[
+            { value: 1080, text: '1080p' },
+            { value: 720, text: '720p' },
+            { value: 480, text: '480p' },
+            { value: 250, text: '250p' },
+            { value: 200, text: '200p' },
+          ]}
+          name="resolution"
+          isEdited={configToEdit.image.thumbnail.size !== config.image.thumbnail.size}
+          {disabled}
+        />
 
-          <SettingField
-            inputType={SettingInputFieldType.NUMBER}
-            label={$t('admin.image_quality')}
-            description={$t('admin.image_thumbnail_quality_description')}
-            bind:value={configToEdit.image.thumbnail.quality}
-            isEdited={configToEdit.image.thumbnail.quality !== config.image.thumbnail.quality}
-            {disabled}
-          />
+        <SettingField
+          inputType={SettingInputFieldType.NUMBER}
+          label={$t('admin.image_quality')}
+          description={$t('admin.image_thumbnail_quality_description')}
+          bind:value={configToEdit.image.thumbnail.quality}
+          isEdited={configToEdit.image.thumbnail.quality !== config.image.thumbnail.quality}
+          {disabled}
+        />
 
-          <SettingToggle
-            title={$t('admin.image_progressive')}
-            subtitle={$t('admin.image_progressive_description')}
-            checked={configToEdit.image.thumbnail.progressive}
-            onToggle={(isChecked) => (configToEdit.image.thumbnail.progressive = isChecked)}
-            isEdited={configToEdit.image.thumbnail.progressive !== config.image.thumbnail.progressive}
-            disabled={disabled || configToEdit.image.thumbnail.format === ImageFormat.Webp}
-          />
-        </SettingGroup>
+        <SettingToggle
+          title={$t('admin.image_progressive')}
+          subtitle={$t('admin.image_progressive_description')}
+          checked={configToEdit.image.thumbnail.progressive}
+          onToggle={(isChecked) => (configToEdit.image.thumbnail.progressive = isChecked)}
+          isEdited={configToEdit.image.thumbnail.progressive !== config.image.thumbnail.progressive}
+          disabled={disabled || configToEdit.image.thumbnail.format === ImageFormat.Webp}
+        />
+      </SettingGroup>
 
-        <SettingGroup
-          key="preview-settings"
-          title={$t('admin.image_preview_title')}
-          subtitle={$t('admin.image_preview_description')}
-        >
-          <SettingSelect
-            label={$t('admin.image_format')}
-            desc={$t('admin.image_format_description')}
-            bind:value={configToEdit.image.preview.format}
-            options={[
-              { value: ImageFormat.Jpeg, text: 'JPEG' },
-              { value: ImageFormat.Webp, text: 'WebP' },
-            ]}
-            name="format"
-            isEdited={configToEdit.image.preview.format !== config.image.preview.format}
-            {disabled}
-            onSelect={(value) => {
-              if (value === ImageFormat.Webp) {
-                configToEdit.image.preview.progressive = false;
-              }
-            }}
-          />
+      <SettingGroup
+        key="preview-settings"
+        title={$t('admin.image_preview_title')}
+        subtitle={$t('admin.image_preview_description')}
+      >
+        <SettingSelect
+          label={$t('admin.image_format')}
+          desc={$t('admin.image_format_description')}
+          bind:value={configToEdit.image.preview.format}
+          options={[
+            { value: ImageFormat.Jpeg, text: 'JPEG' },
+            { value: ImageFormat.Webp, text: 'WebP' },
+          ]}
+          name="format"
+          isEdited={configToEdit.image.preview.format !== config.image.preview.format}
+          {disabled}
+          onSelect={(value) => {
+            if (value === ImageFormat.Webp) {
+              configToEdit.image.preview.progressive = false;
+            }
+          }}
+        />
 
-          <SettingSelect
-            label={$t('admin.image_resolution')}
-            desc={$t('admin.image_resolution_description')}
-            number
-            bind:value={configToEdit.image.preview.size}
-            options={[
-              { value: 2160, text: '4K' },
-              { value: 1440, text: '1440p' },
-              { value: 1080, text: '1080p' },
-              { value: 720, text: '720p' },
-            ]}
-            name="resolution"
-            isEdited={configToEdit.image.preview.size !== config.image.preview.size}
-            {disabled}
-          />
+        <SettingSelect
+          label={$t('admin.image_resolution')}
+          desc={$t('admin.image_resolution_description')}
+          number
+          bind:value={configToEdit.image.preview.size}
+          options={[
+            { value: 2160, text: '4K' },
+            { value: 1440, text: '1440p' },
+            { value: 1080, text: '1080p' },
+            { value: 720, text: '720p' },
+          ]}
+          name="resolution"
+          isEdited={configToEdit.image.preview.size !== config.image.preview.size}
+          {disabled}
+        />
 
-          <SettingField
-            inputType={SettingInputFieldType.NUMBER}
-            label={$t('admin.image_quality')}
-            description={$t('admin.image_preview_quality_description')}
-            bind:value={configToEdit.image.preview.quality}
-            isEdited={configToEdit.image.preview.quality !== config.image.preview.quality}
-            {disabled}
-          />
+        <SettingField
+          inputType={SettingInputFieldType.NUMBER}
+          label={$t('admin.image_quality')}
+          description={$t('admin.image_preview_quality_description')}
+          bind:value={configToEdit.image.preview.quality}
+          isEdited={configToEdit.image.preview.quality !== config.image.preview.quality}
+          {disabled}
+        />
 
-          <SettingToggle
-            title={$t('admin.image_progressive')}
-            subtitle={$t('admin.image_progressive_description')}
-            checked={configToEdit.image.preview.progressive}
-            onToggle={(isChecked) => (configToEdit.image.preview.progressive = isChecked)}
-            isEdited={configToEdit.image.preview.progressive !== config.image.preview.progressive}
-            disabled={disabled || configToEdit.image.preview.format === ImageFormat.Webp}
-          />
-        </SettingGroup>
+        <SettingToggle
+          title={$t('admin.image_progressive')}
+          subtitle={$t('admin.image_progressive_description')}
+          checked={configToEdit.image.preview.progressive}
+          onToggle={(isChecked) => (configToEdit.image.preview.progressive = isChecked)}
+          isEdited={configToEdit.image.preview.progressive !== config.image.preview.progressive}
+          disabled={disabled || configToEdit.image.preview.format === ImageFormat.Webp}
+        />
+      </SettingGroup>
 
-        <SettingGroup
-          key="fullsize-settings"
-          title={$t('admin.image_fullsize_title')}
-          subtitle={$t('admin.image_fullsize_description')}
-        >
-          <SettingToggle
-            title={$t('admin.image_fullsize_enabled')}
-            subtitle={$t('admin.image_fullsize_enabled_description')}
-            checked={configToEdit.image.fullsize.enabled}
-            onToggle={(isChecked) => (configToEdit.image.fullsize.enabled = isChecked)}
-            isEdited={configToEdit.image.fullsize.enabled !== config.image.fullsize.enabled}
-            {disabled}
-          />
+      <SettingGroup
+        key="fullsize-settings"
+        title={$t('admin.image_fullsize_title')}
+        subtitle={$t('admin.image_fullsize_description')}
+      >
+        <SettingToggle
+          title={$t('admin.image_fullsize_enabled')}
+          subtitle={$t('admin.image_fullsize_enabled_description')}
+          checked={configToEdit.image.fullsize.enabled}
+          onToggle={(isChecked) => (configToEdit.image.fullsize.enabled = isChecked)}
+          isEdited={configToEdit.image.fullsize.enabled !== config.image.fullsize.enabled}
+          {disabled}
+        />
 
-          <hr class="my-4" />
+        <hr class="my-4" />
 
-          <SettingSelect
-            label={$t('admin.image_format')}
-            desc={$t('admin.image_format_description')}
-            bind:value={configToEdit.image.fullsize.format}
-            options={[
-              { value: ImageFormat.Jpeg, text: 'JPEG' },
-              { value: ImageFormat.Webp, text: 'WebP' },
-            ]}
-            name="format"
-            isEdited={configToEdit.image.fullsize.format !== config.image.fullsize.format}
-            disabled={disabled || !configToEdit.image.fullsize.enabled}
-            onSelect={(value) => {
-              if (value === ImageFormat.Webp) {
-                configToEdit.image.fullsize.progressive = false;
-              }
-            }}
-          />
+        <SettingSelect
+          label={$t('admin.image_format')}
+          desc={$t('admin.image_format_description')}
+          bind:value={configToEdit.image.fullsize.format}
+          options={[
+            { value: ImageFormat.Jpeg, text: 'JPEG' },
+            { value: ImageFormat.Webp, text: 'WebP' },
+          ]}
+          name="format"
+          isEdited={configToEdit.image.fullsize.format !== config.image.fullsize.format}
+          disabled={disabled || !configToEdit.image.fullsize.enabled}
+          onSelect={(value) => {
+            if (value === ImageFormat.Webp) {
+              configToEdit.image.fullsize.progressive = false;
+            }
+          }}
+        />
 
-          <SettingField
-            inputType={SettingInputFieldType.NUMBER}
-            label={$t('admin.image_quality')}
-            description={$t('admin.image_fullsize_quality_description')}
-            bind:value={configToEdit.image.fullsize.quality}
-            isEdited={configToEdit.image.fullsize.quality !== config.image.fullsize.quality}
-            disabled={disabled || !configToEdit.image.fullsize.enabled}
-          />
+        <SettingField
+          inputType={SettingInputFieldType.NUMBER}
+          label={$t('admin.image_quality')}
+          description={$t('admin.image_fullsize_quality_description')}
+          bind:value={configToEdit.image.fullsize.quality}
+          isEdited={configToEdit.image.fullsize.quality !== config.image.fullsize.quality}
+          disabled={disabled || !configToEdit.image.fullsize.enabled}
+        />
 
-          <SettingToggle
-            title={$t('admin.image_progressive')}
-            subtitle={$t('admin.image_progressive_description')}
-            checked={configToEdit.image.fullsize.progressive}
-            onToggle={(isChecked) => (configToEdit.image.fullsize.progressive = isChecked)}
-            isEdited={configToEdit.image.fullsize.progressive !== config.image.fullsize.progressive}
-            disabled={disabled ||
-              !configToEdit.image.fullsize.enabled ||
-              configToEdit.image.fullsize.format === ImageFormat.Webp}
-          />
-        </SettingGroup>
+        <SettingToggle
+          title={$t('admin.image_progressive')}
+          subtitle={$t('admin.image_progressive_description')}
+          checked={configToEdit.image.fullsize.progressive}
+          onToggle={(isChecked) => (configToEdit.image.fullsize.progressive = isChecked)}
+          isEdited={configToEdit.image.fullsize.progressive !== config.image.fullsize.progressive}
+          disabled={disabled ||
+            !configToEdit.image.fullsize.enabled ||
+            configToEdit.image.fullsize.format === ImageFormat.Webp}
+        />
+      </SettingGroup>
 
-        <div class="mt-4">
-          <SettingToggle
-            title={$t('admin.image_prefer_wide_gamut')}
-            subtitle={$t('admin.image_prefer_wide_gamut_setting_description')}
-            checked={configToEdit.image.colorspace === Colorspace.P3}
-            onToggle={(isChecked) => (configToEdit.image.colorspace = isChecked ? Colorspace.P3 : Colorspace.Srgb)}
-            isEdited={configToEdit.image.colorspace !== config.image.colorspace}
-            {disabled}
-          />
-        </div>
-
-        <div class="mt-4">
-          <SettingToggle
-            title={$t('admin.image_prefer_embedded_preview')}
-            subtitle={$t('admin.image_prefer_embedded_preview_setting_description')}
-            checked={configToEdit.image.extractEmbedded}
-            onToggle={() => (configToEdit.image.extractEmbedded = !configToEdit.image.extractEmbedded)}
-            isEdited={configToEdit.image.extractEmbedded !== config.image.extractEmbedded}
-            {disabled}
-          />
-        </div>
-
-        <div class="mt-4">
-          <SettingToggle
-            title={$t('admin.image_enhanced_raw_rendering')}
-            subtitle={$t('admin.image_enhanced_raw_rendering_description')}
-            checked={configToEdit.image.enhancedRaw?.enabled !== false}
-            onToggle={(isChecked) => (configToEdit.image.enhancedRaw = { enabled: isChecked })}
-            isEdited={(configToEdit.image.enhancedRaw?.enabled !== false) !==
-              (config.image.enhancedRaw?.enabled !== false)}
-            {disabled}
-          />
-        </div>
+      <div class="mt-4">
+        <SettingToggle
+          title={$t('admin.image_prefer_wide_gamut')}
+          subtitle={$t('admin.image_prefer_wide_gamut_setting_description')}
+          checked={configToEdit.image.colorspace === Colorspace.P3}
+          onToggle={(isChecked) => (configToEdit.image.colorspace = isChecked ? Colorspace.P3 : Colorspace.Srgb)}
+          isEdited={configToEdit.image.colorspace !== config.image.colorspace}
+          {disabled}
+        />
       </div>
 
-      <div class="ms-4 mt-4">
-        <SettingActions bind:configToEdit keys={['image']} {disabled} />
+      <div class="mt-4">
+        <SettingToggle
+          title={$t('admin.image_prefer_embedded_preview')}
+          subtitle={$t('admin.image_prefer_embedded_preview_setting_description')}
+          checked={configToEdit.image.extractEmbedded}
+          onToggle={() => (configToEdit.image.extractEmbedded = !configToEdit.image.extractEmbedded)}
+          isEdited={configToEdit.image.extractEmbedded !== config.image.extractEmbedded}
+          {disabled}
+        />
       </div>
+
+      <div class="mt-4">
+        <SettingToggle
+          title={$t('admin.image_enhanced_raw_rendering')}
+          subtitle={$t('admin.image_enhanced_raw_rendering_description')}
+          checked={configToEdit.image.enhancedRaw?.enabled !== false}
+          onToggle={(isChecked) => (configToEdit.image.enhancedRaw = { enabled: isChecked })}
+          isEdited={(configToEdit.image.enhancedRaw?.enabled !== false) !==
+            (config.image.enhancedRaw?.enabled !== false)}
+          {disabled}
+        />
+      </div>
+
+      <SettingActions bind:configToEdit keys={['image']} {disabled} />
     </form>
   </div>
 </div>

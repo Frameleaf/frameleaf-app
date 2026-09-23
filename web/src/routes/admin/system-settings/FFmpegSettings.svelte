@@ -33,7 +33,7 @@
 <div>
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
-      <div class="ms-4 mt-4 flex flex-col gap-4">
+      <div class="flex flex-col gap-4">
         <p class="text-sm dark:text-immich-dark-fg">
           <Icon icon={mdiHelpCircleOutline} class="inline" size="15" />
           <FormatMessage key="admin.transcoding_codecs_learn_more">
@@ -54,7 +54,7 @@
           title={$t('admin.transcoding_policy')}
           subtitle={$t('admin.transcoding_policy_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
+          <div class="flex flex-col gap-4">
             <SettingSelect
               label={$t('admin.transcoding_transcode_policy')}
               {disabled}
@@ -145,7 +145,7 @@
           title={$t('admin.transcoding_encoding_options')}
           subtitle={$t('admin.transcoding_encoding_options_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
+          <div class="flex flex-col gap-4">
             <SettingSelect
               label={$t('admin.transcoding_video_codec')}
               {disabled}
@@ -288,7 +288,7 @@
           title={$t('admin.transcoding_hardware_acceleration')}
           subtitle={$t('admin.transcoding_hardware_acceleration_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
+          <div class="flex flex-col gap-4">
             <SettingSelect
               label={$t('admin.transcoding_acceleration_api')}
               {disabled}
@@ -362,7 +362,7 @@
           title={$t('advanced')}
           subtitle={$t('admin.transcoding_advanced_options_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
+          <div class="flex flex-col gap-4">
             <SettingField
               inputType={SettingInputFieldType.NUMBER}
               label={$t('admin.transcoding_max_b_frames')}
@@ -397,7 +397,7 @@
           title={$t('admin.transcoding_realtime')}
           subtitle={$t('admin.transcoding_realtime_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
+          <div class="flex flex-col gap-4">
             <SettingToggle
               title={$t('admin.transcoding_realtime_enabled')}
               subtitle={$t('admin.transcoding_realtime_enabled_description')}
@@ -445,9 +445,7 @@
         </SettingGroup>
       </div>
 
-      <div class="ms-4">
-        <SettingActions bind:configToEdit keys={['ffmpeg']} {disabled} />
-      </div>
+      <SettingActions bind:configToEdit keys={['ffmpeg']} {disabled} />
     </form>
   </div>
 </div>

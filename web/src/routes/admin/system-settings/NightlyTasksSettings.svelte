@@ -16,7 +16,7 @@
 <div class="mt-2">
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" class="mx-4 mt-4" onsubmit={(event) => event.preventDefault()}>
-      <div class="ms-4 mt-4 flex flex-col gap-4">
+      <div class="flex flex-col gap-4">
         <SettingField
           inputType={SettingInputFieldType.TEXT}
           label={$t('admin.nightly_tasks_start_time_setting')}

@@ -21,7 +21,7 @@
   title={$t('admin.machine_learning_ocr')}
   subtitle={$t('admin.machine_learning_ocr_description')}
 >
-  <div class="mt-4 ml-4 flex flex-col gap-4">
+  <div class="flex flex-col gap-4">
     <SettingToggle
       title={$t('admin.machine_learning_ocr_enabled')}
       subtitle={$t('admin.machine_learning_ocr_enabled_description')}
