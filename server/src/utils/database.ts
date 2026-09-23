@@ -117,6 +117,20 @@ export function withDefaultVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>)
 }
 
 /**
+ * FL-34: the single SQL test for "this asset is Locked". Every Locked privacy filter goes through
+ * these two (directly, or through `withLockedOwnerScope` / `withAlbumVisibility`), so a change to how
+ * Locked is stored is made here once. `alias` names the asset table in the query (default `asset`).
+ */
+export function isLockedAsset<QDB, TB extends keyof QDB>(eb: ExpressionBuilder<QDB, TB>, alias = 'asset') {
+  return eb(sql.ref<string>(`${alias}.visibility`), '=', sql.lit(AssetVisibility.Locked));
+}
+
+/** The negation of {@link isLockedAsset}. */
+export function isNotLockedAsset<QDB, TB extends keyof QDB>(eb: ExpressionBuilder<QDB, TB>, alias = 'asset') {
+  return eb(sql.ref<string>(`${alias}.visibility`), '!=', sql.lit(AssetVisibility.Locked));
+}
+
+/**
  * What an album read shows (owner decision, September 22, 2026): Timeline and Archive media, plus the
  * Locked media of `lockedOwnerId` — the viewer, when their session is elevated. Locked media of anyone
  * else never shows, whatever the viewer's own session. Without an owner this is `withDefaultVisibility`.
@@ -129,7 +143,7 @@ export function withAlbumVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>, l
   return qb.where((eb) =>
     eb.or([
       eb('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)]),
-      eb.and([eb('asset.visibility', '=', sql.lit(AssetVisibility.Locked)), eb('asset.ownerId', '=', lockedOwnerId)]),
+      eb.and([isLockedAsset(eb), eb('asset.ownerId', '=', lockedOwnerId)]),
     ]),
   );
 }
@@ -142,12 +156,7 @@ export function withAlbumVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>, l
  */
 export function withLockedOwnerScope<O>(qb: SelectQueryBuilder<DB, 'asset', O>, lockedOwnerId?: string) {
   return qb.where((eb) =>
-    lockedOwnerId
-      ? eb.or([
-          eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
-          eb('asset.ownerId', '=', lockedOwnerId),
-        ])
-      : eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
+    lockedOwnerId ? eb.or([isNotLockedAsset(eb), eb('asset.ownerId', '=', lockedOwnerId)]) : isNotLockedAsset(eb),
   );
 }
 
@@ -163,7 +172,7 @@ export function hasHiddenLockedPrimary(eb: ExpressionBuilder<DB, 'stack'>, locke
       .selectFrom('asset as lockedPrimary')
       .select(sql.lit(1).as('exists'))
       .whereRef('lockedPrimary.id', '=', 'stack.primaryAssetId')
-      .where('lockedPrimary.visibility', '=', sql.lit(AssetVisibility.Locked))
+      .where((eb) => isLockedAsset(eb, 'lockedPrimary'))
       .$if(!!lockedOwnerId, (qb) => qb.where('lockedPrimary.ownerId', '!=', lockedOwnerId!)),
   );
 }
