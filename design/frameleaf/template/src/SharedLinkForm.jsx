@@ -348,6 +348,7 @@ export function SharedLinkForm({
                 aria-describedby={`${ids}-password-hint`}
               />
               <Button
+                type="button"
                 icon={showPassword ? "mdiEyeOffOutline" : "mdiEyeOutline"}
                 aria-label={showPassword ? "Hide password" : "Show password"}
                 aria-pressed={showPassword}
