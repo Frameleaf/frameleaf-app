@@ -1138,6 +1138,7 @@ export enum JobName {
   AssetGenerateVideoDuplicateFramesQueueAll = 'AssetGenerateVideoDuplicateFramesQueueAll',
   AssetGenerateVideoDuplicateFrames = 'AssetGenerateVideoDuplicateFrames',
   AssetEditThumbnailGeneration = 'AssetEditThumbnailGeneration',
+  AssetDevelopRender = 'AssetDevelopRender',
   AssetVideoEditGeneration = 'AssetVideoEditGeneration',
   AssetEncodeVideoQueueAll = 'AssetEncodeVideoQueueAll',
   AssetEncodeVideo = 'AssetEncodeVideo',
