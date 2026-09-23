@@ -62,9 +62,11 @@ describe(MediaOperationService.name, () => {
   let sut: MediaOperationService;
   let mocks: ServiceMocks;
   let repository: MediaOperationRepository;
+  let icloud: { queueOperation: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     mocks = getMocks();
+    icloud = { queueOperation: vi.fn() };
     repository = {
       create: vi.fn(),
       getForOwner: vi.fn(),
@@ -82,7 +84,7 @@ describe(MediaOperationService.name, () => {
       getLockedAssetIds: vi.fn().mockResolvedValue(new Set()),
     } as unknown as MediaOperationRepository;
 
-    sut = new MediaOperationService(mocks.logger as never, repository, mocks.access as never);
+    sut = new MediaOperationService(mocks.logger as never, repository, mocks.access as never, icloud as never);
   });
 
   describe('search', () => {
@@ -422,6 +424,66 @@ describe(MediaOperationService.name, () => {
       );
       expect(result.retryOfId).toBe(failed.id);
       expect(result.status).toBe(MediaOperationStatus.Queued);
+    });
+
+    describe('an iCloud sync run (FL-68)', () => {
+      const connectionId = '0195e2a0-0000-7000-8000-0000000000c1';
+      const failedRun = () =>
+        operationStub({
+          kind: MediaOperationKind.ICloudSync,
+          status: MediaOperationStatus.Failed,
+          snapshot: { connectionId, trigger: 'schedule' },
+          projectId: null,
+          revisionId: null,
+        });
+
+      it('queues through the connection, never by copying the row beside a run that is still going', async () => {
+        const run = failedRun();
+        vi.mocked(repository.getForOwner).mockResolvedValue(run);
+        icloud.queueOperation.mockResolvedValue({
+          outcome: 'created',
+          operation: operationStub({
+            id: '0195e2a0-0000-7000-8000-000000000003',
+            kind: MediaOperationKind.ICloudSync,
+            status: MediaOperationStatus.Queued,
+            retryOfId: run.id,
+          }),
+        });
+
+        const result = await sut.retry(authStub.user1, run.id);
+
+        expect(icloud.queueOperation).toHaveBeenCalledWith(connectionId, authStub.user1.user.id, {
+          trigger: 'retry',
+          retryOfId: run.id,
+        });
+        expect(repository.create).not.toHaveBeenCalled();
+        expect(result.retryOfId).toBe(run.id);
+      });
+
+      it('answers with the unfinished run when one is already going', async () => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(failedRun());
+        const active = operationStub({
+          id: '0195e2a0-0000-7000-8000-000000000004',
+          kind: MediaOperationKind.ICloudSync,
+          status: MediaOperationStatus.Rendering,
+        });
+        icloud.queueOperation.mockResolvedValue({ outcome: 'busy', operation: active });
+
+        await expect(sut.retry(authStub.user1, failedRun().id)).resolves.toMatchObject({ id: active.id });
+      });
+
+      it('asks for the account when the connection is signed out, and refuses a running run', async () => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(failedRun());
+        icloud.queueOperation.mockResolvedValue({ outcome: 'not-ready' });
+        await expect(sut.retry(authStub.user1, failedRun().id)).rejects.toBeInstanceOf(BadRequestException);
+
+        icloud.queueOperation.mockClear();
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({ kind: MediaOperationKind.ICloudSync, status: MediaOperationStatus.Rendering }),
+        );
+        await expect(sut.retry(authStub.user1, failedRun().id)).rejects.toBeInstanceOf(BadRequestException);
+        expect(icloud.queueOperation).not.toHaveBeenCalled();
+      });
     });
   });
 

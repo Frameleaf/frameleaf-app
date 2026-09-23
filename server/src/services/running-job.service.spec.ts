@@ -99,7 +99,12 @@ describe(RunningJobService.name, () => {
     mocks.job.observeQueueRun.mockResolvedValue(idle);
     mocks.job.isPaused.mockResolvedValue(false);
     // The real service over a mocked repository: the summary must read jobs exactly as Activity does.
-    const operationService = new MediaOperationService(mocks.logger as never, operations, mocks.access as never);
+    const operationService = new MediaOperationService(
+      mocks.logger as never,
+      operations,
+      mocks.access as never,
+      {} as never,
+    );
     sut = new RunningJobService(mocks.logger as never, mocks.job as never, operationService, mocks.memory as never);
   });
 
