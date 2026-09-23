@@ -4,7 +4,6 @@
   import LicenseActivationSuccess from '$lib/components/shared-components/purchasing/PurchaseActivationSuccess.svelte';
   import LicenseContent from '$lib/components/shared-components/purchasing/PurchaseContent.svelte';
   import SupporterBadge from './SupporterBadge.svelte';
-  import { frameleafShell } from '$lib/frameleaf/rollout';
   import '$lib/frameleaf/tokens.css';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
@@ -20,18 +19,14 @@
   let { data }: Props = $props();
   let showLicenseActivated = $state(false);
 
-  // Frameleaf shell rollout (FL-30/FL-80): the supporter page keeps the production
-  // license/activation endpoints and success flow; only the surrounding card is restyled.
+  // Frameleaf supporter panel (FL-80): the page keeps the production license/activation
+  // endpoints and success flow; only the surrounding card is Frameleaf-styled.
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 </script>
 
 <UserPageLayout title={data.meta.title}>
   <Container size="medium" center>
-    <div
-      class:frameleaf={$frameleafShell}
-      class:fl-supporter-panel={$frameleafShell}
-      data-theme={$frameleafShell ? appTheme : undefined}
-    >
+    <div class="frameleaf fl-supporter-panel" data-theme={appTheme}>
       <Stack gap={4} class="mt-4">
         {#if data.isActivated === false}
           <Alert icon={mdiAlertCircleOutline} color="danger" title={$t('purchase_failed_activation')} />

@@ -767,7 +767,7 @@ class PartnerSync extends BaseSync {
   getCreatedAfter({ nowId, userId, afterCreateId }: SyncCreatedAfterOptions) {
     return this.db
       .selectFrom('partner')
-      .select(['sharedById', 'createId'])
+      .select(['sharedById', 'createId', 'shareLocation'])
       .where('sharedWithId', '=', userId)
       .$if(!!afterCreateId, (qb) => qb.where('createId', '>=', afterCreateId!))
       .where('createId', '<', nowId)
@@ -852,6 +852,8 @@ class PartnerAssetExifsSync extends BaseSync {
       .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
       .select(columns.syncAssetExif)
       .select('asset_exif.updateId')
+      // the service needs the owner to apply per-partner location hiding; it is stripped before sending
+      .select('asset.ownerId')
       .where('asset.ownerId', 'in', (eb) =>
         eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
       )

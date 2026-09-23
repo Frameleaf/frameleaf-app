@@ -10,7 +10,12 @@ export class MapService extends BaseService {
   async getMapMarkers(auth: AuthDto, options: MapMarkerDto): Promise<MapMarkerResponseDto[]> {
     const userIds = [auth.user.id];
     if (options.withPartners) {
-      const partnerIds = await getMyPartnerIds({ userId: auth.user.id, repository: this.partnerRepository });
+      // markers are pure location data, so partners who hide their locations contribute none
+      const partnerIds = await getMyPartnerIds({
+        userId: auth.user.id,
+        repository: this.partnerRepository,
+        locationSharedOnly: true,
+      });
       userIds.push(...partnerIds);
     }
 
