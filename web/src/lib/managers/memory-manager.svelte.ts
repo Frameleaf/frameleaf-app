@@ -5,6 +5,7 @@ import {
   type MemoryResponseDto,
   removeMemoryAssets,
   searchMemories,
+  updateAsset,
   updateMemory,
   memoriesStatistics,
 } from '@immich/sdk';
@@ -238,6 +239,97 @@ class MemoryManager {
     const assetId = current.asset.id;
     await this.#leaveCurrentAsset();
     await this.#deleteAsset(memoryId, assetId);
+  }
+
+  /** How long an item stays undoable after "Remove from memory" before the removal is committed. */
+  static readonly REMOVE_UNDO_DELAY = 6000;
+
+  #pendingRemovals = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /**
+   * FL-83 (MPY-1): removing the current item from its memory is undoable, as in the
+   * prototype's `MemoryPlayer.jsx`. The item is hidden at once, a toast offers Undo, and the
+   * server call only happens after `REMOVE_UNDO_DELAY` unless Undo put the item back.
+   */
+  async removeCurrentAsset() {
+    const current = this.current;
+    if (!current) {
+      return;
+    }
+
+    const memory = this.#getMemory(current.memory.id);
+    const assetIndex = memory?.assets.findIndex((asset) => asset.id === current.asset.id) ?? -1;
+    if (!memory || assetIndex === -1) {
+      return;
+    }
+
+    // Captured before the item disappears, since `current` is derived from the loaded assets.
+    const { nextHref, previousHref } = current;
+    const [asset] = memory.assets.splice(assetIndex, 1);
+    const memoryIndex = this.memories.indexOf(memory);
+    const emptied = memory.assets.length === 0;
+    if (emptied) {
+      this.memories = this.memories.filter((item) => item !== memory);
+    }
+    await this.#goto(nextHref ?? previousHref ?? this.memoriesHref);
+
+    const $t = get(t);
+    const key = `${memory.id}:${asset.id}`;
+    const commit = async () => {
+      this.#pendingRemovals.delete(key);
+      await (emptied
+        ? deleteMemory({ id: memory.id })
+        : removeMemoryAssets({ id: memory.id, bulkIdsDto: { ids: [asset.id] } }));
+    };
+    this.#pendingRemovals.set(
+      key,
+      setTimeout(() => void commit(), MemoryManager.REMOVE_UNDO_DELAY),
+    );
+
+    toastManager.primary(
+      {
+        description: $t('frameleaf_memories_item_removed', { values: { name: asset.originalFileName } }),
+        button: (close) => ({
+          label: $t('undo'),
+          onclick: () => {
+            close();
+            const timer = this.#pendingRemovals.get(key);
+            if (timer === undefined) {
+              return;
+            }
+            clearTimeout(timer);
+            this.#pendingRemovals.delete(key);
+            memory.assets.splice(Math.min(assetIndex, memory.assets.length), 0, asset);
+            if (emptied && !this.memories.includes(memory)) {
+              this.memories.splice(Math.min(memoryIndex, this.memories.length), 0, memory);
+            }
+          },
+        }),
+      },
+      { timeout: MemoryManager.REMOVE_UNDO_DELAY },
+    );
+  }
+
+  /**
+   * FL-83 (MPY-3): the player's heart favorites the item being shown, not the memory
+   * (the memory's own saved flag lives on the index card).
+   */
+  async toggleCurrentAssetFavorite() {
+    const current = this.current;
+    if (!current) {
+      return;
+    }
+
+    const { id } = current.asset;
+    const isFavorite = !current.asset.isFavorite;
+    await updateAsset({ id, updateAssetDto: { isFavorite } });
+    for (const memory of this.memories) {
+      for (const asset of memory.assets) {
+        if (asset.id === id) {
+          asset.isFavorite = isFavorite;
+        }
+      }
+    }
   }
 
   async deleteCurrentMemory() {

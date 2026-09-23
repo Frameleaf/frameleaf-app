@@ -3,6 +3,7 @@
   import { page } from '$app/state';
   import { clickOutside } from '$lib/actions/click-outside';
   import AccountMenu from '$lib/components/frameleaf/AccountMenu.svelte';
+  import LockedUnlockDialog from '$lib/components/frameleaf/LockedUnlockDialog.svelte';
   import ActivityIndicator from '$lib/components/frameleaf/ActivityIndicator.svelte';
   import FrameleafLogo from '$lib/components/frameleaf/Logo.svelte';
   import UploadMenuButton from '$lib/components/frameleaf/UploadMenuButton.svelte';
@@ -26,6 +27,7 @@
   import { Icon, IconButton, Theme as AppTheme, themeManager } from '@immich/ui';
   import {
     mdiBellOutline,
+    mdiChevronRight,
     mdiLockOpenVariantOutline,
     mdiLockOutline,
     mdiMenu,
@@ -99,7 +101,12 @@
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   // The prototype's theme control is always present and names the theme it switches to.
   const themeLabel = $derived(appTheme === 'dark' ? $t('light_theme') : $t('dark_theme'));
-  const lockedLabel = $derived(isElevated ? $t('lock_sensitive_content') : $t('unlock_sensitive_content'));
+  // The prototype's Locked control: "Unlock Locked content" / "Hide Locked content", with the state
+  // spelled out as Locked / Revealed beside the icon (LockedContent.jsx).
+  const lockedLabel = $derived(
+    isElevated ? $t('frameleaf_locked_hide_content') : $t('frameleaf_locked_unlock_content'),
+  );
+  let unlockDialogOpen = $state(false);
   // Matches the drag-and-drop overlay's own defaults (FL-45): uploads made from an album
   // page join that album, and uploads made from the Locked area stay locked.
   const uploadAlbumId = $derived(isAlbumsRoute(page.route?.id) ? page.params.albumId : undefined);
@@ -116,9 +123,19 @@
       SessionAccessChanged: ({ isElevated: elevated }) => (isElevated = elevated),
     });
 
+    // The prototype hides Locked content as soon as the tab is left ("Content hides when you
+    // leave this tab or after one hour"); the hour is the server's elevated-session lifetime.
+    const onVisibilityChange = () => {
+      if (document.hidden && isElevated && !isSessionLoading) {
+        handlePromiseError(lockSession());
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
       stopRunningJobs();
       stopEvents();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   });
 
@@ -153,9 +170,16 @@
     return roots.some((root) => pathname === root || pathname.startsWith(`${root}/`));
   };
 
+  // Unlocking happens in place (the prototype's PIN dialog on the control); the PIN prompt route
+  // stays for deep links that need an elevated session before they can render.
   const unlockSession = () => {
-    // The PIN prompt is the only way into an elevated session; it returns here.
-    handlePromiseError(goto(Route.pinPrompt({ continue: page.url.pathname + page.url.search })));
+    unlockDialogOpen = true;
+  };
+
+  const onUnlocked = async () => {
+    isElevated = true;
+    eventManager.emit('SessionAccessChanged', { isElevated: true });
+    await invalidateAll();
   };
 
   const lockSession = async () => {
@@ -308,17 +332,31 @@
         {/if}
       </div>
 
-      <IconButton
-        color={isElevated ? 'primary' : 'secondary'}
-        shape="round"
-        variant="ghost"
-        size="medium"
-        icon={isElevated ? mdiLockOpenVariantOutline : mdiLockOutline}
-        disabled={isSessionLoading}
-        onclick={toggleSession}
-        title={lockedLabel}
-        aria-label={lockedLabel}
-      />
+      <div class="fl-locked-control" class:is-revealed={isElevated}>
+        <button
+          type="button"
+          class="fl-locked-toggle"
+          disabled={isSessionLoading}
+          onclick={toggleSession}
+          title={lockedLabel}
+          aria-label={lockedLabel}
+        >
+          <Icon icon={isElevated ? mdiLockOpenVariantOutline : mdiLockOutline} size="18" aria-hidden="true" />
+          <span class="fl-locked-state"
+            >{isElevated ? $t('frameleaf_locked_revealed_short') : $t('frameleaf_locked')}</span
+          >
+        </button>
+        {#if isElevated}
+          <a
+            class="fl-locked-open"
+            href={Route.suppressed()}
+            title={$t('frameleaf_open_locked')}
+            aria-label={$t('frameleaf_open_locked')}
+          >
+            <Icon icon={mdiChevronRight} size="17" aria-hidden="true" />
+          </a>
+        {/if}
+      </div>
 
       <IconButton
         shape="round"
@@ -340,6 +378,8 @@
     </section>
   </div>
 </nav>
+
+<LockedUnlockDialog bind:open={unlockDialogOpen} onUnlocked={() => handlePromiseError(onUnlocked())} />
 
 <style>
   /*
@@ -475,6 +515,57 @@
     .fl-topbar-actions {
       grid-area: actions;
       gap: 0.125rem;
+    }
+  }
+  /* The prototype's bordered Locked control (locked-content.css): icon + state, accent when revealed. */
+  .fl-locked-control {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    height: 34px;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+    background: var(--fl-panel);
+    color: var(--fl-text);
+  }
+  .fl-locked-control.is-revealed {
+    color: var(--fl-accent);
+    border-color: var(--fl-accent);
+  }
+  .fl-locked-toggle,
+  .fl-locked-open {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+  }
+  .fl-locked-toggle {
+    gap: 7px;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .fl-locked-toggle:disabled {
+    opacity: 0.6;
+  }
+  .fl-locked-open {
+    width: 29px;
+    border-inline-start: 1px solid var(--fl-border);
+  }
+  .fl-locked-control.is-revealed .fl-locked-open {
+    border-color: var(--fl-accent);
+  }
+  .fl-locked-toggle:hover:not(:disabled),
+  .fl-locked-open:hover {
+    background: var(--fl-raised);
+  }
+  @media (max-width: 700px) {
+    .fl-locked-state {
+      display: none;
     }
   }
   .fl-notif-bell {

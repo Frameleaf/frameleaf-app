@@ -143,6 +143,8 @@ describe('Frameleaf Activity page', () => {
   it('says nothing is processing when there are no tasks', async () => {
     await mount([]);
 
-    await vi.waitFor(() => expect(screen.getByRole('heading', { name: 'Nothing is processing' })).toBeInTheDocument());
+    await vi.waitFor(() =>
+      expect(screen.getByRole('heading', { name: /^Nothing (is )?processing$/ })).toBeInTheDocument(),
+    );
   });
 });

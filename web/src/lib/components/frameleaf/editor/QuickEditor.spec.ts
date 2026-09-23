@@ -6,7 +6,7 @@ import {
   saveAssetDevelop,
   type AssetDevelopRevisionResponseDto,
 } from '@immich/sdk';
-import { modalManager } from '@immich/ui';
+import { toastManager } from '@immich/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import QuickEditor from './QuickEditor.svelte';
@@ -91,6 +91,12 @@ describe('QuickEditor', () => {
     vi.clearAllMocks();
   });
 
+  /** The editor loads the asset's develop state on mount and only then adopts it as the draft. */
+  const ready = async () => {
+    await waitFor(() => expect(getAssetDevelop).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+
   it('opens a photo on Adjust with the four develop groups and a histogram', async () => {
     render(QuickEditor, { asset: photo, onClose: vi.fn() });
 
@@ -105,8 +111,9 @@ describe('QuickEditor', () => {
   });
 
   it('requests a server preview after an adjustment and says while it is rendering', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
     render(QuickEditor, { asset: photo, onClose: vi.fn() });
+    await ready();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const slider = screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' });
 
     await fireEvent.input(slider, { target: { value: '25' } });
@@ -125,7 +132,7 @@ describe('QuickEditor', () => {
     vi.useRealTimers();
   });
 
-  it('saves the recipe as a new version and shows it in Versions', async () => {
+  it('saves the recipe as a new version, announces it and closes the editor', async () => {
     const saved = revision({
       assetId: photo.id,
       status: AssetDevelopRevisionStatus.Queued,
@@ -135,32 +142,33 @@ describe('QuickEditor', () => {
     });
     vi.mocked(saveAssetDevelop).mockResolvedValue(saved);
     vi.mocked(getAssetDevelop).mockResolvedValue({ assetId: photo.id, currentRevisionId: null, revisions: [saved] });
-    render(QuickEditor, { asset: photo, onClose: vi.fn() });
+    const onClose = vi.fn();
+    render(QuickEditor, { asset: photo, onClose });
+    await ready();
 
-    await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_exposure' }), {
-      target: { value: '0.5' },
+    await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }), {
+      target: { value: '25' },
     });
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_save_version' }));
 
     await waitFor(() =>
       expect(saveAssetDevelop).toHaveBeenCalledWith({
         id: photo.id,
-        assetDevelopSaveDto: { recipe: expect.objectContaining({ exposure: 0.5 }), render: true },
+        assetDevelopSaveDto: { recipe: expect.objectContaining({ contrast: 25 }), render: true },
       }),
     );
     const sent = vi.mocked(saveAssetDevelop).mock.calls[0][0].assetDevelopSaveDto.recipe;
     expect('aspect' in sent).toBe(false);
-    await fireEvent.click(screen.getByRole('tab', { name: 'frameleaf_editor_tool_versions' }));
-    expect(screen.getByText('frameleaf_editor_version_number')).toBeInTheDocument();
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith(false));
+    expect(toastManager.primary).toHaveBeenCalledWith('frameleaf_editor_version_queued');
   });
 
-  it('asks before discarding unsaved edits and closes without asking when clean', async () => {
+  it('discards unsaved edits at once with a toast, and closes quietly when clean', async () => {
     const onClose = vi.fn();
-    vi.mocked(modalManager.showDialog).mockResolvedValue(false);
     render(QuickEditor, { asset: photo, onClose });
 
     await fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
-    expect(modalManager.showDialog).not.toHaveBeenCalled();
+    expect(toastManager.primary).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledWith(false);
     onClose.mockClear();
 
@@ -168,8 +176,13 @@ describe('QuickEditor', () => {
       target: { value: '10' },
     });
     await fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
-    await waitFor(() => expect(modalManager.showDialog).toHaveBeenCalled());
-    expect(onClose).not.toHaveBeenCalled();
+    expect(toastManager.primary).toHaveBeenCalledWith('frameleaf_editor_edits_discarded');
+    expect(onClose).toHaveBeenCalledWith(false);
+  });
+
+  it('offers Open in Studio in the top bar', () => {
+    render(QuickEditor, { asset: photo, onClose: vi.fn() });
+    expect(screen.getByRole('button', { name: 'frameleaf_editor_open_in_studio' })).toBeInTheDocument();
   });
 
   it('opens a video on the production video editor inside the frame', () => {

@@ -2,6 +2,7 @@
   import { shortcuts } from '$lib/actions/shortcut';
   import type { OnAction } from '$lib/components/asset-viewer/actions/action';
   import { AssetAction } from '$lib/constants';
+  import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
@@ -44,7 +45,11 @@
 <svelte:document
   use:shortcuts={authManager.authenticated && authManager.preferences.ratings.enabled
     ? [
-        { shortcut: { key: '0' }, onShortcut: () => rateAsset(null) },
+        {
+          shortcut: { key: '0' },
+          // 0 first returns a zoomed photo to fit; only at fit does it clear the rating.
+          onShortcut: () => (assetViewerManager.zoom > 1 ? assetViewerManager.animatedZoom(1) : rateAsset(null)),
+        },
         ...[1, 2, 3, 4, 5].map((rating) => ({
           shortcut: { key: String(rating) },
           onShortcut: () => rateAsset(rating),

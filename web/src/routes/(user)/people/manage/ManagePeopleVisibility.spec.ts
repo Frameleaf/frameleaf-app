@@ -1,4 +1,4 @@
-import { render } from '@testing-library/svelte';
+import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'svelte';
 import { vi } from 'vitest';
@@ -16,6 +16,9 @@ vi.mock(import('$lib/managers/feature-flags-manager.svelte'), function () {
 vi.mock('$lib/components/layouts/UserPageLayout.svelte', async () => {
   return await import('@test-data/mocks/UserPageLayout.mock.svelte');
 });
+
+const navigation = vi.hoisted(() => ({ goto: vi.fn().mockResolvedValue(undefined), beforeNavigate: vi.fn() }));
+vi.mock('$app/navigation', () => navigation);
 
 const getData = (
   people: ReturnType<typeof personFactory.build>[],
@@ -38,6 +41,52 @@ const getData = (
 describe('People manage page', () => {
   beforeEach(() => {
     vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
+    navigation.goto.mockClear();
+  });
+
+  // Without loaded messages `$t` returns the key, so the assertions read the keys the page uses.
+  it('groups the batch visibility shortcuts with the prototype labels (MP-1)', () => {
+    render(ManagePeoplePageTestWrapper, { data: getData([personFactory.build({ id: 'a', name: 'Alice' })]) });
+
+    const group = screen.getByRole('group', { name: 'frameleaf_people_visibility_shortcuts' });
+    const labels = [...group.querySelectorAll('button')].map((button) => button.textContent?.trim());
+    expect(labels).toEqual([
+      'frameleaf_people_hide_all',
+      'frameleaf_people_hide_unnamed',
+      'frameleaf_people_show_all',
+      'frameleaf_people_reset_visibility',
+    ]);
+  });
+
+  it('closes straight away when nothing is pending', async () => {
+    render(ManagePeoplePageTestWrapper, { data: getData([personFactory.build({ id: 'a', name: 'Alice' })]) });
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'close' }));
+
+    expect(navigation.goto).toHaveBeenCalledWith('/people');
+    expect(screen.queryByText('frameleaf_people_discard_title')).toBeNull();
+  });
+
+  it('asks before discarding pending visibility changes on Close (MP-3)', async () => {
+    const { container } = render(ManagePeoplePageTestWrapper, {
+      data: getData([personFactory.build({ id: 'a', name: 'Alice', isHidden: false })]),
+    });
+    const user = userEvent.setup();
+
+    await user.click(container.querySelector('button[aria-pressed]')!);
+    await user.click(screen.getByRole('button', { name: 'close' }));
+
+    expect(navigation.goto).not.toHaveBeenCalled();
+    expect(screen.getByText('frameleaf_people_discard_title')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'frameleaf_people_keep_editing' }));
+    expect(navigation.goto).not.toHaveBeenCalled();
+    expect(container.querySelector('button[aria-pressed]')?.getAttribute('aria-pressed')).toBe('false');
+
+    await user.click(screen.getByRole('button', { name: 'close' }));
+    await user.click(screen.getByRole('button', { name: 'frameleaf_people_discard' }));
+    expect(navigation.goto).toHaveBeenCalledWith('/people');
   });
 
   it('keeps toggled hidden state when loading more people', async () => {

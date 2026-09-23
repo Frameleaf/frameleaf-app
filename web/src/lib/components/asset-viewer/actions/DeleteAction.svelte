@@ -3,7 +3,6 @@
   import { AssetAction } from '$lib/constants';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import AssetDeleteConfirmModal from '$lib/modals/AssetDeleteConfirmModal.svelte';
-  import { showDeleteModal } from '$lib/stores/preferences.store';
   import { deleteAssets as deleteAssetsUtil, type OnUndoDelete } from '$lib/utils/actions';
   import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
@@ -29,11 +28,15 @@
     const force = forceDefault || forceRequest;
 
     if (force) {
-      if ($showDeleteModal) {
-        const confirmed = await modalManager.show(AssetDeleteConfirmModal, { size: 1 });
-        if (!confirmed) {
-          return;
-        }
+      // The viewer always confirms a permanent delete; the "do not show again" preference only
+      // covers bulk deletes from the timeline.
+      const confirmed = await modalManager.show(AssetDeleteConfirmModal, {
+        size: 1,
+        suppressible: false,
+        assetName: asset.originalFileName,
+      });
+      if (!confirmed) {
+        return;
       }
 
       try {

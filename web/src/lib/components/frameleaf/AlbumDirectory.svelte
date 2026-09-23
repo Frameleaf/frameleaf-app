@@ -5,11 +5,13 @@
 
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
   import AlbumMoveDialog from '$lib/components/frameleaf/AlbumMoveDialog.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
   import CollectionShelf from '$lib/components/frameleaf/CollectionShelf.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
@@ -38,13 +40,19 @@
     handleCreateAlbumEntry,
     handleDeleteAlbum,
     handleDownloadAlbum,
+    handleLeaveAlbum,
     handleMoveAlbumToCollection,
-    handleRemoveUserFromAlbum,
   } from '$lib/services/album.service';
   import { albumDirectoryView } from '$lib/stores/preferences.store';
   import { getAlbumDragData, isAlbumDrag } from '$lib/utils/album-drag';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
-  import { AlbumKind, type AlbumResponseDto, type AlbumTreeResponseDto, type CreateAlbumDto } from '@immich/sdk';
+  import {
+    AlbumKind,
+    SharedLinkType,
+    type AlbumResponseDto,
+    type AlbumTreeResponseDto,
+    type CreateAlbumDto,
+  } from '@immich/sdk';
   import { Icon, modalManager } from '@immich/ui';
   import {
     mdiAccountMultipleOutline,
@@ -57,6 +65,7 @@
     mdiFolderMultipleOutline,
     mdiFolderOpenOutline,
     mdiImageAlbum,
+    mdiLinkVariant,
     mdiLogoutVariant,
     mdiMagnify,
     mdiPencilOutline,
@@ -109,6 +118,9 @@
     parentId: null,
   });
   let moveDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
+  let deleteDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
+  let leaveDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
+  let linkDialog = $state<{ open: boolean; album?: AlbumResponseDto }>({ open: false });
   let smartDialogOpen = $state(false);
   const headingId = albumDirectoryHeadingId;
 
@@ -138,6 +150,14 @@
   const openRoute = (album: AlbumResponseDto) =>
     isSpace(album) ? Route.viewSharedSpace({ id: album.id }) : Route.viewAlbum({ id: album.id });
   const nameOf = (album: AlbumResponseDto | undefined) => album?.albumName || $t('unnamed_album');
+  const kindOf = (album: AlbumResponseDto) =>
+    album.kind === AlbumKind.Collection
+      ? $t('frameleaf_album_kind_collection')
+      : isSpace(album)
+        ? $t('frameleaf_album_kind_space')
+        : $t('frameleaf_album_kind_album');
+  const albumCountOf = (album: AlbumResponseDto) =>
+    tree.collections.find(({ collection }) => collection.id === album.id)?.albumCount ?? 0;
 
   const filterLabels: Record<AlbumDirectoryFilter, () => string> = {
     all: () => $t('all'),
@@ -215,12 +235,9 @@
       if (!album) {
         return false;
       }
+      // Stay on the page and say what happened (Collections.jsx); the new album is in the refreshed tree.
       status = $t('frameleaf_albums_created', { values: { name: nameOf(album) } });
-      if (album.kind === AlbumKind.Album) {
-        await goto(Route.viewAlbum({ id: album.id }));
-      } else {
-        await refresh();
-      }
+      await refresh();
       return true;
     } finally {
       busy = false;
@@ -248,27 +265,31 @@
     }
   };
 
-  const remove = async (album: AlbumResponseDto) => {
-    if (album.kind === AlbumKind.Collection) {
-      const count = tree.collections.find(({ collection }) => collection.id === album.id)?.albumCount ?? 0;
-      const confirmed = await modalManager.showDialog({
-        prompt: $t('frameleaf_albums_delete_collection_confirm', { values: { name: nameOf(album), count } }),
-      });
-      if (!confirmed) {
-        return;
-      }
-      const ok = await handleDeleteAlbum(album, { prompt: false, notify: false });
-      if (ok) {
-        status = $t('frameleaf_albums_deleted_collection', { values: { name: nameOf(album) } });
-      }
-    } else {
-      await handleDeleteAlbum(album);
+  /** Delete and Leave confirm in the Frameleaf dialog (AlbumConfirmDialog), as the album header does. */
+  const confirmDelete = async () => {
+    const album = deleteDialog.album;
+    if (!album) {
+      return;
+    }
+    const ok = await handleDeleteAlbum(album, { prompt: false, notify: false });
+    if (ok) {
+      status =
+        album.kind === AlbumKind.Collection
+          ? $t('frameleaf_albums_deleted_collection', { values: { name: nameOf(album) } })
+          : $t('frameleaf_albums_deleted', { values: { name: nameOf(album) } });
     }
     await refresh();
   };
 
-  const leave = async (album: AlbumResponseDto) => {
-    await handleRemoveUserFromAlbum(album, authManager.user);
+  const confirmLeave = async () => {
+    const album = leaveDialog.album;
+    if (!album) {
+      return;
+    }
+    const left = await handleLeaveAlbum(album);
+    if (left) {
+      status = $t('frameleaf_albums_left', { values: { name: nameOf(album) } });
+    }
     await refresh();
   };
 
@@ -385,13 +406,20 @@
         onClick={() => share(album)}
       />
     {/if}
+    {#if owner}
+      <MenuOption
+        icon={mdiLinkVariant}
+        text={$t('frameleaf_albums_create_link')}
+        onClick={() => (linkDialog = { open: true, album })}
+      />
+    {/if}
     {#if album.assetCount > 0}
       <MenuOption icon={mdiDownloadOutline} text={$t('download')} onClick={() => handleDownloadAlbum(album)} />
     {/if}
     {#if owner}
-      <MenuOption icon={mdiDeleteOutline} text={$t('delete')} onClick={() => remove(album)} />
+      <MenuOption icon={mdiDeleteOutline} text={$t('delete')} onClick={() => (deleteDialog = { open: true, album })} />
     {:else}
-      <MenuOption icon={mdiLogoutVariant} text={$t('leave')} onClick={() => leave(album)} />
+      <MenuOption icon={mdiLogoutVariant} text={$t('leave')} onClick={() => (leaveDialog = { open: true, album })} />
     {/if}
   </ButtonContextMenu>
 {/snippet}
@@ -642,6 +670,40 @@
     targets={moveTargets(tree, moveDialog.album, currentUserId)}
     {busy}
     onMove={(collectionId) => moveDialog.album && void move(moveDialog.album, collectionId)}
+  />
+{/if}
+
+{#if deleteDialog.album}
+  {@const album = deleteDialog.album}
+  <AlbumConfirmDialog
+    title={$t('frameleaf_album_delete_title', { values: { name: nameOf(album) } })}
+    body={album.kind === AlbumKind.Collection
+      ? $t('frameleaf_album_delete_collection_body')
+      : $t('frameleaf_album_delete_body', { values: { kind: kindOf(album) } })}
+    keepNote={album.kind === AlbumKind.Collection
+      ? $t('frameleaf_album_delete_collection_keep', { values: { count: albumCountOf(album) } })
+      : $t('frameleaf_album_delete_keep', { values: { count: album.assetCount } })}
+    confirmLabel={$t('frameleaf_album_delete', { values: { kind: kindOf(album) } })}
+    bind:open={deleteDialog.open}
+    onConfirm={confirmDelete}
+  />
+{/if}
+
+{#if leaveDialog.album}
+  {@const album = leaveDialog.album}
+  <AlbumConfirmDialog
+    title={$t('frameleaf_album_leave_title', { values: { name: nameOf(album) } })}
+    body={$t('frameleaf_album_leave_body')}
+    confirmLabel={$t('frameleaf_album_leave', { values: { kind: kindOf(album) } })}
+    bind:open={leaveDialog.open}
+    onConfirm={confirmLeave}
+  />
+{/if}
+
+{#if linkDialog.album}
+  <SharedLinkForm
+    bind:open={linkDialog.open}
+    target={{ type: SharedLinkType.Album, albumId: linkDialog.album.id, name: nameOf(linkDialog.album) }}
   />
 {/if}
 

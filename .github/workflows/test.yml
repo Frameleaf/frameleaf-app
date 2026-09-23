@@ -40,6 +40,8 @@ jobs:
         run: |
           node scripts/frameleaf-documentation-coverage.mjs
           node --test scripts/frameleaf-documentation-coverage.test.mjs
+      - name: Validate Frameleaf prototype conformance evidence
+        run: node --test scripts/frameleaf-conformance-audit.test.mjs
     timeout-minutes: 60
   server-unit-tests:
     name: Test & Lint Server

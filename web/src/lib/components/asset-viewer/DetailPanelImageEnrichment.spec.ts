@@ -63,7 +63,6 @@ describe('DetailPanelImageEnrichment', () => {
     renderWithTooltips(DetailPanelImageEnrichment, {
       asset,
       isOwner: true,
-      isAdmin: true,
       onAssetSuppressed,
     });
 
