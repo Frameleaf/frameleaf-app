@@ -868,6 +868,73 @@ export const PetObservationSourceSchema = z
   .meta({ id: 'PetObservationSource' });
 
 /**
+ * Documents: text read from photos, and the owner's corrections to it (FL-63).
+ *
+ * Recognized text (`asset_ocr`) is replaceable model output: reading a photo again deletes and
+ * rewrites it. What the owner decides about that text is durable (`asset_document_edit`) and is
+ * never written into the recognized rows, so the raw recognition stays inspectable as provenance.
+ */
+export enum DocumentEditAction {
+  /** Accept a suggested field value as it was read. */
+  Confirm = 'confirm',
+  /** Replace the recognized text, or a field value, with the owner's own. */
+  Correct = 'correct',
+  /** Set a line or a field suggestion aside. */
+  Dismiss = 'dismiss',
+}
+
+export const DocumentEditActionSchema = z
+  .enum(DocumentEditAction)
+  .describe('What the owner decided about recognized text')
+  .meta({ id: 'DocumentEditAction' });
+
+/** Values suggested from recognized text. A suggestion is never a verified record. */
+export enum DocumentField {
+  Date = 'date',
+  Total = 'total',
+  Reference = 'reference',
+  Email = 'email',
+  Phone = 'phone',
+}
+
+export const DocumentFieldSchema = z
+  .enum(DocumentField)
+  .describe('A value suggested from recognized text')
+  .meta({ id: 'DocumentField' });
+
+export enum DocumentLineStatus {
+  /** As the text recognition read it. */
+  Recognized = 'recognized',
+  /** The owner's correction replaces the recognized text. */
+  Corrected = 'corrected',
+  /** The owner set the line aside. */
+  Dismissed = 'dismissed',
+  /**
+   * The owner's correction whose recognized line is gone because the photo was read again. It is
+   * kept, with its region, and only its owner sees it.
+   */
+  Kept = 'kept',
+}
+
+export const DocumentLineStatusSchema = z
+  .enum(DocumentLineStatus)
+  .describe('Where the text of a document line comes from')
+  .meta({ id: 'DocumentLineStatus' });
+
+export enum DocumentFieldStatus {
+  /** Read from the text; not checked by anyone. */
+  Suggested = 'suggested',
+  Confirmed = 'confirmed',
+  Corrected = 'corrected',
+  Dismissed = 'dismissed',
+}
+
+export const DocumentFieldStatusSchema = z
+  .enum(DocumentFieldStatus)
+  .describe('Whether a document field is a suggestion or the owner decided it')
+  .meta({ id: 'DocumentFieldStatus' });
+
+/**
  * Durable, user-visible media operations (FL-43, FL-104).
  *
  * One persistent job contract covers every long-running workload a person can see in Activity.
@@ -1907,6 +1974,7 @@ export enum ApiTag {
   ConfigPublic = 'Config (public)',
   DatabaseBackups = 'Database Backups (admin)',
   Deprecated = 'Deprecated',
+  Documents = 'Documents',
   Download = 'Download',
   Duplicates = 'Duplicates',
   Faces = 'Faces',

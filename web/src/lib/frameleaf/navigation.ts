@@ -21,6 +21,7 @@ import {
   mdiShieldLockOutline,
   mdiStarOutline,
   mdiTagMultipleOutline,
+  mdiTextBoxSearchOutline,
   mdiTrashCanOutline,
   mdiTuneVariant,
 } from '@mdi/js';
@@ -84,7 +85,7 @@ const LIBRARY_INDEX_ROOTS = [pathOf(Route.albums()), pathOf(Route.sharing())];
 /**
  * Roots that are the prototype's "library" screen: every named collection reached through
  * `navigate()`/`navigateCollection()`/`exploreQuery()` in App.jsx (Library, Favorites, Recently
- * added, Best Photos, Archive, Locked, Pets, an individual album or shared space), plus the
+ * added, Best Photos, Archive, Locked, Pets, Documents, an individual album or shared space), plus the
  * "explore" screen (`goExplore()`). Each root's own child routes (an asset viewer, an
  * album/space's own photos) stay current with it. `/search` has no screen of its own in the
  * prototype — it opens as a panel over whatever screen was already current — so it is treated
@@ -99,6 +100,7 @@ const LIBRARY_ROOTS = [
   Route.locked(),
   Route.suppressed(),
   Route.pets(),
+  Route.documents(),
   Route.albums(),
   Route.sharing(),
   Route.explore(),
@@ -164,10 +166,9 @@ export const currentPrimaryDestination = (pathname: string): PrimaryDestinationI
  * Every entry points at a route that exists in production, so the rail never renders a
  * dead link. Pets landed with the identity model in FL-58 and is unconditional: it is a
  * Frameleaf feature with no upstream account preference behind it, so there is nothing
- * for an account to switch off. One Explore destination from the design is still absent:
- * Documents waits on the discovery work in FL-46/FL-62 (the search DTO carries no
- * document media filter today, only a free-text `ocr` term). Add it here when that route
- * exists.
+ * for an account to switch off. Documents (FL-63) is unconditional for the same reason:
+ * it lists the photos whose recognized text is visible, and says so when text
+ * recognition is switched off rather than disappearing.
  *
  * Duplicate review, large files and Live Photo pairing deliberately have no rail entry.
  * They stay under Settings -> Utilities, reached through the single Library Care entry.
@@ -191,6 +192,7 @@ export type RailDestinationId =
   | 'map'
   | 'tags'
   | 'folders'
+  | 'documents'
   | 'workflows'
   | 'trash'
   | 'libraryCare'
@@ -301,6 +303,7 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
         ...keep(capabilities.map, destination('map', 'map', mdiMapOutline, Route.map())),
         ...keep(capabilities.tags, destination('tags', 'tags', mdiTagMultipleOutline, Route.tags())),
         ...keep(capabilities.folders, destination('folders', 'folders', mdiFolderMultipleOutline, Route.folders())),
+        destination('documents', 'frameleaf_documents_title', mdiTextBoxSearchOutline, Route.documents()),
       ],
     },
     {
