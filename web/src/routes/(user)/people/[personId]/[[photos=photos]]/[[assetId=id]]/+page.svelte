@@ -329,6 +329,7 @@
       bind:timelineManager
       {options}
       destination={{ kind: 'person', id: person.id }}
+      downloadFileName={person.name}
       selectionMode={viewMode === PersonPageViewMode.SELECT_PERSON}
       singleSelect={viewMode === PersonPageViewMode.SELECT_PERSON}
       noSelectionBar={viewMode === PersonPageViewMode.SELECT_PERSON}
