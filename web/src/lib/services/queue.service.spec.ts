@@ -10,7 +10,7 @@ import { getQueuesActions } from '$lib/services/queue.service';
  */
 describe('getQueuesActions', () => {
   it('offers Enrichment tasks alongside Concurrency and Create job', () => {
-    const actions = getQueuesActions((key: string) => key, undefined);
+    const actions = getQueuesActions((key) => String(key), undefined);
 
     expect(actions.EnrichmentTasks).toBeDefined();
     expect(actions.EnrichmentTasks.icon).toBe(mdiImageSearchOutline);
@@ -19,7 +19,7 @@ describe('getQueuesActions', () => {
   });
 
   it('keeps every existing header action', () => {
-    const actions = getQueuesActions((key: string) => key, undefined);
+    const actions = getQueuesActions((key) => String(key), undefined);
 
     expect(Object.keys(actions)).toEqual(['ResumePaused', 'ManageConcurrency', 'EnrichmentTasks', 'CreateJob']);
   });

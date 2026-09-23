@@ -480,7 +480,7 @@ const countLabel = ($t: MessageFormatter, count: number) => $t('items_count', { 
 export const buildCatalogueCommands = (
   $t: MessageFormatter,
   catalogue: CommandCatalogue,
-): Pick<CommandIndexInput, 'people' | 'collections' | 'places'> => ({
+): Required<Pick<CommandIndexInput, 'people' | 'collections' | 'places'>> => ({
   people: catalogue.people.map((person) => ({
     id: person.id,
     title: person.name || $t('no_name'),

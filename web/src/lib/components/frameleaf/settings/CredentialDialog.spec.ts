@@ -17,7 +17,7 @@ vi.mock(import('$lib/managers/system-config-manager.svelte'), () => ({
       notifications: { smtp: { transport: { password: '', passwordConfigured: false } } },
       machineLearning: { runpod: { apiKey: '', hfToken: '' } },
     } as unknown as AdminConfigDto,
-  },
+  } as never,
 }));
 
 vi.mock(import('$lib/managers/event-manager.svelte'), () => ({

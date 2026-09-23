@@ -221,8 +221,18 @@ describe('duplicate review', () => {
           status: MediaOperationStatus.Completed,
           processedUnits: '4',
           bulkItems: [
-            { id: 'c', status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_group_changed' },
-            { id: 'd', status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_group_changed' },
+            {
+              id: 'c',
+              status: MediaOperationItemStatus.Skipped,
+              reasonKey: 'frameleaf_bulk_reason_group_changed',
+              message: null,
+            },
+            {
+              id: 'd',
+              status: MediaOperationItemStatus.Skipped,
+              reasonKey: 'frameleaf_bulk_reason_group_changed',
+              message: null,
+            },
           ],
         }),
       );

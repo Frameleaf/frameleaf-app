@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Button } from "./App";
+import { Button } from "./Controls";
 import { Icon } from "./Icon";
 import {
   BirthdayDialog,
