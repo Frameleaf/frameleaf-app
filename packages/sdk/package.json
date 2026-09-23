@@ -17,7 +17,8 @@
     }
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test": "node --test test/*.test.mjs"
   },
   "license": "GNU Affero General Public License version 3",
   "dependencies": {
