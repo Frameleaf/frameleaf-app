@@ -36,6 +36,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getRecentlyCreatedAssetIds: vitest.fn(),
     getNsfwAssetIds: vitest.fn().mockResolvedValue(new Set()),
     getHiddenContentAssetIds: vitest.fn().mockResolvedValue(new Set()),
+    getLockedAssetIds: vitest.fn().mockResolvedValue(new Set()),
     upsertFile: vitest.fn(),
     upsertFiles: vitest.fn(),
     deleteFile: vitest.fn(),

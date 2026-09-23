@@ -2051,4 +2051,157 @@ describe(AlbumService.name, () => {
       expect(mocks.albumUser.delete).toHaveBeenCalledWith({ albumId: space.id, userId: editorId });
     });
   });
+
+  describe('Locked media in albums (FL-32)', () => {
+    const elevated = (user: { id: string }) => AuthFactory.from(user).session({ hasElevatedPermission: true }).build();
+
+    it('reads an album with the elevated owner as the Locked owner', async () => {
+      const album = AlbumFactory.create();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+
+      await sut.get(elevated(owner), album.id);
+
+      expect(mocks.album.getById).toHaveBeenCalledWith(
+        album.id,
+        { withAssets: false, lockedOwnerId: owner.id },
+        owner.id,
+      );
+      expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], { lockedOwnerId: owner.id });
+    });
+
+    it('reads an album without a Locked owner for an ordinary session', async () => {
+      const album = AlbumFactory.create();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+
+      await sut.get(AuthFactory.create(owner), album.id);
+
+      expect(mocks.album.getById.mock.calls[0][1].lockedOwnerId).toBeUndefined();
+      expect(mocks.album.getMetadataForIds).toHaveBeenCalledWith([album.id], {});
+    });
+
+    it('never offers Locked media as a cover choice, even to the elevated owner', async () => {
+      const album = AlbumFactory.from().asset().build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.update.mockResolvedValue(getForAlbum(album));
+
+      await sut.update(elevated(owner), album.id, { albumName: 'renamed' });
+
+      expect(mocks.album.getById.mock.calls[0][1]).toMatchObject({ withAssets: true });
+      expect(mocks.album.getById.mock.calls[0][1].lockedOwnerId).toBeUndefined();
+    });
+
+    it('lets an elevated owner add Locked items and picks a cover that is not Locked', async () => {
+      const [locked, plain] = [AssetFactory.create(), AssetFactory.create()];
+      const album = AlbumFactory.create();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([locked.id, plain.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValueOnce(new Set());
+      mocks.album.getFirstCoverCandidate.mockResolvedValue(plain.id);
+
+      await expect(sut.addAssets(elevated(owner), album.id, { ids: [locked.id, plain.id] })).resolves.toEqual([
+        { success: true, id: locked.id },
+        { success: true, id: plain.id },
+      ]);
+
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(owner.id, new Set([locked.id, plain.id]), true);
+      expect(mocks.album.getFirstCoverCandidate).toHaveBeenCalledWith([locked.id, plain.id]);
+      expect(mocks.album.update).toHaveBeenCalledWith(
+        album.id,
+        { id: album.id, updatedAt: expect.any(Date), albumThumbnailAssetId: plain.id },
+        owner.id,
+      );
+      expect(mocks.album.addAssetIds).toHaveBeenCalledWith(album.id, [locked.id, plain.id]);
+    });
+
+    it('leaves the cover unset when an elevated owner adds only Locked items to an uncovered album', async () => {
+      const locked = AssetFactory.create();
+      const album = AlbumFactory.create();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([locked.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValueOnce(new Set());
+      mocks.album.getFirstCoverCandidate.mockResolvedValue(undefined);
+
+      await sut.addAssets(elevated(owner), album.id, { ids: [locked.id] });
+
+      expect(mocks.album.update).toHaveBeenCalledWith(
+        album.id,
+        { id: album.id, updatedAt: expect.any(Date), albumThumbnailAssetId: undefined },
+        owner.id,
+      );
+    });
+
+    it('does not consult the database for the cover of an ordinary session', async () => {
+      const asset = AssetFactory.create();
+      const album = AlbumFactory.create();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValueOnce(new Set());
+
+      await sut.addAssets(AuthFactory.create(owner), album.id, { ids: [asset.id] });
+
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(owner.id, new Set([asset.id]), false);
+      expect(mocks.album.getFirstCoverCandidate).not.toHaveBeenCalled();
+      expect(mocks.album.update).toHaveBeenCalledWith(
+        album.id,
+        { id: album.id, updatedAt: expect.any(Date), albumThumbnailAssetId: asset.id },
+        owner.id,
+      );
+    });
+
+    it('creates an album from Locked items with a null cover when nothing else was added', async () => {
+      const locked = AssetFactory.create();
+      const album = AlbumFactory.from({ albumName: 'private' }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.album.create.mockResolvedValue(getForAlbum(album));
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([locked.id]));
+      mocks.album.getFirstCoverCandidate.mockResolvedValue(undefined);
+
+      await sut.create(elevated(owner), { albumName: 'private', assetIds: [locked.id] });
+
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(owner.id, new Set([locked.id]), true);
+      expect(mocks.album.create).toHaveBeenCalledWith(
+        expect.objectContaining({ albumName: 'private', albumThumbnailAssetId: null }),
+        [locked.id],
+        [{ userId: owner.id, role: AlbumUserRole.Owner }],
+        owner.id,
+      );
+    });
+
+    it('adds Locked items to several albums and covers each with a candidate that is not Locked', async () => {
+      const [locked, plain] = [AssetFactory.create(), AssetFactory.create()];
+      const album = AlbumFactory.create();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValueOnce(new Set([album.id]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([locked.id, plain.id]));
+      mocks.album.getById.mockResolvedValueOnce(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValueOnce(new Set());
+      mocks.album.getFirstCoverCandidate.mockResolvedValue(plain.id);
+
+      await expect(
+        sut.addAssetsToAlbums(elevated(owner), { albumIds: [album.id], assetIds: [locked.id, plain.id] }),
+      ).resolves.toEqual({ success: true, error: undefined });
+
+      expect(mocks.album.getFirstCoverCandidate).toHaveBeenCalledWith([locked.id, plain.id]);
+      expect(mocks.album.update).toHaveBeenCalledWith(
+        album.id,
+        { id: album.id, updatedAt: expect.any(Date), albumThumbnailAssetId: plain.id },
+        owner.id,
+      );
+    });
+  });
 });

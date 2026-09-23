@@ -206,7 +206,11 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
     }
 
     case Permission.AssetShare: {
-      const isOwner = await checkAssetOwnerAccess(access, auth, ids, false);
+      // Owner decision, September 22, 2026: an elevated (PIN-unlocked) owner may put Locked media into
+      // albums by any path; the album then hides it from every session that is not the owner's elevated
+      // one. An ordinary session is still refused. Shared links never carry Locked media, so the
+      // shared-link service refuses it on top of this check (see SharedLinkService).
+      const isOwner = await checkAssetOwnerAccess(access, auth, ids, !!auth.session?.hasElevatedPermission);
       const isPartner = await checkAssetPartnerAccess(access, auth, setDifference(ids, isOwner));
       return setUnion(isOwner, isPartner);
     }
