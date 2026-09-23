@@ -38,10 +38,7 @@
   } from '$lib/frameleaf/library-filters';
   import { matchLibraryShortcut, type LibraryShortcut } from '$lib/frameleaf/library-shortcuts';
   import { revealsLocks } from '$lib/frameleaf/session-access.svelte';
-  import {
-    assetMultiSelectManager,
-    type AssetMultiSelectManager,
-  } from '$lib/managers/asset-multi-select-manager.svelte';
+  import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import type { TimelineAsset, TimelineManagerOptions } from '$lib/managers/timeline-manager/types';
@@ -80,11 +77,6 @@
     loading?: boolean;
     /** Restore the scroll position from the URL's asset and from the session's scroll anchor. */
     enableRouting?: boolean;
-    /**
-     * Mirror the session's selection into the existing multi-select manager, so the bulk actions
-     * (FL-32, FL-36) act on exactly what the library shows as selected. One selection, two readers.
-     */
-    multiSelect?: AssetMultiSelectManager | null;
     /** FL-30: rail and top bar. */
     shell?: Snippet;
     /** Rendered above the results toolbar, inside the scrolling area. */
@@ -147,7 +139,6 @@
     selectAll = 'matching',
     loading = false,
     enableRouting = false,
-    multiSelect = assetMultiSelectManager,
     bulkContext,
     downloadFileName,
     beforeAction,
@@ -430,14 +421,12 @@
 
   /**
    * The session owns the selection; the multi-select manager is kept in step with it so the
-   * existing bulk actions keep acting on the same items. Assets that are not loaded cannot be
+   * existing bulk actions (FL-32, FL-36) keep acting on the same items. Assets that are not loaded cannot be
    * mirrored, so a "select everything matching" selection still has to be resolved by its owner.
    */
   $effect(() => {
+    const multiSelect = assetMultiSelectManager;
     const ids = new Set(session.selection);
-    if (!multiSelect) {
-      return;
-    }
     for (const asset of multiSelect.assets) {
       if (!ids.has(asset.id)) {
         multiSelect.removeAssetFromMultiselectGroup(asset.id);

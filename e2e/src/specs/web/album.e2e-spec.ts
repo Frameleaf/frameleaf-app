@@ -12,7 +12,7 @@ test.describe('Album', () => {
     admin = await utils.adminSetup();
   });
 
-  test('keeps a new album after leaving Add photos without choosing anything', async ({ context, page }) => {
+  test('sends Select from library to the Library and keeps the new album', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
 
     // Albums page -> Create album opens the create dialog (Collections.jsx), then the new album.
@@ -26,10 +26,15 @@ test.describe('Album', () => {
     // CollectionHeader.jsx: Add photos -> Select from library / Upload from computer.
     await page.getByRole('button', { name: 'Add photos' }).click();
     await expect(page.getByRole('menuitem', { name: 'Upload from computer' })).toBeVisible();
+    const albumUrl = page.url();
     await page.getByRole('menuitem', { name: 'Select from library' }).click();
-    await page.keyboard.press('Escape');
 
-    await page.reload();
+    // App.jsx onAddPhotos: the Library is where photos are picked, with a hint toast pointing at the
+    // selection bar's "Add to album".
+    await page.waitForURL(/\/photos/);
+    await expect(page.getByText('Select photos, then choose Add to album in the selection bar.')).toBeVisible();
+
+    await page.goto(albumUrl);
     await expect(page.getByRole('button', { name: 'Add photos' })).toBeVisible();
   });
 
