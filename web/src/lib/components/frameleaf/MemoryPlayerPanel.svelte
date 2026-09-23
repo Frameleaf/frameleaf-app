@@ -49,7 +49,6 @@
   import { downloadBlob, getAssetMediaUrl, handlePromiseError, memoryLaneTitle } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { navigateToAsset } from '$lib/utils/asset-utils';
-  import { getAssetMediaUrl, handlePromiseError, memoryLaneTitle } from '$lib/utils';
   import { fromISODateTimeUTC, toTimelineAsset } from '$lib/utils/timeline-util';
   import {
     AssetMediaSize,
