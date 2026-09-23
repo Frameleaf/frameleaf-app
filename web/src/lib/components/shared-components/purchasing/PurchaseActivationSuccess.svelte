@@ -1,5 +1,5 @@
 <script lang="ts">
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { setSupportBadgeVisibility } from '$lib/utils/purchase-utils';
   import { Button, Icon } from '@immich/ui';
@@ -19,7 +19,7 @@
   <p class="mt-6 text-lg">{$t('purchase_activated_subtitle')}</p>
 
   <div class="mt-6 mb-4 w-full rounded-xl border bg-gray-50 p-4 dark:border-gray-600 dark:bg-gray-900">
-    <SettingSwitch
+    <SettingToggle
       title={$t('show_supporter_badge')}
       subtitle={$t('show_supporter_badge_description')}
       bind:checked={authManager.preferences.purchase.showSupportBadge}

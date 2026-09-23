@@ -66,7 +66,7 @@
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
       {#each queueNames as queueName (queueName)}
-        <div class="ms-4 mt-4 flex flex-col gap-4">
+        <div class="flex flex-col gap-4">
           {#if isSystemConfigJobDto(queueName)}
             <SettingField
               inputType={SettingInputFieldType.NUMBER}
@@ -90,9 +90,7 @@
         </div>
       {/each}
 
-      <div class="ms-4">
-        <SettingActions bind:configToEdit keys={['job']} {disabled} />
-      </div>
+      <SettingActions bind:configToEdit keys={['job']} {disabled} />
     </form>
   </div>
 </div>
