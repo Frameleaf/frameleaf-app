@@ -49,7 +49,6 @@ import {
   onBeforeLink,
   onBeforeUnlink,
 } from 'src/utils/asset.util.js';
-import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { extractTimeZone } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -262,12 +261,13 @@ export class AssetService extends BaseService {
   }
 
   /**
-   * Moving into the Locked folder released every cover, featured photo and face thumbnail the assets
-   * were (FL-53, `releaseLockedCoverReferences`); the people whose featured face moved get a new
-   * thumbnail from the face that replaced it.
+   * Moving into the Locked folder moved the rest of each stack along and released every cover,
+   * featured photo and face thumbnail the assets were (FL-53, `onAssetsLocked`); the people whose
+   * featured face moved get a new thumbnail from the face that replaced it, and a profile picture
+   * copied from one of the photos is replaced.
    */
   private queueReleasedFaceThumbnails(ids: string[]) {
-    return queueReleasedPersonThumbnails({ person: this.personRepository, job: this.jobRepository }, ids);
+    return this.afterAssetsLocked(ids);
   }
 
   /**

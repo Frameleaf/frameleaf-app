@@ -5,6 +5,12 @@ import { stringToBool } from 'src/validation.js';
 
 export const BEST_PHOTO_SCORE_VERSION = 1;
 
+/**
+ * A photo is marked as a Best Photo from this score up. The same threshold as the Best Photos card on
+ * Explore (`BEST_PHOTOS_QUALITY_MIN_SCORE` in the web, the design's `bestPhotosScore >= 90`).
+ */
+export const BEST_PHOTOS_MIN_SCORE = 0.9;
+
 const BestPhotoScoreSchema = z
   .object({
     score: z.number().meta({ format: 'double' }).min(0).max(1),
