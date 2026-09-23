@@ -41,8 +41,14 @@ export type ClassificationRuleCounts = Record<'matched' | 'suggested' | 'accepte
 type Contributions = { tagContributed: boolean; archiveContributed: boolean };
 type LiveAsset = { id: string; visibility: AssetVisibility; isLocked: boolean };
 
-const ACTIVE: ClassificationMatchDecision[] = [ClassificationMatchDecision.Matched, ClassificationMatchDecision.Accepted];
-const MANUAL: ClassificationMatchDecision[] = [ClassificationMatchDecision.Accepted, ClassificationMatchDecision.Rejected];
+const ACTIVE: ClassificationMatchDecision[] = [
+  ClassificationMatchDecision.Matched,
+  ClassificationMatchDecision.Accepted,
+];
+const MANUAL: ReadonlySet<ClassificationMatchDecision> = new Set([
+  ClassificationMatchDecision.Accepted,
+  ClassificationMatchDecision.Rejected,
+]);
 const LISTED: AssetVisibility[] = [AssetVisibility.Timeline, AssetVisibility.Archive];
 const NONE: Contributions = { tagContributed: false, archiveContributed: false };
 
@@ -55,7 +61,7 @@ const emptyOutcome = (): ClassificationApplyOutcome => ({
   untagged: [],
 });
 
-const jsonb = (value: string[]) => sql<string[]>`${JSON.stringify(value)}::jsonb`;
+const jsonb = (value: string[]) => sql<string[]>`${JSON.stringify(value)}::text::jsonb`;
 
 /**
  * Classification rules and what they did (FL-60).
@@ -458,7 +464,7 @@ export class ClassificationRepository {
         }
 
         const score = matches.get(assetId) ?? null;
-        if (row && MANUAL.includes(row.decision)) {
+        if (row && MANUAL.has(row.decision)) {
           outcome.unchanged++;
           continue;
         }
@@ -613,7 +619,7 @@ export class ClassificationRepository {
       .forUpdate()
       .execute();
     return new Map<string, LiveAsset>(
-      rows.map((row) => [row.id, { id: row.id, visibility: row.visibility, isLocked: row.isLocked === true }]),
+      rows.map((row) => [row.id, { id: row.id, visibility: row.visibility, isLocked: !!row.isLocked }]),
     );
   }
 
@@ -668,6 +674,11 @@ export class ClassificationRepository {
       if (inserted) {
         tagContributed = true;
         outcome.tagged.push(asset.id);
+      } else {
+        // Already tagged. When another of the owner's rules added it, this rule shares that
+        // contribution, so the tag goes once the last rule holding it lets go. When the person tagged
+        // it themselves, no rule ever takes it away.
+        tagContributed = await this.isRuleContributedTag(trx, rule, asset.id);
       }
     }
 
@@ -699,11 +710,7 @@ export class ClassificationRepository {
     { album = true }: { album?: boolean } = {},
   ): Promise<void> {
     if (album && row.decision !== ClassificationMatchDecision.Suggested) {
-      await trx
-        .deleteFrom('album_asset')
-        .where('albumId', '=', rule.albumId)
-        .where('assetId', '=', asset.id)
-        .execute();
+      await trx.deleteFrom('album_asset').where('albumId', '=', rule.albumId).where('assetId', '=', asset.id).execute();
     }
 
     if (row.tagContributed && rule.tagId) {
@@ -714,6 +721,7 @@ export class ClassificationRepository {
         .where('classification_match.assetId', '=', asset.id)
         .where('classification_match.ruleId', '!=', rule.id)
         .where('classification_match.decision', 'in', ACTIVE)
+        .where('classification_match.tagContributed', '=', true)
         .where('classification_rule.tagId', '=', rule.tagId)
         .executeTakeFirst();
       if (!heldElsewhere) {
@@ -748,6 +756,20 @@ export class ClassificationRepository {
         asset.visibility = AssetVisibility.Timeline;
       }
     }
+  }
+
+  private async isRuleContributedTag(trx: Transaction<DB>, rule: ClassificationRuleEffects, assetId: string) {
+    const row = await trx
+      .selectFrom('classification_match')
+      .innerJoin('classification_rule', 'classification_rule.id', 'classification_match.ruleId')
+      .select('classification_match.ruleId')
+      .where('classification_match.assetId', '=', assetId)
+      .where('classification_match.ruleId', '!=', rule.id)
+      .where('classification_match.decision', 'in', ACTIVE)
+      .where('classification_match.tagContributed', '=', true)
+      .where('classification_rule.tagId', '=', rule.tagId)
+      .executeTakeFirst();
+    return !!row;
   }
 
   private async hasTag(trx: Transaction<DB>, tagId: string, assetId: string) {

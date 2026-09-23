@@ -1,5 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type {
+  ClassificationApplyOutcome,
+  ClassificationRuleCounts,
+  ClassificationRuleCriteria,
+  ClassificationRuleWithAlbum,
+} from 'src/repositories/classification.repository.js';
 import {
   CLASSIFICATION_INLINE_LIMIT,
   CLASSIFICATION_PREVIEW_ITEMS,
@@ -28,12 +34,6 @@ import {
   MlWorkload,
   Permission,
 } from 'src/enum.js';
-import type {
-  ClassificationApplyOutcome,
-  ClassificationRuleCounts,
-  ClassificationRuleCriteria,
-  ClassificationRuleWithAlbum,
-} from 'src/repositories/classification.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { BULK_MAX_ITEMS, type BulkOperationItem } from 'src/utils/bulk-operation.js';
@@ -139,7 +139,11 @@ export class ClassificationService extends BaseService {
     }
   }
 
-  async updateRule(auth: AuthDto, id: string, dto: ClassificationRuleUpdateDto): Promise<ClassificationRuleResponseDto> {
+  async updateRule(
+    auth: AuthDto,
+    id: string,
+    dto: ClassificationRuleUpdateDto,
+  ): Promise<ClassificationRuleResponseDto> {
     const rule = await this.requireRule(auth, id);
     const criteria: CriteriaInput = {
       personIds: dto.personIds ?? rule.personIds,
@@ -377,7 +381,7 @@ export class ClassificationService extends BaseService {
    * never throws, and a rule whose visual phrases cannot be compared right now is left alone.
    */
   async evaluateAsset(assetId: string, ownerId: string): Promise<void> {
-    let rules: ClassificationRuleWithAlbum[] = [];
+    let rules: ClassificationRuleWithAlbum[];
     try {
       rules = (await this.classificationRepository.getEnabledRules(ownerId)) ?? [];
     } catch (error) {
@@ -480,22 +484,19 @@ export class ClassificationService extends BaseService {
   private async validateCriteria(
     auth: AuthDto,
     criteria: CriteriaInput,
-    changed: { personIds: boolean; tagIds: boolean; visualQueries: boolean } = {
-      personIds: true,
-      tagIds: true,
-      visualQueries: true,
-    },
+    changed?: { personIds: boolean; tagIds: boolean; visualQueries: boolean },
   ) {
+    const check = changed ?? { personIds: true, tagIds: true, visualQueries: true };
     if (isEmptyCriteria(criteria)) {
       throw new BadRequestException('Add at least one rule');
     }
-    if (changed.personIds && criteria.personIds.length > 0) {
+    if (check.personIds && criteria.personIds.length > 0) {
       await this.requireAccess({ auth, permission: Permission.PersonRead, ids: criteria.personIds });
     }
-    if (changed.tagIds && criteria.tagIds.length > 0) {
+    if (check.tagIds && criteria.tagIds.length > 0) {
       await this.requireAccess({ auth, permission: Permission.TagRead, ids: criteria.tagIds });
     }
-    if (changed.visualQueries && criteria.visualQueries.length > 0) {
+    if (check.visualQueries && criteria.visualQueries.length > 0) {
       const { smartAlbums } = await this.getConfig({ withCache: true });
       if (!smartAlbums.rules.visualCategories) {
         throw new BadRequestException('Visual categories are turned off on this server');

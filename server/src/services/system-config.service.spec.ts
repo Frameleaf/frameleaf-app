@@ -4,6 +4,7 @@ import { mapConfig } from 'src/dtos/system-config.dto.js';
 import {
   AudioCodec,
   CQMode,
+  ClassificationRuleAction,
   Colorspace,
   ConfigCredential,
   HlsVideoResolution,
@@ -384,7 +385,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
   },
   smartAlbums: {
     enabled: false,
-    rules: { visualCategories: true, defaultAction: 'review' },
+    rules: { visualCategories: true, defaultAction: ClassificationRuleAction.Review },
     builtIn: {
       travel: {
         enabled: true,

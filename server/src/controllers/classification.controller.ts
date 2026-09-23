@@ -98,7 +98,10 @@ export class ClassificationController {
     description: 'One of your smart album rules and its counts.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  getClassificationRule(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<ClassificationRuleResponseDto> {
+  getClassificationRule(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+  ): Promise<ClassificationRuleResponseDto> {
     return this.service.getRule(auth, id);
   }
 
@@ -139,7 +142,10 @@ export class ClassificationController {
       'What applying the rule now would add, suggest and take back, without writing anything. Manual decisions are never part of it.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  planClassificationRule(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<ClassificationPlanResponseDto> {
+  planClassificationRule(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+  ): Promise<ClassificationPlanResponseDto> {
     return this.service.plan(auth, id);
   }
 
