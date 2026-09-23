@@ -1,5 +1,7 @@
 import { Expression, ExpressionBuilder, Kysely, sql } from 'kysely';
-import { AssetVisibility } from 'src/enum.js';
+import { AssetVisibility, JobName } from 'src/enum.js';
+import type { JobRepository } from 'src/repositories/job.repository.js';
+import type { PersonRepository } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
 import { automaticAlbumCover } from 'src/utils/album-cover.js';
 import { anyUuid, nsfwAssetIdExists } from 'src/utils/database.js';
@@ -19,7 +21,8 @@ import { anyUuid, nsfwAssetIdExists } from 'src/utils/database.js';
  * - `person.faceAssetId`: the next face of that person whose photo is not Locked, preferring faces on
  *   photos that are not sensitive, or none. `thumbnailPath` is cleared at the same time, so the crop
  *   cut from the Locked photo is never served again; the thumbnail is generated anew from the new
- *   face (`PersonGenerateThumbnail`, queued by the caller, or the nightly missing-thumbnail sweep).
+ *   face (`queueReleasedPersonThumbnails` after the transaction, or the nightly missing-thumbnail
+ *   sweep for callers that cannot queue jobs).
  * - `pet.featuredAssetId`: cleared. A featured photo is the owner's own choice and there is no
  *   automatic one to fall back to.
  *
@@ -135,4 +138,34 @@ const releasePetFeaturedPhotos = async (db: Kysely<DB>, assetIds: string[]) => {
     .where('pet.featuredAssetId', '=', anyUuid(assetIds))
     .where(isLockedAssetId(sql.ref('pet.featuredAssetId')))
     .execute();
+};
+
+/**
+ * Queues a new thumbnail for every person whose featured face `releaseLockedCoverReferences` moved off
+ * `assetIds` (FL-53). Call it once the move into the Locked folder is committed; the thumbnail job
+ * reads the new face.
+ */
+export const queueReleasedPersonThumbnails = async (
+  repositories: {
+    person: Pick<PersonRepository, 'getMissingThumbnailsForAssets'>;
+    job: Pick<JobRepository, 'queueAll'>;
+  },
+  assetIds: string[],
+): Promise<void> => {
+  if (assetIds.length === 0) {
+    return;
+  }
+
+  const people = await repositories.person.getMissingThumbnailsForAssets(assetIds);
+  const unique = new Map(people.map((person) => [`${person.ownerId}:${person.personGroupId}`, person]));
+  if (unique.size === 0) {
+    return;
+  }
+
+  await repositories.job.queueAll(
+    [...unique.values()].map(({ ownerId, personGroupId }) => ({
+      name: JobName.PersonGenerateThumbnail,
+      data: { ownerId, personGroupId },
+    })),
+  );
 };
