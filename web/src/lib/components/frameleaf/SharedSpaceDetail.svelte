@@ -243,37 +243,40 @@
     />
   </div>
 
-  <div class="panel" data-panel={panel}>
-    {#if panel === 'timeline'}
-      <SharedSpaceNewSince
-        {space}
-        info={newInfo}
-        showing={showingNew}
-        onToggle={(next) => (showingNew = next)}
-        onMarked={(next) => (newInfo = next)}
-      />
-      {#if contributor}
-        <SharedSpaceAddMatching {space} {albums} />
+  <!-- Moving to another space starts every panel afresh, so nothing loaded for one space shows in the next. -->
+  {#key space.id}
+    <div class="panel" data-panel={panel}>
+      {#if panel === 'timeline'}
+        <SharedSpaceNewSince
+          {space}
+          info={newInfo}
+          showing={showingNew}
+          onToggle={(next) => (showingNew = next)}
+          onMarked={(next) => (newInfo = next)}
+        />
+        {#if contributor}
+          <SharedSpaceAddMatching {space} {albums} />
+        {/if}
+        <SharedSpaceTimeline
+          {space}
+          filter={timelineFilter}
+          {albumOptions}
+          onOpen={(asset) => void openAsset(asset.id)}
+          onChanged={onRefresh}
+        />
+      {:else if panel === 'albums'}
+        <SharedSpaceLinkedAlbums {space} albums={linkedAlbums} library={albums} onChanged={onRefresh} />
+      {:else if panel === 'people'}
+        <SharedSpacePeople {space} linked={people.linked} candidates={people.candidates} onChanged={onRefresh} />
+      {:else if panel === 'places'}
+        <SharedSpaceMap {space} onSelect={openFirst} />
+      {:else if panel === 'activity'}
+        <SharedSpaceActivity {space} onClose={() => choosePanel('timeline')} />
+      {:else}
+        <SharedSpaceMembers {space} {members} onChanged={onRefresh} />
       {/if}
-      <SharedSpaceTimeline
-        {space}
-        filter={timelineFilter}
-        {albumOptions}
-        onOpen={(asset) => void openAsset(asset.id)}
-        onChanged={onRefresh}
-      />
-    {:else if panel === 'albums'}
-      <SharedSpaceLinkedAlbums {space} albums={linkedAlbums} library={albums} onChanged={onRefresh} />
-    {:else if panel === 'people'}
-      <SharedSpacePeople {space} linked={people.linked} candidates={people.candidates} onChanged={onRefresh} />
-    {:else if panel === 'places'}
-      <SharedSpaceMap {space} onSelect={openFirst} />
-    {:else if panel === 'activity'}
-      <SharedSpaceActivity {space} onClose={() => choosePanel('timeline')} />
-    {:else}
-      <SharedSpaceMembers {space} {members} onChanged={onRefresh} />
-    {/if}
-  </div>
+    </div>
+  {/key}
 </section>
 
 <style>
