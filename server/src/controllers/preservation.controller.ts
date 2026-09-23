@@ -168,7 +168,8 @@ export class PreservationController {
   @Authenticated({ permission: Permission.AssetDownload })
   @Endpoint({
     summary: 'Verify a preservation package',
-    description: 'Queues a check of every file of the package against its manifest; missing and changed files are reported.',
+    description:
+      'Queues a check of every file of the package against its manifest; missing and changed files are reported.',
     history: history(),
   })
   verifyPreservationPackage(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<MediaOperationDto> {

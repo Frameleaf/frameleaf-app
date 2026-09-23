@@ -28,7 +28,9 @@ const NameSchema = z.string().trim().min(1).max(120);
 
 export const PreservationPackageOriginSchema = z
   .enum(['export', 'upload', 'server'])
-  .describe('`export`: written by this server; `upload`: a package you uploaded; `server`: a package an administrator named on this server')
+  .describe(
+    '`export`: written by this server; `upload`: a package you uploaded; `server`: a package an administrator named on this server',
+  )
   .meta({ id: 'PreservationPackageOrigin' });
 
 export const PreservationPackageStatusSchema = z
@@ -55,7 +57,9 @@ const PreservationVerifyStateSchema = z
 
 const PreservationVerificationStatusSchema = z
   .enum(['verified', 'problems', 'unreadable'])
-  .describe('`verified`: every file matches; `problems`: some are missing or changed; `unreadable`: the manifest or index cannot be believed')
+  .describe(
+    '`verified`: every file matches; `problems`: some are missing or changed; `unreadable`: the manifest or index cannot be believed',
+  )
   .meta({ id: 'PreservationVerificationStatus' });
 
 const PreservationSupportLevelSchema = z
@@ -76,7 +80,9 @@ const PreservationSupportSchema = z
 
 const PreservationScopeSchema = z
   .object({
-    filter: SearchFilterSchema.optional().describe('Your items matching these conditions; the whole library when empty'),
+    filter: SearchFilterSchema.optional().describe(
+      'Your items matching these conditions; the whole library when empty',
+    ),
     assetIds: z
       .array(z.uuidv4())
       .min(1)
@@ -123,7 +129,9 @@ const PreservationExportCreateSchema = z
       .boolean()
       .optional()
       .describe('Include metadata sidecars, albums, people, tags and edit recipes. Checksums are always included.'),
-    requestKey: IdentifierSchema.optional().describe('Idempotency key; a repeated submit answers with the first package'),
+    requestKey: IdentifierSchema.optional().describe(
+      'Idempotency key; a repeated submit answers with the first package',
+    ),
   })
   .meta({ id: 'PreservationExportCreateDto' });
 
@@ -234,7 +242,11 @@ const PreservationUploadCreateSchema = z
 
 const PreservationServerPackageCreateSchema = z
   .object({
-    path: z.string().min(1).max(4096).describe('A package directory or ZIP file on this server, outside its media storage'),
+    path: z
+      .string()
+      .min(1)
+      .max(4096)
+      .describe('A package directory or ZIP file on this server, outside its media storage'),
     name: NameSchema.optional(),
   })
   .meta({ id: 'PreservationServerPackageCreateDto' });
@@ -263,7 +275,9 @@ const PreservationRestoreCreateSchema = z
 
 const PreservationRestoreStatusSchema = z
   .enum(['reviewing', 'ready', 'restoring', 'completed', 'unreadable'])
-  .describe('`reviewing`: the package is being checked; `ready`: review the findings, then restore; `restoring`; `completed`; `unreadable`: the package cannot be believed')
+  .describe(
+    '`reviewing`: the package is being checked; `ready`: review the findings, then restore; `restoring`; `completed`; `unreadable`: the package cannot be believed',
+  )
   .meta({ id: 'PreservationRestoreStatus' });
 
 const PreservationRestoreCountsSchema = z
@@ -316,7 +330,9 @@ const PreservationConflictSchema = z
     field: PreservationConflictFieldSchema,
     archived: z.string().nullable().describe('The package’s value'),
     current: z.string().nullable().describe('The library’s value'),
-    decision: PreservationConflictDefaultSchema.nullable().describe('Your choice; the restoration default applies when null'),
+    decision: PreservationConflictDefaultSchema.nullable().describe(
+      'Your choice; the restoration default applies when null',
+    ),
   })
   .meta({ id: 'PreservationConflictDto' });
 

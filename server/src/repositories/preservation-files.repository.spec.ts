@@ -70,7 +70,9 @@ describe(PreservationFileRepository.name, () => {
       const source = await sut.openPackage('directory', join(root, 'package'));
 
       await expect(source.readDocument('../outside.json', 1024)).rejects.toBeInstanceOf(PreservationPackageError);
-      await expect(source.readDocument('metadata/outside.json', 1024)).rejects.toMatchObject({ code: 'package_entry_link' });
+      await expect(source.readDocument('metadata/outside.json', 1024)).rejects.toMatchObject({
+        code: 'package_entry_link',
+      });
     });
 
     it('refuses a document larger than it may be', async () => {
@@ -133,7 +135,8 @@ describe(PreservationFileRepository.name, () => {
       await mkdir(join(root, 'backups', 'italy'), { recursive: true });
       await writeFile(join(root, 'backups', 'italy.zip'), 'zip');
       expect(await sut.resolveServerPackage(join(root, 'backups', 'italy'))).toMatchObject({ format: 'directory' });
-      expect(await sut.resolveServerPackage(join(root, 'backups', 'italy.zip'))).toMatchObject({ format: 'zip', size: 3 });
+      const zip = await sut.resolveServerPackage(join(root, 'backups', 'italy.zip'));
+      expect(zip).toMatchObject({ format: 'zip', size: 3 });
     });
 
     it('refuses media storage itself, anything inside it, a link and a missing path', async () => {
@@ -144,7 +147,9 @@ describe(PreservationFileRepository.name, () => {
       await expect(sut.resolveServerPackage(root)).rejects.toMatchObject({ code: 'package_path_managed' });
       await symlink(join(root, 'media'), join(root, 'alias'));
       await expect(sut.resolveServerPackage(join(root, 'alias'))).rejects.toMatchObject({ code: 'package_path_link' });
-      await expect(sut.resolveServerPackage(join(root, 'nothing'))).rejects.toMatchObject({ code: 'package_path_missing' });
+      await expect(sut.resolveServerPackage(join(root, 'nothing'))).rejects.toMatchObject({
+        code: 'package_path_missing',
+      });
     });
   });
 });

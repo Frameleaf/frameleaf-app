@@ -191,7 +191,8 @@ describe('index entries', () => {
     ).toBe(false);
     expect(checkPreservationEntry(line({ owner: 'somebody else' })).ok).toBe(false);
     expect(checkPreservationEntry('not json').ok).toBe(false);
-    expect(PreservationEntrySchema.safeParse(JSON.parse(line({ original: { path: `originals/${sourceId}.jpg`, sha1: 'x', sha256, bytes: 5 } }))).success).toBe(false);
+    const badSha1 = line({ original: { path: `originals/${sourceId}.jpg`, sha1: 'x', sha256, bytes: 5 } });
+    expect(PreservationEntrySchema.safeParse(JSON.parse(badSha1)).success).toBe(false);
   });
 });
 
@@ -222,14 +223,16 @@ describe(orderPreservationAlbums.name, () => {
   const child = '44444444-4444-4444-8444-444444444444';
 
   it('creates every parent before its children', () => {
-    const ordered = orderPreservationAlbums([album(child, { parentId: collection }), album(collection, { kind: 'collection' })]);
+    const ordered = orderPreservationAlbums([
+      album(child, { parentId: collection }),
+      album(collection, { kind: 'collection' }),
+    ]);
     expect(ordered.map((item) => item.id)).toEqual([collection, child]);
   });
 
   it('refuses cycles, missing parents and duplicates', () => {
-    expect(() => orderPreservationAlbums([album(child, { parentId: collection }), album(collection, { parentId: child })])).toThrow(
-      PreservationPackageError,
-    );
+    const cycle = [album(child, { parentId: collection }), album(collection, { parentId: child })];
+    expect(() => orderPreservationAlbums(cycle)).toThrow(PreservationPackageError);
     expect(() => orderPreservationAlbums([album(child, { parentId: collection })])).toThrow(PreservationPackageError);
     expect(() => orderPreservationAlbums([album(child), album(child)])).toThrow(PreservationPackageError);
   });
@@ -255,7 +258,8 @@ describe('descriptions', () => {
 
   it('restores only a description the owner wrote', () => {
     expect(manualDescription(sidecarOf({ description: { text: 'Mine', source: 'manual', model: null } }))).toBe('Mine');
-    expect(manualDescription(sidecarOf({ description: { text: 'Model text', source: 'generated', model: 'x' } }))).toBeNull();
+    const generated = sidecarOf({ description: { text: 'Model text', source: 'generated', model: 'x' } });
+    expect(manualDescription(generated)).toBeNull();
   });
 
   it('never treats a rating of zero as a rating', () => {
@@ -290,10 +294,10 @@ describe(compareWithLibrary.name, () => {
   });
 
   it('adds a favourite and a lock but never removes either', () => {
-    expect(compareWithLibrary(sidecarOf({ isFavorite: true }), libraryOf(), { restoreEditRecipes: true }).fills).toContain(
-      'favorite',
-    );
-    expect(compareWithLibrary(sidecarOf({ isFavorite: false }), libraryOf({ isFavorite: true }), { restoreEditRecipes: true }).fills).not.toContain('favorite');
+    const options = { restoreEditRecipes: true };
+    expect(compareWithLibrary(sidecarOf({ isFavorite: true }), libraryOf(), options).fills).toContain('favorite');
+    const unfavourite = compareWithLibrary(sidecarOf({ isFavorite: false }), libraryOf({ isFavorite: true }), options);
+    expect(unfavourite.fills).not.toContain('favorite');
 
     const locked = sidecarOf({ lock: { reason: 'detected', lockedAt: null } });
     expect(compareWithLibrary(locked, libraryOf(), { restoreEditRecipes: true }).lock).toBe(true);
@@ -312,9 +316,8 @@ describe(compareWithLibrary.name, () => {
   it('asks about edit recipes only when they are being restored', () => {
     const edited = sidecarOf({ edits: { isEdited: true, recipe: [{ action: 'rotate', parameters: { angle: 90 } }] } });
     const library = libraryOf({ editRecipe: [{ action: 'crop', parameters: { x: 0, y: 0, width: 10, height: 10 } }] });
-    expect(compareWithLibrary(edited, library, { restoreEditRecipes: true }).conflicts.map((item) => item.field)).toEqual([
-      'editRecipe',
-    ]);
+    const conflicts = compareWithLibrary(edited, library, { restoreEditRecipes: true }).conflicts;
+    expect(conflicts.map((item) => item.field)).toEqual(['editRecipe']);
     expect(compareWithLibrary(edited, library, { restoreEditRecipes: false }).conflicts).toEqual([]);
   });
 });
@@ -361,7 +364,9 @@ describe(fieldsToRestore.name, () => {
   });
 
   it('keeps only known fields and choices from a client', () => {
-    expect(sanitizeDecisions({ description: 'replace', owner: 'replace', rating: 'maybe' })).toEqual({ description: 'replace' });
+    expect(sanitizeDecisions({ description: 'replace', owner: 'replace', rating: 'maybe' })).toEqual({
+      description: 'replace',
+    });
     expect(sanitizeDecisions(null)).toEqual({});
   });
 });
@@ -371,7 +376,8 @@ describe(parsePreservationSnapshot.name, () => {
   const restoreId = '0195e2a0-0000-7000-8000-000000000002';
 
   it('reads each kind', () => {
-    expect(parsePreservationSnapshot(MediaOperationKind.PreservationExport, { packageId, elevated: true })).toMatchObject({
+    const snapshot = parsePreservationSnapshot(MediaOperationKind.PreservationExport, { packageId, elevated: true });
+    expect(snapshot).toMatchObject({
       kind: 'preservation-export',
       elevated: true,
     });
@@ -382,7 +388,8 @@ describe(parsePreservationSnapshot.name, () => {
   });
 
   it('refuses a snapshot without its subject and a kind that is not preservation', () => {
-    expect(() => parsePreservationSnapshot(MediaOperationKind.PreservationVerify, {})).toThrow(PreservationPackageError);
+    const verify = MediaOperationKind.PreservationVerify;
+    expect(() => parsePreservationSnapshot(verify, {})).toThrow(PreservationPackageError);
     expect(() => parsePreservationSnapshot(MediaOperationKind.PreservationReview, { packageId })).toThrow(
       PreservationPackageError,
     );

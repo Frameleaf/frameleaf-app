@@ -22,6 +22,9 @@ export type PreservationRestoreItem = Selectable<PreservationRestoreItemTable>;
 /** What an export may select: a structured filter, or items chosen one by one. Never both. */
 export type PreservationSelection = { filter?: SearchFilter; assetIds?: string[] };
 
+/** A package's items by state, how many are Locked, and the bytes of what was copied. */
+export type PreservationItemCounts = { states: Record<string, number>; locked: number; bytes: number };
+
 export type PreservationPreviewCounts = {
   items: number;
   bytes: number;
@@ -240,8 +243,8 @@ export class PreservationRepository {
   }
 
   /** Item counts by state, and how many are Locked, for each package. */
-  async countItems(packageIds: string[]): Promise<Map<string, { states: Record<string, number>; locked: number; bytes: number }>> {
-    const counts = new Map<string, { states: Record<string, number>; locked: number; bytes: number }>();
+  async countItems(packageIds: string[]): Promise<Map<string, PreservationItemCounts>> {
+    const counts = new Map<string, PreservationItemCounts>();
     if (packageIds.length === 0) {
       return counts;
     }
@@ -280,7 +283,11 @@ export class PreservationRepository {
   }
 
   /** The newest job for each package or restoration, keyed by the id its snapshot names. */
-  async latestOperations(ownerId: string, key: 'packageId' | 'restoreId', ids: string[]): Promise<Map<string, MediaOperation>> {
+  async latestOperations(
+    ownerId: string,
+    key: 'packageId' | 'restoreId',
+    ids: string[],
+  ): Promise<Map<string, MediaOperation>> {
     const latest = new Map<string, MediaOperation>();
     if (ids.length === 0) {
       return latest;
@@ -308,7 +315,11 @@ export class PreservationRepository {
   }
 
   /** A job on this package or restoration that has not finished, if any. */
-  async activeOperation(ownerId: string, key: 'packageId' | 'restoreId', id: string): Promise<MediaOperation | undefined> {
+  async activeOperation(
+    ownerId: string,
+    key: 'packageId' | 'restoreId',
+    id: string,
+  ): Promise<MediaOperation | undefined> {
     const { rows } = await sql<MediaOperation>`
       select * from media_operation
       where "ownerId" = ${ownerId}::uuid
@@ -365,7 +376,12 @@ export class PreservationRepository {
   }
 
   /** The next export items still to do: never tried, or failed with their automatic retry left. */
-  exportWork(packageId: string, afterId: string | null, take: number, maxAttempts: number): Promise<PreservationItem[]> {
+  exportWork(
+    packageId: string,
+    afterId: string | null,
+    take: number,
+    maxAttempts: number,
+  ): Promise<PreservationItem[]> {
     return this.db
       .selectFrom('preservation_item')
       .selectAll()
@@ -453,7 +469,10 @@ export class PreservationRepository {
    * Record the index of a package this server did not write. An item is added once; reading the
    * index again replaces its entry but never its identity.
    */
-  async upsertListedItems(packageId: string, entries: Array<{ sourceAssetId: string; locked: boolean; entry: Record<string, unknown> }>) {
+  async upsertListedItems(
+    packageId: string,
+    entries: Array<{ sourceAssetId: string; locked: boolean; entry: Record<string, unknown> }>,
+  ) {
     if (entries.length === 0) {
       return;
     }
@@ -627,7 +646,11 @@ export class PreservationRepository {
   }
 
   getLock(assetId: string) {
-    return this.db.selectFrom('asset_lock').select(['reason', 'lockedAt']).where('assetId', '=', assetId).executeTakeFirst();
+    return this.db
+      .selectFrom('asset_lock')
+      .select(['reason', 'lockedAt'])
+      .where('assetId', '=', assetId)
+      .executeTakeFirst();
   }
 
   async getTagValues(assetId: string, ownerId: string): Promise<string[]> {
@@ -882,7 +905,12 @@ export class PreservationRepository {
   }
 
   /** Items the restore still has to apply: reviewed, not applied, with their automatic retry left. */
-  restoreWork(restoreId: string, afterId: string | null, take: number, maxAttempts: number): Promise<PreservationRestoreItem[]> {
+  restoreWork(
+    restoreId: string,
+    afterId: string | null,
+    take: number,
+    maxAttempts: number,
+  ): Promise<PreservationRestoreItem[]> {
     return this.db
       .selectFrom('preservation_restore_item')
       .selectAll()
@@ -982,7 +1010,9 @@ export class PreservationRepository {
         ...(patch.match === undefined ? {} : { match: patch.match }),
         ...(patch.assetId === undefined ? {} : { assetId: patch.assetId }),
         ...(patch.sidecar === undefined ? {} : { sidecar: patch.sidecar === null ? null : jsonb(patch.sidecar) }),
-        ...(patch.conflicts === undefined ? {} : { conflicts: patch.conflicts === null ? null : jsonb(patch.conflicts) }),
+        ...(patch.conflicts === undefined
+          ? {}
+          : { conflicts: patch.conflicts === null ? null : jsonb(patch.conflicts) }),
         ...(patch.findings === undefined ? {} : { findings: patch.findings === null ? null : jsonb(patch.findings) }),
         ...(patch.reasonKey === undefined ? {} : { reasonKey: patch.reasonKey }),
         ...(patch.error === undefined ? {} : { error: patch.error }),
@@ -1090,7 +1120,10 @@ export class PreservationRepository {
   }
 
   /** The owner's choices for items not yet applied. Applied items keep what was done with them. */
-  async setDecisions(restoreId: string, items: Array<{ id: string; decisions: Record<string, unknown> }>): Promise<number> {
+  async setDecisions(
+    restoreId: string,
+    items: Array<{ id: string; decisions: Record<string, unknown> }>,
+  ): Promise<number> {
     let updated = 0;
     for (const item of items) {
       const result = await this.db
@@ -1165,7 +1198,10 @@ export class PreservationRepository {
       isFavorite: row.isFavorite,
       visibility: row.visibility as string,
       locked: !!row.isLocked,
-      editRecipe: editRecipe.map(({ action, parameters }) => ({ action: action as string, parameters: parameters as unknown })),
+      editRecipe: editRecipe.map(({ action, parameters }) => ({
+        action: action as string,
+        parameters: parameters as unknown,
+      })),
     };
   }
 
