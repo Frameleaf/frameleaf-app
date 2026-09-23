@@ -228,11 +228,11 @@ export async function validateContracts(repository = root) {
   assert.equal(
     (systemSettings.match(/^\s{6}component:\s*[A-Za-z][A-Za-z0-9]*/gm) ?? [])
       .length,
-    20,
+    21,
   );
   assert.equal(
     (personalSettings.match(/<SettingGroup\b/g) ?? []).length,
-    14,
+    15,
   );
 
   await rejectSpecializedLibraryBacklog(repository);
@@ -245,10 +245,10 @@ export async function validateContracts(repository = root) {
     dirtyOnlyRouteCount: inventory.dirtyOnlyEvidence.length,
     libraryEpicCount: 8,
     libraryStoryCount: 45,
-    personalSettingsCount: 14,
+    personalSettingsCount: 15,
     productionRouteCount: inventory.productionRoutes.length,
     sourceCitationCount: citedSources.length,
-    systemSettingsCount: 20,
+    systemSettingsCount: 21,
   };
 }
 

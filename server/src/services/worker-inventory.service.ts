@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import type { RenderWorkerDto } from 'src/dtos/render-worker.dto.js';
-import type { WorkerInventoryEntryDto, WorkerInventoryResponseDto, WorkerRunnerDto } from 'src/dtos/worker-inventory.dto.js';
+import type {
+  WorkerInventoryEntryDto,
+  WorkerInventoryResponseDto,
+  WorkerRunnerDto,
+} from 'src/dtos/worker-inventory.dto.js';
 import {
   LIBRARY_ML_WORKLOADS,
   MediaOperationDestination,
@@ -152,14 +156,18 @@ export class WorkerInventoryService {
   ): Promise<WorkerInventoryEntryDto> {
     const endpoint = resolveEndpoint(row, this.machineLearningRepository.getRunPodEndpoint());
     const probe = storedProbe(row);
-    const spentUsd = row.budgetLimitUsd === null ? 0 : await this.mlDestinationRepository.getSpend(row.id, budgetWindowStart());
+    const spentUsd =
+      row.budgetLimitUsd === null ? 0 : await this.mlDestinationRepository.getSpend(row.id, budgetWindowStart());
 
     const admission: WorkerInventoryEntryDto['admission'] = [];
     for (const workload of row.workloads) {
       let verdict = evaluateAdmission({ destination: row, workload, endpoint, probe, spentUsd });
       if (verdict.admitted) {
         const conflict = await restorationRoleConflict(
-          { mlDestinationRepository: this.mlDestinationRepository, machineLearningRepository: this.machineLearningRepository },
+          {
+            mlDestinationRepository: this.mlDestinationRepository,
+            machineLearningRepository: this.machineLearningRepository,
+          },
           row,
           workload,
         );

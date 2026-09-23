@@ -169,9 +169,7 @@ describe(UserAdminController.name, () => {
         .delete(`/admin/users/${factory.uuid()}/sessions/not-a-uuid`)
         .set('Authorization', `Bearer token`);
       expect(status).toBe(400);
-      expect(body).toEqual(
-        errorDto.validationError([{ path: ['sessionId'], message: 'Invalid UUID' }]),
-      );
+      expect(body).toEqual(errorDto.validationError([{ path: ['sessionId'], message: 'Invalid UUID' }]));
     });
   });
 });

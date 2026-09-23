@@ -139,7 +139,9 @@ describe('normalizeStudioTime', () => {
 describe('normalizeCommandSummary', () => {
   it('keeps well-formed counts and drops the rest', () => {
     expect(
-      normalizeCommandSummary({ counts: { 'clip.move': 3, 'clip.split': 1, bad: -1, worse: 'x', ['y'.repeat(65)]: 1 } }),
+      normalizeCommandSummary({
+        counts: { 'clip.move': 3, 'clip.split': 1, bad: -1, worse: 'x', ['y'.repeat(65)]: 1 },
+      }),
     ).toEqual({ counts: { 'clip.move': 3, 'clip.split': 1 }, total: 4 });
     expect(normalizeCommandSummary(null)).toEqual({ counts: {}, total: 0 });
   });

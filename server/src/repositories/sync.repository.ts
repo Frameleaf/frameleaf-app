@@ -653,12 +653,7 @@ class AssetFaceSync extends BaseSync {
       .select(['asset_face_audit.id', 'assetFaceId'])
       .innerJoin('asset', 'asset.id', 'asset_face_audit.assetId')
       .innerJoin('user as owner', 'owner.id', 'asset.ownerId')
-      .where((eb) =>
-        eb.or([
-          eb('asset.ownerId', '=', options.userId),
-          isDefaultVisible('asset'),
-        ]),
-      )
+      .where((eb) => eb.or([eb('asset.ownerId', '=', options.userId), isDefaultVisible('asset')]))
       .where('owner.clusterGroupId', '=', ({ selectFrom }) =>
         selectFrom('user').select('user.clusterGroupId').where('user.id', '=', options.userId),
       )
@@ -689,12 +684,7 @@ class AssetFaceSync extends BaseSync {
       .select('asset_face.updateId')
       .innerJoin('asset', 'asset.id', 'asset_face.assetId')
       .innerJoin('user as owner', 'owner.id', 'asset.ownerId')
-      .where((eb) =>
-        eb.or([
-          eb('asset.ownerId', '=', options.userId),
-          isDefaultVisible('asset'),
-        ]),
-      )
+      .where((eb) => eb.or([eb('asset.ownerId', '=', options.userId), isDefaultVisible('asset')]))
       .where('owner.clusterGroupId', '=', ({ selectFrom }) =>
         selectFrom('user').select('user.clusterGroupId').where('user.id', '=', options.userId),
       )
@@ -892,18 +882,20 @@ class PartnerAssetExifsSync extends BaseSync {
 
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
-    return this.upsertQuery('asset_exif', options)
-      .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
-      .select(columns.syncAssetExif)
-      .select('asset_exif.updateId')
-      // the service needs the owner to apply per-partner location hiding; it is stripped before sending
-      .select('asset.ownerId')
-      .select(syncPartnerLocked())
-      .where('asset.ownerId', 'in', (eb) =>
-        eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
-      )
-      .$call((qb) => withHiddenContentFilter(qb, options))
-      .stream();
+    return (
+      this.upsertQuery('asset_exif', options)
+        .innerJoin('asset', 'asset.id', 'asset_exif.assetId')
+        .select(columns.syncAssetExif)
+        .select('asset_exif.updateId')
+        // the service needs the owner to apply per-partner location hiding; it is stripped before sending
+        .select('asset.ownerId')
+        .select(syncPartnerLocked())
+        .where('asset.ownerId', 'in', (eb) =>
+          eb.selectFrom('partner').select(['sharedById']).where('sharedWithId', '=', options.userId),
+        )
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        .stream()
+    );
   }
 }
 

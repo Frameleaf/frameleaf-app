@@ -1,4 +1,17 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Next, Param, Post, Put, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Next,
+  Param,
+  Post,
+  Put,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Response } from 'express';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
@@ -67,8 +80,7 @@ export class AssetDevelopController {
   @Authenticated({ permission: Permission.AssetEditGet })
   @Endpoint({
     summary: 'Render a develop preview',
-    description:
-      'Renders the recipe from the original at preview size and returns the image; nothing is stored.',
+    description: 'Renders the recipe from the original at preview size and returns the image; nothing is stored.',
     history: history(),
   })
   async previewAssetDevelop(
@@ -78,7 +90,11 @@ export class AssetDevelopController {
     @Res() res: Response,
   ) {
     const { buffer, contentType } = await this.service.preview(auth, id, dto);
-    res.set({ 'Content-Type': contentType, 'Cache-Control': 'private, no-store', 'Content-Length': String(buffer.length) });
+    res.set({
+      'Content-Type': contentType,
+      'Cache-Control': 'private, no-store',
+      'Content-Length': String(buffer.length),
+    });
     res.end(buffer);
   }
 
@@ -119,7 +135,8 @@ export class AssetDevelopController {
   @Authenticated({ permission: Permission.AssetEditCreate })
   @Endpoint({
     summary: 'Cancel a develop render',
-    description: 'Stops a queued or running render of the version. Files already rendered for other versions are untouched.',
+    description:
+      'Stops a queued or running render of the version. Files already rendered for other versions are untouched.',
     history: history(),
   })
   cancelAssetDevelopRender(

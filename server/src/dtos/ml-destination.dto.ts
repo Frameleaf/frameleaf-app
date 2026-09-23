@@ -97,11 +97,7 @@ const MlDestinationCreateSchema = z
       .url()
       .optional()
       .describe('Required for a LAN or RunPod video destination, optional for a local one, forbidden for RunPod'),
-    authToken: z
-      .string()
-      .max(4096)
-      .optional()
-      .describe('Bearer token for a LAN or RunPod video worker (write-only)'),
+    authToken: z.string().max(4096).optional().describe('Bearer token for a LAN or RunPod video worker (write-only)'),
     workloads: z.array(MlWorkloadSchema).max(16).default([]),
     enabled: z.boolean().default(true),
     sharesLibraryHardware: sharesLibraryHardwareField,

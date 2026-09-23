@@ -114,8 +114,7 @@
       disabled={saving}
       bind:value={draft}
       onblur={() => void commit()}
-      onkeydown={onKeydown}
-    ></textarea>
+      onkeydown={onKeydown}></textarea>
   {:else}
     <input
       bind:this={field}

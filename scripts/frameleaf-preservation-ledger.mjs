@@ -1599,7 +1599,7 @@ async function validateLedger(ledger) {
     errors.push("stale normalized source evidence hash");
   const expectedHashes = {
     acceptedRoutes:
-      "06f16bd025906f8590381e10e28859156593f0ec312430d3af54b60655c1873a",
+      "d219cdd43224fb5e09cafcc6a67196b997a20a5b33b58a113b4fc1d67a1ee7bc",
     acceptedActionFamilies:
       "f73966cdedd51ef644d8219ba95dbe0dcb9d601ed34878e70d6607e084a81a7c",
     acceptedNative:

@@ -45,25 +45,26 @@ const conflictOf = async (promise: Promise<unknown>) => {
 describe(StudioProjectService.name, () => {
   let sut: StudioProjectService;
   let repository: Record<keyof StudioProjectRepository, ReturnType<typeof vi.fn>>;
-  let access: { album: { checkOwnerAccess: ReturnType<typeof vi.fn>; checkSharedAlbumAccess: ReturnType<typeof vi.fn> } };
+  let access: {
+    album: { checkOwnerAccess: ReturnType<typeof vi.fn>; checkSharedAlbumAccess: ReturnType<typeof vi.fn> };
+  };
   let resources: { resolveProjectResources: ReturnType<typeof vi.fn> };
   let owner: AuthDto;
   let reviewer: AuthDto;
   let project: StudioProject;
   let head: StudioProjectRevision;
 
-  const manifest = (complete: boolean, overrides: Partial<StudioAuthorizedManifest> = {}) =>
-    ({
-      manifest: {
-        complete,
-        refusedCount: complete ? 0 : 2,
-        issuedAt: new Date().toISOString(),
-        expiresAt: future().toISOString(),
-        digest: complete ? 'complete' : 'partial',
-        ...overrides,
-      } as StudioAuthorizedManifest,
-      refused: [],
-    });
+  const manifest = (complete: boolean, overrides: Partial<StudioAuthorizedManifest> = {}) => ({
+    manifest: {
+      complete,
+      refusedCount: complete ? 0 : 2,
+      issuedAt: new Date().toISOString(),
+      expiresAt: future().toISOString(),
+      digest: complete ? 'complete' : 'partial',
+      ...overrides,
+    } as StudioAuthorizedManifest,
+    refused: [],
+  });
 
   const projectStub = (overrides: Partial<StudioProject> = {}): StudioProject =>
     ({
@@ -118,12 +119,14 @@ describe(StudioProjectService.name, () => {
       listVisible: vi.fn().mockResolvedValue({ items: [], total: 0 }),
       update: vi.fn(),
       delete: vi.fn(),
-      trash: vi.fn().mockImplementation((id: string, purgeAfter: Date) =>
-        Promise.resolve({ ...project, id, deletedAt: new Date(), purgeAfter, leaseHolderId: null }),
-      ),
-      untrash: vi.fn().mockImplementation((id: string) =>
-        Promise.resolve({ ...project, id, deletedAt: null, purgeAfter: null }),
-      ),
+      trash: vi
+        .fn()
+        .mockImplementation((id: string, purgeAfter: Date) =>
+          Promise.resolve({ ...project, id, deletedAt: new Date(), purgeAfter, leaseHolderId: null }),
+        ),
+      untrash: vi
+        .fn()
+        .mockImplementation((id: string) => Promise.resolve({ ...project, id, deletedAt: null, purgeAfter: null })),
       emptyTrash: vi.fn().mockResolvedValue(2),
       clearLease: vi.fn(),
       createWithRevision: vi.fn(),
@@ -131,9 +134,11 @@ describe(StudioProjectService.name, () => {
       acquireLease: vi.fn(),
       releaseLease: vi.fn().mockResolvedValue(true),
       appendRevision: vi.fn(),
-      getRevision: vi.fn().mockImplementation((_projectId: string, revision: number) =>
-        Promise.resolve(revision === head.revision ? head : undefined),
-      ),
+      getRevision: vi
+        .fn()
+        .mockImplementation((_projectId: string, revision: number) =>
+          Promise.resolve(revision === head.revision ? head : undefined),
+        ),
       getRevisionByRequestKey: vi.fn().mockResolvedValue(undefined),
       listRevisions: vi.fn().mockResolvedValue({ items: [], total: 0 }),
       listRevisionSummariesBetween: vi.fn().mockResolvedValue([]),
@@ -261,9 +266,9 @@ describe(StudioProjectService.name, () => {
     });
 
     it('refuses an envelope this server does not store, before any read of history', async () => {
-      await expect(sut.save(owner, project.id, dto({ envelope: { ...envelope(), engine: 'other' } }))).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      await expect(
+        sut.save(owner, project.id, dto({ envelope: { ...envelope(), engine: 'other' } })),
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(repository.getRevisionByRequestKey).not.toHaveBeenCalled();
     });
 
@@ -279,7 +284,9 @@ describe(StudioProjectService.name, () => {
     });
 
     it('refuses the same request key carrying a different document', async () => {
-      repository.getRevisionByRequestKey.mockResolvedValue(revisionStub({ revision: 4, digest: 'other', requestKey: 'req-4' }));
+      repository.getRevisionByRequestKey.mockResolvedValue(
+        revisionStub({ revision: 4, digest: 'other', requestKey: 'req-4' }),
+      );
 
       const body = await conflictOf(sut.save(owner, project.id, dto()));
 
@@ -432,10 +439,20 @@ describe(StudioProjectService.name, () => {
   describe('sharing', () => {
     it('only shares into a live shared space the owner belongs to', async () => {
       const spaceId = newUuid();
-      repository.getSpace.mockResolvedValue({ id: spaceId, ownerId: newUuid(), kind: AlbumKind.Album, deletedAt: null });
+      repository.getSpace.mockResolvedValue({
+        id: spaceId,
+        ownerId: newUuid(),
+        kind: AlbumKind.Album,
+        deletedAt: null,
+      });
       await expect(sut.update(owner, project.id, { spaceId })).rejects.toBeInstanceOf(BadRequestException);
 
-      repository.getSpace.mockResolvedValue({ id: spaceId, ownerId: newUuid(), kind: AlbumKind.Space, deletedAt: null });
+      repository.getSpace.mockResolvedValue({
+        id: spaceId,
+        ownerId: newUuid(),
+        kind: AlbumKind.Space,
+        deletedAt: null,
+      });
       await expect(sut.update(owner, project.id, { spaceId })).rejects.toBeInstanceOf(BadRequestException);
 
       memberOf(spaceId);
@@ -534,8 +551,16 @@ describe(StudioProjectService.name, () => {
 
       await sut.authorizeRevision(owner, { projectId: project.id });
       await sut.authorizeRevision(reviewer, { projectId: project.id });
-      await sut.authorizeRevision(owner, { projectId: project.id, destination: StudioDestination.RunPod, cloudConsent: true });
-      await sut.authorizeRevision(owner, { projectId: project.id, destination: StudioDestination.RunPod, cloudConsent: true });
+      await sut.authorizeRevision(owner, {
+        projectId: project.id,
+        destination: StudioDestination.RunPod,
+        cloudConsent: true,
+      });
+      await sut.authorizeRevision(owner, {
+        projectId: project.id,
+        destination: StudioDestination.RunPod,
+        cloudConsent: true,
+      });
 
       expect(resources.resolveProjectResources).toHaveBeenCalledTimes(4);
     });

@@ -1,5 +1,3 @@
-import { buildRunningJobRows, countActiveRunningJobs, type RunningJobRow } from '$lib/frameleaf/running-jobs';
-import { eventManager } from '$lib/managers/event-manager.svelte';
 import {
   getRunningJobs,
   pauseMediaOperation,
@@ -8,6 +6,8 @@ import {
   type QueueName,
   type RunningJobsResponseDto,
 } from '@immich/sdk';
+import { buildRunningJobRows, countActiveRunningJobs, type RunningJobRow } from '$lib/frameleaf/running-jobs';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 /**
  * The live view behind the notifications panel's running-jobs section (FL-104, owner request

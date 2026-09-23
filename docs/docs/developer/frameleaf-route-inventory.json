@@ -11,8 +11,7 @@
     "/photo-tools",
     "/preservation",
     "/spaces",
-    "/spaces/[spaceId]",
-    "/takeout"
+    "/spaces/[spaceId]"
   ],
   "dirtyOnlyStatus": "absent-from-clean-baseline-unreviewed",
   "productionRoutes": [
@@ -83,6 +82,7 @@
     "/suppressed/[[photos=photos]]/[[assetId=id]]",
     "/suppressed/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]",
     "/tags/[[photos=photos]]/[[assetId=id]]",
+    "/takeout",
     "/trash/[[photos=photos]]/[[assetId=id]]",
     "/user-settings",
     "/utilities",

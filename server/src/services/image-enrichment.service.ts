@@ -35,7 +35,7 @@ import {
   StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
-import { ArgOf } from 'src/repositories/event.repository.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository, PrivacySidecar } from 'src/repositories/fork-privacy.repository.js';
 import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
@@ -125,10 +125,12 @@ type EnrichmentResultProvenance = {
 export type EnrichmentRunOptions = {
   enrichmentDestinationId?: string | null;
   searchDestinationId?: string | null;
-  imageDescription?: Partial<Pick<
-    SystemConfig['machineLearning']['imageDescription'],
-    'modelName' | 'fallbackModelName' | 'device' | 'acceleration' | 'prompt'
-  >>;
+  imageDescription?: Partial<
+    Pick<
+      SystemConfig['machineLearning']['imageDescription'],
+      'modelName' | 'fallbackModelName' | 'device' | 'acceleration' | 'prompt'
+    >
+  >;
   nsfwDetection?: Partial<Pick<SystemConfig['machineLearning']['nsfwDetection'], 'modelName' | 'threshold' | 'device'>>;
   clipModelName?: string;
   configHash?: string;

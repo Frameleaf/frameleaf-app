@@ -9,7 +9,6 @@
  * lets its rules — revision binding, seek generations, caching, backpressure — be tested
  * without a network.
  */
-
 import { cancelStudioPreview, getStudioPreview, requestStudioPreview, viewStudioPreviewFrame } from '@immich/sdk';
 import type {
   StudioPreviewIntent,

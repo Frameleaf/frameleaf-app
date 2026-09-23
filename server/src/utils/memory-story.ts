@@ -77,7 +77,10 @@ export const suppressBursts = (candidates: StoryCandidate[]): StoryCandidate[] =
   let previous: StoryCandidate | undefined;
 
   for (const candidate of candidates) {
-    if (previous && Math.abs(candidate.localDateTime.getTime() - previous.localDateTime.getTime()) < BURST_SECONDS * 1000) {
+    if (
+      previous &&
+      Math.abs(candidate.localDateTime.getTime() - previous.localDateTime.getTime()) < BURST_SECONDS * 1000
+    ) {
       continue;
     }
     kept.push(candidate);
@@ -186,7 +189,8 @@ export const groupEventStories = (candidates: StoryCandidate[]): EventStoryGroup
     }
 
     const gap = hoursBetween(previous.localDateTime, candidate.localDateTime);
-    const movedOn = placeKey(previous) !== '' && placeKey(candidate) !== '' && placeKey(previous) !== placeKey(candidate);
+    const movedOn =
+      placeKey(previous) !== '' && placeKey(candidate) !== '' && placeKey(previous) !== placeKey(candidate);
     const split = gap > EVENT_GAP_HOURS || (movedOn && gap > PLACE_CHANGE_GAP_HOURS);
 
     if (split) {

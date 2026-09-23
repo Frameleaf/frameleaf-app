@@ -71,18 +71,20 @@ export class TrashRepository {
     status: AssetStatus | 'listed',
     { lockedOwnerId, privacy }: TrashScopeOptions,
   ) {
-    return db
-      .selectFrom('asset')
-      .where('asset.ownerId', '=', asUuid(userId))
-      .$if(status === 'listed', (qb) =>
-        qb.where('asset.deletedAt', 'is not', null).where('asset.status', '!=', AssetStatus.Deleted),
-      )
-      .$if(status !== 'listed', (qb) => qb.where('asset.status', '=', status as AssetStatus))
-      // a missing external original is active with a deletion date; it is the library scan's, not the library's
-      .$if(status === AssetStatus.Active, (qb) => qb.where('asset.deletedAt', 'is', null))
-      .where('asset.visibility', '!=', AssetVisibility.Hidden)
-      .$if(lockedOwnerId !== userId, (qb) => qb.where(isNotLocked('asset')))
-      .$call((qb) => withHiddenContentFilter(qb, privacy));
+    return (
+      db
+        .selectFrom('asset')
+        .where('asset.ownerId', '=', asUuid(userId))
+        .$if(status === 'listed', (qb) =>
+          qb.where('asset.deletedAt', 'is not', null).where('asset.status', '!=', AssetStatus.Deleted),
+        )
+        .$if(status !== 'listed', (qb) => qb.where('asset.status', '=', status as AssetStatus))
+        // a missing external original is active with a deletion date; it is the library scan's, not the library's
+        .$if(status === AssetStatus.Active, (qb) => qb.where('asset.deletedAt', 'is', null))
+        .where('asset.visibility', '!=', AssetVisibility.Hidden)
+        .$if(lockedOwnerId !== userId, (qb) => qb.where(isNotLocked('asset')))
+        .$call((qb) => withHiddenContentFilter(qb, privacy))
+    );
   }
 
   /** The trash counts the page shows: what is in it, and what is still being removed from storage. */
@@ -142,9 +144,7 @@ export class TrashRepository {
     ]);
     switch (options.order) {
       case TrashItemSort.Size: {
-        query = query
-          .orderBy('asset_exif.fileSizeInByte', (ob) => ob.desc().nullsLast())
-          .orderBy('asset.id', 'asc');
+        query = query.orderBy('asset_exif.fileSizeInByte', (ob) => ob.desc().nullsLast()).orderBy('asset.id', 'asc');
         break;
       }
       case TrashItemSort.Name: {

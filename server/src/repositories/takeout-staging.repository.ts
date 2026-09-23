@@ -157,7 +157,10 @@ export class TakeoutStagingRepository {
    * size, modified time)`. Links are refused, not followed; a directory that changed into a link
    * since it was selected stops the walk.
    */
-  async *walk(directory: string, signal: AbortSignal): AsyncGenerator<{
+  async *walk(
+    directory: string,
+    signal: AbortSignal,
+  ): AsyncGenerator<{
     entryName: string;
     filePath: string;
     size: number;
@@ -360,7 +363,7 @@ export class TakeoutStagingRepository {
         return raw;
       }
       const inflate = createInflateRaw();
-      raw.on('error', (error) => inflate.destroy(error));
+      raw.on('error', (error: Error) => inflate.destroy(error));
       return raw.pipe(inflate);
     };
     return this.writeStaged(openEntry, entry.uncompressedSize, destination, signal, entry.crc32);

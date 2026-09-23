@@ -123,7 +123,12 @@
         <strong>{$remainingUploads > 0 ? $remainingUploads.toLocaleString($locale) : $stats.errors}</strong>
       </button>
     {:else}
-      <section class="fl-panel" role="region" aria-label={$t('upload')} in:scale={{ duration: 250, easing: quartInOut }}>
+      <section
+        class="fl-panel"
+        role="region"
+        aria-label={$t('upload')}
+        in:scale={{ duration: 250, easing: quartInOut }}
+      >
         <header class="fl-panel-head">
           <Icon icon={active ? mdiProgressUpload : mdiCloudCheckOutline} size={20} aria-hidden="true" />
           <div class="fl-panel-head-text">
@@ -230,7 +235,9 @@
                 <span class="fl-actions">
                   {#if item.assetId}
                     <a
-                      href={item.isTrashed ? Route.viewTrashedAsset({ id: item.assetId }) : Route.viewAsset({ id: item.assetId })}
+                      href={item.isTrashed
+                        ? Route.viewTrashedAsset({ id: item.assetId })
+                        : Route.viewAsset({ id: item.assetId })}
                       target="_blank"
                       rel="noopener noreferrer"
                       aria-label={$t('view')}
@@ -238,7 +245,11 @@
                       <Icon icon={mdiOpenInNew} size={16} aria-hidden="true" />
                     </a>
                   {/if}
-                  <button type="button" aria-label={$t('dismiss')} onclick={() => uploadAssetsStore.removeItem(item.id)}>
+                  <button
+                    type="button"
+                    aria-label={$t('dismiss')}
+                    onclick={() => uploadAssetsStore.removeItem(item.id)}
+                  >
                     <Icon icon={mdiClose} size={16} aria-hidden="true" />
                   </button>
                 </span>
@@ -247,7 +258,11 @@
                   <button type="button" aria-label={$t('retry_upload')} onclick={() => retryItem(item)}>
                     <Icon icon={mdiRefresh} size={16} aria-hidden="true" />
                   </button>
-                  <button type="button" aria-label={$t('dismiss')} onclick={() => uploadAssetsStore.removeItem(item.id)}>
+                  <button
+                    type="button"
+                    aria-label={$t('dismiss')}
+                    onclick={() => uploadAssetsStore.removeItem(item.id)}
+                  >
                     <Icon icon={mdiClose} size={16} aria-hidden="true" />
                   </button>
                 </span>

@@ -21,7 +21,6 @@
  * supplies, which is where the authorized service call lives, so the engine has no client
  * API dependency at all (FL-96).
  */
-
 import type { StudioCommandEnvelope, StudioCommandId, StudioCommandResult } from './commands';
 import {
   isStudioCommandEnvelope,

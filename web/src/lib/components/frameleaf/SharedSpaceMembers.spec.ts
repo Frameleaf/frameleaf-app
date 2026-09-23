@@ -1,6 +1,3 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { addMessages } from 'svelte-i18n';
-import { albumFactory } from '@test-data/factories/album-factory';
 import {
   removeSharedSpaceInvitation,
   removeUserFromAlbum,
@@ -11,6 +8,9 @@ import {
   type SharedSpaceMemberResponseDto,
   type UserResponseDto,
 } from '@immich/sdk';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { addMessages } from 'svelte-i18n';
+import { albumFactory } from '@test-data/factories/album-factory';
 import en from '../../../../../i18n/en.json';
 import SharedSpaceMembers from './SharedSpaceMembers.svelte';
 

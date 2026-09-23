@@ -38,7 +38,6 @@
       rows="4"
       maxlength="1000"
       bind:value={description}
-      placeholder={$t('frameleaf_bulk_description_placeholder')}
-    ></textarea>
+      placeholder={$t('frameleaf_bulk_description_placeholder')}></textarea>
   </label>
 </BulkFormDialog>

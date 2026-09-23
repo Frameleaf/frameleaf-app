@@ -57,7 +57,13 @@
 
   const currentUserId = $derived(authManager.user.id);
   const contributor = $derived(canContribute(space, currentUserId));
-  const options = $derived(linkableAlbums(library, space.id, albums.map(({ id }) => id)));
+  const options = $derived(
+    linkableAlbums(
+      library,
+      space.id,
+      albums.map(({ id }) => id),
+    ),
+  );
 
   let choice = $state('');
   let busy = $state(false);
@@ -95,9 +101,7 @@
   };
 
   const coverOf = (album: SharedSpaceAlbumResponseDto) =>
-    album.thumbnailAssetId
-      ? getAssetMediaUrl({ id: album.thumbnailAssetId, size: AssetMediaSize.Thumbnail })
-      : null;
+    album.thumbnailAssetId ? getAssetMediaUrl({ id: album.thumbnailAssetId, size: AssetMediaSize.Thumbnail }) : null;
 </script>
 
 <section class="linked-albums" aria-labelledby="frameleaf-space-albums">

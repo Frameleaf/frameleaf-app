@@ -1,3 +1,4 @@
+import { UserStatus } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   ACCOUNT_QUERY_MAX_LENGTH,
@@ -13,7 +14,6 @@ import {
   sortAccounts,
   type AccountRow,
 } from '$lib/frameleaf/accounts';
-import { UserStatus } from '@immich/sdk';
 
 const account = (overrides: Partial<AccountRow> & Pick<AccountRow, 'id' | 'name' | 'email'>): AccountRow => ({
   isAdmin: false,

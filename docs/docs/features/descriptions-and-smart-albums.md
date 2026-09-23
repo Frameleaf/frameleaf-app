@@ -31,16 +31,16 @@ Before you start:
 
 The features interact. Doing them in the order below gets the best output the first time and avoids re-queueing the library multiple times.
 
-| #   | Step                                                                                          | Why this order                                                                                                                                                                              |
-| --- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **Pick the right model** (Qwen2.5-VL or Phi-3.5-vision).                                      | Florence-2 ignores _every other_ control on this page. Get the model right before you tune anything.                                                                                        |
-| 2   | **Run [Facial Recognition](./facial-recognition.md) and name your most-photographed people.** | Identity injection only mentions names you've curated. Doing this first means your very first description run already says "Kelly" instead of "Someone".                                    |
-| 3   | **Preview a description** on a few photos and videos.                                         | "Try an enrichment change" runs the draft model and prompt on samples and writes nothing, so you see the result before paying for a library-wide run.                                      |
-| 4   | **Tune the description prompt** (style, look-for, custom vocabulary, custom instructions).    | Tuning before the first big re-queue means you don't pay to re-describe everything twice.                                                                                                   |
-| 5   | **Enable identity injection.**                                                                | Cheap to toggle and tune; combine with the prompt tuning in step 4 before the big run.                                                                                                      |
-| 6   | **Re-queue all descriptions.**                                                                | One library-wide pass with everything configured the way you want it.                                                                                                                       |
-| 7   | **Enable smart albums** and let the evaluator run as descriptions complete.                   | Albums are populated from description tags; they're useless without descriptions first.                                                                                                     |
-| 8   | **Re-evaluate smart albums** once descriptions are done.                                      | One-time backfill so older assets get pulled into the new albums.                                                                                                                           |
+| #   | Step                                                                                          | Why this order                                                                                                                                           |
+| --- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Pick the right model** (Qwen2.5-VL or Phi-3.5-vision).                                      | Florence-2 ignores _every other_ control on this page. Get the model right before you tune anything.                                                     |
+| 2   | **Run [Facial Recognition](./facial-recognition.md) and name your most-photographed people.** | Identity injection only mentions names you've curated. Doing this first means your very first description run already says "Kelly" instead of "Someone". |
+| 3   | **Preview a description** on a few photos and videos.                                         | "Try an enrichment change" runs the draft model and prompt on samples and writes nothing, so you see the result before paying for a library-wide run.    |
+| 4   | **Tune the description prompt** (style, look-for, custom vocabulary, custom instructions).    | Tuning before the first big re-queue means you don't pay to re-describe everything twice.                                                                |
+| 5   | **Enable identity injection.**                                                                | Cheap to toggle and tune; combine with the prompt tuning in step 4 before the big run.                                                                   |
+| 6   | **Re-queue all descriptions.**                                                                | One library-wide pass with everything configured the way you want it.                                                                                    |
+| 7   | **Enable smart albums** and let the evaluator run as descriptions complete.                   | Albums are populated from description tags; they're useless without descriptions first.                                                                  |
+| 8   | **Re-evaluate smart albums** once descriptions are done.                                      | One-time backfill so older assets get pulled into the new albums.                                                                                        |
 
 If you've already deployed without following this order, that's fine — you can run [Step 6: Backfill the existing library](#step-6--backfill-the-existing-library) again at any time, and there's a per-album re-evaluate for smart albums.
 
@@ -532,18 +532,18 @@ A video's **Moments** section in the information panel shows its reusable frames
 - **Cover** — choose any frame as the cover; the choice is kept as a time in the video, so it survives the frames being cut again. **Use the best frame** returns to the best-ranked one.
 - **Your moments** — add a moment at any time with a title and an optional typed transcript. There is no automatic speech recognition. Your moments are never removed by a refresh, a replaced original or a face correction.
 - **Find moments / Refresh moments** — queues a plan that cuts the frames and builds the moment search index. **Add captions** queues the optional captions stage.
-- **Search** — a search shows *Moments in your videos* above the results: frames that match by meaning, and moments whose caption or transcript contains the words. Only your own videos are searched.
+- **Search** — a search shows _Moments in your videos_ above the results: frames that match by meaning, and moments whose caption or transcript contains the words. Only your own videos are searched.
 
 ### What makes a result out of date
 
 Each generated result records what it was made from. When one of these changes, only the generated results that depend on it are affected:
 
-| Change                                   | Effect                                                                                                             |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| The original is replaced                 | Frames, their search embeddings and generated moments are removed; the description is marked out of date and is never published over the new file. |
-| A face correction changes confirmed names | Generated descriptions and captions made with the old names are marked out of date and are redone by the next plan. |
-| The saved prompt changes                 | Generated descriptions are marked out of date.                                                                     |
-| The search model changes                 | Only frame embeddings are cleared; frames and moments stay.                                                        |
+| Change                                    | Effect                                                                                                                                             |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The original is replaced                  | Frames, their search embeddings and generated moments are removed; the description is marked out of date and is never published over the new file. |
+| A face correction changes confirmed names | Generated descriptions and captions made with the old names are marked out of date and are redone by the next plan.                                |
+| The saved prompt changes                  | Generated descriptions are marked out of date.                                                                                                     |
+| The search model changes                  | Only frame embeddings are cleared; frames and moments stay.                                                                                        |
 
 Manual descriptions, your own moments, typed transcripts and the cover choice are never touched.
 

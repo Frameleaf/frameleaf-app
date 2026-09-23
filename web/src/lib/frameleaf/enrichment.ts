@@ -127,9 +127,7 @@ export const toggleStage = (
   if (on) {
     return withRequiredStages([...selected, stage]);
   }
-  const remaining = selected.filter(
-    (item) => item !== stage && !ENRICHMENT_STAGE_REQUIRES[item].includes(stage),
-  );
+  const remaining = selected.filter((item) => item !== stage && !ENRICHMENT_STAGE_REQUIRES[item].includes(stage));
   return withRequiredStages(remaining);
 };
 

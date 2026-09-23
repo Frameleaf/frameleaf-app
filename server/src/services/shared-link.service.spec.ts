@@ -471,9 +471,7 @@ describe(SharedLinkService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([locked.id, plain.id]));
       mocks.asset.getLockedAssetIds.mockResolvedValue(new Set([locked.id]));
 
-      await expect(
-        sut.addAssets(elevatedAdmin, sharedLink.id, { assetIds: [locked.id, plain.id] }),
-      ).resolves.toEqual([
+      await expect(sut.addAssets(elevatedAdmin, sharedLink.id, { assetIds: [locked.id, plain.id] })).resolves.toEqual([
         { assetId: locked.id, success: false, error: AssetIdErrorReason.NO_PERMISSION },
         { assetId: plain.id, success: true },
       ]);

@@ -9,7 +9,14 @@
   import { asUrl } from '$lib/services/shared-link.service';
   import { copyToClipboard } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAllAlbums, getAllSharedLinks, removeSharedLink, SharedLinkType, type AlbumResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
+  import {
+    getAllAlbums,
+    getAllSharedLinks,
+    removeSharedLink,
+    SharedLinkType,
+    type AlbumResponseDto,
+    type SharedLinkResponseDto,
+  } from '@immich/sdk';
   import { Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -96,8 +103,9 @@
     Object.fromEntries(
       TABS.map(({ id }) => [
         id,
-        links.filter((link) => id === 'all' || link.type === (id === 'album' ? SharedLinkType.Album : SharedLinkType.Individual))
-          .length,
+        links.filter(
+          (link) => id === 'all' || link.type === (id === 'album' ? SharedLinkType.Album : SharedLinkType.Individual),
+        ).length,
       ]),
     ),
   );
@@ -181,7 +189,12 @@
       {/each}
     </div>
     <label class="sl-search">
-      <input type="search" bind:value={query} placeholder={$t('frameleaf_sharing.search_links')} aria-label={$t('frameleaf_sharing.search_links')} />
+      <input
+        type="search"
+        bind:value={query}
+        placeholder={$t('frameleaf_sharing.search_links')}
+        aria-label={$t('frameleaf_sharing.search_links')}
+      />
     </label>
   </div>
 
@@ -208,7 +221,9 @@
               {#if link.allowDownload}<li>{$t('download')}</li>{/if}
               {#if link.allowUpload}<li>{$t('upload')}</li>{/if}
               {#if link.showMetadata}<li>{$t('show_metadata')}</li>{/if}
-              {#if link.expiresAt}<li>{$t('expires_date', { values: { date: new Date(link.expiresAt).toLocaleString() } })}</li>{/if}
+              {#if link.expiresAt}<li>
+                  {$t('expires_date', { values: { date: new Date(link.expiresAt).toLocaleString() } })}
+                </li>{/if}
             </ul>
           </div>
           <div class="sl-actions">
@@ -242,7 +257,9 @@
     <p class="muted">{$t('frameleaf_sharing.pick_album_hint')}</p>
     <div class="sl-dialog-actions">
       <button type="button" onclick={() => (pickOpen = false)}>{$t('cancel')}</button>
-      <button type="button" class="primary" disabled={!pickAlbumId} onclick={startCreateFromAlbum}>{$t('continue')}</button>
+      <button type="button" class="primary" disabled={!pickAlbumId} onclick={startCreateFromAlbum}
+        >{$t('continue')}</button
+      >
     </div>
   {:else}
     <p class="muted">{$t('frameleaf_sharing.pick_album_hint')}</p>

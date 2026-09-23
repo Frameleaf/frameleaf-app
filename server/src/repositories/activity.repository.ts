@@ -36,34 +36,34 @@ export class ActivityRepository {
   search(options: ActivitySearch) {
     const { userId, assetId, albumId, isLiked } = options;
 
-    return this.db
-      .selectFrom('activity')
-      .selectAll('activity')
-      .innerJoin('user as user2', (join) =>
-        join.onRef('user2.id', '=', 'activity.userId').on('user2.deletedAt', 'is', null),
-      )
-      .innerJoinLateral(
-        (eb) => eb.selectFrom(dummy).select(columns.userWithPrefix).as('user'),
-        (join) => join.onTrue(),
-      )
-      .select((eb) => eb.fn.toJson('user').as('user'))
-      .leftJoin('asset', 'asset.id', 'activity.assetId')
-      .$if(!!userId, (qb) => qb.where('activity.userId', '=', userId!))
-      .$if(assetId === null, (qb) => qb.where('assetId', 'is', null))
-      .$if(!!assetId, (qb) => qb.where('activity.assetId', '=', assetId!))
-      .$if(!!albumId, (qb) => qb.where('activity.albumId', '=', albumId!))
-      .$if(isLiked !== undefined, (qb) => qb.where('activity.isLiked', '=', isLiked!))
-      .where('asset.deletedAt', 'is', null)
-      // reactions on a Locked item stay with its owner's elevated session: another member never
-      // learns the item's id or what was said about it (owner decision, September 22, 2026)
-      .$if(!options.includeLocked, (qb) =>
-        qb.where((eb) =>
-          eb.or([eb('asset.id', 'is', null), notLockedOrOwnedBy(options.lockedOwnerId, 'asset')]),
-        ),
-      )
-      .$call((qb) => withHiddenContentFilter(qb, options))
-      .orderBy('activity.createdAt', 'asc')
-      .execute();
+    return (
+      this.db
+        .selectFrom('activity')
+        .selectAll('activity')
+        .innerJoin('user as user2', (join) =>
+          join.onRef('user2.id', '=', 'activity.userId').on('user2.deletedAt', 'is', null),
+        )
+        .innerJoinLateral(
+          (eb) => eb.selectFrom(dummy).select(columns.userWithPrefix).as('user'),
+          (join) => join.onTrue(),
+        )
+        .select((eb) => eb.fn.toJson('user').as('user'))
+        .leftJoin('asset', 'asset.id', 'activity.assetId')
+        .$if(!!userId, (qb) => qb.where('activity.userId', '=', userId!))
+        .$if(assetId === null, (qb) => qb.where('assetId', 'is', null))
+        .$if(!!assetId, (qb) => qb.where('activity.assetId', '=', assetId!))
+        .$if(!!albumId, (qb) => qb.where('activity.albumId', '=', albumId!))
+        .$if(isLiked !== undefined, (qb) => qb.where('activity.isLiked', '=', isLiked!))
+        .where('asset.deletedAt', 'is', null)
+        // reactions on a Locked item stay with its owner's elevated session: another member never
+        // learns the item's id or what was said about it (owner decision, September 22, 2026)
+        .$if(!options.includeLocked, (qb) =>
+          qb.where((eb) => eb.or([eb('asset.id', 'is', null), notLockedOrOwnedBy(options.lockedOwnerId, 'asset')])),
+        )
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        .orderBy('activity.createdAt', 'asc')
+        .execute()
+    );
   }
 
   @GenerateSql({ params: [{ albumId: DummyValue.UUID, userId: DummyValue.UUID }] })

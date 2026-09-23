@@ -1,6 +1,7 @@
 import { Column, CreateDateColumn, ForeignKeyColumn, Index, Table, Unique, UpdateDateColumn } from '@immich/sql-tools';
-import type { Generated, Int8, Timestamp } from '@immich/sql-tools';
+import type { Generated, Timestamp } from '@immich/sql-tools';
 import { PrimaryGeneratedUuidV7Column, UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import type { Int8Writable } from 'src/schema/int8-writable.js';
 import {
   MediaOperationCheckpointState,
   MediaOperationDestination,
@@ -120,10 +121,10 @@ export class MediaOperationTable {
   progress!: Generated<number>;
 
   @Column({ type: 'bigint', default: 0 })
-  processedUnits!: Generated<Int8>;
+  processedUnits!: Generated<Int8Writable>;
 
   @Column({ type: 'bigint', nullable: true })
-  totalUnits!: Int8 | null;
+  totalUnits!: Int8Writable | null;
 
   /** Increments on every claim. A job that exhausts `maxAttempts` fails instead of requeuing. */
   @Column({ type: 'integer', default: 0 })
@@ -178,7 +179,7 @@ export class MediaOperationTable {
    * bytes a failed one produced.
    */
   @Column({ type: 'bigint', default: 0 })
-  outputBytes!: Generated<Int8>;
+  outputBytes!: Generated<Int8Writable>;
 
   /**
    * When the current attempt was claimed (FL-95). `startedAt` keeps the first attempt's start for
@@ -291,14 +292,14 @@ export class MediaOperationCheckpointTable {
   timebase!: string;
 
   @Column({ type: 'bigint' })
-  startTicks!: Int8;
+  startTicks!: Int8Writable;
 
   @Column({ type: 'bigint' })
-  endTicks!: Int8;
+  endTicks!: Int8Writable;
 
   /** Ticks of preroll this chunk needs before its start to reproduce filter and audio state. */
   @Column({ type: 'bigint', default: 0 })
-  prerollTicks!: Generated<Int8>;
+  prerollTicks!: Generated<Int8Writable>;
 
   /** True when a filter in this chunk carries serialized state; a render may not start here. */
   @Column({ type: 'boolean', default: false })
@@ -311,7 +312,7 @@ export class MediaOperationCheckpointTable {
   outputChecksum!: Buffer | null;
 
   @Column({ type: 'bigint', nullable: true })
-  sizeInBytes!: Int8 | null;
+  sizeInBytes!: Int8Writable | null;
 
   @Column({ type: 'integer', default: 0 })
   attempt!: Generated<number>;

@@ -84,7 +84,10 @@
       {/if}
 
       {#if files.length > 0}
-        <div class="folder-browser-strip" aria-label={$t('frameleaf_folders_contents_of', { values: { name: tree.value } })}>
+        <div
+          class="folder-browser-strip"
+          aria-label={$t('frameleaf_folders_contents_of', { values: { name: tree.value } })}
+        >
           {#each files.slice(0, 8) as asset (asset.id)}
             <img src={getAssetUrls(asset).thumbnail} alt="" loading="lazy" />
           {/each}

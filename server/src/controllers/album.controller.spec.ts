@@ -100,7 +100,9 @@ describe(AlbumController.name, () => {
     it('should pass a null destination through to take the album out of its collection', async () => {
       const id = factory.uuid();
       service.moveToCollection.mockResolvedValue({ id } as never);
-      const { status } = await request(ctx.getHttpServer()).put(`/albums/${id}/collection`).send({ collectionId: null });
+      const { status } = await request(ctx.getHttpServer())
+        .put(`/albums/${id}/collection`)
+        .send({ collectionId: null });
       expect(status).toEqual(200);
       expect(service.moveToCollection).toHaveBeenCalledWith(expect.anything(), id, { collectionId: null });
     });

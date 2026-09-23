@@ -7,7 +7,14 @@ import { HistoryBuilder } from 'src/decorators.js';
 import { BulkIdErrorReasonSchema } from 'src/dtos/asset-ids.response.dto.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
-import { AlbumKind, AlbumKindSchema, AlbumUserRole, AlbumUserRoleSchema, AssetOrder, AssetOrderSchema } from 'src/enum.js';
+import {
+  AlbumKind,
+  AlbumKindSchema,
+  AlbumUserRole,
+  AlbumUserRoleSchema,
+  AssetOrder,
+  AssetOrderSchema,
+} from 'src/enum.js';
 import { MaybeDehydrated } from 'src/types.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { stringToBool } from 'src/validation.js';
@@ -66,7 +73,9 @@ const CreateAlbumSchema = z
     parentId: z
       .uuidv4()
       .optional()
-      .describe('Collection to create the album inside (omit for top-level). Only albums nest, and only inside a collection.'),
+      .describe(
+        'Collection to create the album inside (omit for top-level). Only albums nest, and only inside a collection.',
+      ),
     icon: AlbumIconSchema.optional().describe('Optional icon: any Material Design Icons name (see GET /albums/icons)'),
     kind: AlbumKindSchema.default(AlbumKind.Album)
       .optional()

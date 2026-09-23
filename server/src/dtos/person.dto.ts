@@ -1,4 +1,3 @@
-import { Selectable } from 'kysely';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { ImageDimensions, MaybeDehydrated } from 'src/types.js';
@@ -7,7 +6,6 @@ import { HistoryBuilder } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { SourceTypeSchema } from 'src/enum.js';
-import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { asDateString, asDateTimeString } from 'src/utils/date.js';
 import { transformFaceBoundingBox } from 'src/utils/transform.js';
 import { hexColor, stringToBool } from 'src/validation.js';
@@ -225,11 +223,7 @@ export function mapPerson(person: MaybeDehydrated<Person>): PersonResponseDto {
   };
 }
 
-function mapFacesWithoutPerson(
-  face: MaybeDehydrated<Selectable<AssetFaceTable>>,
-  edits?: AssetEditActionItem[],
-  assetDimensions?: ImageDimensions,
-) {
+function mapFacesWithoutPerson(face: AssetFace, edits?: AssetEditActionItem[], assetDimensions?: ImageDimensions) {
   return {
     id: face.id,
     ...transformFaceBoundingBox(

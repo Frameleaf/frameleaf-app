@@ -96,10 +96,7 @@ export const exportProgress = ({ assetCount, processedAssets }: MemoryExportResp
  * returns is already newest first, but the order is re-established here so the component
  * does not depend on it.
  */
-export const latestExport = (
-  runs: MemoryExportResponseDto[],
-  memoryId: string,
-): MemoryExportResponseDto | undefined =>
+export const latestExport = (runs: MemoryExportResponseDto[], memoryId: string): MemoryExportResponseDto | undefined =>
   runs
     .filter((run) => run.memoryId === memoryId)
     .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))

@@ -182,7 +182,11 @@
             <time datetime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time>
             <span>{$t('frameleaf_studio_history_command_count', { values: { count: summaryCount(item) } })}</span>
             {#if item.restoredFromRevision !== null}
-              <span>{$t('frameleaf_studio_history_restored_from', { values: { revision: item.restoredFromRevision } })}</span>
+              <span
+                >{$t('frameleaf_studio_history_restored_from', {
+                  values: { revision: item.restoredFromRevision },
+                })}</span
+              >
             {/if}
           </div>
         </li>
@@ -234,8 +238,7 @@
           maxlength="2000"
           placeholder={$t('frameleaf_studio_comment_placeholder')}
           bind:value={commentText}
-          disabled={posting}
-        ></textarea>
+          disabled={posting}></textarea>
       </label>
       <Button type="submit" disabled={posting || commentText.trim().length === 0}>
         {$t('frameleaf_studio_comment_add')}

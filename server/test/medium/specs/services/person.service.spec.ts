@@ -203,12 +203,12 @@ describe(PersonService.name, () => {
       };
 
       await expect(assetIds(factory.auth({ user: user1 }))).resolves.toEqual([timeline2.id]);
-      await expect(
-        assetIds(factory.auth({ user: user1, session: { hasElevatedPermission: true } })),
-      ).resolves.toEqual([locked1.id, timeline2.id].sort());
-      await expect(
-        assetIds(factory.auth({ user: user2, session: { hasElevatedPermission: true } })),
-      ).resolves.toEqual([locked2.id, timeline2.id].sort());
+      await expect(assetIds(factory.auth({ user: user1, session: { hasElevatedPermission: true } }))).resolves.toEqual(
+        [locked1.id, timeline2.id].sort(),
+      );
+      await expect(assetIds(factory.auth({ user: user2, session: { hasElevatedPermission: true } }))).resolves.toEqual(
+        [locked2.id, timeline2.id].sort(),
+      );
     });
 
     it("reaches a face on the caller's own Locked media only from an elevated session", async () => {

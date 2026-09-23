@@ -19,15 +19,24 @@ describe('AssetRestorationRequestDto', () => {
     expect(result.data).toMatchObject({ upscale: 2, keepGrain: false, region: DEFAULT_RESTORATION_REGION });
 
     expect(AssetRestorationRequestDto.schema.safeParse({ mode: AssetRestorationMode.Faithful }).success).toBe(false);
-    expect(AssetRestorationRequestDto.schema.safeParse({ mode: AssetRestorationMode.Faithful, destinationId: 'local' }).success).toBe(false);
+    expect(
+      AssetRestorationRequestDto.schema.safeParse({ mode: AssetRestorationMode.Faithful, destinationId: 'local' })
+        .success,
+    ).toBe(false);
   });
 
   it('accepts only the three upscale factors', () => {
     for (const upscale of [1, 2, 4]) {
-      expect(AssetRestorationRequestDto.schema.safeParse({ mode: 'creative', destinationId, upscale }).success).toBe(true);
+      expect(AssetRestorationRequestDto.schema.safeParse({ mode: 'creative', destinationId, upscale }).success).toBe(
+        true,
+      );
     }
-    expect(AssetRestorationRequestDto.schema.safeParse({ mode: 'creative', destinationId, upscale: 3 }).success).toBe(false);
-    expect(AssetRestorationRequestDto.schema.safeParse({ mode: 'creative', destinationId, upscale: 8 }).success).toBe(false);
+    expect(AssetRestorationRequestDto.schema.safeParse({ mode: 'creative', destinationId, upscale: 3 }).success).toBe(
+      false,
+    );
+    expect(AssetRestorationRequestDto.schema.safeParse({ mode: 'creative', destinationId, upscale: 8 }).success).toBe(
+      false,
+    );
   });
 
   it('keeps the preview region inside the frame and not too small', () => {
@@ -51,7 +60,9 @@ describe('AssetRestorationSelectDto and file query', () => {
   it('lets the original be chosen by naming nothing, and defaults the file kind to the restored preview', () => {
     expect(AssetRestorationSelectDto.schema.safeParse({}).success).toBe(true);
     expect(AssetRestorationSelectDto.schema.safeParse({ restorationId: destinationId }).success).toBe(false);
-    expect(AssetRestorationSelectDto.schema.safeParse({ restorationId: '0195e2a0-0000-7000-8000-000000000001' }).success).toBe(true);
+    expect(
+      AssetRestorationSelectDto.schema.safeParse({ restorationId: '0195e2a0-0000-7000-8000-000000000001' }).success,
+    ).toBe(true);
     expect(AssetRestorationFileQueryDto.schema.safeParse({}).data).toEqual({ kind: AssetRestorationFileKind.After });
   });
 });

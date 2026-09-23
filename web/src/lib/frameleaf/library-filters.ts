@@ -44,8 +44,7 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
 };
 
 /** i18n key naming a filter field. Unknown fields fall back to a neutral "Filter". */
-export const filterFieldLabelKey = (field: string) =>
-  FIELD_LABEL_KEYS[field] ?? 'frameleaf_library_filter_field_other';
+export const filterFieldLabelKey = (field: string) => FIELD_LABEL_KEYS[field] ?? 'frameleaf_library_filter_field_other';
 
 const LIST_OPERATORS = ['in', 'notIn', 'any', 'all', 'none'] as const;
 const TEXT_OPERATORS = ['like', 'notLike', 'startsWith', 'endsWith', 'matches'] as const;

@@ -8,7 +8,6 @@
  * the panel cannot offer something the server would refuse — and never picks a destination on the
  * person's behalf.
  */
-import { authManager } from '$lib/managers/auth-manager.svelte';
 import {
   AssetRestorationFileKind,
   AssetRestorationMode,
@@ -19,6 +18,7 @@ import {
   type AssetRestorationOptionsDto,
   type AssetRestorationResponseDto,
 } from '@immich/sdk';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 
 export const RESTORATION_UPSCALES = [1, 2, 4] as const;
 export type RestorationUpscale = (typeof RESTORATION_UPSCALES)[number];
@@ -34,7 +34,10 @@ export type RestorationRegion = { x: number; y: number; w: number; h: number; st
 /** The centre half of the frame, matching the server's default. */
 export const CENTRE_REGION: RestorationRegion = { x: 0.25, y: 0.25, w: 0.5, h: 0.5 };
 
-export const RESTORATION_MODES: readonly AssetRestorationMode[] = [AssetRestorationMode.Faithful, AssetRestorationMode.Creative];
+export const RESTORATION_MODES: readonly AssetRestorationMode[] = [
+  AssetRestorationMode.Faithful,
+  AssetRestorationMode.Creative,
+];
 
 const BUSY: readonly AssetRestorationStatus[] = [
   AssetRestorationStatus.PreviewQueued,
@@ -88,7 +91,11 @@ export const compareKindFor = (
   if (item.status === AssetRestorationStatus.Restored && item.hasResult) {
     return 'result';
   }
-  if (item.hasPreview && item.status !== AssetRestorationStatus.Discarded && item.status !== AssetRestorationStatus.Expired) {
+  if (
+    item.hasPreview &&
+    item.status !== AssetRestorationStatus.Discarded &&
+    item.status !== AssetRestorationStatus.Expired
+  ) {
     return 'preview';
   }
   return null;
@@ -169,7 +176,10 @@ export const orderedDestinations = (destinations: readonly AssetRestorationDesti
  * otherwise the first admissible one that keeps media on the network, otherwise nothing. A cloud
  * destination is never the default; it has to be chosen.
  */
-export const defaultDestinationId = (destinations: readonly AssetRestorationDestinationDto[], previous: string | null) => {
+export const defaultDestinationId = (
+  destinations: readonly AssetRestorationDestinationDto[],
+  previous: string | null,
+) => {
   const ordered = orderedDestinations(destinations);
   const kept = previous && ordered.find((item) => item.id === previous && item.available);
   if (kept) {
@@ -179,7 +189,12 @@ export const defaultDestinationId = (destinations: readonly AssetRestorationDest
 };
 
 /** Whether the picked upscale was reduced by the 4K cap. */
-export const isOutputCapped = (options: Pick<AssetRestorationOptionsDto, 'sourceWidth' | 'sourceHeight' | 'outputWidth' | 'outputHeight' | 'upscale'>) =>
+export const isOutputCapped = (
+  options: Pick<
+    AssetRestorationOptionsDto,
+    'sourceWidth' | 'sourceHeight' | 'outputWidth' | 'outputHeight' | 'upscale'
+  >,
+) =>
   options.outputWidth < options.sourceWidth * options.upscale - 1 ||
   options.outputHeight < options.sourceHeight * options.upscale - 1;
 

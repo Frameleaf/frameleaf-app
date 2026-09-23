@@ -55,6 +55,8 @@ const REQUIRED_READBACK_SOURCES = new Set([
   "docs/docs/developer/frameleaf-plan/10-agent-handoff-2026-09-22.md",
   "docs/docs/developer/frameleaf-settings-inventory.md",
   "docs/docs/developer/frameleaf-toolchain-baseline.md",
+  "docs/docs/features/fork-privacy-suite.md",
+  "docs/docs/features/image-enrichment.md",
   "studio/README.md",
 ]);
 const SHA256 = /^[a-f0-9]{64}$/u;

@@ -1,7 +1,7 @@
 import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
+import { parseStudioHandoff } from '$lib/frameleaf/studio/handoff';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';
-import { parseStudioHandoff } from '$lib/frameleaf/studio/handoff';
 import type { PageLoad } from './$types';
 
 /**

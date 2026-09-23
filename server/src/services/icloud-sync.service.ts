@@ -101,7 +101,8 @@ const asIso = (value: unknown): string | null => {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
 
-const failureCode = (error: unknown) => (error instanceof ICloudTransportError ? error.code : 'icloud_operation_failed');
+const failureCode = (error: unknown) =>
+  error instanceof ICloudTransportError ? error.code : 'icloud_operation_failed';
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -634,7 +635,8 @@ export class ICloudSyncService {
     const started = await this.operations.reportProgress(id, claimToken, {
       status: MediaOperationStatus.Rendering,
       processedUnits: Number(operation.processedUnits ?? 0),
-      totalUnits: operation.totalUnits === null || operation.totalUnits === undefined ? null : Number(operation.totalUnits),
+      totalUnits:
+        operation.totalUnits === null || operation.totalUnits === undefined ? null : Number(operation.totalUnits),
       progress: Number(operation.progress ?? 0),
     });
     if (!started) {
@@ -795,7 +797,9 @@ export class ICloudSyncService {
       return;
     }
     const delay = Math.min(ICLOUD_MAX_WAIT_MS, Math.max(0, Math.round(delayMs)));
-    if (!(await this.operations.requeue(claim.operation.id, claim.claimToken, { delayMs: delay, returnAttempt: true }))) {
+    if (
+      !(await this.operations.requeue(claim.operation.id, claim.claimToken, { delayMs: delay, returnAttempt: true }))
+    ) {
       await this.acknowledgeCancel(claim, connectionId);
     }
   }

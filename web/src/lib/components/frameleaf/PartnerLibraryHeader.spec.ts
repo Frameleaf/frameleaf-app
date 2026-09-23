@@ -1,5 +1,3 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { addMessages } from 'svelte-i18n';
 import {
   getPartners,
   PartnerDirection,
@@ -8,6 +6,8 @@ import {
   UserAvatarColor,
   type PartnerResponseDto,
 } from '@immich/sdk';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { addMessages } from 'svelte-i18n';
 import en from '../../../../../i18n/en.json';
 import PartnerLibraryHeader from './PartnerLibraryHeader.svelte';
 

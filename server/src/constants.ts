@@ -178,6 +178,7 @@ export const endpointTags: Record<ApiTag, string> = {
   [ApiTag.MediaHealth]: 'Media health utilities identify missing and corrupt source files.',
   [ApiTag.MediaOperations]:
     'A media operation is a durable record of long-running media work, such as a render or a bulk change, with its progress, checkpoints and outcome. Operations can be cancelled or retried by the account that started them.',
+  [ApiTag.MlDestinations]: 'Machine-learning destinations and enrolled workers.',
   [ApiTag.Memories]:
     'A memory is a specialized collection of assets with dedicated viewing implementations in the web and mobile clients. A memory includes fields related to visibility and are automatically generated per user via a background job.',
   [ApiTag.Notifications]:
@@ -192,6 +193,7 @@ export const endpointTags: Record<ApiTag, string> = {
     'A plugin is an installed module that makes filters and actions available for the workflow feature.',
   [ApiTag.Queues]:
     'Queues and background jobs are used for processing tasks asynchronously. Queues can be paused and resumed as needed.',
+  [ApiTag.RenderWorkers]: 'Render workers and their admitted media operations.',
   [ApiTag.RunPod]:
     'Provision the Immich machine-learning container on RunPod cloud GPUs. The integration manages a single pod, transparently routes ML jobs to it, and stops it when idle to control cost.',
   [ApiTag.Search]:

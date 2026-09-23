@@ -125,11 +125,7 @@ export class PetController {
     description: 'Update a pet’s name, species, birthday, featured photo, hidden or favorite state.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  updatePet(
-    @Auth() auth: AuthDto,
-    @Param() { id }: UUIDParamDto,
-    @Body() dto: PetUpdateDto,
-  ): Promise<PetResponseDto> {
+  updatePet(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto, @Body() dto: PetUpdateDto): Promise<PetResponseDto> {
     return this.service.update(auth, id, dto);
   }
 

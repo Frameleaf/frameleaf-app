@@ -2,7 +2,8 @@ import { getQueueToken } from '@nestjs/bullmq';
 import { Injectable } from '@nestjs/common';
 import { ModuleRef, Reflector } from '@nestjs/core';
 import { Job, JobsOptions, Queue, Worker, type WorkerOptions } from 'bullmq';
-import { setTimeout } from 'node:timers/promises';
+import type { Redis } from 'ioredis';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { JobCounts, JobItem, JobOf } from 'src/types.js';
 import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
@@ -371,7 +372,7 @@ export class JobRepository {
   }
 
   private queueRunClient(name: QueueName) {
-    return this.getQueue(name).client;
+    return this.getQueue(name).client as Promise<Redis>;
   }
 
   watchWorkers() {
@@ -527,7 +528,7 @@ export class JobRepository {
 
     while (pending.length > 0) {
       this.logger.verbose(`Waiting for ${pending[0]} queue to stop...`);
-      await setTimeout(1000);
+      await sleep(1000);
       pending = await getPending();
     }
   }

@@ -201,9 +201,7 @@ const SharedSpaceNewResponseSchema = z
       .nullable()
       .describe('When this member last marked the shared space seen; null if they never have'),
     assetCount: z.int().min(0).describe('Items other members added since then'),
-    assetIds: z
-      .array(z.uuidv4())
-      .describe('Up to 500 of those items, so the timeline can show exactly what is new'),
+    assetIds: z.array(z.uuidv4()).describe('Up to 500 of those items, so the timeline can show exactly what is new'),
   })
   .meta({ id: 'SharedSpaceNewResponseDto' });
 
@@ -258,10 +256,7 @@ const SharedSpaceActivityResponseSchema = z
       .meta({ format: 'date-time' })
       .nullable()
       .describe('When this member last marked the shared space seen; null if they never have'),
-    unreadCount: z
-      .int()
-      .min(0)
-      .describe('Events by other members since then that this member may see. Capped at 500.'),
+    unreadCount: z.int().min(0).describe('Events by other members since then that this member may see. Capped at 500.'),
     hasMore: z.boolean().describe('True when older events exist beyond this page'),
   })
   .meta({ id: 'SharedSpaceActivityResponseDto' });
@@ -312,10 +307,7 @@ const SharedSpaceCommentsResponseSchema = z
   .meta({ id: 'SharedSpaceCommentsResponseDto' });
 
 const SharedSpaceCommentSearchSchema = z.object({
-  assetId: z
-    .uuidv4()
-    .optional()
-    .describe('Comments on this item. Left out, the comments on the space itself.'),
+  assetId: z.uuidv4().optional().describe('Comments on this item. Left out, the comments on the space itself.'),
 });
 
 const CommentTextSchema = z

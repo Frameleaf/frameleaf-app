@@ -5,7 +5,6 @@
  * qualification evidence, license review and GPU; the server relays that report unchanged. This
  * module only turns those facts into labels and tones. It never marks a model usable itself.
  */
-
 import {
   AssetRestorationMode,
   MlWorkload,

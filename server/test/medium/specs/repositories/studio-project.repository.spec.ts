@@ -50,7 +50,12 @@ afterEach(async () => {
 describe(StudioProjectRepository.name, () => {
   const leasedProject = async (sut: StudioProjectRepository, ownerId: string, clientId = 'tab-a') => {
     const project = await sut.create({ ownerId, name: 'Lake trip' });
-    const leased = await sut.acquireLease(project.id, { userId: ownerId, clientId, leaseMs: LEASE_MS, takeover: false });
+    const leased = await sut.acquireLease(project.id, {
+      userId: ownerId,
+      clientId,
+      leaseMs: LEASE_MS,
+      takeover: false,
+    });
     expect(leased).toBeDefined();
     return leased!;
   };

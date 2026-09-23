@@ -66,15 +66,23 @@ const revision = (overrides: Partial<AssetDevelopRevisionResponseDto> = {}): Ass
 });
 
 describe('QuickEditor', () => {
-  const photo = assetFactory.build({ type: AssetTypeEnum.Image, originalFileName: 'IMG_0001.jpg', width: 4000, height: 3000 });
+  const photo = assetFactory.build({
+    type: AssetTypeEnum.Image,
+    originalFileName: 'IMG_0001.jpg',
+    width: 4000,
+    height: 3000,
+  });
 
   beforeEach(() => {
     vi.mocked(getAssetDevelop).mockResolvedValue({ assetId: photo.id, currentRevisionId: null, revisions: [] });
     vi.mocked(previewAssetDevelop).mockResolvedValue(new Blob(['jpeg']));
-    vi.stubGlobal('ResizeObserver', class {
-      observe() {}
-      disconnect() {}
-    });
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
     URL.createObjectURL = vi.fn(() => 'blob:preview');
     URL.revokeObjectURL = vi.fn();
   });
@@ -107,7 +115,10 @@ describe('QuickEditor', () => {
     await vi.advanceTimersByTimeAsync(400);
     await waitFor(() =>
       expect(previewAssetDevelop).toHaveBeenCalledWith(
-        { id: photo.id, assetDevelopPreviewDto: { recipe: expect.objectContaining({ contrast: 25, version: 1 }), size: 1280 } },
+        {
+          id: photo.id,
+          assetDevelopPreviewDto: { recipe: expect.objectContaining({ contrast: 25, version: 1 }), size: 1280 },
+        },
         expect.anything(),
       ),
     );
@@ -115,12 +126,20 @@ describe('QuickEditor', () => {
   });
 
   it('saves the recipe as a new version and shows it in Versions', async () => {
-    const saved = revision({ assetId: photo.id, status: AssetDevelopRevisionStatus.Queued, progress: 0, hasMaster: false, hasPreview: false });
+    const saved = revision({
+      assetId: photo.id,
+      status: AssetDevelopRevisionStatus.Queued,
+      progress: 0,
+      hasMaster: false,
+      hasPreview: false,
+    });
     vi.mocked(saveAssetDevelop).mockResolvedValue(saved);
     vi.mocked(getAssetDevelop).mockResolvedValue({ assetId: photo.id, currentRevisionId: null, revisions: [saved] });
     render(QuickEditor, { asset: photo, onClose: vi.fn() });
 
-    await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_exposure' }), { target: { value: '0.5' } });
+    await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_exposure' }), {
+      target: { value: '0.5' },
+    });
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_editor_save_version' }));
 
     await waitFor(() =>
@@ -145,7 +164,9 @@ describe('QuickEditor', () => {
     expect(onClose).toHaveBeenCalledWith(false);
     onClose.mockClear();
 
-    await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }), { target: { value: '10' } });
+    await fireEvent.input(screen.getByRole('slider', { name: 'frameleaf_editor_param_contrast' }), {
+      target: { value: '10' },
+    });
     await fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
     await waitFor(() => expect(modalManager.showDialog).toHaveBeenCalled());
     expect(onClose).not.toHaveBeenCalled();

@@ -5,9 +5,6 @@ import {
   type SharedSpaceCommentResponseDto,
   type SharedSpaceMemberResponseDto,
 } from '@immich/sdk';
-import { albumFactory } from '@test-data/factories/album-factory';
-import { personFactory } from '@test-data/factories/person-factory';
-import { userAdminFactory } from '@test-data/factories/user-factory';
 import { describe, expect, it } from 'vitest';
 import {
   activityUnreadHint,
@@ -50,6 +47,9 @@ import {
   withoutComment,
   withReply,
 } from '$lib/frameleaf/shared-space';
+import { albumFactory } from '@test-data/factories/album-factory';
+import { personFactory } from '@test-data/factories/person-factory';
+import { userAdminFactory } from '@test-data/factories/user-factory';
 
 const owner = userAdminFactory.build({ id: 'owner', name: 'Ada' });
 const editor = userAdminFactory.build({ id: 'editor', name: 'Bo' });
@@ -65,11 +65,11 @@ const space = albumFactory.build({
   ],
 });
 
-const member = (
-  user: typeof owner,
-  role: AlbumUserRole,
-  pending = false,
-): SharedSpaceMemberResponseDto => ({ user, role, pending });
+const member = (user: typeof owner, role: AlbumUserRole, pending = false): SharedSpaceMemberResponseDto => ({
+  user,
+  role,
+  pending,
+});
 
 describe('shared space rules', () => {
   it('recognises a space, and not an album or a collection', () => {

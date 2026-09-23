@@ -324,9 +324,7 @@ export class AlbumUserRepository {
           .onRef('person.ownerId', '=', 'link.personOwnerId')
           .onRef('person.personGroupId', '=', 'link.personGroupId'),
       )
-      .leftJoin('asset as cover', (join) =>
-        join.onRef('cover.id', '=', 'link.coverAssetId').on(isLocked('cover')),
-      )
+      .leftJoin('asset as cover', (join) => join.onRef('cover.id', '=', 'link.coverAssetId').on(isLocked('cover')))
       .where('link.albumId', '=', spaceId)
       .select([
         'link.id as id',
@@ -391,7 +389,7 @@ export class AlbumUserRepository {
       .where('asset_face.deletedAt', 'is', null)
       .where('asset_face.isVisible', 'is', true)
       .where('asset_face.personGroupId', 'in', personGroupIds)
-      .select('asset_face.personGroupId as personGroupId')
+      .select((eb) => sql<string>`${eb.ref('asset_face.personGroupId')}`.as('personGroupId'))
       .select((eb) => sql<number>`count(distinct ${eb.ref('asset.id')})::int`.as('assetCount'))
       .groupBy('asset_face.personGroupId')
       .execute();

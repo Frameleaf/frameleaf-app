@@ -1,9 +1,9 @@
-import { fireEvent, render, screen } from '@testing-library/svelte';
 import { AlbumKind, AlbumUserRole, type AlbumResponseDto, type PartnerResponseDto, UserAvatarColor } from '@immich/sdk';
-import { albumFactory } from '@test-data/factories/album-factory';
-import { userAdminFactory } from '@test-data/factories/user-factory';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { albumFactory } from '@test-data/factories/album-factory';
+import { userAdminFactory } from '@test-data/factories/user-factory';
 import SharedSpacesWorkspace from './SharedSpacesWorkspace.svelte';
 
 const me = userAdminFactory.build({ id: 'me', isAdmin: false });
@@ -55,7 +55,7 @@ describe('SharedSpacesWorkspace', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'Shared spaces' })).toBeInTheDocument();
     expect(screen.getByRole('article', { name: 'Family Space' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: "Open Jamie’s library" })).toHaveAttribute('href', '/partners/jamie');
+    expect(screen.getByRole('link', { name: 'Open Jamie’s library' })).toHaveAttribute('href', '/partners/jamie');
   });
 
   it('shows the empty state with a create action when there are no shared spaces', () => {
@@ -72,7 +72,9 @@ describe('SharedSpacesWorkspace', () => {
 
     expect(screen.getByRole('heading', { name: 'Create shared space' })).toBeInTheDocument();
     expect(
-      screen.getByText('A shared space is a top-level library that everyone you invite adds to. Invite people from its page once it exists.'),
+      screen.getByText(
+        'A shared space is a top-level library that everyone you invite adds to. Invite people from its page once it exists.',
+      ),
     ).toBeInTheDocument();
   });
 });

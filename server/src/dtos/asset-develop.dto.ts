@@ -117,12 +117,7 @@ export const AssetDevelopRecipeSchema = z
     flipHorizontal: z.boolean().default(false).describe('Mirror left to right'),
     flipVertical: z.boolean().default(false).describe('Mirror top to bottom'),
     preset: AssetDevelopPresetSchema.default(AssetDevelopPreset.Original),
-    presetStrength: z
-      .int()
-      .min(0)
-      .max(100)
-      .default(100)
-      .describe('How much of the preset is applied, as a percentage'),
+    presetStrength: z.int().min(0).max(100).default(100).describe('How much of the preset is applied, as a percentage'),
   })
   .meta({ id: 'AssetDevelopRecipeDto' });
 
@@ -133,10 +128,7 @@ const AssetDevelopSaveSchema = z
   .object({
     recipe: AssetDevelopRecipeSchema,
     label: z.string().trim().min(1).max(120).optional().describe('Optional name for the saved version'),
-    render: z
-      .boolean()
-      .default(true)
-      .describe('Queue the edited master render immediately after saving the recipe'),
+    render: z.boolean().default(true).describe('Queue the edited master render immediately after saving the recipe'),
   })
   .meta({ id: 'AssetDevelopSaveDto' });
 
@@ -184,10 +176,7 @@ const AssetDevelopRevisionResponseSchema = z
     progress: z.int().min(0).max(100).describe('Render progress as a percentage'),
     error: z.string().nullable().describe('Why the last render failed, when it did'),
     recipe: AssetDevelopRecipeSchema,
-    rendererVersion: z
-      .string()
-      .nullable()
-      .describe('Identity of the renderer that produced the files, for lineage'),
+    rendererVersion: z.string().nullable().describe('Identity of the renderer that produced the files, for lineage'),
     width: z.int().nullable().describe('Width of the edited master in pixels'),
     height: z.int().nullable().describe('Height of the edited master in pixels'),
     isCurrent: z.boolean().describe('True for the version the asset currently shows'),
@@ -206,9 +195,7 @@ const AssetDevelopResponseSchema = z
       .uuidv4()
       .nullable()
       .describe('The revision the asset currently shows; null means the original'),
-    revisions: z
-      .array(AssetDevelopRevisionResponseSchema)
-      .describe('Every saved version of the recipe, newest first'),
+    revisions: z.array(AssetDevelopRevisionResponseSchema).describe('Every saved version of the recipe, newest first'),
   })
   .meta({ id: 'AssetDevelopResponseDto' });
 

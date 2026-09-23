@@ -42,7 +42,9 @@
   /** FL-45: an individual shared link has no album to name the download after (see AlbumViewer for
    * that case), but its own description is often set to something descriptive; falls back to the
    * generic "Shared" label when it is not. */
-  const sharedDownloadFileName = $derived(namedArchiveName(sharedLink.description, $t('frameleaf_archive_name_shared')));
+  const sharedDownloadFileName = $derived(
+    namedArchiveName(sharedLink.description, $t('frameleaf_archive_name_shared')),
+  );
 
   // Local cursor `$state` for the single-asset shared-link path. AssetViewer's
   // `cursor` prop is non-bindable, so the owner of the cursor (this component)

@@ -95,9 +95,7 @@ export const resolveSourceTimeBase = (
  * field is `30000/1001` already flattened to 29.97002997002997, and rebuilding a fraction from
  * it would be inventing a cadence the container never declared.
  */
-export const resolveSourceCadence = (
-  videoStream: Pick<VideoStreamInfo, 'frameRateRational'>,
-): Rational | null => {
+export const resolveSourceCadence = (videoStream: Pick<VideoStreamInfo, 'frameRateRational'>): Rational | null => {
   const exact = coerceRational(videoStream.frameRateRational);
   return exact && exact.num > 0 ? exact : null;
 };

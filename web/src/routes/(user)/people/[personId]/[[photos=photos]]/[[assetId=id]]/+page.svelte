@@ -399,12 +399,18 @@
             {/if}
           </section>
           {#if !isEditingName}
-            <div class="frameleaf-person-actions" role="toolbar" aria-label={$t('frameleaf_people_person_actions', { values: { name: person.name || $t('add_a_name') } })}>
+            <div
+              class="frameleaf-person-actions"
+              role="toolbar"
+              aria-label={$t('frameleaf_people_person_actions', { values: { name: person.name || $t('add_a_name') } })}
+            >
               <FrameleafMenu label={$t('show_person_options')} align="start">
                 {#snippet trigger()}
                   <Icon icon={mdiDotsVertical} size="18" />
                 {/snippet}
-                <FrameleafMenuItem onSelect={SelectFeaturePhoto.onAction}>{$t('select_featured_photo')}</FrameleafMenuItem>
+                <FrameleafMenuItem onSelect={SelectFeaturePhoto.onAction}
+                  >{$t('select_featured_photo')}</FrameleafMenuItem
+                >
                 <FrameleafMenuItem onSelect={Merge.onAction}>{$t('merge_people')}</FrameleafMenuItem>
                 <FrameleafMenuItem onSelect={FixIncorrectMatch.onAction}>{$t('fix_incorrect_match')}</FrameleafMenuItem>
                 <FrameleafMenuItem onSelect={() => (showCorrectionHistory = true)}
@@ -479,7 +485,16 @@
     <ControlAppBar backIcon={mdiArrowLeft} onClose={() => goto(previousRoute)}>
       {#snippet trailing()}
         <ContextMenuButton
-          items={[SelectFeaturePhoto, Merge, FixIncorrectMatch, HidePerson, ShowPerson, SetDateOfBirth, Favorite, Unfavorite]}
+          items={[
+            SelectFeaturePhoto,
+            Merge,
+            FixIncorrectMatch,
+            HidePerson,
+            ShowPerson,
+            SetDateOfBirth,
+            Favorite,
+            Unfavorite,
+          ]}
           aria-label={$t('open')}
         />
       {/snippet}

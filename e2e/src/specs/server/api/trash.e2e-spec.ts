@@ -344,7 +344,11 @@ describe('/trash', () => {
       const id = await trashed();
       const reviewed = await review({ action: 'delete', ids: [id] });
 
-      await request(app).post('/trash/restore/assets').set('Authorization', bearer()).send({ ids: [id] }).expect(200);
+      await request(app)
+        .post('/trash/restore/assets')
+        .set('Authorization', bearer())
+        .send({ ids: [id] })
+        .expect(200);
 
       const { status } = await apply({ action: 'delete', ids: [id], token: reviewed.body.token });
       expect(status).toBe(409);

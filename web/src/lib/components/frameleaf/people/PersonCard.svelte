@@ -58,7 +58,12 @@
 
 <article class="pl-card" class:hidden={person.isHidden} class:editing>
   <div class="pl-face-wrap">
-    <button type="button" class="pl-face" aria-label={$t('frameleaf_people_open_person', { values: { name } })} onclick={onOpen}>
+    <button
+      type="button"
+      class="pl-face"
+      aria-label={$t('frameleaf_people_open_person', { values: { name } })}
+      onclick={onOpen}
+    >
       <PersonAvatar {person} {size} />
     </button>
     {#if person.isFavorite}

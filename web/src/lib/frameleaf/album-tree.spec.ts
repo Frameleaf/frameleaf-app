@@ -43,7 +43,9 @@ describe('Frameleaf album tree adapter', () => {
       }),
     );
 
-    expect(result.collections.map((node) => [node.id, node.kind, node.icon])).toEqual([['trips', 'collection', 'airplane']]);
+    expect(result.collections.map((node) => [node.id, node.kind, node.icon])).toEqual([
+      ['trips', 'collection', 'airplane'],
+    ]);
     expect(result.collections[0].children.map((node) => [node.id, node.kind, node.assetCount])).toEqual([
       ['iceland', 'album', 12],
     ]);
@@ -73,7 +75,9 @@ describe('Frameleaf album tree adapter', () => {
   });
 
   it('carries the stored icon and asset count through to the rail', () => {
-    const result = buildAlbumTree(tree({ albums: [album({ id: 'trip', albumName: 'Trip', icon: 'airplane', assetCount: 3 })] }));
+    const result = buildAlbumTree(
+      tree({ albums: [album({ id: 'trip', albumName: 'Trip', icon: 'airplane', assetCount: 3 })] }),
+    );
 
     expect(result.albums[0]).toMatchObject({ icon: 'airplane', assetCount: 3 });
   });

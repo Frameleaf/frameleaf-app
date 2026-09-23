@@ -1,4 +1,3 @@
-import { error } from '@sveltejs/kit';
 import {
   AlbumKind,
   getAlbumInfo,
@@ -10,6 +9,7 @@ import {
   getSharedSpacePeople,
   isHttpError,
 } from '@immich/sdk';
+import { error } from '@sveltejs/kit';
 import { isSpaceUnavailableStatus } from '$lib/frameleaf/error-page';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';

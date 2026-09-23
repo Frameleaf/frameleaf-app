@@ -151,7 +151,11 @@
       <MenuOption icon={mdiPencilOutline} text={$t('edit')} onClick={() => edit(space)} />
     {/if}
     {#if editor}
-      <MenuOption icon={mdiUpload} text={$t('frameleaf_albums_upload')} onClick={() => void openFileUploadDialog({ albumId: space.id })} />
+      <MenuOption
+        icon={mdiUpload}
+        text={$t('frameleaf_albums_upload')}
+        onClick={() => void openFileUploadDialog({ albumId: space.id })}
+      />
     {/if}
     <MenuOption
       icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline}
@@ -190,7 +194,11 @@
       <h2>{$t('partners')}<small>{$t('frameleaf_spaces_partners_hint')}</small></h2>
       <div class="partner-row">
         {#each partners as partner (partner.id)}
-          <a class="partner" href={Route.viewPartner(partner)} aria-label={$t('frameleaf_spaces_open_partner', { values: { name: partner.name } })}>
+          <a
+            class="partner"
+            href={Route.viewPartner(partner)}
+            aria-label={$t('frameleaf_spaces_open_partner', { values: { name: partner.name } })}
+          >
             <UserAvatar user={partner} size="lg" />
             <span class="partner-text">
               <strong>{partner.name}</strong>

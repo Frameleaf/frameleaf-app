@@ -104,7 +104,10 @@
               </div>
             {:else if row.id === 'camera'}
               <a
-                href={Route.search({ make: asset.exifInfo?.make ?? undefined, model: asset.exifInfo?.model ?? undefined })}
+                href={Route.search({
+                  make: asset.exifInfo?.make ?? undefined,
+                  model: asset.exifInfo?.model ?? undefined,
+                })}
                 title="{$t('search_for')} {row.value}"
                 class="hover:text-primary"
               >

@@ -12,7 +12,6 @@
  * refuses self-deletion and `UserAdminService.update` refuses a self admin-status change.
  * Hiding a control is a courtesy; the endpoint is the boundary.
  */
-
 import { UserStatus, type UserAdminResponseDto } from '@immich/sdk';
 import { DateTime } from 'luxon';
 

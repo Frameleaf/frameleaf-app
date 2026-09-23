@@ -95,9 +95,10 @@ describe(StackService.name, () => {
       };
 
       await expect(memberIds(factory.auth({ user }))).resolves.toEqual([primary.id]);
-      await expect(
-        memberIds(factory.auth({ user, session: { hasElevatedPermission: true } })),
-      ).resolves.toEqual([primary.id, lockedMember.id]);
+      await expect(memberIds(factory.auth({ user, session: { hasElevatedPermission: true } }))).resolves.toEqual([
+        primary.id,
+        lockedMember.id,
+      ]);
     });
   });
 

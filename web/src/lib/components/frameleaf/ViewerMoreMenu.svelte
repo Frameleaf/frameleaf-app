@@ -74,7 +74,9 @@
   const { Cast } = $derived(getGlobalActions($t));
 
   const isOwner = $derived(authManager.authenticated && asset.ownerId === authManager.user.id);
-  const isAlbumOwner = $derived(!!album && authManager.authenticated && album.albumUsers[0]?.user.id === authManager.user.id);
+  const isAlbumOwner = $derived(
+    !!album && authManager.authenticated && album.albumUsers[0]?.user.id === authManager.user.id,
+  );
 
   const groups: ViewerMenuGroup[] = $derived(
     viewerMenuGroups({

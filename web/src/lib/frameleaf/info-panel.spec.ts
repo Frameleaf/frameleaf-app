@@ -1,4 +1,12 @@
 import {
+  AssetTypeEnum,
+  Status,
+  Status2,
+  type AssetImageEnrichmentResponseDto,
+  type AssetResponseDto,
+  type ExifResponseDto,
+} from '@immich/sdk';
+import {
   coordinateLabel,
   coordinatesOf,
   descriptionReview,
@@ -8,14 +16,6 @@ import {
   sensitivityReview,
   validCoordinate,
 } from '$lib/frameleaf/info-panel';
-import {
-  AssetTypeEnum,
-  Status,
-  Status2,
-  type AssetImageEnrichmentResponseDto,
-  type AssetResponseDto,
-  type ExifResponseDto,
-} from '@immich/sdk';
 
 const asset = (overrides: Partial<AssetResponseDto> = {}): AssetResponseDto =>
   ({
@@ -135,7 +135,12 @@ describe('descriptionReview', () => {
     const review = descriptionReview(
       asset({ exifInfo: exif({ description: '  A lake at dusk  ' }) }),
       enrichment({
-        description: { status: Status.Success, appliedDescription: false, appliedTags: false, description: 'A lake at dusk' },
+        description: {
+          status: Status.Success,
+          appliedDescription: false,
+          appliedTags: false,
+          description: 'A lake at dusk',
+        },
       }),
     );
 
@@ -145,7 +150,9 @@ describe('descriptionReview', () => {
   it('reports an empty description as none and carries the run error', () => {
     const review = descriptionReview(
       asset(),
-      enrichment({ description: { status: Status.Failed, appliedDescription: false, appliedTags: false, error: 'timeout' } }),
+      enrichment({
+        description: { status: Status.Failed, appliedDescription: false, appliedTags: false, error: 'timeout' },
+      }),
     );
 
     expect(review?.source).toBe('none');
@@ -169,7 +176,15 @@ describe('sensitivityReview', () => {
 
   it('asks for review when the model flagged an asset nobody has decided on', () => {
     const review = sensitivityReview(
-      enrichment({ nsfwDetection: { status: Status2.Success, effectiveIsNsfw: true, isNsfw: true, score: 0.92, appliedTags: false } }),
+      enrichment({
+        nsfwDetection: {
+          status: Status2.Success,
+          effectiveIsNsfw: true,
+          isNsfw: true,
+          score: 0.92,
+          appliedTags: false,
+        },
+      }),
     );
 
     expect(review?.state).toBe('needs-review');
@@ -218,7 +233,9 @@ describe('sensitivityReview', () => {
 
   it('falls back to the score when the model reported no boolean', () => {
     const review = sensitivityReview(
-      enrichment({ nsfwDetection: { status: Status2.Success, effectiveIsNsfw: false, score: 0.7, appliedTags: false } }),
+      enrichment({
+        nsfwDetection: { status: Status2.Success, effectiveIsNsfw: false, score: 0.7, appliedTags: false },
+      }),
     );
 
     expect(review?.predicted).toBe(true);
@@ -227,7 +244,15 @@ describe('sensitivityReview', () => {
 
   it('clamps a score outside 0 to 1 instead of showing an impossible percentage', () => {
     const review = sensitivityReview(
-      enrichment({ nsfwDetection: { status: Status2.Success, effectiveIsNsfw: false, isNsfw: false, score: 1.4, appliedTags: false } }),
+      enrichment({
+        nsfwDetection: {
+          status: Status2.Success,
+          effectiveIsNsfw: false,
+          isNsfw: false,
+          score: 1.4,
+          appliedTags: false,
+        },
+      }),
     );
 
     expect(review?.scorePercent).toBe(100);

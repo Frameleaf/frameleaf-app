@@ -32,7 +32,8 @@ export interface FrameleafTagTree {
   byId: Map<string, FrameleafTagNode>;
 }
 
-const compareByName = (a: FrameleafTagNode, b: FrameleafTagNode) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+const compareByName = (a: FrameleafTagNode, b: FrameleafTagNode) =>
+  a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
 
 /**
  * Build the tag tree from the flat list `getAllTags()` returns.

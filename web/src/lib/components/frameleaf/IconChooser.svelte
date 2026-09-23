@@ -201,7 +201,11 @@
             : $t('frameleaf_icons_all', { values: { count: catalogue.names.length } })}
         </h3>
         {#if results.length > 0}
-          <div class="grid" role="listbox" aria-label={$t('frameleaf_icons_all', { values: { count: results.length } })}>
+          <div
+            class="grid"
+            role="listbox"
+            aria-label={$t('frameleaf_icons_all', { values: { count: results.length } })}
+          >
             {#each shown as entry (entry.name)}
               {@render option(entry.name, entry.label)}
             {/each}

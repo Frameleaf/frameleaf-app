@@ -236,9 +236,7 @@ export const roundToInteger = (value: Rational, mode: RationalRounding = 'neares
       const magnitude = Math.abs(value.num);
       const { quotient: wholeMagnitude, remainder: magnitudeRemainder } = floorDivide(magnitude, value.den);
       const rounded =
-        product(magnitudeRemainder, 2, 'A rounding comparison') >= value.den
-          ? wholeMagnitude + 1
-          : wholeMagnitude;
+        product(magnitudeRemainder, 2, 'A rounding comparison') >= value.den ? wholeMagnitude + 1 : wholeMagnitude;
       return value.num < 0 ? -rounded : rounded;
     }
   }
@@ -283,19 +281,15 @@ export const tryParseRational = (value: string | null | undefined): Rational | n
 export const formatRational = (value: Rational): string => `${value.num}/${value.den}`;
 
 /** Seconds for a whole number of ticks of a time base. Exact. */
-export const ticksToSeconds = (ticks: number, timeBase: TimeBase): Rational =>
-  multiply(fromInteger(ticks), timeBase);
+export const ticksToSeconds = (ticks: number, timeBase: TimeBase): Rational => multiply(fromInteger(ticks), timeBase);
 
 /**
  * Ticks of a time base for a duration in seconds. Exact whenever the duration is a multiple of
  * the time base; otherwise the named rounding rule applies and {@link isExactInTimeBase} is the
  * way to find out beforehand.
  */
-export const secondsToTicks = (
-  seconds: Rational,
-  timeBase: TimeBase,
-  mode: RationalRounding = 'nearest',
-): number => roundToInteger(divide(seconds, timeBase), mode);
+export const secondsToTicks = (seconds: Rational, timeBase: TimeBase, mode: RationalRounding = 'nearest'): number =>
+  roundToInteger(divide(seconds, timeBase), mode);
 
 export const isExactInTimeBase = (seconds: Rational, timeBase: TimeBase): boolean =>
   isInteger(divide(seconds, timeBase));
@@ -343,8 +337,7 @@ export const toTrackTimescale = (timeBase: TimeBase): number => {
 export const frameDuration = (frameRate: Rational): Rational => invert(frameRate);
 
 /** The exact start time of frame `index` at a constant cadence. No accumulated addition. */
-export const frameStartTime = (index: number, frameRate: Rational): Rational =>
-  divide(fromInteger(index), frameRate);
+export const frameStartTime = (index: number, frameRate: Rational): Rational => divide(fromInteger(index), frameRate);
 
 /**
  * The index of the frame being shown at `time` on a constant cadence: the number of whole

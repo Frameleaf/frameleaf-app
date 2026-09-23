@@ -1,8 +1,8 @@
+import { updateAsset } from '@immich/sdk';
 import '@testing-library/jest-dom';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { assetFactory } from '@test-data/factories/asset-factory';
-import { updateAsset } from '@immich/sdk';
 import DetailPanelDescription from './DetailPanelDescription.svelte';
 
 vi.mock('@immich/sdk', async () => {

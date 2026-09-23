@@ -131,7 +131,11 @@ export class PersonService extends BaseService {
       const person = byId.get(candidate.personId);
       const suggestion = byId.get(candidate.suggestionId);
       if (person && suggestion) {
-        suggestions.push({ person: mapPerson(person), suggestion: mapPerson(suggestion), distance: candidate.distance });
+        suggestions.push({
+          person: mapPerson(person),
+          suggestion: mapPerson(suggestion),
+          distance: candidate.distance,
+        });
       }
     }
 
@@ -287,7 +291,7 @@ export class PersonService extends BaseService {
 
       // A Locked photo is never a featured face (FL-53). The caller's own is refused plainly; anyone
       // else's gets the generic answer, so it never reveals that another person's photo is Locked.
-      if (isLockedAssetRow(face)) {
+      if (isLockedAssetRow({ visibility: face.visibility })) {
         if (face.ownerId === auth.user.id) {
           throw new BadRequestException('A Locked photo cannot be a featured photo');
         }

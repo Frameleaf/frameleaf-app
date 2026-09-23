@@ -40,9 +40,11 @@ describe('partner location policy', () => {
 
     it('never hides a user from themselves', async () => {
       const me = UserFactory.create();
-      vitest.mocked(repository.getAll).mockResolvedValue([
-        getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(me).sharedWith(me).build()),
-      ]);
+      vitest
+        .mocked(repository.getAll)
+        .mockResolvedValue([
+          getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(me).sharedWith(me).build()),
+        ]);
 
       await expect(getLocationHiddenPartnerIds({ userId: me.id, repository })).resolves.toEqual(new Set());
     });
@@ -71,7 +73,10 @@ describe('partner location policy', () => {
   describe(applyPartnerLocationPolicy.name, () => {
     it("skips the lookup when every located asset is the viewer's own", async () => {
       const me = newUuid();
-      const assets = [{ ownerId: me, exifInfo: located }, { ownerId: newUuid(), exifInfo: undefined }];
+      const assets = [
+        { ownerId: me, exifInfo: located },
+        { ownerId: newUuid(), exifInfo: undefined },
+      ];
 
       await expect(applyPartnerLocationPolicy(assets, { userId: me, repository })).resolves.toBe(assets);
       expect(repository.getAll).not.toHaveBeenCalled();
@@ -81,10 +86,12 @@ describe('partner location policy', () => {
       const me = UserFactory.create();
       const hiding = UserFactory.create();
       const sharing = UserFactory.create();
-      vitest.mocked(repository.getAll).mockResolvedValue([
-        getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(hiding).sharedWith(me).build()),
-        getForPartner(PartnerFactory.from({ shareLocation: true }).sharedBy(sharing).sharedWith(me).build()),
-      ]);
+      vitest
+        .mocked(repository.getAll)
+        .mockResolvedValue([
+          getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(hiding).sharedWith(me).build()),
+          getForPartner(PartnerFactory.from({ shareLocation: true }).sharedBy(sharing).sharedWith(me).build()),
+        ]);
       const assets = [
         { ownerId: me.id, exifInfo: located },
         { ownerId: hiding.id, exifInfo: { ...located, make: 'Canon' } },

@@ -8,6 +8,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { DestinationHealthProvider } from 'src/utils/render-admission.js';
 import {
   RenderWorkerAdmissionDto,
   RenderWorkerAuditDto,
@@ -64,7 +65,6 @@ import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   AuthorizedManifest,
   DESTINATION_HEALTH_PROVIDER,
-  DestinationHealthProvider,
   INPUT_GRANT_TTL_MS,
   RenderLimits,
   UnknownDestinationHealthProvider,
@@ -198,8 +198,7 @@ const studioContextOf = (operation: MediaOperation): StudioSnapshotContext | nul
 };
 
 type StudioGraphSource =
-  | { ok: true; graph: unknown; projectOwnerId: string }
-  | { ok: false; refused: { key: string; reason: string } };
+  { ok: true; graph: unknown; projectOwnerId: string } | { ok: false; refused: { key: string; reason: string } };
 
 type ResolvedManifest =
   | { complete: true; manifest: AuthorizedManifest; studio: StudioAuthorizedManifest | null }
@@ -959,8 +958,7 @@ export class RenderWorkerService {
     const { worker, session } = await this.authenticate(sessionToken);
 
     const operation = (await this.repository.getClaimedByWorker(operationId, worker.id)) as unknown as
-      | MediaOperation
-      | undefined;
+      MediaOperation | undefined;
     if (!operation?.claimToken) {
       throw new NotFoundException('Media operation not found');
     }

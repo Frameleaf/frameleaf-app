@@ -82,12 +82,16 @@ export const DEVELOP_PRESETS: Record<AssetDevelopPreset, PresetDefinition> = {
     params: { contrast: 14, highlights: -8, clarity: 8 },
     look: { grayscale: 100, sepia: 18 },
   },
-  [AssetDevelopPreset.Noir]: { params: { contrast: 36, blacks: -24, vignette: 40, grain: 20 }, look: { grayscale: 100 } },
+  [AssetDevelopPreset.Noir]: {
+    params: { contrast: 36, blacks: -24, vignette: 40, grain: 20 },
+    look: { grayscale: 100 },
+  },
   [AssetDevelopPreset.Fade]: { params: { contrast: -18, blacks: 26, saturation: -18, whites: -10 } },
 };
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
-const finite = (value: unknown, fallback = 0) => (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
+const finite = (value: unknown, fallback = 0) =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 const round = (value: number, places = 4) => {
   const factor = 10 ** places;
   return Math.round(value * factor) / factor;
@@ -300,7 +304,7 @@ export function buildToneLuts(params: DevelopSliders): DevelopToneLuts {
 
 /** Small deterministic generator so grain is identical for every render of a revision. */
 export function createNoise(seed: number) {
-  let state = (seed >>> 0) || 0x9e37_79b9;
+  let state = seed >>> 0 || 0x9e37_79b9;
   return () => {
     state ^= state << 13;
     state >>>= 0;
@@ -447,7 +451,10 @@ export type DevelopDetailPlan = {
  * clarity (a softening) has no lossless convolution equivalent and is rendered as zero;
  * the recipe keeps the value so a later renderer can honour it.
  */
-export function planDevelopDetail(params: DevelopSliders, output: { width: number; height: number }): DevelopDetailPlan {
+export function planDevelopDetail(
+  params: DevelopSliders,
+  output: { width: number; height: number },
+): DevelopDetailPlan {
   const plan: DevelopDetailPlan = { median: 0 };
   if (params.noiseReduction > 0) {
     plan.median = params.noiseReduction > 50 ? 5 : 3;

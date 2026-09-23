@@ -31,7 +31,11 @@
   import { type FilterEntityKind, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
   import { librarySession, type LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import type { LibraryGrouping, LibrarySessionAction } from '$lib/frameleaf/library-session';
-  import { describeFilterFields, filterFieldEntityIds, type FilterChipDescription } from '$lib/frameleaf/library-filters';
+  import {
+    describeFilterFields,
+    filterFieldEntityIds,
+    type FilterChipDescription,
+  } from '$lib/frameleaf/library-filters';
   import { matchLibraryShortcut, type LibraryShortcut } from '$lib/frameleaf/library-shortcuts';
   import { revealsLocks } from '$lib/frameleaf/session-access.svelte';
   import {
@@ -293,7 +297,10 @@
   const selectedAssets = $derived(
     snapshot
       ? []
-      : session.selection.map((id) => findAsset(id)).filter((asset): asset is TimelineAsset => !!asset).map(toBulk),
+      : session.selection
+          .map((id) => findAsset(id))
+          .filter((asset): asset is TimelineAsset => !!asset)
+          .map(toBulk),
   );
 
   const runBulk = (id: BulkActionId, payload?: BulkPayload) => {

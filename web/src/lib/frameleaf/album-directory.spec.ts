@@ -1,7 +1,7 @@
 import { AlbumKind, AlbumUserRole, type AlbumResponseDto, type AlbumTreeResponseDto } from '@immich/sdk';
+import { describe, expect, it } from 'vitest';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
-import { describe, expect, it } from 'vitest';
 import {
   arrangeAlbumDirectory,
   canDropOnCollection,
@@ -124,8 +124,7 @@ describe('album directory rules', () => {
     const a = owned({ id: 'a', albumName: 'B', assetCount: 1, endDate: '2026-08-01T00:00:00.000Z' });
     const b = owned({ id: 'b', albumName: 'A', assetCount: 5, endDate: undefined });
     const c = owned({ id: 'c', albumName: 'C', assetCount: 3, endDate: '2026-09-01T00:00:00.000Z' });
-    const ids = (sort: Parameters<typeof compareAlbums>[0]) =>
-      [a, b, c].sort(compareAlbums(sort)).map(({ id }) => id);
+    const ids = (sort: Parameters<typeof compareAlbums>[0]) => [a, b, c].sort(compareAlbums(sort)).map(({ id }) => id);
     expect(ids('title')).toEqual(['b', 'a', 'c']);
     expect(ids('items')).toEqual(['b', 'c', 'a']);
     expect(ids('recent-photo')).toEqual(['c', 'a', 'b']);
@@ -156,10 +155,7 @@ describe('album directory rules', () => {
       ],
     });
     const withOther = tree({
-      collections: [
-        ...directory.collections,
-        { collection: readOnly, albums: [], albumCount: 0, assetCount: 0 },
-      ],
+      collections: [...directory.collections, { collection: readOnly, albums: [], albumCount: 0, assetCount: 0 }],
     });
     expect(moveTargets(withOther, rockies, 'me').map(({ collection }) => collection.id)).toEqual(['family']);
     expect(moveTargets(withOther, family, 'me')).toEqual([]);

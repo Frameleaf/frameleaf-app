@@ -87,10 +87,7 @@ export class MemoryController {
       "Retrieve the caller's own private highlight exports, newest first, optionally limited to a single memory. This is the durable job state the Activity page reads.",
     history: new HistoryBuilder().added('v3'),
   })
-  getMemoryExports(
-    @Auth() auth: AuthDto,
-    @Query() dto: MemoryExportSearchDto,
-  ): Promise<MemoryExportResponseDto[]> {
+  getMemoryExports(@Auth() auth: AuthDto, @Query() dto: MemoryExportSearchDto): Promise<MemoryExportResponseDto[]> {
     return this.service.getExports(auth, dto.memoryId);
   }
 
@@ -98,7 +95,7 @@ export class MemoryController {
   @Authenticated({ permission: Permission.MemoryRead })
   @Endpoint({
     summary: 'Retrieve a memory export',
-    description: 'Retrieve the current state of one of the caller\'s own private highlight exports.',
+    description: "Retrieve the current state of one of the caller's own private highlight exports.",
     history: new HistoryBuilder().added('v3'),
   })
   getMemoryExport(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<MemoryExportResponseDto> {

@@ -44,10 +44,7 @@ describe('Frameleaf tag tree adapter', () => {
   });
 
   it('breaks a parentId cycle by promoting every member to the root rather than looping', () => {
-    const tree = buildTagTree([
-      tag({ id: 'a', name: 'A', parentId: 'b' }),
-      tag({ id: 'b', name: 'B', parentId: 'a' }),
-    ]);
+    const tree = buildTagTree([tag({ id: 'a', name: 'A', parentId: 'b' }), tag({ id: 'b', name: 'B', parentId: 'a' })]);
     expect(tree.roots.map((node) => node.id).sort()).toEqual(['a', 'b']);
   });
 

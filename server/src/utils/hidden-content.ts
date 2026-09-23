@@ -68,7 +68,7 @@ export const isSuppressedWhileLocked = (auth: AuthDto, entity: SuppressibleEntit
   return !!auth.hiddenContent && suppressedIdsFor(auth.hiddenContent, entity).includes(id);
 };
 
-export const getSuppressedOnlyQueryOptions =(auth: AuthDto): HiddenContentQueryOptions => {
+export const getSuppressedOnlyQueryOptions = (auth: AuthDto): HiddenContentQueryOptions => {
   return { onlyHiddenContent: auth.suppressedContent ?? emptyHiddenContentFilter(auth.user.id) };
 };
 

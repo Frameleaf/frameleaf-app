@@ -1,3 +1,4 @@
+import { SuppressionScope, type TagResponseDto, type UserPreferencesResponseDto } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   canCreateTag,
@@ -11,7 +12,6 @@ import {
   withoutLockedRuleIds,
   type LockedRules,
 } from '$lib/frameleaf/locked-rules';
-import { SuppressionScope, type TagResponseDto, type UserPreferencesResponseDto } from '@immich/sdk';
 
 const tag = (id: string, value: string, parentId?: string): TagResponseDto => ({
   id,

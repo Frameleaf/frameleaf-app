@@ -37,7 +37,12 @@
       <FormatMessage key="frameleaf_about_attribution">
         {#snippet children({ tag, message })}
           {#if tag === 'upstream'}
-            <a class="font-medium underline" href="https://github.com/immich-app/immich" target="_blank" rel="noopener noreferrer">{message}</a>
+            <a
+              class="font-medium underline"
+              href="https://github.com/immich-app/immich"
+              target="_blank"
+              rel="noopener noreferrer">{message}</a
+            >
           {:else if tag === 'licence'}
             <a class="font-medium underline" href={licenceUrl} target="_blank" rel="noopener noreferrer">{message}</a>
           {:else}

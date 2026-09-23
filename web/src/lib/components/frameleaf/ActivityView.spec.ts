@@ -1,10 +1,15 @@
-import { sdkMock } from '$lib/__mocks__/sdk.mock';
-import ActivityView from '$lib/components/frameleaf/ActivityView.svelte';
-import { activitySession } from '$lib/frameleaf/activity-session.svelte';
-import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus, type MediaOperationDto } from '@immich/sdk';
+import {
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+  type MediaOperationDto,
+} from '@immich/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import ActivityView from '$lib/components/frameleaf/ActivityView.svelte';
+import { activitySession } from '$lib/frameleaf/activity-session.svelte';
 
 const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDto =>
   ({

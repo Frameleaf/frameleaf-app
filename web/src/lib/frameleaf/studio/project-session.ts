@@ -24,7 +24,6 @@
  * - **Review is read-only.** A shared-space member gets the graph only when the server says
  *   every source resolved for them; `withheld` says so, and there is no draft and no lease.
  */
-
 import {
   acquireStudioProjectLease,
   addStudioProjectComment,
@@ -804,7 +803,10 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       } catch (error) {
         if (gen === generation) {
           generation = previous;
-          emit({ status: state.conflict ? 'conflict' : 'error', error: error instanceof Error ? error.message : String(error) });
+          emit({
+            status: state.conflict ? 'conflict' : 'error',
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
         return null;
       }

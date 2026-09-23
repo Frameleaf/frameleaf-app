@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AssetRestorationMode, AssetRestorationSourceType, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
+import {
+  AssetRestorationMode,
+  AssetRestorationSourceType,
+  AssetRestorationStatus,
+} from 'src/dtos/asset-restoration.dto.js';
 import {
   MediaOperationDestination,
   MediaOperationKind,
@@ -106,15 +110,38 @@ describe('restoration rules (FL-115)', () => {
     });
 
     it('derives the preview payload from the region area and the preview edge', () => {
-      const full = previewInputBytes(4_000_000, { x: 0, y: 0, w: 1, h: 1 }, 1024, 768, AssetRestorationSourceType.Image, null);
+      const full = previewInputBytes(
+        4_000_000,
+        { x: 0, y: 0, w: 1, h: 1 },
+        1024,
+        768,
+        AssetRestorationSourceType.Image,
+        null,
+      );
       expect(full).toBe(4_000_000);
-      const quarter = previewInputBytes(4_000_000, { x: 0.25, y: 0.25, w: 0.5, h: 0.5 }, 1024, 768, AssetRestorationSourceType.Image, null);
+      const quarter = previewInputBytes(
+        4_000_000,
+        { x: 0.25, y: 0.25, w: 0.5, h: 0.5 },
+        1024,
+        768,
+        AssetRestorationSourceType.Image,
+        null,
+      );
       expect(quarter).toBe(1_000_000);
       // A large frame is downscaled to the preview edge, shrinking the upload further.
-      const large = previewInputBytes(40_000_000, { x: 0, y: 0, w: 1, h: 1 }, 8192, 6144, AssetRestorationSourceType.Image, null);
+      const large = previewInputBytes(
+        40_000_000,
+        { x: 0, y: 0, w: 1, h: 1 },
+        8192,
+        6144,
+        AssetRestorationSourceType.Image,
+        null,
+      );
       expect(large).toBe(Math.round(40_000_000 * (RESTORATION_PREVIEW_EDGE / 8192) ** 2));
       // Video previews scale by clip length.
-      expect(previewInputBytes(100_000_000, { x: 0, y: 0, w: 1, h: 1 }, 1920, 1080, AssetRestorationSourceType.Video, 50)).toBe(10_000_000);
+      expect(
+        previewInputBytes(100_000_000, { x: 0, y: 0, w: 1, h: 1 }, 1920, 1080, AssetRestorationSourceType.Video, 50),
+      ).toBe(10_000_000);
     });
   });
 
@@ -175,7 +202,12 @@ describe('restoration rules (FL-115)', () => {
         expect(canRunStage('full', status)).toBe(true);
         expect(canRunStage('preview', status)).toBe(false);
       }
-      for (const status of [AssetRestorationStatus.PreviewReady, AssetRestorationStatus.Rejected, AssetRestorationStatus.Restored, AssetRestorationStatus.Discarded]) {
+      for (const status of [
+        AssetRestorationStatus.PreviewReady,
+        AssetRestorationStatus.Rejected,
+        AssetRestorationStatus.Restored,
+        AssetRestorationStatus.Discarded,
+      ]) {
         expect(canRunStage('preview', status)).toBe(false);
         expect(canRunStage('full', status)).toBe(false);
       }
@@ -183,8 +215,12 @@ describe('restoration rules (FL-115)', () => {
 
     it('sets retention dates from the moment of readiness and of decision', () => {
       const now = new Date('2026-09-22T12:00:00.000Z');
-      expect(previewExpiryAfterReady(now).getTime() - now.getTime()).toBe(RESTORATION_PREVIEW_UNREVIEWED_DAYS * 86_400_000);
-      expect(previewExpiryAfterDecision(now).getTime() - now.getTime()).toBe(RESTORATION_PREVIEW_AFTER_DECISION_DAYS * 86_400_000);
+      expect(previewExpiryAfterReady(now).getTime() - now.getTime()).toBe(
+        RESTORATION_PREVIEW_UNREVIEWED_DAYS * 86_400_000,
+      );
+      expect(previewExpiryAfterDecision(now).getTime() - now.getTime()).toBe(
+        RESTORATION_PREVIEW_AFTER_DECISION_DAYS * 86_400_000,
+      );
     });
   });
 
@@ -220,9 +256,15 @@ describe('restoration rules (FL-115)', () => {
       expect(identity.endTicks).toBe(40_000n);
       expect(restorationChunkIdentity(base, chunk).chunkKey).toBe(identity.chunkKey);
       expect(restorationChunkIdentity(base, { ...chunk, endSeconds: 41 }).chunkKey).not.toBe(identity.chunkKey);
-      expect(restorationChunkIdentity({ ...base, sourceChecksumHex: 'ffff' }, chunk).chunkKey).not.toBe(identity.chunkKey);
-      expect(restorationChunkIdentity({ ...base, mode: AssetRestorationMode.Creative }, chunk).chunkKey).not.toBe(identity.chunkKey);
-      expect(restorationChunkIdentity({ ...base, destinationId: 'elsewhere' }, chunk).chunkKey).not.toBe(identity.chunkKey);
+      expect(restorationChunkIdentity({ ...base, sourceChecksumHex: 'ffff' }, chunk).chunkKey).not.toBe(
+        identity.chunkKey,
+      );
+      expect(restorationChunkIdentity({ ...base, mode: AssetRestorationMode.Creative }, chunk).chunkKey).not.toBe(
+        identity.chunkKey,
+      );
+      expect(restorationChunkIdentity({ ...base, destinationId: 'elsewhere' }, chunk).chunkKey).not.toBe(
+        identity.chunkKey,
+      );
     });
   });
 

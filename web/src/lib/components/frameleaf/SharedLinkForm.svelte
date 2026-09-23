@@ -54,7 +54,9 @@
 
   const relativeTime = $derived(new Intl.RelativeTimeFormat($locale));
   const presetLabel = (item: Preset) =>
-    item.id === 'never' ? $t('never') : relativeTime.format(item.value as number, item.unit as Intl.RelativeTimeFormatUnit);
+    item.id === 'never'
+      ? $t('never')
+      : relativeTime.format(item.value as number, item.unit as Intl.RelativeTimeFormatUnit);
 
   const resetFromLink = () => {
     description = link?.description ?? '';
@@ -152,9 +154,15 @@
   }
 </script>
 
-<Dialog title={editing ? $t('frameleaf_sharing.edit_shared_link_title') : $t('frameleaf_sharing.create_shared_link_title')} closeLabel={$t('close')} bind:open>
+<Dialog
+  title={editing ? $t('frameleaf_sharing.edit_shared_link_title') : $t('frameleaf_sharing.create_shared_link_title')}
+  closeLabel={$t('close')}
+  bind:open
+>
   <p class="slf-target">
-    {type === SharedLinkType.Album ? $t('album_with_link_access') : $t('frameleaf_sharing.items_selected', { values: { count: assetCount } })}
+    {type === SharedLinkType.Album
+      ? $t('album_with_link_access')
+      : $t('frameleaf_sharing.items_selected', { values: { count: assetCount } })}
     {#if name}<strong>{name}</strong>{/if}
   </p>
 
@@ -174,7 +182,9 @@
           bind:value={password}
           maxlength="120"
           disabled={removePassword}
-          placeholder={editing && link?.password && !removePassword ? $t('frameleaf_sharing.password_set_hint') : $t('frameleaf_sharing.password_placeholder')}
+          placeholder={editing && link?.password && !removePassword
+            ? $t('frameleaf_sharing.password_set_hint')
+            : $t('frameleaf_sharing.password_placeholder')}
         />
         <button type="button" aria-pressed={showPassword} onclick={() => (showPassword = !showPassword)}>
           {showPassword ? $t('hide_password') : $t('show_password')}
@@ -201,7 +211,13 @@
     <div class="slf-toggles">
       <label class="slf-toggle">
         <span>{$t('show_metadata')}</span>
-        <input type="checkbox" role="switch" class="slf-switch" aria-label={$t('show_metadata')} bind:checked={showMetadata} />
+        <input
+          type="checkbox"
+          role="switch"
+          class="slf-switch"
+          aria-label={$t('show_metadata')}
+          bind:checked={showMetadata}
+        />
       </label>
       <label class="slf-toggle">
         <span>{$t('allow_public_user_to_download')}</span>
@@ -216,7 +232,13 @@
       </label>
       <label class="slf-toggle">
         <span>{$t('allow_public_user_to_upload')}</span>
-        <input type="checkbox" role="switch" class="slf-switch" aria-label={$t('allow_public_user_to_upload')} bind:checked={allowUpload} />
+        <input
+          type="checkbox"
+          role="switch"
+          class="slf-switch"
+          aria-label={$t('allow_public_user_to_upload')}
+          bind:checked={allowUpload}
+        />
       </label>
     </div>
 

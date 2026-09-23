@@ -1,8 +1,8 @@
+import { MediaOperationStatus, type ICloudConnectionResponseDto } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { addMessages } from 'svelte-i18n';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { userAdminFactory } from '@test-data/factories/user-factory';
-import { MediaOperationStatus, type ICloudConnectionResponseDto } from '@immich/sdk';
-import { addMessages } from 'svelte-i18n';
 import en from '../../../../../i18n/en.json';
 import ICloudSyncPanel from './ICloudSyncPanel.svelte';
 

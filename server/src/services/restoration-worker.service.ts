@@ -208,7 +208,9 @@ export class RestorationWorkerService {
         kinds: RESTORATION_OPERATION_KINDS,
         workerId: this.workerId,
         leaseMs: RESTORATION_LEASE_MS,
-        ...(holdBack.length > 0 ? { holdBack: { kinds: [MediaOperationKind.Restoration], destinationIds: holdBack } } : {}),
+        ...(holdBack.length > 0
+          ? { holdBack: { kinds: [MediaOperationKind.Restoration], destinationIds: holdBack } }
+          : {}),
       });
       if (!claim) {
         return false;
@@ -253,7 +255,9 @@ export class RestorationWorkerService {
   async sweep() {
     const aligned = await this.restorationRepository.alignWithOperations();
     if (aligned.preview || aligned.full) {
-      this.logger.log(`Aligned ${aligned.preview} preview and ${aligned.full} full restorations with their finished jobs`);
+      this.logger.log(
+        `Aligned ${aligned.preview} preview and ${aligned.full} full restorations with their finished jobs`,
+      );
     }
 
     const now = new Date();
@@ -274,7 +278,11 @@ export class RestorationWorkerService {
     }
     for (const row of await this.restorationRepository.listExpiredResults(now, RETENTION_BATCH)) {
       const files = [row.resultPath, row.resultPreviewPath].filter((file): file is string => !!file);
-      await this.restorationRepository.update(row.id, { resultPath: null, resultPreviewPath: null, resultExpiresAt: null });
+      await this.restorationRepository.update(row.id, {
+        resultPath: null,
+        resultPreviewPath: null,
+        resultExpiresAt: null,
+      });
       if (files.length > 0) {
         await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
         removed += files.length;
@@ -340,7 +348,11 @@ export class RestorationWorkerService {
 
     const base = StorageCore.getNestedFolder(StorageFolder.Thumbnails, restoration.ownerId, restoration.assetId);
     const workDir = restorationWorkDir(base, restoration.id);
-    const context: Partial<RunContext> & Pick<RunContext, 'operation' | 'claimToken' | 'snapshot' | 'stage' | 'restoration' | 'signal' | 'workDir' | 'scratch'> = {
+    const context: Partial<RunContext> &
+      Pick<
+        RunContext,
+        'operation' | 'claimToken' | 'snapshot' | 'stage' | 'restoration' | 'signal' | 'workDir' | 'scratch'
+      > = {
       operation,
       claimToken,
       snapshot,
@@ -352,9 +364,10 @@ export class RestorationWorkerService {
     };
 
     try {
-      const total = stage === 'full' && snapshot.sourceType === AssetRestorationSourceType.Video
-        ? planRestorationChunks(snapshot.sourceDurationSeconds ?? 0).length + 3
-        : 4;
+      const total =
+        stage === 'full' && snapshot.sourceType === AssetRestorationSourceType.Video
+          ? planRestorationChunks(snapshot.sourceDurationSeconds ?? 0).length + 3
+          : 4;
       await this.progress(context, MediaOperationStatus.Preparing, 0, total);
 
       // No visibility filter on purpose: the owner asked for this job on this asset.
@@ -376,7 +389,10 @@ export class RestorationWorkerService {
         // is the per-request cloud confirmation FL-114's restore requires. Admission still needs
         // the administrator's recorded consent, budget, health and a qualified model.
         selection = await selectRestorationDestination(
-          { mlDestinationRepository: this.mlDestinationRepository, machineLearningRepository: this.machineLearningRepository },
+          {
+            mlDestinationRepository: this.mlDestinationRepository,
+            machineLearningRepository: this.machineLearningRepository,
+          },
           {
             mode: snapshot.mode,
             destinationId: snapshot.destinationId,
@@ -435,6 +451,7 @@ export class RestorationWorkerService {
             oriented: { width: decoded.info.width, height: decoded.info.height },
             straighten: 0,
             extract: rect,
+            output: { width: rect.width, height: rect.height },
           })),
           colorspace: decoded.colorspace,
         };
@@ -443,7 +460,13 @@ export class RestorationWorkerService {
     await this.mediaRepository.encodeDevelopOutput(
       cropped.data,
       cropped.info,
-      { detail: { median: 0 }, colorspace: decoded.colorspace, format: ImageFormat.Jpeg, quality: 95, size: RESTORATION_PREVIEW_EDGE },
+      {
+        detail: { median: 0 },
+        colorspace: decoded.colorspace,
+        format: ImageFormat.Jpeg,
+        quality: 95,
+        size: RESTORATION_PREVIEW_EDGE,
+      },
       beforeTmp,
     );
     const before = await this.mediaRepository.getImageMetadata(beforeTmp);
@@ -465,7 +488,11 @@ export class RestorationWorkerService {
     return {
       files: [
         { tmp: beforeTmp, final: `${paths.before}.jpg`, column: 'previewBeforePath' },
-        { tmp: result.outputPath, final: `${paths.after}${path.extname(result.outputPath) || '.png'}`, column: 'previewAfterPath' },
+        {
+          tmp: result.outputPath,
+          final: `${paths.after}${path.extname(result.outputPath) || '.png'}`,
+          column: 'previewAfterPath',
+        },
       ],
       width: after.width,
       height: after.height,
@@ -523,7 +550,11 @@ export class RestorationWorkerService {
     const paths = restorationOutputPaths(this.base(ctx), snapshot.assetId, snapshot.restorationId);
     return {
       files: [
-        { tmp: result.outputPath, final: `${paths.result}${path.extname(result.outputPath) || '.png'}`, column: 'resultPath' },
+        {
+          tmp: result.outputPath,
+          final: `${paths.result}${path.extname(result.outputPath) || '.png'}`,
+          column: 'resultPath',
+        },
         { tmp: previewTmp, final: paths.resultPreview, column: 'resultPreviewPath' },
       ],
       width: restored.width,
@@ -538,7 +569,10 @@ export class RestorationWorkerService {
     const duration = snapshot.sourceDurationSeconds ?? 0;
     const clipSeconds = duration > 0 ? Math.min(RESTORATION_PREVIEW_SECONDS, duration) : RESTORATION_PREVIEW_SECONDS;
     const defaultStart = Math.max(0, (duration - clipSeconds) / 2);
-    const start = Math.max(0, Math.min(snapshot.region.startSeconds ?? defaultStart, Math.max(0, duration - clipSeconds)));
+    const start = Math.max(
+      0,
+      Math.min(snapshot.region.startSeconds ?? defaultStart, Math.max(0, duration - clipSeconds)),
+    );
     const rect = previewRegionPixels(snapshot.region, snapshot.sourceWidth, snapshot.sourceHeight);
     const crop = isFullRegion(snapshot.region)
       ? []
@@ -598,7 +632,11 @@ export class RestorationWorkerService {
     return {
       files: [
         { tmp: beforeTmp, final: `${paths.before}.mp4`, column: 'previewBeforePath' },
-        { tmp: result.outputPath, final: `${paths.after}${path.extname(result.outputPath) || '.mp4'}`, column: 'previewAfterPath' },
+        {
+          tmp: result.outputPath,
+          final: `${paths.after}${path.extname(result.outputPath) || '.mp4'}`,
+          column: 'previewAfterPath',
+        },
       ],
       width: after.width,
       height: after.height,
@@ -703,7 +741,12 @@ export class RestorationWorkerService {
 
       const chunkIn = this.scratch(ctx, path.join(workDir, `chunk-${plan.sequence}-in-${operation.id}.mp4`));
       await this.mediaRepository.transcode(source.originalPath, chunkIn, {
-        inputOptions: ['-ss', plan.chunk.startSeconds.toFixed(3), '-t', (plan.chunk.endSeconds - plan.chunk.startSeconds).toFixed(3)],
+        inputOptions: [
+          '-ss',
+          plan.chunk.startSeconds.toFixed(3),
+          '-t',
+          (plan.chunk.endSeconds - plan.chunk.startSeconds).toFixed(3),
+        ],
         outputOptions: ['-an', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '10', '-pix_fmt', 'yuv420p'],
         twoPass: false,
         progress: { frameCount: 0, percentInterval: 5 },
@@ -720,7 +763,13 @@ export class RestorationWorkerService {
       await this.clearStaleOutput(chunkOut);
       const result = await this.machineLearningRepository.restore(
         ctx.selection,
-        { kind: 'video', path: chunkIn, width: stream.width, height: stream.height, durationSeconds: probe.format.duration },
+        {
+          kind: 'video',
+          path: chunkIn,
+          width: stream.width,
+          height: stream.height,
+          durationSeconds: probe.format.duration,
+        },
         this.inferenceOptions(ctx, chunkOut, cap),
       );
       this.check(ctx);
@@ -868,12 +917,16 @@ export class RestorationWorkerService {
 
     const completed = await this.operationRepository.complete(operation.id, claimToken, { resultAssetId: null });
     if (!completed) {
-      this.logger.warn(`Restoration ${restoration.id} published its ${stage} but job ${operation.id} was no longer ours`);
+      this.logger.warn(
+        `Restoration ${restoration.id} published its ${stage} but job ${operation.id} was no longer ours`,
+      );
     }
     if (stage === 'full') {
       await this.storageRepository.unlinkDir(ctx.workDir, { recursive: true, force: true }).catch(() => undefined);
     }
-    this.logger.log(`Restoration ${restoration.id} ${stage} finished on ${snapshot.destinationKind} destination ${snapshot.destinationId}`);
+    this.logger.log(
+      `Restoration ${restoration.id} ${stage} finished on ${snapshot.destinationKind} destination ${snapshot.destinationId}`,
+    );
   }
 
   /**
@@ -896,10 +949,7 @@ export class RestorationWorkerService {
         await this.operationRepository.acknowledgeCancel(operation.id, { released: true });
         await this.restorationRepository.transition(restoration.id, [statuses.running], { status: statuses.cancelled });
         this.logger.log(`Restoration ${restoration.id} cancelled by its owner`);
-      } else if (
-        current?.pauseRequestedAt &&
-        (await this.operationRepository.settlePause(operation.id, claimToken))
-      ) {
+      } else if (current?.pauseRequestedAt && (await this.operationRepository.settlePause(operation.id, claimToken))) {
         // The owner paused it (FL-104). The restoration row stays running: resuming requeues the
         // job, and the next claim carries on from the chunks already checkpointed.
         this.logger.log(`Restoration ${restoration.id} paused by its owner`);
@@ -908,7 +958,9 @@ export class RestorationWorkerService {
         // job goes straight back to the queue instead of waiting for its lease to lapse.
         this.logger.log(`Restoration ${restoration.id} resumed before its pause landed; requeued`);
       } else {
-        this.logger.warn(`Restoration ${restoration.id} lost its claim on job ${operation.id}; recovery will requeue it`);
+        this.logger.warn(
+          `Restoration ${restoration.id} lost its claim on job ${operation.id}; recovery will requeue it`,
+        );
       }
       return;
     }
@@ -918,7 +970,10 @@ export class RestorationWorkerService {
     this.logger.error(`Restoration ${restoration.id} failed (${code}): ${message}`);
     const outcome = await this.operationRepository.fail(operation.id, claimToken, { error: message, errorCode: code });
     if (outcome === 'failed') {
-      await this.restorationRepository.transition(restoration.id, [statuses.running], { status: statuses.failed, error: message });
+      await this.restorationRepository.transition(restoration.id, [statuses.running], {
+        status: statuses.failed,
+        error: message,
+      });
     } else if (outcome === 'retrying') {
       // Every job gets one automatic retry before a failure is reported (FL-104, owner decision
       // September 22, 2026). The row stays running: the stage is runnable from there, and the next
@@ -1036,7 +1091,10 @@ export class RestorationWorkerService {
     const probe = await this.mediaRepository.probe(file);
     const stream = probe.videoStreams[0];
     if (!stream || !(stream.width > 0 && stream.height > 0)) {
-      throw new RestorationFailure(RestorationErrorCode.OutputInvalid, 'The restored video has no decodable video stream');
+      throw new RestorationFailure(
+        RestorationErrorCode.OutputInvalid,
+        'The restored video has no decodable video stream',
+      );
     }
     if (stream.width > cap.width + 1 || stream.height > cap.height + 1) {
       throw new RestorationFailure(
@@ -1067,7 +1125,11 @@ export class RestorationWorkerService {
     return { data, info: info as RawImageInfo, colorspace };
   }
 
-  private isSRGB(exifInfo: { colorspace?: string | null; profileDescription?: string | null; bitsPerSample?: number | null }) {
+  private isSRGB(exifInfo: {
+    colorspace?: string | null;
+    profileDescription?: string | null;
+    bitsPerSample?: number | null;
+  }) {
     const { colorspace, profileDescription, bitsPerSample } = exifInfo;
     if (colorspace || profileDescription) {
       return [colorspace, profileDescription].some((value) => value?.toLowerCase().includes('srgb'));

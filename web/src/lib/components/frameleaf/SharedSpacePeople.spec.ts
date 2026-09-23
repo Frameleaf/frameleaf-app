@@ -1,7 +1,3 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { addMessages } from 'svelte-i18n';
-import { albumFactory } from '@test-data/factories/album-factory';
-import { personFactory } from '@test-data/factories/person-factory';
 import {
   linkSharedSpacePerson,
   unlinkSharedSpacePerson,
@@ -10,6 +6,10 @@ import {
   type SharedSpacePersonResponseDto,
   type UserResponseDto,
 } from '@immich/sdk';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { addMessages } from 'svelte-i18n';
+import { albumFactory } from '@test-data/factories/album-factory';
+import { personFactory } from '@test-data/factories/person-factory';
 import en from '../../../../../i18n/en.json';
 import SharedSpacePeople from './SharedSpacePeople.svelte';
 
@@ -56,9 +56,7 @@ describe('SharedSpacePeople', () => {
     const hidden = personFactory.build({ id: 'p-hidden', name: 'Secret', isHidden: true });
     render(SharedSpacePeople, { space, linked: [], candidates: [shown, hidden], onChanged: vi.fn() });
 
-    const options = [
-      ...screen.getByRole('combobox').querySelectorAll('option'),
-    ].map((option) => option.value);
+    const options = [...screen.getByRole('combobox').querySelectorAll('option')].map((option) => option.value);
     expect(options).toEqual(['', 'p-shown']);
   });
 

@@ -75,7 +75,8 @@
   // the others so it can resurface later in the same session.
   let mergeSuggestions: PersonMergeSuggestionDto[] = $state([]);
   let mergeSuggestionBusy = $state(false);
-  const suggestionKey = (suggestion: PersonMergeSuggestionDto) => [suggestion.person.id, suggestion.suggestion.id].sort().join('|');
+  const suggestionKey = (suggestion: PersonMergeSuggestionDto) =>
+    [suggestion.person.id, suggestion.suggestion.id].sort().join('|');
 
   const loadMergeSuggestions = async () => {
     try {
@@ -101,7 +102,9 @@
         (entry) => entry.person.id !== mergedId && entry.suggestion.id !== mergedId,
       );
       const survivor = await getPerson({ id: survivorId });
-      people = people.filter((person) => person.id !== mergedId).map((person) => (person.id === survivorId ? survivor : person));
+      people = people
+        .filter((person) => person.id !== mergedId)
+        .map((person) => (person.id === survivorId ? survivor : person));
       toastManager.primary($t('frameleaf_people_merge_suggestion_merged_toast', { values: { name: survivor.name } }));
     } catch (error) {
       handleError(error, $t('errors.unable_to_save_name'));
@@ -229,9 +232,7 @@
   let showHiddenFrameleaf = $state(false);
   let editingIdFrameleaf: string | undefined = $state();
   let frameleafBase = $derived(searchName ? searchedPeopleLocal : people);
-  let frameleafCards = $derived(
-    frameleafBase.filter((person) => showHiddenFrameleaf || !person.isHidden),
-  );
+  let frameleafCards = $derived(frameleafBase.filter((person) => showHiddenFrameleaf || !person.isHidden));
   let frameleafHiddenCount = $derived(people.filter((person) => person.isHidden).length);
 
   // FL-57: a Frameleaf rename commits immediately (inline editing has no separate

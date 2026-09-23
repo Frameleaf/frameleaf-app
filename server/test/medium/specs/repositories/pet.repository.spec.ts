@@ -47,9 +47,7 @@ describe(PetRepository.name, () => {
       await expect(sut.getAll(user.id, { withHidden: false, ...elevated })).resolves.toEqual([
         expect.objectContaining({ id: pet.id, assetCount: 2 }),
       ]);
-      await expect(sut.getById(user.id, pet.id, ordinary)).resolves.toEqual(
-        expect.objectContaining({ assetCount: 1 }),
-      );
+      await expect(sut.getById(user.id, pet.id, ordinary)).resolves.toEqual(expect.objectContaining({ assetCount: 1 }));
 
       const observed = async (options: { lockedOwnerId?: string }) =>
         (await sut.getObservations(user.id, pet.id, options)).map(({ assetId }) => assetId).sort();

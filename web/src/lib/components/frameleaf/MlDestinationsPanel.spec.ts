@@ -1,5 +1,3 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import {
   MlDestinationHealth,
   MlDestinationKind,
@@ -8,8 +6,10 @@ import {
   type MlDestinationResponseDto,
   type MlWorkloadRouteDto,
 } from '@immich/sdk';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import MlDestinationsPanel from './MlDestinationsPanel.svelte';
 
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
@@ -25,7 +25,13 @@ const destination = (overrides: Partial<MlDestinationResponseDto> = {}): MlDesti
   role: MlWorkerRole.LibraryAnalysis,
   sharesLibraryHardware: false,
   consent: { required: false, acknowledgedAt: null, acknowledgedBy: null },
-  costControls: { budgetLimitUsd: null, maxRuntimeMinutes: null, maxUploadBytes: null, spentUsd: 0, budgetWindowDays: 30 },
+  costControls: {
+    budgetLimitUsd: null,
+    maxRuntimeMinutes: null,
+    maxUploadBytes: null,
+    spentUsd: 0,
+    budgetWindowDays: 30,
+  },
   health: {
     status: MlDestinationHealth.Healthy,
     probedAt: '2026-09-22T12:00:00.000Z',
@@ -45,7 +51,13 @@ const runPod = destination({
   // FL-72: the managed pod runs library analysis only.
   workloads: [MlWorkload.Face, MlWorkload.Enrichment],
   consent: { required: true, acknowledgedAt: null, acknowledgedBy: null },
-  costControls: { budgetLimitUsd: 25, maxRuntimeMinutes: 120, maxUploadBytes: 500_000_000, spentUsd: 3.5, budgetWindowDays: 30 },
+  costControls: {
+    budgetLimitUsd: 25,
+    maxRuntimeMinutes: 120,
+    maxUploadBytes: 500_000_000,
+    spentUsd: 3.5,
+    budgetWindowDays: 30,
+  },
   health: { status: MlDestinationHealth.Unknown, probedAt: null, summary: null, servedWorkloads: null },
 });
 

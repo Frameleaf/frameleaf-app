@@ -699,10 +699,7 @@
           </div>
         </div>
         {#if busyJob && progress}
-          <progress
-            max="100"
-            value={progress.percent ?? undefined}
-            aria-label={$t('frameleaf_takeout_progress_label')}
+          <progress max="100" value={progress.percent ?? undefined} aria-label={$t('frameleaf_takeout_progress_label')}
           ></progress>
           <p class="meta">{progressText}</p>
           <p class="note">{$t('frameleaf_takeout_background_note')}</p>

@@ -236,11 +236,7 @@
         break;
       }
       case 'restore': {
-        void run(
-          project,
-          () => restoreStudioProjectFromTrash({ id: project.id }),
-          'frameleaf_studio_library_restored',
-        );
+        void run(project, () => restoreStudioProjectFromTrash({ id: project.id }), 'frameleaf_studio_library_restored');
         break;
       }
       case 'delete-permanently': {
@@ -407,7 +403,6 @@
     }
   };
 
-
   const posterUrl = (project: StudioProjectDto) =>
     project.thumbnailAssetId
       ? getAssetMediaUrl({ id: project.thumbnailAssetId, size: AssetMediaSize.Thumbnail })
@@ -509,9 +504,7 @@
     <p class="note" aria-busy="true">{$t('frameleaf_studio_library_loading')}</p>
   {:else if items.length === 0}
     <p class="note">
-      {query.trim()
-        ? $t('frameleaf_studio_library_no_match')
-        : $t(`frameleaf_studio_library_empty_${shelf}`)}
+      {query.trim() ? $t('frameleaf_studio_library_no_match') : $t(`frameleaf_studio_library_empty_${shelf}`)}
     </p>
   {:else}
     <ul class="grid">

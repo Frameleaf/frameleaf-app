@@ -268,15 +268,15 @@ describe('qualifySourceDecode', () => {
   });
 
   it('refuses Dolby Vision profile 7 and the unqualified profiles', () => {
-    expect(
-      qualifySourceDecode(stream({ codecName: 'hevc', dvProfile: DvProfile.Dvhe07 }), noToneMapping).refusal,
-    ).toBe(DecodeRefusal.DolbyVisionEnhancementLayer);
-    expect(
-      qualifySourceDecode(stream({ codecName: 'hevc', dvProfile: DvProfile.Dvav09 }), noToneMapping).refusal,
-    ).toBe(DecodeRefusal.DolbyVisionProfileUnqualified);
-    expect(
-      qualifySourceDecode(stream({ codecName: 'hevc', dvProfile: DvProfile.Dvhe08 }), noToneMapping).refusal,
-    ).toBe(DecodeRefusal.DolbyVisionBaseLayerUnknown);
+    expect(qualifySourceDecode(stream({ codecName: 'hevc', dvProfile: DvProfile.Dvhe07 }), noToneMapping).refusal).toBe(
+      DecodeRefusal.DolbyVisionEnhancementLayer,
+    );
+    expect(qualifySourceDecode(stream({ codecName: 'hevc', dvProfile: DvProfile.Dvav09 }), noToneMapping).refusal).toBe(
+      DecodeRefusal.DolbyVisionProfileUnqualified,
+    );
+    expect(qualifySourceDecode(stream({ codecName: 'hevc', dvProfile: DvProfile.Dvhe08 }), noToneMapping).refusal).toBe(
+      DecodeRefusal.DolbyVisionBaseLayerUnknown,
+    );
   });
 
   it('refuses an undescribable pixel format', () => {
@@ -305,10 +305,7 @@ describe('qualifySourceDecode', () => {
 
 describe('assertDecodeQualified', () => {
   it('throws a media policy error for a refused source', () => {
-    const refused = qualifySourceDecode(
-      stream({ codecName: 'hevc', dvProfile: DvProfile.Dvhe05 }),
-      defaults.ffmpeg,
-    );
+    const refused = qualifySourceDecode(stream({ codecName: 'hevc', dvProfile: DvProfile.Dvhe05 }), defaults.ffmpeg);
     expect(() => assertDecodeQualified(refused)).toThrowError(MediaPolicyError);
     try {
       assertDecodeQualified(refused);

@@ -266,8 +266,7 @@ export const icloudBlankDraft = (): ICloudDraft => ({
   stagingGiB: '20',
 });
 
-export const isLibrarySelected = (draft: ICloudDraft, id: string) =>
-  draft.librariesAll || draft.libraries.includes(id);
+export const isLibrarySelected = (draft: ICloudDraft, id: string) => draft.librariesAll || draft.libraries.includes(id);
 
 /**
  * Toggle one library. Unchecking one of "all" makes the rest explicit; checking the last missing one

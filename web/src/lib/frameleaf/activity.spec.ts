@@ -1,4 +1,12 @@
 import {
+  MediaOperationBulkAction,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+  type MediaOperationDto,
+} from '@immich/sdk';
+import { describe, expect, it } from 'vitest';
+import {
   activityCounts,
   activityIndicatorState,
   activitySettingsDetails,
@@ -12,14 +20,6 @@ import {
 } from '$lib/frameleaf/activity';
 import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
 import { UploadState } from '$lib/types';
-import {
-  MediaOperationBulkAction,
-  MediaOperationDestination,
-  MediaOperationKind,
-  MediaOperationStatus,
-  type MediaOperationDto,
-} from '@immich/sdk';
-import { describe, expect, it } from 'vitest';
 
 const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDto =>
   ({
@@ -156,7 +156,11 @@ describe('fromMediaOperation', () => {
 
   it('carries the server’s failure detail verbatim', () => {
     const item = fromMediaOperation(
-      operation({ status: MediaOperationStatus.Failed, error: 'The worker stopped responding', errorCode: 'worker_lost' }),
+      operation({
+        status: MediaOperationStatus.Failed,
+        error: 'The worker stopped responding',
+        errorCode: 'worker_lost',
+      }),
     );
 
     expect(item.error).toBe('The worker stopped responding');
@@ -361,8 +365,16 @@ describe('buildActivityList', () => {
   it('puts running work above finished work regardless of age', () => {
     const list = buildActivityList({
       operations: [
-        operation({ id: '0195e2a0-0000-7000-8000-00000000000a', status: MediaOperationStatus.Completed, startedAt: '2026-09-22T11:00:00.000Z' }),
-        operation({ id: '0195e2a0-0000-7000-8000-00000000000b', status: MediaOperationStatus.Rendering, startedAt: '2026-09-22T08:00:00.000Z' }),
+        operation({
+          id: '0195e2a0-0000-7000-8000-00000000000a',
+          status: MediaOperationStatus.Completed,
+          startedAt: '2026-09-22T11:00:00.000Z',
+        }),
+        operation({
+          id: '0195e2a0-0000-7000-8000-00000000000b',
+          status: MediaOperationStatus.Rendering,
+          startedAt: '2026-09-22T08:00:00.000Z',
+        }),
       ],
     });
 
@@ -531,7 +543,11 @@ describe('fromMediaOperation, Studio bundles (FL-91)', () => {
     );
     expect(imported.studioBundle).toBe('import');
 
-    for (const status of [MediaOperationStatus.Rendering, MediaOperationStatus.Cancelled, MediaOperationStatus.Failed]) {
+    for (const status of [
+      MediaOperationStatus.Rendering,
+      MediaOperationStatus.Cancelled,
+      MediaOperationStatus.Failed,
+    ]) {
       expect(fromMediaOperation(operation({ kind: MediaOperationKind.StudioBundleExport, status })).studioBundle).toBe(
         undefined,
       );

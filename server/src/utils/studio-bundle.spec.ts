@@ -313,7 +313,10 @@ describe('checkStudioBundleManifest', () => {
   const project = serializeStudioBundleProject(envelope({ tracks: [{ clips: [{ assetId: assetA }] }] }));
 
   it('accepts a well-formed manifest and normalizes descriptive text', () => {
-    const checked = checkStudioBundleManifest({ ...manifestOf(project), producer: { product: 'frameleaf', version: 'x'.repeat(100) } });
+    const checked = checkStudioBundleManifest({
+      ...manifestOf(project),
+      producer: { product: 'frameleaf', version: 'x'.repeat(100) },
+    });
     expect(checked.ok).toBe(true);
     if (checked.ok) {
       expect(checked.manifest.producer.version).toHaveLength(64);

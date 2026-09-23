@@ -124,7 +124,8 @@
           {#if filterSummary.isFiltered && filteredItems.length === 0}
             <tfoot>
               <tr
-                ><td colspan="2" class="frameleaf-report-empty">{$t('admin.frameleaf_maintenance_report_search_empty')}</td
+                ><td colspan="2" class="frameleaf-report-empty"
+                  >{$t('admin.frameleaf_maintenance_report_search_empty')}</td
                 ></tr
               >
             </tfoot>

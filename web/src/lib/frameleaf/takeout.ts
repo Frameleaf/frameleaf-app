@@ -79,8 +79,7 @@ export const takeoutSourcesStaged = (sources: readonly TakeoutSourceResponseDto[
 /** Bytes still to upload across the archives. */
 export const takeoutBytesRemaining = (sources: readonly TakeoutSourceResponseDto[]) =>
   sources.reduce(
-    (total, source) =>
-      total + (source.kind === TakeoutSourceKind.Zip ? Math.max(0, source.size - source.received) : 0),
+    (total, source) => total + (source.kind === TakeoutSourceKind.Zip ? Math.max(0, source.size - source.received) : 0),
     0,
   );
 

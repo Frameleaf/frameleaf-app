@@ -51,11 +51,7 @@
     <div class="controls">
       <label class="field" for={filterId}>
         <span>{$t('frameleaf_render_workers_audit_filter_label')}</span>
-        <select
-          id={filterId}
-          bind:value={workerId}
-          onchange={() => onFilter(workerId === '' ? undefined : workerId)}
-        >
+        <select id={filterId} bind:value={workerId} onchange={() => onFilter(workerId === '' ? undefined : workerId)}>
           <option value="">{$t('frameleaf_render_workers_audit_all_workers')}</option>
           {#each workers as worker (worker.id)}
             <option value={worker.id}>{worker.name}</option>
@@ -83,7 +79,7 @@
             />
             <strong>
               {entry.workerId
-                ? workerName.get(entry.workerId) ?? $t('frameleaf_render_workers_audit_unknown_worker')
+                ? (workerName.get(entry.workerId) ?? $t('frameleaf_render_workers_audit_unknown_worker'))
                 : $t('frameleaf_render_workers_audit_instance')}
             </strong>
             <time datetime={entry.createdAt}>{at(entry.createdAt)}</time>

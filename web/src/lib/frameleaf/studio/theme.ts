@@ -11,7 +11,6 @@
  * editor is given, and so the list can be read against
  * `design/frameleaf/template/src/studio.css`.
  */
-
 import type { StudioThemeTokens } from './host-contract';
 
 export const studioThemeTokenNames = [

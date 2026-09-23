@@ -105,9 +105,9 @@ describe('validateStudioCommandEnvelope', () => {
     // Unreduced and zero-denominator pairs break the invariants the arithmetic relies on.
     expect(validateStudioCommandPayload('clip.split', { at: { num: 14, den: 4 } })).toMatchObject({ valid: false });
     expect(validateStudioCommandPayload('clip.split', { at: { num: 1, den: 0 } })).toMatchObject({ valid: false });
-    expect(
-      validateStudioCommandPayload('sequence.add', { name: 'Main film', fps: FRAME_RATE_NTSC_30 }),
-    ).toEqual({ valid: true });
+    expect(validateStudioCommandPayload('sequence.add', { name: 'Main film', fps: FRAME_RATE_NTSC_30 })).toEqual({
+      valid: true,
+    });
     expect(validateStudioCommandPayload('sequence.add', { name: 'Main film', fps: 29.97 })).toMatchObject({
       valid: false,
     });

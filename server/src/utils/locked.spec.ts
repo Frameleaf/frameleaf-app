@@ -1,11 +1,4 @@
-import {
-  DummyDriver,
-  Kysely,
-  PostgresAdapter,
-  PostgresIntrospector,
-  PostgresQueryCompiler,
-  RawBuilder,
-} from 'kysely';
+import { DummyDriver, Kysely, PostgresAdapter, PostgresIntrospector, PostgresQueryCompiler, RawBuilder } from 'kysely';
 import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import {
   effectiveVisibility,
@@ -114,9 +107,7 @@ describe('the one Locked predicate (FL-34)', () => {
   it('names the locked owner only for an elevated session that is not a shared link', () => {
     const auth = AuthFactory.create();
     expect(getLockedOwnerId(auth)).toBeUndefined();
-    expect(getLockedOwnerId({ ...auth, session: { id: 'session-1', hasElevatedPermission: true } })).toBe(
-      auth.user.id,
-    );
+    expect(getLockedOwnerId({ ...auth, session: { id: 'session-1', hasElevatedPermission: true } })).toBe(auth.user.id);
     expect(
       getLockedOwnerId({
         ...auth,

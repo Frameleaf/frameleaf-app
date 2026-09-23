@@ -7,13 +7,7 @@ import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import type { UpdateAssetDto } from 'src/dtos/asset.dto.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import {
-  AssetVisibility,
-  ImmichWorker,
-  MediaOperationKind,
-  MediaOperationStatus,
-  StorageFolder,
-} from 'src/enum.js';
+import { AssetVisibility, ImmichWorker, MediaOperationKind, MediaOperationStatus, StorageFolder } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
@@ -455,8 +449,7 @@ export class TakeoutWorkerService {
         size: file.size,
         modifiedAt: file.modifiedAt,
         refused: file.link,
-        stage: (destination) =>
-          this.staging.stageFile(source.path, file, destination, run.controller.signal),
+        stage: (destination) => this.staging.stageFile(source.path, file, destination, run.controller.signal),
       });
       if (outcome === 'rejected') {
         rejected++;

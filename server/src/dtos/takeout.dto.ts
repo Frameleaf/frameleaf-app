@@ -210,9 +210,7 @@ export class TakeoutPairQueryDto extends createZodDto(
 ) {}
 
 export class TakeoutControlDto extends createZodDto(
-  z
-    .object({ action: TakeoutControlActionSchema })
-    .meta({ id: 'TakeoutControlDto' }),
+  z.object({ action: TakeoutControlActionSchema }).meta({ id: 'TakeoutControlDto' }),
 ) {}
 
 export class TakeoutResolveDto extends createZodDto(

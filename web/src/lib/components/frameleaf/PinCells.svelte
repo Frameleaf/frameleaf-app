@@ -74,7 +74,7 @@
     maxlength={length}
     {disabled}
     {autofocus}
-    value={value}
+    {value}
     aria-label={label}
     aria-describedby={describedBy}
     aria-invalid={error ? true : undefined}

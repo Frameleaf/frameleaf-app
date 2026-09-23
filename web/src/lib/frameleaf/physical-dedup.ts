@@ -231,13 +231,7 @@ export const applyStatusKey = (
 };
 
 export type DedupApplyBlockedReason =
-  | 'disabled'
-  | 'no-saved-master'
-  | 'master-mismatch'
-  | 'applied'
-  | 'no-shares'
-  | 'running'
-  | 'applying';
+  'disabled' | 'no-saved-master' | 'master-mismatch' | 'applied' | 'no-shares' | 'running' | 'applying';
 
 /**
  * Why a plan cannot be applied right now. Mirrors the server: applying requires the feature to be

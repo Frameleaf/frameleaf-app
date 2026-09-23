@@ -1,4 +1,12 @@
 import {
+  EnrichmentStage,
+  MediaOperationStatus,
+  MlDestinationHealth,
+  MlDestinationKind,
+  type EnrichmentDestinationOptionDto,
+} from '@immich/sdk';
+import { describe, expect, it } from 'vitest';
+import {
   captionRequestCount,
   destinationChoices,
   formatMomentTime,
@@ -12,14 +20,6 @@ import {
   toggleStage,
   withRequiredStages,
 } from '$lib/frameleaf/enrichment';
-import {
-  EnrichmentStage,
-  MediaOperationStatus,
-  MlDestinationHealth,
-  MlDestinationKind,
-  type EnrichmentDestinationOptionDto,
-} from '@immich/sdk';
-import { describe, expect, it } from 'vitest';
 
 const destination = (
   id: string,

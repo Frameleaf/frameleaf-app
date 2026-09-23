@@ -200,8 +200,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
   const count = assets.length || Math.max(0, Number(context.count) || 0);
   const has = count > 0;
   const albumId = typeof context.albumId === 'string' && context.albumId ? context.albumId : null;
-  const sharedLinkId =
-    typeof context.sharedLinkId === 'string' && context.sharedLinkId ? context.sharedLinkId : null;
+  const sharedLinkId = typeof context.sharedLinkId === 'string' && context.sharedLinkId ? context.sharedLinkId : null;
   const trash = !!context.trash;
   const locked = !!context.locked;
   const readOnly = !!context.readOnly;

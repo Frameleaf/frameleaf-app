@@ -411,11 +411,7 @@
     onSubmit={(payload) => submitDialog('tag', payload)}
   />
 {:else if dialog === 'add-to-album'}
-  <BulkAlbumDialog
-    {count}
-    bind:open={dialogOpen}
-    onSubmit={(payload) => submitDialog('add-to-album', payload)}
-  />
+  <BulkAlbumDialog {count} bind:open={dialogOpen} onSubmit={(payload) => submitDialog('add-to-album', payload)} />
 {:else if dialog === 'delete-permanently'}
   <BulkConfirmDialog {count} bind:open={dialogOpen} onConfirm={() => submitDialog('delete-permanently')} />
 {/if}

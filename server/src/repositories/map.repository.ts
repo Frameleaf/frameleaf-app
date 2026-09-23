@@ -98,9 +98,7 @@ export class MapRepository {
           ]),
         ),
       )
-      .$if(isArchived === false || isArchived === undefined, (qb) =>
-        qb.where(isTimelineVisible('asset')),
-      )
+      .$if(isArchived === false || isArchived === undefined, (qb) => qb.where(isTimelineVisible('asset')))
       .$if(isFavorite !== undefined, (q) => q.where('isFavorite', '=', isFavorite!))
       .$if(fileCreatedAfter !== undefined, (q) => q.where('fileCreatedAt', '>=', fileCreatedAfter!))
       .$if(fileCreatedBefore !== undefined, (q) => q.where('fileCreatedAt', '<=', fileCreatedBefore!))

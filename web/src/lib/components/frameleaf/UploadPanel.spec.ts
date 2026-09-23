@@ -1,8 +1,8 @@
 import { render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
-import en from '../../../../../i18n/en.json';
 import { uploadAssetsStore } from '$lib/stores/upload';
 import { UploadState } from '$lib/types';
+import en from '../../../../../i18n/en.json';
 import UploadPanel from './UploadPanel.svelte';
 
 /**

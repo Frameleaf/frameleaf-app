@@ -209,7 +209,9 @@
     moment.source === VideoMomentSource.Manual ? 'frameleaf_moments_untitled' : 'frameleaf_moments_uncaptioned';
 
   const sourceKey = (moment: VideoMomentDto) =>
-    moment.source === VideoMomentSource.Manual ? 'frameleaf_moments_source_manual' : 'frameleaf_moments_source_generated';
+    moment.source === VideoMomentSource.Manual
+      ? 'frameleaf_moments_source_manual'
+      : 'frameleaf_moments_source_generated';
 
   const formatDate = (value: string | null) =>
     value ? new Date(value).toLocaleString($locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '';
@@ -395,8 +397,7 @@
                 class="mt-1 w-full rounded border border-gray-300 bg-transparent px-2 py-1 dark:border-gray-600"
                 rows="3"
                 bind:value={editing.transcript}
-                maxlength="20000"
-              ></textarea>
+                maxlength="20000"></textarea>
               <span class="text-gray-500 dark:text-gray-400">{$t('frameleaf_moments_transcript_help')}</span>
             </label>
             {#if editError}
@@ -436,7 +437,9 @@
               disabled={busy !== null || (plan !== null && isPlanActive(plan.operation.status))}
               onclick={refresh}
             >
-              {$t(moments.state === VideoMomentIndexState.Ready ? 'frameleaf_moments_refresh' : 'frameleaf_moments_find')}
+              {$t(
+                moments.state === VideoMomentIndexState.Ready ? 'frameleaf_moments_refresh' : 'frameleaf_moments_find',
+              )}
             </Button>
             <Button
               size="small"

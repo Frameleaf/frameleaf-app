@@ -139,10 +139,7 @@ const seedStack = async ({ ctx }: ReturnType<typeof setup>) => {
   const { asset: member } = await ctx.newAsset({ ownerId: owner.id, fileCreatedAt: newer });
   const { asset: other } = await ctx.newAsset({ ownerId: owner.id, fileCreatedAt: older });
   await ctx.newStack({ ownerId: owner.id }, [primary.id, member.id]);
-  const { album } = await ctx.newAlbum({ ownerId: owner.id, albumThumbnailAssetId: member.id }, [
-    member.id,
-    other.id,
-  ]);
+  const { album } = await ctx.newAlbum({ ownerId: owner.id, albumThumbnailAssetId: member.id }, [member.id, other.id]);
   return { owner, primary, member, other, album };
 };
 
@@ -551,9 +548,7 @@ describe('Locked cover references (FL-53)', () => {
 
       // with every other confirmed photo Locked, the pet has none
       await sut.updateAll([seeded.fallback.id, newest.id], { visibility: AssetVisibility.Locked });
-      await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(
-        expect.objectContaining({ petFeatured: null }),
-      );
+      await expect(referencesOf(ctx.database, seeded)).resolves.toEqual(expect.objectContaining({ petFeatured: null }));
     });
   });
 

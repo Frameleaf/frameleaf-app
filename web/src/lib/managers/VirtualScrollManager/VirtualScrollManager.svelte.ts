@@ -162,7 +162,12 @@ export abstract class VirtualScrollManager {
 
   protected updateViewportGeometry(_: boolean) {}
 
-  setLayoutOptions({ headerHeight = 48, rowHeight = 235, gap = 12, fillRowWidth = false }: Partial<LayoutOptions> = {}) {
+  setLayoutOptions({
+    headerHeight = 48,
+    rowHeight = 235,
+    gap = 12,
+    fillRowWidth = false,
+  }: Partial<LayoutOptions> = {}) {
     // Note: every setter must run. `||=` short-circuits, so the first option that reported a change
     // used to stop the rest from being applied at all — switching to the mobile layout set the
     // header height and silently kept the desktop row height.

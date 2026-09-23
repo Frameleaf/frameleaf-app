@@ -121,9 +121,7 @@ describe(MediaOperationRepository.name, () => {
       ).resolves.toBe(false);
       await expect(sut.beginValidation(operation.id, stale)).resolves.toBe(false);
       await expect(sut.complete(operation.id, stale, { resultAssetId: null })).resolves.toBe(false);
-      await expect(
-        sut.fail(operation.id, stale, { error: 'late failure', errorCode: 'late' }),
-      ).resolves.toBe(false);
+      await expect(sut.fail(operation.id, stale, { error: 'late failure', errorCode: 'late' })).resolves.toBe(false);
 
       // The replacement's own claim still works.
       await expect(sut.beginValidation(operation.id, replacement!.claimToken)).resolves.toBe(true);
