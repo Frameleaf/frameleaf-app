@@ -2531,6 +2531,102 @@ export type MediaHealthBulkActionDto = {
     /** Media health finding IDs */
     ids: string[];
 };
+export type MediaOperationEstimateDto = {
+    /** Configured cloud rate detail, when one applies */
+    cloudCost: ({
+        [key: string]: any;
+    }) | null;
+    /** Measured estimate of remaining work */
+    seconds: number;
+    /** Estimated output size */
+    sizeBytes: string | null;
+};
+export type MediaOperationDto = {
+    /** Source asset, when the workload has exactly one */
+    assetId: string | null;
+    attempt: number;
+    cancelAcknowledgedAt: string | null;
+    cancelRequestedAt: string | null;
+    createdAt: string;
+    destination: MediaOperationDestination;
+    /** Which worker or endpoint the destination resolved to */
+    destinationDetail: string | null;
+    /** Operator detail about a failure */
+    error: string | null;
+    /** Stable code the client turns into a message */
+    errorCode: string | null;
+    estimate: (MediaOperationEstimateDto) | null;
+    finishedAt: string | null;
+    /** Media operation ID */
+    id: string;
+    kind: MediaOperationKind;
+    /** What the person sees in Activity */
+    label: string;
+    maxAttempts: number;
+    processedUnits: string;
+    /** Percent complete, from counted work */
+    progress: number;
+    projectId: string | null;
+    /** The asset a completed job published */
+    resultAssetId: string | null;
+    /** The job this one retries */
+    retryOfId: string | null;
+    revisionId: string | null;
+    /** User-visible render settings */
+    settings: {
+        [key: string]: any;
+    };
+    startedAt: string | null;
+    status: MediaOperationStatus;
+    totalUnits: string | null;
+    updatedAt: string;
+};
+export type MediaOperationListResponseDto = {
+    items: MediaOperationDto[];
+    /** Matching jobs, before paging */
+    total: number;
+};
+export type MediaOperationAggregateDto = {
+    count: number;
+    destination: MediaOperationDestination;
+    kind: MediaOperationKind;
+    oldestCreatedAt: string | null;
+    status: MediaOperationStatus;
+};
+export type MediaOperationStatisticsDto = {
+    /** Jobs the server is still working on */
+    active: number;
+    buckets: MediaOperationAggregateDto[];
+    failed: number;
+    /** Remote jobs whose cleanup has not been acknowledged */
+    unreleasedRemote: number;
+};
+export type MediaOperationCheckpointDto = {
+    /** Digest over every input to this chunk; the reuse key */
+    chunkKey: string;
+    completedAt: string | null;
+    /** Chunk end, in ticks of the timebase */
+    endTicks: string;
+    /** Checkpoint ID */
+    id: string;
+    /** A render may not start inside this chunk */
+    requiresSequentialContext: boolean;
+    /** Chunk order within the render */
+    sequence: number;
+    sizeInBytes: string | null;
+    /** Chunk start, in ticks of the timebase */
+    startTicks: string;
+    state: MediaOperationCheckpointState;
+    /** Rational timebase for the tick range, e.g. 30000/1001 */
+    timebase: string;
+};
+export type MediaOperationDetailDto = (MediaOperationDto) & {
+    checkpoints: MediaOperationCheckpointDto[];
+    /** The immutable binding the render was bound to */
+    snapshot: {
+        [key: string]: any;
+    };
+};
 export type OnThisDayDto = {
     /** Year for on this day memory */
     year: number;
@@ -6865,6 +6961,92 @@ export function startMissingScan(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * List your media operations
+ */
+export function searchMediaOperations({ includeDismissed, kind, skip, status, take }: {
+    includeDismissed?: boolean;
+    kind?: MediaOperationKind;
+    skip?: number;
+    status?: MediaOperationStatus;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaOperationListResponseDto;
+    }>(`/media-operations${QS.query(QS.explode({
+        includeDismissed,
+        kind,
+        skip,
+        status,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get media operation statistics
+ */
+export function getMediaOperationStatistics(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaOperationStatisticsDto;
+    }>("/media-operations/statistics", {
+        ...opts
+    }));
+}
+/**
+ * Get a media operation
+ */
+export function getMediaOperation({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaOperationDetailDto;
+    }>(`/media-operations/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Clear a finished media operation
+ */
+export function dismissMediaOperation({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/media-operations/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Cancel a media operation
+ */
+export function cancelMediaOperation({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MediaOperationDto;
+    }>(`/media-operations/${encodeURIComponent(id)}/cancel`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Retry a media operation
+ */
+export function retryMediaOperation({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaOperationDto;
+    }>(`/media-operations/${encodeURIComponent(id)}/retry`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Retrieve memories
  */
 export function searchMemories({ $for, id, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
@@ -9796,6 +9978,33 @@ export enum MediaHealthSeverity {
     Info = "info",
     Warning = "warning",
     Critical = "critical"
+}
+export enum MediaOperationKind {
+    StudioExport = "studio_export",
+    StudioPreview = "studio_preview",
+    Restoration = "restoration",
+    RestorationPreview = "restoration_preview",
+    QuickEdit = "quick_edit"
+}
+export enum MediaOperationStatus {
+    Queued = "queued",
+    Preparing = "preparing",
+    Rendering = "rendering",
+    Validating = "validating",
+    Completed = "completed",
+    Cancelling = "cancelling",
+    Cancelled = "cancelled",
+    Failed = "failed"
+}
+export enum MediaOperationDestination {
+    Local = "local",
+    Lan = "lan",
+    RunPod = "runpod"
+}
+export enum MediaOperationCheckpointState {
+    Pending = "pending",
+    Complete = "complete",
+    Invalid = "invalid"
 }
 export enum MemorySearchOrder {
     Asc = "asc",
