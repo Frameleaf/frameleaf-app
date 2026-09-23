@@ -77,12 +77,12 @@ describe('/trash', () => {
     });
 
     it('should remove offline assets', async () => {
+      utils.createImageFile(`${testAssetDir}/temp/trash-empty/offline/offline.png`);
+
       const library = await utils.createLibrary(admin.accessToken, {
         ownerId: admin.userId,
-        importPaths: [`${testAssetDirInternal}/temp/offline`],
+        importPaths: [`${testAssetDirInternal}/temp/trash-empty/offline`],
       });
-
-      utils.createImageFile(`${testAssetDir}/temp/offline/offline.png`);
 
       await utils.scan(admin.accessToken, library.id);
 
@@ -97,7 +97,7 @@ describe('/trash', () => {
       const assetBefore = await utils.getAssetInfo(admin.accessToken, asset.id);
       expect(assetBefore).toMatchObject({ isTrashed: true, isOffline: true });
 
-      utils.createImageFile(`${testAssetDir}/temp/offline/offline.png`);
+      utils.createImageFile(`${testAssetDir}/temp/trash-empty/offline/offline.png`);
 
       const { status } = await request(app).post('/trash/empty').set('Authorization', `Bearer ${admin.accessToken}`);
       expect(status).toBe(200);
@@ -110,12 +110,12 @@ describe('/trash', () => {
 
     it.skip('should not delete offline assets from disk', async () => {
       // Can't be tested at the moment due to no mechanism to forward time
+      utils.createImageFile(`${testAssetDir}/temp/trash-empty-original/offline/offline.png`);
+
       const library = await utils.createLibrary(admin.accessToken, {
         ownerId: admin.userId,
-        importPaths: [`${testAssetDirInternal}/temp/offline`],
+        importPaths: [`${testAssetDirInternal}/temp/trash-empty-original/offline`],
       });
-
-      utils.createImageFile(`${testAssetDir}/temp/offline/offline.png`);
 
       await utils.scan(admin.accessToken, library.id);
 
@@ -130,7 +130,7 @@ describe('/trash', () => {
       const assetBefore = await utils.getAssetInfo(admin.accessToken, asset.id);
       expect(assetBefore).toMatchObject({ isTrashed: true, isOffline: true });
 
-      utils.createImageFile(`${testAssetDir}/temp/offline/offline.png`);
+      utils.createImageFile(`${testAssetDir}/temp/trash-empty-original/offline/offline.png`);
 
       const { status } = await request(app).post('/trash/empty').set('Authorization', `Bearer ${admin.accessToken}`);
       expect(status).toBe(200);
@@ -140,9 +140,9 @@ describe('/trash', () => {
       const after = await getAssetStatistics({ isTrashed: true }, { headers: asBearerAuth(admin.accessToken) });
       expect(after.total).toBe(0);
 
-      expect(existsSync(`${testAssetDir}/temp/offline/offline.png`)).toBe(true);
+      expect(existsSync(`${testAssetDir}/temp/trash-empty-original/offline/offline.png`)).toBe(true);
 
-      utils.removeImageFile(`${testAssetDir}/temp/offline/offline.png`);
+      utils.removeImageFile(`${testAssetDir}/temp/trash-empty-original/offline/offline.png`);
     });
   });
 
@@ -165,12 +165,12 @@ describe('/trash', () => {
     });
 
     it('should not restore offline assets', async () => {
+      utils.createImageFile(`${testAssetDir}/temp/trash-restore-all/offline/offline.png`);
+
       const library = await utils.createLibrary(admin.accessToken, {
         ownerId: admin.userId,
-        importPaths: [`${testAssetDirInternal}/temp/offline`],
+        importPaths: [`${testAssetDirInternal}/temp/trash-restore-all/offline`],
       });
-
-      utils.createImageFile(`${testAssetDir}/temp/offline/offline.png`);
 
       await utils.scan(admin.accessToken, library.id);
 
@@ -191,7 +191,7 @@ describe('/trash', () => {
       const after = await getAssetInfo({ id: assetId }, { headers: asBearerAuth(admin.accessToken) });
       expect(after).toStrictEqual(expect.objectContaining({ id: assetId, isOffline: true }));
 
-      utils.removeImageFile(`${testAssetDir}/temp/offline/offline.png`);
+      utils.removeImageFile(`${testAssetDir}/temp/trash-restore-all/offline/offline.png`);
     });
   });
 
@@ -215,12 +215,12 @@ describe('/trash', () => {
     });
 
     it('should not restore an offline asset', async () => {
+      utils.createImageFile(`${testAssetDir}/temp/trash-restore-selected/offline/offline.png`);
+
       const library = await utils.createLibrary(admin.accessToken, {
         ownerId: admin.userId,
-        importPaths: [`${testAssetDirInternal}/temp/offline`],
+        importPaths: [`${testAssetDirInternal}/temp/trash-restore-selected/offline`],
       });
-
-      utils.createImageFile(`${testAssetDir}/temp/offline/offline.png`);
 
       await utils.scan(admin.accessToken, library.id);
       await utils.waitForQueueFinish(admin.accessToken, 'library');
@@ -246,7 +246,7 @@ describe('/trash', () => {
       const after = await utils.getAssetInfo(admin.accessToken, assetId);
       expect(after.isTrashed).toBe(true);
 
-      utils.removeImageFile(`${testAssetDir}/temp/offline/offline.png`);
+      utils.removeImageFile(`${testAssetDir}/temp/trash-restore-selected/offline/offline.png`);
     });
   });
 
