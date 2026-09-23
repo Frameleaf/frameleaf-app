@@ -33,6 +33,7 @@ import {
   CacheControl,
   JobName,
   JobStatus,
+  MlWorkload,
   Permission,
   PersonPathType,
   QueueName,
@@ -344,7 +345,13 @@ export class PersonService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    const selection = await this.selectRoutedMlDestination({
+      workload: MlWorkload.Face,
+      jobId: id,
+      jobName: JobName.AssetDetectFaces,
+    });
     const { imageHeight, imageWidth, faces } = await this.machineLearningRepository.detectFaces(
+      selection,
       previewFile.path,
       machineLearning.facialRecognition,
     );

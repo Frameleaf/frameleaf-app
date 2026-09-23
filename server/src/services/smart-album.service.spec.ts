@@ -184,7 +184,7 @@ describe(SmartAlbumService.name, () => {
       await sut.evaluate({ assetId, ownerId, tags: [] });
 
       expect(mocks.smartAlbum.addAssetToSmartAlbum).toHaveBeenCalledWith(travelAlbumId, assetId, 'clip');
-      expect(mocks.machineLearning.encodeText).toHaveBeenCalledWith('vacation travel landscape', {
+      expect(mocks.machineLearning.encodeText).toHaveBeenCalledWith(expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }), 'vacation travel landscape', {
         modelName: 'clip-model-match',
       });
     });

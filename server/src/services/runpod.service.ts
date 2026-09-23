@@ -140,7 +140,7 @@ export class RunPodService extends BaseService {
   @OnEvent({ name: 'ConfigInit', priority: BootstrapEventPriority.SystemConfig + 1 })
   async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
     this.currentApiKey = newConfig.machineLearning.runpod.apiKey;
-    await this.syncManagedUrl();
+    await this.publishRunPodEndpoint();
     if (effectiveMode(newConfig) === 'pod') {
       this.startTicker();
     } else {
@@ -163,7 +163,7 @@ export class RunPodService extends BaseService {
   @OnEvent({ name: 'ConfigUpdate', server: true })
   async onConfigUpdate({ newConfig, oldConfig }: ArgOf<'ConfigUpdate'>) {
     this.currentApiKey = newConfig.machineLearning.runpod.apiKey;
-    await this.syncManagedUrl();
+    await this.publishRunPodEndpoint();
     const mode = effectiveMode(newConfig);
     const oldMode = effectiveMode(oldConfig);
     if (mode === 'pod') {
@@ -187,18 +187,19 @@ export class RunPodService extends BaseService {
   onJobStart(...[, job]: ArgsOf<'JobStart'>) {
     // The reconciler timer is pinned to the API worker, but ML jobs run on the
     // Microservices worker. Without this hook a non-API worker that booted
-    // before the pod came up would keep an empty managed URL and route every
-    // ML job to the local fallback. Sync once at job-start so the actual
-    // predict() call below picks up the pod.
+    // before the pod came up would never learn the RunPod endpoint, and a job
+    // whose destination is the RunPod row would be refused as unresolved. Publish
+    // once at job-start so an explicit RunPod selection can resolve it.
+    //
+    // FL-110: a job start no longer provisions a serverless endpoint. Cloud
+    // resources are created only by the boot and config-update paths the
+    // administrator chose, or by the admin's own setup action.
     if (!ML_JOB_NAMES.has(job.name)) {
       return;
     }
 
-    void this.syncManagedUrl().catch((error) => this.logger.warn(`Pre-job managed URL sync failed: ${error}`));
-    // Lazy provisioning for serverless mode — if the endpoint doesn't exist
-    // yet (e.g. first ML job after enabling), create it now.
-    void this.maybeEnsureServerlessOnJob().catch((error) =>
-      this.logger.warn(`Lazy serverless setup on JobStart failed: ${error}`),
+    void this.publishRunPodEndpoint().catch((error) =>
+      this.logger.warn(`Pre-job RunPod endpoint publication failed: ${error}`),
     );
   }
 
@@ -444,7 +445,7 @@ export class RunPodService extends BaseService {
       stopAttempts: 0,
     };
     await this.writeState(next);
-    await this.syncManagedUrl();
+    await this.publishRunPodEndpoint();
     void this.attemptStopFromAdmin(next).catch((error) => this.logger.warn(`Initial stop attempt failed: ${error}`));
     return this.mapStateToDto(next);
   }
@@ -520,7 +521,7 @@ export class RunPodService extends BaseService {
     }
     const next: RunPodPersistedState = { status: 'idle', instanceTag: state.instanceTag };
     await this.writeState(next);
-    await this.syncManagedUrl();
+    await this.publishRunPodEndpoint();
     return this.mapStateToDto(next);
   }
 
@@ -594,7 +595,7 @@ export class RunPodService extends BaseService {
         }
       }
     });
-    await this.syncManagedUrl();
+    await this.publishRunPodEndpoint();
   }
 
   private async pollPodToReady(state: Extract<RunPodPersistedState, { status: 'provisioning' | 'starting' }>) {
@@ -885,7 +886,7 @@ export class RunPodService extends BaseService {
       stopAttempts: 0,
     };
     await this.writeState(next);
-    await this.syncManagedUrl();
+    await this.publishRunPodEndpoint();
     await this.attemptStop(next);
   }
 
@@ -932,15 +933,17 @@ export class RunPodService extends BaseService {
   }
 
   /**
-   * Reflect the current DB state onto this worker's MachineLearningRepository.
-   * Idempotent; called on bootstrap, config-change, transition, and tick.
+   * Publish the current RunPod endpoint to this worker's MachineLearningRepository so a
+   * selection that explicitly names the RunPod destination can resolve it (FL-110). The
+   * repository never routes to it on its own. Idempotent; called on bootstrap,
+   * config-change, transition, and tick.
    */
-  private async syncManagedUrl(): Promise<void> {
+  private async publishRunPodEndpoint(): Promise<void> {
     const state = await this.loadState();
     if (state.status === 'running') {
-      const existing = this.machineLearningRepository.getManagedUrl();
+      const existing = this.machineLearningRepository.getRunPodEndpoint()?.url ?? null;
       if (existing !== state.mlUrl) {
-        this.machineLearningRepository.setManagedUrl(state.mlUrl, state.authToken);
+        this.machineLearningRepository.setRunPodEndpoint(state.mlUrl, state.authToken);
       }
     } else if (state.status === 'serverless-ready') {
       // For serverless, the bearer is the user's RunPod API key — that's
@@ -952,12 +955,12 @@ export class RunPodService extends BaseService {
       // worker holding a stale 401-causing token until next restart.
       const apiKey = await this.getApiKey();
       if (apiKey) {
-        this.machineLearningRepository.setManagedUrl(state.endpointUrl, apiKey);
-      } else if (this.machineLearningRepository.getManagedUrl()) {
-        this.machineLearningRepository.clearManagedUrl();
+        this.machineLearningRepository.setRunPodEndpoint(state.endpointUrl, apiKey);
+      } else if (this.machineLearningRepository.getRunPodEndpoint()) {
+        this.machineLearningRepository.clearRunPodEndpoint();
       }
-    } else if (this.machineLearningRepository.getManagedUrl()) {
-      this.machineLearningRepository.clearManagedUrl();
+    } else if (this.machineLearningRepository.getRunPodEndpoint()) {
+      this.machineLearningRepository.clearRunPodEndpoint();
     }
   }
 
@@ -1074,24 +1077,6 @@ export class RunPodService extends BaseService {
   // ── Serverless lifecycle ──────────────────────────────────────────────
 
   /**
-   * Lazy provisioning called from JobStart: only does work if the user is in
-   * serverless mode AND the endpoint isn't already ready. Cheap enough to
-   * fire on every ML job — it short-circuits if state is already
-   * 'serverless-ready'.
-   */
-  private async maybeEnsureServerlessOnJob(): Promise<void> {
-    const config = await this.getConfig({ withCache: true });
-    if (effectiveMode(config) !== 'serverless') {
-      return;
-    }
-    const state = await this.loadState();
-    if (state.status === 'serverless-ready' || state.status === 'serverless-provisioning') {
-      return;
-    }
-    await this.ensureServerlessEndpoint(config);
-  }
-
-  /**
    * Idempotently create the template + endpoint. Re-uses an existing endpoint
    * tagged with our instance prefix if one is found (e.g. across server
    * restarts where state was lost but the RunPod resources persisted).
@@ -1118,7 +1103,7 @@ export class RunPodService extends BaseService {
     if (state.status === 'serverless-ready') {
       try {
         await this.runPodRepository.getEndpoint(apiKey, state.endpointId);
-        await this.syncManagedUrl();
+        await this.publishRunPodEndpoint();
         return this.mapStateToDto(state);
       } catch (error) {
         if (!(error instanceof RunPodNotFoundError)) {
@@ -1256,7 +1241,7 @@ export class RunPodService extends BaseService {
         createdAt: new Date().toISOString(),
       };
       await this.writeState(next);
-      await this.syncManagedUrl();
+      await this.publishRunPodEndpoint();
       return this.mapStateToDto(next);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1288,7 +1273,7 @@ export class RunPodService extends BaseService {
     if (!apiKey) {
       // No key, can't talk to RunPod. Just clear our state.
       await this.writeState({ status: 'idle', instanceTag: state.instanceTag });
-      this.machineLearningRepository.clearManagedUrl();
+      this.machineLearningRepository.clearRunPodEndpoint();
       return this.mapStateToDto({ status: 'idle', instanceTag: state.instanceTag });
     }
 
@@ -1328,7 +1313,7 @@ export class RunPodService extends BaseService {
 
     const next: RunPodPersistedState = { status: 'idle', instanceTag: state.instanceTag };
     await this.writeState(next);
-    this.machineLearningRepository.clearManagedUrl();
+    this.machineLearningRepository.clearRunPodEndpoint();
     return this.mapStateToDto(next);
   }
 

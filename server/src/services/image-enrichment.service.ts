@@ -21,6 +21,7 @@ import {
   AssetVisibility,
   JobName,
   JobStatus,
+  MlWorkload,
   Permission,
   QueueName,
   StorageFolder,
@@ -357,7 +358,16 @@ export class ImageEnrichmentService extends BaseService {
     // starve the pool under parallel jobs.
     let result: NsfwDetectionResult;
     try {
-      result = await this.machineLearningRepository.detectNsfw(asset.previewFile!, machineLearning.nsfwDetection);
+      const selection = await this.selectRoutedMlDestination({
+        workload: MlWorkload.Enrichment,
+        jobId: id,
+        jobName: JobName.NsfwDetection,
+      });
+      result = await this.machineLearningRepository.detectNsfw(
+        selection,
+        asset.previewFile!,
+        machineLearning.nsfwDetection,
+      );
     } catch (error) {
       await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
         const m = await this.getEnrichmentMetadata(id, trx);
@@ -452,7 +462,16 @@ export class ImageEnrichmentService extends BaseService {
       try {
         // NSFW always runs against the preview thumbnail, not the composite
         // grid — the classifier is calibrated for single-image input.
-        nsfw = await this.machineLearningRepository.detectNsfw(asset.previewFile!, machineLearning.nsfwDetection);
+        const selection = await this.selectRoutedMlDestination({
+          workload: MlWorkload.Enrichment,
+          jobId: id,
+          jobName: JobName.ImageDescription,
+        });
+        nsfw = await this.machineLearningRepository.detectNsfw(
+          selection,
+          asset.previewFile!,
+          machineLearning.nsfwDetection,
+        );
         nsfwIsFresh = true;
       } catch (error) {
         // NSFW failure is non-fatal for description; persist the failed
@@ -481,7 +500,13 @@ export class ImageEnrichmentService extends BaseService {
         nsfw: nsfw ? { isNsfw: nsfw.isNsfw } : null,
         videoContext: videoGrid?.videoContext,
       });
+      const selection = await this.selectRoutedMlDestination({
+        workload: MlWorkload.Enrichment,
+        jobId: id,
+        jobName: JobName.ImageDescription,
+      });
       result = await this.machineLearningRepository.describeImage(
+        selection,
         descriptionInputPath,
         machineLearning.imageDescription,
         nsfw,
@@ -828,7 +853,14 @@ export class ImageEnrichmentService extends BaseService {
       return;
     }
     try {
-      const embedding = await this.machineLearningRepository.encodeText(text, { modelName: clipConfig.modelName });
+      const selection = await this.selectRoutedMlDestination({
+        workload: MlWorkload.Clip,
+        jobId: assetId,
+        jobName: JobName.ImageDescription,
+      });
+      const embedding = await this.machineLearningRepository.encodeText(selection, text, {
+        modelName: clipConfig.modelName,
+      });
       await this.searchRepository.upsertDescriptionEmbedding(assetId, embedding);
     } catch (error) {
       this.logger.warn(`Failed to embed description for asset ${assetId}: ${getErrorMessage(error)}`);
