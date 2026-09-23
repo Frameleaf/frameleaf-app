@@ -65,8 +65,15 @@ import {
 import { BaseConfig, ThumbnailConfig } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
+import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { getOutputDimensions } from 'src/utils/transform.js';
+
+/**
+ * Decimal places in a generated ffmpeg filter argument. Four has always been this service's
+ * precision; FL-93 names it so the rational path and the remaining float path round the same way.
+ */
+const FILTER_DECIMAL_PLACES = 4;
 
 interface UpsertFileOptions {
   assetId: string;
@@ -1718,12 +1725,21 @@ export class MediaService extends BaseService {
       .replaceAll(',', () => `${escape},`);
   }
 
+  /**
+   * FL-93: a filter's time argument is produced by an exact decimal expansion of the
+   * millisecond value rather than by `toFixed` on a float division. For whole milliseconds the
+   * two agree exactly, so no existing command changes; what it buys is that a boundary derived
+   * from a cadence — a speed segment, a trim snapped to a frame — is rounded once, by the
+   * pinned half-away-from-zero rule, instead of inheriting whatever the float landed on. A
+   * fractional input is taken to microsecond precision, which is finer than any time base the
+   * fork encodes to.
+   */
   private msToSeconds(milliseconds: number) {
-    return this.roundFilterNumber(milliseconds / 1000);
+    return toDisplaySeconds(rational(Math.round(milliseconds * 1000), 1_000_000), FILTER_DECIMAL_PLACES);
   }
 
   private roundFilterNumber(value: number) {
-    return Number(value.toFixed(4)).toString();
+    return Number(value.toFixed(FILTER_DECIMAL_PLACES)).toString();
   }
 
   private toEvenDimension(value: number) {

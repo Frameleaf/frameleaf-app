@@ -36,6 +36,8 @@ import {
   ToneMapping,
   VideoCodec,
 } from 'src/enum.js';
+import { formatRational, toTrackTimescale } from 'src/utils/rational-time.js';
+import { type OutputCadenceDecision, OutputCadenceMode, resolveSourceTimeBase } from 'src/utils/video-timing.js';
 
 /**
  * Identity of the render implementation that produced an edited master. Bump the revision
@@ -394,12 +396,31 @@ export const resolveEditedMasterColorPolicy = (
  * remaps, are the ones that are muxed. `-video_track_timescale` pins the output timescale to the
  * source time base so those timestamps stay exactly representable instead of being rounded into
  * the muxer's default 1/1000 grid.
+ *
+ * FL-93: the timescale is now derived from the source's *rational* time base rather than from
+ * the persisted integer denominator, so a container that declares a time base with a numerator
+ * still gets a grid every one of its ticks lands on exactly. `toTrackTimescale` is where that
+ * choice is proved; the answer for the ordinary `1/30000` source is unchanged.
+ *
+ * A cadence decision is optional and is only ever made by a caller that asked for one. Without
+ * it the master passes the source timing through; with a `convert` decision the requested
+ * cadence is written as an exact rational (`-r 30000/1001`, never 29.97) and `-fps_mode cfr`
+ * says out loud that frames are being resampled.
  */
-export const getEditedMasterTimingArgs = (videoStream: Pick<VideoStreamInfo, 'timeBase'>): string[] => {
-  const args = ['-fps_mode', 'passthrough'];
-  if (videoStream.timeBase && Number.isInteger(videoStream.timeBase) && videoStream.timeBase > 0) {
-    args.push('-video_track_timescale', String(videoStream.timeBase));
+export const getEditedMasterTimingArgs = (
+  videoStream: Pick<VideoStreamInfo, 'timeBase' | 'timeBaseRational'>,
+  cadence?: OutputCadenceDecision | null,
+): string[] => {
+  const args =
+    cadence?.mode === OutputCadenceMode.Convert && cadence.cadence
+      ? ['-fps_mode', 'cfr', '-r', formatRational(cadence.cadence)]
+      : ['-fps_mode', 'passthrough'];
+
+  const timeBase = resolveSourceTimeBase(videoStream);
+  if (timeBase) {
+    args.push('-video_track_timescale', String(toTrackTimescale(timeBase)));
   }
+
   return args;
 };
 
