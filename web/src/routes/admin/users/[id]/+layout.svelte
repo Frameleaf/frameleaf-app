@@ -40,7 +40,7 @@
 
   const { children, data }: Props = $props();
 
-  const { user, userPreferences, userStatistics, userSessions, libraries } = $derived(data);
+  const { user, userPreferences, userStatistics, userSessions, libraries, libraryStatistics } = $derived(data);
 
   const { ResetPassword, ResetPinCode, Update, Delete, Restore } = $derived(getUserAdminActions($t, user));
 
@@ -124,6 +124,7 @@
               statistics={userStatistics}
               sessions={userSessions}
               {libraries}
+              {libraryStatistics}
               preferencesEditable={accountLifecycle(user) === 'active'}
               savePreferences={(update) => updateUserPreferencesAdmin({ id: user.id, userPreferencesUpdateDto: update })}
               loadPreferences={() => getUserPreferencesAdmin({ id: user.id })}

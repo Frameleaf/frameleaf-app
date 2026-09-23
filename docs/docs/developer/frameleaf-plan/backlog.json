@@ -284,7 +284,7 @@
       "id": "FN-204",
       "objective": "Freeze the intended matching set for select-all and long-running bulk operations without crossing ownership/privacy boundaries.",
       "paths": [
-        "web/src/lib/components/timeline/AssetSelectControlBar.svelte",
+        "web/src/lib/components/frameleaf/SelectionBar.svelte",
         "web/src/lib/managers/timeline-manager",
         "server/src/services/asset.service.ts",
         "server/src/repositories/access.repository.ts"
@@ -790,8 +790,8 @@
         "server/src/repositories/fork-enrichment.repository.ts",
         "server/src/repositories/fork-privacy.repository.ts",
         "server/src/utils/database.ts",
-        "web/src/lib/components/timeline/actions/MarkNsfwAction.svelte",
-        "web/src/lib/components/shared-components/navigation-bar/ElevatedSessionToggle.svelte"
+        "web/src/lib/frameleaf/bulk-operations.ts",
+        "web/src/lib/components/frameleaf/AccountMenu.svelte"
       ],
       "phase": 4,
       "priority": "High",
@@ -927,7 +927,7 @@
       "paths": [
         "web/src/routes/(user)/tags/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/routes/(user)/folders/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-        "web/src/lib/services/tag.service.ts",
+        "web/src/lib/components/frameleaf/TagBrowserPanel.svelte",
         "web/src/lib/stores/folders.svelte.ts",
         "web/src/lib/components/shared-components/tree",
         "e2e/src/specs/server/api/tag.e2e-spec.ts"
@@ -996,7 +996,7 @@
         "web/src/lib/components/discovery/query.ts",
         "web/src/lib/components/discovery/query.spec.ts",
         "web/src/lib/elements/SearchBar.svelte",
-        "web/src/lib/managers/search-manager.svelte.ts",
+        "web/src/lib/frameleaf/search-filters.ts",
         "server/src/dtos/discovery.dto.ts",
         "server/src/dtos/search.dto.ts"
       ],
@@ -1136,8 +1136,8 @@
       "objective": "Fixed sample collections and snapshots lack album lifecycle and hierarchy. Port the real album list/tree and source controls.",
       "paths": [
         "web/src/routes/(user)/albums/+page.svelte",
-        "web/src/routes/(user)/albums/AlbumsControls.svelte",
-        "web/src/lib/components/shared-components/side-bar/AlbumNavigationTree.svelte",
+        "web/src/lib/components/frameleaf/AlbumDirectory.svelte",
+        "web/src/lib/components/frameleaf/LibraryRail.svelte",
         "web/src/lib/services/album.service.ts",
         "server/src/services/album.service.ts",
         "e2e/src/specs/web/album.e2e-spec.ts"
@@ -1756,7 +1756,7 @@
         "web/src/routes/(user)/utilities/live-photos/+page.svelte",
         "server/src/services/asset.service.ts",
         "server/src/dtos/asset.dto.ts",
-        "web/src/lib/components/timeline/actions/LinkLivePhotoAction.svelte",
+        "web/src/lib/frameleaf/bulk-actions.ts",
         "prototypes/frameleaf/src/UtilitiesManager.jsx"
       ],
       "phase": 4,

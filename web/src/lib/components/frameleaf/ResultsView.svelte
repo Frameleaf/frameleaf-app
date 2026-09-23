@@ -34,8 +34,18 @@
     onOpen?: (asset: TimelineAsset) => void;
     /** Drop assets a bulk action removed from this page's own list. */
     onRemoved?: (ids: string[]) => void;
-    /** Select every result the page currently holds. */
+    /** Select every result the page currently holds. Used by `selectAllMode: 'loaded'` (the default). */
     onSelectAll?: () => void;
+    /**
+     * What "select all" means here (FL-55 follow-up). `loaded` (default) calls `onSelectAll`, as
+     * before: every page but a shared space's own timeline uses this, selecting only what has
+     * paged in so far. `matching` is for a destination with a real structured scope the server can
+     * resolve on its own, the same way `LibraryView`'s `selectAll="matching"` works for a space
+     * viewed through the album route: it counts and selects a frozen snapshot of `session.state`
+     * (`bulk.count` / `session.dispatch({ ..., allMatching: true })`), and a bulk action run while
+     * that snapshot is active goes through `bulk.runMatching` instead of the explicit-ids `bulk.run`.
+     */
+    selectAllMode?: 'matching' | 'loaded';
     /** Album, shared-link and trash context for the bulk actions. */
     bulkContext?: Omit<BulkActionContext, 'assets' | 'count' | 'currentUserId' | 'snapshot'>;
     /**
@@ -61,6 +71,7 @@
     onOpen,
     onRemoved,
     onSelectAll,
+    selectAllMode = 'loaded',
     bulkContext,
     downloadFileName,
     tagOptions = [],
@@ -125,12 +136,35 @@
       .map((asset) => toBulk(asset)),
   );
 
+  // A snapshot selection covers items that are not loaded, so the bar is told what it may offer.
+  // Mirrors `LibraryView`'s `snapshot` — both read the same session-level `selectionSnapshot`.
+  const snapshot = $derived(selectAllMode === 'matching' ? session.session.selectionSnapshot : undefined);
+
   const runBulk = (id: BulkActionId, payload?: BulkPayload) => {
     const withFileName =
       id === 'download' && downloadFileName && !payload?.fileName
         ? { ...payload, fileName: downloadFileName }
         : payload;
+    if (snapshot) {
+      // Frozen at submit: editing the query afterwards cannot change what the operation touches.
+      void bulk.runMatching(id, snapshot, { payload: withFileName, submittedTotal: session.total });
+      session.clearSelection();
+      return;
+    }
     void bulk.run(id, [...session.selection], withFileName);
+  };
+
+  /**
+   * Count everything matching the session's current scope and query, then select a frozen
+   * snapshot of it — mirrors `LibraryView`'s `selectAllMatching`. Only meaningful where the
+   * session carries a query the server can resolve on its own (`selectAllMode: 'matching'`).
+   */
+  const selectAllMatching = async () => {
+    const total = await bulk.count(session.state);
+    session.dispatch({ type: 'selection', ids: assets.map((asset) => asset.id), allMatching: true });
+    if (total !== null) {
+      session.applyTotal(total, session.revision);
+    }
   };
 
   /**
@@ -169,16 +203,16 @@
 
   <SelectionBar
     count={session.selection.length}
-    total={assets.length}
+    total={selectAllMode === 'matching' ? session.total : assets.length}
     assets={selectedAssets}
-    context={{ ...bulkContext, currentUserId }}
+    context={{ ...bulkContext, currentUserId, snapshot: !!snapshot }}
     {tagOptions}
     operations={session.session.operations}
     undoLabel={bulk.undo?.label}
     onAction={runBulk}
     onUndo={() => void bulk.undo?.run()}
     onClear={() => session.clearSelection()}
-    onSelectAllMatching={onSelectAll}
+    onSelectAllMatching={selectAllMode === 'matching' ? () => void selectAllMatching() : onSelectAll}
     onCancelOperation={(requestId) => bulk.cancel(requestId)}
     onRetryOperation={(operation) => void bulk.retry(operation)}
     onDismissOperation={(requestId) => bulk.dismiss(requestId)}

@@ -1,8 +1,10 @@
 <script lang="ts">
+  import EnrichmentWorkbench from '$lib/components/frameleaf/EnrichmentWorkbench.svelte';
   import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
   import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
-  import { SettingInputFieldType } from '$lib/constants';
+  import { page } from '$app/state';
+  import { QueryParameter, SettingInputFieldType } from '$lib/constants';
   import ImageDescriptionRequeueModal from '$lib/modals/ImageDescriptionRequeueModal.svelte';
   import {
     getImageDescriptionRequeueEstimate,
@@ -15,7 +17,7 @@
     type AdminConfigRunPodServerlessDto,
   } from '@immich/sdk';
   import { Button, modalManager, toastManager } from '@immich/ui';
-  import { mdiRefresh } from '@mdi/js';
+  import { mdiFlaskOutline, mdiRefresh } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
@@ -172,6 +174,10 @@
     runpodServerless.gpuTypeIds = [...recommended];
   };
 
+  // Sample-first preview and plans (FL-59) ────────────────────────────────
+
+  let workbenchOpen = $state(false);
+
   // Description status panel state ────────────────────────────────────────
 
   let descriptionStats = $state<ImageDescriptionRequeueEstimateDto | undefined>(undefined);
@@ -192,6 +198,11 @@
 
   onMount(() => {
     void loadDescriptionStats();
+    // Deep link from the Jobs manager's "Enrichment tasks" entry (FL-59): opens straight into
+    // the sample-first workbench instead of only scrolling to this section.
+    if (page.url.searchParams.get(QueryParameter.OPEN_SETTING) === 'workbench') {
+      workbenchOpen = true;
+    }
   });
 
   const handleRequeueClick = async () => {
@@ -345,6 +356,21 @@
       workingMlEnabled={workingConfig.enabled}
       {disabled}
     />
+
+    <!-- FL-59: try the model and prompt on a few samples before they reach the library. -->
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <p class="text-sm text-immich-fg/70 dark:text-immich-dark-fg/70">{$t('frameleaf_enrichment_open_help')}</p>
+      <Button
+        shape="round"
+        size="small"
+        leadingIcon={mdiFlaskOutline}
+        onclick={() => (workbenchOpen = true)}
+        disabled={!workingConfig.enabled || !imageDescription.enabled}
+      >
+        {$t('frameleaf_enrichment_open')}
+      </Button>
+    </div>
+    <EnrichmentWorkbench bind:open={workbenchOpen} draft={imageDescription} saved={savedImageDescription} />
 
     <SettingGroup
       key="image-description-status-regen"
