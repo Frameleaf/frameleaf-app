@@ -127,3 +127,20 @@ export const describeFilterFields = (query: DiscoveryQuery, fields: string[]): F
   fields
     .map((field) => describeFilterField(query, field))
     .filter((description): description is FilterChipDescription => description !== null);
+
+/**
+ * The literal ids behind an active `personIds`/`tagIds` (or similar id-list) condition, when it is
+ * a positive membership condition (`any`/`all`) — `null` for an exclusion (`none`) and for anything
+ * that is not an id-list condition. Naming a download after an id from a `none` condition would say
+ * the opposite of what was filtered (FL-45): the download holds everything *except* those ids, so
+ * their names are not a description of it.
+ */
+export const filterFieldEntityIds = (query: DiscoveryQuery, field: string): string[] | null => {
+  const condition = query?.filter?.[field as keyof SearchFilter] as unknown;
+  if (!condition || typeof condition !== 'object' || Array.isArray(condition)) {
+    return null;
+  }
+  const { any, all } = condition as Record<string, unknown>;
+  const ids = Array.isArray(any) ? any : Array.isArray(all) ? all : null;
+  return ids && ids.every((id) => typeof id === 'string') ? (ids as string[]) : null;
+};
