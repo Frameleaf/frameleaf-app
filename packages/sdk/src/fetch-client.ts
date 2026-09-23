@@ -1922,6 +1922,139 @@ export type AssetDevelopRevertDto = {
     /** Rendered revision to make current again; omitted, the original becomes current */
     revisionId?: string;
 };
+export type AssetRestorationRegionDto = {
+    /** Preview area height as a fraction of the frame */
+    h: number;
+    /** Video only: where the preview clip starts. Ignored for stills. */
+    startSeconds?: number;
+    /** Preview area width as a fraction of the frame */
+    w: number;
+    /** Left edge of the preview area as a fraction of the frame width */
+    x: number;
+    /** Top edge of the preview area as a fraction of the frame height */
+    y: number;
+};
+export type AssetRestorationRequestDto = {
+    /** The processing destination this restoration runs on. Required; never inferred. */
+    destinationId: string;
+    /** Preserve fine film grain instead of smoothing it */
+    keepGrain?: boolean;
+    mode: AssetRestorationMode;
+    region?: AssetRestorationRegionDto;
+    /** Upscale factor. Output is additionally capped at 4K. */
+    upscale?: 1 | 2 | 4;
+};
+export type AssetRestorationEstimateDto = {
+    /** Measured upload throughput for this destination and workload, or null with no samples */
+    bytesPerSecond: number | null;
+    /** Approximate bytes the full render sends */
+    fullBytes: number;
+    /** Estimated full render time from measured throughput, or null when nothing is measured */
+    fullSeconds: number | null;
+    /** Approximate bytes the preview sends */
+    previewBytes: number;
+    /** Estimated preview time from measured throughput, or null when nothing is measured */
+    previewSeconds: number | null;
+    /** Successful requests the throughput was measured from */
+    sampleCount: number;
+    /** Length of the measurement window */
+    windowDays: number;
+};
+export type AssetRestorationResponseDto = {
+    /** The job currently running for this restoration, for cancel and retry; null when idle */
+    activeOperationId: string | null;
+    assetId: string;
+    createdAt: string;
+    /** The bound destination, or null once an administrator removed it */
+    destinationId: string | null;
+    destinationKind: MlDestinationKind;
+    destinationName: string;
+    error: string | null;
+    estimate: (AssetRestorationEstimateDto) | null;
+    /** The durable job that renders the full result */
+    fullOperationId: string | null;
+    /** Both preview files exist */
+    hasPreview: boolean;
+    /** The full-resolution result exists */
+    hasResult: boolean;
+    /** Restoration ID */
+    id: string;
+    /** The owner chose this result as the asset’s playback version */
+    isCurrent: boolean;
+    keepGrain: boolean;
+    mode: AssetRestorationMode;
+    /** Model the adapter reported, for provenance */
+    modelName: string | null;
+    modelVersion: string | null;
+    outputHeight: number | null;
+    outputWidth: number | null;
+    previewExpiresAt: string | null;
+    /** The durable job that rendered the preview */
+    previewOperationId: string | null;
+    previewReadyAt: string | null;
+    previewRegion: AssetRestorationRegionDto;
+    restoredAt: string | null;
+    resultExpiresAt: string | null;
+    reviewedAt: string | null;
+    /** Per-asset sequence number, 1 for the first restoration */
+    revision: number;
+    sourceDurationSeconds: number | null;
+    sourceHeight: number;
+    sourceType: AssetRestorationSourceType;
+    sourceWidth: number;
+    status: AssetRestorationStatus;
+    updatedAt: string;
+    upscale: number;
+    workload: MlWorkload;
+};
+export type AssetRestorationListResponseDto = {
+    assetId: string;
+    /** The restoration the owner chose as the playback version; null means the original */
+    currentRestorationId: string | null;
+    /** Every restoration of the asset, newest first */
+    items: AssetRestorationResponseDto[];
+};
+export type AssetRestorationDestinationDto = {
+    /** The server would admit this workload on this destination right now */
+    available: boolean;
+    /** True when no consent is needed or an administrator recorded it */
+    consentGranted: boolean;
+    consentRequired: boolean;
+    estimate: AssetRestorationEstimateDto;
+    health: MlDestinationHealth;
+    id: string;
+    kind: MlDestinationKind;
+    /** Media sent to this destination leaves the network */
+    leavesNetwork: boolean;
+    name: string;
+    /** Why the destination cannot be chosen, or null */
+    refusal: (MlAdmissionRefusal) | null;
+    refusalDetail: string | null;
+};
+export type AssetRestorationOptionsDto = {
+    /** The server has a restoration adapter. False means every request will fail honestly. */
+    adapterInstalled: boolean;
+    assetId: string;
+    destinations: AssetRestorationDestinationDto[];
+    /** Video length; null for stills */
+    durationSeconds: number | null;
+    mode: AssetRestorationMode;
+    /** Height the full render would produce after the 4K cap */
+    outputHeight: number;
+    /** Width the full render would produce after the 4K cap */
+    outputWidth: number;
+    /** Length of a video preview clip; null for stills */
+    previewSeconds: number | null;
+    sourceHeight: number;
+    sourceType: AssetRestorationSourceType;
+    sourceWidth: number;
+    upscale: number;
+    workload: MlWorkload;
+};
+export type AssetRestorationSelectDto = {
+    /** Restored revision to use as the playback version; omitted, the original is used */
+    restorationId?: string;
+};
 export type AssetEditActionItemResponseDto = {
     action: AssetEditAction;
     /** Asset edit ID */
@@ -6875,6 +7008,128 @@ export function downloadAsset({ edited, id, key, slug }: {
     }));
 }
 /**
+ * List restorations of an asset
+ */
+export function getAssetRestorations({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetRestorationListResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations`, {
+        ...opts
+    }));
+}
+/**
+ * Request a restoration preview
+ */
+export function requestAssetRestoration({ id, assetRestorationRequestDto }: {
+    id: string;
+    assetRestorationRequestDto: AssetRestorationRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssetRestorationResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetRestorationRequestDto
+    })));
+}
+/**
+ * Choose the restoration used for playback
+ */
+export function setCurrentAssetRestoration({ id, assetRestorationSelectDto }: {
+    id: string;
+    assetRestorationSelectDto: AssetRestorationSelectDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetRestorationListResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations/current`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: assetRestorationSelectDto
+    })));
+}
+/**
+ * Get restoration options for an asset
+ */
+export function getAssetRestorationOptions({ id, mode, upscale }: {
+    id: string;
+    mode?: AssetRestorationMode;
+    upscale?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetRestorationOptionsDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations/options${QS.query(QS.explode({
+        mode,
+        upscale
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Discard a restoration
+ */
+export function discardAssetRestoration({ id, restorationId }: {
+    id: string;
+    restorationId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/restorations/${encodeURIComponent(restorationId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Accept a restoration preview
+ */
+export function acceptAssetRestoration({ id, restorationId }: {
+    id: string;
+    restorationId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetRestorationResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations/${encodeURIComponent(restorationId)}/accept`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * View a restoration file
+ */
+export function viewAssetRestorationFile({ id, kind, restorationId }: {
+    id: string;
+    kind?: AssetRestorationFileKind;
+    restorationId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/assets/${encodeURIComponent(id)}/restorations/${encodeURIComponent(restorationId)}/file${QS.query(QS.explode({
+        kind
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Reject a restoration preview
+ */
+export function rejectAssetRestoration({ id, restorationId }: {
+    id: string;
+    restorationId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetRestorationResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations/${encodeURIComponent(restorationId)}/reject`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * View asset thumbnail
  */
 export function viewAsset({ edited, id, key, size, slug }: {
@@ -11384,6 +11639,35 @@ export enum AssetDevelopPreset {
 export enum AssetDevelopFileKind {
     Master = "master",
     Preview = "preview"
+}
+export enum AssetRestorationMode {
+    Faithful = "faithful",
+    Creative = "creative"
+}
+export enum AssetRestorationSourceType {
+    Image = "image",
+    Video = "video"
+}
+export enum AssetRestorationStatus {
+    PreviewQueued = "preview_queued",
+    PreviewRendering = "preview_rendering",
+    PreviewReady = "preview_ready",
+    PreviewFailed = "preview_failed",
+    PreviewCancelled = "preview_cancelled",
+    Accepted = "accepted",
+    Restoring = "restoring",
+    Restored = "restored",
+    RestoreFailed = "restore_failed",
+    RestoreCancelled = "restore_cancelled",
+    Rejected = "rejected",
+    Discarded = "discarded",
+    Expired = "expired"
+}
+export enum AssetRestorationFileKind {
+    Before = "before",
+    After = "after",
+    Result = "result",
+    ResultPreview = "result_preview"
 }
 export enum AssetEditAction {
     Crop = "crop",

@@ -5658,6 +5658,567 @@
         ],
         "type": "object"
       },
+      "AssetRestorationDestinationDto": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "The server would admit this workload on this destination right now"
+          },
+          "consentGranted": {
+            "type": "boolean",
+            "description": "True when no consent is needed or an administrator recorded it"
+          },
+          "consentRequired": {
+            "type": "boolean"
+          },
+          "estimate": {
+            "$ref": "#/components/schemas/AssetRestorationEstimateDto"
+          },
+          "health": {
+            "$ref": "#/components/schemas/MlDestinationHealth"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MlDestinationKind"
+          },
+          "leavesNetwork": {
+            "type": "boolean",
+            "description": "Media sent to this destination leaves the network"
+          },
+          "name": {
+            "type": "string"
+          },
+          "refusal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlAdmissionRefusal"
+              }
+            ],
+            "nullable": true,
+            "description": "Why the destination cannot be chosen, or null"
+          },
+          "refusalDetail": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "available",
+          "consentGranted",
+          "consentRequired",
+          "estimate",
+          "health",
+          "id",
+          "kind",
+          "leavesNetwork",
+          "name",
+          "refusal",
+          "refusalDetail"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationEstimateDto": {
+        "properties": {
+          "bytesPerSecond": {
+            "type": "number",
+            "format": "double",
+            "description": "Measured upload throughput for this destination and workload, or null with no samples",
+            "nullable": true
+          },
+          "fullBytes": {
+            "type": "number",
+            "format": "double",
+            "description": "Approximate bytes the full render sends"
+          },
+          "fullSeconds": {
+            "type": "number",
+            "format": "double",
+            "description": "Estimated full render time from measured throughput, or null when nothing is measured",
+            "nullable": true
+          },
+          "previewBytes": {
+            "type": "number",
+            "format": "double",
+            "description": "Approximate bytes the preview sends"
+          },
+          "previewSeconds": {
+            "type": "number",
+            "format": "double",
+            "description": "Estimated preview time from measured throughput, or null when nothing is measured",
+            "nullable": true
+          },
+          "sampleCount": {
+            "type": "integer",
+            "description": "Successful requests the throughput was measured from"
+          },
+          "windowDays": {
+            "type": "integer",
+            "description": "Length of the measurement window"
+          }
+        },
+        "required": [
+          "bytesPerSecond",
+          "fullBytes",
+          "fullSeconds",
+          "previewBytes",
+          "previewSeconds",
+          "sampleCount",
+          "windowDays"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationFileKind": {
+        "description": "Which file of a restoration to fetch",
+        "enum": [
+          "before",
+          "after",
+          "result",
+          "result_preview"
+        ],
+        "type": "string"
+      },
+      "AssetRestorationListResponseDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "currentRestorationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "The restoration the owner chose as the playback version; null means the original",
+            "nullable": true
+          },
+          "items": {
+            "description": "Every restoration of the asset, newest first",
+            "items": {
+              "$ref": "#/components/schemas/AssetRestorationResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetId",
+          "currentRestorationId",
+          "items"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationMode": {
+        "description": "Restoration model family",
+        "enum": [
+          "faithful",
+          "creative"
+        ],
+        "type": "string"
+      },
+      "AssetRestorationOptionsDto": {
+        "properties": {
+          "adapterInstalled": {
+            "type": "boolean",
+            "description": "The server has a restoration adapter. False means every request will fail honestly."
+          },
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "destinations": {
+            "items": {
+              "$ref": "#/components/schemas/AssetRestorationDestinationDto"
+            },
+            "type": "array"
+          },
+          "durationSeconds": {
+            "type": "number",
+            "format": "double",
+            "description": "Video length; null for stills",
+            "nullable": true
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AssetRestorationMode"
+          },
+          "outputHeight": {
+            "type": "integer",
+            "description": "Height the full render would produce after the 4K cap"
+          },
+          "outputWidth": {
+            "type": "integer",
+            "description": "Width the full render would produce after the 4K cap"
+          },
+          "previewSeconds": {
+            "type": "number",
+            "format": "double",
+            "description": "Length of a video preview clip; null for stills",
+            "nullable": true
+          },
+          "sourceHeight": {
+            "type": "integer"
+          },
+          "sourceType": {
+            "$ref": "#/components/schemas/AssetRestorationSourceType"
+          },
+          "sourceWidth": {
+            "type": "integer"
+          },
+          "upscale": {
+            "type": "integer"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "adapterInstalled",
+          "assetId",
+          "destinations",
+          "durationSeconds",
+          "mode",
+          "outputHeight",
+          "outputWidth",
+          "previewSeconds",
+          "sourceHeight",
+          "sourceType",
+          "sourceWidth",
+          "upscale",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationRegionDto": {
+        "properties": {
+          "h": {
+            "type": "number",
+            "format": "double",
+            "description": "Preview area height as a fraction of the frame",
+            "maximum": 1,
+            "minimum": 0.1
+          },
+          "startSeconds": {
+            "type": "number",
+            "format": "double",
+            "description": "Video only: where the preview clip starts. Ignored for stills.",
+            "minimum": 0
+          },
+          "w": {
+            "type": "number",
+            "format": "double",
+            "description": "Preview area width as a fraction of the frame",
+            "maximum": 1,
+            "minimum": 0.1
+          },
+          "x": {
+            "type": "number",
+            "format": "double",
+            "description": "Left edge of the preview area as a fraction of the frame width",
+            "maximum": 1,
+            "minimum": 0
+          },
+          "y": {
+            "type": "number",
+            "format": "double",
+            "description": "Top edge of the preview area as a fraction of the frame height",
+            "maximum": 1,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "h",
+          "w",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationRequestDto": {
+        "properties": {
+          "destinationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "The processing destination this restoration runs on. Required; never inferred."
+          },
+          "keepGrain": {
+            "type": "boolean",
+            "description": "Preserve fine film grain instead of smoothing it",
+            "default": false
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AssetRestorationMode"
+          },
+          "region": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetRestorationRegionDto"
+              }
+            ],
+            "default": {
+              "h": 0.5,
+              "w": 0.5,
+              "x": 0.25,
+              "y": 0.25
+            }
+          },
+          "upscale": {
+            "default": 2,
+            "description": "Upscale factor. Output is additionally capped at 4K.",
+            "enum": [
+              1,
+              2,
+              4
+            ],
+            "type": "integer"
+          }
+        },
+        "required": [
+          "destinationId",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationResponseDto": {
+        "properties": {
+          "activeOperationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "The job currently running for this restoration, for cancel and retry; null when idle",
+            "nullable": true
+          },
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "destinationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "The bound destination, or null once an administrator removed it",
+            "nullable": true
+          },
+          "destinationKind": {
+            "$ref": "#/components/schemas/MlDestinationKind"
+          },
+          "destinationName": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "estimate": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetRestorationEstimateDto"
+              }
+            ],
+            "nullable": true
+          },
+          "fullOperationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "The durable job that renders the full result",
+            "nullable": true
+          },
+          "hasPreview": {
+            "type": "boolean",
+            "description": "Both preview files exist"
+          },
+          "hasResult": {
+            "type": "boolean",
+            "description": "The full-resolution result exists"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "Restoration ID"
+          },
+          "isCurrent": {
+            "type": "boolean",
+            "description": "The owner chose this result as the asset’s playback version"
+          },
+          "keepGrain": {
+            "type": "boolean"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AssetRestorationMode"
+          },
+          "modelName": {
+            "type": "string",
+            "description": "Model the adapter reported, for provenance",
+            "nullable": true
+          },
+          "modelVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "outputHeight": {
+            "type": "integer",
+            "nullable": true
+          },
+          "outputWidth": {
+            "type": "integer",
+            "nullable": true
+          },
+          "previewExpiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "previewOperationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "The durable job that rendered the preview",
+            "nullable": true
+          },
+          "previewReadyAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "previewRegion": {
+            "$ref": "#/components/schemas/AssetRestorationRegionDto"
+          },
+          "restoredAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "resultExpiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "reviewedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "revision": {
+            "type": "integer",
+            "description": "Per-asset sequence number, 1 for the first restoration",
+            "minimum": 1
+          },
+          "sourceDurationSeconds": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "sourceHeight": {
+            "type": "integer"
+          },
+          "sourceType": {
+            "$ref": "#/components/schemas/AssetRestorationSourceType"
+          },
+          "sourceWidth": {
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AssetRestorationStatus"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "upscale": {
+            "type": "integer"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "activeOperationId",
+          "assetId",
+          "createdAt",
+          "destinationId",
+          "destinationKind",
+          "destinationName",
+          "error",
+          "estimate",
+          "fullOperationId",
+          "hasPreview",
+          "hasResult",
+          "id",
+          "isCurrent",
+          "keepGrain",
+          "mode",
+          "modelName",
+          "modelVersion",
+          "outputHeight",
+          "outputWidth",
+          "previewExpiresAt",
+          "previewOperationId",
+          "previewReadyAt",
+          "previewRegion",
+          "restoredAt",
+          "resultExpiresAt",
+          "reviewedAt",
+          "revision",
+          "sourceDurationSeconds",
+          "sourceHeight",
+          "sourceType",
+          "sourceWidth",
+          "status",
+          "updatedAt",
+          "upscale",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationSelectDto": {
+        "properties": {
+          "restorationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "Restored revision to use as the playback version; omitted, the original is used"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "AssetRestorationSourceType": {
+        "description": "Whether the restored source is a still image or a video",
+        "enum": [
+          "image",
+          "video"
+        ],
+        "type": "string"
+      },
+      "AssetRestorationStatus": {
+        "description": "Lifecycle state of a restoration",
+        "enum": [
+          "preview_queued",
+          "preview_rendering",
+          "preview_ready",
+          "preview_failed",
+          "preview_cancelled",
+          "accepted",
+          "restoring",
+          "restored",
+          "restore_failed",
+          "restore_cancelled",
+          "rejected",
+          "discarded",
+          "expired"
+        ],
+        "type": "string"
+      },
       "AssetStackResponseDto": {
         "properties": {
           "assetCount": {
@@ -28846,6 +29407,549 @@
         ],
         "x-immich-permission": "asset.download",
         "x-immich-state": "Stable"
+      }
+    },
+    "/assets/{id}/restorations": {
+      "get": {
+        "description": "Every restoration of the asset, newest first, with its lifecycle state, the destination it was bound to and which result the owner chose as the playback version.",
+        "operationId": "getAssetRestorations",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetRestorationListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List restorations of an asset",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Creates the next restoration revision of the asset and queues a small preview on the named destination. The destination is admitted now; a refusal (no consent, disabled, over budget, unhealthy) is returned instead of another destination being used.",
+        "operationId": "requestAssetRestoration",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetRestorationRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetRestorationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Request a restoration preview",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/restorations/current": {
+      "put": {
+        "description": "Makes a finished restoration the version the asset plays back, or the original when none is named. Explicit and reversible; a finished job never makes this choice.",
+        "operationId": "setCurrentAssetRestoration",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetRestorationSelectDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetRestorationListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Choose the restoration used for playback",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/restorations/options": {
+      "get": {
+        "description": "The output size after the 4K cap and every processing destination with whether it would admit the workload right now, whether media would leave the network, and a measured time estimate per destination.",
+        "operationId": "getAssetRestorationOptions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "mode",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/AssetRestorationMode"
+                }
+              ],
+              "default": "faithful"
+            }
+          },
+          {
+            "name": "upscale",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 2,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetRestorationOptionsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get restoration options for an asset",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/restorations/{restorationId}": {
+      "delete": {
+        "description": "Cancels anything still running, stops using the result for playback and removes every file the restoration produced. The record stays as history.",
+        "operationId": "discardAssetRestoration",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "restorationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Discard a restoration",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/restorations/{restorationId}/accept": {
+      "post": {
+        "description": "Queues the full-resolution render bound to exactly what was previewed: same destination, model, mode and size. Refused when the original changed since the preview or the destination no longer admits the workload.",
+        "operationId": "acceptAssetRestoration",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "restorationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetRestorationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Accept a restoration preview",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/restorations/{restorationId}/file": {
+      "get": {
+        "description": "Streams the preview input, the restored preview, the full result or its playback rendition.",
+        "operationId": "viewAssetRestorationFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/AssetRestorationFileKind"
+                }
+              ],
+              "default": "after"
+            }
+          },
+          {
+            "name": "restorationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "View a restoration file",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/restorations/{restorationId}/reject": {
+      "post": {
+        "description": "Records the rejection. The preview files are kept briefly for comparison and then removed.",
+        "operationId": "rejectAssetRestoration",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "restorationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetRestorationResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Reject a restoration preview",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
       }
     },
     "/assets/{id}/thumbnail": {
