@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { type AssetDevelopRecipe, AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
+import {
+  type AssetDevelopRecipe,
+  AssetDevelopRevisionKind,
+  AssetDevelopRevisionStatus,
+} from 'src/dtos/asset-develop.dto.js';
 import { DB } from 'src/schema/index.js';
 
 export type AssetDevelopRevision = {
@@ -22,6 +26,13 @@ export type AssetDevelopRevision = {
   width: number | null;
   height: number | null;
   isCurrent: boolean;
+  kind: AssetDevelopRevisionKind;
+  sourceChecksum: Buffer | null;
+  renditionChecksum: Buffer | null;
+  exportId: string | null;
+  fileName: string | null;
+  software: string | null;
+  attempts: number;
   createdAt: Date;
   updatedAt: Date;
   renderedAt: Date | null;
@@ -40,6 +51,9 @@ export type AssetDevelopRevisionUpdate = Partial<
     | 'width'
     | 'height'
     | 'renderedAt'
+    | 'sourceChecksum'
+    | 'renditionChecksum'
+    | 'attempts'
   >
 >;
 
@@ -81,18 +95,80 @@ export class AssetDevelopRepository {
     recipeVersion: number;
     label: string | null;
     status: AssetDevelopRevisionStatus;
+    kind?: AssetDevelopRevisionKind;
+    sourceChecksum?: Buffer | null;
+    renditionChecksum?: Buffer | null;
+    exportId?: string | null;
+    fileName?: string | null;
+    software?: string | null;
+    masterPath?: string | null;
   }): Promise<AssetDevelopRevision> {
+    // Serialised per asset: two saves racing for the same next number would otherwise collide on
+    // the (assetId, revision) unique key and one of them would fail.
+    return this.db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_develop_revision:${input.assetId}`}, 0))`.execute(
+        trx,
+      );
+      const { rows } = await sql<AssetDevelopRevision>`
+        INSERT INTO ${TABLE} (
+          "assetId", "ownerId", revision, "recipeVersion", recipe, label, status,
+          kind, "sourceChecksum", "renditionChecksum", "exportId", "fileName", software, "masterPath"
+        )
+        VALUES (
+          ${input.assetId}::uuid,
+          ${input.ownerId}::uuid,
+          (SELECT COALESCE(MAX(revision), 0) + 1 FROM ${TABLE} WHERE "assetId" = ${input.assetId}::uuid),
+          ${input.recipeVersion},
+          ${JSON.stringify(input.recipe)}::text::jsonb,
+          ${input.label},
+          ${input.status},
+          ${input.kind ?? AssetDevelopRevisionKind.Recipe},
+          ${input.sourceChecksum ?? null},
+          ${input.renditionChecksum ?? null},
+          ${input.exportId ?? null}::uuid,
+          ${input.fileName ?? null},
+          ${input.software ?? null},
+          ${input.masterPath ?? null}
+        )
+        RETURNING *
+      `.execute(trx);
+      return rows[0];
+    });
+  }
+
+  /** Revisions whose render the queue may have lost (a restart, a flushed queue): queued or rendering. */
+  async listUnfinished(): Promise<Pick<AssetDevelopRevision, 'id' | 'status' | 'updatedAt'>[]> {
+    const { rows } = await sql<Pick<AssetDevelopRevision, 'id' | 'status' | 'updatedAt'>>`
+      SELECT id, status, "updatedAt" FROM ${TABLE}
+      WHERE status IN (${AssetDevelopRevisionStatus.Queued}, ${AssetDevelopRevisionStatus.Rendering})
+      ORDER BY "updatedAt"
+    `.execute(this.db);
+    return rows;
+  }
+
+  /**
+   * Records the start of a render attempt and returns the attempt number, or undefined when the
+   * revision is gone, finished, cancelled meanwhile, or held by a render whose lease has not
+   * lapsed. One guarded statement, so two deliveries of the same job can never both claim it.
+   */
+  async beginAttempt(
+    id: string,
+    rendererVersion: string,
+    leaseSeconds: number,
+  ): Promise<AssetDevelopRevision | undefined> {
     const { rows } = await sql<AssetDevelopRevision>`
-      INSERT INTO ${TABLE} ("assetId", "ownerId", revision, "recipeVersion", recipe, label, status)
-      VALUES (
-        ${input.assetId}::uuid,
-        ${input.ownerId}::uuid,
-        (SELECT COALESCE(MAX(revision), 0) + 1 FROM ${TABLE} WHERE "assetId" = ${input.assetId}::uuid),
-        ${input.recipeVersion},
-        ${JSON.stringify(input.recipe)}::jsonb,
-        ${input.label},
-        ${input.status}
-      )
+      UPDATE ${TABLE}
+      SET status = ${AssetDevelopRevisionStatus.Rendering}, progress = 5, error = NULL,
+          attempts = attempts + 1, "rendererVersion" = ${rendererVersion}, "updatedAt" = now()
+      WHERE id = ${id}::uuid
+        AND NOT "cancelRequested"
+        AND (
+          status = ${AssetDevelopRevisionStatus.Queued}
+          OR (
+            status = ${AssetDevelopRevisionStatus.Rendering}
+            AND "updatedAt" < now() - make_interval(secs => ${leaseSeconds})
+          )
+        )
       RETURNING *
     `.execute(this.db);
     return rows[0];

@@ -58,17 +58,17 @@
   });
 
   const totalBytes = $derived($uploadAssetsStore.reduce((sum, item) => sum + item.file.size, 0));
-  const weightedBytes = $derived(
-    $uploadAssetsStore.reduce((sum, item) => {
+  const weightedBytes = $derived.by(() => {
+    let sum = 0;
+    for (const item of $uploadAssetsStore) {
       if (item.state === UploadState.DONE || item.state === UploadState.DUPLICATED) {
-        return sum + item.file.size;
+        sum += item.file.size;
+      } else if (item.state === UploadState.STARTED) {
+        sum += (item.file.size * (item.progress ?? 0)) / 100;
       }
-      if (item.state === UploadState.STARTED) {
-        return sum + (item.file.size * (item.progress ?? 0)) / 100;
-      }
-      return sum;
-    }, 0),
-  );
+    }
+    return sum;
+  });
   const percent = $derived(totalBytes > 0 ? Math.round((weightedBytes / totalBytes) * 100) : 0);
 
   const label = $derived(
