@@ -152,7 +152,12 @@ def restore(
     source_frames = work_dir / "source-frames"
     try:
         frame_count = media.extract_frames(
-            media_path, source_frames, start_ms=start_ms, end_ms=end_ms, timeout=MEDIA_TIMEOUT_S
+            media_path,
+            source_frames,
+            start_ms=start_ms,
+            end_ms=end_ms,
+            yuv_matrix=source.yuv_matrix,
+            timeout=MEDIA_TIMEOUT_S,
         )
     except media.MediaError as error:
         raise RestorationFailure(RestorationErrorCode.RUNTIME_FAILED, str(error), model_id=model_id)
@@ -170,6 +175,7 @@ def restore(
         source_size=(source.width, source.height),
         target_size=target,
         seed=request.seed,
+        yuv_matrix=source.yuv_matrix,
     )
     run = adapter_factory(selected).run(job)
 
@@ -190,7 +196,7 @@ def restore(
     encode_started = time.monotonic()
     output_path = work_dir / "restored.mp4"
     try:
-        media.encode_output(
+        audio = media.encode_output(
             run.frames_dir,
             output_path,
             source=media_path,
@@ -204,6 +210,8 @@ def restore(
     except media.MediaError as error:
         raise RestorationFailure(RestorationErrorCode.RUNTIME_FAILED, str(error), model_id=model_id)
     encode_ms = _elapsed_ms(encode_started)
+    if audio == "transcoded":
+        warnings.append(f"audio ({', '.join(source.audio_codecs)}) was transcoded to AAC because MP4 cannot carry it")
 
     expected_ms = frame_count * 1000 / float(source.frame_rate)
     if (restored.width, restored.height) != target or abs(restored.duration_ms - expected_ms) > max(
@@ -242,7 +250,7 @@ def restore(
             videoCodec="h264",
             dynamicRange=DynamicRange.SDR,
             bitDepth=8,
-            audio="copied" if source.audio_streams > 0 else "none",
+            audio=audio,
             bytes=output_path.stat().st_size,
             sha256=_file_sha256(output_path),
         ),

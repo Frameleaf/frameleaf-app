@@ -242,6 +242,29 @@ class TestQualificationGate:
         assert capability.qualificationId is None
         assert "no qualification record" in capability.reasons[0]
 
+    def test_a_later_pass_never_hides_a_failure_and_a_pass_needs_its_artifact(self, tmp_path: Path) -> None:
+        spec = make_spec(tmp_path)
+        passing = [evidence.model_dump(mode="json") for evidence in passing_record(spec).evidence]
+        unsupported = [{**entry, "artifact": ""} if entry["item"] == "fault-nan" else entry for entry in passing]
+
+        failing_first = [{"item": "compare-faces", "result": "fail"}, *passing]
+
+        failed = evaluate(spec, records=[passing_record(spec, evidence=failing_first)])
+        bare = evaluate(spec, records=[passing_record(spec, evidence=unsupported)])
+
+        assert failed.state == ModelState.UNQUALIFIED
+        assert "evidence compare-faces is fail" in failed.reasons
+        assert bare.state == ModelState.UNQUALIFIED
+        assert "evidence fault-nan passes without an artifact to reproduce it" in bare.reasons
+
+    def test_a_gpu_on_another_driver_branch_is_not_qualified(self, tmp_path: Path) -> None:
+        spec = make_spec(tmp_path)
+        other_driver = GPU.model_copy(update={"driverVersion": "560.1"})
+        same_branch = GPU.model_copy(update={"driverVersion": "550.54.14"})
+
+        assert evaluate(spec, gpus=[other_driver]).state == ModelState.GPU_UNQUALIFIED
+        assert evaluate(spec, gpus=[same_branch]).state == ModelState.AVAILABLE
+
     def test_hdr_is_never_offered_even_when_a_record_claims_it(self, tmp_path: Path) -> None:
         spec = make_spec(tmp_path, dynamic_ranges=["sdr", "hdr"])
 
@@ -452,8 +475,8 @@ class TestMedia:
                         "color_primaries": "bt709",
                         "duration": "5.005",
                     },
-                    {"codec_type": "audio"},
-                    {"codec_type": "audio"},
+                    {"codec_type": "audio", "codec_name": "aac"},
+                    {"codec_type": "audio", "codec_name": "pcm_s16le"},
                 ]
             }
         )
@@ -463,6 +486,8 @@ class TestMedia:
         assert probe.dynamic_range == DynamicRange.SDR
         assert probe.bit_depth == 8
         assert probe.audio_streams == 2
+        assert probe.audio_codecs == ("aac", "pcm_s16le")
+        assert probe.yuv_matrix == "bt601"
         assert probe.duration_ms == 5005
 
     def test_parse_probe_recognises_hdr_high_bit_depth_and_variable_rate(self) -> None:
@@ -520,6 +545,48 @@ class TestMedia:
         with pytest.raises(media.MediaError, match="suspected NaN"):
             media.validate_output_frames(source, output, expected_size=None)
 
+    def test_ffmpeg_arguments_work_on_ffmpeg_4_and_keep_the_source_matrix(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[list[str]] = []
+        monkeypatch.setattr(media, "_run", lambda args, timeout: calls.append(args))
+        monkeypatch.setattr(media, "count_frames", lambda _: 3)
+        probe = source_probe(color_space="bt709", height=720, width=1280)
+
+        media.extract_frames(
+            tmp_path / "in.mp4", tmp_path / "frames", start_ms=None, end_ms=None, yuv_matrix="bt709", timeout=5
+        )
+        copied = media.encode_output(
+            tmp_path / "frames",
+            tmp_path / "out.mp4",
+            source=tmp_path / "in.mp4",
+            source_probe=probe,
+            target=(2560, 1440),
+            start_ms=None,
+            end_ms=None,
+            timeout=5,
+        )
+        transcoded = media.encode_output(
+            tmp_path / "frames",
+            tmp_path / "out2.mp4",
+            source=tmp_path / "in.mp4",
+            source_probe=source_probe(audio_codecs=("pcm_s16le",)),
+            target=(1280, 720),
+            start_ms=1000,
+            end_ms=6000,
+            timeout=5,
+        )
+
+        extract, encode_copy, encode_transcode = calls
+        assert "-fps_mode" not in extract and "-vsync" in extract
+        assert "scale=in_color_matrix=bt709:in_range=auto,format=rgb24" in extract
+        assert any("out_color_matrix=bt709" in argument for argument in encode_copy)
+        assert copied == "copied" and encode_copy[encode_copy.index("-c:a") + 1] == "copy"
+        assert transcoded == "transcoded" and encode_transcode[encode_transcode.index("-c:a") + 1] == "aac"
+        assert ["-ss", "1.000", "-t", "5.000"] == encode_transcode[
+            encode_transcode.index("-ss") : encode_transcode.index("-ss") + 4
+        ]
+
     def test_parse_gpu_query_and_memory(self) -> None:
         gpus = parse_gpu_query("NVIDIA GeForce RTX 4090, 24564, 550.54.14\nbroken line\n")
 
@@ -574,6 +641,7 @@ class TestRuntime:
         assert argv[3] == str(source_frames)
         assert argv[5] == "--max_seq_len=30"
         assert calls[0].env["HF_HUB_OFFLINE"] == "1"
+        assert "IMMICH_ML_AUTH_TOKEN" not in calls[0].env
         assert calls[0].cwd == spec.runtime.root
 
 
@@ -605,7 +673,7 @@ def source_probe(**overrides: Any) -> media.SourceProbe:
         "duration_ms": 5000,
         "dynamic_range": DynamicRange.SDR,
         "bit_depth": 8,
-        "audio_streams": 1,
+        "audio_codecs": ("aac",),
         "color_primaries": None,
         "color_transfer": None,
         "color_space": None,
