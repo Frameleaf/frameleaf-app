@@ -30,7 +30,7 @@ export class TimelineService extends BaseService {
   }
 
   private async buildTimeBucketOptions(auth: AuthDto, dto: TimeBucketDto): Promise<TimeBucketOptions> {
-    const { userId, suppressedOnly, ...options } = dto;
+    const { userId, suppressedOnly, lockReason, ...options } = dto;
     let userIds: string[] | undefined;
 
     if (userId) {
@@ -59,15 +59,21 @@ export class TimelineService extends BaseService {
       ...options,
       ...getPrivacyQueryOptions(auth, suppressedOnly),
       // An album shows the viewer their own Locked members in an elevated session (owner decision,
-      // September 22, 2026). The main timeline never does: the Locked folder is its own view.
+      // September 22, 2026). The main timeline never does: the Locked view is its own view.
       ...(dto.albumId ? getLockedVisibilityOptions(auth) : {}),
       userIds,
+      ...(lockReason ? { lockReasons: [lockReason] } : {}),
       ...(locationHiddenOwnerIds.length > 0 ? { locationHiddenOwnerIds } : {}),
     };
   }
 
   private async timeBucketChecks(auth: AuthDto, dto: TimeBucketDto) {
     requireSuppressedOnlyAccess(auth, dto.suppressedOnly);
+
+    // FL-34: why an asset is locked is part of the Locked view only
+    if (dto.lockReason && dto.visibility !== AssetVisibility.Locked) {
+      throw new BadRequestException('lockReason is only supported with visibility LOCKED');
+    }
 
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
