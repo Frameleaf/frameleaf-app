@@ -137,16 +137,18 @@ describe('fileUploader error handling', () => {
     const handled = fileUploadHandler({ files: [mockFile, secondFile] });
 
     // Let the first file's request start (and the second land in the store as PENDING)
-    // before cancelling the one still queued behind it.
-    await Promise.resolve();
-    await Promise.resolve();
+    // before cancelling the one still queued behind it. The first file hashes and checks for
+    // duplicates before it reaches the request, so wait for the request itself.
+    await vi.waitFor(() => expect(releaseFirst).toBeDefined());
+    expect(get(uploadAssetsStore).find((item) => item.file === secondFile)?.state).toBe(UploadState.PENDING);
 
     cancelRemainingUploads();
     releaseFirst?.();
     await handled;
 
     const items = get(uploadAssetsStore);
-    expect(items.some((item) => item.state === UploadState.ERROR)).toBe(true);
+    expect(items.find((item) => item.file === mockFile)?.state).toBe(UploadState.DONE);
+    expect(items.find((item) => item.file === secondFile)?.state).toBe(UploadState.ERROR);
 
     concurrencySpy.mockRestore();
   });

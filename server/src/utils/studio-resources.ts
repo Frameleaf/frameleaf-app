@@ -908,13 +908,7 @@ const walk = (
     if (typeof value !== 'string') {
       continue;
     }
-    if (locatorKeys.has(key) && isExternalLocator(value)) {
-      state.violations.push({
-        reason: StudioRefusalReason.ExternalLocator,
-        graphPath,
-        detail: `${key}: ${value.slice(0, 120)}`,
-      });
-    } else if (!locatorKeys.has(key) && forbiddenSchemes.test(value)) {
+    if ((locatorKeys.has(key) && isExternalLocator(value)) || (!locatorKeys.has(key) && forbiddenSchemes.test(value))) {
       state.violations.push({
         reason: StudioRefusalReason.ExternalLocator,
         graphPath,
@@ -1028,7 +1022,7 @@ export const checkNestedSequences = (
     visit(id, 0, []);
   }
 
-  return { refused: [...refused.values()] };
+  return { refused: refused.values().toArray() };
 };
 
 /* ------------------------------------------------------------------ */
@@ -1074,19 +1068,22 @@ export type StudioResourceInventory = {
  * spec next to this module asserts it, and `server/src/bin/studio-resource-inventory.ts` prints it.
  */
 export const buildStudioResourceInventory = (): StudioResourceInventory => {
-  const resources: StudioResourceInventoryRow[] = [...studioResourceRegistry.values()].map((definition) => ({
-    kind: definition.kind,
-    label: definition.label,
-    description: definition.description,
-    owner: definition.owner,
-    accessCheck: definition.accessCheck,
-    egress: { ...definition.egress },
-    retention: definition.retention,
-    fileBacked: definition.fileBacked,
-    carriesPersonalData: definition.carriesPersonalData,
-    graphKeys: [...definition.graphKeys],
-    refusals: [...new Set(definition.refusals)],
-  }));
+  const resources: StudioResourceInventoryRow[] = studioResourceRegistry
+    .values()
+    .map((definition) => ({
+      kind: definition.kind,
+      label: definition.label,
+      description: definition.description,
+      owner: definition.owner,
+      accessCheck: definition.accessCheck,
+      egress: { ...definition.egress },
+      retention: definition.retention,
+      fileBacked: definition.fileBacked,
+      carriesPersonalData: definition.carriesPersonalData,
+      graphKeys: [...definition.graphKeys],
+      refusals: [...new Set(definition.refusals)],
+    }))
+    .toArray();
 
   return {
     schemaVersion: STUDIO_RESOURCE_INVENTORY_SCHEMA_VERSION,
