@@ -1,28 +1,26 @@
 <script lang="ts">
   import { shortcut } from '$lib/actions/shortcut';
-  import AlbumMap from '$lib/components/album-page/AlbumMap.svelte';
-  import Brand from '$lib/components/frameleaf/Brand.svelte';
-  import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
+  import PublicViewerShell from '$lib/components/frameleaf/PublicViewerShell.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import Portal from '$lib/elements/Portal.svelte';
-  import '$lib/frameleaf/tokens.css';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
-  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { handleDownloadAlbum } from '$lib/services/album.service';
-  import { getGlobalActions } from '$lib/services/app.service';
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
-  import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
+  import { downloadArchive } from '$lib/utils/asset-utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { AlbumResponseDto, SharedLinkResponseDto } from '@immich/sdk';
-  import { ActionButton, Icon, Theme as AppTheme, themeManager } from '@immich/ui';
-  import { mdiDownload, mdiFileImagePlusOutline, mdiPresentationPlay } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
+  /**
+   * A public album link (FL-56, prototype `PublicViewer.jsx`): the album's photos in the Frameleaf
+   * timeline inside the public shell. Select mode picks tiles with a plain click; the header's
+   * download takes everything or the selection, and only exists when the link allows downloads.
+   */
   interface Props {
     sharedLink: SharedLinkResponseDto;
   }
@@ -31,16 +29,19 @@
 
   const album = sharedLink.album as AlbumResponseDto;
 
-  let { slideshowState, slideshowNavigation } = slideshowStore;
-
   const options = $derived({ albumId: album.id, order: album.order });
   let timelineManager = $state<TimelineManager>() as TimelineManager;
   let viewerInvisible = $state(false);
+  let selectMode = $state(false);
+
+  const selectedCount = $derived(librarySession.selection.length);
+  // A tile picked by its own checkbox is a selection too, so the header follows it.
+  const selecting = $derived(selectMode || selectedCount > 0);
+  const downloadFileName = $derived(namedArchiveName(album.albumName, $t('frameleaf_archive_name_album')));
 
   /**
-   * A shared link is not a library: the only bulk action its recipients get is the download, and
-   * only when the link allows it. `bulkActions` already refuses everything else without an owned,
-   * live asset context, and the shared-link id is what scopes what remains.
+   * A shared link is not a library: its recipients get no bulk actions beyond the header's
+   * download, so the library's selection bar is not mounted here.
    */
   const bulkContext = $derived({ sharedLinkId: sharedLink.id, readOnly: true });
 
@@ -48,147 +49,112 @@
     if (!(value.isDragging && value.files.length > 0)) {
       return;
     }
-
-    handlePromiseError(fileUploadHandler({ files: value.files, albumId: album.id }));
+    // Only a link that allows uploads takes dropped files; the server refuses the rest anyway.
+    if (sharedLink.allowUpload) {
+      handlePromiseError(fileUploadHandler({ files: value.files, albumId: album.id }));
+    }
     dragAndDropFilesStore.set({ isDragging: false, files: [] });
   });
 
-  const handleStartSlideshow = async () => {
-    const asset =
-      $slideshowNavigation === SlideshowNavigation.Shuffle
-        ? await timelineManager.getRandomAsset()
-        : timelineManager.months[0]?.timelineDays[0]?.viewerAssets[0]?.asset;
-    if (asset) {
-      handlePromiseError(
-        assetViewerManager.setAssetId(asset.id).then(() => ($slideshowState = SlideshowState.PlaySlideshow)),
-      );
-    }
+  const setSelecting = (next: boolean) => {
+    selectMode = next;
+    librarySession.clearSelection();
   };
 
-  // FL-56: own layout, no LibraryRail/TopBar/account menu.
-  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
+  /** Everything in the album, loading the months the timeline has not loaded yet. */
+  const selectAll = async () => {
+    for (const month of timelineManager.months) {
+      if (!month.isLoaded) {
+        await timelineManager.loadTimelineMonth(month.yearMonth);
+      }
+    }
+    librarySession.selectAll(
+      timelineManager.months.flatMap((month) =>
+        month.timelineDays.flatMap((day) => day.viewerAssets.map((viewerAsset) => viewerAsset.id)),
+      ),
+    );
+  };
 
-  // FL-33 cleanup: Cast belongs on this header. It was dropped when the public viewer was
-  // redesigned; it is a global action, so it is the same one the album detail page mounts.
-  const { Cast } = $derived(getGlobalActions($t));
+  const downloadSelected = () =>
+    handlePromiseError(downloadArchive(downloadFileName, { assetIds: [...librarySession.selection] }));
 </script>
 
 <svelte:document
   use:shortcut={{
     shortcut: { key: 'Escape' },
     onShortcut: () => {
-      if (!assetViewerManager.isViewing && librarySession.selection.length > 0) {
-        librarySession.clearSelection();
+      if (!assetViewerManager.isViewing && selecting) {
+        setSelecting(false);
       }
     },
   }}
 />
 
-<main
-  class="frameleaf relative h-dvh overflow-hidden px-2 pt-(--navbar-height) max-md:pt-(--navbar-height-md) md:px-6"
-  data-theme={appTheme}
+<PublicViewerShell
+  {sharedLink}
+  title={album.albumName}
+  ownerName={album.albumUsers[0]?.user.name}
+  count={album.assetCount}
+  {selecting}
+  {selectedCount}
+  onSelectingChange={setSelecting}
+  onUpload={() => void openFileUploadDialog({ albumId: album.id })}
+  onDownloadAll={() => handlePromiseError(handleDownloadAlbum(album))}
+  onDownloadSelected={downloadSelected}
+  onSelectAll={() => handlePromiseError(selectAll())}
+  onClear={() => librarySession.clearSelection()}
 >
-  <LibraryView
-    enableRouting
-    syncUrl={false}
-    selectAll="loaded"
-    bind:timelineManager
-    {options}
-    destination={{ kind: 'album', id: album.id }}
-    {bulkContext}
-    downloadFileName={namedArchiveName(album.albumName, $t('frameleaf_archive_name_album'))}
-    noSelectionBar={!sharedLink.allowDownload}
-  >
-    <section class="px-2 pt-8 md:px-0 md:pt-24">
-      <!-- FL-56: the public album's own title block, ported from the design template's
-           PublicViewer.jsx `pv-title`. -->
-      <div class="pv-album-title">
-        <h1>{album.albumName}</h1>
-        <span class="pv-album-meta">
-          {$t('frameleaf_sharing.individual_items', { values: { count: album.assetCount } })}
-        </span>
-      </div>
+  <div class="h-full">
+    <LibraryView
+      enableRouting
+      syncUrl={false}
+      selectAll="loaded"
+      bind:timelineManager
+      {options}
+      destination={{ kind: 'album', id: album.id }}
+      {bulkContext}
+      {downloadFileName}
+      selectionMode={selecting}
+      noSelectionBar
+    >
       {#if album.description}
         <p class="pv-album-description">{album.description}</p>
       {/if}
-    </section>
 
-    {#snippet viewer()}
-      <Portal target="body">
-        {#if assetViewerManager.isViewing}
-          <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} {album} />
-        {/if}
-      </Portal>
-    {/snippet}
-  </LibraryView>
-</main>
+      {#snippet empty()}
+        <div class="pv-empty" role="status">
+          <h2>{$t('frameleaf_public_empty_title')}</h2>
+          <p>
+            {sharedLink.allowUpload ? $t('frameleaf_public_empty_upload') : $t('frameleaf_public_empty_owner')}
+          </p>
+        </div>
+      {/snippet}
 
-<header>
-  <!-- FL-56: the public viewer has its own brand, no LibraryRail/TopBar/account menu. The
-       Frameleaf selection bar floats over the results rather than replacing this header, so the
-       header's own actions stay reachable while a selection is being made. -->
-  <div class="frameleaf pv-header" data-theme={appTheme}>
-    <a class="pv-brand" href="/" data-sveltekit-preload-data="hover">
-      <Brand />
-    </a>
-    <div class="pv-actions">
-      {#if sharedLink.allowUpload}
-        <IconButton label={$t('add_photos')} onclick={() => openFileUploadDialog({ albumId: album.id })}>
-          <Icon icon={mdiFileImagePlusOutline} size="1.25em" aria-hidden={true} />
-        </IconButton>
-      {/if}
-      {#if album.assetCount > 0 && sharedLink.allowDownload}
-        <IconButton label={$t('slideshow')} onclick={handleStartSlideshow}>
-          <Icon icon={mdiPresentationPlay} size="1.25em" aria-hidden={true} />
-        </IconButton>
-        <IconButton label={$t('download')} onclick={() => handleDownloadAlbum(album)}>
-          <Icon icon={mdiDownload} size="1.25em" aria-hidden={true} />
-        </IconButton>
-      {/if}
-      <!-- FL-33: Cast, restored. It draws nothing when no cast destination is available. -->
-      <ActionButton action={Cast} />
-      {#if sharedLink.showMetadata && featureFlagsManager.value.map}
-        <AlbumMap {album} />
-      {/if}
-    </div>
+      {#snippet viewer()}
+        <Portal target="body">
+          {#if assetViewerManager.isViewing}
+            <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} {album} />
+          {/if}
+        </Portal>
+      {/snippet}
+    </LibraryView>
   </div>
-</header>
+</PublicViewerShell>
 
 <style>
-  .pv-album-title h1 {
-    font-size: 1.75rem;
-    color: var(--fl-text);
-  }
-  .pv-album-meta {
-    color: var(--fl-muted);
-    font-size: 0.875rem;
-  }
   .pv-album-description {
-    margin: 0.75rem 0 2rem;
+    margin: 1rem 0;
     color: var(--fl-muted);
     white-space: pre-line;
   }
-  .pv-header {
-    position: fixed;
-    inset-inline: 0;
-    top: 0;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
-    background: color-mix(in srgb, var(--fl-canvas), transparent 12%);
-    border-bottom: 1px solid var(--fl-border);
-    backdrop-filter: blur(6px);
+  .pv-empty {
+    padding: 4rem 1rem;
+    text-align: center;
+    color: var(--fl-muted);
   }
-  .pv-brand {
-    display: inline-flex;
-    flex-shrink: 0;
-  }
-  .pv-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
+  .pv-empty h2 {
+    margin-bottom: 0.5rem;
+    font-size: 1.125rem;
+    color: var(--fl-text);
   }
 </style>

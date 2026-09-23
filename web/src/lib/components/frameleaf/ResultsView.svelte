@@ -55,6 +55,8 @@
      */
     downloadFileName?: string;
     tagOptions?: { id: string; name: string }[];
+    /** Suppress the selection bar, for a page whose own chrome acts on the selection. */
+    noSelectionBar?: boolean;
     selectionMode?: boolean;
     singleSelect?: boolean;
     onSelect?: (asset: TimelineAsset) => void;
@@ -75,6 +77,7 @@
     bulkContext,
     downloadFileName,
     tagOptions = [],
+    noSelectionBar = false,
     selectionMode = false,
     singleSelect = false,
     onSelect,
@@ -199,22 +202,24 @@
     {empty}
   />
 
-  <SelectionBar
-    count={session.selection.length}
-    total={selectAllMode === 'matching' ? session.total : assets.length}
-    assets={selectedAssets}
-    context={{ ...bulkContext, currentUserId, snapshot: !!snapshot }}
-    {tagOptions}
-    operations={session.session.operations}
-    undoLabel={bulk.undo?.label}
-    onAction={runBulk}
-    onUndo={() => void bulk.undo?.run()}
-    onClear={() => session.clearSelection()}
-    onSelectAllMatching={selectAllMode === 'matching' ? () => void selectAllMatching() : onSelectAll}
-    onCancelOperation={(requestId) => bulk.cancel(requestId)}
-    onRetryOperation={(operation) => void bulk.retry(operation)}
-    onDismissOperation={(requestId) => bulk.dismiss(requestId)}
-  />
+  {#if !noSelectionBar}
+    <SelectionBar
+      count={session.selection.length}
+      total={selectAllMode === 'matching' ? session.total : assets.length}
+      assets={selectedAssets}
+      context={{ ...bulkContext, currentUserId, snapshot: !!snapshot }}
+      {tagOptions}
+      operations={session.session.operations}
+      undoLabel={bulk.undo?.label}
+      onAction={runBulk}
+      onUndo={() => void bulk.undo?.run()}
+      onClear={() => session.clearSelection()}
+      onSelectAllMatching={selectAllMode === 'matching' ? () => void selectAllMatching() : onSelectAll}
+      onCancelOperation={(requestId) => bulk.cancel(requestId)}
+      onRetryOperation={(operation) => void bulk.retry(operation)}
+      onDismissOperation={(requestId) => bulk.dismiss(requestId)}
+    />
+  {/if}
 </div>
 
 <style>
