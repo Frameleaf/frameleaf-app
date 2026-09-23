@@ -104,10 +104,6 @@ describe('parseMigrationReport', () => {
     const report = failedReport();
     report.unresolved[0] = { ...report.unresolved[0], detail: `ENOENT ${value}` };
     expect(parse(report)).toEqual({ ok: false, error: 'foreign-path' });
-    expect(parse({ ...cleanReport(), missing: [{ aId: 'a', filename: value, reason: 'not-transferred' }] })).toEqual({
-      ok: false,
-      error: 'foreign-path',
-    });
   });
 
   it('accepts album paths, tag hierarchies and UUIDs as ordinary names', () => {
@@ -136,6 +132,12 @@ describe('parseMigrationReport', () => {
       'Grandma: /the best/',
       'Summer-Trip-2024-Photos-Of-The-Family-x',
     ]);
+  });
+
+  it('treats legacy missing file names as display text too', () => {
+    const report = failedReport();
+    report.missing = [{ aId: 'a3', filename: 'Family-Reunion-2024-Main-Hall-Take2', reason: 'not-transferred' }];
+    expect(parse(report).ok).toBe(true);
   });
 
   it('still rejects a credential used as a name', () => {

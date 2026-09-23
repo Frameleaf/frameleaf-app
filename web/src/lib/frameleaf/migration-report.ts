@@ -222,6 +222,19 @@ function parse(raw: string): MigrationReport {
           return item;
         })
       : root.unresolved,
+    // The legacy list repeats original file names (already reduced to the last segment).
+    missing: Array.isArray(root.missing)
+      ? root.missing.map((item: unknown) => {
+          if (item && typeof item === 'object' && !Array.isArray(item)) {
+            const { filename, ...rest } = item as Record<string, unknown>;
+            if (typeof filename === 'string') {
+              names.push(filename);
+            }
+            return { ...rest, filename: '' };
+          }
+          return item;
+        })
+      : root.missing,
   };
   if (names.some((name) => SECRET_VALUE.some((pattern) => pattern.test(name)))) {
     reject('secret');
