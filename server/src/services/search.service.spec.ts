@@ -511,7 +511,7 @@ describe(SearchService.name, () => {
 
       const options = mocks.search.searchMetadata.mock.calls[0][1];
       expect(options.visibility).toBe('not-locked');
-      expect(options).not.toHaveProperty('lockedOwnerId');
+      expect(options.lockedOwnerId).toBeUndefined();
     });
 
     it('never names a Locked owner for a shared link, even inside its album', async () => {
@@ -522,7 +522,7 @@ describe(SearchService.name, () => {
 
       await sut.searchMetadata(auth, { size: 250, albumIds: [albumId] });
 
-      expect(mocks.search.searchMetadata.mock.calls[0][1]).not.toHaveProperty('lockedOwnerId');
+      expect(mocks.search.searchMetadata.mock.calls[0][1].lockedOwnerId).toBeUndefined();
     });
 
     it('keeps an explicit Locked request to the caller alone', async () => {
