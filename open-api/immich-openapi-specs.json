@@ -15345,6 +15345,81 @@
         },
         "type": "object"
       },
+      "SharedSpaceAlbumResponseDto": {
+        "properties": {
+          "albumName": {
+            "description": "The linked album name",
+            "type": "string"
+          },
+          "assetCount": {
+            "description": "Items that are in both this album and the shared space. Media marked sensitive, and Locked media, are not counted.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "canUnlink": {
+            "description": "True when the caller may remove this link",
+            "type": "boolean"
+          },
+          "icon": {
+            "description": "Icon: a Material Design Icons name (null = default icon)",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "The linked album ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "linkedAt": {
+            "description": "When the album was linked",
+            "format": "date-time",
+            "type": "string"
+          },
+          "linkedBy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserResponseDto"
+              }
+            ],
+            "description": "The member who linked this album",
+            "nullable": true
+          },
+          "thumbnailAssetId": {
+            "description": "An item that is already in the shared space, used as the tile picture",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumName",
+          "assetCount",
+          "canUnlink",
+          "icon",
+          "id",
+          "linkedAt",
+          "linkedBy",
+          "thumbnailAssetId"
+        ],
+        "type": "object"
+      },
+      "SharedSpaceAlbumsResponseDto": {
+        "properties": {
+          "albums": {
+            "description": "Albums linked into the shared space, by name",
+            "items": {
+              "$ref": "#/components/schemas/SharedSpaceAlbumResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "albums"
+        ],
+        "type": "object"
+      },
       "SharedSpaceMemberResponseDto": {
         "properties": {
           "invitedAt": {
@@ -15382,6 +15457,131 @@
         },
         "required": [
           "members"
+        ],
+        "type": "object"
+      },
+      "SharedSpaceNewResponseDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Items other members added since then",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "assetIds": {
+            "description": "Up to 500 of those items, so the timeline can show exactly what is new",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "lastVisitedAt": {
+            "description": "When this member last marked the shared space seen; null if they never have",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetCount",
+          "assetIds",
+          "lastVisitedAt"
+        ],
+        "type": "object"
+      },
+      "SharedSpacePeopleResponseDto": {
+        "properties": {
+          "candidates": {
+            "description": "People of the caller's own that appear in the shared space and are not linked yet. Only the caller's own people are ever listed here.",
+            "items": {
+              "$ref": "#/components/schemas/PersonResponseDto"
+            },
+            "type": "array"
+          },
+          "linked": {
+            "description": "People published into the shared space",
+            "items": {
+              "$ref": "#/components/schemas/SharedSpacePersonResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "candidates",
+          "linked"
+        ],
+        "type": "object"
+      },
+      "SharedSpacePersonLinkDto": {
+        "properties": {
+          "name": {
+            "description": "The name the shared space will use. Defaults to the caller's own name for them.",
+            "maxLength": 255,
+            "type": "string"
+          },
+          "personId": {
+            "description": "A person of the caller's own to publish into the shared space",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "personId"
+        ],
+        "type": "object"
+      },
+      "SharedSpacePersonResponseDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Items in the shared space that show this person. Media marked sensitive, and Locked media, are not counted.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "canUnlink": {
+            "description": "True when the caller may remove this link",
+            "type": "boolean"
+          },
+          "coverAssetId": {
+            "description": "An item already in the shared space that shows this person, used as the tile picture",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "id": {
+            "description": "The link ID. Not a person ID: a person is never disclosed across a space.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "linkedAt": {
+            "description": "When the person was linked",
+            "format": "date-time",
+            "type": "string"
+          },
+          "linkedBy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserResponseDto"
+              }
+            ],
+            "description": "The member who linked this person"
+          },
+          "name": {
+            "description": "The name this shared space uses, independent of the owner's own name for them",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetCount",
+          "canUnlink",
+          "coverAssetId",
+          "id",
+          "linkedAt",
+          "linkedBy",
+          "name"
         ],
         "type": "object"
       },
@@ -38584,6 +38784,178 @@
         "x-immich-permission": "albumUser.update"
       }
     },
+    "/shared-spaces/{id}/albums": {
+      "get": {
+        "description": "The albums members have linked into the shared space, one level: a space links albums, never another space and never a collection. A link is a reference, not a move and not a share — the album keeps its owner, its members, its access rules and its place in its owner’s tree, and this response grants no access to it. The count and the tile picture come only from items that are in both the album and the space, with media marked sensitive and Locked media excluded.",
+        "operationId": "getSharedSpaceAlbums",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSpaceAlbumsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List albums linked into a shared space",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
+      }
+    },
+    "/shared-spaces/{id}/albums/{albumId}": {
+      "delete": {
+        "description": "Remove the reference and only the reference. The album, its items, its members and the shared space’s own items are untouched. The member who made the link, and the shared space owner, may remove it.",
+        "operationId": "unlinkSharedSpaceAlbum",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "albumId",
+            "required": true,
+            "in": "path",
+            "description": "The album to link or unlink",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Unlink an album from a shared space",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.update"
+      },
+      "put": {
+        "description": "Point the shared space at an album the caller can already read. Nothing else happens: no item moves or is copied, no album membership changes, and the album stays where its owner put it. Linking the same album twice is the same single link. An owner or editor of the space may link; a viewer may not.",
+        "operationId": "linkSharedSpaceAlbum",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "albumId",
+            "required": true,
+            "in": "path",
+            "description": "The album to link or unlink",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSpaceAlbumsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Link an album into a shared space",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.update"
+      }
+    },
     "/shared-spaces/{id}/invitation": {
       "delete": {
         "description": "Decline the invitation. Nothing else changes: the shared space and its photos are untouched, and the owner may invite again later.",
@@ -38740,6 +39112,230 @@
         "x-immich-permission": "album.read"
       }
     },
+    "/shared-spaces/{id}/new": {
+      "get": {
+        "description": "Items other members added since the caller last marked this shared space seen. The marker is per member. If the caller has never marked it seen, everything in the space counts as new to them. The caller’s own additions are left out, and media marked sensitive and Locked media are excluded.",
+        "operationId": "getSharedSpaceNew",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSpaceNewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "What is new in a shared space since your last visit",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
+      }
+    },
+    "/shared-spaces/{id}/people": {
+      "get": {
+        "description": "Two lists. `linked` is who members have published into the space, carrying the space’s own name for each one and a picture that is already in the space — never the owner’s private name, thumbnail, birth date or person ID. `candidates` is the caller’s own people seen on the space’s items, so they can publish one; no other member’s people are ever listed. Counts exclude media marked sensitive and Locked media.",
+        "operationId": "getSharedSpacePeople",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSpacePeopleResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "People in a shared space",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
+      },
+      "post": {
+        "description": "Publish one of the caller’s own people into the shared space under a name the space uses. The name is independent: it never renames the caller’s own person, and renaming that person does not rename it here. The caller’s person record is not disclosed to anybody. Linking the same person again rewrites the link rather than adding a second one.",
+        "operationId": "linkSharedSpacePerson",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedSpacePersonLinkDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSpacePeopleResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Link a person into a shared space",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "person.update"
+      }
+    },
+    "/shared-spaces/{id}/people/{linkId}": {
+      "delete": {
+        "description": "Remove the link and only the link. The person, their name, their faces and every item that shows them are untouched, and so are the shared space’s items. The member who made the link, and the shared space owner, may remove it.",
+        "operationId": "unlinkSharedSpacePerson",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "linkId",
+            "required": true,
+            "in": "path",
+            "description": "The person link to remove",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Unlink a person from a shared space",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "person.update"
+      }
+    },
     "/shared-spaces/{id}/preview": {
       "get": {
         "description": "What the shared space exposes, for someone holding an invitation to it or already in it. The preview carries no asset: no ids, no thumbnails, no file names, no people and no places. Counts and dates exclude media marked sensitive and Locked media. Anyone without an invitation or membership gets 404.",
@@ -38781,6 +39377,59 @@
           }
         ],
         "summary": "Preview a shared space",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
+      }
+    },
+    "/shared-spaces/{id}/visit": {
+      "post": {
+        "description": "Move the caller’s own last-seen marker to now and return what is new after doing so. This is deliberately explicit rather than something opening the page does, so glancing at a space on a phone does not silently clear the list of what has not been looked at.",
+        "operationId": "markSharedSpaceVisited",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Shared space ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedSpaceNewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Mark a shared space seen",
         "tags": [
           "Shared spaces"
         ],
