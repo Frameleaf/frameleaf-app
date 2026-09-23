@@ -15,6 +15,7 @@ import {
   MlWorkloadRouteUpdateDto,
   MlWorkloadRoutesResponseDto,
 } from 'src/dtos/ml-destination.dto.js';
+import { MlRestorationModelsResponseDto } from 'src/dtos/restoration-inference.dto.js';
 import {
   BootstrapEventPriority,
   DatabaseLock,
@@ -260,6 +261,49 @@ export class MlDestinationService extends BaseService {
       if (row.enabled) {
         await this.probeRow(row);
       }
+    }
+  }
+
+  /**
+   * Ask one destination which restoration models it has and why each is or is not available
+   * (FL-114). Only metadata travels; no media is sent, so a cloud destination needs no consent
+   * for this. An unreachable destination, or one that does not run the restoration worker, is
+   * reported as such rather than as an error.
+   */
+  async getRestorationModels(id: string): Promise<MlRestorationModelsResponseDto> {
+    const row = await this.require(id);
+    const unreachable = (error: string): MlRestorationModelsResponseDto => ({
+      destinationId: row.id,
+      reachable: false,
+      error,
+      workloads: [],
+      models: [],
+      gpus: [],
+      configurationProblems: [],
+      checkedAt: null,
+    });
+
+    const endpoint = resolveEndpoint(row, this.machineLearningRepository.getRunPodEndpoint());
+    if (!endpoint) {
+      return unreachable(
+        row.kind === MlDestinationKind.RunPod ? 'No running pod or ready serverless worker' : 'No URL configured',
+      );
+    }
+
+    try {
+      const report = await this.machineLearningRepository.getRestorationModels(endpoint);
+      return {
+        destinationId: row.id,
+        reachable: true,
+        error: null,
+        workloads: report.workloads,
+        models: report.models,
+        gpus: report.gpus,
+        configurationProblems: report.configurationProblems,
+        checkedAt: report.checkedAt,
+      };
+    } catch (error) {
+      return unreachable(error instanceof Error ? error.message : String(error));
     }
   }
 

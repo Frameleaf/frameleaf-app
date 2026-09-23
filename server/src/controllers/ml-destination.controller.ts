@@ -16,6 +16,7 @@ import {
   MlWorkloadRouteUpdateDto,
   MlWorkloadRoutesResponseDto,
 } from 'src/dtos/ml-destination.dto.js';
+import { MlRestorationModelsResponseDto } from 'src/dtos/restoration-inference.dto.js';
 import { ApiTag, MlWorkloadSchema, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { MlDestinationService } from 'src/services/ml-destination.service.js';
@@ -135,6 +136,18 @@ export class MlDestinationController {
   })
   probe(@Param() { id }: UUIDParamDto): Promise<MlDestinationHealthStateDto> {
     return this.service.probe(id);
+  }
+
+  @Get(':id/restoration-models')
+  @Authenticated({ permission: Permission.SystemConfigRead, admin: true })
+  @Endpoint({
+    summary: 'Get restoration models of a destination',
+    description:
+      'Asks the destination which Faithful and Creative restoration models it has, the state of each and every reason one is unavailable, with the throughput measured when it was qualified. No media is sent.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getMlDestinationRestorationModels(@Param() { id }: UUIDParamDto): Promise<MlRestorationModelsResponseDto> {
+    return this.service.getRestorationModels(id);
   }
 
   @Put(':id/consent')
