@@ -16,7 +16,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { TagTable } from 'src/schema/tables/tag.table.js';
-import { getHiddenContentFilter, tagHasVisibleAssetOrNoAssets } from 'src/utils/database.js';
+import { getHiddenContentFilter, tagHasVisibleAssetOrNoAssets, tagIsSuppressed } from 'src/utils/database.js';
 
 export type TagSearchOptions = HiddenContentQueryOptions;
 
@@ -58,10 +58,16 @@ export class TagRepository {
 
   @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })
   getAll(userId: string, options: TagSearchOptions = {}) {
+    // FL-46: a session that is not unlocked never lists a suppressed tag or one nested under it,
+    // even an empty one, so the list agrees with the 404 its own page answers
+    const suppressedTagIds = options.hiddenContent?.tagIds ?? [];
     return this.db
       .selectFrom('tag')
       .select(columns.tag)
       .where('userId', '=', userId)
+      .$if(suppressedTagIds.length > 0, (qb) =>
+        qb.where(sql<boolean>`not ${tagIsSuppressed(sql.ref('tag.id'), suppressedTagIds)}`),
+      )
       .$if(!!getHiddenContentFilter(options), (qb) =>
         qb.where(tagHasVisibleAssetOrNoAssets(sql.ref('tag.id'), getHiddenContentFilter(options))),
       )
