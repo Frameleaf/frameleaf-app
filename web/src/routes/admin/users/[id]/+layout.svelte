@@ -1,11 +1,13 @@
 <script lang="ts">
   import { goto, invalidateAll } from '$app/navigation';
   import AdminCard from '$lib/components/AdminCard.svelte';
+  import AccountLifecyclePanel from '$lib/components/frameleaf/AccountLifecyclePanel.svelte';
+  import AccountSecurityPanel from '$lib/components/frameleaf/AccountSecurityPanel.svelte';
+  import Theme from '$lib/components/frameleaf/Theme.svelte';
   import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import ServerStatisticsCard from '$lib/components/server-statistics/ServerStatisticsCard.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
-  import DeviceCard from '$lib/components/user-settings-page/DeviceCard.svelte';
   import FeatureSetting from './FeatureSetting.svelte';
   import { Route } from '$lib/route';
   import { getUserAdminActions } from '$lib/services/user-admin.service';
@@ -27,6 +29,8 @@
     Meter,
     Stack,
     Text,
+    Theme as AppTheme,
+    themeManager,
   } from '@immich/ui';
   import {
     mdiAccountOutline,
@@ -35,7 +39,6 @@
     mdiChartPieOutline,
     mdiCheckCircle,
     mdiCloudUploadOutline,
-    mdiDevices,
     mdiFeatureSearchOutline,
     mdiPlayCircle,
     mdiTrashCanOutline,
@@ -203,15 +206,19 @@
           {/if}
         </AdminCard>
 
-        <AdminCard icon={mdiDevices} title={$t('authorized_devices')}>
-          <Stack gap={3}>
-            {#each userSessions as session (session.id)}
-              <DeviceCard {session} />
-            {:else}
-              <span class="text-dark">{$t('no_devices')}</span>
-            {/each}
-          </Stack>
-        </AdminCard>
+        <!--
+          Frameleaf account lifecycle and security (FL-76). Both panels act through the
+          existing admin user endpoints; the device list stays read-only because no admin
+          session-revoke endpoint exists, which the panel states rather than implies.
+        -->
+        <div class="col-span-full">
+          <Theme theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}>
+            <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <AccountSecurityPanel {user} sessions={userSessions} />
+              <AccountLifecyclePanel {user} />
+            </div>
+          </Theme>
+        </div>
 
         <div class="col-span-full px-4 py-2">
           <div class="flex gap-2 text-primary">
