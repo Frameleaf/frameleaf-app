@@ -260,11 +260,30 @@ describe('photo tools round trip (FL-64)', () => {
     );
     await sut.handleRender({ id: good.id });
 
+    // Not an image at all: refused before anything is kept.
+    const garbage = await stage(user.id, Buffer.from('not an image at all'), 'broken.jpg');
+    await expect(sut.importRendition(auth, asset.id, { exportId: exported.id }, garbage)).rejects.toThrow(
+      'not a readable image',
+    );
+    expect(await exists(garbage.path)).toBe(false);
+
+    // A JPEG whose header reads but whose image data is cut off: kept, and its preview fails.
+    const jpeg = await sharp({
+      create: {
+        width: 256,
+        height: 256,
+        channels: 3,
+        background: '#808080',
+        noise: { type: 'gaussian', mean: 128, sigma: 40 },
+      },
+    })
+      .jpeg()
+      .toBuffer();
     const broken = await sut.importRendition(
       auth,
       asset.id,
       { exportId: exported.id },
-      await stage(user.id, Buffer.from('not an image at all'), 'broken.jpg'),
+      await stage(user.id, jpeg.subarray(0, Math.floor(jpeg.length / 3)), 'broken.jpg'),
     );
     job.queue.mockClear();
 

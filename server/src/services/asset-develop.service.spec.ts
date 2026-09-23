@@ -410,6 +410,18 @@ describe(AssetDevelopService.name, () => {
       expect(mocks.media.decodeImage).not.toHaveBeenCalled();
     });
 
+    it('claims a render with the lease, so the database refuses a second claim of a live one', async () => {
+      developRepository.get.mockResolvedValue(
+        revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued }),
+      );
+      await sut.handleRender({ id: 'rev' });
+      expect(developRepository.beginAttempt).toHaveBeenCalledWith(
+        'rev',
+        expect.any(String),
+        DEVELOP_RENDER_LEASE_MS / 1000,
+      );
+    });
+
     it('records the original and the master it produced for lineage', async () => {
       const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued });
       developRepository.get.mockResolvedValue(revision);
@@ -524,6 +536,7 @@ describe(AssetDevelopService.name, () => {
     });
 
     beforeEach(() => {
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 64, height: 48, isTransparent: false });
       developRepository.create.mockImplementation((input: Partial<AssetDevelopRevision>) =>
         Promise.resolve(revisionStub({ ...input, id: 'imported', revision: 2 })),
       );
@@ -622,6 +635,17 @@ describe(AssetDevelopService.name, () => {
       expect(mocks.storage.unlink).toHaveBeenCalledWith(staged.path);
     });
 
+    it('refuses a file that is named like an image but is not one, before keeping it', async () => {
+      photoTools.getExport.mockResolvedValue(exportRow());
+      mocks.media.getImageMetadata.mockRejectedValue(new Error('Input file contains unsupported image format'));
+      await expect(sut.importRendition(authStub.user1, asset.id, { exportId: exportRow().id }, staged)).rejects.toThrow(
+        'not a readable image',
+      );
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(developRepository.create).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(staged.path);
+    });
+
     it('refuses a RAW, an unsupported format and an empty file', async () => {
       photoTools.getExport.mockResolvedValue(exportRow());
       for (const file of [
@@ -711,6 +735,9 @@ describe(AssetDevelopService.name, () => {
         status: AssetDevelopRevisionStatus.Failed,
         error: 'The original changed after this file was brought back',
       });
+      // The file can never become a version, so it is not kept.
+      expect(developRepository.update).toHaveBeenCalledWith('imported', { masterPath: null });
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(`/thumbs/${asset.id}_develop_import_x.tif`);
     });
   });
 });
