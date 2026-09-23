@@ -122,6 +122,30 @@ describe('bulk action descriptors', () => {
     }
   });
 
+  /**
+   * FL-48 map/space follow-ups: "select all matching" no longer refuses a shared space
+   * (`bulk-operations.spec.ts`'s `applies a shared-space scope as the album condition it is`), but a
+   * viewer's role there permits only download and adding to an album of their own -- never the
+   * album-level actions an editor or owner has, which the server would refuse per item anyway.
+   */
+  it("limits a shared space's matching set to what a viewer's role permits", () => {
+    const ids = available({ count: 4000, snapshot: true, albumId: 'space-1', spaceViewerMatching: true });
+    expect(ids).toEqual(['add-to-album', 'download']);
+  });
+
+  it('does not restrict a manually built selection in a shared space, only the matching one', () => {
+    // spaceViewerMatching is paired with `snapshot`; a resolved, manually chosen selection still
+    // offers the full album menu, and the server's per-item check still decides.
+    const ids = available({ assets: [photo('a')], albumId: 'space-1', spaceViewerMatching: true });
+    expect(ids).toContain('remove-from-album');
+    expect(ids).toContain('tag');
+  });
+
+  it("lets an editor or owner's matching set keep the full album-level menu", () => {
+    const ids = available({ count: 4000, snapshot: true, albumId: 'space-1' });
+    expect(ids).toEqual(expect.arrayContaining(['favorite', 'tag', 'delete', 'mark-sensitive']));
+  });
+
   it('enables the album actions only inside an album, and the cover only for one item', () => {
     expect(available({ assets: [photo('a')] })).not.toContain('remove-from-album');
     const inAlbum = bulkActions({ assets: [photo('a')], albumId: 'album-1' });
