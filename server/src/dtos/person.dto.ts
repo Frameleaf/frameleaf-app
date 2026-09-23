@@ -98,7 +98,11 @@ const PersonMergeSuggestionSchema = z
   .object({
     person: PersonResponseSchema.describe('The person being reviewed'),
     suggestion: PersonResponseSchema.describe('The suggested match for that person'),
-    distance: z.number().min(0).describe('Face embedding distance between the two people (lower is more similar)'),
+    distance: z
+      .number()
+      .meta({ format: 'double' })
+      .min(0)
+      .describe('Face embedding distance between the two people (lower is more similar)'),
   })
   .meta({ id: 'PersonMergeSuggestionDto' });
 
