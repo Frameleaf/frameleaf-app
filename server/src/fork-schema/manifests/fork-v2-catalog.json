@@ -133,6 +133,10 @@
       "identity": "immich_fork.asset_develop_revision.assetId"
     },
     {
+      "definition": "integer|not null|0||",
+      "identity": "immich_fork.asset_develop_revision.attempts"
+    },
+    {
       "definition": "boolean|not null|false||",
       "identity": "immich_fork.asset_develop_revision.cancelRequested"
     },
@@ -145,6 +149,14 @@
       "identity": "immich_fork.asset_develop_revision.error"
     },
     {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.exportId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.fileName"
+    },
+    {
       "definition": "integer|nullable|||",
       "identity": "immich_fork.asset_develop_revision.height"
     },
@@ -155,6 +167,10 @@
     {
       "definition": "boolean|not null|false||",
       "identity": "immich_fork.asset_develop_revision.isCurrent"
+    },
+    {
+      "definition": "text|not null|'recipe'::text||",
+      "identity": "immich_fork.asset_develop_revision.kind"
     },
     {
       "definition": "text|nullable|||",
@@ -193,8 +209,20 @@
       "identity": "immich_fork.asset_develop_revision.rendererVersion"
     },
     {
+      "definition": "bytea|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.renditionChecksum"
+    },
+    {
       "definition": "integer|not null|||",
       "identity": "immich_fork.asset_develop_revision.revision"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.software"
+    },
+    {
+      "definition": "bytea|nullable|||",
+      "identity": "immich_fork.asset_develop_revision.sourceChecksum"
     },
     {
       "definition": "text|not null|'saved'::text||",
@@ -2609,6 +2637,54 @@
       "identity": "public.cluster_group.updateId"
     },
     {
+      "definition": "uuid|not null|||",
+      "identity": "public.develop_export.assetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.develop_export.createdAt"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.develop_export.fileName"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.develop_export.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.develop_export.ownerId"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "public.develop_export.sourceChecksum"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.develop_preset.createdAt"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.develop_preset.id"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.develop_preset.name"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.develop_preset.ownerId"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.develop_preset.settings"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.develop_preset.updatedAt"
+    },
+    {
       "definition": "timestamp with time zone|nullable|||",
       "identity": "public.duplicate_decision.appliedAt"
     },
@@ -3942,6 +4018,270 @@
     },
     {
       "definition": "uuid|nullable|||",
+      "identity": "public.preservation_item.assetId"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.preservation_item.attempts"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.preservation_item.createdAt"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.preservation_item.entry"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.preservation_item.error"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.preservation_item.id"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.preservation_item.locked"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.preservation_item.packageId"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.preservation_item.reasonKey"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.preservation_item.sourceAssetId"
+    },
+    {
+      "definition": "character varying|not null|'pending'::character varying||",
+      "identity": "public.preservation_item.state"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.preservation_item.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.preservation_item.updateId"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.preservation_item.verifyState"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.preservation_package.createdAt"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.preservation_package.digest"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.preservation_package.expiresAt"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.preservation_package.format"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.preservation_package.id"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.preservation_package.includeLocked"
+    },
+    {
+      "definition": "boolean|not null|true||",
+      "identity": "public.preservation_package.includeMetadata"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.preservation_package.manifest"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.preservation_package.name"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.preservation_package.origin"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.preservation_package.originalFileName"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.preservation_package.ownerId"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.preservation_package.path"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.preservation_package.removedAt"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.preservation_package.scope"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.preservation_package.sizeBytes"
+    },
+    {
+      "definition": "character varying|not null|'building'::character varying||",
+      "identity": "public.preservation_package.status"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.preservation_package.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.preservation_package.updateId"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.preservation_package.verification"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.preservation_package.verifiedAt"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.preservation_restore_item.appliedAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.preservation_restore_item.assetId"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.preservation_restore_item.attempts"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.preservation_restore_item.conflicts"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.preservation_restore_item.createdAt"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.preservation_restore_item.creatingAt"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.preservation_restore_item.decisions"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.preservation_restore_item.entry"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.preservation_restore_item.error"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.preservation_restore_item.findings"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.preservation_restore_item.id"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.preservation_restore_item.locked"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.preservation_restore_item.match"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.preservation_restore_item.reasonKey"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.preservation_restore_item.restoreId"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.preservation_restore_item.sidecar"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.preservation_restore_item.sourceAssetId"
+    },
+    {
+      "definition": "character varying|not null|'ready'::character varying||",
+      "identity": "public.preservation_restore_item.state"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.preservation_restore_item.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.preservation_restore_item.updateId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.preservation_restore.createdAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.preservation_restore.id"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.preservation_restore.name"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.preservation_restore.options"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.preservation_restore.ownerId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.preservation_restore.packageId"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.preservation_restore.packageIdentity"
+    },
+    {
+      "definition": "character varying|not null|'reviewing'::character varying||",
+      "identity": "public.preservation_restore.status"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.preservation_restore.summary"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.preservation_restore.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.preservation_restore.updateId"
+    },
+    {
+      "definition": "uuid|nullable|||",
       "identity": "public.render_worker_audit.actorId"
     },
     {
@@ -3999,6 +4339,10 @@
     {
       "definition": "timestamp with time zone|not null|now()||",
       "identity": "public.render_worker_limit.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.render_worker_limit.updateId"
     },
     {
       "definition": "uuid|nullable|||",
@@ -4721,6 +5065,10 @@
       "identity": "public.studio_project_comment.updatedAt"
     },
     {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.studio_project_comment.updateId"
+    },
+    {
       "definition": "uuid|nullable|||",
       "identity": "public.studio_project_revision.authorId"
     },
@@ -5321,6 +5669,10 @@
       "identity": "public.video_moment_frame.updatedAt"
     },
     {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.video_moment_frame.updateId"
+    },
+    {
       "definition": "integer|nullable|||",
       "identity": "public.video_moment_frame.width"
     },
@@ -5397,6 +5749,10 @@
       "identity": "public.video_moment_index.updatedAt"
     },
     {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.video_moment_index.updateId"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "public.video_moment.assetId"
     },
@@ -5443,6 +5799,10 @@
     {
       "definition": "timestamp with time zone|not null|now()||",
       "identity": "public.video_moment.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.video_moment.updateId"
     },
     {
       "definition": "integer|not null|||",
@@ -5619,6 +5979,18 @@
       "identity": "immich_fork.asset_develop_revision.asset_develop_revision_assetId_revision_key"
     },
     {
+      "definition": "CHECK (attempts >= 0)",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_attempts_check"
+    },
+    {
+      "definition": "CHECK (\"fileName\" IS NULL OR length(\"fileName\") >= 1 AND length(\"fileName\") <= 255)",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_fileName_check"
+    },
+    {
+      "definition": "CHECK (kind = ANY (ARRAY['recipe'::text, 'external'::text]))",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_kind_check"
+    },
+    {
       "definition": "CHECK (label IS NULL OR length(label) >= 1 AND length(label) <= 120)",
       "identity": "immich_fork.asset_develop_revision.asset_develop_revision_label_check"
     },
@@ -5637,6 +6009,10 @@
     {
       "definition": "CHECK (revision >= 1)",
       "identity": "immich_fork.asset_develop_revision.asset_develop_revision_revision_check"
+    },
+    {
+      "definition": "CHECK (software IS NULL OR length(software) >= 1 AND length(software) <= 120)",
+      "identity": "immich_fork.asset_develop_revision.asset_develop_revision_software_check"
     },
     {
       "definition": "CHECK (status = ANY (ARRAY['saved'::text, 'queued'::text, 'rendering'::text, 'rendered'::text, 'failed'::text, 'cancelled'::text]))",
@@ -6343,6 +6719,30 @@
       "identity": "public.cluster_group.cluster_group_pkey"
     },
     {
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.develop_export.develop_export_assetId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.develop_export.develop_export_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.develop_export.develop_export_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.develop_preset.develop_preset_ownerId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"ownerId\", name)",
+      "identity": "public.develop_preset.develop_preset_ownerId_name_uq"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.develop_preset.develop_preset_pkey"
+    },
+    {
       "definition": "UNIQUE (\"operationId\", \"duplicateId\")",
       "identity": "public.duplicate_decision.duplicate_decision_operationId_duplicateId_uq"
     },
@@ -6685,6 +7085,58 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.plugin.plugin_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.preservation_item.preservation_item_assetId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"packageId\") REFERENCES preservation_package(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.preservation_item.preservation_item_packageId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"packageId\", \"sourceAssetId\")",
+      "identity": "public.preservation_item.preservation_item_packageId_sourceAssetId_uq"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.preservation_item.preservation_item_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.preservation_package.preservation_package_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.preservation_package.preservation_package_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.preservation_restore_item.preservation_restore_item_assetId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.preservation_restore_item.preservation_restore_item_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"restoreId\") REFERENCES preservation_restore(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.preservation_restore_item.preservation_restore_item_restoreId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"restoreId\", \"sourceAssetId\")",
+      "identity": "public.preservation_restore_item.preservation_restore_item_restoreId_sourceAssetId_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.preservation_restore.preservation_restore_ownerId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"packageId\") REFERENCES preservation_package(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.preservation_restore.preservation_restore_packageId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.preservation_restore.preservation_restore_pkey"
     },
     {
       "definition": "PRIMARY KEY (id)",
@@ -9459,6 +9911,30 @@
       "identity": "public.cluster_group.cluster_group_updateId_idx"
     },
     {
+      "definition": "CREATE INDEX \"develop_export_assetId_idx\" ON public.develop_export USING btree (\"assetId\")",
+      "identity": "public.develop_export.develop_export_assetId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"develop_export_ownerId_idx\" ON public.develop_export USING btree (\"ownerId\")",
+      "identity": "public.develop_export.develop_export_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX develop_export_pkey ON public.develop_export USING btree (id)",
+      "identity": "public.develop_export.develop_export_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"develop_preset_ownerId_idx\" ON public.develop_preset USING btree (\"ownerId\")",
+      "identity": "public.develop_preset.develop_preset_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"develop_preset_ownerId_name_uq\" ON public.develop_preset USING btree (\"ownerId\", name)",
+      "identity": "public.develop_preset.develop_preset_ownerId_name_uq"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX develop_preset_pkey ON public.develop_preset USING btree (id)",
+      "identity": "public.develop_preset.develop_preset_pkey"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX \"duplicate_decision_operationId_duplicateId_uq\" ON public.duplicate_decision USING btree (\"operationId\", \"duplicateId\")",
       "identity": "public.duplicate_decision.duplicate_decision_operationId_duplicateId_uq"
     },
@@ -9961,6 +10437,66 @@
     {
       "definition": "CREATE UNIQUE INDEX plugin_pkey ON public.plugin USING btree (id)",
       "identity": "public.plugin.plugin_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"preservation_item_assetId_idx\" ON public.preservation_item USING btree (\"assetId\")",
+      "identity": "public.preservation_item.preservation_item_assetId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"preservation_item_packageId_sourceAssetId_uq\" ON public.preservation_item USING btree (\"packageId\", \"sourceAssetId\")",
+      "identity": "public.preservation_item.preservation_item_packageId_sourceAssetId_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"preservation_item_packageId_state_idx\" ON public.preservation_item USING btree (\"packageId\", state)",
+      "identity": "public.preservation_item.preservation_item_packageId_state_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX preservation_item_pkey ON public.preservation_item USING btree (id)",
+      "identity": "public.preservation_item.preservation_item_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"preservation_package_ownerId_createdAt_idx\" ON public.preservation_package USING btree (\"ownerId\", \"createdAt\")",
+      "identity": "public.preservation_package.preservation_package_ownerId_createdAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"preservation_package_ownerId_idx\" ON public.preservation_package USING btree (\"ownerId\")",
+      "identity": "public.preservation_package.preservation_package_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX preservation_package_pkey ON public.preservation_package USING btree (id)",
+      "identity": "public.preservation_package.preservation_package_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"preservation_restore_item_assetId_idx\" ON public.preservation_restore_item USING btree (\"assetId\")",
+      "identity": "public.preservation_restore_item.preservation_restore_item_assetId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX preservation_restore_item_pkey ON public.preservation_restore_item USING btree (id)",
+      "identity": "public.preservation_restore_item.preservation_restore_item_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"preservation_restore_item_restoreId_sourceAssetId_uq\" ON public.preservation_restore_item USING btree (\"restoreId\", \"sourceAssetId\")",
+      "identity": "public.preservation_restore_item.preservation_restore_item_restoreId_sourceAssetId_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"preservation_restore_item_restoreId_state_idx\" ON public.preservation_restore_item USING btree (\"restoreId\", state)",
+      "identity": "public.preservation_restore_item.preservation_restore_item_restoreId_state_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"preservation_restore_ownerId_createdAt_idx\" ON public.preservation_restore USING btree (\"ownerId\", \"createdAt\")",
+      "identity": "public.preservation_restore.preservation_restore_ownerId_createdAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"preservation_restore_ownerId_idx\" ON public.preservation_restore USING btree (\"ownerId\")",
+      "identity": "public.preservation_restore.preservation_restore_ownerId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"preservation_restore_packageId_idx\" ON public.preservation_restore USING btree (\"packageId\")",
+      "identity": "public.preservation_restore.preservation_restore_packageId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX preservation_restore_pkey ON public.preservation_restore USING btree (id)",
+      "identity": "public.preservation_restore.preservation_restore_pkey"
     },
     {
       "definition": "CREATE INDEX \"render_worker_audit_operationId_idx\" ON public.render_worker_audit USING btree (\"operationId\")",
@@ -10814,6 +11350,10 @@
     "trigger_person_group_updatedAt",
     "trigger_person_updatedAt",
     "trigger_physical_file_updatedAt",
+    "trigger_preservation_item_updatedAt",
+    "trigger_preservation_package_updatedAt",
+    "trigger_preservation_restore_item_updatedAt",
+    "trigger_preservation_restore_updatedAt",
     "trigger_render_worker_limit_updatedAt",
     "trigger_render_worker_updatedAt",
     "trigger_session_sync_checkpoint_updatedAt",
@@ -11123,6 +11663,14 @@
     },
     {
       "definition": "table",
+      "identity": "public.develop_export"
+    },
+    {
+      "definition": "table",
+      "identity": "public.develop_preset"
+    },
+    {
+      "definition": "table",
       "identity": "public.duplicate_decision"
     },
     {
@@ -11260,6 +11808,22 @@
     {
       "definition": "table",
       "identity": "public.plugin_method"
+    },
+    {
+      "definition": "table",
+      "identity": "public.preservation_item"
+    },
+    {
+      "definition": "table",
+      "identity": "public.preservation_package"
+    },
+    {
+      "definition": "table",
+      "identity": "public.preservation_restore"
+    },
+    {
+      "definition": "table",
+      "identity": "public.preservation_restore_item"
     },
     {
       "definition": "table",
@@ -11588,7 +12152,7 @@
       "identity": "public.asset_restoration.asset_restoration_updatedAt"
     },
     {
-      "definition": "CREATE TRIGGER \"asset_video_duplicate_frame_updatedAt\" BEFORE UPDATE ON asset_video_duplicate_frame FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "definition": "CREATE TRIGGER \"asset_video_duplicate_frame_updatedAt\" BEFORE UPDATE ON asset_video_duplicate_frame FOR EACH ROW EXECUTE FUNCTION media_health_updated_at()",
       "identity": "public.asset_video_duplicate_frame.asset_video_duplicate_frame_updatedAt"
     },
     {
@@ -11662,6 +12226,22 @@
     {
       "definition": "CREATE TRIGGER \"physical_file_updatedAt\" BEFORE UPDATE ON physical_file FOR EACH ROW EXECUTE FUNCTION updated_at()",
       "identity": "public.physical_file.physical_file_updatedAt"
+    },
+    {
+      "definition": "CREATE TRIGGER \"preservation_item_updatedAt\" BEFORE UPDATE ON preservation_item FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "identity": "public.preservation_item.preservation_item_updatedAt"
+    },
+    {
+      "definition": "CREATE TRIGGER \"preservation_package_updatedAt\" BEFORE UPDATE ON preservation_package FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "identity": "public.preservation_package.preservation_package_updatedAt"
+    },
+    {
+      "definition": "CREATE TRIGGER \"preservation_restore_item_updatedAt\" BEFORE UPDATE ON preservation_restore_item FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "identity": "public.preservation_restore_item.preservation_restore_item_updatedAt"
+    },
+    {
+      "definition": "CREATE TRIGGER \"preservation_restore_updatedAt\" BEFORE UPDATE ON preservation_restore FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "identity": "public.preservation_restore.preservation_restore_updatedAt"
     },
     {
       "definition": "CREATE TRIGGER \"render_worker_limit_updatedAt\" BEFORE UPDATE ON render_worker_limit FOR EACH ROW EXECUTE FUNCTION updated_at()",

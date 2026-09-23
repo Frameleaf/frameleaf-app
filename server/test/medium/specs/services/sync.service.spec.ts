@@ -227,8 +227,11 @@ describe(SyncService.name, () => {
     it('should cleanup every table', async () => {
       const { sut } = setup();
 
+      // render_worker_audit is the operator's record of render worker actions, kept like any audit
+      // log; it is not a sync tombstone table and sync never cleans it
+      const notSyncTombstones = new Set(['render_worker_audit']);
       const auditTables = schemaFromCode()
-        .tables.filter((table) => table.name.endsWith('_audit'))
+        .tables.filter((table) => table.name.endsWith('_audit') && !notSyncTombstones.has(table.name))
         .map(({ name }) => name);
 
       const auditCleanupSpy = vi.spyOn(BaseSync.prototype as any, 'auditCleanup');

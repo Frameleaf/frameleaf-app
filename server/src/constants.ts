@@ -191,6 +191,8 @@ export const endpointTags: Record<ApiTag, string> = {
     "A pet is a durable named animal identity. Pets carry a species, an optional birthday and a featured photo, and collect observations: the owner's own record of which photos the animal appears in. Recognition proposals are reviewed against those identities and never overwrite them.",
   [ApiTag.Plugins]:
     'A plugin is an installed module that makes filters and actions available for the workflow feature.',
+  [ApiTag.Preservation]:
+    'A preservation package is an independent copy of selected originals with checksums, metadata sidecars, album structure, people, tags, Locked records and edit recipes. Packages are written, verified, reviewed and restored by durable media operations; a restoration never overwrites an existing original and never creates a duplicate.',
   [ApiTag.Queues]:
     'Queues and background jobs are used for processing tasks asynchronously. Queues can be paused and resumed as needed.',
   [ApiTag.RenderWorkers]: 'Render workers and their admitted media operations.',
