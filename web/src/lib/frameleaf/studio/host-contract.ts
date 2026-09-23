@@ -84,6 +84,10 @@ export interface StudioThemeTokens {
  * the person, so it must identify capabilities rather than say "unavailable".
  */
 export interface StudioCapabilities {
+  /** Local AI analysis: captioning, scene detection, silence and filler detection. */
+  analysisWorker: boolean;
+  /** Local generation: text to speech and music generation. */
+  generationWorker: boolean;
   gpuWorker: boolean;
   renderWorker: boolean;
   restorationWorker: boolean;
@@ -91,6 +95,8 @@ export interface StudioCapabilities {
 }
 
 export const emptyStudioCapabilities = (): StudioCapabilities => ({
+  analysisWorker: false,
+  generationWorker: false,
   gpuWorker: false,
   renderWorker: false,
   restorationWorker: false,
