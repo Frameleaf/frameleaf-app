@@ -89,10 +89,11 @@ describe('catalog manifests', () => {
     expect(getCatalogTableLocks(originalOfficial)).toEqual(
       [...official.tables, ...forkTables].map(({ identity }) => identity).toSorted(),
     );
-    // 123 public (v3.1.0, the post-certified residue cluster_group, cluster_group_request, person_group,
-    // person_group_audit, workflow_log, and the legacy fork tables of the 2100000000NNN migrations) + 33 fork
-    // tables, including seven iCloud tables and asset_develop_revision
-    expect(getCatalogTableLocks(fork)).toHaveLength(156);
+    // 125 public (v3.1.0, the post-certified residue cluster_group, cluster_group_request, person_group,
+    // person_group_audit, workflow_log, and the legacy fork tables of the 2100000000NNN migrations, including
+    // workflow_definition and workflow_log_detail) + 33 fork tables, including seven iCloud tables and
+    // asset_develop_revision
+    expect(getCatalogTableLocks(fork)).toHaveLength(158);
     // 66 v3.1.0 public + the 33 fork tables
     expect(getCatalogTableLocks(originalOfficial)).toHaveLength(99);
   });

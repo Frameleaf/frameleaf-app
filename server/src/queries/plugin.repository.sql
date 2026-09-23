@@ -189,10 +189,13 @@ select
   "plugin_method"."id",
   "plugin_method"."name",
   "plugin"."name" as "pluginName",
-  "plugin_method"."types"
+  "plugin_method"."types",
+  "plugin_method"."schema"
 from
   "plugin_method"
   inner join "plugin" on "plugin_method"."pluginId" = "plugin"."id"
+where
+  "plugin"."enabled" = $1
 
 -- PluginRepository.searchMethods
 select
@@ -210,5 +213,7 @@ select
 from
   "plugin_method"
   inner join "plugin" on "plugin"."id" = "plugin_method"."pluginId"
+where
+  "plugin"."enabled" = $1
 order by
   "plugin_method"."name"

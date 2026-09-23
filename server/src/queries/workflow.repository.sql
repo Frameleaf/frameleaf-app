@@ -2,6 +2,7 @@
 
 -- WorkflowRepository.search
 select
+  "workflow_definition"."definition",
   "workflow"."id",
   "workflow"."name",
   "workflow"."description",
@@ -16,6 +17,7 @@ select
     from
       (
         select
+          "workflow_step"."id",
           "plugin"."name" as "pluginName",
           "plugin_method"."name" as "methodName",
           "workflow_step"."config",
@@ -32,11 +34,13 @@ select
   ) as "steps"
 from
   "workflow"
+  left join "workflow_definition" on "workflow_definition"."workflowId" = "workflow"."id"
 order by
-  "createdAt" desc
+  "workflow"."createdAt" desc
 
 -- WorkflowRepository.get
 select
+  "workflow_definition"."definition",
   "workflow"."id",
   "workflow"."name",
   "workflow"."description",
@@ -51,6 +55,7 @@ select
     from
       (
         select
+          "workflow_step"."id",
           "plugin"."name" as "pluginName",
           "plugin_method"."name" as "methodName",
           "workflow_step"."config",
@@ -67,8 +72,9 @@ select
   ) as "steps"
 from
   "workflow"
+  left join "workflow_definition" on "workflow_definition"."workflowId" = "workflow"."id"
 where
-  "id" = $1
+  "workflow"."id" = $1
 
 -- WorkflowRepository.getForWorkflowRun
 SELECT
@@ -87,6 +93,7 @@ select
   "workflow"."name",
   "workflow"."trigger",
   "workflow"."logging",
+  "workflow_definition"."definition",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -95,7 +102,10 @@ select
         select
           "workflow_step"."id",
           "workflow_step"."config",
+          "workflow_step"."order",
           "plugin_method"."pluginId" as "pluginId",
+          "plugin"."name" as "pluginName",
+          "plugin"."enabled" as "pluginEnabled",
           "plugin_method"."name" as "methodName",
           "plugin_method"."types" as "types",
           "plugin_method"."hostFunctions",
@@ -103,16 +113,20 @@ select
         from
           "workflow_step"
           inner join "plugin_method" on "plugin_method"."id" = "workflow_step"."pluginMethodId"
+          inner join "plugin" on "plugin"."id" = "plugin_method"."pluginId"
         where
           "workflow_step"."workflowId" = "workflow"."id"
           and "workflow_step"."enabled" = $1
+        order by
+          "workflow_step"."order" asc
       ) as agg
   ) as "steps"
 from
   "workflow"
+  left join "workflow_definition" on "workflow_definition"."workflowId" = "workflow"."id"
 where
-  "id" = $2
-  and "enabled" = $3
+  "workflow"."id" = $2
+  and "workflow"."enabled" = $3
 
 -- WorkflowRepository.getLogs
 select
@@ -122,6 +136,10 @@ select
   "workflow_log"."workflowId",
   "workflow_log"."workflowStepId",
   "workflow_log"."triggerDataId",
+  "workflow_log"."runId",
+  "workflow_log_detail"."attempt",
+  "workflow_log_detail"."errorCode",
+  "workflow_log_detail"."error",
   (
     select
       to_json(obj)
@@ -140,12 +158,30 @@ select
   ) as "step"
 from
   "workflow_log"
+  left join "workflow_log_detail" on "workflow_log_detail"."logId" = "workflow_log"."id"
 where
   "workflow_log"."workflowId" = $1
 order by
   "workflow_log"."createdAt" desc
 limit
   $2
+
+-- WorkflowRepository.getLatestRunAttempt
+select
+  "workflow_log"."runId",
+  "workflow_log"."triggerDataId",
+  "workflow_log"."result",
+  "workflow_log_detail"."attempt"
+from
+  "workflow_log"
+  left join "workflow_log_detail" on "workflow_log_detail"."logId" = "workflow_log"."id"
+where
+  "workflow_log"."workflowId" = $1
+  and "workflow_log"."runId" = $2
+order by
+  "workflow_log"."createdAt" desc
+limit
+  $3
 
 -- WorkflowRepository.delete
 delete from "workflow"

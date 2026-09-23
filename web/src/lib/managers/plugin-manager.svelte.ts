@@ -32,6 +32,10 @@ class PluginManager {
     }
   }
 
+  get methods() {
+    return this.#methods;
+  }
+
   get triggers() {
     return this.#triggers;
   }
