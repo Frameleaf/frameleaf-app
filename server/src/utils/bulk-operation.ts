@@ -64,6 +64,8 @@ export type BulkOperationPayload = {
    * it at the moment of change; this only says what the person chose.
    */
   mediaHealth?: BulkMediaHealthEntry[];
+  /** The classification rule an `apply-classification-rule` job applies (FL-60). */
+  classificationRuleId?: string;
 };
 
 /** One reviewed Library Care finding in a bulk job (FL-69). */
@@ -577,6 +579,8 @@ export const BULK_ACTION_PERMISSIONS: Readonly<Record<MediaOperationBulkAction, 
   [MediaOperationBulkAction.RelinkMissingMedia]: [Permission.AssetUpdate],
   [MediaOperationBulkAction.RecoverDamagedMedia]: [Permission.AssetUpdate],
   [MediaOperationBulkAction.TrashDamagedMedia]: [Permission.AssetDelete],
+  // A rule writes to its own smart album, its rule-owned tag and, when consented, the archive state.
+  [MediaOperationBulkAction.ApplyClassificationRule]: [Permission.AlbumUpdate, Permission.AssetUpdate],
 };
 
 /**
@@ -622,6 +626,8 @@ export const BULK_ITEM_PERMISSION: Readonly<Record<MediaOperationBulkAction, Per
   [MediaOperationBulkAction.RelinkMissingMedia]: null,
   [MediaOperationBulkAction.RecoverDamagedMedia]: null,
   [MediaOperationBulkAction.TrashDamagedMedia]: null,
+  // The classification service reaches only the rule owner's own, unlocked items (FL-60).
+  [MediaOperationBulkAction.ApplyClassificationRule]: null,
 };
 
 /** True for the two actions that work a complete duplicate group at a time (FL-61). */
@@ -728,6 +734,9 @@ export const bulkPayloadProblem = (
     case MediaOperationBulkAction.Tag:
     case MediaOperationBulkAction.Untag: {
       return payload.tagIds && payload.tagIds.length > 0 ? null : 'At least one tag is required for this action';
+    }
+    case MediaOperationBulkAction.ApplyClassificationRule: {
+      return payload.classificationRuleId ? null : 'A classification rule is required for this action';
     }
     case MediaOperationBulkAction.ChangeDate: {
       if (payload.dateMode === 'shift') {

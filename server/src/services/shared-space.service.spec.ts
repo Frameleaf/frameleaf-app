@@ -145,6 +145,8 @@ describe(SharedSpaceService.name, () => {
         createdAt: newDate(),
       });
       mocks.album.getById.mockResolvedValue(getForAlbum(space));
+      mocks.albumUser.create.mockResolvedValue({ albumId: space.id, userId: recipient.id, role: AlbumUserRole.Viewer });
+      mocks.albumUser.deleteInvite.mockResolvedValue();
 
       await sut.accept(AuthFactory.create(recipient), space.id);
 
@@ -176,6 +178,8 @@ describe(SharedSpaceService.name, () => {
         invitedById: null,
         createdAt: newDate(),
       });
+
+      mocks.albumUser.deleteInvite.mockResolvedValue();
 
       await sut.decline(AuthFactory.create(recipient), space.id);
 
@@ -236,6 +240,8 @@ describe(SharedSpaceService.name, () => {
         invitedById: owner.id,
         createdAt: newDate(),
       });
+
+      mocks.albumUser.deleteInvite.mockResolvedValue();
 
       await sut.removeInvitation(AuthFactory.create(owner), space.id, invitedId);
 
@@ -298,6 +304,13 @@ describe(SharedSpaceService.name, () => {
     mocks.album.getById.mockResolvedValue(getForAlbum(space));
   };
 
+  /** The access check answers only for the ids it is asked about, as the real one does. */
+  const readable = (...albumIds: string[]) => {
+    mocks.access.album.checkSharedAlbumAccess.mockImplementation((_userId, ids) =>
+      Promise.resolve(new Set([...ids].filter((id) => albumIds.includes(id)))),
+    );
+  };
+
   const asEditor = (space: ReturnType<typeof spaceWithEditor>['space']) => {
     mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
     mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([space.id]));
@@ -349,10 +362,11 @@ describe(SharedSpaceService.name, () => {
       const { space, editor } = spaceWithEditor();
       const album = AlbumFactory.from({ kind: AlbumKind.Album }).build();
       asEditor(space);
-      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([space.id, album.id]));
+      readable(space.id, album.id);
       mocks.album.getById.mockResolvedValueOnce(getForAlbum(space)).mockResolvedValueOnce(getForAlbum(album));
       mocks.albumUser.getLinkedAlbums.mockResolvedValue([]);
       mocks.albumUser.getLinkedAlbumCounts.mockResolvedValue([]);
+      mocks.albumUser.createLinkedAlbum.mockResolvedValue();
 
       await sut.linkAlbum(AuthFactory.create(editor), space.id, album.id);
 
@@ -370,7 +384,7 @@ describe(SharedSpaceService.name, () => {
       const { space, editor } = spaceWithEditor();
       const other = AlbumFactory.from({ kind: AlbumKind.Space }).build();
       asEditor(space);
-      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([space.id, other.id]));
+      readable(space.id, other.id);
       mocks.album.getById.mockResolvedValueOnce(getForAlbum(space)).mockResolvedValueOnce(getForAlbum(other));
 
       await expect(sut.linkAlbum(AuthFactory.create(editor), space.id, other.id)).rejects.toBeInstanceOf(
@@ -383,7 +397,7 @@ describe(SharedSpaceService.name, () => {
       const { space, editor } = spaceWithEditor();
       const collection = AlbumFactory.from({ kind: AlbumKind.Collection }).build();
       asEditor(space);
-      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([space.id, collection.id]));
+      readable(space.id, collection.id);
       mocks.album.getById.mockResolvedValueOnce(getForAlbum(space)).mockResolvedValueOnce(getForAlbum(collection));
 
       await expect(sut.linkAlbum(AuthFactory.create(editor), space.id, collection.id)).rejects.toBeInstanceOf(
@@ -406,6 +420,8 @@ describe(SharedSpaceService.name, () => {
         linkedById: editor.id,
         createdAt: newDate(),
       });
+
+      mocks.albumUser.deleteLinkedAlbum.mockResolvedValue();
 
       await sut.unlinkAlbum(AuthFactory.create(owner), space.id, linkedAlbumId);
 
@@ -546,6 +562,8 @@ describe(SharedSpaceService.name, () => {
         createdAt: newDate(),
       });
 
+      mocks.albumUser.deleteLinkedPerson.mockResolvedValue();
+
       await sut.unlinkPerson(AuthFactory.create(editor), space.id, linkId);
 
       expect(mocks.albumUser.deleteLinkedPerson).toHaveBeenCalledWith(linkId);
@@ -618,6 +636,8 @@ describe(SharedSpaceService.name, () => {
       mocks.albumUser.getSpaceVisit.mockResolvedValue(void 0);
       mocks.albumUser.getSpaceNewAssetCount.mockResolvedValue(0);
       mocks.albumUser.getSpaceNewAssetIds.mockResolvedValue([]);
+
+      mocks.albumUser.setSpaceVisit.mockResolvedValue();
 
       await sut.markVisited(AuthFactory.create(editor), space.id);
 

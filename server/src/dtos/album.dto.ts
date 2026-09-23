@@ -24,7 +24,7 @@ import { stringToBool } from 'src/validation.js';
 // valid so older rows are never rejected. Enforced via refine (not z.enum) so the
 // wire type stays `string` and no client needs a codegen bump when the
 // catalogue version moves.
-const AlbumIconSchema = z
+export const AlbumIconSchema = z
   .string()
   .max(80)
   .refine((value) => isValidAlbumIcon(value), { message: 'Invalid album icon: expected a Material Design Icons name' });
@@ -236,7 +236,14 @@ export const AlbumResponseSchema = z
     isSmart: z
       .boolean()
       .optional()
-      .describe('True when the album is filled by the smart album rules. Only populated by GET /albums/tree.'),
+      .describe(
+        'True when the album is filled by smart album rules. Populated by GET /albums/tree and GET /albums/{id}.',
+      ),
+    smartRuleId: z
+      .string()
+      .nullable()
+      .optional()
+      .describe('Your classification rule behind this smart album, when it is one of yours'),
     sortOrder: z
       .number()
       .meta({ format: 'double' })

@@ -13,6 +13,7 @@ import {
   type SharedSpacePreviewResponseDto,
   type UserResponseDto,
 } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 import { createLibrarySession, type LibraryViewState } from '$lib/frameleaf/library-session';
 
 /**
@@ -357,7 +358,7 @@ export const isNewSpaceEvent = (
 export const spaceEventMessageKey = (
   event: Pick<SharedSpaceEventResponseDto, 'type' | 'assetCount'> &
     Partial<Pick<SharedSpaceEventResponseDto, 'actor' | 'targetUser'>>,
-): string => {
+): Translations => {
   switch (event.type) {
     case SharedSpaceEventType.AssetsAdded: {
       return 'frameleaf_spaces_activity_assets_added';

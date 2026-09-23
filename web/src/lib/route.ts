@@ -8,6 +8,7 @@ import {
 } from '@immich/sdk';
 import { omitBy } from 'lodash-es';
 import { OpenQueryParam, QueryParameter, type SharedLinkTab } from '$lib/constants';
+import { analyticsAreaUrl } from '$lib/frameleaf/settings-areas';
 import { studioHandoffQuery } from '$lib/frameleaf/studio/handoff';
 
 const asQueueSlug = (name: QueueName) => {
@@ -169,7 +170,8 @@ export const Route = {
         [QueryParameter.OPEN_SETTING]: params.openSetting,
       },
     ),
-  systemStatistics: () => '/admin/server-status',
+  /** Library analytics in the command center (FL-79); `/admin/server-status` redirects here. */
+  libraryAnalytics: (params?: { scope?: string; range?: string }) => analyticsAreaUrl(params),
   physicalDeduplication: () => '/admin/physical-deduplication',
   systemMaintenance: (params?: { continue?: string }) => '/admin/maintenance' + asQueryString(params),
   /** Processing destinations (FL-110): where machine-learning work may run, with consent and cost controls. */

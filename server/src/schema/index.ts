@@ -61,6 +61,8 @@ import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
 import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { ClassificationMatchTable } from 'src/schema/tables/classification-match.table.js';
+import { ClassificationRuleTable } from 'src/schema/tables/classification-rule.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
@@ -83,6 +85,7 @@ import { MoveTable } from 'src/schema/tables/move.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
 import { NotificationTable } from 'src/schema/tables/notification.table.js';
 import { OcrSearchTable } from 'src/schema/tables/ocr-search.table.js';
+import { OperationalMetricSampleTable } from 'src/schema/tables/operational-metric-sample.table.js';
 import { PartnerAuditTable } from 'src/schema/tables/partner-audit.table.js';
 import { PartnerTable } from 'src/schema/tables/partner.table.js';
 import { PersonAuditTable } from 'src/schema/tables/person-audit.table.js';
@@ -90,9 +93,16 @@ import { PersonGroupAuditTable } from 'src/schema/tables/person-group-audit.tabl
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
 import { PersonTable } from 'src/schema/tables/person.table.js';
 import { PetCandidateTable, PetDetectionTable, PetObservationTable, PetTable } from 'src/schema/tables/pet.table.js';
+import { DevelopExportTable, DevelopPresetTable } from 'src/schema/tables/photo-tools.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
 import { PluginTable } from 'src/schema/tables/plugin.table.js';
+import {
+  PreservationItemTable,
+  PreservationPackageTable,
+  PreservationRestoreItemTable,
+  PreservationRestoreTable,
+} from 'src/schema/tables/preservation.table.js';
 import {
   RenderWorkerAuditTable,
   RenderWorkerLimitTable,
@@ -116,6 +126,11 @@ import { SmartSearchDescriptionTable } from 'src/schema/tables/smart-search-desc
 import { SmartSearchTable } from 'src/schema/tables/smart-search.table.js';
 import { StackAuditTable } from 'src/schema/tables/stack-audit.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
+import {
+  StudioExportRemoteReferenceTable,
+  StudioExportVersionSourceTable,
+  StudioExportVersionTable,
+} from 'src/schema/tables/studio-export.table.js';
 import { StudioPreviewFrameTable } from 'src/schema/tables/studio-preview.table.js';
 import {
   StudioBundleUploadTable,
@@ -191,6 +206,8 @@ export class ImmichDatabase {
     AssetHealthCandidateTable,
     AssetExifTable,
     AssetVideoDuplicateFrameTable,
+    ClassificationRuleTable,
+    ClassificationMatchTable,
     ClusterGroupTable,
     ClusterGroupRequestTable,
     DuplicateDecisionTable,
@@ -216,6 +233,7 @@ export class ImmichDatabase {
     NaturalEarthCountriesTable,
     NotificationTable,
     OcrSearchTable,
+    OperationalMetricSampleTable,
     PartnerAuditTable,
     PartnerTable,
     PersonTable,
@@ -227,6 +245,10 @@ export class ImmichDatabase {
     PetObservationTable,
     PetDetectionTable,
     PetCandidateTable,
+    PreservationPackageTable,
+    PreservationItemTable,
+    PreservationRestoreTable,
+    PreservationRestoreItemTable,
     SessionTable,
     SharedLinkAssetTable,
     SharedLinkTable,
@@ -249,12 +271,17 @@ export class ImmichDatabase {
     StudioProjectRevisionTable,
     StudioProjectCommentTable,
     StudioBundleUploadTable,
+    StudioExportVersionTable,
+    StudioExportVersionSourceTable,
+    StudioExportRemoteReferenceTable,
     TakeoutImportTable,
     TakeoutSourceTable,
     TakeoutFileTable,
     TakeoutItemTable,
     TakeoutPairTable,
     TakeoutAlbumTable,
+    DevelopPresetTable,
+    DevelopExportTable,
     SessionSyncCheckpointTable,
     SystemMetadataTable,
     TagTable,
@@ -382,6 +409,7 @@ export interface DB {
   ml_destination: MlDestinationTable;
   ml_workload_route: MlWorkloadRouteTable;
   ml_workload_accounting: MlWorkloadAccountingTable;
+  operational_metric_sample: OperationalMetricSampleTable;
   partner: PartnerTable;
   partner_audit: PartnerAuditTable;
 
@@ -395,10 +423,17 @@ export interface DB {
   pet_detection: PetDetectionTable;
   pet_candidate: PetCandidateTable;
 
+  classification_match: ClassificationMatchTable;
+  classification_rule: ClassificationRuleTable;
   cluster_group: ClusterGroupTable;
   cluster_group_request: ClusterGroupRequestTable;
 
   physical_file: PhysicalFileTable;
+
+  preservation_package: PreservationPackageTable;
+  preservation_item: PreservationItemTable;
+  preservation_restore: PreservationRestoreTable;
+  preservation_restore_item: PreservationRestoreItemTable;
 
   render_worker: RenderWorkerTable;
   render_worker_session: RenderWorkerSessionTable;
@@ -433,6 +468,9 @@ export interface DB {
   studio_project_revision: StudioProjectRevisionTable;
   studio_project_comment: StudioProjectCommentTable;
   studio_bundle_upload: StudioBundleUploadTable;
+  studio_export_version: StudioExportVersionTable;
+  studio_export_version_source: StudioExportVersionSourceTable;
+  studio_export_remote_reference: StudioExportRemoteReferenceTable;
 
   system_metadata: SystemMetadataTable;
 
@@ -442,6 +480,9 @@ export interface DB {
   takeout_item: TakeoutItemTable;
   takeout_pair: TakeoutPairTable;
   takeout_source: TakeoutSourceTable;
+
+  develop_export: DevelopExportTable;
+  develop_preset: DevelopPresetTable;
 
   tag: TagTable;
   tag_asset: TagAssetTable;
