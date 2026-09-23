@@ -4,12 +4,12 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import type { DeepPartial } from 'src/types.js';
 import {
-  ClassificationRuleAction,
-  ClassificationRuleActionSchema,
   AudioCodec,
   AudioCodecSchema,
   CQMode,
   CQModeSchema,
+  ClassificationRuleAction,
+  ClassificationRuleActionSchema,
   Colorspace,
   ColorspaceSchema,
   ConfigVisibility,
