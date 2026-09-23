@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import type { JobOf } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
-import { AssetVisibility, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { AssetVisibility, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
 import { OCR } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { tokenizeForSearch } from 'src/utils/database.js';
@@ -44,7 +44,8 @@ export class OcrService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const ocrResults = await this.machineLearningRepository.ocr(asset.previewFile, machineLearning.ocr);
+    const selection = await this.selectRoutedMlDestination({ workload: MlWorkload.Ocr, jobId: id, jobName: JobName.Ocr });
+    const ocrResults = await this.machineLearningRepository.ocr(selection, asset.previewFile, machineLearning.ocr);
     const { ocrDataList, searchText } = this.parseOcrResults(id, ocrResults);
     await this.ocrRepository.upsert(id, ocrDataList, searchText);
 

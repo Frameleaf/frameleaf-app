@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { isEqual, omit } from 'lodash-es';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent } from 'src/decorators.js';
@@ -19,11 +19,15 @@ import {
   SmartAlbumReevaluateRequestDto,
   SmartAlbumReevaluateResponseDto,
 } from 'src/dtos/system-config.dto.js';
-import { BootstrapEventPriority, JobName, QueueName, SystemMetadataKey } from 'src/enum.js';
-import { MachineLearningHardwareResponse } from 'src/repositories/machine-learning.repository.js';
+import { BootstrapEventPriority, JobName, MlDestinationKind, QueueName, SystemMetadataKey } from 'src/enum.js';
+import {
+  MachineLearningHardwareResponse,
+  defaultMachineLearningHardware,
+} from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { isImageDescriptionEnabled } from 'src/utils/misc.js';
+import { resolveEndpoint } from 'src/utils/ml-destination.js';
 import { toPlainObject } from 'src/utils/object.js';
 
 /** Default per-asset estimate when no telemetry data is available. */
@@ -45,11 +49,6 @@ export class SystemConfigService extends BaseService {
   async onBootstrap() {
     const config = await this.getConfig({ withCache: false });
     await this.eventRepository.emit('ConfigInit', { newConfig: config });
-  }
-
-  @OnEvent({ name: 'AppShutdown' })
-  onShutdown() {
-    this.machineLearningRepository.teardown();
   }
 
   async getAdminConfig(): Promise<AdminConfigDto> {
@@ -79,8 +78,28 @@ export class SystemConfigService extends BaseService {
     return mapPublicConfig(defaults);
   }
 
-  getMachineLearningHardware(): Promise<MachineLearningHardwareResponse> {
-    return this.machineLearningRepository.getHardware();
+  /**
+   * Hardware of one explicit destination. Without an id, the first enabled local
+   * destination is probed; if there is none the defaults are returned. A cloud destination
+   * is reached only when its id is named (FL-110).
+   */
+  async getMachineLearningHardware(destinationId?: string): Promise<MachineLearningHardwareResponse> {
+    const destination = destinationId
+      ? await this.mlDestinationRepository.getById(destinationId)
+      : (await this.mlDestinationRepository.getAll()).find(
+          (row) => row.kind === MlDestinationKind.Local && row.enabled,
+        );
+    if (!destination) {
+      if (destinationId) {
+        throw new NotFoundException(`Machine learning destination ${destinationId} does not exist`);
+      }
+      return defaultMachineLearningHardware;
+    }
+    const endpoint = resolveEndpoint(destination, this.machineLearningRepository.getRunPodEndpoint());
+    if (!endpoint) {
+      return defaultMachineLearningHardware;
+    }
+    return this.machineLearningRepository.getHardware(endpoint);
   }
 
   @OnEvent({ name: 'ConfigInit', priority: -100 })
