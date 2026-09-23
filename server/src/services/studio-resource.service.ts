@@ -41,10 +41,10 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Selectable } from 'kysely';
 import { createHmac } from 'node:crypto';
 import { AuthDto } from 'src/dtos/auth.dto.js';
-import { AssetFileType, AssetType, AssetVisibility, Permission } from 'src/enum.js';
+import { AssetFileType, AssetType, Permission } from 'src/enum.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
-import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
+import { getLockedOwnerId, isLockedAssetRow } from 'src/utils/locked-visibility.js';
 import {
   StudioAudioSource,
   StudioDestination,
@@ -1038,7 +1038,7 @@ export class StudioResourceService extends BaseService {
     for (const id of ids) {
       const asset = byId.get(id);
       const isOwner = asset?.ownerId === auth.user.id;
-      const isLocked = asset?.visibility === AssetVisibility.Locked;
+      const isLocked = !!asset && isLockedAssetRow(asset);
       if (!asset) {
         decisions.set(id, notFound);
       } else if (isLocked && !(isOwner && (backgroundRunner || elevatedOwnerId === auth.user.id))) {

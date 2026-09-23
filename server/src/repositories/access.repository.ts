@@ -9,6 +9,7 @@ import {
   asUuid,
   getHiddenContentFilter,
   hiddenContentAssetIdExists,
+  isNotLockedAsset,
   tagHasVisibleAssetOrNoAssets,
   withDefaultVisibility,
   withHiddenContentFilter,
@@ -696,7 +697,7 @@ class PersonAccess {
       .where('asset.ownerId', '=', userId)
       // a face on Locked media is reachable only from its owner's elevated session (FL-34); left out,
       // the session counts as ordinary
-      .$if(!hasElevatedPermission, (qb) => qb.where('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)))
+      .$if(!hasElevatedPermission, (qb) => qb.where((eb) => isNotLockedAsset(eb)))
       .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
       .execute()
       .then((faces) => new Set(faces.map((face) => face.id)));
