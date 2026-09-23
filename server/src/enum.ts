@@ -1769,6 +1769,7 @@ export enum NotificationType {
   AlbumUpdate = 'AlbumUpdate',
   ClusterGroupRequest = 'ClusterGroupRequest',
   SharedSpaceMention = 'SharedSpaceMention',
+  SharedSpaceReply = 'SharedSpaceReply',
   Custom = 'Custom',
 }
 
@@ -1795,6 +1796,8 @@ export enum SharedSpaceEventType {
   MemberRemoved = 'MemberRemoved',
   MemberRoleChanged = 'MemberRoleChanged',
   Comment = 'Comment',
+  /** A reply to a comment (threaded replies); `targetUserId` is the author of the comment it answers. */
+  Reply = 'Reply',
   Like = 'Like',
 }
 
