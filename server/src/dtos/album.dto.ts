@@ -236,7 +236,9 @@ export const AlbumResponseSchema = z
     isSmart: z
       .boolean()
       .optional()
-      .describe('True when the album is filled by smart album rules. Populated by GET /albums/tree and GET /albums/{id}.'),
+      .describe(
+        'True when the album is filled by smart album rules. Populated by GET /albums/tree and GET /albums/{id}.',
+      ),
     smartRuleId: z
       .string()
       .nullable()

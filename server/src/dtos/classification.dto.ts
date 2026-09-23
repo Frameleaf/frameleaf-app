@@ -117,9 +117,7 @@ const ClassificationRuleUpdateSchema = z
   .refine(dateOrder, dateOrderError)
   .meta({ id: 'ClassificationRuleUpdateDto' });
 
-const ClassificationTagSchema = z
-  .object({ id: z.string(), name: z.string() })
-  .meta({ id: 'ClassificationTagDto' });
+const ClassificationTagSchema = z.object({ id: z.string(), name: z.string() }).meta({ id: 'ClassificationTagDto' });
 
 const ClassificationRuleCountsSchema = z
   .object({

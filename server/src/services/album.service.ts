@@ -169,7 +169,10 @@ export class AlbumService extends BaseService {
    * Whether an album is filled automatically (FL-60): a built-in smart album, or one of the viewer's
    * own classification rules. Another person's rule id is never returned.
    */
-  private async smartStateOf(auth: AuthDto, albumId: string): Promise<{ isSmart: boolean; smartRuleId: string | null }> {
+  private async smartStateOf(
+    auth: AuthDto,
+    albumId: string,
+  ): Promise<{ isSmart: boolean; smartRuleId: string | null }> {
     const [builtIn, rule] = await Promise.all([
       this.smartAlbumRepository.getSmartBackedAlbumIds([albumId]),
       this.classificationRepository.getRuleByAlbumId(albumId),

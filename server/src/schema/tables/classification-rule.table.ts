@@ -15,7 +15,10 @@ import { UserTable } from 'src/schema/tables/user.table.js';
  * together with the moment the owner consented to it (`classification_rule_archive_consent_chk`).
  */
 @Unique({ name: 'classification_rule_albumId_uq', columns: ['albumId'] })
-@Check({ name: 'classification_rule_archive_consent_chk', expression: `NOT "archive" OR "archiveConsentAt" IS NOT NULL` })
+@Check({
+  name: 'classification_rule_archive_consent_chk',
+  expression: `NOT "archive" OR "archiveConsentAt" IS NOT NULL`,
+})
 @Table({ name: 'classification_rule' })
 export class ClassificationRuleTable {
   @PrimaryGeneratedUuidV7Column()
