@@ -135,7 +135,7 @@ const PhysicalDeduplicationApplySchema = z
     pauseRequested: z.boolean(),
     total: z.number().int().nonnegative().describe('Copies in the reviewed plan'),
     processed: z.number().int().nonnegative(),
-    progress: z.number(),
+    progress: z.number().meta({ format: 'double' }),
     applied: z.number().int().nonnegative(),
     alreadyApplied: z.number().int().nonnegative(),
     skipped: z.number().int().nonnegative().describe('Copies left alone because their evidence changed'),

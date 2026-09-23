@@ -101,7 +101,10 @@ const RunSchema = z
   .object({
     id: z.uuid().describe('Media operation ID of the run'),
     status: MediaOperationStatusSchema,
-    progress: z.number().describe('0 to 100, from resources settled out of those known so far'),
+    progress: z
+      .number()
+      .meta({ format: 'double' })
+      .describe('0 to 100, from resources settled out of those known so far'),
     processedUnits: z.number().int().describe('Resources settled so far'),
     totalUnits: z.number().int().nullable().describe('Resources known so far; null until the inventory is counted'),
     retrying: z.boolean().describe('Back in the queue for its automatic retry after a failure'),
@@ -123,7 +126,7 @@ const ConnectionSchema = z
     config: ConfigFieldsSchema,
     lastError: z.string().nullable(),
     nextRunAt: z.string().nullable(),
-    counts: z.record(z.string(), z.number()),
+    counts: z.record(z.string(), z.number().int()),
     run: RunSchema.nullable().describe('The current or most recent sync run'),
   })
   .meta({ id: 'ICloudConnectionResponseDto' });
