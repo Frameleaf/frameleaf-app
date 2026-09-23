@@ -3,7 +3,8 @@
   import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
   import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
-  import { SettingInputFieldType } from '$lib/constants';
+  import { page } from '$app/state';
+  import { QueryParameter, SettingInputFieldType } from '$lib/constants';
   import ImageDescriptionRequeueModal from '$lib/modals/ImageDescriptionRequeueModal.svelte';
   import {
     getImageDescriptionRequeueEstimate,
@@ -197,6 +198,11 @@
 
   onMount(() => {
     void loadDescriptionStats();
+    // Deep link from the Jobs manager's "Enrichment tasks" entry (FL-59): opens straight into
+    // the sample-first workbench instead of only scrolling to this section.
+    if (page.url.searchParams.get(QueryParameter.OPEN_SETTING) === 'workbench') {
+      workbenchOpen = true;
+    }
   });
 
   const handleRequeueClick = async () => {

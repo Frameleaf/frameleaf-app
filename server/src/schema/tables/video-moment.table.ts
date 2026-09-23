@@ -132,8 +132,20 @@ export class VideoMomentFrameTable {
 /**
  * The search embedding of one reusable frame (FL-59). Kept apart from the frame so a change of
  * search model, which empties every embedding table, never touches frames or moments.
+ *
+ * The vector index (`video_moment_frame_index`, added in `2100000000500-AddVideoMomentFrameVectorIndex`)
+ * is `synchronize: false` for the same reason the column's dimension is: it is built after the
+ * table already has its final dimension, choosing whichever vector extension the initial
+ * migration chose for this database, the same way `smart_search`'s `clip_index` does.
  */
 @Table('video_moment_frame_embedding')
+@Index({
+  name: 'video_moment_frame_index',
+  using: 'hnsw',
+  expression: `embedding vector_cosine_ops`,
+  with: `ef_construction = 300, m = 16`,
+  synchronize: false,
+})
 export class VideoMomentFrameEmbeddingTable {
   @ForeignKeyColumn(() => VideoMomentFrameTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', primary: true })
   frameId!: string;
