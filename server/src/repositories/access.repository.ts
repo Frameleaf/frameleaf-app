@@ -193,6 +193,9 @@ class AssetAccess {
       )
       .where('user.id', '=', userId)
       .where('album.deletedAt', 'is', null)
+      // Locked media stays a member of an album but is never reachable through the album: only its
+      // owner's elevated session sees it, via checkOwnerAccess (owner decision, September 22, 2026).
+      .where('asset.visibility', '!=', sql.lit(AssetVisibility.Locked))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .execute()
       .then((assets) => {
@@ -278,12 +281,20 @@ class AssetAccess {
       .selectFrom('shared_link')
       .leftJoin('album', (join) => join.onRef('album.id', '=', 'shared_link.albumId').on('album.deletedAt', 'is', null))
       .leftJoin('shared_link_asset', 'shared_link_asset.sharedLinkId', 'shared_link.id')
+      // A shared link never reaches Locked media, whether the link names the asset or its album
+      // (owner decision, September 22, 2026).
       .leftJoin('asset', (join) =>
-        join.onRef('asset.id', '=', 'shared_link_asset.assetId').on('asset.deletedAt', 'is', null),
+        join
+          .onRef('asset.id', '=', 'shared_link_asset.assetId')
+          .on('asset.deletedAt', 'is', null)
+          .on('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
       )
       .leftJoin('album_asset', 'album_asset.albumId', 'album.id')
       .leftJoin('asset as albumAssets', (join) =>
-        join.onRef('albumAssets.id', '=', 'album_asset.assetId').on('albumAssets.deletedAt', 'is', null),
+        join
+          .onRef('albumAssets.id', '=', 'album_asset.assetId')
+          .on('albumAssets.deletedAt', 'is', null)
+          .on('albumAssets.visibility', '!=', sql.lit(AssetVisibility.Locked)),
       )
       .select([
         'asset.id as assetId',

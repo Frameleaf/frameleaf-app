@@ -54,6 +54,7 @@ select
         where
           "shared_link"."id" = "shared_link_asset"."sharedLinkId"
           and "asset"."deletedAt" is null
+          and "asset"."visibility" != 'locked'
           and not (
             case
               when "asset"."id" is null then false
@@ -166,6 +167,7 @@ from
         where
           "album_asset"."assetId" = "asset"."id"
           and "asset"."deletedAt" is null
+          and "asset"."visibility" != 'locked'
           and not (
             case
               when "asset"."id" is null then false
