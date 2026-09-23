@@ -2850,7 +2850,7 @@ export type ClassificationRuleUpdateDto = {
     visualQueries?: string[];
 };
 export type ClassificationApplyDto = {
-    /** Items from the plan */
+    /** Items from the plan; empty records the check when nothing changed */
     assetIds: string[];
 };
 export type ClassificationApplyResponseDto = {
@@ -2862,8 +2862,7 @@ export type ClassificationApplyResponseDto = {
 };
 export type ClassificationDecisionDto = {
     assetIds: string[];
-    /** Keep the matches, or turn them down and undo what the rule applied */
-    decision: Decision;
+    decision: ClassificationReviewDecision;
 };
 export type ClassificationDecisionResponseDto = {
     skipped: number;
@@ -15951,7 +15950,7 @@ export enum ClassificationMediaType {
     Photo = "photo",
     Video = "video"
 }
-export enum Decision {
+export enum ClassificationReviewDecision {
     Accepted = "accepted",
     Rejected = "rejected"
 }
