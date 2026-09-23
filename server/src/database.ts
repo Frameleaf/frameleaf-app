@@ -107,6 +107,28 @@ export type Memory = {
   assets: ShallowDehydrateObject<MapAsset>[];
 };
 
+/** a private highlight export run (FL-62) */
+export type MemoryExport = {
+  id: string;
+  ownerId: string;
+  memoryId: string;
+  title: string;
+  format: string;
+  status: string;
+  assetIds: string[];
+  assetCount: number;
+  processedAssets: number;
+  path: string | null;
+  sizeInBytes: number | string | null;
+  error: string | null;
+  cancelRequestedAt: Date | null;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  expiresAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 export type Asset = {
   id: string;
   checksum: Buffer<ArrayBufferLike>;

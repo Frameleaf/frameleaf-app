@@ -28,6 +28,7 @@ import {
   TranscodeTarget,
   VideoCodec,
 } from 'src/enum.js';
+import { AudioChannelPolicy, getDeliveryAudioChannelArgs } from 'src/utils/media-policy.js';
 
 export const isVideoRotated = (videoStream: VideoStreamInfo): boolean => Math.abs(videoStream.rotation) === 90;
 
@@ -230,10 +231,12 @@ export class BaseConfig implements VideoCodecSWConfig {
     const options = ['-c:v', videoCodec, '-c:a', audioCodec, '-map', `0:${videoStream.index}`, '-map_metadata', '-1'];
     if (audioStream) {
       options.push('-map', `0:${audioStream.index}`);
-      // If there are more than 2 channels sometimes the channel config is broken when re-encoded
-      // TODO: Store the number of channels in the db and then set it during the transcoding: -channel_layout 5.1
+      // FL-102: the channel count, layout and sample rate are now probed and persisted, so a
+      // downmix is a choice a target makes rather than the only safe option. The default here
+      // stays a stereo downmix because this class builds playback proxies and HLS renditions,
+      // which are allowed to be stereo; the edited-master paths ask for Preserve instead.
       if ([TranscodeTarget.All, TranscodeTarget.Audio].includes(target)) {
-        options.push('-ac', '2');
+        options.push(...getDeliveryAudioChannelArgs(audioStream, this.getAudioChannelPolicy()));
       }
     }
     if (this.getBFrames() > -1) {
@@ -255,6 +258,14 @@ export class BaseConfig implements VideoCodecSWConfig {
     }
 
     return options;
+  }
+
+  /**
+   * FL-102: what this target asks of the source's channel layout. A playback proxy or an HLS
+   * rendition folds to stereo; a master overrides this with {@link AudioChannelPolicy.Preserve}.
+   */
+  getAudioChannelPolicy(): AudioChannelPolicy {
+    return AudioChannelPolicy.DownmixStereo;
   }
 
   getEncoderOptions(): string[] {

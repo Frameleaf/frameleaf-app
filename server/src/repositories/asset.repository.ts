@@ -235,6 +235,9 @@ export class AssetRepository {
               index: ref('excluded.index'),
               profile: ref('excluded.profile'),
               codecName: ref('excluded.codecName'),
+              channels: ref('excluded.channels'),
+              channelLayout: ref('excluded.channelLayout'),
+              sampleRate: ref('excluded.sampleRate'),
             })),
           ),
       );
@@ -564,6 +567,102 @@ export class AssetRepository {
       );
       return ids.map(({ id }) => id);
     });
+  }
+
+  /**
+   * One owner's timeline assets in a local-date window, with the place their metadata
+   * records, ordered by local capture time (FL-62).
+   *
+   * `localDateTime` is the wall clock where the photograph was taken, so the bounds are
+   * compared as local dates: a trip that crossed a timezone still returns the days the
+   * owner lived through, not the server's. Only assets with a generated preview are
+   * returned, so a story can always be rendered.
+   */
+  // No @GenerateSql: the committed snapshots under server/src/queries are generated against
+  // a live database, which this slice could not run.
+  getEventStoryCandidates(ownerId: string, from: Date, to: Date) {
+    return this.db
+      .selectFrom('asset')
+      .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
+      .leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+      .select([
+        'asset.id as id',
+        'asset.localDateTime as localDateTime',
+        'asset_exif.city as city',
+        'asset_exif.state as state',
+        'asset_exif.country as country',
+      ])
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.visibility', '=', AssetVisibility.Timeline)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.localDateTime', '>=', from)
+      .where('asset.localDateTime', '<=', to)
+      .where((eb) =>
+        eb.exists((qb) =>
+          qb
+            .selectFrom('asset_file')
+            .whereRef('asset_file.assetId', '=', 'asset.id')
+            .where('asset_file.type', '=', AssetFileType.Preview),
+        ),
+      )
+      .orderBy('asset.localDateTime', 'asc')
+      .orderBy('asset.id', 'asc')
+      .execute();
+  }
+
+  /**
+   * A spread of one owner's assets across a calendar year, for a year-in-review recap
+   * (FL-62). Diversity is enforced in SQL: at most `perDay` assets from any one local day
+   * and at most `perMonth` from any one local month, so a single busy weekend cannot
+   * become the whole year. The year boundaries are the owner's local ones.
+   */
+  // No @GenerateSql: the committed snapshots under server/src/queries are generated against
+  // a live database, which this slice could not run.
+  getYearInReviewCandidates(ownerId: string, year: number, perDay = 2, perMonth = 10) {
+    return this.db
+      .with('candidate', (qb) =>
+        qb
+          .selectFrom('asset')
+          .innerJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
+          .select([
+            'asset.id as id',
+            'asset.localDateTime as localDateTime',
+            sql<number>`date_part('month', (asset."localDateTime" at time zone 'UTC')::date)::int`.as('month'),
+            sql<number>`row_number() over (
+              partition by (asset."localDateTime" at time zone 'UTC')::date
+              order by asset."localDateTime" asc, asset.id asc
+            )`.as('dayRank'),
+          ])
+          .where('asset.ownerId', '=', ownerId)
+          .where('asset.visibility', '=', AssetVisibility.Timeline)
+          .where('asset.deletedAt', 'is', null)
+          .where(sql`date_part('year', (asset."localDateTime" at time zone 'UTC')::date)::int`, '=', year)
+          .where((eb) =>
+            eb.exists((qb) =>
+              qb
+                .selectFrom('asset_file')
+                .whereRef('asset_file.assetId', '=', 'asset.id')
+                .where('asset_file.type', '=', AssetFileType.Preview),
+            ),
+          ),
+      )
+      .with('ranked', (qb) =>
+        qb
+          .selectFrom('candidate')
+          .selectAll('candidate')
+          .select(
+            sql<number>`row_number() over (
+              partition by "month"
+              order by "localDateTime" asc, "id" asc
+            )`.as('monthRank'),
+          )
+          .where('candidate.dayRank', '<=', perDay),
+      )
+      .selectFrom('ranked')
+      .select(['id', 'localDateTime', 'month'])
+      .where('ranked.monthRank', '<=', perMonth)
+      .orderBy('localDateTime', 'asc')
+      .execute();
   }
 
   @GenerateSql({ params: [DummyValue.UUID, { year: 2000, day: 1, month: 1 }] })

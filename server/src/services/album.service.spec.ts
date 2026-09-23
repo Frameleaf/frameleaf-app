@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { CreateAlbumDto } from 'src/dtos/album.dto.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { AlbumKind, AlbumUserRole, AssetOrder, UserMetadataKey } from 'src/enum.js';
@@ -1912,6 +1912,143 @@ describe(AlbumService.name, () => {
         await expect(sut.getDescendantCount(auth, album.id)).resolves.toEqual({ count: 5 });
         expect(mocks.album.getDescendantCount).toHaveBeenCalledWith(album.id);
       });
+    });
+  });
+
+  describe('shared space membership (FL-55)', () => {
+    it('invites rather than adds, so nobody is put into a space without agreeing', async () => {
+      const space = AlbumFactory.from({ kind: AlbumKind.Space }).build();
+      const { user: owner } = space.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const user = UserFactory.create();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([space.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(space));
+      mocks.user.get.mockResolvedValue(user);
+
+      await sut.addUsers(AuthFactory.create(owner), space.id, {
+        albumUsers: [{ userId: user.id, role: AlbumUserRole.Viewer }],
+      });
+
+      expect(mocks.albumUser.create).not.toHaveBeenCalled();
+      expect(mocks.albumUser.createInvite).toHaveBeenCalledWith({
+        albumId: space.id,
+        userId: user.id,
+        role: AlbumUserRole.Viewer,
+        invitedById: owner.id,
+      });
+      expect(mocks.event.emit).toHaveBeenCalledWith('AlbumInvite', {
+        id: space.id,
+        userId: user.id,
+        senderName: owner.name,
+      });
+    });
+
+    it('refuses an editor of a space inviting anyone', async () => {
+      const editorId = newUuid();
+      const space = AlbumFactory.from({ kind: AlbumKind.Space })
+        .albumUser({ userId: editorId, role: AlbumUserRole.Editor })
+        .build();
+      const { user: editor } = space.albumUsers.find(({ user }) => user.id === editorId)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([space.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(space));
+
+      await expect(
+        sut.addUsers(AuthFactory.create(editor), space.id, { albumUsers: [{ userId: newUuid() }] }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.albumUser.createInvite).not.toHaveBeenCalled();
+      expect(mocks.albumUser.create).not.toHaveBeenCalled();
+    });
+
+    it('still lets an editor of a plain album share it', async () => {
+      const editorId = newUuid();
+      const album = AlbumFactory.from().albumUser({ userId: editorId, role: AlbumUserRole.Editor }).build();
+      const { user: editor } = album.albumUsers.find(({ user }) => user.id === editorId)!;
+      const user = UserFactory.create();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.user.get.mockResolvedValue(user);
+
+      await sut.addUsers(AuthFactory.create(editor), album.id, { albumUsers: [{ userId: user.id }] });
+
+      expect(mocks.albumUser.create).toHaveBeenCalled();
+      expect(mocks.albumUser.createInvite).not.toHaveBeenCalled();
+    });
+
+    it('refuses to offer the owner role in a space', async () => {
+      const space = AlbumFactory.from({ kind: AlbumKind.Space }).build();
+      const { user: owner } = space.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([space.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(space));
+
+      await expect(
+        sut.addUsers(AuthFactory.create(owner), space.id, {
+          albumUsers: [{ userId: newUuid(), role: AlbumUserRole.Owner }],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('lets the space owner change a member role', async () => {
+      const viewerId = newUuid();
+      const space = AlbumFactory.from({ kind: AlbumKind.Space })
+        .albumUser({ userId: viewerId, role: AlbumUserRole.Viewer })
+        .build();
+      const { user: owner } = space.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([space.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(space));
+      mocks.albumUser.getInvite.mockResolvedValue(void 0);
+
+      await sut.updateUser(AuthFactory.create(owner), space.id, viewerId, { role: AlbumUserRole.Editor });
+
+      expect(mocks.albumUser.update).toHaveBeenCalledWith(
+        { albumId: space.id, userId: viewerId },
+        { role: AlbumUserRole.Editor },
+      );
+    });
+
+    it('changes the offer, not a role, when the person has not joined yet', async () => {
+      const invitedId = newUuid();
+      const space = AlbumFactory.from({ kind: AlbumKind.Space }).build();
+      const { user: owner } = space.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([space.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(space));
+      mocks.albumUser.getInvite.mockResolvedValue({
+        albumId: space.id,
+        userId: invitedId,
+        role: AlbumUserRole.Viewer,
+        invitedById: owner.id,
+        createdAt: new Date(),
+      });
+
+      await sut.updateUser(AuthFactory.create(owner), space.id, invitedId, { role: AlbumUserRole.Editor });
+
+      expect(mocks.albumUser.update).not.toHaveBeenCalled();
+      expect(mocks.albumUser.createInvite).toHaveBeenCalledWith({
+        albumId: space.id,
+        userId: invitedId,
+        role: AlbumUserRole.Editor,
+        invitedById: owner.id,
+      });
+    });
+
+    it('refuses an editor of a space removing another member, but lets them leave', async () => {
+      const editorId = newUuid();
+      const viewerId = newUuid();
+      const space = AlbumFactory.from({ kind: AlbumKind.Space })
+        .albumUser({ userId: editorId, role: AlbumUserRole.Editor })
+        .albumUser({ userId: viewerId, role: AlbumUserRole.Viewer })
+        .build();
+      const { user: editor } = space.albumUsers.find(({ user }) => user.id === editorId)!;
+      const auth = AuthFactory.create(editor);
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([space.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(space));
+
+      await expect(sut.removeUser(auth, space.id, viewerId)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.albumUser.delete).not.toHaveBeenCalled();
+
+      await sut.removeUser(auth, space.id, 'me');
+      expect(mocks.albumUser.delete).toHaveBeenCalledWith({ albumId: space.id, userId: editorId });
     });
   });
 });
