@@ -18,7 +18,7 @@ People you share the photo with read it with your corrections applied and withou
 ### When the photo changes
 
 - **Read again**: your corrections follow the line that now covers the same place in the photo. If the new reading differs from the text you corrected, the line says so. A correction whose text is gone entirely is kept as your own text, and the old recognized text is not shown again.
-- **Cropped**: text a crop removes is no longer read, listed or searchable, and your corrections of it are not shown while the crop hides it. Removing the crop brings them back.
+- **Cropped**: text a crop removes is no longer read, listed or searchable, and your corrections of it are not shown while the crop hides it. Reading a cropped photo again keeps that text hidden, and search on a cropped photo matches only its visible text and values you typed yourself. Removing the crop brings them back.
 - **Locked**: a locked photo's text is part of the photo. It is listed and readable only while your session is unlocked, and locking the session again clears it from the list and from an open information panel.
 
 ## Suggested details
