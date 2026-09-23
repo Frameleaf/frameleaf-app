@@ -4491,6 +4491,116 @@
         "x-immich-state": "Stable"
       }
     },
+    "/analytics": {
+      "get": {
+        "description": "Counts, sizes, dated history and processing outcomes for one selection and date range. Series that are not recorded for the selection are omitted or null, never filled in; estimated processing cost is an estimate, not a charge.",
+        "operationId": "getAnalyticsReport",
+        "parameters": [
+          {
+            "name": "range",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "year",
+              "$ref": "#/components/schemas/AnalyticsRange"
+            }
+          },
+          {
+            "name": "scope",
+            "required": false,
+            "in": "query",
+            "description": "`all` (the whole server, administrators only), `account:<id>` or `library:<id>`",
+            "schema": {
+              "default": "all",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsReportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve library analytics",
+        "tags": [
+          "Analytics"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/analytics/scopes": {
+      "get": {
+        "description": "The selections the signed-in account may read analytics for: the whole server for administrators, then accounts and external libraries.",
+        "operationId": "getAnalyticsScopes",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsScopesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List analytics scopes",
+        "tags": [
+          "Analytics"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/api-keys": {
       "get": {
         "description": "Retrieve all API keys of the current user.",
@@ -33133,6 +33243,10 @@
       "description": "An album is a collection of assets that can be shared with other users or via shared links."
     },
     {
+      "name": "Analytics",
+      "description": "Library analytics: counts, sizes, dated history and processing outcomes for the whole server, one account or one external library. Everything is computed and kept on this server; nothing is sent elsewhere."
+    },
+    {
       "name": "API keys",
       "description": "An api key can be used to programmatically access the Immich API."
     },
@@ -36180,6 +36294,835 @@
             "$ref": "#/components/schemas/AssetOrder"
           }
         },
+        "type": "object"
+      },
+      "AnalyticsAlbumDto": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owned": {
+            "type": "boolean"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "shared": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "owned",
+          "ownerName",
+          "shared"
+        ],
+        "type": "object"
+      },
+      "AnalyticsAlbumsDto": {
+        "properties": {
+          "albums": {
+            "description": "Albums the viewer owns or belongs to",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsAlbumDto"
+            },
+            "type": "array"
+          },
+          "notShared": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "owned": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ownedShared": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "shared": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unlisted": {
+            "description": "Albums counted but not listed, because the viewer neither owns nor belongs to them",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "albums",
+          "notShared",
+          "owned",
+          "ownedShared",
+          "shared",
+          "total",
+          "unlisted"
+        ],
+        "type": "object"
+      },
+      "AnalyticsBucketDto": {
+        "properties": {
+          "completed": {
+            "description": "Completed processing attempts; null when not available for this scope",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "failed": {
+            "description": "Failed processing attempts; null when not available for this scope",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "from": {
+            "format": "date",
+            "type": "string"
+          },
+          "items": {
+            "description": "Library items at the last observation in this period; null when none",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "key": {
+            "description": "YYYY-MM for a month, the Monday for a week",
+            "type": "string"
+          },
+          "logicalBytes": {
+            "description": "Bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "observedAt": {
+            "description": "When the growth values were read; null for a gap",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "partial": {
+            "description": "Cut short by the edge of the selected dates",
+            "type": "boolean"
+          },
+          "photos": {
+            "description": "Photos added in this period and still in the library",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "physicalBytes": {
+            "description": "Bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "through": {
+            "format": "date",
+            "type": "string"
+          },
+          "videos": {
+            "description": "Videos added in this period and still in the library",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "completed",
+          "failed",
+          "from",
+          "items",
+          "key",
+          "logicalBytes",
+          "observedAt",
+          "partial",
+          "photos",
+          "physicalBytes",
+          "through",
+          "videos"
+        ],
+        "type": "object"
+      },
+      "AnalyticsCameraDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AnalyticsCameraKind"
+          },
+          "name": {
+            "description": "Camera model; null for the other and unknown rows",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "kind",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AnalyticsCameraKind": {
+        "enum": [
+          "model",
+          "other",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "AnalyticsDayDto": {
+        "properties": {
+          "captured": {
+            "description": "Items taken on this local date",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "uploaded": {
+            "description": "Items added on this UTC date",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "captured",
+          "date",
+          "uploaded"
+        ],
+        "type": "object"
+      },
+      "AnalyticsGrain": {
+        "description": "Analytics grain",
+        "enum": [
+          "snapshot",
+          "day"
+        ],
+        "type": "string"
+      },
+      "AnalyticsHistoryDto": {
+        "properties": {
+          "dayRetentionDays": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lastObservedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "staleAfterHours": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/AnalyticsState",
+            "description": "unknown: never collected; stale: last collection is too old"
+          },
+          "weekRetentionDays": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dayRetentionDays",
+          "lastObservedAt",
+          "staleAfterHours",
+          "state",
+          "weekRetentionDays"
+        ],
+        "type": "object"
+      },
+      "AnalyticsHostDto": {
+        "description": "The library volume, always the whole host whatever is selected",
+        "properties": {
+          "capacityBytes": {
+            "description": "Bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "freeBytes": {
+            "description": "Bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/AnalyticsState"
+          },
+          "volumeUsedBytes": {
+            "description": "Bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "capacityBytes",
+          "freeBytes",
+          "observedAt",
+          "state",
+          "volumeUsedBytes"
+        ],
+        "type": "object"
+      },
+      "AnalyticsMeasurementScope": {
+        "description": "Analytics measurement scope",
+        "enum": [
+          "selection",
+          "host"
+        ],
+        "type": "string"
+      },
+      "AnalyticsMetadataDto": {
+        "properties": {
+          "field": {
+            "$ref": "#/components/schemas/AnalyticsMetadataField"
+          },
+          "missing": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "present": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "field",
+          "missing",
+          "present",
+          "total"
+        ],
+        "type": "object"
+      },
+      "AnalyticsMetadataField": {
+        "enum": [
+          "captureDate",
+          "location",
+          "cameraModel",
+          "aiDescription",
+          "checksum"
+        ],
+        "type": "string"
+      },
+      "AnalyticsProcessingDto": {
+        "properties": {
+          "attempts": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "available": {
+            "description": "Processing is recorded for the whole server only",
+            "type": "boolean"
+          },
+          "completed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "costedAttempts": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "durationMs": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "estimatedCostUsd": {
+            "description": "Estimate from configured hourly rates; never a bill. Null when no attempt had a rate",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "uncostedAttempts": {
+            "description": "Attempts without a configured rate; not included in the estimate",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "attempts",
+          "available",
+          "completed",
+          "costedAttempts",
+          "durationMs",
+          "estimatedCostUsd",
+          "failed",
+          "uncostedAttempts"
+        ],
+        "type": "object"
+      },
+      "AnalyticsRange": {
+        "description": "Analytics date range",
+        "enum": [
+          "90days",
+          "year"
+        ],
+        "type": "string"
+      },
+      "AnalyticsReportResponseDto": {
+        "properties": {
+          "albums": {
+            "$ref": "#/components/schemas/AnalyticsAlbumsDto"
+          },
+          "cameras": {
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsCameraDto"
+            },
+            "type": "array"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsDayDto"
+            },
+            "type": "array"
+          },
+          "definitions": {
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsSeriesDefinitionDto"
+            },
+            "type": "array"
+          },
+          "from": {
+            "format": "date",
+            "type": "string"
+          },
+          "generatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "history": {
+            "$ref": "#/components/schemas/AnalyticsHistoryDto"
+          },
+          "host": {
+            "$ref": "#/components/schemas/AnalyticsHostDto"
+          },
+          "metadata": {
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsMetadataDto"
+            },
+            "type": "array"
+          },
+          "processing": {
+            "$ref": "#/components/schemas/AnalyticsProcessingDto"
+          },
+          "range": {
+            "$ref": "#/components/schemas/AnalyticsRange"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "scopeKind": {
+            "$ref": "#/components/schemas/AnalyticsScopeKind"
+          },
+          "scopeLabel": {
+            "description": "Account or library name; empty for the whole server",
+            "type": "string"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsBucketDto"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/AnalyticsSummaryDto"
+          },
+          "through": {
+            "format": "date",
+            "type": "string"
+          },
+          "views": {
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsViewDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "albums",
+          "cameras",
+          "days",
+          "definitions",
+          "from",
+          "generatedAt",
+          "history",
+          "host",
+          "metadata",
+          "processing",
+          "range",
+          "scope",
+          "scopeKind",
+          "scopeLabel",
+          "series",
+          "summary",
+          "through",
+          "views"
+        ],
+        "type": "object"
+      },
+      "AnalyticsScopeKind": {
+        "description": "Analytics scope kind",
+        "enum": [
+          "host",
+          "account",
+          "library"
+        ],
+        "type": "string"
+      },
+      "AnalyticsScopeOptionDto": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/AnalyticsScopeKind"
+          },
+          "label": {
+            "description": "Account or library name; empty for the whole server",
+            "type": "string"
+          },
+          "libraryId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "removed": {
+            "description": "The account or library has been removed; its items may still count until deleted",
+            "type": "boolean"
+          },
+          "userId": {
+            "description": "The account, or the library owner",
+            "nullable": true,
+            "type": "string"
+          },
+          "value": {
+            "description": "The value to pass as `scope`",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "label",
+          "libraryId",
+          "removed",
+          "userId",
+          "value"
+        ],
+        "type": "object"
+      },
+      "AnalyticsScopesResponseDto": {
+        "properties": {
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsScopeOptionDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "scopes"
+        ],
+        "type": "object"
+      },
+      "AnalyticsSeriesDefinitionDto": {
+        "properties": {
+          "available": {
+            "description": "Whether this report carries the series for the selected scope",
+            "type": "boolean"
+          },
+          "collected": {
+            "description": "Written by the local nightly collector rather than read live",
+            "type": "boolean"
+          },
+          "estimate": {
+            "description": "An estimate, never a charge",
+            "type": "boolean"
+          },
+          "grain": {
+            "$ref": "#/components/schemas/AnalyticsGrain"
+          },
+          "id": {
+            "$ref": "#/components/schemas/AnalyticsSeriesId"
+          },
+          "measurementScope": {
+            "$ref": "#/components/schemas/AnalyticsMeasurementScope"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/AnalyticsSeriesOwner"
+          },
+          "scopes": {
+            "description": "Selections the series can be read for",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsScopeKind"
+            },
+            "type": "array"
+          },
+          "source": {
+            "description": "Where the number comes from",
+            "type": "string"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/AnalyticsUnit"
+          }
+        },
+        "required": [
+          "available",
+          "collected",
+          "estimate",
+          "grain",
+          "id",
+          "measurementScope",
+          "owner",
+          "scopes",
+          "source",
+          "unit"
+        ],
+        "type": "object"
+      },
+      "AnalyticsSeriesId": {
+        "description": "Approved analytics series",
+        "enum": [
+          "library.items",
+          "library.photos",
+          "library.videos",
+          "library.logicalBytes",
+          "library.physicalBytes",
+          "host.volumeUsedBytes",
+          "host.capacityBytes",
+          "library.arrivals",
+          "library.captures",
+          "processing.completed",
+          "processing.failed",
+          "processing.estimatedCostUsd"
+        ],
+        "type": "string"
+      },
+      "AnalyticsSeriesOwner": {
+        "description": "The part of the product that answers for it",
+        "enum": [
+          "library",
+          "host",
+          "processing"
+        ],
+        "type": "string"
+      },
+      "AnalyticsState": {
+        "description": "Analytics reading state",
+        "enum": [
+          "measured",
+          "stale",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "AnalyticsSummaryDto": {
+        "properties": {
+          "duplicateReferences": {
+            "description": "Items sharing an original file with another item in this selection",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "externalLogicalBytes": {
+            "description": "Originals in external libraries, usually outside the library volume",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "externalPhysicalBytes": {
+            "description": "Bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "files": {
+            "description": "Original files, Live Photo motion parts included",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "items": {
+            "description": "Photos and videos, Trash included, Locked media and Live Photo motion parts excluded",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "logicalBytes": {
+            "description": "Every original reference, before physical deduplication",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "photos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "physicalBytes": {
+            "description": "Original files, each shared file counted once within this selection",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "raw": {
+            "description": "RAW photos; a subset of photos",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "savedBytes": {
+            "description": "logicalBytes minus physicalBytes of this same selection",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unmeasuredFiles": {
+            "description": "Original files whose size has not been read; excluded from byte totals",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "uploadedLogicalBytes": {
+            "description": "Bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "uploadedPhysicalBytes": {
+            "description": "Bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "videos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "duplicateReferences",
+          "externalLogicalBytes",
+          "externalPhysicalBytes",
+          "files",
+          "items",
+          "logicalBytes",
+          "photos",
+          "physicalBytes",
+          "raw",
+          "savedBytes",
+          "unmeasuredFiles",
+          "uploadedLogicalBytes",
+          "uploadedPhysicalBytes",
+          "videos"
+        ],
+        "type": "object"
+      },
+      "AnalyticsUnit": {
+        "description": "Analytics unit",
+        "enum": [
+          "items",
+          "bytes",
+          "attempts",
+          "usd"
+        ],
+        "type": "string"
+      },
+      "AnalyticsView": {
+        "enum": [
+          "timeline",
+          "favorites",
+          "archive",
+          "trash"
+        ],
+        "type": "string"
+      },
+      "AnalyticsViewDto": {
+        "properties": {
+          "overlaps": {
+            "description": "Also counted in another view",
+            "type": "boolean"
+          },
+          "photos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "videos": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "view": {
+            "$ref": "#/components/schemas/AnalyticsView"
+          }
+        },
+        "required": [
+          "overlaps",
+          "photos",
+          "total",
+          "videos",
+          "view"
+        ],
         "type": "object"
       },
       "ApiKeyCreateDto": {
@@ -44245,6 +45188,7 @@
         "description": "Job name",
         "enum": [
           "ICloudSync",
+          "AnalyticsCollect",
           "ForkSchemaBackfill",
           "AssetDelete",
           "AssetDeleteCheck",
@@ -44883,7 +45827,8 @@
           "integrity-checksum-mismatch-refresh",
           "integrity-missing-files-delete-all",
           "integrity-untracked-files-delete-all",
-          "integrity-checksum-mismatch-delete-all"
+          "integrity-checksum-mismatch-delete-all",
+          "analytics-collect"
         ],
         "type": "string"
       },
