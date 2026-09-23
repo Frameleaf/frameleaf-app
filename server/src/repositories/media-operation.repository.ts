@@ -37,6 +37,45 @@ export type MediaOperationAggregateRow = {
   oldestQueuedAt: Date | null;
 };
 
+/** Every column except the two JSON documents `list` trims rather than returns whole. */
+const LIST_COLUMNS = [
+  'id',
+  'ownerId',
+  'kind',
+  'status',
+  'destination',
+  'destinationDetail',
+  'label',
+  'assetId',
+  'resultAssetId',
+  'retryOfId',
+  'projectId',
+  'revisionId',
+  'settings',
+  'estimate',
+  'progress',
+  'processedUnits',
+  'totalUnits',
+  'attempt',
+  'maxAttempts',
+  'claimToken',
+  'claimedBy',
+  'claimExpiresAt',
+  'heartbeatAt',
+  'cancelRequestedAt',
+  'cancelAcknowledgedAt',
+  'remoteJobId',
+  'remoteReleasedAt',
+  'error',
+  'errorCode',
+  'startedAt',
+  'finishedAt',
+  'dismissedAt',
+  'createdAt',
+  'updatedAt',
+  'updateId',
+] as const;
+
 /**
  * Durable media operations (FL-43, FL-104).
  *
@@ -81,7 +120,11 @@ export class MediaOperationRepository {
 
     const [items, total] = await Promise.all([
       query
-        .selectAll()
+        .select(LIST_COLUMNS)
+        // A bulk job's snapshot carries every asset id it was frozen with, and its result every
+        // recorded refusal. The list shows neither, and polling it must not drag them along.
+        .select(sql<Record<string, unknown>>`"snapshot" - 'assetIds'`.as('snapshot'))
+        .select(sql<Record<string, unknown> | null>`"result" - 'items'`.as('result'))
         // Newest first; the id is a v7 uuid so it orders by creation without a second column.
         .orderBy('createdAt', 'desc')
         .orderBy('id', 'desc')
@@ -95,6 +138,42 @@ export class MediaOperationRepository {
     ]);
 
     return { items: items as unknown as MediaOperation[], total };
+  }
+
+  /**
+   * The owner's bulk operation submitted under a client idempotency key, if any (FL-32).
+   *
+   * A double-clicked submit or a browser retrying a request it never saw answered finds the first
+   * job here instead of starting a second one over the same items.
+   */
+  async getBulkByRequestId(ownerId: string, requestId: string): Promise<MediaOperation | undefined> {
+    return (await this.db
+      .selectFrom('media_operation')
+      .selectAll()
+      .where('ownerId', '=', ownerId)
+      .where('kind', '=', MediaOperationKind.Bulk)
+      .where(sql<string>`"snapshot"->>'requestId'`, '=', requestId)
+      .orderBy('createdAt', 'asc')
+      .limit(1)
+      .executeTakeFirst()) as unknown as MediaOperation | undefined;
+  }
+
+  /**
+   * A retry of this job that is still running, if there is one.
+   *
+   * Retry is idempotent on this: asking twice while the first retry is working answers with that
+   * retry rather than queueing a second pass over the same items.
+   */
+  async getActiveRetry(retryOfId: string, ownerId: string): Promise<MediaOperation | undefined> {
+    return (await this.db
+      .selectFrom('media_operation')
+      .selectAll()
+      .where('retryOfId', '=', retryOfId)
+      .where('ownerId', '=', ownerId)
+      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .orderBy('createdAt', 'desc')
+      .limit(1)
+      .executeTakeFirst()) as unknown as MediaOperation | undefined;
   }
 
   getCheckpoints(operationId: string): Promise<MediaOperationCheckpoint[]> {
@@ -221,6 +300,51 @@ export class MediaOperationRepository {
       .executeTakeFirst();
 
     return Number(result.numUpdatedRows) === 1;
+  }
+
+  /**
+   * Record what a bulk operation has done so far (FL-32), and extend the lease while doing it.
+   *
+   * Unlike `reportProgress` this does not change the status, and it is allowed while the job is
+   * `cancelling`: a batch that was applied before the owner pressed Cancel really happened, and its
+   * outcome has to land on the row even though the job is stopping. The returned status is how the
+   * runner learns about that cancel in the same round trip.
+   *
+   * Returns undefined when the claim is no longer ours, in which case the runner must stop at once.
+   */
+  async setBulkResult(
+    id: string,
+    claimToken: string,
+    patch: {
+      result: Record<string, unknown>;
+      processedUnits: number;
+      totalUnits: number;
+      progress: number;
+      leaseMs: number;
+    },
+  ): Promise<{ status: MediaOperationStatus; cancelRequestedAt: Date | null } | undefined> {
+    const row = await this.db
+      .updateTable('media_operation')
+      .set({
+        result: patch.result,
+        processedUnits: String(patch.processedUnits),
+        totalUnits: String(patch.totalUnits),
+        progress: patch.progress,
+        heartbeatAt: sql<Date>`now()`,
+        claimExpiresAt: sql<Date>`now() + ${sql.lit(patch.leaseMs)} * interval '1 millisecond'`,
+      })
+      .where('id', '=', id)
+      .where('claimToken', '=', claimToken)
+      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+      .returning(['status', 'cancelRequestedAt'])
+      .executeTakeFirst();
+
+    return row
+      ? {
+          status: row.status as MediaOperationStatus,
+          cancelRequestedAt: (row.cancelRequestedAt as unknown as Date | null) ?? null,
+        }
+      : undefined;
   }
 
   /**
@@ -419,10 +543,15 @@ export class MediaOperationRepository {
   async recoverExpiredClaims(options: {
     errorCode: string;
     error: string;
+    /** Limit recovery to the kinds the caller runs. Omitted, every kind is recovered. */
+    kinds?: readonly MediaOperationKind[];
   }): Promise<{ requeued: number; failed: number; abandonedCancels: number }> {
+    const kinds = options.kinds?.length ? [...options.kinds] : undefined;
+
     const requeued = await this.db
       .updateTable('media_operation')
       .set({ status: MediaOperationStatus.Queued, claimToken: null, claimedBy: null, claimExpiresAt: null })
+      .$if(!!kinds, (qb) => qb.where('kind', 'in', kinds!))
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)
@@ -442,6 +571,7 @@ export class MediaOperationRepository {
         claimedBy: null,
         claimExpiresAt: null,
       })
+      .$if(!!kinds, (qb) => qb.where('kind', 'in', kinds!))
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)
@@ -458,6 +588,7 @@ export class MediaOperationRepository {
         claimedBy: null,
         claimExpiresAt: null,
       })
+      .$if(!!kinds, (qb) => qb.where('kind', 'in', kinds!))
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)

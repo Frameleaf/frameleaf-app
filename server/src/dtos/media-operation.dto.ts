@@ -87,7 +87,7 @@ const MediaOperationBulkPayloadSchema = z
     dateMode: z.enum(['set', 'shift']).optional(),
     dateTimeOriginal: z.string().optional(),
     timeZone: z.string().optional(),
-    minutes: z.number().optional(),
+    minutes: z.int().optional().describe('Relative shift in minutes, for `dateMode: shift`'),
     description: z.string().max(10_000).optional(),
     latitude: z.number().min(-90).max(90).optional(),
     longitude: z.number().min(-180).max(180).optional(),
@@ -109,7 +109,11 @@ const MediaOperationBulkCreateSchema = z
     action: MediaOperationBulkActionSchema,
     assetIds: z.array(z.uuidv4()).min(1).max(BULK_MAX_ITEMS).describe('The frozen matching set, in order'),
     payload: MediaOperationBulkPayloadSchema.optional(),
-    submittedTotal: z.int().nullable().optional().describe('The count shown to the person at submit'),
+    requestId: z
+      .uuidv4()
+      .optional()
+      .describe('Client idempotency key; submitting the same key again returns the existing operation'),
+    submittedTotal: z.int().min(0).nullable().optional().describe('The count shown to the person at submit'),
     truncated: z.boolean().optional().describe('The client could not resolve the whole matching set'),
     scope: JsonObjectSchema.optional().describe('A record of the view the set came from; never re-resolved'),
   })
@@ -212,3 +216,7 @@ export class MediaOperationStatisticsDto extends createZodDto(MediaOperationStat
 export class MediaOperationCheckpointDto extends createZodDto(MediaOperationCheckpointSchema) {}
 export class MediaOperationAggregateDto extends createZodDto(MediaOperationAggregateSchema) {}
 export class MediaOperationEstimateDto extends createZodDto(MediaOperationEstimateSchema) {}
+export class MediaOperationBulkCreateDto extends createZodDto(MediaOperationBulkCreateSchema) {}
+export class MediaOperationBulkSummaryDto extends createZodDto(MediaOperationBulkSummarySchema) {}
+export class MediaOperationBulkItemDto extends createZodDto(MediaOperationBulkItemSchema) {}
+export class MediaOperationBulkPayloadDto extends createZodDto(MediaOperationBulkPayloadSchema) {}
