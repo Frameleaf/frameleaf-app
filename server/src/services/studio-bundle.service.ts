@@ -305,6 +305,10 @@ export class StudioBundleService {
       progress: operation.progress,
       attempt: operation.attempt,
       maxAttempts: operation.maxAttempts,
+      // The same retry state Activity reads (FL-104), so the project library's dialog can say a
+      // job is waiting for its automatic retry instead of calling it freshly queued.
+      autoRetries: operation.autoRetries ?? 0,
+      retryAt: asIso(operation.retryAt),
       error: operation.error,
       errorCode: operation.errorCode,
       projectId: isExport ? operation.projectId : (imported?.projectId ?? null),
