@@ -3,16 +3,12 @@ import { AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import { anyUuid } from 'src/utils/database.js';
-import {
-  isLockedAssetId,
-  isLockingVisibility,
-  isUnlockedAsset,
-  lockAssets,
-  unlockAssets,
-} from 'src/utils/locked-state.js';
+import { isLockedAssetId, isLockingVisibility, unlockAssets } from 'src/utils/locked-state.js';
 
 /**
- * A stack is Locked as a whole (owner decision 3, September 22, 2026, FL-53).
+ * A stack is Locked as a whole (owner decision 3, September 22, 2026, FL-53), and so is a live photo
+ * (FL-34): the video part of every photo a cascade locks is locked with it, and every lock a cascade
+ * writes carries the reason of the lock it follows, so the Locked view files it with its stack.
  *
  * A stack is one moment shown as one tile: a burst, a RAW with its JPEG, an original with its edits.
  * When any photo of a stack becomes Locked, every photo of that stack becomes Locked with it, and
@@ -46,17 +42,91 @@ export const otherStackMembers = (db: Kysely<DB>, assetIds: string[]) =>
     .where('member.id', '!=', sql<string>`all(${`{${assetIds}}`}::uuid[])`);
 
 /**
- * Call right after `assetIds` became Locked, in the same transaction. Locks the rest of their stacks
- * and releases every cover, featured photo and face thumbnail any of them was. Returns the ids of the
- * other stack photos it locked.
+ * Touches the assets a cascade just locked, so every device syncs the change.
+ */
+const touch = async (db: Kysely<DB>, assetIds: string[]) => {
+  if (assetIds.length > 0) {
+    await db.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', anyUuid(assetIds)).execute();
+  }
+};
+
+/**
+ * Locks the video part of every locked live photo among `assetIds` with its photo's reason (FL-34):
+ * a live photo locks as a whole. Returns the ids it locked.
+ */
+const lockLivePhotoParts = async (db: Kysely<DB>, assetIds: string[]): Promise<string[]> => {
+  const { rows } = await sql<{ assetId: string }>`
+    insert into asset_lock ("assetId", "reason", "lockedBy")
+    select still."livePhotoVideoId", asset_lock."reason", asset_lock."lockedBy"
+    from asset as still
+    inner join asset_lock on asset_lock."assetId" = still.id
+    where still.id = ${anyUuid(assetIds)}
+      and still."livePhotoVideoId" is not null
+    on conflict ("assetId") do nothing
+    returning "assetId"
+  `.execute(db);
+  return rows.map(({ assetId }) => assetId);
+};
+
+/**
+ * Locks every photo of `stackIds` that holds a locked photo, and the video part of each of their live
+ * photos (FL-34). Each takes the reason and author of the stack's own lock: the primary photo's when
+ * it is locked, otherwise the earliest. Returns the ids it locked, touched but with covers untouched.
+ */
+const lockRestOfStacks = async (db: Kysely<DB>, stackIds: string[]): Promise<string[]> => {
+  const { rows } = await sql<{ assetId: string }>`
+    with source as (
+      select distinct on (asset."stackId") asset."stackId", asset_lock."reason", asset_lock."lockedBy"
+      from asset_lock
+      inner join asset on asset.id = asset_lock."assetId"
+      inner join stack on stack.id = asset."stackId"
+      where asset."stackId" = ${anyUuid(stackIds)}
+      order by asset."stackId", (asset.id = stack."primaryAssetId") desc, asset_lock."lockedAt"
+    ),
+    target as (
+      select member.id, source."reason", source."lockedBy"
+      from asset as member
+      inner join source on source."stackId" = member."stackId"
+      union
+      select member."livePhotoVideoId" as id, source."reason", source."lockedBy"
+      from asset as member
+      inner join source on source."stackId" = member."stackId"
+      where member."livePhotoVideoId" is not null
+    )
+    insert into asset_lock ("assetId", "reason", "lockedBy")
+    select target.id, target."reason", target."lockedBy"
+    from target
+    on conflict ("assetId") do nothing
+    returning "assetId"
+  `.execute(db);
+  const locked = rows.map(({ assetId }) => assetId);
+  await touch(db, locked);
+  return locked;
+};
+
+/**
+ * Call right after `assetIds` became Locked, in the same transaction. Locks the video parts of their
+ * live photos and the rest of their stacks (with their video parts), each with the reason of the lock
+ * it follows, and releases every cover, featured photo and face thumbnail any of them was. Returns the
+ * ids of everything else it locked.
  */
 export const onAssetsLocked = async (db: Kysely<DB>, assetIds: string[]): Promise<string[]> => {
   if (assetIds.length === 0) {
     return [];
   }
 
-  const rows = await otherStackMembers(db, assetIds).where(isUnlockedAsset('member')).execute();
-  const moved = await lockAssets(db, rows.map(({ id }) => id));
+  const parts = await lockLivePhotoParts(db, assetIds);
+  await touch(db, parts);
+  const stacks = await db
+    .selectFrom('asset')
+    .select('asset.stackId')
+    .distinct()
+    .where('asset.id', '=', anyUuid(assetIds))
+    .where('asset.stackId', 'is not', null)
+    .execute();
+  const stackIds = stacks.map(({ stackId }) => stackId!);
+  const members = stackIds.length > 0 ? await lockRestOfStacks(db, stackIds) : [];
+  const moved = [...parts, ...members];
   await releaseLockedCoverReferences(db, [...assetIds, ...moved]);
   return moved;
 };
@@ -107,22 +177,8 @@ export const onStacksJoined = async (db: Kysely<DB>, stackIds: string[]): Promis
     return [];
   }
 
-  const rows = await db
-    .selectFrom('asset as member')
-    .select('member.id')
-    .where('member.stackId', '=', anyUuid(stackIds))
-    .where(isUnlockedAsset('member'))
-    .where((eb) =>
-      eb.exists(
-        eb
-          .selectFrom('asset as locked_member')
-          .select(sql.lit(1).as('locked'))
-          .whereRef('locked_member.stackId', '=', 'member.stackId')
-          .where(isLockedAssetId(sql.ref('locked_member.id'))),
-      ),
-    )
-    .execute();
-  const moved = await lockAssets(db, rows.map(({ id }) => id));
+  // with the video part of every live photo in the stack, and the reason of the stack's own lock
+  const moved = await lockRestOfStacks(db, stackIds);
   await releaseLockedCoverReferences(db, moved);
   return moved;
 };
