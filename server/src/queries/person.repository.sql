@@ -595,6 +595,8 @@ select
   "asset_face".*
 from
   "asset_face"
+  inner join "asset" on "asset"."id" = "asset_face"."assetId"
+  and "asset"."visibility" != 'locked'
 where
   "asset_face"."personGroupId" = $1
   and "asset_face"."deletedAt" is null
@@ -639,6 +641,24 @@ order by
     )
     else false
   end asc
+
+-- PersonRepository.getMissingThumbnailsForAssets
+select
+  "person"."ownerId",
+  "person"."personGroupId"
+from
+  "person"
+where
+  "person"."thumbnailPath" = ''
+  and "person"."faceAssetId" is not null
+  and exists (
+    select
+    from
+      "asset_face"
+    where
+      "asset_face"."personGroupId" = "person"."personGroupId"
+      and "asset_face"."assetId" = any ($1::uuid[])
+  )
 
 -- PersonRepository.getLatestFaceDate
 select

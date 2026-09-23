@@ -12,6 +12,7 @@ import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
 import { PersonTable } from 'src/schema/tables/person.table.js';
 import {
+  anyUuid,
   asUuid,
   dummy,
   inSharedAlbum,
@@ -736,6 +737,13 @@ export class PersonRepository {
       this.db
         .selectFrom('asset_face')
         .selectAll('asset_face')
+        // A Locked photo is never a face thumbnail (FL-53): the thumbnail is shown on the people page
+        // and wherever the person is listed, whatever the session.
+        .innerJoin('asset', (join) =>
+          join
+            .onRef('asset.id', '=', 'asset_face.assetId')
+            .on('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
+        )
         .where('asset_face.personGroupId', '=', personGroupId)
         .where('asset_face.deletedAt', 'is', null)
         .where('asset_face.isVisible', 'is', true)
@@ -743,6 +751,34 @@ export class PersonRepository {
         .orderBy(sql`${nsfwAssetIdExists(sql.ref('asset_face.assetId'))} asc`)
         .executeTakeFirst()
     );
+  }
+
+  /**
+   * People with a face on one of `assetIds` who have a featured face but no thumbnail: after those
+   * assets move into the Locked folder, the people whose featured face was on them (FL-53). Their
+   * thumbnail is generated anew from the face that replaced it.
+   */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  @ChunkedArray()
+  getMissingThumbnailsForAssets(assetIds: string[]): Promise<PersonId[]> {
+    if (assetIds.length === 0) {
+      return Promise.resolve([]);
+    }
+
+    return this.db
+      .selectFrom('person')
+      .select(['person.ownerId', 'person.personGroupId'])
+      .where('person.thumbnailPath', '=', sql.lit(''))
+      .where('person.faceAssetId', 'is not', null)
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('asset_face')
+            .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
+            .where('asset_face.assetId', '=', anyUuid(assetIds)),
+        ),
+      )
+      .execute();
   }
 
   @GenerateSql()
