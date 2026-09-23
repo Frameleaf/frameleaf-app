@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FrameleafLogo from '$lib/components/frameleaf/Logo.svelte';
   import { copyToClipboard } from '$lib/utils';
   import {
     Card,
@@ -9,8 +10,9 @@
     Icon,
     IconButton,
     Link,
-    Logo,
     Text,
+    Theme as AppTheme,
+    themeManager,
     VStack,
   } from '@immich/ui';
   import { mdiAlarmLight, mdiCodeTags, mdiContentCopy, mdiMessage, mdiPartyPopper } from '@mdi/js';
@@ -29,13 +31,15 @@
 
     await copyToClipboard(`${error.message} - ${error.code}\n${error.stack}`);
   };
+
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 </script>
 
 <div class="flex h-dvh w-dvw flex-col">
   <section>
     <div class="flex place-items-center border-b px-6 py-4 dark:border-b-immich-dark-gray">
       <Link href="/photos">
-        <Logo variant="inline" />
+        <FrameleafLogo variant="inline" theme={appTheme} />
       </Link>
     </div>
   </section>

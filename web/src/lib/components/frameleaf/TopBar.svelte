@@ -4,6 +4,7 @@
   import { clickOutside } from '$lib/actions/click-outside';
   import AccountMenu from '$lib/components/frameleaf/AccountMenu.svelte';
   import ActivityIndicator from '$lib/components/frameleaf/ActivityIndicator.svelte';
+  import FrameleafLogo from '$lib/components/frameleaf/Logo.svelte';
   import UploadMenuButton from '$lib/components/frameleaf/UploadMenuButton.svelte';
   import NotificationPanel from '$lib/components/shared-components/navigation-bar/NotificationPanel.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
@@ -21,7 +22,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import { isAlbumsRoute, isAssetViewerRoute, isLockedFolderRoute, navigate } from '$lib/utils/navigation';
   import { getAuthStatus, lockAuthSession } from '@immich/sdk';
-  import { ActionButton, IconButton, Logo, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { ActionButton, IconButton, Theme as AppTheme, themeManager } from '@immich/ui';
   import {
     mdiBellBadge,
     mdiBellOutline,
@@ -175,7 +176,12 @@
         class="sidebar:hidden"
       />
       <a data-sveltekit-preload-data="hover" href={Route.photos()} aria-label={$t('library')}>
-        <Logo variant={mediaQueryManager.isFullSidebar ? 'inline' : 'icon'} class="max-md:h-12" />
+        <FrameleafLogo
+          variant={mediaQueryManager.isFullSidebar ? 'inline' : 'icon'}
+          theme={appTheme}
+          decorative
+          class="h-12"
+        />
       </a>
     </div>
 
