@@ -7130,7 +7130,7 @@ export type MachineLearningHardwareResponseDto = {
 };
 export type SmartAlbumReevaluateRequestDto = {
     /** Optional built-in kind to scope the re-evaluation to. Omit to re-evaluate every enabled kind. */
-    kind?: Kind3;
+    kind?: SmartAlbumBuiltInKind;
 };
 export type SmartAlbumReevaluateResponseDto = {
     /** Whether the re-evaluate job was newly enqueued (false = already in-flight) */
@@ -17446,7 +17446,7 @@ export enum SyncRequestType {
     AssetFacesV3 = "AssetFacesV3",
     UserMetadataV1 = "UserMetadataV1"
 }
-export enum Kind3 {
+export enum SmartAlbumBuiltInKind {
     Travel = "travel",
     Documents = "documents",
     Screenshots = "screenshots",
