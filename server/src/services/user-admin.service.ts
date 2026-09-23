@@ -169,7 +169,7 @@ export class UserAdminService extends BaseService {
   async updatePreferences(auth: AuthDto, id: string, dto: UserPreferencesUpdateDto) {
     await this.findOrFail(id, { withDeleted: false });
     const metadata = await this.userRepository.getMetadata(id);
-    const newPreferences = mergePreferences(getPreferences(metadata), dto);
+    const newPreferences = mergePreferences(getPreferences(metadata), dto, 'admin');
 
     await this.userRepository.upsertMetadata(id, {
       key: UserMetadataKey.Preferences,
