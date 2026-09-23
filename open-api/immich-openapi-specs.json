@@ -17805,6 +17805,228 @@
         ],
         "type": "object"
       },
+      "StudioPreviewDto": {
+        "properties": {
+          "contentType": {
+            "nullable": true,
+            "type": "string"
+          },
+          "errorCode": {
+            "description": "Stable code the client turns into a message",
+            "nullable": true,
+            "type": "string"
+          },
+          "etag": {
+            "description": "Revision-bound entity tag for the frame endpoint",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "framePts": {
+            "nullable": true,
+            "type": "string"
+          },
+          "framePtsTimebase": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "Preview frame ID"
+          },
+          "operationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "The durable job rendering this frame, when one has been created",
+            "nullable": true
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/StudioPreviewQuality"
+          },
+          "readyAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "requestedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "revisionDigest": {
+            "description": "The exact revision this frame is bound to",
+            "type": "string"
+          },
+          "seekGeneration": {
+            "description": "The seek this frame answers",
+            "type": "string"
+          },
+          "sizeInBytes": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StudioPreviewStatus"
+          },
+          "time": {
+            "$ref": "#/components/schemas/StudioPreviewTimeDto"
+          },
+          "toneMapped": {
+            "description": "The frame is an explicitly tone-mapped SDR rendering; never the colour authority",
+            "type": "boolean"
+          },
+          "viewportHeight": {
+            "type": "integer"
+          },
+          "viewportWidth": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "contentType",
+          "errorCode",
+          "etag",
+          "expiresAt",
+          "framePts",
+          "framePtsTimebase",
+          "id",
+          "operationId",
+          "projectId",
+          "quality",
+          "readyAt",
+          "requestedAt",
+          "revisionDigest",
+          "seekGeneration",
+          "sizeInBytes",
+          "status",
+          "time",
+          "toneMapped",
+          "viewportHeight",
+          "viewportWidth"
+        ],
+        "type": "object"
+      },
+      "StudioPreviewQuality": {
+        "description": "Studio preview quality",
+        "enum": [
+          "draft",
+          "standard",
+          "full"
+        ],
+        "type": "string"
+      },
+      "StudioPreviewRequestDto": {
+        "properties": {
+          "projectId": {
+            "description": "Studio project the frame belongs to",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/StudioPreviewQuality"
+          },
+          "revisionDigest": {
+            "description": "Exact graph revision digest the frame is bound to; a superseded revision is refused",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "seekGeneration": {
+            "default": 0,
+            "description": "The client's monotonic seek counter, echoed back on the result",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "time": {
+            "$ref": "#/components/schemas/StudioPreviewTimeDto"
+          },
+          "viewportHeight": {
+            "maximum": 7680,
+            "minimum": 16,
+            "type": "integer"
+          },
+          "viewportWidth": {
+            "maximum": 7680,
+            "minimum": 16,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "projectId",
+          "quality",
+          "revisionDigest",
+          "time",
+          "viewportHeight",
+          "viewportWidth"
+        ],
+        "type": "object"
+      },
+      "StudioPreviewResponseDto": {
+        "properties": {
+          "currentRevisionDigest": {
+            "description": "The revision the project is on now",
+            "type": "string"
+          },
+          "preview": {
+            "$ref": "#/components/schemas/StudioPreviewDto"
+          },
+          "supersededPreviewIds": {
+            "description": "Previews cancelled because the revision advanced",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "currentRevisionDigest",
+          "preview",
+          "supersededPreviewIds"
+        ],
+        "type": "object"
+      },
+      "StudioPreviewStatus": {
+        "description": "Studio preview status",
+        "enum": [
+          "pending",
+          "rendering",
+          "ready",
+          "superseded",
+          "failed",
+          "evicted"
+        ],
+        "type": "string"
+      },
+      "StudioPreviewTimeDto": {
+        "properties": {
+          "denominator": {
+            "description": "Time denominator; must be positive",
+            "pattern": "^-?\\d{1,16}$",
+            "type": "string"
+          },
+          "numerator": {
+            "description": "Time numerator, in seconds over the denominator",
+            "pattern": "^-?\\d{1,16}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "denominator",
+          "numerator"
+        ],
+        "type": "object"
+      },
       "SuppressionResponse": {
         "properties": {
           "personIds": {
@@ -40734,6 +40956,228 @@
         "x-immich-state": "Stable"
       }
     },
+    "/studio/previews": {
+      "post": {
+        "description": "Asks for one frame of a project at an exact revision, rational time, quality and viewport. An identical request shares the render rather than starting a second one, and previews of superseded revisions are cancelled.",
+        "operationId": "requestStudioPreview",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioPreviewRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioPreviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Request a Studio preview frame",
+        "tags": [
+          "Studio previews"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/previews/{id}": {
+      "delete": {
+        "description": "Stops a preview the client no longer needs and releases its stored frame. The record survives so a client still holding the id is told the frame is gone rather than that it never existed.",
+        "operationId": "cancelStudioPreview",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioPreviewDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel a Studio preview",
+        "tags": [
+          "Studio previews"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "The state of one requested frame, including its revision-bound entity tag.",
+        "operationId": "getStudioPreview",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioPreviewDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Studio preview",
+        "tags": [
+          "Studio previews"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/previews/{id}/frame": {
+      "get": {
+        "description": "Returns the rendered frame. The entity tag contains the project revision, so a frame whose revision has been superseded is refused with 409 rather than served or revalidated.",
+        "operationId": "viewStudioPreviewFrame",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "View a Studio preview frame",
+        "tags": [
+          "Studio previews"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/sync/ack": {
       "delete": {
         "description": "Delete specific synchronization acknowledgments.",
@@ -44430,7 +44874,8 @@
       "description": "Media health utilities identify missing and corrupt source files."
     },
     {
-      "name": "Media operations"
+      "name": "Media operations",
+      "description": "A media operation is a durable record of long-running media work, such as a render or a bulk change, with its progress, checkpoints and outcome. Operations can be cancelled or retried by the account that started them."
     },
     {
       "name": "Memories",
@@ -44487,6 +44932,10 @@
     {
       "name": "Stacks",
       "description": "A stack is a group of related assets. One asset is the \"primary\" asset, and the rest are \"child\" assets. On the main timeline, stack parents are included by default, while child assets are hidden."
+    },
+    {
+      "name": "Studio previews",
+      "description": "Revision-bound Studio preview frames. A frame is delivered only to the account that requested it, and only while the project revision it was rendered for is still current."
     },
     {
       "name": "Sync",

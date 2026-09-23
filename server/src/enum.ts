@@ -857,6 +857,54 @@ export const MediaOperationCheckpointStateSchema = z
   .describe('Media operation checkpoint state')
   .meta({ id: 'MediaOperationCheckpointState' });
 
+/**
+ * Revision-bound Studio preview frames (FL-96, `STU-402`).
+ *
+ * The quality tier is chosen by the client and is part of the store key, so switching quality
+ * produces a different frame rather than reusing one rendered at another tier. `draft` exists
+ * for scrubbing and is explicitly not a colour authority.
+ */
+export enum StudioPreviewQuality {
+  /** Fast, reduced-precision scrub frame. Never used for inspection or as an export source. */
+  Draft = 'draft',
+  /** The ordinary paused-playhead frame. */
+  Standard = 'standard',
+  /** Full-precision inspection frame for scopes and pixel checks. */
+  Full = 'full',
+}
+
+export const StudioPreviewQualitySchema = z
+  .enum(StudioPreviewQuality)
+  .describe('Studio preview quality')
+  .meta({ id: 'StudioPreviewQuality' });
+
+/**
+ * The life of one stored preview frame.
+ *
+ * `superseded` is a real persisted state rather than a deletion: a frame whose revision has
+ * advanced must keep answering "stale" for as long as anyone can still ask for it, because the
+ * honest answer to a stale request is a refusal, not a miss.
+ */
+export enum StudioPreviewStatus {
+  /** Recorded, not yet handed to a worker. */
+  Pending = 'pending',
+  /** A worker holds the render. */
+  Rendering = 'rendering',
+  /** A validated frame is on disk and may be delivered. */
+  Ready = 'ready',
+  /** The project revision advanced past this frame. Refused, never served. */
+  Superseded = 'superseded',
+  /** The render failed; the reason is in the operation. */
+  Failed = 'failed',
+  /** Retention removed the frame. The row survives so the answer stays "gone", not "missing". */
+  Evicted = 'evicted',
+}
+
+export const StudioPreviewStatusSchema = z
+  .enum(StudioPreviewStatus)
+  .describe('Studio preview status')
+  .meta({ id: 'StudioPreviewStatus' });
+
 export enum LogLevel {
   Verbose = 'verbose',
   Debug = 'debug',
@@ -1591,6 +1639,7 @@ export enum ApiTag {
   SharedLinks = 'Shared links',
   SharedSpaces = 'Shared spaces',
   Stacks = 'Stacks',
+  StudioPreviews = 'Studio previews',
   Sync = 'Sync',
   SystemConfig = 'System config',
   SystemMetadata = 'System metadata',
