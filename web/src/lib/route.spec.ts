@@ -24,6 +24,12 @@ describe('Route', () => {
     });
   });
 
+  describe(Route.physicalDeduplication.name, () => {
+    it('should work', () => {
+      expect(Route.physicalDeduplication()).toBe('/admin/physical-deduplication');
+    });
+  });
+
   describe(Route.viewSharedLink.name, () => {
     it('should work with key', () => {
       expect(Route.viewSharedLink({ key: 'uuid-key' })).toBe('/share/uuid-key');
