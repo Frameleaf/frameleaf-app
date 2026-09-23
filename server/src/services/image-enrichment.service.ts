@@ -647,6 +647,7 @@ export class ImageEnrichmentService extends BaseService {
           modelName: machineLearning.nsfwDetection.modelName,
           updatedAt: new Date().toISOString(),
           error: getErrorMessage(error),
+          ...(m.nsfwDetection?.review && { review: m.nsfwDetection.review }),
         };
         await this.saveEnrichmentMetadata(id, m, trx);
       });
@@ -778,6 +779,7 @@ export class ImageEnrichmentService extends BaseService {
             modelName: machineLearning.nsfwDetection.modelName,
             updatedAt: new Date().toISOString(),
             error: getErrorMessage(error),
+            ...(m.nsfwDetection?.review && { review: m.nsfwDetection.review }),
           };
           await this.saveEnrichmentMetadata(id, m, trx);
         });
@@ -880,6 +882,7 @@ export class ImageEnrichmentService extends BaseService {
             result: nsfw,
             appliedTagHash,
             appliedTagValues,
+            ...(m.nsfwDetection?.review && { review: m.nsfwDetection.review }),
           };
         }
 

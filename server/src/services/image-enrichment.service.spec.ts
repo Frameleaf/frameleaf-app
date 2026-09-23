@@ -720,6 +720,85 @@ describe(ImageEnrichmentService.name, () => {
       expect(mocks.asset.lock).not.toHaveBeenCalled();
     });
 
+    it('keeps a safe review through a failed detection and a positive retry', async () => {
+      const review = { action: 'marked-safe', isNsfw: false, reviewedAt: '2026-09-22T00:00:00Z', reviewedBy: ownerId };
+      let stored: Record<string, unknown> = {
+        nsfwDetection: { ...detectedMetadata.value.nsfwDetection, review },
+      };
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: {
+          nsfwDetection: { enabled: true, hideFromLibrary: true },
+          imageDescription: { enabled: false },
+        },
+      });
+      mocks.asset.getMetadataByKey.mockImplementation(() =>
+        Promise.resolve({ value: structuredClone(stored) } as never),
+      );
+      mocks.asset.upsertMetadata.mockImplementation((_id, entries) => {
+        stored = structuredClone(entries[0].value as Record<string, unknown>);
+        return Promise.resolve([{ ...entries[0], updatedAt: new Date() }]);
+      });
+      mocks.machineLearning.detectNsfw
+        .mockRejectedValueOnce(new Error('network offline'))
+        .mockResolvedValueOnce({ isNsfw: true, score: 0.99, labels: { explicit: 0.99 } });
+
+      await expect(sut.detectLockedContent(assetId)).resolves.toMatchObject({ status: JobStatus.Failed });
+      expect(stored.nsfwDetection).toMatchObject({ status: 'failed', review });
+
+      await expect(sut.detectLockedContent(assetId)).resolves.toMatchObject({ status: JobStatus.Success });
+      expect(stored.nsfwDetection).toMatchObject({ status: 'success', review });
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
+    it('keeps a review made during description detection through failure and retry', async () => {
+      const review = { action: 'marked-safe', isNsfw: false, reviewedAt: '2026-09-22T00:00:00Z', reviewedBy: ownerId };
+      let stored: Record<string, unknown> = {};
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: {
+          nsfwDetection: { enabled: true, hideFromLibrary: true },
+          imageDescription: { enabled: true },
+        },
+      });
+      mocks.asset.getMetadataByKey.mockImplementation(() =>
+        Promise.resolve({ value: structuredClone(stored) } as never),
+      );
+      mocks.asset.upsertMetadata.mockImplementation((_id, entries) => {
+        stored = structuredClone(entries[0].value as Record<string, unknown>);
+        return Promise.resolve([{ ...entries[0], updatedAt: new Date() }]);
+      });
+      mocks.machineLearning.detectNsfw
+        .mockImplementationOnce(() => {
+          // The owner saves a review after describeAsset's initial snapshot, while inference is in flight.
+          stored = {
+            nsfwDetection: {
+              status: 'success',
+              modelName: 'manual-review',
+              updatedAt: review.reviewedAt,
+              result: { isNsfw: false, score: 0, labels: {} },
+              review,
+            },
+          };
+          return Promise.reject(new Error('network offline'));
+        })
+        .mockResolvedValueOnce({ isNsfw: true, score: 0.99, labels: { explicit: 0.99 } });
+      mocks.machineLearning.describeImage.mockResolvedValue({
+        description: 'A beach.',
+        people: [],
+        environment: 'beach',
+        objects: [],
+        visible_text: [],
+        context: '',
+        tags: [],
+      });
+
+      await expect(sut.describeAsset(assetId)).resolves.toMatchObject({ status: JobStatus.Success });
+      expect(stored.nsfwDetection).toMatchObject({ status: 'failed', review });
+
+      await expect(sut.describeAsset(assetId)).resolves.toMatchObject({ status: JobStatus.Success });
+      expect(stored.nsfwDetection).toMatchObject({ status: 'success', review });
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
     it('never unlocks when a detection comes back safe', async () => {
       mocks.systemMetadata.get.mockResolvedValue({
         machineLearning: {
