@@ -12,6 +12,7 @@
     STUDIO_LIBRARY_SORTS,
     studioBundleErrorCode,
     studioBundleErrorKey,
+    studioBundleJobStatusKey,
     studioBundleMapping,
     studioBundlePollMs,
     studioDaysUntilPurge,
@@ -304,6 +305,8 @@
         progress: operation.progress,
         attempt: operation.attempt,
         maxAttempts: operation.maxAttempts,
+        autoRetries: operation.autoRetries,
+        retryAt: operation.retryAt,
         error: null,
         errorCode: null,
         projectId: target.id,
@@ -376,6 +379,8 @@
         progress: operation.progress,
         attempt: operation.attempt,
         maxAttempts: operation.maxAttempts,
+        autoRetries: operation.autoRetries,
+        retryAt: operation.retryAt,
         error: null,
         errorCode: null,
         projectId: null,
@@ -402,7 +407,6 @@
     }
   };
 
-  const jobStatusKey = (operation: StudioBundleOperationDto) => `frameleaf_activity_status_${operation.status}`;
 
   const posterUrl = (project: StudioProjectDto) =>
     project.thumbnailAssetId
@@ -617,7 +621,7 @@
         </Button>
       </footer>
     {:else}
-      <p role="status">{$t(jobStatusKey(exportJob))}</p>
+      <p role="status">{$t(studioBundleJobStatusKey(exportJob))}</p>
       {#if exportJob.status === MediaOperationStatus.Failed}
         <p class="error">{$t(studioBundleErrorKey(exportJob.errorCode))}</p>
       {/if}
@@ -685,7 +689,7 @@
           </Button>
         </footer>
       {:else}
-        <p role="status">{$t(jobStatusKey(importJob))}</p>
+        <p role="status">{$t(studioBundleJobStatusKey(importJob))}</p>
         {#if importJob.status === MediaOperationStatus.Failed}
           <p class="error">{$t(studioBundleErrorKey(importJob.errorCode))}</p>
         {/if}

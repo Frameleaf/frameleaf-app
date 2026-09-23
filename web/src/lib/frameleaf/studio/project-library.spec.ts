@@ -13,6 +13,7 @@ import {
   reviewStudioBundle,
   studioBundleErrorCode,
   studioBundleErrorKey,
+  studioBundleJobStatusKey,
   studioBundleMapping,
   studioBundlePollMs,
   studioDaysUntilPurge,
@@ -144,5 +145,17 @@ describe('bundle errors and polling', () => {
     expect(studioBundlePollMs(0)).toBe(1000);
     expect(studioBundlePollMs(3)).toBe(8000);
     expect(studioBundlePollMs(10)).toBe(10_000);
+  });
+
+  it('reads a job waiting for its automatic retry as retrying, the way Activity does', () => {
+    const key = (status: MediaOperationStatus, autoRetries: number, retryAt: string | null = null) =>
+      studioBundleJobStatusKey({ status, autoRetries, retryAt });
+
+    expect(key(MediaOperationStatus.Queued, 0)).toBe('frameleaf_activity_status_queued');
+    expect(key(MediaOperationStatus.Queued, 1)).toBe('frameleaf_activity_status_retrying');
+    expect(key(MediaOperationStatus.Queued, 0, '2026-09-22T12:00:00.000Z')).toBe('frameleaf_activity_status_retrying');
+    // Once the retry runs it reads as running, and a spent retry reads as failed.
+    expect(key(MediaOperationStatus.Rendering, 1)).toBe('frameleaf_activity_status_rendering');
+    expect(key(MediaOperationStatus.Failed, 1)).toBe('frameleaf_activity_status_failed');
   });
 });
