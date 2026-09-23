@@ -95,8 +95,9 @@ describe('Frameleaf Activity page', () => {
     );
     await mount([operation({ status: MediaOperationStatus.Failed, error: 'The worker stopped responding' })]);
 
+    // The request resolving is not the page having rendered its answer: wait for the row first.
+    expect(await screen.findByText('The worker stopped responding')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^cancel$/i })).not.toBeInTheDocument();
-    expect(screen.getByText('The worker stopped responding')).toBeInTheDocument();
 
     await fireEvent.click(await screen.findByRole('button', { name: /retry/i }));
     expect(sdkMock.retryMediaOperation).toHaveBeenCalledWith({ id: '0195e2a0-0000-7000-8000-000000000001' });
