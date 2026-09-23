@@ -325,7 +325,11 @@
   };
 
   const formatDate = (value: string | null) =>
-    value ? new Intl.DateTimeFormat($locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : null;
+    value
+      ? new Intl.DateTimeFormat($locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
+          new Date(value),
+        )
+      : null;
 
   const formatUsd = (value: number) =>
     new Intl.NumberFormat($locale ?? undefined, { style: 'currency', currency: 'USD' }).format(value);
@@ -377,14 +381,18 @@
               {#if blocked}
                 <Badge
                   value={$t('admin.frameleaf_ml_destinations_consent_missing')}
-                  label={$t('admin.frameleaf_ml_destinations_consent_missing_label', { values: { name: destination.name } })}
+                  label={$t('admin.frameleaf_ml_destinations_consent_missing_label', {
+                    values: { name: destination.name },
+                  })}
                   tone="warning"
                 />
               {/if}
               {#if overBudget}
                 <Badge
                   value={$t('admin.frameleaf_ml_destinations_over_budget')}
-                  label={$t('admin.frameleaf_ml_destinations_over_budget_label', { values: { name: destination.name } })}
+                  label={$t('admin.frameleaf_ml_destinations_over_budget_label', {
+                    values: { name: destination.name },
+                  })}
                   tone="danger"
                 />
               {/if}
@@ -413,7 +421,7 @@
             {#if destination.workloads.length === 0}
               <span class="muted">{$t('admin.frameleaf_ml_destinations_no_workloads')}</span>
             {:else}
-              {#each ML_WORKLOAD_ORDER.filter((workload) => destination.workloads.includes(workload)) as workload (workload)}
+              {#each ML_WORKLOAD_ORDER.filter( (workload) => destination.workloads.includes(workload) ) as workload (workload)}
                 {@const served = destination.health.servedWorkloads?.includes(workload) ?? false}
                 <Chip
                   label={served
@@ -569,9 +577,13 @@
             {#if current === null}
               {$t('admin.frameleaf_ml_destinations_route_refused')}
             {:else if !currentStillValid}
-              {$t('admin.frameleaf_ml_destinations_route_blocked', { values: { name: routedName(workload) ?? current } })}
+              {$t('admin.frameleaf_ml_destinations_route_blocked', {
+                values: { name: routedName(workload) ?? current },
+              })}
             {:else}
-              {$t('admin.frameleaf_ml_destinations_route_active', { values: { name: routedName(workload) ?? current } })}
+              {$t('admin.frameleaf_ml_destinations_route_active', {
+                values: { name: routedName(workload) ?? current },
+              })}
             {/if}
           </span>
         </li>
@@ -587,7 +599,11 @@
   </section>
 </Pane>
 
-<Dialog title={$t('admin.frameleaf_ml_destinations_consent_dialog_title')} closeLabel={$t('close')} bind:open={consentOpen}>
+<Dialog
+  title={$t('admin.frameleaf_ml_destinations_consent_dialog_title')}
+  closeLabel={$t('close')}
+  bind:open={consentOpen}
+>
   <div class="dialog-body">
     <p>
       {$t('admin.frameleaf_ml_destinations_consent_dialog_body', { values: { name: consentTarget?.name ?? '' } })}
@@ -607,7 +623,11 @@
 
 <RestorationModelsDialog destination={restorationTarget} bind:open={restorationOpen} />
 
-<Dialog title={$t('admin.frameleaf_ml_destinations_delete_dialog_title')} closeLabel={$t('close')} bind:open={deleteOpen}>
+<Dialog
+  title={$t('admin.frameleaf_ml_destinations_delete_dialog_title')}
+  closeLabel={$t('close')}
+  bind:open={deleteOpen}
+>
   <div class="dialog-body">
     <p>{$t('admin.frameleaf_ml_destinations_delete_dialog_body', { values: { name: deleteTarget?.name ?? '' } })}</p>
     <div class="dialog-actions">

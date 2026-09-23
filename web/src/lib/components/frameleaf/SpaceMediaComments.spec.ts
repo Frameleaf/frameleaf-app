@@ -1,6 +1,3 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { addMessages } from 'svelte-i18n';
-import { userAdminFactory } from '@test-data/factories/user-factory';
 import {
   AlbumUserRole,
   createSharedSpaceComment,
@@ -9,6 +6,9 @@ import {
   getSharedSpaceMembers,
   type SharedSpaceCommentResponseDto,
 } from '@immich/sdk';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { addMessages } from 'svelte-i18n';
+import { userAdminFactory } from '@test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
 import SpaceMediaComments from './SpaceMediaComments.svelte';
 

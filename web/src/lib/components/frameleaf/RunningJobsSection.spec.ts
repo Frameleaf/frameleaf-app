@@ -1,6 +1,3 @@
-import { sdkMock } from '$lib/__mocks__/sdk.mock';
-import RunningJobsSection from '$lib/components/frameleaf/RunningJobsSection.svelte';
-import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
 import {
   MediaOperationDestination,
   MediaOperationKind,
@@ -12,6 +9,9 @@ import {
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import RunningJobsSection from '$lib/components/frameleaf/RunningJobsSection.svelte';
+import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
 
 const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDto =>
   ({

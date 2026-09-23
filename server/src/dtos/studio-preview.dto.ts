@@ -85,10 +85,7 @@ const StudioPreviewSchema = z
     viewportWidth: z.int(),
     viewportHeight: z.int(),
     status: StudioPreviewStatusSchema,
-    operationId: z
-      .uuidv7()
-      .nullable()
-      .describe('The durable job rendering this frame, when one has been created'),
+    operationId: z.uuidv7().nullable().describe('The durable job rendering this frame, when one has been created'),
     seekGeneration: z.string().describe('The seek this frame answers'),
     etag: z.string().describe('Revision-bound entity tag for the frame endpoint'),
     /** Frame identity: the delivered picture's own PTS in its timebase. */
@@ -117,9 +114,7 @@ const StudioPreviewResponseSchema = z
   .object({
     preview: StudioPreviewSchema,
     currentRevision: z.int().min(0).describe('The stored revision the project is on now'),
-    supersededPreviewIds: z
-      .array(z.uuidv7())
-      .describe('Previews cancelled because the revision advanced'),
+    supersededPreviewIds: z.array(z.uuidv7()).describe('Previews cancelled because the revision advanced'),
   })
   .meta({ id: 'StudioPreviewResponseDto' });
 

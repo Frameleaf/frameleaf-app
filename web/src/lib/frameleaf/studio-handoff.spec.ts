@@ -55,13 +55,57 @@ describe('Studio handoff contract', () => {
   });
 
   it('rejects a payload from another schema version or source', () => {
-    expect(parseStudioHandoff(JSON.stringify({ version: 2, source: 'memory', sourceId: 'x', title: 'x', assetIds: ['a'], createdAt: Date.now() }))).toBeNull();
-    expect(parseStudioHandoff(JSON.stringify({ version: 1, source: 'library', sourceId: 'x', title: 'x', assetIds: ['a'], createdAt: Date.now() }))).toBeNull();
+    expect(
+      parseStudioHandoff(
+        JSON.stringify({
+          version: 2,
+          source: 'memory',
+          sourceId: 'x',
+          title: 'x',
+          assetIds: ['a'],
+          createdAt: Date.now(),
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parseStudioHandoff(
+        JSON.stringify({
+          version: 1,
+          source: 'library',
+          sourceId: 'x',
+          title: 'x',
+          assetIds: ['a'],
+          createdAt: Date.now(),
+        }),
+      ),
+    ).toBeNull();
   });
 
   it('rejects a handoff with no surviving asset ids', () => {
-    expect(parseStudioHandoff(JSON.stringify({ version: 1, source: 'memory', sourceId: 'x', title: 'x', assetIds: [], createdAt: Date.now() }))).toBeNull();
-    expect(parseStudioHandoff(JSON.stringify({ version: 1, source: 'memory', sourceId: 'x', title: 'x', assetIds: [1, null, {}], createdAt: Date.now() }))).toBeNull();
+    expect(
+      parseStudioHandoff(
+        JSON.stringify({
+          version: 1,
+          source: 'memory',
+          sourceId: 'x',
+          title: 'x',
+          assetIds: [],
+          createdAt: Date.now(),
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parseStudioHandoff(
+        JSON.stringify({
+          version: 1,
+          source: 'memory',
+          sourceId: 'x',
+          title: 'x',
+          assetIds: [1, null, {}],
+          createdAt: Date.now(),
+        }),
+      ),
+    ).toBeNull();
   });
 
   it('treats an expired handoff as absent', () => {
@@ -106,7 +150,9 @@ describe('Studio handoff contract', () => {
         throw new Error('blocked');
       },
     };
-    expect(() => writeStudioHandoff({ source: 'memory', sourceId: 'x', title: 'x', assetIds: ['a'] }, throwing)).not.toThrow();
+    expect(() =>
+      writeStudioHandoff({ source: 'memory', sourceId: 'x', title: 'x', assetIds: ['a'] }, throwing),
+    ).not.toThrow();
     expect(readStudioHandoff(throwing)).toBeNull();
     expect(() => clearStudioHandoff(throwing)).not.toThrow();
   });

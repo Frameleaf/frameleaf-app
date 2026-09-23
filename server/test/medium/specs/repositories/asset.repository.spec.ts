@@ -545,9 +545,9 @@ describe(AssetRepository.name, () => {
       await expect(sut.getByChecksums(user.id, [locked.checksum], { lockedOwnerId: user.id })).resolves.toEqual([
         expect.objectContaining({ id: locked.id }),
       ]);
-      await expect(
-        sut.getUploadAssetIdByChecksum(user.id, locked.checksum, { lockedOwnerId: user.id }),
-      ).resolves.toBe(locked.id);
+      await expect(sut.getUploadAssetIdByChecksum(user.id, locked.checksum, { lockedOwnerId: user.id })).resolves.toBe(
+        locked.id,
+      );
     });
   });
 

@@ -290,11 +290,19 @@ export class MediaRepository {
       const scale = Math.max((width * cos + height * sin) / width, (width * sin + height * cos) / height);
       const windowWidth = Math.max(1, Math.round(width / scale));
       const windowHeight = Math.max(1, Math.round(height / scale));
-      const rotated = await sharp(current.data, { raw: this.toRawInfo(current.info), limitInputPixels: false, unlimited: true })
+      const rotated = await sharp(current.data, {
+        raw: this.toRawInfo(current.info),
+        limitInputPixels: false,
+        unlimited: true,
+      })
         .rotate(plan.straighten, { background: { r: 0, g: 0, b: 0, alpha: 1 } })
         .raw()
         .toBuffer({ resolveWithObject: true });
-      current = await sharp(rotated.data, { raw: this.toRawInfo(rotated.info), limitInputPixels: false, unlimited: true })
+      current = await sharp(rotated.data, {
+        raw: this.toRawInfo(rotated.info),
+        limitInputPixels: false,
+        unlimited: true,
+      })
         .extract({
           left: Math.max(0, Math.round((rotated.info.width - windowWidth) / 2)),
           top: Math.max(0, Math.round((rotated.info.height - windowHeight) / 2)),
@@ -308,7 +316,11 @@ export class MediaRepository {
 
     const { extract } = plan;
     if (extract.left !== 0 || extract.top !== 0 || extract.width !== width || extract.height !== height) {
-      current = await sharp(current.data, { raw: this.toRawInfo(current.info), limitInputPixels: false, unlimited: true })
+      current = await sharp(current.data, {
+        raw: this.toRawInfo(current.info),
+        limitInputPixels: false,
+        unlimited: true,
+      })
         .extract({
           left: Math.min(extract.left, Math.max(0, current.info.width - 1)),
           top: Math.min(extract.top, Math.max(0, current.info.height - 1)),

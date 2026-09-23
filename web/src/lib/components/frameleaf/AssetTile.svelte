@@ -91,9 +91,7 @@
 
   const coarsePointer = $derived(mediaQueryManager.pointerCoarse);
   const isLive = $derived(asset.isImage && !!asset.livePhotoVideoId);
-  const isPanorama = $derived(
-    !!asset.projectionType && asset.projectionType !== ProjectionType.NONE,
-  );
+  const isPanorama = $derived(!!asset.projectionType && asset.projectionType !== ProjectionType.NONE);
   const stackCount = $derived(asset.stack?.assetCount ?? 0);
   const isLocked = $derived(asset.visibility === AssetVisibility.Locked);
   // FL-34: `Locked` for an item from the old Locked folder, `Sensitive` for a mark or a detection
@@ -194,9 +192,7 @@
     }
     const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
     const length =
-      Number.isFinite(videoElement.duration) && videoElement.duration > 0
-        ? videoElement.duration
-        : durationSeconds;
+      Number.isFinite(videoElement.duration) && videoElement.duration > 0 ? videoElement.duration : durationSeconds;
     if (length > 0) {
       videoElement.currentTime = fraction * length;
     }
@@ -237,8 +233,7 @@
       event.preventDefault();
       return;
     }
-    const modified =
-      'metaKey' in event && (event.metaKey || event.ctrlKey || event.shiftKey);
+    const modified = 'metaKey' in event && (event.metaKey || event.ctrlKey || event.shiftKey);
     if (modified || selecting) {
       onToggleSelect?.(asset, event);
       return;

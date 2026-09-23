@@ -408,7 +408,10 @@ describe(MediaOperationService.name, () => {
     });
 
     it('copies the snapshot and destination into a new row and records the lineage', async () => {
-      const failed = operationStub({ status: MediaOperationStatus.Failed, destination: MediaOperationDestination.RunPod });
+      const failed = operationStub({
+        status: MediaOperationStatus.Failed,
+        destination: MediaOperationDestination.RunPod,
+      });
       vi.mocked(repository.getForOwner).mockResolvedValue(failed);
       vi.mocked(repository.create).mockResolvedValue(
         operationStub({
@@ -608,9 +611,9 @@ describe(MediaOperationService.name, () => {
     it('refuses an API key that does not grant the action', async () => {
       const auth = { ...authStub.user1, apiKey: { id: newUuid(), permissions: [Permission.AssetRead] } };
 
-      await expect(
-        sut.createBulk(auth, { action: MediaOperationBulkAction.Delete, assetIds }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(sut.createBulk(auth, { action: MediaOperationBulkAction.Delete, assetIds })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
       expect(repository.create).not.toHaveBeenCalled();
     });
 

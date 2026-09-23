@@ -7,7 +7,6 @@
  * and edits the machine-learning URL list with the prototype's rules (`worker-settings.mjs`).
  * It never contacts a worker and never picks a destination.
  */
-
 import {
   MlDestinationKind,
   MlWorkerAcceleration,
@@ -165,7 +164,9 @@ export type InventorySections = {
 };
 
 /** Split the inventory the way the prototype lays it out. Nothing is dropped. */
-export const inventorySections = (inventory: Pick<WorkerInventoryResponseDto, 'entries' | 'configuredUrls'>): InventorySections => {
+export const inventorySections = (
+  inventory: Pick<WorkerInventoryResponseDto, 'entries' | 'configuredUrls'>,
+): InventorySections => {
   const used = new Set<string>();
   const endpoints = inventory.configuredUrls.map((url, index) => {
     const entry =

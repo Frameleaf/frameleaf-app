@@ -4,10 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import { DatabaseLock, MediaOperationCheckpointState, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
-import {
-  MediaOperationCheckpointTable,
-  MediaOperationTable,
-} from 'src/schema/tables/media-operation.table.js';
+import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import { anyUuid, isLockedAsset } from 'src/utils/database.js';
 import {
   CLAIMED_MEDIA_OPERATION_STATUSES,
@@ -1310,7 +1307,9 @@ export class MediaOperationRepository {
       .select([
         destinationId.as('destinationId'),
         sql<string>`count(*) filter (where "status" = ${MediaOperationStatus.Queued})`.as('queued'),
-        sql<string>`count(*) filter (where "status" = any(${[...CLAIMED_MEDIA_OPERATION_STATUSES]}::text[]))`.as('active'),
+        sql<string>`count(*) filter (where "status" = any(${[...CLAIMED_MEDIA_OPERATION_STATUSES]}::text[]))`.as(
+          'active',
+        ),
       ])
       .where('kind', 'in', [...kinds])
       .where('status', 'in', [MediaOperationStatus.Queued, ...CLAIMED_MEDIA_OPERATION_STATUSES])

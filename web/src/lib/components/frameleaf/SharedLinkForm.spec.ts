@@ -1,8 +1,8 @@
+import { SharedLinkType } from '@immich/sdk';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sharedLinkFactory } from '$lib/../test-data/factories/shared-link-factory';
 import { handleCreateSharedLink, handleUpdateSharedLink } from '$lib/services/shared-link.service';
-import { SharedLinkType } from '@immich/sdk';
 import en from '../../../../../i18n/en.json';
 import SharedLinkForm from './SharedLinkForm.svelte';
 
@@ -53,10 +53,7 @@ describe('SharedLinkForm', () => {
     render(SharedLinkForm, { open: true, link });
 
     await fireEvent.click(screen.getByRole('button', { name: en.save }));
-    expect(handleUpdateSharedLink).toHaveBeenCalledWith(
-      link,
-      expect.objectContaining({ password: undefined }),
-    );
+    expect(handleUpdateSharedLink).toHaveBeenCalledWith(link, expect.objectContaining({ password: undefined }));
 
     vi.clearAllMocks();
     await fireEvent.click(screen.getByLabelText(en.frameleaf_sharing.remove_password));

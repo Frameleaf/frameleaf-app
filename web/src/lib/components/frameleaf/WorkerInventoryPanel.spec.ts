@@ -1,5 +1,3 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import {
   MlAdmissionRefusal,
   MlDestinationKind,
@@ -14,8 +12,10 @@ import {
   type WorkerInventoryEntryDto,
   type WorkerInventoryResponseDto,
 } from '@immich/sdk';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import WorkerInventoryPanel from './WorkerInventoryPanel.svelte';
 
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
@@ -118,7 +118,9 @@ const inventory = (overrides: Partial<WorkerInventoryResponseDto> = {}): WorkerI
   ...overrides,
 });
 
-const config = { machineLearning: { enabled: true, urls: ['http://immich-machine-learning:3003'] } } as unknown as AdminConfigDto;
+const config = {
+  machineLearning: { enabled: true, urls: ['http://immich-machine-learning:3003'] },
+} as unknown as AdminConfigDto;
 
 describe('WorkerInventoryPanel (FL-72)', () => {
   beforeAll(async () => {
@@ -172,7 +174,9 @@ describe('WorkerInventoryPanel (FL-72)', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Add endpoint' }));
     const dialog = await screen.findByRole('dialog', { name: 'Add ML endpoint' });
-    await fireEvent.input(within(dialog).getByLabelText('Endpoint URL'), { target: { value: 'http://study.lan:3003/' } });
+    await fireEvent.input(within(dialog).getByLabelText('Endpoint URL'), {
+      target: { value: 'http://study.lan:3003/' },
+    });
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     await waitFor(() =>

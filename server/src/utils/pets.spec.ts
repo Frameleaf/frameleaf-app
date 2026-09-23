@@ -45,33 +45,25 @@ describe('asKnownSpecies', () => {
 describe('filterReviewedCandidates', () => {
   it('drops a proposal the owner already confirmed', () => {
     const candidates = [candidate('c1', 'asset-1', 'pet-1', 0.9)];
-    const result = filterReviewedCandidates(candidates, [
-      decision('asset-1', 'pet-1', PetObservationState.Confirmed),
-    ]);
+    const result = filterReviewedCandidates(candidates, [decision('asset-1', 'pet-1', PetObservationState.Confirmed)]);
     expect(result).toEqual([]);
   });
 
   it('drops a proposal the owner already rejected, so reprocessing cannot resurrect it', () => {
     const candidates = [candidate('c1', 'asset-1', 'pet-1', 0.42)];
-    const result = filterReviewedCandidates(candidates, [
-      decision('asset-1', 'pet-1', PetObservationState.Rejected),
-    ]);
+    const result = filterReviewedCandidates(candidates, [decision('asset-1', 'pet-1', PetObservationState.Rejected)]);
     expect(result).toEqual([]);
   });
 
   it('keeps a proposal about a different pet in the same asset', () => {
     const candidates = [candidate('c1', 'asset-1', 'pet-2', 0.5)];
-    const result = filterReviewedCandidates(candidates, [
-      decision('asset-1', 'pet-1', PetObservationState.Rejected),
-    ]);
+    const result = filterReviewedCandidates(candidates, [decision('asset-1', 'pet-1', PetObservationState.Rejected)]);
     expect(result).toEqual(candidates);
   });
 
   it('keeps a proposal about the same pet in a different asset', () => {
     const candidates = [candidate('c1', 'asset-2', 'pet-1', 0.5)];
-    const result = filterReviewedCandidates(candidates, [
-      decision('asset-1', 'pet-1', PetObservationState.Confirmed),
-    ]);
+    const result = filterReviewedCandidates(candidates, [decision('asset-1', 'pet-1', PetObservationState.Confirmed)]);
     expect(result).toEqual(candidates);
   });
 });

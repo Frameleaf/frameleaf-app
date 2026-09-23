@@ -135,7 +135,9 @@ export class AssetDevelopRepository {
 
   /** Marks a revision as wanting to stop; the renderer checks the flag between stages. */
   async requestCancel(id: string): Promise<void> {
-    await sql`UPDATE ${TABLE} SET "cancelRequested" = true, "updatedAt" = now() WHERE id = ${id}::uuid`.execute(this.db);
+    await sql`UPDATE ${TABLE} SET "cancelRequested" = true, "updatedAt" = now() WHERE id = ${id}::uuid`.execute(
+      this.db,
+    );
   }
 
   async isCancelRequested(id: string): Promise<boolean> {

@@ -84,9 +84,8 @@ export const alreadyInvolvedIds = (members: SharedSpaceMemberResponseDto[]): Set
   new Set(members.map(({ user }) => user.id));
 
 /** A recipient preview is worth showing only while it is still an offer. */
-export const pendingInvitations = (
-  invitations: SharedSpacePreviewResponseDto[],
-): SharedSpacePreviewResponseDto[] => invitations.filter(({ accepted }) => !accepted);
+export const pendingInvitations = (invitations: SharedSpacePreviewResponseDto[]): SharedSpacePreviewResponseDto[] =>
+  invitations.filter(({ accepted }) => !accepted);
 
 /* -------------------------------------------------------------------------- */
 /* Bulk "add everything matching" into a space (FL-32's snapshot path)         */
@@ -151,9 +150,7 @@ export const linkableAlbums = (
   linkedIds: Iterable<string> = [],
 ): AlbumResponseDto[] => {
   const linked = new Set(linkedIds);
-  return albums.filter(
-    (album) => album.id !== spaceId && album.kind === AlbumKind.Album && !linked.has(album.id),
-  );
+  return albums.filter((album) => album.id !== spaceId && album.kind === AlbumKind.Album && !linked.has(album.id));
 };
 
 /**
@@ -271,8 +268,7 @@ export const mentionToken = (userId: string): string => `@{${userId}}`;
 export type MentionUser = Pick<UserResponseDto, 'id' | 'name'>;
 
 export type CommentSegment =
-  | { kind: 'text'; text: string }
-  | { kind: 'mention'; userId: string; user: MentionUser | null };
+  { kind: 'text'; text: string } | { kind: 'mention'; userId: string; user: MentionUser | null };
 
 /**
  * Split a comment into plain text and mentions, naming each mention from the
@@ -394,7 +390,9 @@ export const spaceEventMessageKey = (
       return 'frameleaf_spaces_activity_member_role';
     }
     case SharedSpaceEventType.Comment: {
-      return event.assetCount > 0 ? 'frameleaf_spaces_activity_comment_item' : 'frameleaf_spaces_activity_comment_space';
+      return event.assetCount > 0
+        ? 'frameleaf_spaces_activity_comment_item'
+        : 'frameleaf_spaces_activity_comment_space';
     }
     case SharedSpaceEventType.Reply: {
       // Answering in one's own thread reads as that, not as "Bo replied to Bo's comment".

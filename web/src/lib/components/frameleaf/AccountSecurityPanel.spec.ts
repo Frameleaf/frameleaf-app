@@ -1,8 +1,8 @@
 import type { SessionResponseDto } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
-import AccountSecurityPanel from '$lib/components/frameleaf/AccountSecurityPanel.svelte';
 import { userAdminFactory } from '$lib/../test-data/factories/user-factory';
+import AccountSecurityPanel from '$lib/components/frameleaf/AccountSecurityPanel.svelte';
 import en from '../../../../../i18n/en.json';
 
 /**

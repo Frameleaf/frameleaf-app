@@ -24,12 +24,7 @@ import { DateTime } from 'luxon';
 import { init, register, t } from 'svelte-i18n';
 import { derived, get } from 'svelte/store';
 import { defaultLang, locales } from '$lib/constants';
-import {
-  eventStoryPlace,
-  formatLocalDateRange,
-  isEventStory,
-  isYearInReview,
-} from '$lib/frameleaf/memory-stories';
+import { eventStoryPlace, formatLocalDateRange, isEventStory, isYearInReview } from '$lib/frameleaf/memory-stories';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { alwaysLoadOriginalFile, lang, locale } from '$lib/stores/preferences.store';
 import { isWebCompatibleImage } from '$lib/utils/asset-utils';
@@ -407,9 +402,7 @@ export const memoryLaneTitle = derived(t, ($t) => {
     // it has one and otherwise reads as its local day range; the range comes from the
     // server's `yyyy-MM-dd` local days, so it is not re-zoned here.
     if (isEventStory(memory)) {
-      return (
-        eventStoryPlace(memory) ?? formatLocalDateRange(memory.data.startDate, memory.data.endDate, get(locale))
-      );
+      return eventStoryPlace(memory) ?? formatLocalDateRange(memory.data.startDate, memory.data.endDate, get(locale));
     }
 
     if (isYearInReview(memory)) {

@@ -30,9 +30,8 @@
  * which is the one every browser has; a streamed playback transport plugs in behind the same
  * {@link StudioPreviewTransport} without the engine or this cache changing.
  */
-
-import { formatRational, frameStartTime, tryParseRational } from './rational-time';
 import type { StudioTime } from './commands';
+import { formatRational, frameStartTime, tryParseRational } from './rational-time';
 
 /* ------------------------------------------------------------------ */
 /* Time                                                                 */
@@ -271,8 +270,7 @@ export class StudioPreviewCache {
 
   constructor(options: StudioPreviewCacheOptions = {}) {
     this.maxFramesPerRevision = options.maxFramesPerRevision ?? 60;
-    this.release =
-      options.release ?? ((objectUrl: string) => globalThis.URL?.revokeObjectURL?.(objectUrl));
+    this.release = options.release ?? ((objectUrl: string) => globalThis.URL?.revokeObjectURL?.(objectUrl));
   }
 
   get size(): number {

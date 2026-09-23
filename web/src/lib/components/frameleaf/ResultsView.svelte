@@ -110,9 +110,7 @@
     context: () => ({
       currentUserId,
       ownerById: Object.fromEntries(
-        session.selection
-          .map((id) => [id, byId.get(id)?.ownerId])
-          .filter(([, owner]) => !!owner) as [string, string][],
+        session.selection.map((id) => [id, byId.get(id)?.ownerId]).filter(([, owner]) => !!owner) as [string, string][],
       ),
     }),
   });

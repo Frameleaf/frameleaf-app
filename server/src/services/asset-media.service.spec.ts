@@ -569,11 +569,7 @@ describe(AssetMediaService.name, () => {
         id: '00000000-0000-0000-0000-000000000000',
         status: AssetMediaStatus.DUPLICATE,
       });
-      expect(mocks.asset.getUploadAssetIdByChecksum).toHaveBeenNthCalledWith(
-        1,
-        authStub.user1.user.id,
-        file.checksum,
-      );
+      expect(mocks.asset.getUploadAssetIdByChecksum).toHaveBeenNthCalledWith(1, authStub.user1.user.id, file.checksum);
       expect(mocks.sharedLink.addAssets).not.toHaveBeenCalled();
       expect(mocks.album.addAssetIds).not.toHaveBeenCalled();
     });

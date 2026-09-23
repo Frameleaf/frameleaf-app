@@ -99,9 +99,7 @@
     ),
   );
   // A shared space's photos are one of its panels, so leaving them goes back to the space's own page.
-  const backRoute = $derived(
-    album.kind === AlbumKind.Space ? Route.viewSharedSpace({ id: album.id }) : Route.albums(),
-  );
+  const backRoute = $derived(album.kind === AlbumKind.Space ? Route.viewSharedSpace({ id: album.id }) : Route.albums());
   const showAlbumUsers = $derived(timelineManager?.showAssetOwners ?? false);
   const containsEditors = $derived(album.shared && album.albumUsers.some(({ role }) => role === AlbumUserRole.Editor));
   const isShared = $derived(viewMode === AlbumPageViewMode.SELECT_ASSETS ? false : album.albumUsers.length > 1);
@@ -112,7 +110,9 @@
   const node = $derived(tree.collections.find(({ collection }) => collection.id === album.id));
   const childAlbums = $derived(node?.albums ?? []);
   const parent = $derived(
-    album.parentId ? tree.collections.find(({ collection }) => collection.id === album.parentId)?.collection : undefined,
+    album.parentId
+      ? tree.collections.find(({ collection }) => collection.id === album.parentId)?.collection
+      : undefined,
   );
   const editableCollections = $derived(
     tree.collections.map(({ collection }) => collection).filter((collection) => canEdit(collection, currentUserId)),
@@ -164,7 +164,7 @@
     void loadCollectionAssets(collectionPage);
   };
 
-  const assetCount = $derived(isCollection ? node?.assetCount ?? collectionAssets.length : album.assetCount);
+  const assetCount = $derived(isCollection ? (node?.assetCount ?? collectionAssets.length) : album.assetCount);
 
   /* ------------------------------------------------------------------ */
   /* Library session and bulk actions                                    */
@@ -219,8 +219,7 @@
 
   const collectionTimelineAssets = $derived(collectionAssets.map((asset) => toTimelineAsset(asset)));
 
-  const selectEverythingInCollection = () =>
-    librarySession.selectAll(collectionAssets.map((asset) => asset.id));
+  const selectEverythingInCollection = () => librarySession.selectAll(collectionAssets.map((asset) => asset.id));
 
   /* ------------------------------------------------------------------ */
   /* Album lifecycle                                                     */
@@ -370,7 +369,15 @@
     await setModeToView();
   };
 
-  const onAlbumUserUpdate = ({ albumId: id, userId, role }: { albumId: string; userId: string; role: AlbumUserRole }) => {
+  const onAlbumUserUpdate = ({
+    albumId: id,
+    userId,
+    role,
+  }: {
+    albumId: string;
+    userId: string;
+    role: AlbumUserRole;
+  }) => {
     if (id !== albumId) {
       return;
     }

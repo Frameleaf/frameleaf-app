@@ -372,11 +372,7 @@
     </div>
     <EnrichmentWorkbench bind:open={workbenchOpen} draft={imageDescription} saved={savedImageDescription} />
 
-    <SettingGroup
-      key="image-description-status-regen"
-      title={$t('admin.image_description_status_section')}
-      subtitle=""
-    >
+    <SettingGroup key="image-description-status-regen" title={$t('admin.image_description_status_section')} subtitle="">
       <div class="flex flex-col gap-4">
         {#if descriptionStatsLoading && !descriptionStats}
           <p class="text-sm text-immich-fg/60 dark:text-immich-dark-fg/60">

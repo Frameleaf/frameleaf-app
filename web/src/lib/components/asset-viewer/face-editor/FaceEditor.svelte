@@ -273,13 +273,29 @@
       shortcut: { key, shift: true },
       ignoreInputFields: true,
       preventDefault: true,
-      onShortcut: () => nudgeFace((dx / FACE_NUDGE_STEP) * FACE_NUDGE_STEP_LARGE, (dy / FACE_NUDGE_STEP) * FACE_NUDGE_STEP_LARGE),
+      onShortcut: () =>
+        nudgeFace((dx / FACE_NUDGE_STEP) * FACE_NUDGE_STEP_LARGE, (dy / FACE_NUDGE_STEP) * FACE_NUDGE_STEP_LARGE),
     },
   ]);
   faceRegionShortcuts.push(
-    { shortcut: { key: '=' }, ignoreInputFields: true, preventDefault: true, onShortcut: () => resizeFace(FACE_RESIZE_STEP) },
-    { shortcut: { key: '+' }, ignoreInputFields: true, preventDefault: true, onShortcut: () => resizeFace(FACE_RESIZE_STEP) },
-    { shortcut: { key: '-' }, ignoreInputFields: true, preventDefault: true, onShortcut: () => resizeFace(-FACE_RESIZE_STEP) },
+    {
+      shortcut: { key: '=' },
+      ignoreInputFields: true,
+      preventDefault: true,
+      onShortcut: () => resizeFace(FACE_RESIZE_STEP),
+    },
+    {
+      shortcut: { key: '+' },
+      ignoreInputFields: true,
+      preventDefault: true,
+      onShortcut: () => resizeFace(FACE_RESIZE_STEP),
+    },
+    {
+      shortcut: { key: '-' },
+      ignoreInputFields: true,
+      preventDefault: true,
+      onShortcut: () => resizeFace(-FACE_RESIZE_STEP),
+    },
   );
 
   $effect(() => {

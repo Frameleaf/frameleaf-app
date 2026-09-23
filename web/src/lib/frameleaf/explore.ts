@@ -1,6 +1,6 @@
-import { Route } from '$lib/route';
 import { AssetTypeEnum, type AssetResponseDto } from '@immich/sdk';
 import { mdiCameraOutline, mdiHeartOutline, mdiImageSearchOutline, mdiMovieOpenOutline } from '@mdi/js';
+import { Route } from '$lib/route';
 
 /**
  * Frameleaf Explore destination (FL-50).

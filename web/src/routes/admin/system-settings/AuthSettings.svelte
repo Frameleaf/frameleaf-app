@@ -67,11 +67,7 @@
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(e) => e.preventDefault()}>
       <div class="flex flex-col">
-        <SettingGroup
-          key="oauth"
-          title={$t('admin.oauth_settings')}
-          subtitle={$t('admin.oauth_settings_description')}
-        >
+        <SettingGroup key="oauth" title={$t('admin.oauth_settings')} subtitle={$t('admin.oauth_settings_description')}>
           <div class="flex flex-col gap-4">
             <Text size="small">
               <FormatMessage key="admin.oauth_settings_more_details">

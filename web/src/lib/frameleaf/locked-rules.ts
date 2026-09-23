@@ -16,7 +16,6 @@
  *   revision only when the Locked rules themselves did not change; otherwise the draft stays and
  *   the owner decides.
  */
-
 import {
   SuppressionScope,
   type TagResponseDto,

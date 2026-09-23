@@ -126,9 +126,10 @@
               {libraries}
               {libraryStatistics}
               preferencesEditable={accountLifecycle(user) === 'active'}
-              savePreferences={(update) => updateUserPreferencesAdmin({ id: user.id, userPreferencesUpdateDto: update })}
+              savePreferences={(update) =>
+                updateUserPreferencesAdmin({ id: user.id, userPreferencesUpdateDto: update })}
               loadPreferences={() => getUserPreferencesAdmin({ id: user.id })}
-              onPreferencesSaved={onPreferencesSaved}
+              {onPreferencesSaved}
               onOpenPrivacy={user.id === authManager.user.id ? openOwnLockedSettings : undefined}
             />
           {/key}

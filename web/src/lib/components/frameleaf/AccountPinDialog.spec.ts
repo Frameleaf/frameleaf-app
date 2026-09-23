@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { userAdminFactory } from '$lib/../test-data/factories/user-factory';
 import AccountPinDialog from '$lib/components/frameleaf/AccountPinDialog.svelte';
 import { handleUpdateUserAdmin } from '$lib/services/user-admin.service';
-import { userAdminFactory } from '$lib/../test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
 
 vi.mock('$lib/services/user-admin.service', () => ({

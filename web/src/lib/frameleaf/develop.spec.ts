@@ -28,7 +28,9 @@ describe('develop', () => {
   describe('parameters', () => {
     it('lists the sixteen Lightroom-style sliders in four groups', () => {
       expect(DEVELOP_KEYS).toHaveLength(16);
-      expect(new Set(DEVELOP_PARAMS.map((item) => item.group))).toEqual(new Set(['light', 'color', 'effects', 'detail']));
+      expect(new Set(DEVELOP_PARAMS.map((item) => item.group))).toEqual(
+        new Set(['light', 'color', 'effects', 'detail']),
+      );
       expect(developDefaults().exposure).toBe(0);
     });
 

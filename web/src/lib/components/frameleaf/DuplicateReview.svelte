@@ -78,8 +78,15 @@
     keyboardPaused?: boolean;
   };
 
-  let { groups: initialGroups, history, gateway, trashEnabled, onOpen, onOpenTrash, keyboardPaused = false }: Props =
-    $props();
+  let {
+    groups: initialGroups,
+    history,
+    gateway,
+    trashEnabled,
+    onOpen,
+    onOpenTrash,
+    keyboardPaused = false,
+  }: Props = $props();
 
   let query = $state('');
   let filter = $state<ReviewFilter>('open');
@@ -621,11 +628,7 @@
             >
               <Icon icon={mdiChevronLeft} size="18" aria-hidden={true} />
             </Button>
-            <Button
-              label={$t('frameleaf_duplicates_next_group')}
-              disabled={groups.length < 2}
-              onclick={() => move(1)}
-            >
+            <Button label={$t('frameleaf_duplicates_next_group')} disabled={groups.length < 2} onclick={() => move(1)}>
               <Icon icon={mdiChevronRight} size="18" aria-hidden={true} />
             </Button>
           </div>
@@ -680,9 +683,7 @@
                   : $t('frameleaf_duplicates_choose_keepers')}
               </strong>
               <small>
-                {keeperIds.length > 0
-                  ? $t(unselectedKey)
-                  : $t('frameleaf_duplicates_nothing_removed')}
+                {keeperIds.length > 0 ? $t(unselectedKey) : $t('frameleaf_duplicates_nothing_removed')}
               </small>
             </div>
             <Button

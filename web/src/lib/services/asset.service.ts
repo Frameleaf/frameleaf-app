@@ -266,8 +266,7 @@ export const getAssetActions = (
       typeof asset.exifInfo?.latitude === 'number' &&
       typeof asset.exifInfo?.longitude === 'number' &&
       asset.visibility !== AssetVisibility.Locked,
-    onAction: () =>
-      goto(Route.map({ zoom: 14, lat: asset.exifInfo!.latitude!, lng: asset.exifInfo!.longitude! })),
+    onAction: () => goto(Route.map({ zoom: 14, lat: asset.exifInfo!.latitude!, lng: asset.exifInfo!.longitude! })),
   };
 
   /**

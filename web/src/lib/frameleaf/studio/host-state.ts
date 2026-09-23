@@ -13,11 +13,10 @@
  * engine when it is reached so private state leaves the page. `offline` outranks
  * `unavailable` because a capability probe that could not reach the server proves nothing.
  */
-
 import type { StudioCapabilityId } from './commands';
+import type { StudioEngineAbsenceReason } from './engine-loader';
 import type { StudioCapabilities } from './host-contract';
 import { unmetRequiredCapabilities } from './host-contract';
-import type { StudioEngineAbsenceReason } from './engine-loader';
 
 export type StudioHostPhase = 'loading' | 'ready' | 'unavailable' | 'forbidden' | 'offline' | 'error';
 
@@ -63,11 +62,7 @@ export type StudioHostEvent =
  * `forbidden` so private frames, audio and cached media leave the page, and the others
  * because an editor that cannot save is worse than no editor.
  */
-const disposingPhases: ReadonlySet<StudioHostPhase> = new Set<StudioHostPhase>([
-  'forbidden',
-  'unavailable',
-  'error',
-]);
+const disposingPhases: ReadonlySet<StudioHostPhase> = new Set<StudioHostPhase>(['forbidden', 'unavailable', 'error']);
 
 export const shouldDisposeEngine = (phase: StudioHostPhase): boolean => disposingPhases.has(phase);
 

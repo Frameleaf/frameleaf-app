@@ -22,7 +22,6 @@
  * The adapters that satisfy this contract live outside `studio/vendor/freecut`, which is a
  * provenance-checked snapshot that no story edits.
  */
-
 import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, StudioDuration } from './commands';
 import type { StudioPreviewView } from './preview';
 
@@ -198,10 +197,7 @@ export const unavailableStudioWorkspace = (): StudioWorkspaceView => ({
 /* What the engine may ask the host to do                               */
 /* ------------------------------------------------------------------ */
 
-export type StudioNavigationTarget =
-  | { kind: 'library' }
-  | { kind: 'activity' }
-  | { kind: 'asset'; assetId: string };
+export type StudioNavigationTarget = { kind: 'library' } | { kind: 'activity' } | { kind: 'asset'; assetId: string };
 
 export type StudioNotificationTone = 'info' | 'error';
 
@@ -267,9 +263,5 @@ export interface StudioEngineModule {
   readonly engineRevision: string;
   /** Feature manifest rows this build claims. Used by the conformance work in FL-85. */
   readonly features: readonly string[];
-  mount(
-    target: HTMLElement,
-    context: StudioHostContext,
-    services: StudioHostServices,
-  ): Promise<StudioEngineInstance>;
+  mount(target: HTMLElement, context: StudioHostContext, services: StudioHostServices): Promise<StudioEngineInstance>;
 }

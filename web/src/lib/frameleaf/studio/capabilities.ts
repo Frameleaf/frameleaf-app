@@ -14,7 +14,6 @@
  * capability as absent, because a capability the server did not confirm is not one the
  * route may claim.
  */
-
 import { getMlCapabilities, type StudioCapabilitiesDto } from '@immich/sdk';
 import { emptyStudioCapabilities, type StudioCapabilities } from './host-contract';
 

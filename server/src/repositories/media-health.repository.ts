@@ -1012,35 +1012,37 @@ export class MediaHealthRepository {
       return Promise.resolve([]);
     }
 
-    return this.db
-      .withSchema('public')
-      .selectFrom('asset')
-      .selectAll('asset')
-      // the stored visibility is never `locked` (FL-34): the lock record tells the response
-      .select(isLocked('asset').as('isLocked'))
-      .select((eb) => [
-        eb
-          .selectFrom('asset_file')
-          .select('path')
-          .whereRef('asset_file.assetId', '=', 'asset.id')
-          .where('type', '=', AssetFileType.Preview)
-          .where('isEdited', '=', false)
-          .limit(1)
-          .as('previewPath'),
-        eb
-          .selectFrom('asset_file')
-          .select('path')
-          .whereRef('asset_file.assetId', '=', 'asset.id')
-          .where('type', '=', AssetFileType.Thumbnail)
-          .where('isEdited', '=', false)
-          .limit(1)
-          .as('thumbnailPath'),
-      ])
-      .where('asset.id', '=', anyUuid(assetIds))
-      .$if(!!ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(ownerId!)))
-      .$if(!!privacy, (qb) => qb.where((eb) => lockedOwnerScope(eb, privacy!.lockedOwnerId)))
-      .$call((qb) => withHiddenContentFilter(qb, privacy))
-      .execute();
+    return (
+      this.db
+        .withSchema('public')
+        .selectFrom('asset')
+        .selectAll('asset')
+        // the stored visibility is never `locked` (FL-34): the lock record tells the response
+        .select(isLocked('asset').as('isLocked'))
+        .select((eb) => [
+          eb
+            .selectFrom('asset_file')
+            .select('path')
+            .whereRef('asset_file.assetId', '=', 'asset.id')
+            .where('type', '=', AssetFileType.Preview)
+            .where('isEdited', '=', false)
+            .limit(1)
+            .as('previewPath'),
+          eb
+            .selectFrom('asset_file')
+            .select('path')
+            .whereRef('asset_file.assetId', '=', 'asset.id')
+            .where('type', '=', AssetFileType.Thumbnail)
+            .where('isEdited', '=', false)
+            .limit(1)
+            .as('thumbnailPath'),
+        ])
+        .where('asset.id', '=', anyUuid(assetIds))
+        .$if(!!ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(ownerId!)))
+        .$if(!!privacy, (qb) => qb.where((eb) => lockedOwnerScope(eb, privacy!.lockedOwnerId)))
+        .$call((qb) => withHiddenContentFilter(qb, privacy))
+        .execute()
+    );
   }
 
   async relinkManagedAsset(input: RelinkManagedAsset): Promise<boolean> {

@@ -81,7 +81,12 @@
       ? `${viewportTopMonth.year}-${viewportTopMonth.month}`
       : null,
   );
-  const currentIndex = $derived(Math.max(0, months.findIndex((month) => month.key === currentKey)));
+  const currentIndex = $derived(
+    Math.max(
+      0,
+      months.findIndex((month) => month.key === currentKey),
+    ),
+  );
   const current = $derived(months[currentIndex]);
   /** Where the marker sits: inside the current month, or the overall position when there is none. */
   const markerFraction = $derived.by(() => {
@@ -197,9 +202,7 @@
     aria-valuemin={0}
     aria-valuemax={Math.max(0, months.length - 1)}
     aria-valuenow={currentIndex}
-    aria-valuetext={current
-      ? `${current.title}, ${$t('items_count', { values: { count: current.assetCount } })}`
-      : ''}
+    aria-valuetext={current ? `${current.title}, ${$t('items_count', { values: { count: current.assetCount } })}` : ''}
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}

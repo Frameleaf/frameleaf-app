@@ -121,13 +121,7 @@ export const previewETagMatches = (header: string | undefined, etag: string): bo
 /* ------------------------------------------------------------------ */
 
 /** The store states a preview row can be in. Mirrors `StudioPreviewStatus` in `enum.ts`. */
-export type PreviewStatusValue =
-  | 'pending'
-  | 'rendering'
-  | 'ready'
-  | 'superseded'
-  | 'failed'
-  | 'evicted';
+export type PreviewStatusValue = 'pending' | 'rendering' | 'ready' | 'superseded' | 'failed' | 'evicted';
 
 export type PreviewDeliveryInput = {
   status: PreviewStatusValue;
@@ -262,10 +256,7 @@ export const planPreviewEviction = (
     framesPerRevision?: number;
   },
 ): EvictionPlan => {
-  const keepRevisions = new Set<string>([
-    options.currentRevisionDigest,
-    ...(options.recentRevisionDigests ?? []),
-  ]);
+  const keepRevisions = new Set<string>([options.currentRevisionDigest, ...(options.recentRevisionDigests ?? [])]);
   const framesPerRevision = options.framesPerRevision ?? PREVIEW_FRAMES_PER_REVISION;
 
   const evict = new Set<string>();
@@ -282,7 +273,11 @@ export const planPreviewEviction = (
       continue;
     }
 
-    if (candidate.expiresAt && candidate.expiresAt.getTime() <= options.now.getTime() && !isInFlight(candidate.status)) {
+    if (
+      candidate.expiresAt &&
+      candidate.expiresAt.getTime() <= options.now.getTime() &&
+      !isInFlight(candidate.status)
+    ) {
       evict.add(candidate.id);
       continue;
     }

@@ -53,8 +53,7 @@
 
   const listId = $props.id();
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
-  const isApple =
-    typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent || '');
+  const isApple = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent || '');
 
   const searching = $derived(query.trim().length > 0);
 

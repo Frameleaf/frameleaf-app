@@ -83,7 +83,10 @@ export class MlDestinationService extends BaseService {
     this.stopProbing();
   }
 
-  private async reconcile(machineLearning: { urls: string[]; availabilityChecks: { enabled: boolean; interval: number } }) {
+  private async reconcile(machineLearning: {
+    urls: string[];
+    availabilityChecks: { enabled: boolean; interval: number };
+  }) {
     try {
       await this.databaseRepository.withLock(DatabaseLock.MlDestinationBootstrap, () =>
         this.ensureLocalDestinations(machineLearning.urls),
@@ -195,7 +198,9 @@ export class MlDestinationService extends BaseService {
       if (dto.url || dto.authToken) {
         throw new BadRequestException('A RunPod destination takes its URL and credentials from the RunPod service');
       }
-      const existing = (await this.mlDestinationRepository.getAll()).find((row) => row.kind === MlDestinationKind.RunPod);
+      const existing = (await this.mlDestinationRepository.getAll()).find(
+        (row) => row.kind === MlDestinationKind.RunPod,
+      );
       if (existing) {
         throw new BadRequestException('There is already a RunPod destination; edit it instead');
       }
@@ -237,7 +242,11 @@ export class MlDestinationService extends BaseService {
     // Checked only when the allowed work changes, so a row saved before FL-72 that mixes roles
     // can still be renamed or disabled; its restoration work is refused at admission meanwhile.
     if (dto.workloads !== undefined || dto.sharesLibraryHardware !== undefined) {
-      this.assertWorkloadPolicy(current.kind, nextWorkloads, dto.sharesLibraryHardware ?? current.sharesLibraryHardware);
+      this.assertWorkloadPolicy(
+        current.kind,
+        nextWorkloads,
+        dto.sharesLibraryHardware ?? current.sharesLibraryHardware,
+      );
     }
 
     const row = await this.mlDestinationRepository.update(id, {
@@ -262,7 +271,11 @@ export class MlDestinationService extends BaseService {
     await this.mlDestinationRepository.delete(id);
   }
 
-  async grantConsent(auth: AuthDto, id: string, dto: MlDestinationConsentRequestDto): Promise<MlDestinationResponseDto> {
+  async grantConsent(
+    auth: AuthDto,
+    id: string,
+    dto: MlDestinationConsentRequestDto,
+  ): Promise<MlDestinationResponseDto> {
     if (dto.acknowledgeMediaLeavesNetwork !== true) {
       throw new BadRequestException('Consent must be acknowledged explicitly');
     }
@@ -306,7 +319,12 @@ export class MlDestinationService extends BaseService {
         hardware: null,
         latencyMs: null,
       });
-      return { status: MlDestinationHealth.Unhealthy, probedAt: probedAt.toISOString(), summary, servedWorkloads: null };
+      return {
+        status: MlDestinationHealth.Unhealthy,
+        probedAt: probedAt.toISOString(),
+        summary,
+        servedWorkloads: null,
+      };
     }
 
     const probe = await this.machineLearningRepository.probe(endpoint);
@@ -408,11 +426,16 @@ export class MlDestinationService extends BaseService {
       throw new BadRequestException(`${destination.name} is not allowed to run ${workload}`);
     }
     if (!hasRequiredConsent(destination)) {
-      throw new BadRequestException(`${destination.name} sends media off this network; record consent before routing to it`);
+      throw new BadRequestException(
+        `${destination.name} sends media off this network; record consent before routing to it`,
+      );
     }
     // FL-72: a restoration route never lands on an endpoint library analysis uses.
     const conflict = await restorationRoleConflict(
-      { mlDestinationRepository: this.mlDestinationRepository, machineLearningRepository: this.machineLearningRepository },
+      {
+        mlDestinationRepository: this.mlDestinationRepository,
+        machineLearningRepository: this.machineLearningRepository,
+      },
       destination,
       workload,
     );
@@ -460,7 +483,10 @@ export class MlDestinationService extends BaseService {
    * render worker admission (FL-95, FL-104) owns them and this service has no evidence of one.
    */
   async getCapabilities(): Promise<MlCapabilitiesResponseDto> {
-    const [rows, routes] = await Promise.all([this.mlDestinationRepository.getAll(), this.mlDestinationRepository.getRoutes()]);
+    const [rows, routes] = await Promise.all([
+      this.mlDestinationRepository.getAll(),
+      this.mlDestinationRepository.getRoutes(),
+    ]);
     const routed = new Map(routes.map((route) => [route.workload, route.destinationId]));
 
     const workloads: MlWorkloadCapabilityDto[] = Object.values(MlWorkload).map((workload) => {
@@ -488,7 +514,8 @@ export class MlDestinationService extends BaseService {
       };
     });
 
-    const available = (workload: MlWorkload) => workloads.find((entry) => entry.workload === workload)?.available ?? false;
+    const available = (workload: MlWorkload) =>
+      workloads.find((entry) => entry.workload === workload)?.available ?? false;
 
     return {
       workloads,
@@ -525,7 +552,9 @@ export class MlDestinationService extends BaseService {
       throw new BadRequestException(problem);
     }
     if (sharesLibraryHardware && !workloads.some((workload) => RESTORATION_ML_WORKLOADS.includes(workload))) {
-      throw new BadRequestException('Only a restoration worker can be marked as sharing hardware with library analysis');
+      throw new BadRequestException(
+        'Only a restoration worker can be marked as sharing hardware with library analysis',
+      );
     }
     if (sharesLibraryHardware && isCloudDestination(kind)) {
       throw new BadRequestException('A cloud worker cannot share a GPU with library analysis on this network');
@@ -552,7 +581,8 @@ export class MlDestinationService extends BaseService {
       kind: row.kind,
       name: row.name,
       url: endpoint?.url ?? null,
-      authTokenConfigured: row.kind === MlDestinationKind.RunPod ? Boolean(endpoint?.authToken) : row.authToken !== null,
+      authTokenConfigured:
+        row.kind === MlDestinationKind.RunPod ? Boolean(endpoint?.authToken) : row.authToken !== null,
       enabled: row.enabled,
       workloads: row.workloads,
       role: mlWorkerRoleOf(row.workloads),

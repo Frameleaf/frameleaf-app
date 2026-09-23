@@ -2,7 +2,11 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaults } from 'src/config.js';
 import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
-import { RESTORATION_PROTOCOL, RestorationDynamicRange, RestorationModelState } from 'src/dtos/restoration-inference.dto.js';
+import {
+  RESTORATION_PROTOCOL,
+  RestorationDynamicRange,
+  RestorationModelState,
+} from 'src/dtos/restoration-inference.dto.js';
 import {
   ImmichWorker,
   MlAdmissionRefusal,
@@ -29,7 +33,10 @@ describe(MlDestinationService.name, () => {
     ]);
     mocks.mlDestination.getThroughput.mockResolvedValue({ sampleCount: 0, bytesSent: 0, durationMs: 0, spentUsd: 0 });
     mocks.mlDestination.update.mockImplementation((id, patch) =>
-      Promise.resolve({ ...(id === mlDestinationStub.runPod.id ? mlDestinationStub.runPod : mlDestinationStub.local), ...patch } as never),
+      Promise.resolve({
+        ...(id === mlDestinationStub.runPod.id ? mlDestinationStub.runPod : mlDestinationStub.local),
+        ...patch,
+      } as never),
     );
     mocks.mlDestination.create.mockImplementation((row) =>
       Promise.resolve({ ...mlDestinationStub.local, ...row, id: 'created' } as never),
@@ -106,7 +113,11 @@ describe(MlDestinationService.name, () => {
       const second = { ...mlDestinationStub.local, id: 'ml-destination-second', url: 'http://second:3003' };
       mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, second, mlDestinationStub.lan]);
       mocks.mlDestination.getByUrl.mockResolvedValue(mlDestinationStub.local);
-      mocks.mlDestination.getRoute.mockResolvedValue({ workload: MlWorkload.Face, destinationId: second.id, updatedAt: new Date() });
+      mocks.mlDestination.getRoute.mockResolvedValue({
+        workload: MlWorkload.Face,
+        destinationId: second.id,
+        updatedAt: new Date(),
+      });
       (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
 
       await bootWith(['http://immich-machine-learning:3003']);
@@ -126,7 +137,11 @@ describe(MlDestinationService.name, () => {
       const removed = { ...mlDestinationStub.local, enabled: false, lastProbeSummary: ML_URL_REMOVED_SUMMARY };
       mocks.mlDestination.getAll.mockResolvedValue([removed]);
       mocks.mlDestination.getByUrl.mockResolvedValue(removed);
-      mocks.mlDestination.getRoute.mockResolvedValue({ workload: MlWorkload.Face, destinationId: removed.id, updatedAt: new Date() });
+      mocks.mlDestination.getRoute.mockResolvedValue({
+        workload: MlWorkload.Face,
+        destinationId: removed.id,
+        updatedAt: new Date(),
+      });
       (mocks.config.getWorker as ReturnType<typeof vi.fn>).mockReturnValue(ImmichWorker.Microservices);
 
       await bootWith(['http://immich-machine-learning:3003']);
@@ -136,7 +151,11 @@ describe(MlDestinationService.name, () => {
       const adminOff = { ...mlDestinationStub.local, enabled: false, lastProbeSummary: 'Serves face' };
       mocks.mlDestination.getAll.mockResolvedValue([adminOff]);
       mocks.mlDestination.getByUrl.mockResolvedValue(adminOff);
-      mocks.mlDestination.getRoute.mockResolvedValue({ workload: MlWorkload.Face, destinationId: adminOff.id, updatedAt: new Date() });
+      mocks.mlDestination.getRoute.mockResolvedValue({
+        workload: MlWorkload.Face,
+        destinationId: adminOff.id,
+        updatedAt: new Date(),
+      });
 
       await bootWith(['http://immich-machine-learning:3003']);
       expect(mocks.mlDestination.update).not.toHaveBeenCalled();
@@ -230,7 +249,9 @@ describe(MlDestinationService.name, () => {
     it('refuses a consent body that is not the literal acknowledgement', async () => {
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPod);
       await expect(
-        sut.grantConsent(authStub.admin, mlDestinationStub.runPod.id, { acknowledgeMediaLeavesNetwork: false } as never),
+        sut.grantConsent(authStub.admin, mlDestinationStub.runPod.id, {
+          acknowledgeMediaLeavesNetwork: false,
+        } as never),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(mocks.mlDestination.update).not.toHaveBeenCalled();
     });
@@ -264,7 +285,10 @@ describe(MlDestinationService.name, () => {
     it('routes to a consented cloud destination and removes a route with null', async () => {
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPodConsented);
       await sut.setRoute(MlWorkload.Enrichment, { destinationId: mlDestinationStub.runPodConsented.id });
-      expect(mocks.mlDestination.setRoute).toHaveBeenCalledWith(MlWorkload.Enrichment, mlDestinationStub.runPodConsented.id);
+      expect(mocks.mlDestination.setRoute).toHaveBeenCalledWith(
+        MlWorkload.Enrichment,
+        mlDestinationStub.runPodConsented.id,
+      );
 
       await sut.setRoute(MlWorkload.Enrichment, { destinationId: null });
       expect(mocks.mlDestination.clearRoute).toHaveBeenCalledWith(MlWorkload.Enrichment);
@@ -273,7 +297,9 @@ describe(MlDestinationService.name, () => {
     it('lists every workload, unrouted ones with a null destination', async () => {
       const { routes } = await sut.getRoutes();
       expect(routes).toHaveLength(Object.values(MlWorkload).length);
-      expect(routes.find((route) => route.workload === MlWorkload.Face)?.destinationId).toBe(mlDestinationStub.local.id);
+      expect(routes.find((route) => route.workload === MlWorkload.Face)?.destinationId).toBe(
+        mlDestinationStub.local.id,
+      );
       expect(routes.find((route) => route.workload === MlWorkload.StudioAi)?.destinationId).toBeNull();
     });
   });
@@ -300,7 +326,10 @@ describe(MlDestinationService.name, () => {
 
       const result = await sut.probe(mlDestinationStub.lan.id);
 
-      expect(mocks.machineLearning.probe).toHaveBeenCalledWith({ url: mlDestinationStub.lan.url, authToken: 'lan-token' });
+      expect(mocks.machineLearning.probe).toHaveBeenCalledWith({
+        url: mlDestinationStub.lan.url,
+        authToken: 'lan-token',
+      });
       expect(result.servedWorkloads).toEqual([MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative]);
       expect(result.status).toBe(MlDestinationHealth.Healthy);
     });
@@ -358,7 +387,12 @@ describe(MlDestinationService.name, () => {
 
   describe('admit', () => {
     it('admits the named destination and returns a measured estimate or null', async () => {
-      mocks.mlDestination.getThroughput.mockResolvedValue({ sampleCount: 3, bytesSent: 3000, durationMs: 1500, spentUsd: 0 });
+      mocks.mlDestination.getThroughput.mockResolvedValue({
+        sampleCount: 3,
+        bytesSent: 3000,
+        durationMs: 1500,
+        spentUsd: 0,
+      });
 
       const result = await sut.admit(mlDestinationStub.local.id, { workload: MlWorkload.Face, jobId: 'job-1' });
 
@@ -375,9 +409,14 @@ describe(MlDestinationService.name, () => {
 
     it('refuses instead of answering with another destination', async () => {
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPod);
-      mocks.machineLearning.getRunPodEndpoint.mockReturnValue({ url: 'https://endpoint.api.runpod.ai/', authToken: 'rp' });
+      mocks.machineLearning.getRunPodEndpoint.mockReturnValue({
+        url: 'https://endpoint.api.runpod.ai/',
+        authToken: 'rp',
+      });
 
-      const error = await sut.admit(mlDestinationStub.runPod.id, { workload: MlWorkload.Enrichment }).catch((error_) => error_);
+      const error = await sut
+        .admit(mlDestinationStub.runPod.id, { workload: MlWorkload.Enrichment })
+        .catch((error_) => error_);
 
       expect(error).toBeInstanceOf(MlDestinationRefusedError);
       expect((error as MlDestinationRefusedError).refusal).toBe(MlAdmissionRefusal.ConsentMissing);
@@ -406,7 +445,12 @@ describe(MlDestinationService.name, () => {
     it('never offers the managed RunPod pod for restoration', async () => {
       mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local]);
       await expect(
-        sut.create({ kind: MlDestinationKind.RunPod, name: 'RunPod', workloads: [MlWorkload.RestorationCreative], enabled: true }),
+        sut.create({
+          kind: MlDestinationKind.RunPod,
+          name: 'RunPod',
+          workloads: [MlWorkload.RestorationCreative],
+          enabled: true,
+        }),
       ).rejects.toThrow(/library analysis only/);
     });
 
@@ -435,7 +479,11 @@ describe(MlDestinationService.name, () => {
       });
 
       expect(mocks.mlDestination.create).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: MlDestinationKind.RunPodVideo, authToken: 'video-token', sharesLibraryHardware: false }),
+        expect.objectContaining({
+          kind: MlDestinationKind.RunPodVideo,
+          authToken: 'video-token',
+          sharesLibraryHardware: false,
+        }),
       );
       expect(result.role).toBe(MlWorkerRole.Restoration);
       expect(result.consent.required).toBe(true);
@@ -482,7 +530,9 @@ describe(MlDestinationService.name, () => {
     it('refuses a restoration route on an endpoint library analysis is routed to', async () => {
       const sameUrl = { ...mlDestinationStub.lan, url: mlDestinationStub.local.url };
       mocks.mlDestination.getById.mockImplementation((id: string) =>
-        Promise.resolve(id === sameUrl.id ? sameUrl : id === mlDestinationStub.local.id ? mlDestinationStub.local : undefined),
+        Promise.resolve(
+          id === sameUrl.id ? sameUrl : id === mlDestinationStub.local.id ? mlDestinationStub.local : undefined,
+        ),
       );
 
       await expect(sut.setRoute(MlWorkload.RestorationFaithful, { destinationId: sameUrl.id })).rejects.toThrow(
@@ -498,7 +548,10 @@ describe(MlDestinationService.name, () => {
 
       await sut.setRoute(MlWorkload.RestorationFaithful, { destinationId: mlDestinationStub.lan.id });
 
-      expect(mocks.mlDestination.setRoute).toHaveBeenCalledWith(MlWorkload.RestorationFaithful, mlDestinationStub.lan.id);
+      expect(mocks.mlDestination.setRoute).toHaveBeenCalledWith(
+        MlWorkload.RestorationFaithful,
+        mlDestinationStub.lan.id,
+      );
     });
   });
 
@@ -549,7 +602,9 @@ describe(MlDestinationService.name, () => {
 
       const result = await sut.getCapabilities();
 
-      expect(result.workloads.find((entry) => entry.workload === MlWorkload.RestorationFaithful)?.available).toBe(false);
+      expect(result.workloads.find((entry) => entry.workload === MlWorkload.RestorationFaithful)?.available).toBe(
+        false,
+      );
       expect(result.studio.restorationWorker).toBe(false);
     });
   });
@@ -639,14 +694,21 @@ describe(MlDestinationService.name, () => {
     it('maps rows to DTOs without exposing tokens and with the RunPod URL from the published endpoint', async () => {
       mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.lan, mlDestinationStub.runPodConsented]);
       mocks.mlDestination.getSpend.mockResolvedValue(4.25);
-      mocks.machineLearning.getRunPodEndpoint.mockReturnValue({ url: 'https://endpoint.api.runpod.ai/', authToken: 'rp' });
+      mocks.machineLearning.getRunPodEndpoint.mockReturnValue({
+        url: 'https://endpoint.api.runpod.ai/',
+        authToken: 'rp',
+      });
 
       const [lan, runPod] = await sut.list();
 
       expect(lan.authTokenConfigured).toBe(true);
       expect(JSON.stringify(lan)).not.toContain('lan-token');
       expect(runPod.url).toBe('https://endpoint.api.runpod.ai/');
-      expect(runPod.consent).toEqual({ required: true, acknowledgedAt: expect.any(String), acknowledgedBy: 'admin-id' });
+      expect(runPod.consent).toEqual({
+        required: true,
+        acknowledgedAt: expect.any(String),
+        acknowledgedBy: 'admin-id',
+      });
       expect(runPod.costControls).toMatchObject({ budgetLimitUsd: 25, spentUsd: 4.25, budgetWindowDays: 30 });
       expect(JSON.stringify(runPod)).not.toContain('"rp"');
     });

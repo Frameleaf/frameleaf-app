@@ -1,6 +1,3 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { addMessages } from 'svelte-i18n';
-import { albumFactory } from '@test-data/factories/album-factory';
 import {
   linkSharedSpaceAlbum,
   removeAssetFromAlbum,
@@ -11,6 +8,9 @@ import {
   type SharedSpaceAlbumResponseDto,
   type UserResponseDto,
 } from '@immich/sdk';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { addMessages } from 'svelte-i18n';
+import { albumFactory } from '@test-data/factories/album-factory';
 import en from '../../../../../i18n/en.json';
 import SharedSpaceLinkedAlbums from './SharedSpaceLinkedAlbums.svelte';
 
@@ -108,9 +108,7 @@ describe('SharedSpaceLinkedAlbums', () => {
   it('offers only plain albums that are not linked yet, never a collection or a space', () => {
     render(SharedSpaceLinkedAlbums, { space, albums: [linked({})], library, onChanged: vi.fn() });
 
-    const options = [
-      ...screen.getByRole('combobox').querySelectorAll('option'),
-    ].map((option) => option.value);
+    const options = [...screen.getByRole('combobox').querySelectorAll('option')].map((option) => option.value);
     expect(options).toEqual(['', 'album-free']);
   });
 

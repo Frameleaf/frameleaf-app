@@ -41,7 +41,6 @@
  * bridge accepts the envelope, validates it and returns a `not-implemented` rejection
  * until that story lands. Nothing here silently no-ops.
  */
-
 import type { Rational } from './rational-time';
 
 /* ------------------------------------------------------------------ */

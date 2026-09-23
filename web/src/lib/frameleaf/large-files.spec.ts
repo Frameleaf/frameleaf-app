@@ -79,8 +79,9 @@ describe('large files (FL-47)', () => {
   });
 
   it('should export names, owners and sizes only', () => {
-    expect(
-      largeFileExport([assets[1]], { owner: LARGE_FILES_ALL_ACCOUNTS, ownerName: () => 'Taylor' }),
-    ).toEqual({ scope: 'all', items: [{ id: 'huge', name: 'Lake morning.mov', owner: 'Taylor', bytes: 5000 }] });
+    expect(largeFileExport([assets[1]], { owner: LARGE_FILES_ALL_ACCOUNTS, ownerName: () => 'Taylor' })).toEqual({
+      scope: 'all',
+      items: [{ id: 'huge', name: 'Lake morning.mov', owner: 'Taylor', bytes: 5000 }],
+    });
   });
 });

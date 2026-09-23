@@ -778,10 +778,7 @@ export type SearchLocation =
  * is reported, never thrown, so a damaged or newer link fails safely.
  */
 export const readSearchLocation = (url: URL): SearchLocation =>
-  readSearchParameters(
-    url.searchParams.get(DISCOVERY_QUERY_PARAMETER),
-    url.searchParams.get(LEGACY_SEARCH_PARAMETER),
-  );
+  readSearchParameters(url.searchParams.get(DISCOVERY_QUERY_PARAMETER), url.searchParams.get(LEGACY_SEARCH_PARAMETER));
 
 /**
  * `readSearchLocation` over the two raw parameter values, for a page that derives them separately so
@@ -870,7 +867,6 @@ export const contextDiscoveryQuery = (url: URL): DiscoveryQuery => contextDiscov
  */
 export const isEmptyDiscoverySearch = (query: DiscoveryQuery): boolean =>
   !query.text.trim() && activeFilterCount(query) === 0 && !query.queryAssetId && !query.spaceId;
-
 
 export const withDiscoveryFacet = (query: DiscoveryQuery, field: string, value: string): DiscoveryQuery => {
   const result = structuredClone(query);
@@ -1019,17 +1015,7 @@ export const activeFilterSections = (query: DiscoveryQuery): DiscoveryFilterSect
  */
 export type DiscoveryDestination = {
   kind:
-    | 'library'
-    | 'album'
-    | 'space'
-    | 'person'
-    | 'pet'
-    | 'tag'
-    | 'place'
-    | 'favorites'
-    | 'archive'
-    | 'trash'
-    | 'search';
+    'library' | 'album' | 'space' | 'person' | 'pet' | 'tag' | 'place' | 'favorites' | 'archive' | 'trash' | 'search';
   id?: string;
 };
 
@@ -1264,11 +1250,9 @@ const withDefaultCondition = (
  * trash condition keeps it; the others get the default.
  */
 export const withSearchDefaults = (filter: SearchFilter): SearchFilter =>
-  withDefaultCondition(
-    withDefaultCondition(filter, 'visibility', { eq: AssetVisibility.Timeline }),
-    'trashedAt',
-    { eq: null },
-  );
+  withDefaultCondition(withDefaultCondition(filter, 'visibility', { eq: AssetVisibility.Timeline }), 'trashedAt', {
+    eq: null,
+  });
 
 /**
  * The results-page request for a search that carries a structured `filter` (FL-58, so a pet picked in

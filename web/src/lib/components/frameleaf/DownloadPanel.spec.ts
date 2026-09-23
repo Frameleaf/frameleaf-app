@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
-import en from '../../../../../i18n/en.json';
-import * as utils from '$lib/utils';
 import { downloadManager } from '$lib/managers/download-manager.svelte';
+import * as utils from '$lib/utils';
+import en from '../../../../../i18n/en.json';
 import DownloadPanel from './DownloadPanel.svelte';
 
 /**

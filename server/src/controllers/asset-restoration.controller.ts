@@ -1,4 +1,17 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Next, Param, Post, Put, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Next,
+  Param,
+  Post,
+  Put,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Response } from 'express';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
@@ -138,7 +151,10 @@ export class AssetRestorationController {
       'Cancels anything still running, stops using the result for playback and removes every file the restoration produced. The record stays as history.',
     history: history(),
   })
-  discardAssetRestoration(@Auth() auth: AuthDto, @Param() { id, restorationId }: AssetRestorationParamDto): Promise<void> {
+  discardAssetRestoration(
+    @Auth() auth: AuthDto,
+    @Param() { id, restorationId }: AssetRestorationParamDto,
+  ): Promise<void> {
     return this.service.discard(auth, id, restorationId);
   }
 

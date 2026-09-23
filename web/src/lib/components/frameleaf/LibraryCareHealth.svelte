@@ -548,11 +548,7 @@
   </div>
 
   {#if active && operation && operation.totalUnits}
-    <progress
-      class="progress"
-      max="100"
-      value={operation.progress}
-      aria-label={$t('library_care_scan_progress')}
+    <progress class="progress" max="100" value={operation.progress} aria-label={$t('library_care_scan_progress')}
     ></progress>
   {/if}
 
@@ -575,10 +571,7 @@
     </label>
     <label>
       {$t('library_care_show')}
-      <select
-        value={show}
-        onchange={(event) => changeShow(event.currentTarget.value === 'all' ? 'all' : 'open')}
-      >
+      <select value={show} onchange={(event) => changeShow(event.currentTarget.value === 'all' ? 'all' : 'open')}>
         <option value="open">{$t('library_care_show_open')}</option>
         <option value="all">{$t('library_care_show_all')}</option>
       </select>
@@ -843,9 +836,7 @@
     bind:open={recoveryOpen}
     mode={recovery.mode}
     rows={recoveryRows}
-    roots={recovery.mode === 'replace'
-      ? roots.filter((root) => root.kind !== MediaHealthRootKind.Library)
-      : roots}
+    roots={recovery.mode === 'replace' ? roots.filter((root) => root.kind !== MediaHealthRootKind.Library) : roots}
     ownerName={nameOf}
     {busy}
     searching={searchingForRecovery}

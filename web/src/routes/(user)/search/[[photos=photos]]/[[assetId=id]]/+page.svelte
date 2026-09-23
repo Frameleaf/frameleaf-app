@@ -245,7 +245,8 @@
       return;
     }
     let cancelled = false;
-    const andMoreLabel = (remaining: number) => $t('frameleaf_archive_name_and_n_more', { values: { count: remaining } });
+    const andMoreLabel = (remaining: number) =>
+      $t('frameleaf_archive_name_and_n_more', { values: { count: remaining } });
     handlePromiseError(
       (async () => {
         const personSegments =
@@ -314,24 +315,20 @@
 
   const filterChips = $derived(
     chipQuery
-      ? describeFilterChips(
-          $t,
-          chipQuery,
-          {
-            locale: $locale,
-            nameFor: (field, id) => {
-              const kind = FILTER_ENTITY_FIELDS[field];
-              if (!kind) {
-                return undefined;
-              }
-              const key = entityNameKey(field, id);
-              if (!(key in filterEntityNames)) {
-                return '…';
-              }
-              return filterEntityNames[key] ?? $t(FILTER_ENTITY_FALLBACK_KEYS[kind]);
-            },
+      ? describeFilterChips($t, chipQuery, {
+          locale: $locale,
+          nameFor: (field, id) => {
+            const kind = FILTER_ENTITY_FIELDS[field];
+            if (!kind) {
+              return undefined;
+            }
+            const key = entityNameKey(field, id);
+            if (!(key in filterEntityNames)) {
+              return '…';
+            }
+            return filterEntityNames[key] ?? $t(FILTER_ENTITY_FALLBACK_KEYS[kind]);
           },
-        )
+        })
       : [],
   );
 

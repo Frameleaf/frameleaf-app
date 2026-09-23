@@ -97,7 +97,15 @@
 
 <div class="rc-stage" bind:this={stageEl} data-testid="restoration-compare">
   {#if isVideo}
-    <video class="rc-media" bind:this={beforeVideo} src={before} muted playsinline preload="metadata" aria-label={beforeLabel}></video>
+    <video
+      class="rc-media"
+      bind:this={beforeVideo}
+      src={before}
+      muted
+      playsinline
+      preload="metadata"
+      aria-label={beforeLabel}
+    ></video>
     <video
       class="rc-media rc-after"
       bind:this={afterVideo}
@@ -119,7 +127,13 @@
     ></video>
   {:else}
     <img class="rc-media" src={before} alt={`${beforeLabel}: ${alt}`} draggable="false" />
-    <img class="rc-media rc-after" src={after} alt={`${afterLabel}: ${alt}`} draggable="false" style="clip-path: {afterClip}" />
+    <img
+      class="rc-media rc-after"
+      src={after}
+      alt={`${afterLabel}: ${alt}`}
+      draggable="false"
+      style="clip-path: {afterClip}"
+    />
   {/if}
 
   <span class="ed-badge">{beforeLabel}</span>

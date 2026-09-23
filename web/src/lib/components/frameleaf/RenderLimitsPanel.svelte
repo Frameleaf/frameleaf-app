@@ -51,8 +51,7 @@
   const concurrency = (limit: RenderWorkerLimitDto) =>
     limit.maxConcurrentOperations === 0 ? $t('frameleaf_render_workers_limits_paused') : limit.maxConcurrentOperations;
 
-  const updated = (value: string) =>
-    DateTime.fromISO(value, { locale: $locale }).toLocaleString(DateTime.DATETIME_MED);
+  const updated = (value: string) => DateTime.fromISO(value, { locale: $locale }).toLocaleString(DateTime.DATETIME_MED);
 </script>
 
 <Pane label={$t('frameleaf_render_workers_limits_title')}>

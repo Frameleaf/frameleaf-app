@@ -1,5 +1,3 @@
-import { render, screen, within } from '@testing-library/svelte';
-import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import {
   AssetRestorationMode,
   MlDestinationHealth,
@@ -11,8 +9,10 @@ import {
   type MlDestinationResponseDto,
   type RestorationModelCapabilityDto,
 } from '@immich/sdk';
+import { render, screen, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import RestorationModelsDialog from './RestorationModelsDialog.svelte';
 
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));

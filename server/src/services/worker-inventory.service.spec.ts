@@ -19,7 +19,14 @@ import { RENDER_WORKER_STALE_MS, WorkerInventoryService } from 'src/services/wor
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
 
-const counts = (active: number, waiting: number) => ({ active, waiting, completed: 0, failed: 0, delayed: 0, paused: 0 });
+const counts = (active: number, waiting: number) => ({
+  active,
+  waiting,
+  completed: 0,
+  failed: 0,
+  delayed: 0,
+  paused: 0,
+});
 
 const renderWorker = (overrides: Record<string, unknown> = {}) => ({
   id: '0199a000-0000-7000-8000-000000000001',
@@ -53,7 +60,11 @@ describe(WorkerInventoryService.name, () => {
     operations = { getDestinationLoad: vi.fn().mockResolvedValue([]), getClaimants: vi.fn().mockResolvedValue([]) };
     renderWorkers = { list: vi.fn().mockResolvedValue([]) };
 
-    mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, mlDestinationStub.lan, mlDestinationStub.runPodConsented]);
+    mocks.mlDestination.getAll.mockResolvedValue([
+      mlDestinationStub.local,
+      mlDestinationStub.lan,
+      mlDestinationStub.runPodConsented,
+    ]);
     mocks.mlDestination.getRoutes.mockResolvedValue([
       { workload: MlWorkload.Face, destinationId: mlDestinationStub.local.id, updatedAt: new Date() },
       { workload: MlWorkload.Clip, destinationId: mlDestinationStub.local.id, updatedAt: new Date() },
@@ -61,7 +72,11 @@ describe(WorkerInventoryService.name, () => {
       { workload: MlWorkload.RestorationFaithful, destinationId: mlDestinationStub.lan.id, updatedAt: new Date() },
     ]);
     mocks.mlDestination.getById.mockImplementation((id: string) =>
-      Promise.resolve([mlDestinationStub.local, mlDestinationStub.lan, mlDestinationStub.runPodConsented].find((row) => row.id === id)),
+      Promise.resolve(
+        [mlDestinationStub.local, mlDestinationStub.lan, mlDestinationStub.runPodConsented].find(
+          (row) => row.id === id,
+        ),
+      ),
     );
     mocks.mlDestination.getSpend.mockResolvedValue(0);
     mocks.machineLearning.getRunPodEndpoint.mockReturnValue(null);
@@ -117,21 +132,39 @@ describe(WorkerInventoryService.name, () => {
       queues: [QueueName.ImageDescription, QueueName.NsfwDetection],
     });
     const runPod = inventory.entries.find((entry) => entry.id === mlDestinationStub.runPodConsented.id)!;
-    expect(runPod).toMatchObject({ leavesNetwork: true, consentGranted: true, routedWorkloads: [MlWorkload.Enrichment] });
+    expect(runPod).toMatchObject({
+      leavesNetwork: true,
+      consentGranted: true,
+      routedWorkloads: [MlWorkload.Enrichment],
+    });
     // No published pod: admission would refuse rather than send the work anywhere else.
     expect(runPod.admission).toEqual([
-      expect.objectContaining({ workload: MlWorkload.Enrichment, admitted: false, refusal: MlAdmissionRefusal.EndpointUnresolved }),
+      expect.objectContaining({
+        workload: MlWorkload.Enrichment,
+        admitted: false,
+        refusal: MlAdmissionRefusal.EndpointUnresolved,
+      }),
     ]);
   });
 
   it('distinguishes unreachable, not serving and CPU-only workers', async () => {
     mocks.mlDestination.getAll.mockResolvedValue([
-      { ...mlDestinationStub.local, id: 'down', lastProbeHealth: MlDestinationHealth.Unhealthy, lastProbeWorkloads: null },
+      {
+        ...mlDestinationStub.local,
+        id: 'down',
+        lastProbeHealth: MlDestinationHealth.Unhealthy,
+        lastProbeWorkloads: null,
+      },
       { ...mlDestinationStub.local, id: 'idle', lastProbeWorkloads: [MlWorkload.StudioAi] },
       {
         ...mlDestinationStub.local,
         id: 'cpu',
-        lastProbeHardware: { preferredAcceleration: 'auto', providers: ['CPUExecutionProvider'], cudaDeviceCount: 0, gpus: [] },
+        lastProbeHardware: {
+          preferredAcceleration: 'auto',
+          providers: ['CPUExecutionProvider'],
+          cudaDeviceCount: 0,
+          gpus: [],
+        },
       },
       { ...mlDestinationStub.local, id: 'new', lastProbeHealth: MlDestinationHealth.Unknown, lastProbeAt: null },
     ]);
@@ -150,7 +183,9 @@ describe(WorkerInventoryService.name, () => {
 
   it('reports the library backlog of the routed queues and ignores paused ones', async () => {
     mocks.job.getJobCounts.mockImplementation((queue) =>
-      Promise.resolve(queue === QueueName.FaceDetection ? counts(2, 30) : queue === QueueName.Ocr ? counts(0, 99) : counts(0, 0)),
+      Promise.resolve(
+        queue === QueueName.FaceDetection ? counts(2, 30) : queue === QueueName.Ocr ? counts(0, 99) : counts(0, 0),
+      ),
     );
     mocks.job.isPaused.mockImplementation((queue) => Promise.resolve(queue === QueueName.Ocr));
 
@@ -162,8 +197,13 @@ describe(WorkerInventoryService.name, () => {
   });
 
   it('shows restoration load, and a shared-GPU restoration worker waiting for library analysis', async () => {
-    mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, { ...mlDestinationStub.lan, sharesLibraryHardware: true }]);
-    operations.getDestinationLoad.mockResolvedValue([{ destinationId: mlDestinationStub.lan.id, queued: 3, active: 1 }]);
+    mocks.mlDestination.getAll.mockResolvedValue([
+      mlDestinationStub.local,
+      { ...mlDestinationStub.lan, sharesLibraryHardware: true },
+    ]);
+    operations.getDestinationLoad.mockResolvedValue([
+      { destinationId: mlDestinationStub.lan.id, queued: 3, active: 1 },
+    ]);
     mocks.job.getJobCounts.mockImplementation((queue) =>
       Promise.resolve(queue === QueueName.SmartSearch ? counts(1, 5) : counts(0, 0)),
     );
@@ -188,7 +228,11 @@ describe(WorkerInventoryService.name, () => {
     const { entries } = await sut.getInventory();
 
     expect(entries.find((entry) => entry.id === sameUrl.id)?.admission).toEqual([
-      expect.objectContaining({ workload: MlWorkload.RestorationFaithful, admitted: false, refusal: MlAdmissionRefusal.RoleConflict }),
+      expect.objectContaining({
+        workload: MlWorkload.RestorationFaithful,
+        admitted: false,
+        refusal: MlAdmissionRefusal.RoleConflict,
+      }),
     ]);
   });
 
@@ -220,7 +264,12 @@ describe(WorkerInventoryService.name, () => {
     const heartbeat = new Date('2026-09-23T10:00:00.000Z');
     operations.getClaimants.mockResolvedValue([
       { workerId: 'restoration:server:42', kind: MediaOperationKind.Restoration, count: 1, lastHeartbeatAt: heartbeat },
-      { workerId: 'restoration:server:42', kind: MediaOperationKind.RestorationPreview, count: 1, lastHeartbeatAt: null },
+      {
+        workerId: 'restoration:server:42',
+        kind: MediaOperationKind.RestorationPreview,
+        count: 1,
+        lastHeartbeatAt: null,
+      },
     ]);
 
     const { runners } = await sut.getInventory();

@@ -874,16 +874,28 @@
     <div class="confirm">
       <p>{$t('frameleaf_dedup_confirm_body')}</p>
       <dl>
-        <div><dt>{$t('frameleaf_dedup_confirm_plan')}</dt><dd>{plan.planId}</dd></div>
+        <div>
+          <dt>{$t('frameleaf_dedup_confirm_plan')}</dt>
+          <dd>{plan.planId}</dd>
+        </div>
         <div>
           <dt>{$t('frameleaf_dedup_scan_scope')}</dt>
           <dd>
             {plan.scopeUserId ? (plan.scopeUserName ?? nameOf(plan.scopeUserId)) : $t('frameleaf_dedup_scope_all')}
           </dd>
         </div>
-        <div><dt>{$t('frameleaf_dedup_retain_in')}</dt><dd>{plan.masterUserName}</dd></div>
-        <div><dt>{$t('frameleaf_dedup_metric_copies')}</dt><dd>{review.copies}</dd></div>
-        <div><dt>{$t('frameleaf_dedup_confirm_estimate')}</dt><dd>{formatBytes(review.estimatedBytes)}</dd></div>
+        <div>
+          <dt>{$t('frameleaf_dedup_retain_in')}</dt>
+          <dd>{plan.masterUserName}</dd>
+        </div>
+        <div>
+          <dt>{$t('frameleaf_dedup_metric_copies')}</dt>
+          <dd>{review.copies}</dd>
+        </div>
+        <div>
+          <dt>{$t('frameleaf_dedup_confirm_estimate')}</dt>
+          <dd>{formatBytes(review.estimatedBytes)}</dd>
+        </div>
         {#if review.excludedRetainedAssetIds.length > 0}
           <div>
             <dt>{$t('frameleaf_dedup_confirm_kept')}</dt>

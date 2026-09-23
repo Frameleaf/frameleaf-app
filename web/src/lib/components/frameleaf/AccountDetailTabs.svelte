@@ -200,7 +200,10 @@
             max={total}
             value={Math.min(usedBytes, total)}
             aria-label={$t('storage_usage', {
-              values: { used: getByteUnitString(usedBytes, $locale, 1), available: getByteUnitString(availableBytes ?? 0, $locale, 1) },
+              values: {
+                used: getByteUnitString(usedBytes, $locale, 1),
+                available: getByteUnitString(availableBytes ?? 0, $locale, 1),
+              },
             })}
           />
         </div>

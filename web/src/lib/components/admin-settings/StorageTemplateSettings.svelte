@@ -302,12 +302,7 @@
               />
 
               <div class="flex-0">
-                <SettingField
-                  label={$t('extension')}
-                  inputType={SettingInputFieldType.TEXT}
-                  value=".jpg"
-                  disabled
-                />
+                <SettingField label={$t('extension')} inputType={SettingInputFieldType.TEXT} value=".jpg" disabled />
               </div>
             </div>
 

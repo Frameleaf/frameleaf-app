@@ -246,8 +246,9 @@ describe('scanState', () => {
         error: null,
       }) as unknown as MediaHealthSummaryResponseDto['runs']['missing'];
     for (const status of ['running', 'paused', 'retrying', 'something-new']) {
-      expect(scanState({ operation: null, runs: { missing: open(status), corrupt: null } }, MediaHealthCategory.Missing))
-        .toMatchObject({ kind: 'interrupted' });
+      expect(
+        scanState({ operation: null, runs: { missing: open(status), corrupt: null } }, MediaHealthCategory.Missing),
+      ).toMatchObject({ kind: 'interrupted' });
     }
     expect(
       scanState({ operation: null, runs: { missing: open('completed'), corrupt: null } }, MediaHealthCategory.Missing),

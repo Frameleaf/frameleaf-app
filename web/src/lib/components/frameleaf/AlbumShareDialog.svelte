@@ -10,7 +10,14 @@
     handleRemoveUserFromAlbum,
     handleUpdateUserAlbumRole,
   } from '$lib/services/album.service';
-  import { AlbumKind, AlbumUserRole, searchUsers, SharedLinkType, type AlbumResponseDto, type UserResponseDto } from '@immich/sdk';
+  import {
+    AlbumKind,
+    AlbumUserRole,
+    searchUsers,
+    SharedLinkType,
+    type AlbumResponseDto,
+    type UserResponseDto,
+  } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiAccountPlusOutline, mdiLinkVariant } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -134,9 +141,7 @@
 </script>
 
 <Dialog
-  title={isOwner
-    ? $t('frameleaf_album_share_title', { values: { kind: kindLabel } })
-    : $t('frameleaf_albums_members')}
+  title={isOwner ? $t('frameleaf_album_share_title', { values: { kind: kindLabel } }) : $t('frameleaf_albums_members')}
   closeLabel={$t('close')}
   bind:open
 >
@@ -160,8 +165,7 @@
                 <select
                   value={member.role}
                   disabled={busy}
-                  onchange={(event) =>
-                    void changeRole(member.user.id, event.currentTarget.value as AlbumUserRole)}
+                  onchange={(event) => void changeRole(member.user.id, event.currentTarget.value as AlbumUserRole)}
                 >
                   <option value={AlbumUserRole.Editor}>{$t('frameleaf_album_role_editor')}</option>
                   <option value={AlbumUserRole.Viewer}>{$t('frameleaf_album_role_viewer')}</option>

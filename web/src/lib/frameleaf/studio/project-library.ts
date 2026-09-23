@@ -10,7 +10,6 @@
  * Deleting a project, even for good, only ever removes the project. The copy on the page says so,
  * because "delete" next to anything built from photos reads as "delete the photos".
  */
-
 import {
   MediaOperationStatus,
   StudioBundleSourceMode,
@@ -68,15 +67,7 @@ export const recentStudioProjects = (
     .slice(0, limit);
 
 export type StudioProjectAction =
-  | 'open'
-  | 'rename'
-  | 'duplicate'
-  | 'export'
-  | 'archive'
-  | 'unarchive'
-  | 'trash'
-  | 'restore'
-  | 'delete-permanently';
+  'open' | 'rename' | 'duplicate' | 'export' | 'archive' | 'unarchive' | 'trash' | 'restore' | 'delete-permanently';
 
 /**
  * What a person may do with one project from the library. The server decides every one of these

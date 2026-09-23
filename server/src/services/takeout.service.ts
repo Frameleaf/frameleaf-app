@@ -111,7 +111,10 @@ export class TakeoutService {
   async list(auth: AuthDto): Promise<TakeoutResponseDto[]> {
     this.requireSession(auth);
     const imports = await this.repository.list(auth.user.id);
-    const latest = await this.repository.latestOperations(auth.user.id, imports.map(({ id }) => id));
+    const latest = await this.repository.latestOperations(
+      auth.user.id,
+      imports.map(({ id }) => id),
+    );
     return Promise.all(
       imports.map((row) =>
         this.present(
@@ -562,7 +565,10 @@ export class TakeoutService {
 
   private async currentOperation(auth: AuthDto, row: TakeoutImport): Promise<TakeoutOperation | undefined> {
     const latest = await this.repository.latestOperations(auth.user.id, [row.id]);
-    return takeoutOperationFor(row.phase, latest.map(({ operation }) => operation));
+    return takeoutOperationFor(
+      row.phase,
+      latest.map(({ operation }) => operation),
+    );
   }
 
   private requireReviewable(row: TakeoutImport, operation: TakeoutOperation | undefined) {
@@ -653,4 +659,3 @@ export class TakeoutService {
     }
   }
 }
-

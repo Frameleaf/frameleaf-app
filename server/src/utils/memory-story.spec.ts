@@ -25,9 +25,7 @@ const at = (iso: string, place: Partial<Pick<StoryCandidate, 'city' | 'state' | 
 
 /** `count` captures on one local day, one hour apart, starting at 09:00 local */
 const day = (date: string, count: number, place: Partial<Pick<StoryCandidate, 'city' | 'state' | 'country'>> = {}) =>
-  Array.from({ length: count }, (_, index) =>
-    at(`${date}T${String(9 + index).padStart(2, '0')}:00:00.000Z`, place),
-  );
+  Array.from({ length: count }, (_, index) => at(`${date}T${String(9 + index).padStart(2, '0')}:00:00.000Z`, place));
 
 describe('memory story grouping', () => {
   describe('suppressBursts', () => {
@@ -46,7 +44,10 @@ describe('memory story grouping', () => {
     });
 
     it('keeps captures exactly at the burst boundary', () => {
-      const pair = [at('2026-06-01T09:00:00.000Z'), at(`2026-06-01T09:00:${String(BURST_SECONDS).padStart(2, '0')}.000Z`)];
+      const pair = [
+        at('2026-06-01T09:00:00.000Z'),
+        at(`2026-06-01T09:00:${String(BURST_SECONDS).padStart(2, '0')}.000Z`),
+      ];
 
       expect(suppressBursts(pair)).toHaveLength(2);
     });

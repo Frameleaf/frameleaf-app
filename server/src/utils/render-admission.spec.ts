@@ -94,13 +94,15 @@ describe(evaluateSessionAdmission.name, () => {
   });
 });
 
-const claimInput = (overrides: {
-  worker?: Partial<ClaimAdmissionInput['worker']>;
-  session?: Partial<ClaimAdmissionInput['session']>;
-  operation?: Partial<ClaimAdmissionInput['operation']>;
-  owner?: Partial<ClaimAdmissionInput['owner']>;
-  destinationHealth?: Partial<ClaimAdmissionInput['destinationHealth']>;
-} = {}): ClaimAdmissionInput => ({
+const claimInput = (
+  overrides: {
+    worker?: Partial<ClaimAdmissionInput['worker']>;
+    session?: Partial<ClaimAdmissionInput['session']>;
+    operation?: Partial<ClaimAdmissionInput['operation']>;
+    owner?: Partial<ClaimAdmissionInput['owner']>;
+    destinationHealth?: Partial<ClaimAdmissionInput['destinationHealth']>;
+  } = {},
+): ClaimAdmissionInput => ({
   worker: {
     id: 'worker-1',
     name: 'Basement GPU',
@@ -189,9 +191,10 @@ describe(evaluateClaimAdmission.name, () => {
   });
 
   it('refuses a kind outside the session scopes even if the worker row allows it', () => {
-    expect(
-      evaluateClaimAdmission(claimInput({ session: { scopes: [MediaOperationKind.Restoration] } })),
-    ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.ScopeExceeded });
+    expect(evaluateClaimAdmission(claimInput({ session: { scopes: [MediaOperationKind.Restoration] } }))).toEqual({
+      admitted: false,
+      reason: RenderWorkerRefusalReason.ScopeExceeded,
+    });
   });
 
   it('never admits a job that runs on the server, even one the scopes list (FL-73)', () => {
@@ -378,9 +381,10 @@ describe('input grants', () => {
 
   it('rejects an expired grant', () => {
     const grant = signInputGrant(payload, binding);
-    expect(
-      verifyInputGrant(grant, { operationId: 'op-1', binding, now: new Date(payload.expiresAt + 1) }),
-    ).toEqual({ valid: false, reason: 'expired' });
+    expect(verifyInputGrant(grant, { operationId: 'op-1', binding, now: new Date(payload.expiresAt + 1) })).toEqual({
+      valid: false,
+      reason: 'expired',
+    });
   });
 
   it('rejects a grant whose payload was edited after signing', () => {

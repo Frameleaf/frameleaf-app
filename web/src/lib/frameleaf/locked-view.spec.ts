@@ -1,3 +1,4 @@
+import { AssetLockReason, AssetVisibility } from '@immich/sdk';
 import {
   DEFAULT_LOCKED_FILTER,
   LOCKED_FILTERS,
@@ -6,7 +7,6 @@ import {
   lockedTimelineOptions,
   parseLockedFilter,
 } from '$lib/frameleaf/locked-view';
-import { AssetLockReason, AssetVisibility } from '@immich/sdk';
 
 describe('locked view', () => {
   it('defaults to All, so items from the old Locked folder show straight away', () => {

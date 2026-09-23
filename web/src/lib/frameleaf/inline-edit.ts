@@ -99,8 +99,7 @@ export const inlineEditRecovery = (failure: InlineEditFailure): InlineEditRecove
 export const inlineEditMessageKey = (failure: InlineEditFailure): string => `frameleaf_info_error_${failure}`;
 
 export type InlineEditOutcome<T> =
-  | { ok: true; value: T }
-  | { ok: false; failure: InlineEditFailure; recovery: InlineEditRecovery; error: unknown };
+  { ok: true; value: T } | { ok: false; failure: InlineEditFailure; recovery: InlineEditRecovery; error: unknown };
 
 /**
  * Run one inline edit and classify its failure. The caller keeps the returned outcome so it

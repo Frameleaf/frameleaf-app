@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { AlbumKind, AlbumUserRole, getAllAlbums, type AlbumResponseDto } from '@immich/sdk';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import SelectionBar from '$lib/components/frameleaf/SelectionBar.svelte';
@@ -128,7 +128,11 @@ describe('Frameleaf selection bar', () => {
     expect(within(dialog).getByRole('radio', { name: /Household/ })).toBeInTheDocument();
 
     await fireEvent.click(within(dialog).getByRole('radio', { name: /Iceland/ }));
-    await fireEvent.submit(within(dialog).getByRole('radio', { name: /Iceland/ }).closest('form')!);
+    await fireEvent.submit(
+      within(dialog)
+        .getByRole('radio', { name: /Iceland/ })
+        .closest('form')!,
+    );
     expect(onAction).toHaveBeenCalledWith('add-to-album', { albumId: 'iceland' });
   });
 

@@ -94,8 +94,7 @@ export const justifiedRows = (ratios: readonly number[], options: JustifiedRowsO
     return [];
   }
 
-  const fillHeight = (aspectSum: number, count: number) =>
-    Math.max(1, containerWidth - gap * (count - 1)) / aspectSum;
+  const fillHeight = (aspectSum: number, count: number) => Math.max(1, containerWidth - gap * (count - 1)) / aspectSum;
 
   const rows: JustifiedRow[] = [];
   let row: number[] = [];
@@ -216,7 +215,5 @@ class FilledJustifiedLayout implements CommonJustifiedLayout {
 }
 
 /** Build a filling justified layout from aspect ratios alone. */
-export const filledJustifiedLayout = (
-  ratios: readonly number[],
-  options: CommonLayoutOptions,
-): CommonJustifiedLayout => new FilledJustifiedLayout(ratios, options);
+export const filledJustifiedLayout = (ratios: readonly number[], options: CommonLayoutOptions): CommonJustifiedLayout =>
+  new FilledJustifiedLayout(ratios, options);

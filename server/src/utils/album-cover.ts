@@ -11,10 +11,7 @@ export const albumCoverCandidates = (eb: ExpressionBuilder<DB, 'album'>) =>
   eb
     .selectFrom('album_asset')
     .innerJoin('asset', (join) =>
-      join
-        .onRef('album_asset.assetId', '=', 'asset.id')
-        .on('asset.deletedAt', 'is', null)
-        .on(isNotLocked('asset')),
+      join.onRef('album_asset.assetId', '=', 'asset.id').on('asset.deletedAt', 'is', null).on(isNotLocked('asset')),
     )
     .whereRef('album_asset.albumId', '=', 'album.id');
 

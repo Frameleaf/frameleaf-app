@@ -1,3 +1,4 @@
+import { AssetVisibility, PetSpecies, type PetCandidateResponseDto, type PetResponseDto } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   confidencePercent,
@@ -12,7 +13,6 @@ import {
   sortPets,
   speciesLabelKey,
 } from '$lib/frameleaf/pets';
-import { AssetVisibility, PetSpecies, type PetCandidateResponseDto, type PetResponseDto } from '@immich/sdk';
 
 const pet = (overrides: Partial<PetResponseDto> = {}): PetResponseDto =>
   ({

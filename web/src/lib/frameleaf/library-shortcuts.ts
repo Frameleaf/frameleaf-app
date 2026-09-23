@@ -52,7 +52,15 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     group: 'general',
     surfaces: BOTH,
   },
-  { id: 'navigate-next', key: 'ArrowRight', keys: ['→'], label: 'previous_or_next_photo', group: 'general', surfaces: BOTH, helpHidden: true },
+  {
+    id: 'navigate-next',
+    key: 'ArrowRight',
+    keys: ['→'],
+    label: 'previous_or_next_photo',
+    group: 'general',
+    surfaces: BOTH,
+    helpHidden: true,
+  },
   {
     id: 'focus-up',
     key: 'ArrowUp',
@@ -78,7 +86,15 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     group: 'general',
     surfaces: TIMELINE,
   },
-  { id: 'select-all', key: 'a', mod: true, keys: ['Mod', 'A'], label: 'select_all', group: 'general', surfaces: TIMELINE },
+  {
+    id: 'select-all',
+    key: 'a',
+    mod: true,
+    keys: ['Mod', 'A'],
+    label: 'select_all',
+    group: 'general',
+    surfaces: TIMELINE,
+  },
   {
     id: 'clear-selection',
     key: 'd',
@@ -112,7 +128,14 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     group: 'general',
     surfaces: TIMELINE,
   },
-  { id: 'previous-or-next-day', key: 'd', keys: ['D'], label: 'previous_or_next_day', group: 'general', surfaces: VIEWER },
+  {
+    id: 'previous-or-next-day',
+    key: 'd',
+    keys: ['D'],
+    label: 'previous_or_next_day',
+    group: 'general',
+    surfaces: VIEWER,
+  },
   {
     id: 'previous-or-next-month',
     key: 'm',
@@ -144,10 +167,46 @@ export const libraryShortcuts: readonly LibraryShortcut[] = [
     surfaces: BOTH,
     value: 1,
   },
-  { id: 'rate-2', key: '2', keys: ['2'], label: 'rate_asset', group: 'actions', surfaces: BOTH, value: 2, helpHidden: true },
-  { id: 'rate-3', key: '3', keys: ['3'], label: 'rate_asset', group: 'actions', surfaces: BOTH, value: 3, helpHidden: true },
-  { id: 'rate-4', key: '4', keys: ['4'], label: 'rate_asset', group: 'actions', surfaces: BOTH, value: 4, helpHidden: true },
-  { id: 'rate-5', key: '5', keys: ['5'], label: 'rate_asset', group: 'actions', surfaces: BOTH, value: 5, helpHidden: true },
+  {
+    id: 'rate-2',
+    key: '2',
+    keys: ['2'],
+    label: 'rate_asset',
+    group: 'actions',
+    surfaces: BOTH,
+    value: 2,
+    helpHidden: true,
+  },
+  {
+    id: 'rate-3',
+    key: '3',
+    keys: ['3'],
+    label: 'rate_asset',
+    group: 'actions',
+    surfaces: BOTH,
+    value: 3,
+    helpHidden: true,
+  },
+  {
+    id: 'rate-4',
+    key: '4',
+    keys: ['4'],
+    label: 'rate_asset',
+    group: 'actions',
+    surfaces: BOTH,
+    value: 4,
+    helpHidden: true,
+  },
+  {
+    id: 'rate-5',
+    key: '5',
+    keys: ['5'],
+    label: 'rate_asset',
+    group: 'actions',
+    surfaces: BOTH,
+    value: 5,
+    helpHidden: true,
+  },
   {
     id: 'rate-clear',
     key: '0',
@@ -260,8 +319,9 @@ export const matchLibraryShortcut = (
 };
 
 /** True on Apple platforms, where Mod renders as ⌘. */
-export const isMacPlatform = (nav: { platform?: string; userAgent?: string } | null | undefined = globalThis.navigator) =>
-  /Mac|iPhone|iPad|iPod/i.test(`${nav?.platform ?? ''} ${nav?.userAgent ?? ''}`);
+export const isMacPlatform = (
+  nav: { platform?: string; userAgent?: string } | null | undefined = globalThis.navigator,
+) => /Mac|iPhone|iPad|iPod/i.test(`${nav?.platform ?? ''} ${nav?.userAgent ?? ''}`);
 
 /** Display keys for an entry, substituting the platform modifier. */
 export const formatShortcutKeys = (entry: LibraryShortcut, { mac = isMacPlatform() }: { mac?: boolean } = {}) =>
@@ -276,7 +336,11 @@ export type ShortcutHelpGroups = { general: ShortcutHelpEntry[]; actions: Shortc
  */
 export const libraryShortcutGroups = (
   translate: (key: string) => string,
-  { surface, mac = isMacPlatform(), table = libraryShortcuts }: { surface?: LibrarySurface; mac?: boolean; table?: readonly LibraryShortcut[] } = {},
+  {
+    surface,
+    mac = isMacPlatform(),
+    table = libraryShortcuts,
+  }: { surface?: LibrarySurface; mac?: boolean; table?: readonly LibraryShortcut[] } = {},
 ): ShortcutHelpGroups => {
   const groups: ShortcutHelpGroups = { general: [], actions: [] };
   for (const entry of table) {

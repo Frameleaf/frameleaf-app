@@ -713,11 +713,7 @@ export class StudioResourceService extends BaseService {
         continue;
       }
       if (decision.sourceAccess !== 'owner') {
-        refuse(
-          reference,
-          StudioRefusalReason.NoAccess,
-          'Shared access reaches the original, not its edited versions.',
-        );
+        refuse(reference, StudioRefusalReason.NoAccess, 'Shared access reaches the original, not its edited versions.');
         continue;
       }
       const files = (await this.assetFileRepository.search({ assetId: reference.id, isEdited: true })).filter((file) =>
@@ -829,9 +825,7 @@ export class StudioResourceService extends BaseService {
       );
     }
     if (destination && manifest.destination !== destination) {
-      throw new BadRequestException(
-        `Studio manifest was resolved for ${manifest.destination}, not ${destination}`,
-      );
+      throw new BadRequestException(`Studio manifest was resolved for ${manifest.destination}, not ${destination}`);
     }
   }
 

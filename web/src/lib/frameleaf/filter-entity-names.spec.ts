@@ -61,7 +61,7 @@ describe('resolveEntityName', () => {
     expect(await resolveEntityName('person', 'person-1')).toBe('Ada');
   });
 
-  it('never surfaces a hidden person\'s name, even though the lookup succeeded', async () => {
+  it("never surfaces a hidden person's name, even though the lookup succeeded", async () => {
     vi.mocked(getPerson).mockResolvedValue(person({ isHidden: true }) as never);
     expect(await resolveEntityName('person', 'person-1')).toBeNull();
   });
@@ -71,7 +71,7 @@ describe('resolveEntityName', () => {
     expect(await resolveEntityName('person', 'person-1')).toBeNull();
   });
 
-  it('never surfaces a hidden pet\'s name, and resolves a visible one', async () => {
+  it("never surfaces a hidden pet's name, and resolves a visible one", async () => {
     vi.mocked(getPet).mockResolvedValue(pet({ isHidden: true }) as never);
     expect(await resolveEntityName('pet', 'pet-1')).toBeNull();
 
@@ -99,8 +99,9 @@ describe('resolveEntityName', () => {
 
 describe('resolveEntityNames', () => {
   it('resolves several ids in order, independently', async () => {
-    vi.mocked(getPerson).mockImplementation(({ id }) =>
-      Promise.resolve(id === 'person-2' ? person({ isHidden: true }) : person({ name: `Name-${id}` })) as never,
+    vi.mocked(getPerson).mockImplementation(
+      ({ id }) =>
+        Promise.resolve(id === 'person-2' ? person({ isHidden: true }) : person({ name: `Name-${id}` })) as never,
     );
     expect(await resolveEntityNames('person', ['person-1', 'person-2', 'person-3'])).toEqual([
       'Name-person-1',

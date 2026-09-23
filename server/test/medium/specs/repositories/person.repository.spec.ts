@@ -283,14 +283,27 @@ describe(PersonRepository.name, () => {
       const { person } = await ctx.newPerson({ ownerId: user.id });
       const { person: elsewhere } = await ctx.newPerson({ ownerId: user.id });
 
-      const { assetFace: older } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: elsewhere.personGroupId });
-      const { assetFace: newer } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: elsewhere.personGroupId });
-      const { assetFace: deleted } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: elsewhere.personGroupId });
+      const { assetFace: older } = await ctx.newAssetFace({
+        assetId: asset.id,
+        personGroupId: elsewhere.personGroupId,
+      });
+      const { assetFace: newer } = await ctx.newAssetFace({
+        assetId: asset.id,
+        personGroupId: elsewhere.personGroupId,
+      });
+      const { assetFace: deleted } = await ctx.newAssetFace({
+        assetId: asset.id,
+        personGroupId: elsewhere.personGroupId,
+      });
 
       await sut.reassignFace(older.id, person.personGroupId);
       await sut.reassignFace(newer.id, person.personGroupId);
       await sut.reassignFace(deleted.id, person.personGroupId);
-      await ctx.database.updateTable('asset_face').set({ deletedAt: new Date() }).where('id', '=', deleted.id).execute();
+      await ctx.database
+        .updateTable('asset_face')
+        .set({ deletedAt: new Date() })
+        .where('id', '=', deleted.id)
+        .execute();
 
       const corrections = await sut.getCorrections(person.personGroupId);
       expect(corrections.map((face) => face.id)).toEqual([newer.id, older.id]);
@@ -305,9 +318,9 @@ describe(PersonRepository.name, () => {
       const { person: visible } = await ctx.newPerson({ ownerId: user.id });
 
       const suggestions = await sut.getMergeSuggestions(user.id, { maxDistance: 1, limit: 20 });
-      expect(suggestions.some((row) => row.personId === hidden.personGroupId || row.suggestionId === hidden.personGroupId)).toBe(
-        false,
-      );
+      expect(
+        suggestions.some((row) => row.personId === hidden.personGroupId || row.suggestionId === hidden.personGroupId),
+      ).toBe(false);
       // Without face_search embeddings for either person's feature face, no pair can be
       // formed at all — this only asserts the hidden-person filter shape, not distance math.
       expect(suggestions.some((row) => row.personId === visible.personGroupId)).toBe(false);

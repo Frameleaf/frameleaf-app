@@ -1,7 +1,7 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { probeStudioCapabilities, toStudioCapabilities } from '$lib/frameleaf/studio/capabilities';
 import { emptyStudioCapabilities } from '$lib/frameleaf/studio/host-contract';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const snapshot = (studio: Record<string, boolean>) => ({
   workloads: [],

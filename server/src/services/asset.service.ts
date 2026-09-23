@@ -41,7 +41,7 @@ import {
   Permission,
   QueueName,
 } from 'src/enum.js';
-import { ArgOf } from 'src/repositories/event.repository.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import { applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
@@ -667,7 +667,10 @@ export class AssetService extends BaseService {
     // See `upsertBulkMetadata` — the repository handles the asset.is_nsfw
     // sync for any 'ml-enrichment' items in the payload.
     const result = await this.assetRepository.upsertMetadata(id, dto.items);
-    await this.lockSensitiveMetadata(auth, dto.items.map((item) => ({ assetId: id, ...item })));
+    await this.lockSensitiveMetadata(
+      auth,
+      dto.items.map((item) => ({ assetId: id, ...item })),
+    );
     return result;
   }
 

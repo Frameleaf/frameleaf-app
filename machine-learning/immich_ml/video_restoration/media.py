@@ -133,7 +133,7 @@ def parse_probe(payload: dict[str, Any], *, still: bool = False) -> SourceProbe:
 
         duration_text = video.get("duration") or (payload.get("format") or {}).get("duration")
         try:
-            duration_ms = int(round(float(duration_text) * 1000))
+            duration_ms = int(round(float(str(duration_text)) * 1000))
         except (TypeError, ValueError):
             raise MediaError("the upload has no duration", unsupported=True)
         if duration_ms <= 0:

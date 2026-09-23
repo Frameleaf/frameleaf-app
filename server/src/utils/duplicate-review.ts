@@ -219,8 +219,7 @@ export const classifyDuplicateGroup = (assets: readonly ReviewAsset[]): Duplicat
   return span <= DUPLICATE_BURST_SECONDS * 1000 ? DuplicateGroupKind.Burst : DuplicateGroupKind.Duplicates;
 };
 
-const pixels = (asset: ReviewAsset) =>
-  (asset.exifInfo?.exifImageWidth ?? 0) * (asset.exifInfo?.exifImageHeight ?? 0);
+const pixels = (asset: ReviewAsset) => (asset.exifInfo?.exifImageWidth ?? 0) * (asset.exifInfo?.exifImageHeight ?? 0);
 const bytes = (asset: ReviewAsset) => asset.exifInfo?.fileSizeInByte ?? 0;
 
 /**

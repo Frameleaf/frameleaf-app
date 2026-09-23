@@ -176,7 +176,11 @@ export class AssetRestorationService {
    * measured throughput says about the time. Nothing is probed here; the persisted probe state is
    * what the administrator's page shows too, so the two never disagree.
    */
-  async getOptions(auth: AuthDto, assetId: string, dto: AssetRestorationOptionsQueryDto): Promise<AssetRestorationOptionsDto> {
+  async getOptions(
+    auth: AuthDto,
+    assetId: string,
+    dto: AssetRestorationOptionsQueryDto,
+  ): Promise<AssetRestorationOptionsDto> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
     const source = await this.requireSource(assetId);
     const mode = dto.mode ?? AssetRestorationMode.Faithful;
@@ -193,13 +197,19 @@ export class AssetRestorationService {
         workload,
         endpoint: resolveEndpoint(row, this.machineLearningRepository.getRunPodEndpoint()),
         probe: this.probeFromRow(row),
-        spentUsd: row.budgetLimitUsd === null ? 0 : await this.mlDestinationRepository.getSpend(row.id, windowStart(ML_BUDGET_WINDOW_DAYS)),
+        spentUsd:
+          row.budgetLimitUsd === null
+            ? 0
+            : await this.mlDestinationRepository.getSpend(row.id, windowStart(ML_BUDGET_WINDOW_DAYS)),
       });
       if (verdict.admitted) {
         // FL-72: the rule requestPreview and accept apply before anything is created, so the
         // picker never offers an endpoint library analysis uses.
         const conflict = await restorationRoleConflict(
-          { mlDestinationRepository: this.mlDestinationRepository, machineLearningRepository: this.machineLearningRepository },
+          {
+            mlDestinationRepository: this.mlDestinationRepository,
+            machineLearningRepository: this.machineLearningRepository,
+          },
           row,
           workload,
         );
@@ -219,7 +229,11 @@ export class AssetRestorationService {
         consentGranted: hasRequiredConsent(row),
         refusal: verdict.admitted ? null : verdict.refusal,
         refusalDetail: verdict.admitted ? null : verdict.detail,
-        estimate: restorationEstimate(sample, this.inputBytes(source, DEFAULT_RESTORATION_REGION), ESTIMATE_WINDOW_DAYS),
+        estimate: restorationEstimate(
+          sample,
+          this.inputBytes(source, DEFAULT_RESTORATION_REGION),
+          ESTIMATE_WINDOW_DAYS,
+        ),
       });
     }
 
@@ -246,7 +260,11 @@ export class AssetRestorationService {
    * once that a destination cannot take the work instead of finding out from a failed job. The
    * refusal names its reason; it never picks somewhere else.
    */
-  async requestPreview(auth: AuthDto, assetId: string, dto: AssetRestorationRequestDto): Promise<AssetRestorationResponseDto> {
+  async requestPreview(
+    auth: AuthDto,
+    assetId: string,
+    dto: AssetRestorationRequestDto,
+  ): Promise<AssetRestorationResponseDto> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     const source = await this.requireSource(assetId);
     const workload = workloadForMode(dto.mode);
@@ -256,7 +274,11 @@ export class AssetRestorationService {
     await this.admitRestoration(workload, dto.destinationId, MediaOperationKind.RestorationPreview);
     const destination = await this.requireDestination(dto.destinationId);
     const output = cappedOutputSize(source.width, source.height, dto.upscale);
-    const sample = await this.mlDestinationRepository.getThroughput(destination.id, windowStart(ESTIMATE_WINDOW_DAYS), workload);
+    const sample = await this.mlDestinationRepository.getThroughput(
+      destination.id,
+      windowStart(ESTIMATE_WINDOW_DAYS),
+      workload,
+    );
     const estimate = restorationEstimate(sample, this.inputBytes(source, region), ESTIMATE_WINDOW_DAYS);
 
     const restoration = await this.restorationRepository.create({
@@ -294,10 +316,15 @@ export class AssetRestorationService {
         revisionId: restoration.id,
         snapshot: this.snapshotOf(restoration, source, 'preview', output),
         settings: this.settingsOf(restoration, destination.name, true),
-        estimate: estimate.previewSeconds === null ? null : { seconds: estimate.previewSeconds, sizeBytes: null, cloudCost: null },
+        estimate:
+          estimate.previewSeconds === null
+            ? null
+            : { seconds: estimate.previewSeconds, sizeBytes: null, cloudCost: null },
       });
       const bound = await this.restorationRepository.update(restoration.id, { previewOperationId: operation.id });
-      this.logger.log(`Restoration ${restoration.id} preview queued as operation ${operation.id} on ${destination.name}`);
+      this.logger.log(
+        `Restoration ${restoration.id} preview queued as operation ${operation.id} on ${destination.name}`,
+      );
       return this.toDto(bound ?? restoration);
     } catch (error) {
       // No job means no preview; say so on the row rather than leaving it queued for nothing.
@@ -329,7 +356,11 @@ export class AssetRestorationService {
       throw new BadRequestException('The destination this preview ran on has been removed; request a new preview');
     }
 
-    await this.admitRestoration(restoration.workload as MlWorkload, restoration.destinationId, MediaOperationKind.Restoration);
+    await this.admitRestoration(
+      restoration.workload as MlWorkload,
+      restoration.destinationId,
+      MediaOperationKind.Restoration,
+    );
     const destination = await this.requireDestination(restoration.destinationId);
     const output = cappedOutputSize(restoration.sourceWidth, restoration.sourceHeight, restoration.upscale);
     const sample = await this.mlDestinationRepository.getThroughput(
@@ -337,7 +368,11 @@ export class AssetRestorationService {
       windowStart(ESTIMATE_WINDOW_DAYS),
       restoration.workload as MlWorkload,
     );
-    const estimate = restorationEstimate(sample, this.inputBytes(source, asRegion(restoration.previewRegion)), ESTIMATE_WINDOW_DAYS);
+    const estimate = restorationEstimate(
+      sample,
+      this.inputBytes(source, asRegion(restoration.previewRegion)),
+      ESTIMATE_WINDOW_DAYS,
+    );
 
     const operation = await this.operationRepository.create({
       ownerId: restoration.ownerId,
@@ -352,18 +387,23 @@ export class AssetRestorationService {
       revisionId: restoration.id,
       snapshot: this.snapshotOf(restoration, source, 'full', output),
       settings: this.settingsOf(restoration, destination.name, false),
-      estimate: estimate.fullSeconds === null ? null : { seconds: estimate.fullSeconds, sizeBytes: null, cloudCost: null },
+      estimate:
+        estimate.fullSeconds === null ? null : { seconds: estimate.fullSeconds, sizeBytes: null, cloudCost: null },
     });
 
     const now = new Date();
-    const accepted = await this.restorationRepository.transition(restoration.id, [AssetRestorationStatus.PreviewReady], {
-      status: AssetRestorationStatus.Accepted,
-      fullOperationId: operation.id,
-      reviewedAt: now,
-      previewExpiresAt: previewExpiryAfterDecision(now),
-      estimate,
-      error: null,
-    });
+    const accepted = await this.restorationRepository.transition(
+      restoration.id,
+      [AssetRestorationStatus.PreviewReady],
+      {
+        status: AssetRestorationStatus.Accepted,
+        fullOperationId: operation.id,
+        reviewedAt: now,
+        previewExpiresAt: previewExpiryAfterDecision(now),
+        estimate,
+        error: null,
+      },
+    );
     if (!accepted) {
       // Decided from another tab between the read and the write. The job must not run.
       await this.operationRepository.requestCancel(operation.id, restoration.ownerId);
@@ -381,11 +421,15 @@ export class AssetRestorationService {
       throw new BadRequestException('Only a preview that is ready for review can be rejected');
     }
     const now = new Date();
-    const rejected = await this.restorationRepository.transition(restoration.id, [AssetRestorationStatus.PreviewReady], {
-      status: AssetRestorationStatus.Rejected,
-      reviewedAt: now,
-      previewExpiresAt: previewExpiryAfterDecision(now),
-    });
+    const rejected = await this.restorationRepository.transition(
+      restoration.id,
+      [AssetRestorationStatus.PreviewReady],
+      {
+        status: AssetRestorationStatus.Rejected,
+        reviewedAt: now,
+        previewExpiresAt: previewExpiryAfterDecision(now),
+      },
+    );
     if (!rejected) {
       throw new ConflictException('This restoration was already decided');
     }
@@ -432,10 +476,16 @@ export class AssetRestorationService {
       await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
     }
     await this.storageRepository
-      .unlinkDir(restorationWorkDir(StorageCore.getNestedFolder(StorageFolder.Thumbnails, restoration.ownerId, assetId), restoration.id), {
-        recursive: true,
-        force: true,
-      })
+      .unlinkDir(
+        restorationWorkDir(
+          StorageCore.getNestedFolder(StorageFolder.Thumbnails, restoration.ownerId, assetId),
+          restoration.id,
+        ),
+        {
+          recursive: true,
+          force: true,
+        },
+      )
       .catch(() => undefined);
   }
 
@@ -443,7 +493,11 @@ export class AssetRestorationService {
    * Choose which version the asset plays back: a restored result, or the original. Explicit and
    * reversible; a finished job never makes this choice on the owner's behalf.
    */
-  async setCurrent(auth: AuthDto, assetId: string, dto: AssetRestorationSelectDto): Promise<AssetRestorationListResponseDto> {
+  async setCurrent(
+    auth: AuthDto,
+    assetId: string,
+    dto: AssetRestorationSelectDto,
+  ): Promise<AssetRestorationListResponseDto> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     if (dto.restorationId) {
       const restoration = await this.requireOwned(auth, assetId, dto.restorationId);
@@ -455,7 +509,12 @@ export class AssetRestorationService {
     return this.toList(assetId);
   }
 
-  async getFile(auth: AuthDto, assetId: string, restorationId: string, kind: AssetRestorationFileKind): Promise<ImmichFileResponse> {
+  async getFile(
+    auth: AuthDto,
+    assetId: string,
+    restorationId: string,
+    kind: AssetRestorationFileKind,
+  ): Promise<ImmichFileResponse> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
     const restoration = await this.requireOwned(auth, assetId, restorationId);
     const filePath = this.fileFor(restoration, kind);
@@ -532,8 +591,10 @@ export class AssetRestorationService {
     if (!(width > 0 && height > 0)) {
       throw new BadRequestException('The dimensions of this file are not known yet; run metadata extraction first');
     }
-    const sourceType = asset.type === AssetType.Video ? AssetRestorationSourceType.Video : AssetRestorationSourceType.Image;
-    const durationSeconds = sourceType === AssetRestorationSourceType.Video ? parseDurationSeconds(asset.duration) : null;
+    const sourceType =
+      asset.type === AssetType.Video ? AssetRestorationSourceType.Video : AssetRestorationSourceType.Image;
+    const durationSeconds =
+      sourceType === AssetRestorationSourceType.Video ? parseDurationSeconds(asset.duration) : null;
     if (sourceType === AssetRestorationSourceType.Video && durationSeconds === null) {
       throw new BadRequestException('The length of this video is not known yet; run metadata extraction first');
     }
@@ -559,7 +620,10 @@ export class AssetRestorationService {
    * by the ordinary admission (consent, allow-list, budget, live health). Nothing is moved.
    */
   private async admitRestoration(workload: MlWorkload, destinationId: string, jobName: MediaOperationKind) {
-    const deps = { mlDestinationRepository: this.mlDestinationRepository, machineLearningRepository: this.machineLearningRepository };
+    const deps = {
+      mlDestinationRepository: this.mlDestinationRepository,
+      machineLearningRepository: this.machineLearningRepository,
+    };
     const row = await this.mlDestinationRepository.getById(destinationId);
     if (row) {
       const conflict = await restorationRoleConflict(deps, row, workload);
@@ -587,7 +651,14 @@ export class AssetRestorationService {
 
   private inputBytes(source: RestorationSource, region: AssetRestorationRegion) {
     return {
-      preview: previewInputBytes(source.sizeBytes, region, source.width, source.height, source.sourceType, source.durationSeconds),
+      preview: previewInputBytes(
+        source.sizeBytes,
+        region,
+        source.width,
+        source.height,
+        source.sourceType,
+        source.durationSeconds,
+      ),
       full: source.sizeBytes,
     };
   }

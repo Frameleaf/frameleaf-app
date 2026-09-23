@@ -52,7 +52,9 @@
   const dayIds = $derived(timelineDay.viewerAssets.map((viewerAsset) => viewerAsset.id));
   const state = $derived(groupSelectionState(dayIds, selection));
   const selected = $derived(new Set(selection));
-  const headingId = $derived(`fl-day-${timelineDay.timelineMonth.yearMonth.year}-${timelineDay.timelineMonth.yearMonth.month}-${timelineDay.day}`);
+  const headingId = $derived(
+    `fl-day-${timelineDay.timelineMonth.yearMonth.year}-${timelineDay.timelineMonth.yearMonth.month}-${timelineDay.day}`,
+  );
   const fullDate = $derived(
     getDateLocaleString(
       fromTimelinePlainDate({
@@ -76,26 +78,26 @@
   style:top="{timelineDay.top}px"
 >
   {#if showHeader}
-  <header class="fl-day-header" style:width="{timelineDay.width}px">
-    <label class="fl-day-select" class:is-active={state !== 'none'}>
-      <input
-        type="checkbox"
-        checked={state === 'all'}
-        indeterminate={state === 'some'}
-        aria-label={$t('frameleaf_library_select_all_in_group', { values: { title: timelineDay.groupTitle } })}
-        onchange={(event) => onSelectGroup?.(dayIds, event.currentTarget.checked)}
-      />
-      <span aria-hidden="true">
-        {#if state === 'all'}
-          <Icon icon={mdiCheck} size="13" />
-        {:else if state === 'some'}
-          <Icon icon={mdiMinus} size="13" />
-        {/if}
-      </span>
-    </label>
-    <h2 id={headingId} title={fullDate}>{timelineDay.groupTitle}</h2>
-    <span class="fl-day-count">{$t('items_count', { values: { count: dayIds.length } })}</span>
-  </header>
+    <header class="fl-day-header" style:width="{timelineDay.width}px">
+      <label class="fl-day-select" class:is-active={state !== 'none'}>
+        <input
+          type="checkbox"
+          checked={state === 'all'}
+          indeterminate={state === 'some'}
+          aria-label={$t('frameleaf_library_select_all_in_group', { values: { title: timelineDay.groupTitle } })}
+          onchange={(event) => onSelectGroup?.(dayIds, event.currentTarget.checked)}
+        />
+        <span aria-hidden="true">
+          {#if state === 'all'}
+            <Icon icon={mdiCheck} size="13" />
+          {:else if state === 'some'}
+            <Icon icon={mdiMinus} size="13" />
+          {/if}
+        </span>
+      </label>
+      <h2 id={headingId} title={fullDate}>{timelineDay.groupTitle}</h2>
+      <span class="fl-day-count">{$t('items_count', { values: { count: dayIds.length } })}</span>
+    </header>
   {/if}
 
   <div class="fl-day-rows" style:width="{timelineDay.width}px" style:height="{timelineDay.height}px">

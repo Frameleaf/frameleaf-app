@@ -411,9 +411,9 @@ describe(TrashService.name, () => {
     it('should refuse a token reviewed for another action', async () => {
       applyAgainst(reviewed);
 
-      await expect(
-        sut.apply(authStub.user1, { action: TrashReviewAction.RestoreAll, token }),
-      ).rejects.toBeInstanceOf(ConflictException);
+      await expect(sut.apply(authStub.user1, { action: TrashReviewAction.RestoreAll, token })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
     });
 
     it('should refuse when a chosen item is missing from the set', async () => {

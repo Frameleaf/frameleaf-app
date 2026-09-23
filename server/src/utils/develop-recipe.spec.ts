@@ -79,7 +79,11 @@ describe('develop recipe', () => {
       const full = effectiveDevelop({ ...defaultDevelopRecipe(), preset: AssetDevelopPreset.Vivid });
       expect(full.params.vibrance).toBe(30);
       expect(full.params.contrast).toBe(18);
-      const half = effectiveDevelop({ ...defaultDevelopRecipe(), preset: AssetDevelopPreset.Vivid, presetStrength: 50 });
+      const half = effectiveDevelop({
+        ...defaultDevelopRecipe(),
+        preset: AssetDevelopPreset.Vivid,
+        presetStrength: 50,
+      });
       expect(half.params.vibrance).toBe(15);
       expect(half.params.contrast).toBe(9);
     });
@@ -196,7 +200,12 @@ describe('develop recipe', () => {
     });
 
     it('scales the clarity radius with the frame and ignores negative clarity', () => {
-      const params = effectiveDevelop({ ...defaultDevelopRecipe(), clarity: 50, noiseReduction: 70, sharpen: 50 }).params;
+      const params = effectiveDevelop({
+        ...defaultDevelopRecipe(),
+        clarity: 50,
+        noiseReduction: 70,
+        sharpen: 50,
+      }).params;
       const small = planDevelopDetail(params, { width: 400, height: 300 });
       const large = planDevelopDetail(params, { width: 6000, height: 4000 });
       expect(small.median).toBe(5);

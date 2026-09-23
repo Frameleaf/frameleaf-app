@@ -50,7 +50,8 @@ export class MlDestinationController {
   @Authenticated({ permission: Permission.SystemConfigRead, admin: true })
   @Endpoint({
     summary: 'List workload routes',
-    description: 'The destination each workload is routed to. A workload without a route is refused, never sent anywhere.',
+    description:
+      'The destination each workload is routed to. A workload without a route is refused, never sent anywhere.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   getRoutes(): Promise<MlWorkloadRoutesResponseDto> {
@@ -119,7 +120,8 @@ export class MlDestinationController {
   @Authenticated({ permission: Permission.SystemConfigUpdate, admin: true })
   @Endpoint({
     summary: 'Delete a machine-learning destination',
-    description: 'Removes the destination and every route to it; the affected workloads are refused until routed again.',
+    description:
+      'Removes the destination and every route to it; the affected workloads are refused until routed again.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   delete(@Param() { id }: UUIDParamDto): Promise<void> {

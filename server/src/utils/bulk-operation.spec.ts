@@ -309,11 +309,10 @@ describe('bulk-operation', () => {
     it('requires a matching still + video pair for every id in the frozen set (FL-70)', () => {
       expect(bulkPayloadProblem(MediaOperationBulkAction.RelinkLivePhoto, {}, ['a', 'b'])).not.toBeNull();
       expect(
-        bulkPayloadProblem(
-          MediaOperationBulkAction.RelinkLivePhoto,
-          { pairs: [{ photoId: 'a', videoId: 'x' }] },
-          ['a', 'b'],
-        ),
+        bulkPayloadProblem(MediaOperationBulkAction.RelinkLivePhoto, { pairs: [{ photoId: 'a', videoId: 'x' }] }, [
+          'a',
+          'b',
+        ]),
       ).not.toBeNull();
       expect(
         bulkPayloadProblem(
@@ -328,11 +327,9 @@ describe('bulk-operation', () => {
         ),
       ).not.toBeNull();
       expect(
-        bulkPayloadProblem(
-          MediaOperationBulkAction.RelinkLivePhoto,
-          { pairs: [{ photoId: 'a', videoId: 'a' }] },
-          ['a'],
-        ),
+        bulkPayloadProblem(MediaOperationBulkAction.RelinkLivePhoto, { pairs: [{ photoId: 'a', videoId: 'a' }] }, [
+          'a',
+        ]),
       ).not.toBeNull();
       expect(
         bulkPayloadProblem(

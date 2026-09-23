@@ -73,11 +73,7 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access.js';
 import { getConfig, updateConfig } from 'src/utils/config.js';
 import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
-import {
-  MlSelectionRequest,
-  routedMlDestinationId,
-  selectMlDestination,
-} from 'src/utils/ml-destination.js';
+import { MlSelectionRequest, routedMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
 import { replaceLockedProfileImages } from 'src/utils/profile-image.js';
 
 export const BASE_SERVICE_DEPENDENCIES = [
@@ -319,7 +315,10 @@ export class BaseService {
    */
   protected selectMlDestination(request: MlSelectionRequest) {
     return selectMlDestination(
-      { mlDestinationRepository: this.mlDestinationRepository, machineLearningRepository: this.machineLearningRepository },
+      {
+        mlDestinationRepository: this.mlDestinationRepository,
+        machineLearningRepository: this.machineLearningRepository,
+      },
       request,
     );
   }
@@ -339,10 +338,7 @@ export class BaseService {
    * it, and profile pictures copied from a photo now Locked are replaced.
    */
   protected async afterAssetsLocked(assetIds: string[]): Promise<void> {
-    await queueReleasedPersonThumbnails(
-      { person: this.personRepository, job: this.jobRepository },
-      assetIds,
-    );
+    await queueReleasedPersonThumbnails({ person: this.personRepository, job: this.jobRepository }, assetIds);
     await this.replaceLockedProfileImages();
   }
 

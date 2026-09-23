@@ -1,4 +1,13 @@
 import {
+  MlAdmissionRefusal,
+  MlDestinationHealth,
+  MlDestinationKind,
+  MlWorkerRole,
+  MlWorkload,
+  type MlDestinationResponseDto,
+} from '@immich/sdk';
+import { describe, expect, it } from 'vitest';
+import {
   canRouteTo,
   formatThroughput,
   isConsentBlocking,
@@ -13,15 +22,6 @@ import {
   workloadBlockedInDraft,
   workloadsForKind,
 } from '$lib/frameleaf/ml-destinations';
-import {
-  MlAdmissionRefusal,
-  MlDestinationHealth,
-  MlDestinationKind,
-  MlWorkerRole,
-  MlWorkload,
-  type MlDestinationResponseDto,
-} from '@immich/sdk';
-import { describe, expect, it } from 'vitest';
 
 const destination = (overrides: Partial<MlDestinationResponseDto> = {}): MlDestinationResponseDto => ({
   id: 'local',
@@ -34,7 +34,13 @@ const destination = (overrides: Partial<MlDestinationResponseDto> = {}): MlDesti
   role: MlWorkerRole.LibraryAnalysis,
   sharesLibraryHardware: false,
   consent: { required: false, acknowledgedAt: null, acknowledgedBy: null },
-  costControls: { budgetLimitUsd: null, maxRuntimeMinutes: null, maxUploadBytes: null, spentUsd: 0, budgetWindowDays: 30 },
+  costControls: {
+    budgetLimitUsd: null,
+    maxRuntimeMinutes: null,
+    maxUploadBytes: null,
+    spentUsd: 0,
+    budgetWindowDays: 30,
+  },
   health: { status: MlDestinationHealth.Healthy, probedAt: null, summary: null, servedWorkloads: null },
   createdAt: '2026-09-22T00:00:00.000Z',
   updatedAt: '2026-09-22T00:00:00.000Z',
@@ -103,7 +109,9 @@ describe('ml-destinations presentation rules (FL-110)', () => {
 
   it('marks a destination over budget only at or past its limit', () => {
     const limited = (spentUsd: number, budgetLimitUsd: number | null) =>
-      destination({ costControls: { budgetLimitUsd, maxRuntimeMinutes: null, maxUploadBytes: null, spentUsd, budgetWindowDays: 30 } });
+      destination({
+        costControls: { budgetLimitUsd, maxRuntimeMinutes: null, maxUploadBytes: null, spentUsd, budgetWindowDays: 30 },
+      });
     expect(isOverBudget(limited(24.99, 25))).toBe(false);
     expect(isOverBudget(limited(25, 25))).toBe(true);
     expect(isOverBudget(limited(999, null))).toBe(false);
@@ -147,7 +155,10 @@ describe('separate library-analysis and restoration workers (FL-72)', () => {
     });
     expect(canRouteTo(legacyPod, MlWorkload.RestorationFaithful)).toBe(false);
 
-    const mixed = destination({ workloads: [MlWorkload.Face, MlWorkload.RestorationFaithful], role: MlWorkerRole.Mixed });
+    const mixed = destination({
+      workloads: [MlWorkload.Face, MlWorkload.RestorationFaithful],
+      role: MlWorkerRole.Mixed,
+    });
     expect(canRouteTo(mixed, MlWorkload.RestorationFaithful)).toBe(false);
     expect(canRouteTo(mixed, MlWorkload.Face)).toBe(true);
 
@@ -157,7 +168,10 @@ describe('separate library-analysis and restoration workers (FL-72)', () => {
   it('offers each kind only the work it may run', () => {
     expect(workloadsForKind(MlDestinationKind.RunPod)).not.toContain(MlWorkload.RestorationFaithful);
     expect(workloadsForKind(MlDestinationKind.RunPod)).toContain(MlWorkload.Enrichment);
-    expect(workloadsForKind(MlDestinationKind.RunPodVideo)).toEqual([MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative]);
+    expect(workloadsForKind(MlDestinationKind.RunPodVideo)).toEqual([
+      MlWorkload.RestorationFaithful,
+      MlWorkload.RestorationCreative,
+    ]);
     expect(workloadsForKind(MlDestinationKind.Lan)).toEqual([...ML_WORKLOAD_ORDER]);
   });
 
@@ -168,7 +182,9 @@ describe('separate library-analysis and restoration workers (FL-72)', () => {
     expect(workloadBlockedInDraft(lan, [MlWorkload.RestorationCreative], MlWorkload.Ocr)).toBe(true);
     expect(workloadBlockedInDraft(lan, [MlWorkload.RestorationCreative], MlWorkload.StudioAi)).toBe(false);
     // Unticking stays possible on a row saved before the rule.
-    expect(workloadBlockedInDraft(lan, [MlWorkload.Face, MlWorkload.RestorationFaithful], MlWorkload.RestorationFaithful)).toBe(false);
+    expect(
+      workloadBlockedInDraft(lan, [MlWorkload.Face, MlWorkload.RestorationFaithful], MlWorkload.RestorationFaithful),
+    ).toBe(false);
     expect(workloadBlockedInDraft(MlDestinationKind.RunPod, [], MlWorkload.RestorationCreative)).toBe(true);
   });
 });

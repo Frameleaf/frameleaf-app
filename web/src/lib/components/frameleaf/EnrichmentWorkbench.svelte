@@ -397,11 +397,7 @@
           </p>
           <div class="counts">
             {#each planCounts(plan) as count (count.key)}
-              <Badge
-                tone={count.tone}
-                value={count.value}
-                label={$t(count.key, { values: { count: count.value } })}
-              />
+              <Badge tone={count.tone} value={count.value} label={$t(count.key, { values: { count: count.value } })} />
             {/each}
           </div>
         </div>
@@ -592,14 +588,18 @@
               <strong>{$t(stageLabelKey[stage])}</strong>
               <small>{$t(stageHelpKey[stage])}</small>
               {#if required.length > 0}
-                <small>{$t('frameleaf_enrichment_needed_by', {
-                  values: { stages: required.map((item) => $t(stageLabelKey[item])).join(', ') },
-                })}</small>
+                <small
+                  >{$t('frameleaf_enrichment_needed_by', {
+                    values: { stages: required.map((item) => $t(stageLabelKey[item])).join(', ') },
+                  })}</small
+                >
               {/if}
               {#if stage === EnrichmentStage.MomentCaptions}
-                <small>{$t('frameleaf_enrichment_captions_cost', {
-                  values: { count: captionRequestCount(videoCount, options?.framesPerVideo ?? 6) },
-                })}</small>
+                <small
+                  >{$t('frameleaf_enrichment_captions_cost', {
+                    values: { count: captionRequestCount(videoCount, options?.framesPerVideo ?? 6) },
+                  })}</small
+                >
               {/if}
               {#if VIDEO_ONLY_STAGES.has(stage) && videoCount === 0}
                 <small>{$t('frameleaf_enrichment_videos_only')}</small>
@@ -665,11 +665,7 @@
           </Button>
           <Button variant="primary" onclick={() => (step = 2)}>{$t('continue')}</Button>
         {:else}
-          <Button
-            variant="primary"
-            disabled={busy || stages.length === 0 || selected.length === 0}
-            onclick={queuePlan}
-          >
+          <Button variant="primary" disabled={busy || stages.length === 0 || selected.length === 0} onclick={queuePlan}>
             {$t('frameleaf_enrichment_queue')}
           </Button>
         {/if}

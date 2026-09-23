@@ -93,8 +93,11 @@ export const buildArchiveName = (
 ): string => {
   const { fallback, brand = false, withDate = false, now = new Date(), maxLength = ARCHIVE_NAME_MAX_LENGTH } = options;
 
-  const cleanedSegments = segments.map((segment) => sanitizeArchiveSegment(segment)).filter((segment) => segment.length > 0);
-  const body = cleanedSegments.length > 0 ? cleanedSegments.join('-') : sanitizeArchiveSegment(fallback) || ASCII_SAFE_FALLBACK;
+  const cleanedSegments = segments
+    .map((segment) => sanitizeArchiveSegment(segment))
+    .filter((segment) => segment.length > 0);
+  const body =
+    cleanedSegments.length > 0 ? cleanedSegments.join('-') : sanitizeArchiveSegment(fallback) || ASCII_SAFE_FALLBACK;
 
   const parts = brand ? ['frameleaf', body] : [body];
   if (withDate) {

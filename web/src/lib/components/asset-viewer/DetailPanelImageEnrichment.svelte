@@ -40,14 +40,7 @@
     type AssetResponseDto,
   } from '@immich/sdk';
   import { Badge, Button, LoadingSpinner, Text, toastManager } from '@immich/ui';
-  import {
-    mdiBroom,
-    mdiCheckCircleOutline,
-    mdiRefresh,
-    mdiShieldAlert,
-    mdiShieldCheck,
-    mdiTagRemove,
-  } from '@mdi/js';
+  import { mdiBroom, mdiCheckCircleOutline, mdiRefresh, mdiShieldAlert, mdiShieldCheck, mdiTagRemove } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -271,7 +264,10 @@
             </div>
 
             {#if description.suggestion}
-              <p class="rounded bg-gray-100 p-2 text-xs break-words dark:bg-gray-800" data-testid="frameleaf-description-suggestion">
+              <p
+                class="rounded bg-gray-100 p-2 text-xs break-words dark:bg-gray-800"
+                data-testid="frameleaf-description-suggestion"
+              >
                 {description.suggestion}
               </p>
             {/if}

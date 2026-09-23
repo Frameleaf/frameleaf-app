@@ -95,7 +95,12 @@ const words = (value: unknown): string[] =>
     .filter(Boolean);
 
 const keywordText = (value: CommandInput['keywords']) =>
-  Array.isArray(value) ? value.map((item) => string(item)).filter(Boolean).join(' ') : string(value);
+  Array.isArray(value)
+    ? value
+        .map((item) => string(item))
+        .filter(Boolean)
+        .join(' ')
+    : string(value);
 
 const DEFAULT_ICONS: Record<CommandGroupId, string> = {
   // Filled in by the caller from `@mdi/js`; a blank icon simply renders no glyph.

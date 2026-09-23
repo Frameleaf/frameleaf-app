@@ -69,17 +69,19 @@ export class DuplicateDecisionRepository {
       return Promise.resolve([]);
     }
 
-    return this.db
-      .selectFrom('asset')
-      .select(['asset.id', 'asset.ownerId'])
-      .select((eb) => eb.ref('asset.duplicateId').$castTo<string>().as('duplicateId'))
-      .$call(withDefaultVisibility)
-      // the same join the review list and resolve read a group through: a photo without metadata is in neither
-      .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .where('asset.duplicateId', '=', anyUuid(duplicateIds))
-      .where('asset.deletedAt', 'is', null)
-      .where('asset.stackId', 'is', null)
-      .execute();
+    return (
+      this.db
+        .selectFrom('asset')
+        .select(['asset.id', 'asset.ownerId'])
+        .select((eb) => eb.ref('asset.duplicateId').$castTo<string>().as('duplicateId'))
+        .$call(withDefaultVisibility)
+        // the same join the review list and resolve read a group through: a photo without metadata is in neither
+        .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+        .where('asset.duplicateId', '=', anyUuid(duplicateIds))
+        .where('asset.deletedAt', 'is', null)
+        .where('asset.stackId', 'is', null)
+        .execute()
+    );
   }
 
   /** Where each of these photos stands now. Photos that no longer exist are simply absent. */

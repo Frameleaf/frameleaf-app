@@ -1,7 +1,19 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AssetRestorationFileKind, AssetRestorationMode, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
-import { AssetType, JobName, MediaOperationDestination, MediaOperationKind, MlAdmissionRefusal, MlDestinationKind, MlWorkload } from 'src/enum.js';
+import {
+  AssetRestorationFileKind,
+  AssetRestorationMode,
+  AssetRestorationStatus,
+} from 'src/dtos/asset-restoration.dto.js';
+import {
+  AssetType,
+  JobName,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MlAdmissionRefusal,
+  MlDestinationKind,
+  MlWorkload,
+} from 'src/enum.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { AssetRestorationService, parseDurationSeconds } from 'src/services/asset-restoration.service.js';
@@ -72,15 +84,21 @@ describe(AssetRestorationService.name, () => {
   beforeEach(() => {
     mocks = getMocks();
     restorations = {
-      create: vi.fn().mockImplementation((input) => Promise.resolve(row({ ...input, id: RESTORATION_ID, status: input.status }))),
+      create: vi
+        .fn()
+        .mockImplementation((input) => Promise.resolve(row({ ...input, id: RESTORATION_ID, status: input.status }))),
       get: vi.fn(),
       getForOwner: vi.fn(),
       listByAsset: vi.fn().mockResolvedValue([]),
       getCurrent: vi.fn(),
-      update: vi.fn().mockImplementation((id: string, patch: Partial<AssetRestoration>) => Promise.resolve(row({ id, ...patch }))),
-      transition: vi.fn().mockImplementation((id: string, _from: unknown, patch: Partial<AssetRestoration>) =>
-        Promise.resolve(row({ id, ...patch })),
-      ),
+      update: vi
+        .fn()
+        .mockImplementation((id: string, patch: Partial<AssetRestoration>) => Promise.resolve(row({ id, ...patch }))),
+      transition: vi
+        .fn()
+        .mockImplementation((id: string, _from: unknown, patch: Partial<AssetRestoration>) =>
+          Promise.resolve(row({ id, ...patch })),
+        ),
       setCurrent: vi.fn().mockResolvedValue(void 0),
       listExpiredPreviews: vi.fn().mockResolvedValue([]),
       listExpiredResults: vi.fn().mockResolvedValue([]),
@@ -97,11 +115,18 @@ describe(AssetRestorationService.name, () => {
     mocks.asset.getById.mockResolvedValue(asset as never);
     // A LAN worker that is allowed to and reports that it serves faithful restoration.
     mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.lan);
-    mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, mlDestinationStub.lan, mlDestinationStub.runPodVideo]);
+    mocks.mlDestination.getAll.mockResolvedValue([
+      mlDestinationStub.local,
+      mlDestinationStub.lan,
+      mlDestinationStub.runPodVideo,
+    ]);
     // No library routes by default; the FL-72 case below sets one.
     mocks.mlDestination.getRoutes.mockResolvedValue([]);
     mocks.mlDestination.getThroughput.mockResolvedValue({ sampleCount: 0, bytesSent: 0, durationMs: 0, spentUsd: 0 });
-    mocks.machineLearning.probe.mockResolvedValue({ ...mlProbeStub.healthy, workloads: [MlWorkload.RestorationFaithful] });
+    mocks.machineLearning.probe.mockResolvedValue({
+      ...mlProbeStub.healthy,
+      workloads: [MlWorkload.RestorationFaithful],
+    });
 
     sut = new AssetRestorationService(
       mocks.logger as never,
@@ -119,7 +144,12 @@ describe(AssetRestorationService.name, () => {
   describe('access', () => {
     it('refuses every operation on an asset the user cannot edit, before anything is created', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
-      const request = { mode: AssetRestorationMode.Faithful, upscale: 2 as const, keepGrain: false, destinationId: mlDestinationStub.lan.id };
+      const request = {
+        mode: AssetRestorationMode.Faithful,
+        upscale: 2 as const,
+        keepGrain: false,
+        destinationId: mlDestinationStub.lan.id,
+      };
       await expect(sut.list(authStub.user1, asset.id)).rejects.toBeInstanceOf(BadRequestException);
       await expect(sut.getOptions(authStub.user1, asset.id, {})).rejects.toBeInstanceOf(BadRequestException);
       await expect(sut.requestPreview(authStub.user1, asset.id, request)).rejects.toBeInstanceOf(BadRequestException);
@@ -133,9 +163,9 @@ describe(AssetRestorationService.name, () => {
     it('answers not found for a restoration that belongs to another account or does not exist', async () => {
       restorations.getForOwner.mockResolvedValue(undefined);
       await expect(sut.accept(authStub.user1, asset.id, RESTORATION_ID)).rejects.toBeInstanceOf(NotFoundException);
-      await expect(sut.getFile(authStub.user1, asset.id, RESTORATION_ID, AssetRestorationFileKind.After)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        sut.getFile(authStub.user1, asset.id, RESTORATION_ID, AssetRestorationFileKind.After),
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(restorations.getForOwner).toHaveBeenCalledWith(RESTORATION_ID, asset.id, authStub.user1.user.id);
     });
   });
@@ -150,18 +180,36 @@ describe(AssetRestorationService.name, () => {
         ),
       );
 
-      const options = await sut.getOptions(authStub.user1, asset.id, { mode: AssetRestorationMode.Faithful, upscale: 2 });
+      const options = await sut.getOptions(authStub.user1, asset.id, {
+        mode: AssetRestorationMode.Faithful,
+        upscale: 2,
+      });
 
-      expect(options).toMatchObject({ sourceType: 'image', outputWidth: 3240, outputHeight: 2160, previewSeconds: null, adapterInstalled: true });
+      expect(options).toMatchObject({
+        sourceType: 'image',
+        outputWidth: 3240,
+        outputHeight: 2160,
+        previewSeconds: null,
+        adapterInstalled: true,
+      });
       const local = options.destinations.find((item) => item.id === mlDestinationStub.local.id);
       const lan = options.destinations.find((item) => item.id === mlDestinationStub.lan.id);
       const runPod = options.destinations.find((item) => item.id === mlDestinationStub.runPodVideo.id);
-      expect(local).toMatchObject({ available: false, refusal: MlAdmissionRefusal.WorkloadNotAllowed, leavesNetwork: false });
+      expect(local).toMatchObject({
+        available: false,
+        refusal: MlAdmissionRefusal.WorkloadNotAllowed,
+        leavesNetwork: false,
+      });
       expect(lan).toMatchObject({ available: true, refusal: null, leavesNetwork: false });
       expect(lan?.estimate.fullSeconds).toBe(6);
       expect(lan?.estimate.previewSeconds).not.toBeNull();
       // Without recorded consent the cloud destination is shown as refused, never hidden and never chosen.
-      expect(runPod).toMatchObject({ available: false, refusal: MlAdmissionRefusal.ConsentMissing, leavesNetwork: true, consentGranted: false });
+      expect(runPod).toMatchObject({
+        available: false,
+        refusal: MlAdmissionRefusal.ConsentMissing,
+        leavesNetwork: true,
+        consentGranted: false,
+      });
       expect(runPod?.estimate.fullSeconds).toBeNull();
       expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
     });
@@ -176,7 +224,10 @@ describe(AssetRestorationService.name, () => {
         Promise.resolve(id === mlDestinationStub.local.id ? mlDestinationStub.local : sameUrl),
       );
 
-      const options = await sut.getOptions(authStub.user1, asset.id, { mode: AssetRestorationMode.Faithful, upscale: 2 });
+      const options = await sut.getOptions(authStub.user1, asset.id, {
+        mode: AssetRestorationMode.Faithful,
+        upscale: 2,
+      });
 
       expect(options.destinations.find((item) => item.id === sameUrl.id)).toMatchObject({
         available: false,
@@ -186,7 +237,12 @@ describe(AssetRestorationService.name, () => {
   });
 
   describe('requestPreview', () => {
-    const request = { mode: AssetRestorationMode.Faithful, upscale: 2 as const, keepGrain: false, destinationId: mlDestinationStub.lan.id };
+    const request = {
+      mode: AssetRestorationMode.Faithful,
+      upscale: 2 as const,
+      keepGrain: false,
+      destinationId: mlDestinationStub.lan.id,
+    };
 
     it('refuses restoration on the library-analysis pod up front and creates nothing (FL-72)', async () => {
       const legacyPod = { ...mlDestinationStub.runPodConsented, workloads: [MlWorkload.RestorationFaithful] };
@@ -205,9 +261,9 @@ describe(AssetRestorationService.name, () => {
     it('refuses a cloud destination without consent and creates nothing', async () => {
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPodVideo);
 
-      await expect(sut.requestPreview(authStub.user1, asset.id, { ...request, destinationId: mlDestinationStub.runPodVideo.id })).rejects.toBeInstanceOf(
-        MlDestinationRefusedError,
-      );
+      await expect(
+        sut.requestPreview(authStub.user1, asset.id, { ...request, destinationId: mlDestinationStub.runPodVideo.id }),
+      ).rejects.toBeInstanceOf(MlDestinationRefusedError);
       expect(restorations.create).not.toHaveBeenCalled();
       expect(operations.create).not.toHaveBeenCalled();
       expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
@@ -217,7 +273,10 @@ describe(AssetRestorationService.name, () => {
       restorations.update.mockImplementation((id: string, patch: Partial<AssetRestoration>) =>
         Promise.resolve(row({ id, status: AssetRestorationStatus.PreviewQueued, ...patch })),
       );
-      const response = await sut.requestPreview(authStub.user1, asset.id, { ...request, region: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 } });
+      const response = await sut.requestPreview(authStub.user1, asset.id, {
+        ...request,
+        region: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 },
+      });
 
       expect(restorations.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -300,7 +359,11 @@ describe(AssetRestorationService.name, () => {
       expect(restorations.transition).toHaveBeenCalledWith(
         RESTORATION_ID,
         [AssetRestorationStatus.PreviewReady],
-        expect.objectContaining({ status: AssetRestorationStatus.Accepted, fullOperationId: OPERATION_ID, previewExpiresAt: expect.any(Date) }),
+        expect.objectContaining({
+          status: AssetRestorationStatus.Accepted,
+          fullOperationId: OPERATION_ID,
+          previewExpiresAt: expect.any(Date),
+        }),
       );
       expect(response.status).toBe(AssetRestorationStatus.Accepted);
       expect(response.activeOperationId).toBe(OPERATION_ID);
@@ -318,7 +381,9 @@ describe(AssetRestorationService.name, () => {
 
       restorations.getForOwner.mockResolvedValue(row());
       mocks.mlDestination.getById.mockResolvedValue({ ...mlDestinationStub.lan, enabled: false });
-      await expect(sut.accept(authStub.user1, asset.id, RESTORATION_ID)).rejects.toBeInstanceOf(MlDestinationRefusedError);
+      await expect(sut.accept(authStub.user1, asset.id, RESTORATION_ID)).rejects.toBeInstanceOf(
+        MlDestinationRefusedError,
+      );
       expect(operations.create).not.toHaveBeenCalled();
     });
 
@@ -342,7 +407,11 @@ describe(AssetRestorationService.name, () => {
       expect(restorations.transition).toHaveBeenCalledWith(
         RESTORATION_ID,
         [AssetRestorationStatus.PreviewReady],
-        expect.objectContaining({ status: AssetRestorationStatus.Rejected, reviewedAt: expect.any(Date), previewExpiresAt: expect.any(Date) }),
+        expect.objectContaining({
+          status: AssetRestorationStatus.Rejected,
+          reviewedAt: expect.any(Date),
+          previewExpiresAt: expect.any(Date),
+        }),
       );
       expect(response.status).toBe(AssetRestorationStatus.Rejected);
     });
@@ -364,11 +433,23 @@ describe(AssetRestorationService.name, () => {
       expect(restorations.setCurrent).toHaveBeenCalledWith(asset.id, null);
       expect(restorations.update).toHaveBeenCalledWith(
         RESTORATION_ID,
-        expect.objectContaining({ status: AssetRestorationStatus.Discarded, resultPath: null, previewAfterPath: null, isCurrent: false }),
+        expect.objectContaining({
+          status: AssetRestorationStatus.Discarded,
+          resultPath: null,
+          previewAfterPath: null,
+          isCurrent: false,
+        }),
       );
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: ['/data/thumbs/before.jpg', '/data/thumbs/after.png', '/data/thumbs/result.png', '/data/thumbs/result_preview.jpg'] },
+        data: {
+          files: [
+            '/data/thumbs/before.jpg',
+            '/data/thumbs/after.png',
+            '/data/thumbs/result.png',
+            '/data/thumbs/result_preview.jpg',
+          ],
+        },
       });
     });
   });
@@ -376,9 +457,13 @@ describe(AssetRestorationService.name, () => {
   describe('setCurrent', () => {
     it('only lets a finished result become the playback version, and only by explicit choice', async () => {
       restorations.getForOwner.mockResolvedValue(row({ status: AssetRestorationStatus.PreviewReady }));
-      await expect(sut.setCurrent(authStub.user1, asset.id, { restorationId: RESTORATION_ID })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.setCurrent(authStub.user1, asset.id, { restorationId: RESTORATION_ID })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
 
-      restorations.getForOwner.mockResolvedValue(row({ status: AssetRestorationStatus.Restored, resultPath: '/data/thumbs/result.png' }));
+      restorations.getForOwner.mockResolvedValue(
+        row({ status: AssetRestorationStatus.Restored, resultPath: '/data/thumbs/result.png' }),
+      );
       await sut.setCurrent(authStub.user1, asset.id, { restorationId: RESTORATION_ID });
       expect(restorations.setCurrent).toHaveBeenCalledWith(asset.id, RESTORATION_ID);
 
@@ -390,9 +475,9 @@ describe(AssetRestorationService.name, () => {
   describe('getFile', () => {
     it('serves the result only once the restoration is finished', async () => {
       restorations.getForOwner.mockResolvedValue(row({ resultPath: '/data/thumbs/result.png' }));
-      await expect(sut.getFile(authStub.user1, asset.id, RESTORATION_ID, AssetRestorationFileKind.Result)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        sut.getFile(authStub.user1, asset.id, RESTORATION_ID, AssetRestorationFileKind.Result),
+      ).rejects.toBeInstanceOf(NotFoundException);
       const after = await sut.getFile(authStub.user1, asset.id, RESTORATION_ID, AssetRestorationFileKind.After);
       expect(after.path).toBe('/data/thumbs/after.png');
     });
@@ -403,7 +488,10 @@ describe(AssetRestorationService.name, () => {
       restorations.getFilePaths.mockResolvedValue(['/data/thumbs/before.jpg']);
       await sut.onAssetDelete({ assetId: asset.id, userId: asset.ownerId });
       expect(restorations.deleteByAsset).toHaveBeenCalledWith(asset.id);
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/data/thumbs/before.jpg'] } });
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: ['/data/thumbs/before.jpg'] },
+      });
     });
   });
 

@@ -28,7 +28,9 @@
   class:hidden
   class:changed
   aria-pressed={!hidden}
-  aria-label={$t('frameleaf_people_manage_toggle', { values: { name, state: hidden ? $t('hide_person') : $t('unhide_person') } })}
+  aria-label={$t('frameleaf_people_manage_toggle', {
+    values: { name, state: hidden ? $t('hide_person') : $t('unhide_person') },
+  })}
   onclick={onToggle}
 >
   <PersonAvatar {person} size={104} />

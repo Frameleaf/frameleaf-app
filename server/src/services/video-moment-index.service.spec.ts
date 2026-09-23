@@ -186,9 +186,7 @@ describe(VideoMomentIndexService.name, () => {
 
       const outcome = await sut.runIndexStage(assetId, { destinationId: newUuid() });
 
-      expect(outcome).toEqual(
-        expect.objectContaining({ state: EnrichmentItemState.Failed, reasonKey: 'model-error' }),
-      );
+      expect(outcome).toEqual(expect.objectContaining({ state: EnrichmentItemState.Failed, reasonKey: 'model-error' }));
       expect(mocks.machineLearning.encodeImage).not.toHaveBeenCalled();
       expect(moments.publishIndex).not.toHaveBeenCalled();
     });

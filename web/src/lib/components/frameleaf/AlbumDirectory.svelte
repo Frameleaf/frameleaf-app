@@ -340,16 +340,32 @@
       <MenuOption icon={mdiPencilOutline} text={$t('edit')} onClick={() => edit(album)} />
     {/if}
     {#if editor && isCollection}
-      <MenuOption icon={mdiPlus} text={$t('frameleaf_albums_new_album')} onClick={() => openCreate(AlbumKind.Album, album.id)} />
+      <MenuOption
+        icon={mdiPlus}
+        text={$t('frameleaf_albums_new_album')}
+        onClick={() => openCreate(AlbumKind.Album, album.id)}
+      />
     {/if}
     {#if owner && isAlbum}
-      <MenuOption icon={mdiFolderMoveOutline} text={$t('frameleaf_albums_move_to')} onClick={() => (moveDialog = { open: true, album })} />
+      <MenuOption
+        icon={mdiFolderMoveOutline}
+        text={$t('frameleaf_albums_move_to')}
+        onClick={() => (moveDialog = { open: true, album })}
+      />
     {/if}
     {#if editor && isAlbum && !album.isSmart}
-      <MenuOption icon={mdiUpload} text={$t('frameleaf_albums_upload')} onClick={() => void openFileUploadDialog({ albumId: album.id })} />
+      <MenuOption
+        icon={mdiUpload}
+        text={$t('frameleaf_albums_upload')}
+        onClick={() => void openFileUploadDialog({ albumId: album.id })}
+      />
     {/if}
     {#if album.isSmart}
-      <MenuOption icon={mdiRefresh} text={$t('frameleaf_albums_smart_reevaluate')} onClick={() => void modalManager.show(SmartAlbumReevaluateModal, {})} />
+      <MenuOption
+        icon={mdiRefresh}
+        text={$t('frameleaf_albums_smart_reevaluate')}
+        onClick={() => void modalManager.show(SmartAlbumReevaluateModal, {})}
+      />
     {/if}
     {#if isSpace(album)}
       <!-- A space's people are invitations and roles, managed on the space's own Members panel. -->
@@ -468,10 +484,26 @@
         variant="filled"
         hideContent={false}
       >
-        <MenuOption icon={mdiImageAlbum} text={$t('frameleaf_albums_new_album')} onClick={() => openCreate(AlbumKind.Album)} />
-        <MenuOption icon={mdiAutoFix} text={$t('frameleaf_albums_new_smart')} onClick={() => (smartDialogOpen = true)} />
-        <MenuOption icon={mdiFolderMultipleOutline} text={$t('frameleaf_albums_new_collection')} onClick={() => openCreate(AlbumKind.Collection)} />
-        <MenuOption icon={mdiAccountMultipleOutline} text={$t('frameleaf_albums_new_space')} onClick={() => openCreate(AlbumKind.Space)} />
+        <MenuOption
+          icon={mdiImageAlbum}
+          text={$t('frameleaf_albums_new_album')}
+          onClick={() => openCreate(AlbumKind.Album)}
+        />
+        <MenuOption
+          icon={mdiAutoFix}
+          text={$t('frameleaf_albums_new_smart')}
+          onClick={() => (smartDialogOpen = true)}
+        />
+        <MenuOption
+          icon={mdiFolderMultipleOutline}
+          text={$t('frameleaf_albums_new_collection')}
+          onClick={() => openCreate(AlbumKind.Collection)}
+        />
+        <MenuOption
+          icon={mdiAccountMultipleOutline}
+          text={$t('frameleaf_albums_new_space')}
+          onClick={() => openCreate(AlbumKind.Space)}
+        />
       </ButtonContextMenu>
     </div>
   </header>
@@ -614,7 +646,9 @@
     <p>{$t('frameleaf_albums_smart_description')}</p>
     <div class="buttons">
       {#if authManager.user.isAdmin}
-        <a href={Route.systemSettings()} onclick={() => (smartDialogOpen = false)}>{$t('frameleaf_albums_smart_settings')}</a>
+        <a href={Route.systemSettings()} onclick={() => (smartDialogOpen = false)}
+          >{$t('frameleaf_albums_smart_settings')}</a
+        >
       {/if}
       <button
         type="button"

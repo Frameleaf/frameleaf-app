@@ -388,11 +388,7 @@ export class SharedSpaceService extends BaseService {
     const alreadyLinked = new Set(
       links.filter(({ personOwnerId }) => personOwnerId === auth.user.id).map(({ personGroupId }) => personGroupId),
     );
-    const candidates = await this.albumUserRepository.getSpacePersonCandidates(
-      id,
-      auth.user.id,
-      SPACE_CONTENT_OPTIONS,
-    );
+    const candidates = await this.albumUserRepository.getSpacePersonCandidates(id, auth.user.id, SPACE_CONTENT_OPTIONS);
 
     return {
       linked,
@@ -532,7 +528,11 @@ export class SharedSpaceService extends BaseService {
    * the caller's own last-seen marker, so it never counts what it would not
    * show.
    */
-  async getActivity(auth: AuthDto, id: string, dto: SharedSpaceActivitySearchDto): Promise<SharedSpaceActivityResponseDto> {
+  async getActivity(
+    auth: AuthDto,
+    id: string,
+    dto: SharedSpaceActivitySearchDto,
+  ): Promise<SharedSpaceActivityResponseDto> {
     await this.requireSpaceMembership(auth, id);
 
     const take = dto.take ?? ACTIVITY_PAGE;
@@ -588,7 +588,11 @@ export class SharedSpaceService extends BaseService {
    * flat: a reply names its top-level comment in `parentId`, and a top-level
    * comment carries how many replies the caller can see.
    */
-  async getComments(auth: AuthDto, id: string, dto: SharedSpaceCommentSearchDto): Promise<SharedSpaceCommentsResponseDto> {
+  async getComments(
+    auth: AuthDto,
+    id: string,
+    dto: SharedSpaceCommentSearchDto,
+  ): Promise<SharedSpaceCommentsResponseDto> {
     const space = await this.requireSpaceMembership(auth, id);
     if (dto.assetId) {
       await this.requireVisibleSpaceAsset(auth, id, dto.assetId);
@@ -633,7 +637,11 @@ export class SharedSpaceService extends BaseService {
    * top-level comment is told — in the app only — unless that is the replier,
    * they have left the space, or the reply already mentions them.
    */
-  async createComment(auth: AuthDto, id: string, dto: SharedSpaceCommentCreateDto): Promise<SharedSpaceCommentResponseDto> {
+  async createComment(
+    auth: AuthDto,
+    id: string,
+    dto: SharedSpaceCommentCreateDto,
+  ): Promise<SharedSpaceCommentResponseDto> {
     const space = await this.requireSpaceMembership(auth, id);
     await this.requireAccess({ auth, permission: Permission.ActivityCreate, ids: [id] });
 
@@ -958,9 +966,7 @@ export class SharedSpaceService extends BaseService {
     }
 
     const [metadata] = await this.albumRepository.getMetadataForIds([id], { excludeNsfw: true });
-    const invitedBy = invite?.invitedById
-      ? ((await this.userRepository.get(invite.invitedById, {})) ?? null)
-      : null;
+    const invitedBy = invite?.invitedById ? ((await this.userRepository.get(invite.invitedById, {})) ?? null) : null;
 
     return {
       id: album.id,

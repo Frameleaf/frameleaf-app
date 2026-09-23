@@ -1,7 +1,12 @@
 <script lang="ts">
   import { page } from '$app/state';
   import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
-  import { buildAlbumTree, emptyAlbumTree, type FrameleafAlbumNode, type FrameleafAlbumTree } from '$lib/frameleaf/album-tree';
+  import {
+    buildAlbumTree,
+    emptyAlbumTree,
+    type FrameleafAlbumNode,
+    type FrameleafAlbumTree,
+  } from '$lib/frameleaf/album-tree';
   import { buildRailSections, isDestinationCurrent, type RailDestination } from '$lib/frameleaf/navigation';
   import '$lib/frameleaf/tokens.css';
   import { authManager } from '$lib/managers/auth-manager.svelte';

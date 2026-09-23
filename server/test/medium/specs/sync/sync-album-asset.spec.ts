@@ -389,9 +389,7 @@ describe(SyncRequestType.AlbumAssetsV2, () => {
 
       const response = await ctx.syncStream(auth, [SyncRequestType.AlbumAssetsV2]);
       expect(response).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ data: expect.objectContaining({ id: asset.id }) }),
-        ]),
+        expect.arrayContaining([expect.objectContaining({ data: expect.objectContaining({ id: asset.id }) })]),
       );
       await ctx.syncAckAll(auth, response);
 

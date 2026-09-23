@@ -749,9 +749,7 @@ export class PersonRepository {
         // A Locked photo is never a face thumbnail (FL-53): the thumbnail is shown on the people page
         // and wherever the person is listed, whatever the session.
         .innerJoin('asset', (join) =>
-          join
-            .onRef('asset.id', '=', 'asset_face.assetId')
-            .on((eb) => isNotLockedAsset(eb)),
+          join.onRef('asset.id', '=', 'asset_face.assetId').on((eb) => isNotLockedAsset(eb)),
         )
         .where('asset_face.personGroupId', '=', personGroupId)
         .where('asset_face.deletedAt', 'is', null)
@@ -876,14 +874,14 @@ export class PersonRepository {
       this.db
         .selectFrom('asset_face')
         .select('asset_face.id')
+        .innerJoin('asset', (join) =>
+          join.onRef('asset.id', '=', 'asset_face.assetId').on('asset.isOffline', '=', false),
+        )
         // the caller refuses a Locked photo as a featured face (FL-53)
         .select(['asset.ownerId', effectiveVisibility('asset').as('visibility')])
         .where('asset_face.assetId', '=', assetId)
         .where('asset_face.personGroupId', '=', personGroupId)
         .where('asset_face.deletedAt', 'is', null)
-        .innerJoin('asset', (join) =>
-          join.onRef('asset.id', '=', 'asset_face.assetId').on('asset.isOffline', '=', false),
-        )
         .executeTakeFirst()
     );
   }

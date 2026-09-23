@@ -398,8 +398,7 @@ export const signInputGrant = (payload: InputGrantPayload, binding: InputGrantBi
 export type InputGrantRejection = 'malformed' | 'signature' | 'expired' | 'operation-mismatch';
 
 export type InputGrantDecision =
-  | { valid: true; payload: InputGrantPayload }
-  | { valid: false; reason: InputGrantRejection };
+  { valid: true; payload: InputGrantPayload } | { valid: false; reason: InputGrantRejection };
 
 /**
  * Verify a grant against the operation it is being used on and the claim and session presenting

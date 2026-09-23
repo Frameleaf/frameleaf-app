@@ -46,7 +46,10 @@ describe('studio host state', () => {
   });
 
   it('does not blame a missing capability when the capability probe could not be trusted', () => {
-    const state = run({ type: 'connectivity', online: false }, { type: 'capabilities', capabilities: emptyStudioCapabilities() });
+    const state = run(
+      { type: 'connectivity', online: false },
+      { type: 'capabilities', capabilities: emptyStudioCapabilities() },
+    );
 
     expect(state.phase).toBe('offline');
     expect(state.messageKey).toBe('frameleaf_studio_offline_body');
@@ -126,7 +129,11 @@ describe('studio host state', () => {
   });
 
   it('only arms the navigation guard while a running engine holds a draft', () => {
-    const mounted = run({ type: 'capabilities', capabilities: capable }, { type: 'engine-mounted' }, { type: 'dirty', dirty: true });
+    const mounted = run(
+      { type: 'capabilities', capabilities: capable },
+      { type: 'engine-mounted' },
+      { type: 'dirty', dirty: true },
+    );
     expect(studioHostBlocksNavigation(mounted)).toBe(true);
 
     const notMounted = run({ type: 'dirty', dirty: true });
@@ -151,7 +158,11 @@ describe('studio host state', () => {
   });
 
   it('shuts the engine down on a fatal error and records the detail out of the message', () => {
-    const state = run({ type: 'capabilities', capabilities: capable }, { type: 'engine-mounted' }, { type: 'fatal', detail: 'WebGPU device lost' });
+    const state = run(
+      { type: 'capabilities', capabilities: capable },
+      { type: 'engine-mounted' },
+      { type: 'fatal', detail: 'WebGPU device lost' },
+    );
 
     expect(state.phase).toBe('error');
     expect(state.mounted).toBe(false);

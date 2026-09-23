@@ -1,10 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { AlbumKind, AlbumUserRole, type AlbumTreeResponseDto } from '@immich/sdk';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { init, register, waitLocale } from 'svelte-i18n';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
-import { init, register, waitLocale } from 'svelte-i18n';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import AlbumDirectory from './AlbumDirectory.svelte';
 
 const me = userAdminFactory.build({ id: 'me', isAdmin: false });
@@ -147,7 +147,9 @@ describe('AlbumDirectory', () => {
     const tile = shelf.querySelector('article[aria-label="Family Space"]') as HTMLElement;
     expect(tile).toHaveAttribute('draggable', 'false');
     expect(tile.querySelector('a[href="/sharing/space"]')).not.toBeNull();
-    expect(screen.getByRole('region', { name: 'Family' }).querySelector('article[aria-label="Family Space"]')).toBeNull();
+    expect(
+      screen.getByRole('region', { name: 'Family' }).querySelector('article[aria-label="Family Space"]'),
+    ).toBeNull();
 
     expect(screen.getByRole('link', { name: '2 invitations waiting' })).toHaveAttribute('href', '/sharing');
     expect(screen.getByRole('link', { name: 'Open Sharing' })).toHaveAttribute('href', '/sharing');

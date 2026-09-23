@@ -641,7 +641,14 @@ describe(StudioResourceService.name, () => {
         sequences: [
           {
             id: 'main',
-            tracks: [{ clips: [{ kind: 'sequence', sequenceId: 'intro' }, { kind: 'sequence', sequenceId: 'ghost' }] }],
+            tracks: [
+              {
+                clips: [
+                  { kind: 'sequence', sequenceId: 'intro' },
+                  { kind: 'sequence', sequenceId: 'ghost' },
+                ],
+              },
+            ],
           },
           { id: 'intro', tracks: [{ clips: [{ kind: 'sequence', sequenceId: 'loop' }] }] },
           { id: 'loop', tracks: [{ clips: [{ kind: 'sequence', sequenceId: 'loop' }] }] },

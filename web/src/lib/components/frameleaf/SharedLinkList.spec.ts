@@ -1,8 +1,8 @@
+import type { ServerConfigDto } from '@immich/sdk';
+import { getAllSharedLinks, removeSharedLink, SharedLinkType } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sharedLinkFactory } from '$lib/../test-data/factories/shared-link-factory';
-import type { ServerConfigDto } from '@immich/sdk';
-import { getAllSharedLinks, removeSharedLink, SharedLinkType } from '@immich/sdk';
 import en from '../../../../../i18n/en.json';
 import SharedLinkList from './SharedLinkList.svelte';
 

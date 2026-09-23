@@ -26,7 +26,12 @@
 import { createHash } from 'node:crypto';
 import { createInflateRaw, inflateRawSync } from 'node:zlib';
 import { MediaOperationDestination, MediaOperationKind } from 'src/enum.js';
-import { StudioProjectEnvelope, canonicalJson, checkStudioEnvelope, studioEnvelopeDigest } from 'src/utils/studio-project.js';
+import {
+  StudioProjectEnvelope,
+  canonicalJson,
+  checkStudioEnvelope,
+  studioEnvelopeDigest,
+} from 'src/utils/studio-project.js';
 import {
   STUDIO_MAX_GRAPH_BYTES,
   StudioResourceKind,
@@ -143,9 +148,7 @@ export type StudioBundleManifest = {
   sources: StudioBundleSource[];
 };
 
-export type StudioBundleManifestCheck =
-  | { ok: true; manifest: StudioBundleManifest }
-  | { ok: false; detail: string };
+export type StudioBundleManifestCheck = { ok: true; manifest: StudioBundleManifest } | { ok: false; detail: string };
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
@@ -266,7 +269,11 @@ export const checkStudioBundleManifest = (value: unknown): StudioBundleManifestC
   if (typeof value.createdAt !== 'string' || Number.isNaN(Date.parse(value.createdAt))) {
     return { ok: false, detail: 'createdAt must be an ISO date' };
   }
-  if (!isPlainObject(value.producer) || value.producer.product !== 'frameleaf' || typeof value.producer.version !== 'string') {
+  if (
+    !isPlainObject(value.producer) ||
+    value.producer.product !== 'frameleaf' ||
+    typeof value.producer.version !== 'string'
+  ) {
     return { ok: false, detail: 'producer must name the product and its version' };
   }
 
@@ -536,7 +543,10 @@ export const readZipDirectory = async (source: ZipByteSource): Promise<ZipDirect
     refuse('bundle_zip64', 'ZIP64 archives are not accepted as bundles');
   }
   if (entryCount > STUDIO_BUNDLE_MAX_ENTRIES) {
-    refuse('bundle_too_many_entries', `The archive declares ${entryCount} entries; the limit is ${STUDIO_BUNDLE_MAX_ENTRIES}`);
+    refuse(
+      'bundle_too_many_entries',
+      `The archive declares ${entryCount} entries; the limit is ${STUDIO_BUNDLE_MAX_ENTRIES}`,
+    );
   }
   if (directoryOffset + directorySize > source.size || directorySize < entryCount * CENTRAL_MIN) {
     refuse('bundle_corrupt', 'The central directory lies outside the file');
@@ -573,7 +583,11 @@ export const readZipDirectory = async (source: ZipByteSource): Promise<ZipDirect
     if (flags & (FLAG_ENCRYPTED | FLAG_STRONG_ENCRYPTION)) {
       refuse('bundle_encrypted', `${name.slice(0, 80)} is encrypted`);
     }
-    if (compressedSize === ZIP64_MARKER_32 || uncompressedSize === ZIP64_MARKER_32 || localHeaderOffset === ZIP64_MARKER_32) {
+    if (
+      compressedSize === ZIP64_MARKER_32 ||
+      uncompressedSize === ZIP64_MARKER_32 ||
+      localHeaderOffset === ZIP64_MARKER_32
+    ) {
       refuse('bundle_zip64', 'ZIP64 archives are not accepted as bundles');
     }
     if (method !== METHOD_STORE && method !== METHOD_DEFLATE) {
@@ -601,7 +615,10 @@ export const readZipDirectory = async (source: ZipByteSource): Promise<ZipDirect
     }
     const isJson = name === STUDIO_BUNDLE_MANIFEST_ENTRY || name === STUDIO_BUNDLE_PROJECT_ENTRY;
     if (isJson && uncompressedSize > STUDIO_BUNDLE_MAX_JSON_BYTES) {
-      refuse('bundle_too_large', `${name} declares ${uncompressedSize} bytes; the limit is ${STUDIO_BUNDLE_MAX_JSON_BYTES}`);
+      refuse(
+        'bundle_too_large',
+        `${name} declares ${uncompressedSize} bytes; the limit is ${STUDIO_BUNDLE_MAX_JSON_BYTES}`,
+      );
     }
 
     const entry: ZipEntry = {
@@ -773,7 +790,10 @@ export const digestZipEntry = async (
   }
 
   if (produced !== entry.uncompressedSize) {
-    refuse('bundle_corrupt', `${entry.name.slice(0, 80)} produced ${produced} bytes, not the declared ${entry.uncompressedSize}`);
+    refuse(
+      'bundle_corrupt',
+      `${entry.name.slice(0, 80)} produced ${produced} bytes, not the declared ${entry.uncompressedSize}`,
+    );
   }
   return { sha256: hash.digest('hex'), bytes: produced };
 };
@@ -1056,7 +1076,9 @@ export const parseBundleExportSnapshot = (value: unknown): StudioBundleExportSna
   const embed = Array.isArray(raw.embed)
     ? raw.embed
         .filter(isPlainObject)
-        .filter((entry) => typeof entry.key === 'string' && isStudioResourceKind(entry.kind) && typeof entry.id === 'string')
+        .filter(
+          (entry) => typeof entry.key === 'string' && isStudioResourceKind(entry.kind) && typeof entry.id === 'string',
+        )
         .map((entry) => ({ key: entry.key as string, kind: entry.kind as StudioResourceKind, id: entry.id as string }))
     : [];
   return {
@@ -1118,7 +1140,10 @@ export const parseBundleImportResult = (value: unknown): StudioBundleImportResul
     missing: Array.isArray(raw.missing)
       ? raw.missing
           .filter(isPlainObject)
-          .filter((entry) => typeof entry.key === 'string' && isStudioResourceKind(entry.kind) && typeof entry.id === 'string')
+          .filter(
+            (entry) =>
+              typeof entry.key === 'string' && isStudioResourceKind(entry.kind) && typeof entry.id === 'string',
+          )
           .map((entry) => ({
             key: entry.key as string,
             kind: entry.kind as StudioResourceKind,

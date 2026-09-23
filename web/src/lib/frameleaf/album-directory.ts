@@ -41,7 +41,8 @@ export const defaultAlbumDirectoryView: AlbumDirectoryView = {
 
 const isFilter = (value: unknown): value is AlbumDirectoryFilter =>
   albumDirectoryFilters.includes(value as AlbumDirectoryFilter);
-const isSort = (value: unknown): value is AlbumDirectorySort => albumDirectorySorts.includes(value as AlbumDirectorySort);
+const isSort = (value: unknown): value is AlbumDirectorySort =>
+  albumDirectorySorts.includes(value as AlbumDirectorySort);
 const isViewMode = (value: unknown): value is AlbumDirectoryViewMode =>
   albumDirectoryViews.includes(value as AlbumDirectoryViewMode);
 
@@ -201,7 +202,13 @@ export const arrangeAlbumDirectory = (
       ? hits.length > 0 || selfMatch
       : albums.length > 0 || matchesFilter(node.collection, filter, userId);
     if (visible) {
-      shelves.push({ collection: node.collection, albums, all, albumCount: node.albumCount, assetCount: node.assetCount });
+      shelves.push({
+        collection: node.collection,
+        albums,
+        all,
+        albumCount: node.albumCount,
+        assetCount: node.assetCount,
+      });
     }
   }
 

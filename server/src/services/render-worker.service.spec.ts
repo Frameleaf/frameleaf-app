@@ -466,7 +466,9 @@ describe(RenderWorkerService.name, () => {
     const queued = operationStub();
 
     beforeEach(() => {
-      vi.mocked(workers.peekQueued).mockResolvedValueOnce([queued] as never).mockResolvedValue([]);
+      vi.mocked(workers.peekQueued)
+        .mockResolvedValueOnce([queued] as never)
+        .mockResolvedValue([]);
       vi.mocked(workers.claimQueued).mockImplementation(({ id, workerId }) =>
         Promise.resolve({
           operation: operationStub({
@@ -517,7 +519,9 @@ describe(RenderWorkerService.name, () => {
 
       beforeEach(() => {
         vi.mocked(workers.peekQueued).mockReset();
-        vi.mocked(workers.peekQueued).mockResolvedValueOnce([studioOp] as never).mockResolvedValue([]);
+        vi.mocked(workers.peekQueued)
+          .mockResolvedValueOnce([studioOp] as never)
+          .mockResolvedValue([]);
         vi.mocked(workers.claimQueued).mockImplementation(({ id, workerId }) =>
           Promise.resolve({
             operation: studioOperationStub({
@@ -660,7 +664,9 @@ describe(RenderWorkerService.name, () => {
 
         beforeEach(() => {
           vi.mocked(workers.peekQueued).mockReset();
-          vi.mocked(workers.peekQueued).mockResolvedValueOnce([storedOp] as never).mockResolvedValue([]);
+          vi.mocked(workers.peekQueued)
+            .mockResolvedValueOnce([storedOp] as never)
+            .mockResolvedValue([]);
           studioProjects.getById.mockResolvedValue(projectRow());
           studioProjects.getRevision.mockResolvedValue({
             projectId: 'project-1',
@@ -744,7 +750,9 @@ describe(RenderWorkerService.name, () => {
     it('skips an operation whose owner is at their concurrency and records the refusal on it', async () => {
       const other = operationStub({ id: '0195e2a0-0000-7000-8000-000000000002', ownerId: OWNER_B });
       vi.mocked(workers.peekQueued).mockReset();
-      vi.mocked(workers.peekQueued).mockResolvedValueOnce([queued, other] as never).mockResolvedValue([]);
+      vi.mocked(workers.peekQueued)
+        .mockResolvedValueOnce([queued, other] as never)
+        .mockResolvedValue([]);
       vi.mocked(workers.countActiveForOwner).mockImplementation((ownerId) =>
         Promise.resolve(ownerId === OWNER_A ? 2 : 0),
       );

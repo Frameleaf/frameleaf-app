@@ -1,5 +1,5 @@
-import { SPACE_TIMELINE_PAGE } from '$lib/frameleaf/shared-space';
 import { searchAssets, type AssetOrder, type AssetResponseDto } from '@immich/sdk';
+import { SPACE_TIMELINE_PAGE } from '$lib/frameleaf/shared-space';
 
 /**
  * The photos in one shared space, as far as they have been loaded (FL-55).

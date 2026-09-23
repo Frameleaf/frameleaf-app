@@ -1,4 +1,11 @@
 import {
+  ICloudReviewKind,
+  MediaOperationStatus,
+  type ICloudConnectionResponseDto,
+  type ICloudSyncRunDto,
+} from '@immich/sdk';
+import { describe, expect, it } from 'vitest';
+import {
   GIB,
   icloudAuthStep,
   icloudConsentNeeded,
@@ -14,13 +21,6 @@ import {
   icloudSummary,
   toggleLibrary,
 } from '$lib/frameleaf/icloud-sync';
-import {
-  ICloudReviewKind,
-  MediaOperationStatus,
-  type ICloudConnectionResponseDto,
-  type ICloudSyncRunDto,
-} from '@immich/sdk';
-import { describe, expect, it } from 'vitest';
 
 const run = (overrides: Partial<ICloudSyncRunDto> = {}): ICloudSyncRunDto => ({
   id: '0195e2a0-0000-7000-8000-000000000001',
@@ -174,9 +174,9 @@ describe('sync preferences', () => {
   it('asks for consent only to what saving newly allows', () => {
     const draft = { ...icloudDraft(connection()), includeHidden: true };
     expect(icloudConsentNeeded(draft, connection())).toEqual({ hidden: true, external: false });
-    expect(
-      icloudConsentNeeded(draft, connection({ config: { ...connection().config, includeHidden: true } })),
-    ).toEqual({ hidden: false, external: false });
+    expect(icloudConsentNeeded(draft, connection({ config: { ...connection().config, includeHidden: true } }))).toEqual(
+      { hidden: false, external: false },
+    );
   });
 });
 

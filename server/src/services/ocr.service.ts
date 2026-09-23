@@ -46,7 +46,11 @@ export class OcrService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const selection = await this.selectRoutedMlDestination({ workload: MlWorkload.Ocr, jobId: id, jobName: JobName.Ocr });
+    const selection = await this.selectRoutedMlDestination({
+      workload: MlWorkload.Ocr,
+      jobId: id,
+      jobName: JobName.Ocr,
+    });
     const ocrResults = await this.machineLearningRepository.ocr(selection, asset.previewFile, machineLearning.ocr);
     const { ocrDataList, searchText } = this.parseOcrResults(id, ocrResults, await this.getCropVisibility(id));
     await this.ocrRepository.upsert(id, ocrDataList, searchText);

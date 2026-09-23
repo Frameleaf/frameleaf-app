@@ -103,7 +103,11 @@ describe('LibrarySessionStore', () => {
   it('summarises paging cumulatively and reports no results honestly', () => {
     store.applyTotal(25, store.revision);
     expect(store.paging.shown).toBe(10);
-    expect(store.pageSummary).toEqual({ key: 'frameleaf_library_showing_of', values: { shown: 10, total: 25 }, hasMore: true });
+    expect(store.pageSummary).toEqual({
+      key: 'frameleaf_library_showing_of',
+      values: { shown: 10, total: 25 },
+      hasMore: true,
+    });
 
     store.showMore();
     expect(store.paging.shown).toBe(20);
@@ -259,7 +263,10 @@ describe('LibrarySessionStore', () => {
     store.restore(new URL('https://example.test/photos'), 'user-1');
     expect(store.layout).toBe('browse');
 
-    storage.setItem(libraryPreferenceKey('user-1'), JSON.stringify({ version: 1, layout: 'admin', state: { evil: true } }));
+    storage.setItem(
+      libraryPreferenceKey('user-1'),
+      JSON.stringify({ version: 1, layout: 'admin', state: { evil: true } }),
+    );
     store.restore(new URL('https://example.test/photos'), 'user-1');
     expect(store.layout).toBe('browse');
     expect(store.state.scope).toEqual({ kind: 'library' });

@@ -37,7 +37,10 @@
   const loadPeople = async () => {
     loading = true;
     try {
-      const [users, partners] = await Promise.all([searchUsers(), getPartners({ direction: PartnerDirection.SharedBy })]);
+      const [users, partners] = await Promise.all([
+        searchUsers(),
+        getPartners({ direction: PartnerDirection.SharedBy }),
+      ]);
       people = users.filter((user) => user.id !== authManager.user.id);
       recipients = new Set(partners.map((partner) => partner.id));
       initialRecipients = new Set(recipients);

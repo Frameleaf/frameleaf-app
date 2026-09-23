@@ -52,9 +52,7 @@ describe('rational preview time', () => {
 
 describe('preview identity', () => {
   it('gives the same key to the same frame expressed differently', () => {
-    expect(previewCacheKey(binding({ time: rational(2002, 60_000) }))).toBe(
-      previewCacheKey(binding()),
-    );
+    expect(previewCacheKey(binding({ time: rational(2002, 60_000) }))).toBe(previewCacheKey(binding()));
   });
 
   it.each([

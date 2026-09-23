@@ -1,8 +1,8 @@
+import { AssetOrder } from '@immich/sdk';
+import { describe, expect, it, vi } from 'vitest';
 import { SPACE_TIMELINE_PAGE } from '$lib/frameleaf/shared-space';
 import { SpacePhotoSet, type SpacePageFetcher } from '$lib/frameleaf/space-photos.svelte';
-import { AssetOrder } from '@immich/sdk';
 import { assetFactory } from '@test-data/factories/asset-factory';
-import { describe, expect, it, vi } from 'vitest';
 
 const page = (ids: string[], nextPage: string | null) => ({
   items: ids.map((id) => assetFactory.build({ id })),
@@ -16,7 +16,12 @@ describe('SpacePhotoSet', () => {
 
     await photos.load(1);
 
-    expect(fetch).toHaveBeenCalledWith({ spaceId: 'space-1', page: 1, size: SPACE_TIMELINE_PAGE, order: AssetOrder.Asc });
+    expect(fetch).toHaveBeenCalledWith({
+      spaceId: 'space-1',
+      page: 1,
+      size: SPACE_TIMELINE_PAGE,
+      order: AssetOrder.Asc,
+    });
     expect(photos.assets.map(({ id }) => id)).toEqual(['a', 'b']);
     expect(photos.page).toBe(1);
     expect(photos.exhausted).toBe(false);

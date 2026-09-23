@@ -1,8 +1,8 @@
+import { ConfigCredential, updateConfigCredential, type AdminConfigDto } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import CredentialDialog from '$lib/components/frameleaf/settings/CredentialDialog.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import { ConfigCredential, updateConfigCredential, type AdminConfigDto } from '@immich/sdk';
 import en from '../../../../../../i18n/en.json';
 
 vi.mock('@immich/sdk', async (importOriginal) => ({

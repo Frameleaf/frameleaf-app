@@ -1,3 +1,4 @@
+import { Permission } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import ApiKeyDialog from '$lib/components/frameleaf/access/ApiKeyDialog.svelte';
@@ -6,7 +7,6 @@ import PinDialog from '$lib/components/frameleaf/access/PinDialog.svelte';
 import SupporterKeyDialog from '$lib/components/frameleaf/access/SupporterKeyDialog.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { getActivationKey } from '$lib/utils/license-utils';
-import { Permission } from '@immich/sdk';
 
 vi.mock('$lib/utils/license-utils', () => ({
   getActivationKey: vi.fn(),

@@ -105,8 +105,4 @@
   </section>
 </UserPageLayout>
 
-<ResultsAssetViewer
-  {assets}
-  onAssetChange={updateAsset}
-  onRemove={(id) => onAssetDelete([id])}
-/>
+<ResultsAssetViewer {assets} onAssetChange={updateAsset} onRemove={(id) => onAssetDelete([id])} />

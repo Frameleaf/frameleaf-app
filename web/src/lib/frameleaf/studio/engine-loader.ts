@@ -14,7 +14,6 @@
  * The loader also refuses a module whose `engineRevision` is not the pinned one, so a
  * stale or substituted bundle cannot mount and be mistaken for the qualified engine.
  */
-
 import type { StudioEngineModule } from './host-contract';
 
 /**

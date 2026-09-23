@@ -121,15 +121,7 @@
   {:else}
     <div class="control">
       {#if inputType === SettingInputFieldType.COLOR}
-        <input
-          class="swatch"
-          aria-label={label}
-          type="color"
-          bind:value
-          onchange={handleChange}
-          {disabled}
-          {title}
-        />
+        <input class="swatch" aria-label={label} type="color" bind:value onchange={handleChange} {disabled} {title} />
       {/if}
       <input
         bind:this={input}

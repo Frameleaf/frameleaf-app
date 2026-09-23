@@ -1,7 +1,7 @@
+import { markSharedSpaceVisited, AlbumKind, type SharedSpaceNewResponseDto } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { albumFactory } from '@test-data/factories/album-factory';
-import { markSharedSpaceVisited, AlbumKind, type SharedSpaceNewResponseDto } from '@immich/sdk';
 import en from '../../../../../i18n/en.json';
 import SharedSpaceNewSince from './SharedSpaceNewSince.svelte';
 

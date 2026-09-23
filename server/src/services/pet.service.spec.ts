@@ -133,9 +133,9 @@ describe(PetService.name, () => {
     it('refuses a Locked photo as the featured photo (FL-53)', async () => {
       (petRepository.isOwnLockedAsset as ReturnType<typeof vi.fn>).mockResolvedValue(true);
 
-      await expect(
-        sut.create(authStub.user1, { species: PetSpecies.Dog, featuredAssetId: assetId }),
-      ).rejects.toThrow('A Locked photo cannot be a featured photo');
+      await expect(sut.create(authStub.user1, { species: PetSpecies.Dog, featuredAssetId: assetId })).rejects.toThrow(
+        'A Locked photo cannot be a featured photo',
+      );
       expect(petRepository.create).not.toHaveBeenCalled();
     });
 
@@ -315,9 +315,7 @@ describe(PetService.name, () => {
     it('checks asset access before writing anything durable', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
 
-      await expect(sut.addObservation(authStub.user1, petId, { assetId })).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      await expect(sut.addObservation(authStub.user1, petId, { assetId })).rejects.toBeInstanceOf(BadRequestException);
       expect(petRepository.upsertObservation).not.toHaveBeenCalled();
     });
 
@@ -445,9 +443,9 @@ describe(PetService.name, () => {
     it('checks the reassignment target is the caller’s own pet', async () => {
       (petRepository.getById as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
-      await expect(
-        sut.acceptCandidate(authStub.user1, candidateId, { petId: otherPetId }),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.acceptCandidate(authStub.user1, candidateId, { petId: otherPetId })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
       expect(petRepository.upsertObservation).not.toHaveBeenCalled();
     });
 
@@ -490,9 +488,7 @@ describe(PetService.name, () => {
     it('refuses when a source pet is not the caller’s', async () => {
       (petRepository.getByIds as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 
-      await expect(sut.merge(authStub.user1, petId, { ids: [otherPetId] })).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      await expect(sut.merge(authStub.user1, petId, { ids: [otherPetId] })).rejects.toBeInstanceOf(BadRequestException);
       expect(petRepository.mergeInto).not.toHaveBeenCalled();
     });
 

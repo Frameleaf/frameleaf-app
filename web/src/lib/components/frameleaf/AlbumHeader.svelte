@@ -372,11 +372,7 @@
     </button>
 
     {#if owner}
-      <button
-        type="button"
-        class="action"
-        onclick={() => void openLinks()}
-      >
+      <button type="button" class="action" onclick={() => void openLinks()}>
         <Icon icon={mdiLinkVariant} size="18" />
         <span>{$t('shared_links')}</span>
       </button>

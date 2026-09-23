@@ -139,9 +139,7 @@ describe(AlbumRepository.prototype.updateThumbnails.name, () => {
       fileCreatedAt: newer,
       is_nsfw: true,
     });
-    const { album: own } = await ctx.newAlbum({ ownerId: owner.user.id, albumThumbnailAssetId: null }, [
-      sensitive.id,
-    ]);
+    const { album: own } = await ctx.newAlbum({ ownerId: owner.user.id, albumThumbnailAssetId: null }, [sensitive.id]);
 
     await sut.updateThumbnails();
 

@@ -59,7 +59,10 @@ const effectiveVisibilityOf = async (db: Kysely<DB>, assetIds: string[]) => {
 
 /** The saved "hide sensitive detections" switch, restored after the test that sets it. */
 const setDetectionHiding = async (db: Kysely<DB>, enabled: boolean | undefined) => {
-  await db.deleteFrom('system_metadata').where('key', '=', 'system-config' as never).execute();
+  await db
+    .deleteFrom('system_metadata')
+    .where('key', '=', 'system-config' as never)
+    .execute();
   if (enabled !== undefined) {
     await sql`INSERT INTO system_metadata (key, value) VALUES ('system-config', ${JSON.stringify({
       machineLearning: { nsfwDetection: { hideFromLibrary: enabled } },
@@ -80,10 +83,7 @@ describe('asset lock (FL-34)', () => {
       const { asset: still } = await ctx.newAsset({ ownerId: user.id, livePhotoVideoId: motion.id });
       const { asset: archived } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
       const { asset: open } = await ctx.newAsset({ ownerId: user.id });
-      const { album } = await ctx.newAlbum({ ownerId: user.id, albumThumbnailAssetId: still.id }, [
-        still.id,
-        open.id,
-      ]);
+      const { album } = await ctx.newAlbum({ ownerId: user.id, albumThumbnailAssetId: still.id }, [still.id, open.id]);
       // an Immich library: the still and its video part in the Locked folder
       await ctx.database
         .updateTable('asset')
@@ -237,7 +237,7 @@ describe('asset lock (FL-34)', () => {
       });
     });
 
-    it('locks a photo joining a locked stack, and its video part, with the stack's own reason', async () => {
+    it("locks a photo joining a locked stack, and its video part, with the stack's own reason", async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const { asset: primary } = await ctx.newAsset({ ownerId: user.id });

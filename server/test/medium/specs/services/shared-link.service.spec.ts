@@ -650,9 +650,9 @@ describe(SharedLinkService.name, () => {
       expect(response.album?.assets.map(({ id }) => id)).toEqual([plain.id]);
 
       const access = ctx.get(AccessRepository);
-      await expect(
-        access.asset.checkSharedLinkAccess(sharedLink.id, new Set([plain.id, locked.id])),
-      ).resolves.toEqual(new Set([plain.id]));
+      await expect(access.asset.checkSharedLinkAccess(sharedLink.id, new Set([plain.id, locked.id]))).resolves.toEqual(
+        new Set([plain.id]),
+      );
     });
 
     it('drops an individually linked asset from the link once it moves into the Locked folder', async () => {

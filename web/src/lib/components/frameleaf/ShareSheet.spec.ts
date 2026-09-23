@@ -1,7 +1,14 @@
+import {
+  createPartner,
+  getPartners,
+  removePartner,
+  searchUsers,
+  UserAvatarColor,
+  type UserResponseDto,
+} from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { authManager } from '$lib/managers/auth-manager.svelte';
-import { createPartner, getPartners, removePartner, searchUsers, UserAvatarColor, type UserResponseDto } from '@immich/sdk';
 import en from '../../../../../i18n/en.json';
 import ShareSheet from './ShareSheet.svelte';
 
@@ -69,6 +76,8 @@ describe('ShareSheet', () => {
     expect(screen.queryByRole('dialog', { name: en.frameleaf_sharing.create_shared_link_title })).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_sharing.create_public_link }));
 
-    expect(await screen.findByRole('dialog', { name: en.frameleaf_sharing.create_shared_link_title })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('dialog', { name: en.frameleaf_sharing.create_shared_link_title }),
+    ).toBeInTheDocument();
   });
 });

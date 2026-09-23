@@ -317,7 +317,10 @@ describe(RunPodService.name, () => {
           return Promise.resolve();
         },
       );
-      (mocks.machineLearning.getRunPodEndpoint as ReturnType<typeof vi.fn>).mockReturnValue({ url: PROXY_URL, authToken: 'tok' });
+      (mocks.machineLearning.getRunPodEndpoint as ReturnType<typeof vi.fn>).mockReturnValue({
+        url: PROXY_URL,
+        authToken: 'tok',
+      });
       (mocks.runPod.stopPod as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
       const result = await sut.stop();
@@ -407,7 +410,10 @@ describe(RunPodService.name, () => {
 
     it('clears the managed URL when state is idle', async () => {
       setState({ status: 'idle' });
-      (mocks.machineLearning.getRunPodEndpoint as ReturnType<typeof vi.fn>).mockReturnValue({ url: PROXY_URL, authToken: 'tok' });
+      (mocks.machineLearning.getRunPodEndpoint as ReturnType<typeof vi.fn>).mockReturnValue({
+        url: PROXY_URL,
+        authToken: 'tok',
+      });
 
       await sut.onConfigInit({ newConfig: _systemConfigWithRunPod() } as never);
 
@@ -661,7 +667,10 @@ describe(RunPodService.name, () => {
         createdAt: '2026-05-22T20:00:00.000Z',
       });
       // Same URL already cached on this worker.
-      (mocks.machineLearning.getRunPodEndpoint as ReturnType<typeof vi.fn>).mockReturnValue({ url: ENDPOINT_URL, authToken: 'rp_old' });
+      (mocks.machineLearning.getRunPodEndpoint as ReturnType<typeof vi.fn>).mockReturnValue({
+        url: ENDPOINT_URL,
+        authToken: 'rp_old',
+      });
 
       await sut.onConfigInit({
         newConfig: _systemConfigWithRunPod({ mode: 'serverless', apiKey: 'rp_rotated' }),

@@ -79,12 +79,7 @@ import {
   checkStudioEnvelope,
   studioEnvelopeDigest,
 } from 'src/utils/studio-project.js';
-import {
-  StudioDestination,
-  StudioResourceKind,
-  isStudioUuid,
-  studioReferenceKey,
-} from 'src/utils/studio-resources.js';
+import { StudioDestination, StudioResourceKind, isStudioUuid, studioReferenceKey } from 'src/utils/studio-resources.js';
 
 /** How often the worker looks for queued bundle jobs. */
 export const STUDIO_BUNDLE_TICK_MS = 5000;

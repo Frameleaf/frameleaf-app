@@ -1,4 +1,14 @@
 import {
+  MlDestinationKind,
+  MlWorkerAcceleration,
+  MlWorkerReadiness,
+  MlWorkerRole,
+  WorkerCredentialState,
+  WorkerInventorySource,
+  type WorkerInventoryEntryDto,
+} from '@immich/sdk';
+import { describe, expect, it } from 'vitest';
+import {
   accelerationLabelKey,
   applyWorkerUrlChange,
   credentialLabelKey,
@@ -17,16 +27,6 @@ import {
   workerUrlProblemKey,
   type WorkerUrlProblem,
 } from '$lib/frameleaf/worker-inventory';
-import {
-  MlDestinationKind,
-  MlWorkerAcceleration,
-  MlWorkerReadiness,
-  MlWorkerRole,
-  WorkerCredentialState,
-  WorkerInventorySource,
-  type WorkerInventoryEntryDto,
-} from '@immich/sdk';
-import { describe, expect, it } from 'vitest';
 
 const entry = (overrides: Partial<WorkerInventoryEntryDto> = {}): WorkerInventoryEntryDto => ({
   id: 'local',
@@ -84,7 +84,10 @@ describe('the machine-learning URL list (prototype worker-settings rules)', () =
   });
 
   it('adds, edits, moves and removes against the current list', () => {
-    expect(applyWorkerUrlChange(urls, { kind: 'add', url: 'http://c.lan:3003/' })).toEqual([...urls, 'http://c.lan:3003']);
+    expect(applyWorkerUrlChange(urls, { kind: 'add', url: 'http://c.lan:3003/' })).toEqual([
+      ...urls,
+      'http://c.lan:3003',
+    ]);
     expect(applyWorkerUrlChange(urls, { kind: 'edit', original: urls[1], url: 'http://d.lan:3003' })).toEqual([
       urls[0],
       'http://d.lan:3003',
@@ -118,7 +121,14 @@ describe('the machine-learning URL list (prototype worker-settings rules)', () =
   });
 
   it('has a message for every refusal', () => {
-    for (const problem of ['changed-elsewhere', 'keep-one', 'cannot-move', 'invalid-url', 'duplicate', 'limit'] as const) {
+    for (const problem of [
+      'changed-elsewhere',
+      'keep-one',
+      'cannot-move',
+      'invalid-url',
+      'duplicate',
+      'limit',
+    ] as const) {
       expect(workerUrlProblemKey(problem)).toMatch(/^admin\.frameleaf_workers_problem_/);
     }
   });
@@ -167,9 +177,9 @@ describe('labels (FL-72)', () => {
       );
       expect(readinessTone(readiness)).toBeTruthy();
     }
-    expect(readinessLabelKey({ readiness: MlWorkerReadiness.ModelReady, source: WorkerInventorySource.RenderWorker })).toBe(
-      'admin.frameleaf_workers_state_checked_in',
-    );
+    expect(
+      readinessLabelKey({ readiness: MlWorkerReadiness.ModelReady, source: WorkerInventorySource.RenderWorker }),
+    ).toBe('admin.frameleaf_workers_state_checked_in');
     expect(readinessLabelKey({ readiness: MlWorkerReadiness.Cpu, source: WorkerInventorySource.MlDestination })).toBe(
       'admin.frameleaf_workers_state_cpu',
     );
@@ -192,7 +202,9 @@ describe('labels (FL-72)', () => {
       expect(roleLabelKey(role)).toMatch(/^admin\.frameleaf_ml_role_/);
     }
     expect(workerTypeLabelKey(entry())).toBe('admin.frameleaf_workers_type_ml');
-    expect(workerTypeLabelKey(entry({ role: MlWorkerRole.Restoration }))).toBe('admin.frameleaf_workers_type_restoration');
+    expect(workerTypeLabelKey(entry({ role: MlWorkerRole.Restoration }))).toBe(
+      'admin.frameleaf_workers_type_restoration',
+    );
     expect(workerTypeLabelKey(entry({ role: MlWorkerRole.Restoration, kind: MlDestinationKind.RunPodVideo }))).toBe(
       'admin.frameleaf_workers_type_persistent_video',
     );

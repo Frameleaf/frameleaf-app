@@ -333,9 +333,18 @@ describe('studio project session', () => {
       expect(last().status).toBe('conflict');
       expect(timers.pending().some((timer) => timer.ms === 1500)).toBe(false);
 
-      api.get.mockResolvedValue(detail({ revision: 5, envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { theirs: true } } }));
+      api.get.mockResolvedValue(
+        detail({
+          revision: 5,
+          envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { theirs: true } },
+        }),
+      );
       await session.reload();
-      expect(last()).toMatchObject({ status: 'saved', hasDraft: false, project: { revision: 5, graph: { theirs: true } } });
+      expect(last()).toMatchObject({
+        status: 'saved',
+        hasDraft: false,
+        project: { revision: 5, graph: { theirs: true } },
+      });
     });
 
     it('saves the draft as a new project and switches to it', async () => {
@@ -413,7 +422,9 @@ describe('studio project session', () => {
       expect(api.acquireLease).toHaveBeenCalledTimes(2);
       expect(timers.pending().map((timer) => timer.ms)).toEqual([30_000]);
 
-      api.acquireLease.mockRejectedValueOnce(httpError(409, { reason: 'lease-held', lease: lease({ heldByYou: false, heldByAnother: true }) }));
+      api.acquireLease.mockRejectedValueOnce(
+        httpError(409, { reason: 'lease-held', lease: lease({ heldByYou: false, heldByAnother: true }) }),
+      );
       await timers.fire((timer) => timer.ms === 30_000);
       expect(last()).toMatchObject({ status: 'lease-lost', project: { hasLease: false } });
     });
@@ -463,7 +474,14 @@ describe('studio project session', () => {
     it('flushes the draft, appends the restore against the current head and reloads the graph', async () => {
       api.save.mockResolvedValue(saved(4));
       api.restore.mockResolvedValue(saved(5));
-      api.get.mockResolvedValueOnce(detail()).mockResolvedValueOnce(detail({ revision: 5, envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { old: true } } }));
+      api.get
+        .mockResolvedValueOnce(detail())
+        .mockResolvedValueOnce(
+          detail({
+            revision: 5,
+            envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { old: true } },
+          }),
+        );
       const session = create();
       await session.open();
       session.stage({ mine: true }, ['clip.add']);

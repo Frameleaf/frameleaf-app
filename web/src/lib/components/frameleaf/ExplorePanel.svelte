@@ -108,13 +108,19 @@
       <div class="explore-highlights">
         <a class="explore-best" href={Route.bestPhotos()}>
           {#if bestPhotos.cover}
-            <img src={getAssetMediaUrl({ id: bestPhotos.cover.id, size: AssetMediaSize.Thumbnail })} alt="" loading="lazy" />
+            <img
+              src={getAssetMediaUrl({ id: bestPhotos.cover.id, size: AssetMediaSize.Thumbnail })}
+              alt=""
+              loading="lazy"
+            />
           {:else}
             <div class="explore-cover-empty"><Icon icon={mdiImageMultipleOutline} size={28} aria-hidden="true" /></div>
           {/if}
           <span class="explore-cover-shade"></span>
           <span class="explore-best-copy">
-            <span class="explore-overline"><Icon icon={mdiStarOutline} size={16} aria-hidden="true" /> {$t('best_photos')}</span>
+            <span class="explore-overline"
+              ><Icon icon={mdiStarOutline} size={16} aria-hidden="true" /> {$t('best_photos')}</span
+            >
             <strong>{$t('frameleaf_explore_highlight_copy')}</strong>
             <small>
               {#if bestPhotos.total === null}
@@ -232,13 +238,10 @@
         <div class="explore-recent">
           {#each recents.slice(0, 8) as asset (asset.id)}
             <button type="button" onclick={() => onViewAsset(asset.id)} aria-label={altTextFor(asset)}>
-              <img
-                src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail })}
-                alt=""
-                loading="lazy"
-              />
+              <img src={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail })} alt="" loading="lazy" />
               {#if asset.type === AssetTypeEnum.Video}
-                <span class="explore-media-label"><Icon icon={mdiMovieOpenOutline} size={14} aria-hidden="true" /></span>
+                <span class="explore-media-label"><Icon icon={mdiMovieOpenOutline} size={14} aria-hidden="true" /></span
+                >
               {/if}
             </button>
           {/each}
