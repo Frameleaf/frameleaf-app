@@ -976,6 +976,13 @@ export enum MediaOperationKind {
    * pause, survive a restart and carry on where it stopped.
    */
   MediaHealth = 'media_health',
+  /**
+   * Physical deduplication (FL-73): an administrator's reviewed plan applied copy by copy. The
+   * snapshot freezes exactly the copies the reviewed plan listed with their checksum and reference
+   * evidence; every copy is checked again before its file is shared, and the job records each one,
+   * so it can pause, survive a restart and carry on without applying anything twice.
+   */
+  PhysicalDeduplication = 'physical_deduplication',
 }
 
 export const MediaOperationKindSchema = z

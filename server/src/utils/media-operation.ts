@@ -124,9 +124,28 @@ export const PAUSABLE_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [
   MediaOperationKind.EnrichmentPlan,
   // A Library Care scan or search records its asset or directory cursor after every batch (FL-69).
   MediaOperationKind.MediaHealth,
+  // FL-73: a reviewed deduplication plan records every copy as it finishes and resumes from its cursor.
+  MediaOperationKind.PhysicalDeduplication,
 ];
 
 export const isPausableMediaOperationKind = (kind: MediaOperationKind) => PAUSABLE_MEDIA_OPERATION_KINDS.includes(kind);
+
+/**
+ * The kinds a remote render worker may ever claim (FL-73): the renders. Bulk jobs, project bundles,
+ * enrichment plans, Library Care and physical deduplication run on this server's own workers, and
+ * their snapshots can name other accounts' files; a worker whose saved scope lists one of them is
+ * still never handed it.
+ */
+export const RENDER_WORKER_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [
+  MediaOperationKind.StudioExport,
+  MediaOperationKind.StudioPreview,
+  MediaOperationKind.Restoration,
+  MediaOperationKind.RestorationPreview,
+  MediaOperationKind.QuickEdit,
+];
+
+export const isRenderWorkerMediaOperationKind = (kind: MediaOperationKind) =>
+  RENDER_WORKER_MEDIA_OPERATION_KINDS.includes(kind);
 
 /**
  * Statuses a pause may be asked for from. `validating` is left out: the output is already written
