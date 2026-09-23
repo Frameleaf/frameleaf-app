@@ -1023,6 +1023,8 @@ export type UserPreferencesResponseDto = {
     purchase: PurchaseResponse;
     ratings: RatingsResponse;
     recentlyAdded: RecentlyAddedResponse;
+    /** Changes whenever the stored preferences change; send it back as expectedRevision to reject stale saves */
+    revision: string;
     sharedLinks: SharedLinksResponse;
     tags: TagsResponse;
 };
@@ -1119,6 +1121,8 @@ export type UserPreferencesUpdateDto = {
     cast?: CastUpdate;
     download?: DownloadUpdate;
     emailNotifications?: EmailNotificationsUpdate;
+    /** The revision these changes were made against. When it no longer matches the stored preferences the update is rejected with 409 and nothing is changed */
+    expectedRevision?: string;
     folders?: FoldersUpdate;
     memories?: MemoriesUpdate;
     people?: PeopleUpdate;

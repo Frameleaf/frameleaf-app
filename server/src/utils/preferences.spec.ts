@@ -1,11 +1,13 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import { mapPreferences } from 'src/dtos/user-preferences.dto.js';
 import { UserMetadataKey } from 'src/enum.js';
 import { UserMetadataItem } from 'src/types.js';
 import {
+  assertPreferencesRevision,
   getPreferences,
   getPreferencesPartial,
+  getPreferencesRevision,
   mergePreferences,
   restrictPreferencesUpdate,
 } from 'src/utils/preferences.js';
@@ -100,6 +102,112 @@ describe('preferences (FL-77 admin casting permission)', () => {
       const current = getPreferences([]);
       const merged = mergePreferences(current, { cast: { gCastEnabled: true } }, 'admin');
       expect(merged.cast).toEqual({ gCastEnabled: true, adminDisabled: false });
+    });
+  });
+
+  describe('getPreferencesRevision (FL-77 stale-save rejection)', () => {
+    it('is the same for equal stored preferences whatever their key order', () => {
+      const first = getPreferences(stored({ memories: { enabled: false, duration: 9 }, tags: { enabled: true } }));
+      const second = getPreferences(stored({ tags: { enabled: true }, memories: { duration: 9, enabled: false } }));
+      expect(getPreferencesRevision(first)).toBe(getPreferencesRevision(second));
+    });
+
+    it('treats values equal to the defaults as not stored', () => {
+      expect(getPreferencesRevision(getPreferences(stored({ memories: { enabled: true } })))).toBe(
+        getPreferencesRevision(getPreferences([])),
+      );
+    });
+
+    it('changes when any stored value changes, including values a response masks', () => {
+      const base = getPreferencesRevision(getPreferences(stored({ cast: { adminDisabled: true } })));
+      const userChoice = getPreferencesRevision(
+        getPreferences(stored({ cast: { adminDisabled: true, gCastEnabled: true } })),
+      );
+      const archive = getPreferencesRevision(
+        getPreferences(stored({ cast: { adminDisabled: true }, download: { archiveSize: 1_234_567 } })),
+      );
+      const locked = getPreferencesRevision(
+        getPreferences(
+          stored({
+            cast: { adminDisabled: true },
+            privacy: { suppression: { personIds: ['c5f9f5a1-3b8d-4f6e-9a2b-0d1e2f3a4b5c'] } },
+          }),
+        ),
+      );
+      expect(new Set([base, userChoice, archive, locked]).size).toBe(4);
+    });
+
+    it('is what mapPreferences reports and survives a round trip through storage', () => {
+      const merged = mergePreferences(getPreferences([]), { download: { archiveSize: 1_234_567 } }, 'user');
+      const reloaded = getPreferences(stored(getPreferencesPartial(merged) as Record<string, unknown>));
+      expect(mapPreferences(merged).revision).toBe(getPreferencesRevision(reloaded));
+      expect(mapPreferences(reloaded, 'admin').revision).toBe(mapPreferences(reloaded).revision);
+    });
+  });
+
+  describe('mergePreferences with expectedRevision', () => {
+    it('applies an update made against the current revision and never stores the revision', () => {
+      const current = getPreferences(stored({ tags: { enabled: true } }));
+      const expectedRevision = getPreferencesRevision(current);
+      const merged = mergePreferences(current, { expectedRevision, memories: { duration: 7 } }, 'admin');
+      expect(merged.memories.duration).toBe(7);
+      expect(merged.tags.enabled).toBe(true);
+      expect(merged).not.toHaveProperty('expectedRevision');
+      expect(getPreferencesPartial(merged)).toEqual({ memories: { duration: 7 }, tags: { enabled: true } });
+    });
+
+    it('rejects an update made against an older revision without changing anything', () => {
+      const loaded = getPreferences([]);
+      const expectedRevision = getPreferencesRevision(loaded);
+      const changedElsewhere = getPreferences(stored({ people: { minimumFaces: 8 } }));
+      expect(() =>
+        mergePreferences(changedElsewhere, { expectedRevision, people: { minimumFaces: 2 } }, 'admin'),
+      ).toThrow(ConflictException);
+      expect(changedElsewhere.people.minimumFaces).toBe(8);
+    });
+
+    it('rejects a stale save from the account itself too', () => {
+      const current = getPreferences(stored({ emailNotifications: { enabled: false } }));
+      expect(() => assertPreferencesRevision(current, getPreferencesRevision(getPreferences([])))).toThrow(
+        ConflictException,
+      );
+    });
+
+    it('keeps accepting updates that do not send a revision', () => {
+      const current = getPreferences(stored({ people: { minimumFaces: 8 } }));
+      expect(mergePreferences(current, { people: { minimumFaces: 2 } }, 'user').people.minimumFaces).toBe(2);
+    });
+  });
+
+  describe('Locked choices and administrators', () => {
+    const personId = 'c5f9f5a1-3b8d-4f6e-9a2b-0d1e2f3a4b5c';
+    const tagId = '0b8f7e6d-5c4b-4a39-8281-7f6e5d4c3b2a';
+
+    it("never shows an administrator the account's Locked people, pets or tags", () => {
+      const preferences = getPreferences(
+        stored({ privacy: { suppression: { personIds: [personId], tagIds: [tagId], scope: 'visible' } } }),
+      );
+      expect(mapPreferences(preferences, 'admin').privacy).toEqual({
+        suppression: { tagIds: [], personIds: [], petIds: [], scope: 'visible' },
+      });
+      expect(mapPreferences(preferences).privacy.suppression.personIds).toEqual([personId]);
+    });
+
+    it("drops an administrator's attempt to rewrite Locked choices and keeps the rest", () => {
+      const current = getPreferences(stored({ privacy: { suppression: { personIds: [personId] } } }));
+      const merged = mergePreferences(
+        current,
+        { privacy: { suppression: { personIds: [], tagIds: [tagId] } }, ratings: { enabled: true } },
+        'admin',
+      );
+      expect(merged.privacy.suppression.personIds).toEqual([personId]);
+      expect(merged.privacy.suppression.tagIds).toEqual([]);
+      expect(merged.ratings.enabled).toBe(true);
+    });
+
+    it('still lets the account change its own Locked choices', () => {
+      const merged = mergePreferences(getPreferences([]), { privacy: { suppression: { tagIds: [tagId] } } }, 'user');
+      expect(merged.privacy.suppression.tagIds).toEqual([tagId]);
     });
   });
 });
