@@ -1720,6 +1720,11 @@
       },
       "AdminConfigOcrDto": {
         "properties": {
+          "documentFields": {
+            "default": false,
+            "description": "Suggest receipt and document fields (dates, totals, references) from recognized text",
+            "type": "boolean"
+          },
           "enabled": {
             "description": "Whether the task is enabled",
             "type": "boolean"
@@ -5059,6 +5064,7 @@
         "enum": [
           "refresh-faces",
           "refresh-metadata",
+          "refresh-ocr",
           "regenerate-thumbnail",
           "transcode-video"
         ],
@@ -7321,6 +7327,452 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "DocumentEditAction": {
+        "description": "What the owner decided about recognized text",
+        "enum": [
+          "confirm",
+          "correct",
+          "dismiss"
+        ],
+        "type": "string"
+      },
+      "DocumentField": {
+        "description": "A value suggested from recognized text",
+        "enum": [
+          "date",
+          "total",
+          "reference",
+          "email",
+          "phone"
+        ],
+        "type": "string"
+      },
+      "DocumentFieldCandidateDto": {
+        "properties": {
+          "confidence": {
+            "description": "Recognition confidence of that line; null for a corrected line",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "lineId": {
+            "description": "Recognized line the value was read from",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "region": {
+            "$ref": "#/components/schemas/DocumentRegionDto"
+          },
+          "value": {
+            "description": "The value as the text reads it",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confidence",
+          "lineId",
+          "region",
+          "value"
+        ],
+        "type": "object"
+      },
+      "DocumentFieldEditDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/DocumentEditAction"
+          },
+          "lineId": {
+            "description": "Recognized line supporting the value",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "recognizedText": {
+            "description": "The recognized text of that line the caller read",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Revision of the existing decision, if there is one",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer"
+          },
+          "value": {
+            "description": "The value, for confirm and correct",
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "DocumentFieldResponseDto": {
+        "properties": {
+          "candidates": {
+            "description": "Values the text suggests, most likely first",
+            "items": {
+              "$ref": "#/components/schemas/DocumentFieldCandidateDto"
+            },
+            "type": "array"
+          },
+          "confidence": {
+            "description": "Recognition confidence of the supporting line (0-1)",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "editId": {
+            "description": "ID of the owner’s decision about this field",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "evidenceChanged": {
+            "description": "The supporting text has since been read differently or is gone",
+            "type": "boolean"
+          },
+          "field": {
+            "$ref": "#/components/schemas/DocumentField"
+          },
+          "lineId": {
+            "description": "Recognized line supporting the value",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "region": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DocumentRegionDto"
+              }
+            ],
+            "nullable": true
+          },
+          "revision": {
+            "description": "Revision of the owner’s decision",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DocumentFieldStatus"
+          },
+          "updatedAt": {
+            "description": "When the owner last decided",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "value": {
+            "description": "The suggested, confirmed or corrected value; null when dismissed",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidates",
+          "confidence",
+          "editId",
+          "evidenceChanged",
+          "field",
+          "lineId",
+          "region",
+          "revision",
+          "status",
+          "updatedAt",
+          "value"
+        ],
+        "type": "object"
+      },
+      "DocumentFieldStatus": {
+        "description": "Whether a document field is a suggestion or the owner decided it",
+        "enum": [
+          "suggested",
+          "confirmed",
+          "corrected",
+          "dismissed"
+        ],
+        "type": "string"
+      },
+      "DocumentLineDto": {
+        "properties": {
+          "confidence": {
+            "description": "Recognition confidence (0-1)",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "editId": {
+            "description": "ID of the owner’s decision about this line",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "evidenceChanged": {
+            "description": "The decision was made against text that has since been read differently",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Recognized line ID, or the decision ID of a kept correction",
+            "type": "string"
+          },
+          "ocrId": {
+            "description": "Recognized line ID; null once the line is gone",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "recognizedText": {
+            "description": "The recognized text, while the recognized line exists",
+            "nullable": true,
+            "type": "string"
+          },
+          "region": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DocumentRegionDto"
+              }
+            ],
+            "nullable": true
+          },
+          "revision": {
+            "description": "Revision of the owner’s decision",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DocumentLineStatus"
+          },
+          "text": {
+            "description": "What the line reads: the owner’s correction or the recognized text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confidence",
+          "editId",
+          "evidenceChanged",
+          "id",
+          "ocrId",
+          "recognizedText",
+          "region",
+          "revision",
+          "status",
+          "text"
+        ],
+        "type": "object"
+      },
+      "DocumentLineEditDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/DocumentEditAction"
+          },
+          "ocrId": {
+            "description": "Recognized line the decision is about",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "recognizedText": {
+            "description": "The recognized text the caller read; refused when it changed",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Revision of the existing decision, if there is one",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer"
+          },
+          "value": {
+            "description": "The corrected text, for correct",
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "ocrId",
+          "recognizedText"
+        ],
+        "type": "object"
+      },
+      "DocumentLineStatus": {
+        "description": "Where the text of a document line comes from",
+        "enum": [
+          "recognized",
+          "corrected",
+          "dismissed",
+          "kept"
+        ],
+        "type": "string"
+      },
+      "DocumentRecognitionDto": {
+        "properties": {
+          "enabled": {
+            "description": "Text recognition is switched on",
+            "type": "boolean"
+          },
+          "routed": {
+            "description": "A processing destination is chosen for text recognition",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "routed"
+        ],
+        "type": "object"
+      },
+      "DocumentRegionDto": {
+        "description": "Where the text is in the photo as it is shown, edits applied",
+        "properties": {
+          "x1": {
+            "description": "Normalized x coordinate of corner 1 (0-1)",
+            "format": "double",
+            "type": "number"
+          },
+          "x2": {
+            "description": "Normalized x coordinate of corner 2 (0-1)",
+            "format": "double",
+            "type": "number"
+          },
+          "x3": {
+            "description": "Normalized x coordinate of corner 3 (0-1)",
+            "format": "double",
+            "type": "number"
+          },
+          "x4": {
+            "description": "Normalized x coordinate of corner 4 (0-1)",
+            "format": "double",
+            "type": "number"
+          },
+          "y1": {
+            "description": "Normalized y coordinate of corner 1 (0-1)",
+            "format": "double",
+            "type": "number"
+          },
+          "y2": {
+            "description": "Normalized y coordinate of corner 2 (0-1)",
+            "format": "double",
+            "type": "number"
+          },
+          "y3": {
+            "description": "Normalized y coordinate of corner 3 (0-1)",
+            "format": "double",
+            "type": "number"
+          },
+          "y4": {
+            "description": "Normalized y coordinate of corner 4 (0-1)",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x1",
+          "x2",
+          "x3",
+          "x4",
+          "y1",
+          "y2",
+          "y3",
+          "y4"
+        ],
+        "type": "object"
+      },
+      "DocumentResponseDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "canEdit": {
+            "description": "The caller owns the photo and may correct its text",
+            "type": "boolean"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentFieldResponseDto"
+            },
+            "type": "array"
+          },
+          "fieldsEnabled": {
+            "description": "Field suggestions are switched on",
+            "type": "boolean"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentLineDto"
+            },
+            "type": "array"
+          },
+          "recognition": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DocumentRecognitionDto"
+              }
+            ],
+            "description": "Whether the photo can be read again; owner only",
+            "nullable": true
+          },
+          "recognizedAt": {
+            "description": "When the text was last read",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "canEdit",
+          "fields",
+          "fieldsEnabled",
+          "lines",
+          "recognition",
+          "recognizedAt"
+        ],
+        "type": "object"
+      },
+      "DocumentSearchResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssetResponseDto"
+            },
+            "type": "array"
+          },
+          "nextPage": {
+            "nullable": true,
+            "type": "string"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "nextPage",
+          "total"
+        ],
         "type": "object"
       },
       "DownloadArchiveDto": {
@@ -35645,6 +36097,436 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/documents": {
+      "get": {
+        "description": "List the signed-in account’s photos that show recognized text, newest first, optionally matching text read from them or the owner’s corrections.",
+        "operationId": "searchDocuments",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "query",
+            "required": false,
+            "in": "query",
+            "description": "Text to find in recognized text and in the owner’s corrections",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 250,
+              "default": 100,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentSearchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Search documents",
+        "tags": [
+          "Documents"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/documents/{id}": {
+      "get": {
+        "description": "Retrieve the text read from a photo with the owner’s corrections applied, where each line is in the photo, and, for the owner, the values suggested from it.",
+        "operationId": "getDocument",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve a document",
+        "tags": [
+          "Documents"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/documents/{id}/fields/{field}": {
+      "put": {
+        "description": "Confirm, correct or dismiss a value suggested from the text of a photo.",
+        "operationId": "updateDocumentField",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "field",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/DocumentField"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentFieldEditDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Decide a document field",
+        "tags": [
+          "Documents"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      },
+      "delete": {
+        "description": "Remove the owner’s decision about a field, so the text’s suggestion shows again.",
+        "operationId": "deleteDocumentField",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "field",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/DocumentField"
+            }
+          },
+          {
+            "name": "revision",
+            "required": true,
+            "in": "query",
+            "description": "Revision of the decision being removed",
+            "schema": {
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Clear a document field decision",
+        "tags": [
+          "Documents"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/documents/{id}/lines": {
+      "put": {
+        "description": "Record the owner’s correction or dismissal of one recognized line. The recognized text itself is kept unchanged.",
+        "operationId": "updateDocumentLine",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentLineEditDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Correct or dismiss a line of text",
+        "tags": [
+          "Documents"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/documents/{id}/lines/{editId}": {
+      "delete": {
+        "description": "Remove the owner’s correction or dismissal of a line, so it reads as recognized again.",
+        "operationId": "deleteDocumentLine",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "editId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "revision",
+            "required": true,
+            "in": "query",
+            "description": "Revision of the decision being removed",
+            "schema": {
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Restore a line of text",
+        "tags": [
+          "Documents"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/download/archive": {
       "post": {
         "description": "Download a ZIP archive containing the specified assets. The assets must have been previously requested via the \"getDownloadInfo\" endpoint.",
@@ -54869,6 +55751,10 @@
     {
       "name": "Deprecated",
       "description": "Deprecated endpoints that are planned for removal in the next major release."
+    },
+    {
+      "name": "Documents",
+      "description": "A document is a photo with recognized text. Its lines, and the values suggested from them, can be corrected or dismissed by the owner; corrections are kept apart from the recognized text and survive reading the photo again."
     },
     {
       "name": "Download",
