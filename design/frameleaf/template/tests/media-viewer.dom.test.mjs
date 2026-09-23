@@ -69,7 +69,7 @@ const base = {
   },
 };
 const assets = [
-  { ...base, id: "a", name: "Lake.jpg", image: "/media/lake.png", description: "A quiet lake", personIds: ["emma"], stackId: "s", stackPrimary: true, ocr: "LAKE AGNES 3.4 km" },
+  { ...base, id: "a", name: "Lake.jpg", image: "/media/lake.png", description: "A quiet lake", personIds: ["emma", "ghost"], stackId: "s", stackPrimary: true, ocr: "LAKE AGNES 3.4 km" },
   { ...base, id: "b", name: "Lake 2.jpg", image: "/media/lake2.png", stackId: "s", description: "" },
   { ...base, id: "c", name: "Live.jpg", image: "/media/live.png", isLivePhoto: true, livePhotoVideo: "/media/live.mp4", isOffline: true },
   { ...base, id: "v", name: "Clip.mov", type: "video", image: "/media/clip.png", mediaSrc: "/media/clip.mp4", duration: 24, frameRate: 29.97 },
