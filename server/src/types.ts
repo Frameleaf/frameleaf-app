@@ -122,6 +122,16 @@ export interface AudioStreamInfo {
   codecName: string | null;
   profile: AacProfile | null;
   bitrate: number;
+  /**
+   * FL-102 (VID-104): channel-aware audio. Optional and additive so every existing construction
+   * site — probe stubs, fixtures, the upstream transcode paths — keeps compiling unchanged, and
+   * so an absent value stays distinguishable from a known one. A render never guesses these:
+   * when they are unknown it emits no channel argument at all rather than a silent downmix.
+   * Populated by `MediaRepository.probe` and persisted on `asset_audio`.
+   */
+  channels?: number | null;
+  channelLayout?: string | null;
+  sampleRate?: number | null;
 }
 
 /** Packet-derived video data needed for accurate HLS playlists. */
