@@ -6,7 +6,7 @@ import {
 } from 'src/services/media-operation-sweep.service.js';
 import { getMocks } from 'test/utils.js';
 
-const nothing = { requeued: 0, retried: 0, failed: 0, abandonedCancels: 0 };
+const nothing = { requeued: 0, retried: 0, failed: 0, abandonedCancels: 0, paused: 0 };
 
 describe(MediaOperationSweepService.name, () => {
   let sut: MediaOperationSweepService;
@@ -34,11 +34,19 @@ describe(MediaOperationSweepService.name, () => {
     });
 
     it('reports what it recovered, automatic retries included', async () => {
-      const recovered = { requeued: 2, retried: 1, failed: 1, abandonedCancels: 1 };
+      const recovered = { requeued: 2, retried: 1, failed: 1, abandonedCancels: 1, paused: 0 };
       operations.recoverExpiredClaims.mockResolvedValue(recovered);
 
       await expect(sut.sweep()).resolves.toEqual(recovered);
       expect(logger.log).toHaveBeenCalledWith(expect.stringContaining('1 retrying'));
+    });
+
+    it('reports a job it held for its owner’s pause, rather than requeuing it (FL-104)', async () => {
+      operations.recoverExpiredClaims.mockResolvedValue({ ...nothing, paused: 1 });
+
+      await sut.sweep();
+
+      expect(logger.log).toHaveBeenCalledWith(expect.stringContaining('1 paused'));
     });
 
     it('stays quiet when there was nothing to recover', async () => {

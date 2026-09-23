@@ -37,7 +37,16 @@ import {
   parseBulkSnapshot,
   type BulkOperationSnapshot,
 } from 'src/utils/bulk-operation.js';
-import { canDismissMediaOperation, canRetryMediaOperation, isActiveMediaOperation } from 'src/utils/media-operation.js';
+import {
+  ACTIVE_MEDIA_OPERATION_STATUSES,
+  PAUSABLE_MEDIA_OPERATION_KINDS,
+  canDismissMediaOperation,
+  canPauseMediaOperation,
+  canResumeMediaOperation,
+  canRetryMediaOperation,
+  isActiveMediaOperation,
+  isPausableMediaOperationKind,
+} from 'src/utils/media-operation.js';
 
 const DEFAULT_TAKE = 100;
 
@@ -175,6 +184,8 @@ export const mapOperation = (
   errorCode: operation.errorCode,
   cancelRequestedAt: asIso(operation.cancelRequestedAt),
   cancelAcknowledgedAt: asIso(operation.cancelAcknowledgedAt),
+  pausable: isPausableMediaOperationKind(operation.kind as MediaOperationKind),
+  pauseRequestedAt: asIso(operation.pauseRequestedAt),
   startedAt: asIso(operation.startedAt),
   finishedAt: asIso(operation.finishedAt),
   createdAt: asRequiredIso(operation.createdAt),
@@ -227,6 +238,24 @@ export class MediaOperationService {
 
     const hidden = await this.hiddenLockedIds(auth, items);
     return { items: items.map((item) => mapOperation(item, hidden)), total };
+  }
+
+  /**
+   * The account's unfinished jobs, paused ones included, for the notifications panel's running-jobs
+   * summary (FL-104). Read exactly as `search` reads them, Locked ids withheld from a session that
+   * has not unlocked them (FL-34).
+   */
+  async listUnfinished(auth: AuthDto, take: number): Promise<MediaOperationDto[]> {
+    const { items } = await this.repository.list({
+      ownerId: auth.user.id,
+      statuses: ACTIVE_MEDIA_OPERATION_STATUSES,
+      includeDismissed: false,
+      take,
+      skip: 0,
+    });
+
+    const hidden = await this.hiddenLockedIds(auth, items);
+    return items.map((item) => mapOperation(item, hidden));
   }
 
   async get(auth: AuthDto, id: string): Promise<MediaOperationDetailDto> {
@@ -345,6 +374,62 @@ export class MediaOperationService {
 
     this.logger.log(`Cancellation requested for media operation ${id} (${cancelled.status})`);
     return this.present(auth, cancelled);
+  }
+
+  /**
+   * Pause a job (FL-104, owner request September 23, 2026).
+   *
+   * Only kinds that record where they have got to can pause: a bulk job, a Studio export and a
+   * restoration. A queued one is held at once; a running one is asked to stop at its next checkpoint
+   * and reports its current status, with `pauseRequestedAt` set, until its worker gets there. The
+   * answer is always what the row says, never what the caller hoped for.
+   */
+  async pause(auth: AuthDto, id: string): Promise<MediaOperationDto> {
+    const operation = await this.findOwned(auth, id);
+    const kind = operation.kind as MediaOperationKind;
+
+    if (!isPausableMediaOperationKind(kind)) {
+      throw new BadRequestException('This kind of job cannot be paused');
+    }
+
+    if (operation.status === MediaOperationStatus.Paused) {
+      return this.present(auth, operation);
+    }
+
+    if (!canPauseMediaOperation(operation)) {
+      throw new BadRequestException('Only a queued or running job can be paused');
+    }
+
+    const paused = await this.repository.requestPause(id, auth.user.id, PAUSABLE_MEDIA_OPERATION_KINDS);
+    if (!paused) {
+      // It moved on between the read and the write: finished, validating or cancelled.
+      return this.present(auth, await this.findOwned(auth, id));
+    }
+
+    this.logger.log(`Pause requested for media operation ${id} (${paused.status})`);
+    return this.present(auth, paused);
+  }
+
+  /**
+   * Resume a paused job, or withdraw a pause its worker has not reached yet.
+   *
+   * A resumed job joins the queue again and carries on from what it recorded; nothing it already did
+   * is done twice. Resuming a job that is not paused and has no pause pending is refused.
+   */
+  async resume(auth: AuthDto, id: string): Promise<MediaOperationDto> {
+    const operation = await this.findOwned(auth, id);
+
+    if (!canResumeMediaOperation(operation)) {
+      throw new BadRequestException('This job is not paused');
+    }
+
+    const resumed = await this.repository.resume(id, auth.user.id);
+    if (!resumed) {
+      return this.present(auth, await this.findOwned(auth, id));
+    }
+
+    this.logger.log(`Media operation ${id} resumed (${resumed.status})`);
+    return this.present(auth, resumed);
   }
 
   /**

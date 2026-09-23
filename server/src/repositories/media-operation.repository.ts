@@ -13,6 +13,7 @@ import {
   CLAIMED_MEDIA_OPERATION_STATUSES,
   MEDIA_OPERATION_AUTO_RETRIES,
   MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
+  PAUSABLE_MEDIA_OPERATION_STATUSES,
   TERMINAL_MEDIA_OPERATION_STATUSES,
 } from 'src/utils/media-operation.js';
 
@@ -34,7 +35,20 @@ export type MediaOperationCreate = Omit<
 export type MediaOperationFailOutcome = 'retrying' | 'failed' | false;
 
 /** What one recovery pass over lapsed claims did, by outcome (see `recoverExpiredClaims`). */
-export type MediaOperationRecovery = { requeued: number; retried: number; failed: number; abandonedCancels: number };
+export type MediaOperationRecovery = {
+  requeued: number;
+  retried: number;
+  failed: number;
+  abandonedCancels: number;
+  paused: number;
+};
+
+/** What a worker learns from a write: whether to carry on, stop for a cancel, or stop for a pause. */
+export type MediaOperationWriteState = {
+  status: MediaOperationStatus;
+  cancelRequestedAt: Date | null;
+  pauseRequestedAt: Date | null;
+};
 
 /** The statuses a live claim may report from. `cancelling` is left out: a cancel is never retried. */
 const WORKING_STATUSES = [
@@ -45,6 +59,16 @@ const WORKING_STATUSES = [
 
 /** `now() + ms`, for leases and retry delays. */
 const nowPlus = (ms: number) => sql<Date>`now() + ${sql.lit(ms)} * interval '1 millisecond'`;
+
+/**
+ * Where a job goes when its worker lets go of it without finishing: back to the queue, or — when
+ * the owner has asked for a pause (FL-104) — to `paused`, where no worker will take it.
+ */
+const pausedIfRequested = () =>
+  sql<MediaOperationStatus>`case when "pauseRequestedAt" is not null then ${sql.lit(MediaOperationStatus.Paused)} else ${sql.lit(MediaOperationStatus.Queued)} end`;
+
+/** Statuses with no worker attached: a cancel settles them at once. */
+const UNCLAIMED_STATUSES = [MediaOperationStatus.Queued, MediaOperationStatus.Paused];
 
 export type MediaOperationListOptions = {
   ownerId: string;
@@ -94,6 +118,7 @@ const LIST_COLUMNS = [
   'heartbeatAt',
   'cancelRequestedAt',
   'cancelAcknowledgedAt',
+  'pauseRequestedAt',
   'remoteJobId',
   'remoteReleasedAt',
   'error',
@@ -466,6 +491,8 @@ export class MediaOperationRepository {
    * runner learns about that cancel in the same round trip.
    *
    * Returns undefined when the claim is no longer ours, in which case the runner must stop at once.
+   * A `pauseRequestedAt` in the answer means the owner asked to pause: the runner stops at this
+   * boundary and hands the claim back with `settlePause` (FL-104).
    */
   async setBulkResult(
     id: string,
@@ -477,7 +504,7 @@ export class MediaOperationRepository {
       progress: number;
       leaseMs: number;
     },
-  ): Promise<{ status: MediaOperationStatus; cancelRequestedAt: Date | null } | undefined> {
+  ): Promise<MediaOperationWriteState | undefined> {
     const row = await this.db
       .updateTable('media_operation')
       .set({
@@ -491,13 +518,14 @@ export class MediaOperationRepository {
       .where('id', '=', id)
       .where('claimToken', '=', claimToken)
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
-      .returning(['status', 'cancelRequestedAt'])
+      .returning(['status', 'cancelRequestedAt', 'pauseRequestedAt'])
       .executeTakeFirst();
 
     return row
       ? {
           status: row.status as MediaOperationStatus,
           cancelRequestedAt: (row.cancelRequestedAt as unknown as Date | null) ?? null,
+          pauseRequestedAt: (row.pauseRequestedAt as unknown as Date | null) ?? null,
         }
       : undefined;
   }
@@ -525,6 +553,8 @@ export class MediaOperationRepository {
         claimExpiresAt: null,
         error: null,
         errorCode: null,
+        // A pause that arrived too late to be reached has nothing left to hold.
+        pauseRequestedAt: null,
       })
       .where('id', '=', id)
       .where('claimToken', '=', claimToken)
@@ -572,7 +602,8 @@ export class MediaOperationRepository {
     const requeued = await this.db
       .updateTable('media_operation')
       .set({
-        status: MediaOperationStatus.Queued,
+        // The owner asked to pause: the retry waits for them instead of running by itself.
+        status: pausedIfRequested(),
         error: failure.error,
         errorCode: failure.errorCode,
         autoRetries: sql<number>`"autoRetries" + 1`,
@@ -602,6 +633,7 @@ export class MediaOperationRepository {
         retryAt: null,
         claimToken: null,
         claimExpiresAt: null,
+        pauseRequestedAt: null,
       })
       .where('id', '=', id)
       .where('claimToken', '=', claimToken)
@@ -623,7 +655,8 @@ export class MediaOperationRepository {
     const result = await this.db
       .updateTable('media_operation')
       .set({
-        status: MediaOperationStatus.Queued,
+        // A pause asked for during the pass holds the job here rather than at its next claim.
+        status: pausedIfRequested(),
         retryAt: nowPlus(options.delayMs),
         claimToken: null,
         claimedBy: null,
@@ -657,33 +690,36 @@ export class MediaOperationRepository {
     return (await this.db
       .updateTable('media_operation')
       .set((eb) => ({
+        // A paused job has no worker either (FL-104), so it is cancelled outright like a queued one.
         status: eb
           .case()
-          .when('status', '=', MediaOperationStatus.Queued)
+          .when('status', 'in', UNCLAIMED_STATUSES)
           .then(MediaOperationStatus.Cancelled)
           .else(MediaOperationStatus.Cancelling)
           .end(),
         cancelRequestedAt: sql<Date>`coalesce("cancelRequestedAt", now())`,
         cancelAcknowledgedAt: eb
           .case()
-          .when('status', '=', MediaOperationStatus.Queued)
+          .when('status', 'in', UNCLAIMED_STATUSES)
           .then(sql<Date>`now()`)
           .else(eb.ref('cancelAcknowledgedAt'))
           .end(),
         finishedAt: eb
           .case()
-          .when('status', '=', MediaOperationStatus.Queued)
+          .when('status', 'in', UNCLAIMED_STATUSES)
           .then(sql<Date>`now()`)
           .else(eb.ref('finishedAt'))
           .end(),
-        // Only a queued job had no worker to revoke.
-        claimToken: eb.case().when('status', '=', MediaOperationStatus.Queued).then(null).else(eb.ref('claimToken')).end(),
+        // Only a queued or paused job had no worker to revoke.
+        claimToken: eb.case().when('status', 'in', UNCLAIMED_STATUSES).then(null).else(eb.ref('claimToken')).end(),
         claimExpiresAt: eb
           .case()
-          .when('status', '=', MediaOperationStatus.Queued)
+          .when('status', 'in', UNCLAIMED_STATUSES)
           .then(null)
           .else(eb.ref('claimExpiresAt'))
           .end(),
+        // Stopping outranks holding: a pause waiting to be reached is dropped.
+        pauseRequestedAt: null,
       }))
       .where('id', '=', id)
       .where('ownerId', '=', ownerId)
@@ -749,6 +785,106 @@ export class MediaOperationRepository {
   }
 
   /* ------------------------------------------------------------------ */
+  /* Pause and resume (FL-104, owner request September 23, 2026)        */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Record the owner's pause.
+   *
+   * A queued job has no worker, so it becomes `paused` at once and no claim will take it. A claimed
+   * job keeps its status and its lease: the request is written to `pauseRequestedAt` and its worker
+   * stops at its next checkpoint, where `settlePause` hands the claim back. Pausing twice is
+   * harmless. A job that is finishing, being cancelled or already finished is left alone, which is
+   * what the undefined answer means.
+   */
+  async requestPause(
+    id: string,
+    ownerId: string,
+    kinds: readonly MediaOperationKind[],
+  ): Promise<MediaOperation | undefined> {
+    return (await this.db
+      .updateTable('media_operation')
+      .set((eb) => ({
+        status: eb
+          .case()
+          .when('status', '=', MediaOperationStatus.Queued)
+          .then(MediaOperationStatus.Paused)
+          .else(eb.ref('status'))
+          .end(),
+        pauseRequestedAt: sql<Date>`coalesce("pauseRequestedAt", now())`,
+      }))
+      .where('id', '=', id)
+      .where('ownerId', '=', ownerId)
+      .where('kind', 'in', [...kinds])
+      .where('status', 'in', [...PAUSABLE_MEDIA_OPERATION_STATUSES])
+      .where('cancelRequestedAt', 'is', null)
+      .returningAll()
+      .executeTakeFirst()) as unknown as MediaOperation | undefined;
+  }
+
+  /**
+   * Resume a paused job, or withdraw a pause its worker has not reached yet.
+   *
+   * A paused job goes back to the queue with everything it recorded, and the next claim carries on
+   * from there: a bulk job from its cursor, a render from its checkpoints. A pending retry delay is
+   * kept, so resuming never skips the wait before an automatic retry. A running job whose pause is
+   * still pending simply keeps running.
+   */
+  async resume(id: string, ownerId: string): Promise<MediaOperation | undefined> {
+    return (await this.db
+      .updateTable('media_operation')
+      .set((eb) => ({
+        status: eb
+          .case()
+          .when('status', '=', MediaOperationStatus.Paused)
+          .then(MediaOperationStatus.Queued)
+          .else(eb.ref('status'))
+          .end(),
+        pauseRequestedAt: null,
+      }))
+      .where('id', '=', id)
+      .where('ownerId', '=', ownerId)
+      .where('cancelRequestedAt', 'is', null)
+      .where((eb) =>
+        eb.or([
+          eb('status', '=', MediaOperationStatus.Paused),
+          eb.and([eb('pauseRequestedAt', 'is not', null), eb('status', 'in', WORKING_STATUSES)]),
+        ]),
+      )
+      .returningAll()
+      .executeTakeFirst()) as unknown as MediaOperation | undefined;
+  }
+
+  /**
+   * A worker reached a checkpoint with a pause requested and lets go of the job.
+   *
+   * Guarded by the claim like every worker write, and by the request itself: if the owner resumed
+   * in the meantime, nothing changes and the worker is told to carry on. The job keeps everything
+   * it recorded, and the attempt it was on is given back, because it did not fail.
+   */
+  async settlePause(id: string, claimToken: string): Promise<boolean> {
+    const result = await this.db
+      .updateTable('media_operation')
+      .set({
+        status: MediaOperationStatus.Paused,
+        claimToken: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+        attempt: sql<number>`greatest("attempt" - 1, 0)`,
+      })
+      .where('id', '=', id)
+      .where('claimToken', '=', claimToken)
+      // Never while validating: that output is about to be adopted, and a runner that moved there
+      // after it last looked must not have it thrown away by a late settle.
+      .where('status', 'in', [MediaOperationStatus.Preparing, MediaOperationStatus.Rendering])
+      .where('pauseRequestedAt', 'is not', null)
+      .where('cancelRequestedAt', 'is', null)
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows) === 1;
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Recovery                                                            */
   /* ------------------------------------------------------------------ */
 
@@ -768,13 +904,35 @@ export class MediaOperationRepository {
    * Clearing the claim token is what makes all of them safe: if the old worker comes back, none of
    * its writes match any more.
    *
+   * A job whose owner asked for a pause is none of the above: it becomes `paused` (FL-104). That
+   * step runs first, and the steps after it only match jobs whose status is still claimed, so a
+   * paused job is never also requeued or failed. A job that is already `paused` holds no claim to
+   * lapse, so recovery never touches it.
+   *
    * Every kind is recovered in one pass, and only `MediaOperationSweepService` calls this, so a
    * lapsed claim is judged once, by one set of rules, whichever worker held it (FL-104).
    */
   async recoverExpiredClaims(options: { errorCode: string; error: string }): Promise<MediaOperationRecovery> {
+    // A job whose owner asked to pause stays paused when its worker disappears (FL-104): the pause
+    // is what the owner wanted, and resuming it later picks up from its checkpoints like a requeue.
+    // Unlike `settlePause`, the attempt is not given back: the worker vanished, which is what
+    // attempts count, whether or not a pause was also waiting.
+    const paused = await this.db
+      .updateTable('media_operation')
+      .set({ status: MediaOperationStatus.Paused, claimToken: null, claimedBy: null, claimExpiresAt: null })
+      .where('status', 'in', WORKING_STATUSES)
+      .where('claimExpiresAt', 'is not', null)
+      .where('claimExpiresAt', '<', sql<Date>`now()`)
+      .where('pauseRequestedAt', 'is not', null)
+      .where('cancelRequestedAt', 'is', null)
+      .executeTakeFirst();
+
+    // The steps below also land on `paused` if a pause arrived after the step above ran: the steps
+    // are separate statements, and a pause request between them must not leave a queued job with a
+    // pause pending that nothing would ever settle.
     const requeued = await this.db
       .updateTable('media_operation')
-      .set({ status: MediaOperationStatus.Queued, claimToken: null, claimedBy: null, claimExpiresAt: null })
+      .set({ status: pausedIfRequested(), claimToken: null, claimedBy: null, claimExpiresAt: null })
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)
@@ -787,7 +945,7 @@ export class MediaOperationRepository {
     const retried = await this.db
       .updateTable('media_operation')
       .set({
-        status: MediaOperationStatus.Queued,
+        status: pausedIfRequested(),
         error: options.error,
         errorCode: options.errorCode,
         autoRetries: sql<number>`"autoRetries" + 1`,
@@ -843,6 +1001,7 @@ export class MediaOperationRepository {
       retried: Number(retried.numUpdatedRows),
       failed: Number(failed.numUpdatedRows),
       abandonedCancels: Number(abandonedCancels.numUpdatedRows),
+      paused: Number(paused.numUpdatedRows),
     };
   }
 

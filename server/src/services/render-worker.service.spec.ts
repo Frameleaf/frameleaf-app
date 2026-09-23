@@ -256,6 +256,7 @@ describe(RenderWorkerService.name, () => {
       complete: vi.fn().mockResolvedValue(true),
       fail: vi.fn().mockResolvedValue('failed'),
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
+      settlePause: vi.fn().mockResolvedValue(true),
     } as unknown as MediaOperationRepository;
 
     studioResources = {
@@ -804,6 +805,40 @@ describe(RenderWorkerService.name, () => {
 
       expect(result).toEqual(expect.objectContaining({ leaseExtended: true, cancelRequested: false, refusal: null }));
       expect(operations.heartbeat).toHaveBeenCalledWith(claimedByA.id, 'claim-1', expect.any(Number));
+    });
+
+    it('hands a paused job back on heartbeat instead of extending the lease (FL-104)', async () => {
+      vi.mocked(workers.getClaimed).mockResolvedValue({ ...claimedByA, pauseRequestedAt: new Date() } as never);
+
+      const result = await sut.heartbeat(SESSION_A, claimedByA.id, { claimToken: 'claim-1' } as never);
+
+      expect(result).toEqual(
+        expect.objectContaining({ leaseExtended: false, pauseRequested: true, cancelRequested: false, refusal: null }),
+      );
+      expect(operations.settlePause).toHaveBeenCalledWith(claimedByA.id, 'claim-1');
+      expect(operations.heartbeat).not.toHaveBeenCalled();
+    });
+
+    it('lets a job already validating its output finish despite a pause request', async () => {
+      vi.mocked(workers.getClaimed).mockResolvedValue({
+        ...claimedByA,
+        status: MediaOperationStatus.Validating,
+        pauseRequestedAt: new Date(),
+      } as never);
+
+      const result = await sut.heartbeat(SESSION_A, claimedByA.id, { claimToken: 'claim-1' } as never);
+
+      expect(result).toEqual(expect.objectContaining({ leaseExtended: true, pauseRequested: false }));
+      expect(operations.settlePause).not.toHaveBeenCalled();
+    });
+
+    it('keeps the lease when the owner resumed before the heartbeat arrived', async () => {
+      vi.mocked(workers.getClaimed).mockResolvedValue({ ...claimedByA, pauseRequestedAt: new Date() } as never);
+      vi.mocked(operations.settlePause).mockResolvedValueOnce(false);
+
+      const result = await sut.heartbeat(SESSION_A, claimedByA.id, { claimToken: 'claim-1' } as never);
+
+      expect(result).toEqual(expect.objectContaining({ leaseExtended: true, pauseRequested: false }));
     });
 
     it('refuses another worker presenting the real claim token: cross-worker', async () => {

@@ -126,7 +126,7 @@ const MediaOperationBulkCreateSchema = z
  * Deliberately absent: the claim token, the worker identity and the remote job handle. They are
  * how the server keeps the job honest, not something a browser needs or should be able to read.
  */
-const MediaOperationSchema = z
+export const MediaOperationSchema = z
   .object({
     id: z.uuidv7().describe('Media operation ID'),
     kind: MediaOperationKindSchema,
@@ -163,6 +163,12 @@ const MediaOperationSchema = z
     errorCode: z.string().nullable().describe('Stable code the client turns into a message'),
     cancelRequestedAt: z.string().meta({ format: 'date-time' }).nullable(),
     cancelAcknowledgedAt: z.string().meta({ format: 'date-time' }).nullable(),
+    pausable: z.boolean().describe('Whether this kind of job can pause and carry on later; one-shot kinds cannot'),
+    pauseRequestedAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('When the owner asked to pause; a running job keeps working until its next checkpoint'),
     startedAt: z.string().meta({ format: 'date-time' }).nullable(),
     finishedAt: z.string().meta({ format: 'date-time' }).nullable(),
     createdAt: z.string().meta({ format: 'date-time' }),
