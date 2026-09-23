@@ -218,6 +218,8 @@ export const studioHostBlocksNavigation = (state: StudioHostState): boolean => s
  * interpolated so every key in this file is greppable in `i18n/en.json`.
  */
 const capabilityLabelKeys: Record<StudioCapabilityId, string> = {
+  analysisWorker: 'frameleaf_studio_capability_analysis_worker',
+  generationWorker: 'frameleaf_studio_capability_generation_worker',
   gpuWorker: 'frameleaf_studio_capability_gpu_worker',
   renderWorker: 'frameleaf_studio_capability_render_worker',
   restorationWorker: 'frameleaf_studio_capability_restoration_worker',

@@ -2017,6 +2017,8 @@
   "frameleaf_studio_activity_unavailable": "Activity is not available in this build, so the job cannot be followed from here yet.",
   "frameleaf_studio_all_saved": "All changes saved",
   "frameleaf_studio_back_to_library": "Library",
+  "frameleaf_studio_capability_analysis_worker": "Analysis worker",
+  "frameleaf_studio_capability_generation_worker": "Generation worker",
   "frameleaf_studio_capability_gpu_worker": "GPU worker",
   "frameleaf_studio_capability_render_worker": "Render worker",
   "frameleaf_studio_capability_restoration_worker": "Restoration worker",
