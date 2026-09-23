@@ -138,10 +138,7 @@ const releaseAlbumCovers = async (db: Kysely<DB>, assetIds: string[], scores: Be
  * trashed, not sensitive, as `AlbumUserRepository.getLinkedPersonCoverAssetId`); Best Photos first,
  * then the newest. None when there is no such item.
  */
-export const sharedSpacePersonCover = (
-  eb: ExpressionBuilder<DB, 'shared_space_person'>,
-  scores: BestPhotoScoreTable,
-) =>
+export const sharedSpacePersonCover = (eb: ExpressionBuilder<DB, 'shared_space_person'>, scores: BestPhotoScoreTable) =>
   eb
     .selectFrom('asset')
     .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
