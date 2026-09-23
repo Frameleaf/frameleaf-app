@@ -235,6 +235,13 @@
       });
   });
 
+  /**
+   * A collection holds albums, not items: "remove from album" and "set as cover" belong to the
+   * album an item actually lives in, so the album-scoped bulk actions are offered on an album
+   * or a shared space only. A collection's cover is set from the header instead.
+   */
+  const bulkContext = $derived({ albumId: isCollection ? null : albumId, currentUserId });
+
   const runBulk = (action: BulkActionId, payload?: BulkPayload) => {
     handlePromiseError(bulk.run(action, session.selection, payload));
   };
@@ -543,7 +550,7 @@
       count={session.selection.length}
       total={assetCount}
       assets={selectedBulkAssets}
-      context={{ albumId, currentUserId }}
+      context={bulkContext}
       {tagOptions}
       {albumOptions}
       operations={session.operations}
