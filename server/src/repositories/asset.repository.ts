@@ -1989,8 +1989,8 @@ export class AssetRepository {
       .innerJoin('asset_job_status as job_status', 'job_status.assetId', 'asset.id')
       .where('asset.type', '=', sql.lit(AssetType.Image))
       .where('asset.deletedAt', 'is', null)
-      .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden))
-      .$call(withDefaultVisibility)
+      // stored visibility only, like the job: background work includes locked media (FL-34)
+      .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
       .where((eb) =>
         eb.exists(
           eb
