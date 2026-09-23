@@ -23,7 +23,13 @@ test.describe('Maintenance', () => {
     // mode instead of acting on the first click; the legacy shell still acts immediately. Only
     // one of the two buttons below exists at a time, so this stays a no-op under the legacy shell.
     const confirmButton = page.getByRole('button', { name: 'Start maintenance mode now' });
-    if (await confirmButton.isVisible().catch(() => false)) {
+    let needsConfirmation = false;
+    try {
+      needsConfirmation = await confirmButton.isVisible();
+    } catch {
+      // The legacy shell navigates immediately, removing the button.
+    }
+    if (needsConfirmation) {
       await confirmButton.click();
     }
 
