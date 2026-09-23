@@ -1040,6 +1040,23 @@ describe(SharedSpaceService.name, () => {
       expect(mocks.event.emit).not.toHaveBeenCalled();
     });
 
+    it('says "not found" when the comment being answered was removed meanwhile', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      asEditor(space);
+      mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
+      const root = commentBy(space.id, owner);
+      const created = commentBy(space.id, editor);
+      mocks.activity.getById.mockResolvedValueOnce(root).mockResolvedValueOnce(void 0);
+      mocks.activity.create.mockResolvedValue(created);
+      mocks.albumUser.createCommentThread.mockRejectedValue(new Error('foreign key violation'));
+      mocks.activity.delete.mockResolvedValue();
+
+      await expect(
+        sut.createComment(AuthFactory.create(editor), space.id, { comment: 'x', parentId: root.id }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.activity.delete).toHaveBeenCalledWith(created.id);
+    });
+
     it('reports where an edited comment already sits in its thread', async () => {
       const { space, editor } = spaceWithEditor();
       asEditor(space);
