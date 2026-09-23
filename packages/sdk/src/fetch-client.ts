@@ -2097,6 +2097,58 @@ export type AssetDevelopCrop = {
     /** Top edge of the crop as a fraction of the oriented frame height */
     y: number;
 };
+export type AssetDevelopMaskAdjustments = {
+    /** Black point inside the mask */
+    blacks?: number;
+    /** Contrast inside the mask */
+    contrast?: number;
+    /** Dehaze inside the mask */
+    dehaze?: number;
+    /** Exposure in EV inside the mask */
+    exposure?: number;
+    /** Highlights inside the mask */
+    highlights?: number;
+    /** Saturation inside the mask */
+    saturation?: number;
+    /** Shadows inside the mask */
+    shadows?: number;
+    /** White balance shift inside the mask */
+    temperature?: number;
+    /** Tint inside the mask */
+    tint?: number;
+    /** Vibrance inside the mask */
+    vibrance?: number;
+    /** White point inside the mask */
+    whites?: number;
+};
+export type AssetDevelopMask = {
+    adjustments?: AssetDevelopMaskAdjustments;
+    /** How much of the adjustment is applied, as a percentage */
+    amount?: number;
+    /** A disabled mask is kept but not rendered */
+    enabled?: boolean;
+    /** Where a linear mask has faded out, across the frame */
+    endX?: number;
+    /** Where a linear mask has faded out, down the frame */
+    endY?: number;
+    /** Softness of a radial edge as a percentage of the radius */
+    feather?: number;
+    /** Client-chosen identifier, unique within the recipe */
+    id: string;
+    /** Apply the adjustment outside the shape instead of inside */
+    invert?: boolean;
+    kind: AssetDevelopMaskKind;
+    /** Optional name shown in the editor */
+    name?: string | null;
+    /** Horizontal radius of a radial mask as a fraction of the frame width */
+    radiusX?: number;
+    /** Vertical radius of a radial mask as a fraction of the frame height */
+    radiusY?: number;
+    /** Centre (radial) or start (linear) across the oriented frame */
+    x: number;
+    /** Centre (radial) or start (linear) down the oriented frame */
+    y: number;
+};
 export type AssetDevelopRecipeDto = {
     /** Black point */
     blacks?: number;
@@ -2117,6 +2169,8 @@ export type AssetDevelopRecipeDto = {
     grain?: number;
     /** Highlight recovery (negative) or lift (positive) */
     highlights?: number;
+    /** Selective adjustments, applied in order after the global develop */
+    masks?: AssetDevelopMask[];
     /** Luminance noise reduction amount */
     noiseReduction?: number;
     preset?: AssetDevelopPreset;
@@ -2148,10 +2202,16 @@ export type AssetDevelopRecipeDto = {
 export type AssetDevelopRevisionResponseDto = {
     /** Asset this revision belongs to */
     assetId: string;
+    /** Render attempts so far; one automatic retry follows a first failure */
+    attempts: number;
     /** When the version was saved */
     createdAt: string;
     /** Why the last render failed, when it did */
     error: string | null;
+    /** The export of the original an imported version was developed from */
+    exportId: string | null;
+    /** Name of the imported file, for a version developed elsewhere */
+    fileName: string | null;
     /** True once the edited master file exists */
     hasMaster: boolean;
     /** True once the preview file exists */
@@ -2162,6 +2222,7 @@ export type AssetDevelopRevisionResponseDto = {
     id: string;
     /** True for the version the asset currently shows */
     isCurrent: boolean;
+    kind: AssetDevelopRevisionKind;
     /** Name given when the version was saved */
     label: string | null;
     /** Render progress as a percentage */
@@ -2171,8 +2232,14 @@ export type AssetDevelopRevisionResponseDto = {
     renderedAt: string | null;
     /** Identity of the renderer that produced the files, for lineage */
     rendererVersion: string | null;
+    /** SHA-256 (hex) of the edited master file, once it exists */
+    renditionChecksum: string | null;
     /** Per-asset sequence number, 1 for the first saved version */
     revision: number;
+    /** Application an imported version was developed with, when known */
+    software: string | null;
+    /** SHA-256 (hex) of the original this version was rendered or developed from */
+    sourceChecksum: string | null;
     status: AssetDevelopRevisionStatus;
     /** When the revision last changed */
     updatedAt: string;
@@ -2193,6 +2260,34 @@ export type AssetDevelopSaveDto = {
     recipe: AssetDevelopRecipeDto;
     /** Queue the edited master render immediately after saving the recipe */
     render?: boolean;
+};
+export type DevelopExportResponseDto = {
+    /** Asset whose original was exported */
+    assetId: string;
+    /** When the original was exported */
+    createdAt: string;
+    /** File name of the exported original */
+    fileName: string;
+    /** Export ID; quote it when bringing the developed file back */
+    id: string;
+    /** False once the asset original no longer matches the exported bytes; a return is then refused */
+    isCurrentOriginal: boolean;
+    /** SHA-256 (hex) of the original when it was exported */
+    sourceChecksum: string;
+};
+export type AssetDevelopImportDto = {
+    /** The export this file was developed from */
+    exportId?: string;
+    /** The developed file: JPEG, PNG, TIFF, WebP or HEIF */
+    file: Blob;
+    /** Optional name for the new version */
+    label?: string;
+    /** SHA-256 (hex) of the file as the client sent it; a transfer that does not match is refused */
+    renditionChecksum?: string;
+    /** Application the file was developed with */
+    software?: string;
+    /** SHA-256 (hex) of the original the file was developed from */
+    sourceChecksum?: string;
 };
 export type AssetDevelopPreviewDto = {
     recipe: AssetDevelopRecipeDto;
@@ -2825,6 +2920,67 @@ export type UserConfigDto = {
     theme: UserConfigThemeDto;
     trash: UserConfigTrashDto;
     user: UserConfigUserDto;
+};
+export type DevelopPresetSettingsDto = {
+    /** Black point */
+    blacks?: number;
+    /** Local contrast in the midtones */
+    clarity?: number;
+    /** Contrast around middle grey */
+    contrast?: number;
+    /** Haze removal (positive) or addition (negative) */
+    dehaze?: number;
+    /** Exposure in EV; each whole stop doubles the light */
+    exposure?: number;
+    /** Film grain amount */
+    grain?: number;
+    /** Highlight recovery (negative) or lift (positive) */
+    highlights?: number;
+    /** Selective adjustments, applied in order after the global develop */
+    masks?: AssetDevelopMask[];
+    /** Luminance noise reduction amount */
+    noiseReduction?: number;
+    preset?: AssetDevelopPreset;
+    /** How much of the preset is applied, as a percentage */
+    presetStrength?: number;
+    /** Global saturation */
+    saturation?: number;
+    /** Shadow lift (positive) or deepening (negative) */
+    shadows?: number;
+    /** Detail sharpening amount */
+    sharpen?: number;
+    /** Warm (positive) or cool (negative) white balance shift */
+    temperature?: number;
+    /** Magenta (positive) or green (negative) tint */
+    tint?: number;
+    /** Saturation weighted towards muted colours */
+    vibrance?: number;
+    /** Darkened (positive) or lightened (negative) edges */
+    vignette?: number;
+    /** White point */
+    whites?: number;
+};
+export type DevelopPresetResponseDto = {
+    /** When the preset was saved */
+    createdAt: string;
+    /** Preset ID */
+    id: string;
+    /** Preset name */
+    name: string;
+    settings: DevelopPresetSettingsDto;
+    /** When the preset last changed */
+    updatedAt: string;
+};
+export type DevelopPresetCreateDto = {
+    /** Name shown in the presets list; unique per account */
+    name: string;
+    settings: DevelopPresetSettingsDto;
+};
+export type DevelopPresetUpdateDto = {
+    /** Name shown in the presets list; unique per account */
+    name?: string;
+    /** Replaces every stored setting of the preset */
+    settings?: DevelopPresetSettingsDto;
 };
 export type DocumentSearchResponseDto = {
     items: AssetResponseDto[];
@@ -8950,6 +9106,49 @@ export function saveAssetDevelop({ id, assetDevelopSaveDto }: {
     })));
 }
 /**
+ * List exports of an original for editing elsewhere
+ */
+export function getAssetDevelopExports({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopExportResponseDto[];
+    }>(`/assets/${encodeURIComponent(id)}/develop/exports`, {
+        ...opts
+    }));
+}
+/**
+ * Export an original for editing elsewhere
+ */
+export function createAssetDevelopExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopExportResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop/exports`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Bring back a file developed elsewhere
+ */
+export function importAssetDevelopRendition({ id, assetDevelopImportDto }: {
+    id: string;
+    assetDevelopImportDto: AssetDevelopImportDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssetDevelopRevisionResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop/imports`, oazapfts.multipart({
+        ...opts,
+        method: "POST",
+        body: assetDevelopImportDto
+    })));
+}
+/**
  * Render a develop preview
  */
 export function previewAssetDevelop({ id, assetDevelopPreviewDto }: {
@@ -9707,6 +9906,59 @@ export function getUserConfigDefaults(opts?: Oazapfts.RequestOpts) {
     }>("/config/defaults", {
         ...opts
     }));
+}
+/**
+ * List develop presets
+ */
+export function getDevelopPresets(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopPresetResponseDto[];
+    }>("/develop-presets", {
+        ...opts
+    }));
+}
+/**
+ * Save a develop preset
+ */
+export function createDevelopPreset({ developPresetCreateDto }: {
+    developPresetCreateDto: DevelopPresetCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopPresetResponseDto;
+    }>("/develop-presets", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: developPresetCreateDto
+    })));
+}
+/**
+ * Delete a develop preset
+ */
+export function deleteDevelopPreset({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/develop-presets/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Update a develop preset
+ */
+export function updateDevelopPreset({ id, developPresetUpdateDto }: {
+    id: string;
+    developPresetUpdateDto: DevelopPresetUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopPresetResponseDto;
+    }>(`/develop-presets/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: developPresetUpdateDto
+    })));
 }
 /**
  * Search documents
@@ -15431,6 +15683,14 @@ export enum AssetJobName {
     RefreshOcr = "refresh-ocr",
     RegenerateThumbnail = "regenerate-thumbnail",
     TranscodeVideo = "transcode-video"
+}
+export enum AssetDevelopRevisionKind {
+    Recipe = "recipe",
+    External = "external"
+}
+export enum AssetDevelopMaskKind {
+    Radial = "radial",
+    Linear = "linear"
 }
 export enum AssetDevelopPreset {
     Original = "Original",

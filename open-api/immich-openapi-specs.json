@@ -5918,6 +5918,189 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/assets/{id}/develop/exports": {
+      "get": {
+        "description": "Every recorded export of the original, newest first, and whether the original still matches it.",
+        "operationId": "getAssetDevelopExports",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DevelopExportResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List exports of an original for editing elsewhere",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Records the SHA-256 of the original now, so a file developed from it in another application can be brought back and checked. Download the original through the ordinary download route.",
+        "operationId": "createAssetDevelopExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevelopExportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Export an original for editing elsewhere",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/develop/imports": {
+      "post": {
+        "description": "Checks that the file arrived intact and was developed from the original the photo has now, then keeps it as a new version and renders its preview. Nothing is kept when a check fails; the original is never changed.",
+        "operationId": "importAssetDevelopRendition",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetDevelopImportDto"
+              }
+            }
+          },
+          "description": "The developed file and the original it was made from",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDevelopRevisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Bring back a file developed elsewhere",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/assets/{id}/develop/preview": {
       "post": {
         "description": "Renders the recipe from the original at preview size and returns the image; nothing is stored.",
@@ -9192,6 +9375,220 @@
           }
         ],
         "x-immich-permission": "userConfig.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/develop-presets": {
+      "get": {
+        "description": "Your saved develop presets, by name.",
+        "operationId": "getDevelopPresets",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DevelopPresetResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List develop presets",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Saves develop settings (sliders, look, strength and masks, never geometry) under a new name.",
+        "operationId": "createDevelopPreset",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DevelopPresetCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevelopPresetResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Save a develop preset",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/develop-presets/{id}": {
+      "delete": {
+        "description": "Deletes the preset. Versions already saved with its settings are unchanged.",
+        "operationId": "deleteDevelopPreset",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a develop preset",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Renames a preset, replaces its settings, or both.",
+        "operationId": "updateDevelopPreset",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DevelopPresetUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevelopPresetResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update a develop preset",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
         "x-immich-state": "Alpha"
       }
     },
@@ -35576,6 +35973,262 @@
         ],
         "type": "string"
       },
+      "AssetDevelopImportDto": {
+        "properties": {
+          "exportId": {
+            "description": "The export this file was developed from",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "file": {
+            "description": "The developed file: JPEG, PNG, TIFF, WebP or HEIF",
+            "format": "binary",
+            "type": "string"
+          },
+          "label": {
+            "description": "Optional name for the new version",
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "renditionChecksum": {
+            "description": "SHA-256 (hex) of the file as the client sent it; a transfer that does not match is refused",
+            "pattern": "^[\\da-f]{64}$",
+            "type": "string"
+          },
+          "software": {
+            "description": "Application the file was developed with",
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceChecksum": {
+            "description": "SHA-256 (hex) of the original the file was developed from",
+            "pattern": "^[\\da-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopMask": {
+        "properties": {
+          "adjustments": {
+            "$ref": "#/components/schemas/AssetDevelopMaskAdjustments",
+            "default": {
+              "blacks": 0,
+              "contrast": 0,
+              "dehaze": 0,
+              "exposure": 0,
+              "highlights": 0,
+              "saturation": 0,
+              "shadows": 0,
+              "temperature": 0,
+              "tint": 0,
+              "vibrance": 0,
+              "whites": 0
+            }
+          },
+          "amount": {
+            "default": 100,
+            "description": "How much of the adjustment is applied, as a percentage",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "enabled": {
+            "default": true,
+            "description": "A disabled mask is kept but not rendered",
+            "type": "boolean"
+          },
+          "endX": {
+            "default": 0.5,
+            "description": "Where a linear mask has faded out, across the frame",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "endY": {
+            "default": 1,
+            "description": "Where a linear mask has faded out, down the frame",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "feather": {
+            "default": 50,
+            "description": "Softness of a radial edge as a percentage of the radius",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Client-chosen identifier, unique within the recipe",
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "invert": {
+            "default": false,
+            "description": "Apply the adjustment outside the shape instead of inside",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AssetDevelopMaskKind"
+          },
+          "name": {
+            "default": null,
+            "description": "Optional name shown in the editor",
+            "maxLength": 60,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          },
+          "radiusX": {
+            "default": 0.25,
+            "description": "Horizontal radius of a radial mask as a fraction of the frame width",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0.01,
+            "type": "number"
+          },
+          "radiusY": {
+            "default": 0.25,
+            "description": "Vertical radius of a radial mask as a fraction of the frame height",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0.01,
+            "type": "number"
+          },
+          "x": {
+            "description": "Centre (radial) or start (linear) across the oriented frame",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "y": {
+            "description": "Centre (radial) or start (linear) down the oriented frame",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopMaskAdjustments": {
+        "properties": {
+          "blacks": {
+            "default": 0,
+            "description": "Black point inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "contrast": {
+            "default": 0,
+            "description": "Contrast inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "dehaze": {
+            "default": 0,
+            "description": "Dehaze inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "exposure": {
+            "default": 0,
+            "description": "Exposure in EV inside the mask",
+            "format": "double",
+            "maximum": 2,
+            "minimum": -2,
+            "type": "number"
+          },
+          "highlights": {
+            "default": 0,
+            "description": "Highlights inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "saturation": {
+            "default": 0,
+            "description": "Saturation inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "shadows": {
+            "default": 0,
+            "description": "Shadows inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "temperature": {
+            "default": 0,
+            "description": "White balance shift inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "tint": {
+            "default": 0,
+            "description": "Tint inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "vibrance": {
+            "default": 0,
+            "description": "Vibrance inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "whites": {
+            "default": 0,
+            "description": "White point inside the mask",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "AssetDevelopMaskKind": {
+        "description": "Shape of a selective adjustment mask",
+        "enum": [
+          "radial",
+          "linear"
+        ],
+        "type": "string"
+      },
       "AssetDevelopPreset": {
         "description": "Named look applied on top of the develop sliders",
         "enum": [
@@ -35685,6 +36338,15 @@
             "maximum": 100,
             "minimum": -100,
             "type": "number"
+          },
+          "masks": {
+            "default": [],
+            "description": "Selective adjustments, applied in order after the global develop",
+            "items": {
+              "$ref": "#/components/schemas/AssetDevelopMask"
+            },
+            "maxItems": 8,
+            "type": "array"
           },
           "noiseReduction": {
             "default": 0,
@@ -35839,6 +36501,14 @@
         },
         "type": "object"
       },
+      "AssetDevelopRevisionKind": {
+        "description": "How a develop version was produced",
+        "enum": [
+          "recipe",
+          "external"
+        ],
+        "type": "string"
+      },
       "AssetDevelopRevisionResponseDto": {
         "properties": {
           "assetId": {
@@ -35847,6 +36517,12 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "attempts": {
+            "description": "Render attempts so far; one automatic retry follows a first failure",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "createdAt": {
             "description": "When the version was saved",
             "format": "date-time",
@@ -35854,6 +36530,18 @@
           },
           "error": {
             "description": "Why the last render failed, when it did",
+            "nullable": true,
+            "type": "string"
+          },
+          "exportId": {
+            "description": "The export of the original an imported version was developed from",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "fileName": {
+            "description": "Name of the imported file, for a version developed elsewhere",
             "nullable": true,
             "type": "string"
           },
@@ -35882,6 +36570,9 @@
             "description": "True for the version the asset currently shows",
             "type": "boolean"
           },
+          "kind": {
+            "$ref": "#/components/schemas/AssetDevelopRevisionKind"
+          },
           "label": {
             "description": "Name given when the version was saved",
             "nullable": true,
@@ -35907,11 +36598,26 @@
             "nullable": true,
             "type": "string"
           },
+          "renditionChecksum": {
+            "description": "SHA-256 (hex) of the edited master file, once it exists",
+            "nullable": true,
+            "type": "string"
+          },
           "revision": {
             "description": "Per-asset sequence number, 1 for the first saved version",
             "maximum": 9007199254740991,
             "minimum": 1,
             "type": "integer"
+          },
+          "software": {
+            "description": "Application an imported version was developed with, when known",
+            "nullable": true,
+            "type": "string"
+          },
+          "sourceChecksum": {
+            "description": "SHA-256 (hex) of the original this version was rendered or developed from",
+            "nullable": true,
+            "type": "string"
           },
           "status": {
             "$ref": "#/components/schemas/AssetDevelopRevisionStatus"
@@ -35931,19 +36637,26 @@
         },
         "required": [
           "assetId",
+          "attempts",
           "createdAt",
           "error",
+          "exportId",
+          "fileName",
           "hasMaster",
           "hasPreview",
           "height",
           "id",
           "isCurrent",
+          "kind",
           "label",
           "progress",
           "recipe",
           "renderedAt",
           "rendererVersion",
+          "renditionChecksum",
           "revision",
+          "software",
+          "sourceChecksum",
           "status",
           "updatedAt",
           "width"
@@ -38829,6 +39542,269 @@
             "nullable": true,
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DevelopExportResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset whose original was exported",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When the original was exported",
+            "format": "date-time",
+            "type": "string"
+          },
+          "fileName": {
+            "description": "File name of the exported original",
+            "type": "string"
+          },
+          "id": {
+            "description": "Export ID; quote it when bringing the developed file back",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isCurrentOriginal": {
+            "description": "False once the asset original no longer matches the exported bytes; a return is then refused",
+            "type": "boolean"
+          },
+          "sourceChecksum": {
+            "description": "SHA-256 (hex) of the original when it was exported",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "createdAt",
+          "fileName",
+          "id",
+          "isCurrentOriginal",
+          "sourceChecksum"
+        ],
+        "type": "object"
+      },
+      "DevelopPresetCreateDto": {
+        "properties": {
+          "name": {
+            "description": "Name shown in the presets list; unique per account",
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/DevelopPresetSettingsDto"
+          }
+        },
+        "required": [
+          "name",
+          "settings"
+        ],
+        "type": "object"
+      },
+      "DevelopPresetResponseDto": {
+        "properties": {
+          "createdAt": {
+            "description": "When the preset was saved",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Preset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "Preset name",
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/DevelopPresetSettingsDto"
+          },
+          "updatedAt": {
+            "description": "When the preset last changed",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "name",
+          "settings",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "DevelopPresetSettingsDto": {
+        "properties": {
+          "blacks": {
+            "default": 0,
+            "description": "Black point",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "clarity": {
+            "default": 0,
+            "description": "Local contrast in the midtones",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "contrast": {
+            "default": 0,
+            "description": "Contrast around middle grey",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "dehaze": {
+            "default": 0,
+            "description": "Haze removal (positive) or addition (negative)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "exposure": {
+            "default": 0,
+            "description": "Exposure in EV; each whole stop doubles the light",
+            "format": "double",
+            "maximum": 2,
+            "minimum": -2,
+            "type": "number"
+          },
+          "grain": {
+            "default": 0,
+            "description": "Film grain amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "highlights": {
+            "default": 0,
+            "description": "Highlight recovery (negative) or lift (positive)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "masks": {
+            "default": [],
+            "description": "Selective adjustments, applied in order after the global develop",
+            "items": {
+              "$ref": "#/components/schemas/AssetDevelopMask"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "noiseReduction": {
+            "default": 0,
+            "description": "Luminance noise reduction amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "preset": {
+            "$ref": "#/components/schemas/AssetDevelopPreset",
+            "default": "Original"
+          },
+          "presetStrength": {
+            "default": 100,
+            "description": "How much of the preset is applied, as a percentage",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "saturation": {
+            "default": 0,
+            "description": "Global saturation",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "shadows": {
+            "default": 0,
+            "description": "Shadow lift (positive) or deepening (negative)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "sharpen": {
+            "default": 0,
+            "description": "Detail sharpening amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "temperature": {
+            "default": 0,
+            "description": "Warm (positive) or cool (negative) white balance shift",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "tint": {
+            "default": 0,
+            "description": "Magenta (positive) or green (negative) tint",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "vibrance": {
+            "default": 0,
+            "description": "Saturation weighted towards muted colours",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "vignette": {
+            "default": 0,
+            "description": "Darkened (positive) or lightened (negative) edges",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "whites": {
+            "default": 0,
+            "description": "White point",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "DevelopPresetUpdateDto": {
+        "properties": {
+          "name": {
+            "description": "Name shown in the presets list; unique per account",
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/DevelopPresetSettingsDto",
+            "description": "Replaces every stored setting of the preset"
           }
         },
         "type": "object"

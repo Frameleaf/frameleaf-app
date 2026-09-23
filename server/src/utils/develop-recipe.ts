@@ -264,7 +264,7 @@ export function maskWeight(mask: AssetDevelopMask, px: number, py: number, aspec
     if (length2 === 0) {
       return 0;
     }
-    const t = (((px - mask.x) * aspect) * vx + (py - mask.y) * vy) / length2;
+    const t = ((px - mask.x) * aspect * vx + (py - mask.y) * vy) / length2;
     weight = 1 - smoothstep(0, 1, t);
   }
   return mask.invert ? 1 - weight : weight;
@@ -382,7 +382,7 @@ export const isIdentityDevelop = (recipe: AssetDevelopRecipe) => {
     recipe.rotation === 0 &&
     !recipe.flipHorizontal &&
     !recipe.flipVertical &&
-    !(recipe.masks ?? []).some((mask) => isActiveMask(mask))
+    (recipe.masks ?? []).every((mask) => !isActiveMask(mask))
   );
 };
 
@@ -591,7 +591,12 @@ export function applyDevelopTone(
   let index = 0;
   for (let y = 0; y < info.height; y += 1) {
     for (let x = 0; x < info.width; x += 1, index += channels) {
-      let [r, g, b] = toneRgb(luts.r[data[index]] / 255, luts.g[data[index + 1]] / 255, luts.b[data[index + 2]] / 255, local);
+      let [r, g, b] = toneRgb(
+        luts.r[data[index]] / 255,
+        luts.g[data[index + 1]] / 255,
+        luts.b[data[index + 2]] / 255,
+        local,
+      );
       const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
       if (grayscale > 0) {
         const grey = 0.2126 * r + 0.7152 * g + 0.0722 * b;

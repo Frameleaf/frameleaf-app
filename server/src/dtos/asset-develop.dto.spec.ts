@@ -63,9 +63,9 @@ describe('AssetDevelopRecipeDto', () => {
 
     const radial = { id: 'a', kind: AssetDevelopMaskKind.Radial, x: 0.5, y: 0.5 };
     expect(AssetDevelopRecipeSchema.safeParse({ version: 1, masks: [radial, radial] }).success).toBe(false);
-    expect(
-      AssetDevelopRecipeSchema.safeParse({ version: 1, masks: [{ ...radial, kind: 'brush' }] }).success,
-    ).toBe(false);
+    expect(AssetDevelopRecipeSchema.safeParse({ version: 1, masks: [{ ...radial, kind: 'brush' }] }).success).toBe(
+      false,
+    );
     expect(
       AssetDevelopRecipeSchema.safeParse({ version: 1, masks: [{ ...radial, adjustments: { clarity: 20 } }] }).data
         ?.masks[0].adjustments,
