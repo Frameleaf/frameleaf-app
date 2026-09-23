@@ -293,9 +293,9 @@ export class AssetService extends BaseService {
 
   /**
    * `visibility: locked` in a request (older clients, the upstream "Move to Locked folder") is a lock
-   * record, never a stored visibility (FL-34). Any other visibility on a locked asset takes it out of the
-   * Locked state first, exactly as leaving the upstream Locked folder did, and is then stored. Returns
-   * the visibility to store, if any.
+   * record, never a stored visibility (FL-34). Any other visibility is stored as asked and never unlocks:
+   * a locked asset stays locked, whatever its stored visibility, until its owner unlocks it through
+   * `POST /assets/unlock` from an unlocked session. Returns the visibility to store, if any.
    */
   private async applyLockedVisibility(
     auth: AuthDto,
@@ -311,7 +311,8 @@ export class AssetService extends BaseService {
       return undefined;
     }
 
-    await this.assetRepository.unlock(ids);
+    // Never an unlock (FL-34): only `POST /assets/unlock` removes a lock, from an unlocked session,
+    // recording the owner's review. Any other visibility is stored and the lock, if any, stays.
     return visibility;
   }
 
