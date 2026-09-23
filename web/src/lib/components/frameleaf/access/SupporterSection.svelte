@@ -123,7 +123,9 @@
 
   const setBadge = async (value: boolean) => {
     try {
-      const response = await updateMyPreferences({ userPreferencesUpdateDto: { purchase: { showSupportBadge: value } } });
+      const response = await updateMyPreferences({
+        userPreferencesUpdateDto: { purchase: { showSupportBadge: value } },
+      });
       authManager.setPreferences(withoutLockedRuleIds(response));
     } catch (error) {
       handleError(error, $t('errors.unable_to_update_settings'));

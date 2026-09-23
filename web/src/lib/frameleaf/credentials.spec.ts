@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CREDENTIALS,
+  forConfigSave,
   hasCredentialValues,
   isCredentialConfigured,
   isCredentialValueValid,
@@ -62,6 +63,18 @@ describe('write-only credentials (FL-67)', () => {
     expect(withoutCredentialValues({ trash: { enabled: false, days: 1 } })).toEqual({
       trash: { enabled: false, days: 1 },
     });
+  });
+
+  it('leaves values and the read-only flags out of what a generic save sends and compares', () => {
+    const saved = forConfigSave(config());
+    expect(saved.notifications.smtp.transport).not.toHaveProperty('passwordConfigured');
+    expect(saved.oauth).not.toHaveProperty('clientSecretConfigured');
+    expect(saved.machineLearning.runpod).not.toHaveProperty('apiKeyConfigured');
+    expect(saved.oauth.clientSecret).toBe('');
+
+    // a draft loaded before a credential was replaced compares equal to the fresh configuration
+    const stale = withCredentialState(config(), ConfigCredential.SmtpPassword, false);
+    expect(forConfigSave(stale)).toEqual(forConfigSave(config()));
   });
 
   it('tells whether an imported configuration carries a credential', () => {

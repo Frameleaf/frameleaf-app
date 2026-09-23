@@ -90,6 +90,20 @@ export const withoutCredentialValues = <T extends PartialConfig>(config: T): T =
   return copy;
 };
 
+/**
+ * A copy with every credential value emptied and the read-only `...Configured` flags removed: what
+ * a generic save sends and compares. A form's draft keeps the flags it was loaded with, so without
+ * this a section whose credential was replaced meanwhile would always look changed.
+ */
+export const forConfigSave = <T extends PartialConfig>(config: T): T => {
+  const copy = withoutCredentialValues(config);
+  delete copy.notifications?.smtp?.transport?.passwordConfigured;
+  delete copy.oauth?.clientSecretConfigured;
+  delete copy.machineLearning?.runpod?.apiKeyConfigured;
+  delete copy.machineLearning?.runpod?.hfTokenConfigured;
+  return copy;
+};
+
 /** Whether a configuration (for example an imported file) carries any credential value. */
 export const hasCredentialValues = (config: PartialConfig): boolean =>
   !!(

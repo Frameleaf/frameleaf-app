@@ -233,6 +233,11 @@
       return;
     }
     try {
+      // An unlock that expired while away is not a change made elsewhere: lock the panel instead.
+      if (!(await getAuthStatus()).isElevated) {
+        relock($t('frameleaf_locked_rules_unlock_again'));
+        return;
+      }
       const latest = await getMyPreferences();
       if (latest.revision === revision) {
         return;
