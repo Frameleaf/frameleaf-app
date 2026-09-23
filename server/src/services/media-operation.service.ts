@@ -16,6 +16,7 @@ import {
   Permission,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   MediaOperation,
@@ -231,6 +232,7 @@ export class MediaOperationService {
     private logger: LoggingRepository,
     private repository: MediaOperationRepository,
     private access: AccessRepository,
+    private icloud: ICloudSyncRepository,
   ) {
     this.logger.setContext(MediaOperationService.name);
   }
@@ -456,6 +458,10 @@ export class MediaOperationService {
       return this.retryBulk(auth, operation);
     }
 
+    if (operation.kind === MediaOperationKind.ICloudSync) {
+      return this.retryICloudSync(auth, operation);
+    }
+
     if (!canRetryMediaOperation(operation.status as MediaOperationStatus)) {
       throw new BadRequestException('Only a failed or cancelled job can be retried');
     }
@@ -599,6 +605,41 @@ export class MediaOperationService {
 
     this.logger.log(`Bulk media operation ${operation.id} retried as ${retried.id} (${remaining.length} items)`);
     return this.present(auth, retried);
+  }
+
+  /**
+   * Retry an iCloud sync run (FL-68): a new run of the same connection, through the connection's own
+   * locked path, so Activity can never start a second run beside one that is still going. The failed
+   * items' back-off is cleared first. When a run is already unfinished, that run is the answer.
+   */
+  private async retryICloudSync(auth: AuthDto, operation: MediaOperation): Promise<MediaOperationDto> {
+    if (!canRetryMediaOperation(operation.status as MediaOperationStatus)) {
+      throw new BadRequestException('Only a failed or cancelled job can be retried');
+    }
+
+    const connectionId = asObject(operation.snapshot).connectionId;
+    if (typeof connectionId !== 'string') {
+      throw new BadRequestException('This job cannot be retried');
+    }
+
+    const queued = await this.icloud.queueOperation(connectionId, auth.user.id, {
+      trigger: 'retry',
+      retryOfId: operation.id,
+    });
+    switch (queued.outcome) {
+      case 'created':
+      case 'existing':
+      case 'busy': {
+        this.logger.log(`iCloud sync run ${operation.id} retried as ${queued.operation.id} (${queued.outcome})`);
+        return this.present(auth, queued.operation);
+      }
+      case 'not-ready': {
+        throw new BadRequestException('Sign in to this iCloud connection again before retrying');
+      }
+      default: {
+        throw new BadRequestException('This iCloud connection is no longer connected');
+      }
+    }
   }
 
   /**
