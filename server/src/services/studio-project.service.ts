@@ -167,20 +167,20 @@ export class StudioProjectService {
   }
 
   /**
-   * The head digest for a project the account may read, or null. Shaped for FL-96's interim
-   * `StudioProjectRevisionAuthority`; a project with no revision yet has nothing to preview and
-   * answers null too.
+   * The head revision number of a project the account may read right now, or null when it may
+   * not (or the project is gone). FL-96 calls this on every preview frame read, so a reviewer
+   * who leaves the space, or a project that is deleted, stops receiving frames at once, and a
+   * frame rendered for an earlier revision is refused. Reads one row; no graph, no resolution.
    */
-  async getCurrentRevisionDigest(projectId: string, userId: string): Promise<string | null> {
+  async getReadableRevision(projectId: string, userId: string): Promise<number | null> {
     const project = await this.repository.getById(projectId);
-    if (!project || project.currentRevision === 0) {
+    if (!project) {
       return null;
     }
     if (project.ownerId !== userId && !(project.spaceId && (await this.isSpaceMember(userId, project.spaceId)))) {
       return null;
     }
-    const head = await this.repository.getRevision(project.id, project.currentRevision);
-    return head?.digest ?? null;
+    return project.currentRevision;
   }
 
   /**

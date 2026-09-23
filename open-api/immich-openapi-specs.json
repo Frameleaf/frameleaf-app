@@ -19831,8 +19831,14 @@
             "format": "date-time",
             "type": "string"
           },
+          "revision": {
+            "description": "The stored project revision this frame was rendered for",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "revisionDigest": {
-            "description": "The exact revision this frame is bound to",
+            "description": "Digest of the authorized resolution the frame is bound to; changes with the revision and whenever access is re-resolved",
             "type": "string"
           },
           "seekGeneration": {
@@ -19873,6 +19879,7 @@
           "quality",
           "readyAt",
           "requestedAt",
+          "revision",
           "revisionDigest",
           "seekGeneration",
           "sizeInBytes",
@@ -19896,19 +19903,19 @@
       "StudioPreviewRequestDto": {
         "properties": {
           "projectId": {
-            "description": "Studio project the frame belongs to",
-            "maxLength": 255,
-            "minLength": 1,
-            "type": "string"
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "Studio project the frame belongs to"
           },
           "quality": {
             "$ref": "#/components/schemas/StudioPreviewQuality"
           },
-          "revisionDigest": {
-            "description": "Exact graph revision digest the frame is bound to; a superseded revision is refused",
-            "maxLength": 255,
-            "minLength": 1,
-            "type": "string"
+          "revision": {
+            "description": "Stored project revision the frame is bound to; a superseded revision is refused",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
           },
           "seekGeneration": {
             "default": 0,
@@ -19933,7 +19940,7 @@
         "required": [
           "projectId",
           "quality",
-          "revisionDigest",
+          "revision",
           "time",
           "viewportHeight",
           "viewportWidth"
@@ -19942,9 +19949,11 @@
       },
       "StudioPreviewResponseDto": {
         "properties": {
-          "currentRevisionDigest": {
-            "description": "The revision the project is on now",
-            "type": "string"
+          "currentRevision": {
+            "description": "The stored revision the project is on now",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
           },
           "preview": {
             "$ref": "#/components/schemas/StudioPreviewDto"
@@ -19960,7 +19969,7 @@
           }
         },
         "required": [
-          "currentRevisionDigest",
+          "currentRevision",
           "preview",
           "supersededPreviewIds"
         ],
@@ -46129,7 +46138,7 @@
     },
     "/studio/previews": {
       "post": {
-        "description": "Asks for one frame of a project at an exact revision, rational time, quality and viewport. An identical request shares the render rather than starting a second one, and previews of superseded revisions are cancelled.",
+        "description": "Asks for one frame of a project's current stored revision at an exact rational time, quality and viewport. The server reads the graph from project storage and resolves its sources for the caller; a request naming a superseded revision is refused with the current one. An identical request shares the render rather than starting a second one, and previews of superseded revisions are cancelled.",
         "operationId": "requestStudioPreview",
         "parameters": [],
         "requestBody": {

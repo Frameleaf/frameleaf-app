@@ -51,9 +51,8 @@ export class StudioPreviewFrameTable {
   projectId!: string;
 
   /**
-   * What this frame is bound to: FL-90's authorized manifest digest when the request carried
-   * one, and otherwise the graph revision digest the client named. Matched for equality only —
-   * never parsed, never ordered.
+   * What this frame is bound to: FL-90's authorized manifest digest for the stored project
+   * revision (FL-89). Matched for equality only — never parsed, never ordered.
    *
    * Binding to the manifest digest is strictly stronger than binding to the graph alone: the
    * digest changes when the revision changes *and* when the project is re-resolved, so a frame
@@ -63,8 +62,9 @@ export class StudioPreviewFrameTable {
   revisionDigest!: string;
 
   /**
-   * The numeric project revision the manifest was resolved at, when a manifest was supplied.
-   * Recorded for lineage and for the render snapshot; the equality check uses the digest.
+   * The stored project revision the manifest was resolved at. Frame delivery requires it to be
+   * the project's head, and a committed revision supersedes every row below it for every
+   * account. Null only on rows recorded before previews were bound to project storage.
    */
   @Column({ type: 'integer', nullable: true })
   projectRevision!: number | null;
