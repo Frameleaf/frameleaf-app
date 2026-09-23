@@ -89,7 +89,10 @@ export const describeFilterField = (query: DiscoveryQuery, field: string): Filte
   if (typeof condition !== 'object') {
     return null;
   }
-  const entries = Object.entries(condition as Record<string, unknown>);
+  // An empty list (`{ any: [] }`) constrains nothing, exactly like an empty condition.
+  const entries = Object.entries(condition as Record<string, unknown>).filter(
+    ([, value]) => value !== undefined && !(Array.isArray(value) && value.length === 0),
+  );
   if (entries.length === 0) {
     return null;
   }
