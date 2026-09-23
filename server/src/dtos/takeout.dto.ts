@@ -45,6 +45,26 @@ export const TakeoutWarningSchema = z
   .describe('Why an item needs attention')
   .meta({ id: 'TakeoutWarning' });
 
+export const TakeoutActionSchema = z
+  .enum(['scan', 'import'])
+  .describe('The step a job carries out')
+  .meta({ id: 'TakeoutAction' });
+
+export const TakeoutControlActionSchema = z
+  .enum(['pause', 'resume', 'cancel'])
+  .describe('What to do with the running job')
+  .meta({ id: 'TakeoutControlAction' });
+
+export const TakeoutSourceKindSchema = z
+  .enum(['zip', 'directory'])
+  .describe('An uploaded archive or a server directory')
+  .meta({ id: 'TakeoutSourceKind' });
+
+export const TakeoutItemKindSchema = z
+  .enum(['image', 'video'])
+  .describe('Photo or video')
+  .meta({ id: 'TakeoutItemKind' });
+
 const TakeoutMetadataSchema = z
   .object({
     title: z.string().describe('File name Google Photos recorded'),
@@ -88,6 +108,21 @@ export const TakeoutOptionsSchema = z
   .meta({ id: 'TakeoutOptionsDto' });
 
 export class TakeoutOptionsDto extends createZodDto(TakeoutOptionsSchema) {}
+
+/** The choices as the import holds them; every switch is present. */
+const TakeoutOptionsResponseSchema = z
+  .object({
+    descriptions: z.boolean(),
+    dates: z.boolean(),
+    locations: z.boolean(),
+    favorites: z.boolean(),
+    archive: z.boolean(),
+    albums: z.boolean(),
+    sidecarReview: z.boolean(),
+    updateMatchedMetadata: z.boolean(),
+    selectedAlbums: z.array(z.string()).optional(),
+  })
+  .meta({ id: 'TakeoutOptionsResponseDto' });
 
 export class TakeoutCreateDto extends createZodDto(
   z
@@ -176,7 +211,7 @@ export class TakeoutPairQueryDto extends createZodDto(
 
 export class TakeoutControlDto extends createZodDto(
   z
-    .object({ action: z.enum(['pause', 'resume', 'cancel']).describe('What to do with the running job') })
+    .object({ action: TakeoutControlActionSchema })
     .meta({ id: 'TakeoutControlDto' }),
 ) {}
 
@@ -204,7 +239,7 @@ export const TakeoutSourceSchema = z
   .object({
     id: z.uuid(),
     name: z.string().describe('The archive’s file name, or the directory’s name'),
-    kind: z.enum(['zip', 'directory']).describe('An uploaded archive or a server directory'),
+    kind: TakeoutSourceKindSchema,
     size: z.int().describe('Declared archive size in bytes; zero for a directory'),
     received: z.int().describe('Bytes staged so far; an upload resumes here'),
     scanned: z.boolean().describe('Every entry has been read'),
@@ -249,7 +284,7 @@ export const TakeoutResponseSchema = z
     name: z.string(),
     state: TakeoutStateSchema,
     phase: TakeoutPhaseSchema,
-    action: z.enum(['scan', 'import']).nullable().describe('What the latest job did or is doing'),
+    action: TakeoutActionSchema.nullable().describe('What the latest job did or is doing'),
     operationId: z.uuid().nullable().describe('The latest job, as Activity lists it'),
     processed: z.int().describe('Units the latest job has finished'),
     total: z.int().nullable().describe('Units the latest job knows of so far; grows while a scan reads its sources'),
@@ -259,7 +294,7 @@ export const TakeoutResponseSchema = z
     updatedAt: z.string(),
     counts: TakeoutCountsSchema,
     sources: z.array(TakeoutSourceSchema),
-    options: TakeoutOptionsSchema,
+    options: TakeoutOptionsResponseSchema,
     albums: z.array(TakeoutAlbumSchema),
   })
   .meta({ id: 'TakeoutResponseDto' });
@@ -275,7 +310,7 @@ const TakeoutItemSchema = z
     path: z.string().describe('Path inside the export'),
     folder: z.string(),
     source: z.string().describe('The archive or directory the file came from'),
-    kind: z.enum(['image', 'video']),
+    kind: TakeoutItemKindSchema,
     size: z.int(),
     state: TakeoutItemStateSchema,
     assetId: z.uuid().nullable().describe('The library item it became or matched, when this session may open it'),
