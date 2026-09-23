@@ -332,7 +332,10 @@ export class BaseService {
    * it, and profile pictures copied from a photo now Locked are replaced.
    */
   protected async afterAssetsLocked(assetIds: string[]): Promise<void> {
-    await queueReleasedPersonThumbnails({ person: this.personRepository, job: this.jobRepository }, assetIds);
+    await queueReleasedPersonThumbnails(
+      { person: this.personRepository, job: this.jobRepository },
+      assetIds,
+    );
     await this.replaceLockedProfileImages();
   }
 

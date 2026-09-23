@@ -51,10 +51,7 @@ export const onAssetsLocked = async (db: Kysely<DB>, assetIds: string[]): Promis
   }
 
   const rows = await otherStackMembers(db, assetIds).where(isUnlockedAsset('member')).execute();
-  const moved = await lockAssets(
-    db,
-    rows.map(({ id }) => id),
-  );
+  const moved = await lockAssets(db, rows.map(({ id }) => id));
   await releaseLockedCoverReferences(db, [...assetIds, ...moved]);
   return moved;
 };
@@ -73,11 +70,7 @@ export const onAssetsUnlocked = async (
   }
 
   const rows = await otherStackMembers(db, assetIds).where(isLockedAssetId(sql.ref('member.id'))).execute();
-  return unlockAssets(
-    db,
-    rows.map(({ id }) => id),
-    visibility,
-  );
+  return unlockAssets(db, rows.map(({ id }) => id), visibility);
 };
 
 /**
@@ -124,10 +117,7 @@ export const onStacksJoined = async (db: Kysely<DB>, stackIds: string[]): Promis
       ),
     )
     .execute();
-  const moved = await lockAssets(
-    db,
-    rows.map(({ id }) => id),
-  );
+  const moved = await lockAssets(db, rows.map(({ id }) => id));
   await releaseLockedCoverReferences(db, moved);
   return moved;
 };

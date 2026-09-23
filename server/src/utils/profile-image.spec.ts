@@ -12,6 +12,8 @@ import { vitest } from 'vitest';
  */
 describe(replaceLockedProfileImages.name, () => {
   const lockedAssetId = 'locked-asset-id';
+  const source = { id: 'user-id', profileImagePath: '/profile/user-id/old.webp', profileImageAssetId: lockedAssetId };
+  const replacement = { id: 'best-photo-id', path: '/thumbs/preview.jpeg' };
 
   const setup = () => {
     const repos = {
@@ -19,12 +21,8 @@ describe(replaceLockedProfileImages.name, () => {
       crypto: { randomUUID: vitest.fn().mockReturnValue('new-picture') } as unknown as CryptoRepository,
       storageCore: { ensureFolders: vitest.fn() } as unknown as StorageCore,
       user: {
-        getLockedProfileImageSources: vitest
-          .fn()
-          .mockResolvedValue([
-            { id: 'user-id', profileImagePath: '/profile/user-id/old.webp', profileImageAssetId: lockedAssetId },
-          ]),
-        getProfileImageReplacement: vitest.fn().mockResolvedValue({ id: 'best-photo-id', path: '/thumbs/preview.jpeg' }),
+        getLockedProfileImageSources: vitest.fn().mockResolvedValue([source]),
+        getProfileImageReplacement: vitest.fn().mockResolvedValue(replacement),
         replaceLockedProfileImage: vitest.fn().mockResolvedValue(true),
       },
       job: { queue: vitest.fn().mockResolvedValue(undefined) },
