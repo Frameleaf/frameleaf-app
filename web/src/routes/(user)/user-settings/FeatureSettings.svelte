@@ -73,9 +73,9 @@
 <section class="my-4">
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" {onsubmit}>
-      <div class="flex flex-col sm:ms-4 md:ms-8">
+      <div class="flex flex-col gap-4">
         <SettingGroup key="albums" title={$t('albums')} subtitle={$t('albums_feature_description')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
+          <div class="flex flex-col gap-4">
             <Field label={$t('albums_default_sort_order')} description={$t('albums_default_sort_order_description')}>
               <Select
                 options={[
@@ -89,7 +89,7 @@
         </SettingGroup>
 
         <SettingGroup key="folders" title={$t('folders')} subtitle={$t('folders_feature_description')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
+          <div class="flex flex-col gap-4">
             <Field label={$t('enable')}>
               <Switch bind:checked={foldersEnabled} />
             </Field>
@@ -103,7 +103,7 @@
         </SettingGroup>
 
         <SettingGroup key="memories" title={$t('time_based_memories')} subtitle={$t('photos_from_previous_years')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
+          <div class="flex flex-col gap-4">
             <Field label={$t('enable')}>
               <Switch bind:checked={memoriesEnabled} />
             </Field>
@@ -121,7 +121,7 @@
         </SettingGroup>
 
         <SettingGroup key="people" title={$t('people')} subtitle={$t('people_feature_description')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
+          <div class="flex flex-col gap-4">
             <Field label={$t('enable')}>
               <Switch bind:checked={peopleEnabled} />
             </Field>
@@ -138,7 +138,7 @@
         </SettingGroup>
 
         <SettingGroup key="rating" title={$t('rating')} subtitle={$t('rating_description')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
+          <div class="flex flex-col gap-4">
             <Field label={$t('enable')}>
               <Switch bind:checked={ratingsEnabled} />
             </Field>
@@ -146,7 +146,7 @@
         </SettingGroup>
 
         <SettingGroup key="shared-links" title={$t('shared_links')} subtitle={$t('shared_links_description')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
+          <div class="flex flex-col gap-4">
             <Field label={$t('enable')}>
               <Switch bind:checked={sharedLinksEnabled} />
             </Field>
@@ -160,7 +160,7 @@
         </SettingGroup>
 
         <SettingGroup key="tags" title={$t('tags')} subtitle={$t('tag_feature_description')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
+          <div class="flex flex-col gap-4">
             <Field label={$t('enable')}>
               <Switch bind:checked={tagsEnabled} />
             </Field>
@@ -174,7 +174,7 @@
         </SettingGroup>
 
         <SettingGroup key="cast" title={$t('cast')} subtitle={$t('cast_description')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
+          <div class="flex flex-col gap-4">
             <Field label={$t('gcast_enabled')} description={$t('gcast_enabled_description')}>
               <Switch bind:checked={gCastEnabled} />
             </Field>
@@ -182,14 +182,14 @@
         </SettingGroup>
 
         <SettingGroup key="recentlyAdded" title={$t('recently_added')} subtitle={$t('recently_added_description')}>
-          <div class="mt-4 flex flex-col gap-4 sm:ms-4">
+          <div class="flex flex-col gap-4">
             <Field label={$t('sidebar')} description={$t('sidebar_display_description')}>
               <Switch bind:checked={recentlyAddedSidebar} />
             </Field>
           </div>
         </SettingGroup>
 
-        <div class="mt-4 flex justify-end">
+        <div class="flex justify-end">
           <Button shape="round" type="submit" size="small" onclick={() => handleSave()}>{$t('save')}</Button>
         </div>
       </div>
