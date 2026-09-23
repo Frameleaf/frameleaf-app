@@ -1,4 +1,4 @@
-import type { AssetStackResponseDto, AssetVisibility } from '@immich/sdk';
+import type { AssetLockReason, AssetStackResponseDto, AssetVisibility } from '@immich/sdk';
 import type { TimelineDate, TimelineDateTime, TimelineYearMonth } from '$lib/utils/timeline-util';
 
 export type ViewportTopMonth = TimelineYearMonth | undefined | 'lead-in' | 'lead-out';
@@ -25,6 +25,8 @@ export type TimelineAsset = {
   createdAt: TimelineDateTime;
   fileCreatedAt: TimelineDateTime;
   visibility: AssetVisibility;
+  /** Why the asset is locked (FL-34); only the Locked view's buckets carry it. */
+  lockReason?: AssetLockReason | null;
   isFavorite: boolean;
   isTrashed: boolean;
   isVideo: boolean;
