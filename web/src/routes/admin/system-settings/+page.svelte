@@ -32,6 +32,7 @@
   import ThemeSettings from './ThemeSettings.svelte';
   import TrashSettings from './TrashSettings.svelte';
   import UserSettings from './UserSettings.svelte';
+  import LibrariesArea from '$lib/components/frameleaf/LibrariesArea.svelte';
   import PreservationPanel from '$lib/components/frameleaf/PreservationPanel.svelte';
   import SettingsHost from '$lib/components/frameleaf/settings/SettingsHost.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
@@ -339,7 +340,13 @@
       {#if featureFlagsManager.value.configFile}
         <Alert color="warning" class="mb-4 text-dark" title={$t('admin.config_set_by_file')} />
       {/if}
-      <SettingsHost {sections} disabled={featureFlagsManager.value.configFile} />
+      <SettingsHost {sections} disabled={featureFlagsManager.value.configFile}>
+        {#snippet areaPanel(area)}
+          {#if area === 'libraries'}
+            <LibrariesArea />
+          {/if}
+        {/snippet}
+      </SettingsHost>
     </Theme>
   </Container>
 </AdminPageLayout>
