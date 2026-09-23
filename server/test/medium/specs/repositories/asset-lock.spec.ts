@@ -237,6 +237,24 @@ describe('asset lock (FL-34)', () => {
       });
     });
 
+    it('locks a photo joining a locked stack, and its video part, with the stack's own reason', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: primary } = await ctx.newAsset({ ownerId: user.id });
+      const { stack } = await ctx.newStack({ ownerId: user.id }, [primary.id]);
+      await sut.lock([primary.id], AssetLockReason.Detected, null);
+      const { asset: motion } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Hidden });
+      const { asset: joining } = await ctx.newAsset({ ownerId: user.id, livePhotoVideoId: motion.id });
+
+      await sut.update({ id: joining.id, stackId: stack.id });
+
+      await expect(locksOf(ctx.database, [primary.id, joining.id, motion.id])).resolves.toEqual({
+        [primary.id]: AssetLockReason.Detected,
+        [joining.id]: AssetLockReason.Detected,
+        [motion.id]: AssetLockReason.Detected,
+      });
+    });
+
     it('never stores visibility locked, whoever asks for it', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
