@@ -25,12 +25,16 @@ describe('studio command mirror', () => {
     expect(STUDIO_ENGINE_REVISION).toBe('4d62e8082c5eb387a96275bcbd323d28f6e41a62');
   });
 
-  it('declares a scope, an owner and at least one payload field for every command', () => {
+  it('declares a scope, an owner and a payload field for every graph change', () => {
     expect(studioCommandIds.length).toBeGreaterThan(0);
     for (const id of studioCommandIds) {
       const definition = studioCommandMirror[id];
       expect(definition.owner).toMatch(/^FL-\d+$/);
-      expect(Object.keys(definition.payload).length).toBeGreaterThan(0);
+      // Only a command that changes nothing about the project may carry no arguments
+      // (`preview.release`, FL-96); every graph change names what it changes.
+      if (definition.mutatesGraph) {
+        expect(Object.keys(definition.payload).length).toBeGreaterThan(0);
+      }
       if (definition.undoable) {
         expect(definition.mutatesGraph).toBe(true);
       }
