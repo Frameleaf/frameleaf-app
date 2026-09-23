@@ -306,7 +306,7 @@ export function restoreCredentials(
     paths.some((path) => !hasPath(config, path)) &&
     !isDeepStrictEqual(redactCredentials(config).config, redactCredentials(stored).config)
   ) {
-    throw new Error('Re-enter stored credentials when changing other step parameters.');
+    throw new Error('Re-enter stored credentials when changing the fields around them.');
   }
   const next = structuredClone(config ?? {});
   for (const path of paths) {
