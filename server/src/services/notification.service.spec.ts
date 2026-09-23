@@ -456,6 +456,7 @@ describe(NotificationService.name, () => {
           includeNsfw: true,
           tagIds: [],
           personIds: [],
+          petIds: [],
           scope: 'owned',
         },
       });
@@ -646,6 +647,7 @@ describe(NotificationService.name, () => {
           includeNsfw: true,
           tagIds: [],
           personIds: [],
+          petIds: [],
           scope: 'owned',
         },
       });

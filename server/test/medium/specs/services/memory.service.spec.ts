@@ -1,7 +1,7 @@
 import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetFileType, MemoryType } from 'src/enum.js';
+import { AssetFileType, MemoryType, PetObservationState } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -415,6 +415,47 @@ describe(MemoryService.name, () => {
 
       const memoriesAfter = await memoryRepo.search(user.id, {});
       expect(memoriesAfter.length).toBe(1);
+    });
+  });
+
+  describe('search', () => {
+    const memoryWithTwoPhotos = async (ctx: ReturnType<typeof setup>['ctx']) => {
+      const { user } = await ctx.newUser();
+      const { memory } = await ctx.newMemory({ ownerId: user.id });
+      const { asset: petPhoto } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: otherPhoto } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newMemoryAsset({ memoryId: memory.id, assetId: petPhoto.id });
+      await ctx.newMemoryAsset({ memoryId: memory.id, assetId: otherPhoto.id });
+      const pet = await ctx.database
+        .insertInto('pet')
+        .values({ ownerId: user.id, name: 'Biscuit', isHidden: true })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      return { user, petPhoto, otherPhoto, pet };
+    };
+
+    it('should leave out a photo of a pet the owner hid, as it does a hidden person', async () => {
+      const { sut, ctx } = setup();
+      const { user, petPhoto, otherPhoto, pet } = await memoryWithTwoPhotos(ctx);
+      await ctx.database.insertInto('pet_observation').values({ petId: pet.id, assetId: petPhoto.id }).execute();
+
+      const memories = await sut.search(factory.auth({ user }), {});
+
+      expect(memories).toHaveLength(1);
+      expect(memories[0].assets.map(({ id }) => id)).toEqual([otherPhoto.id]);
+    });
+
+    it('should keep a photo in which the owner rejected the hidden pet', async () => {
+      const { sut, ctx } = setup();
+      const { user, petPhoto, pet } = await memoryWithTwoPhotos(ctx);
+      await ctx.database
+        .insertInto('pet_observation')
+        .values({ petId: pet.id, assetId: petPhoto.id, state: PetObservationState.Rejected })
+        .execute();
+
+      const memories = await sut.search(factory.auth({ user }), {});
+
+      expect(memories[0].assets.map(({ id }) => id)).toContain(petPhoto.id);
     });
   });
 
