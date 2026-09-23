@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto, invalidateAll } from '$app/navigation';
   import AdminCard from '$lib/components/AdminCard.svelte';
+  import AdminCastPermission from '$lib/components/frameleaf/AdminCastPermission.svelte';
   import AccountLifecyclePanel from '$lib/components/frameleaf/AccountLifecyclePanel.svelte';
   import AccountSecurityPanel from '$lib/components/frameleaf/AccountSecurityPanel.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
@@ -179,6 +180,8 @@
             <FeatureSetting title={$t('show_supporter_badge')} state={userPreferences.purchase.showSupportBadge} />
             <FeatureSetting title={$t('tags')} state={userPreferences.tags.enabled} />
             <FeatureSetting title={$t('gcast_enabled')} state={userPreferences.cast.gCastEnabled} />
+            <!-- FL-77: casting is the one administrator-enforced feature; the rows above are the account's own choices. -->
+            <AdminCastPermission {user} preferences={userPreferences} />
           </Stack>
         </AdminCard>
 
