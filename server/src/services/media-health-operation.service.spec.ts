@@ -139,7 +139,7 @@ describe(MediaHealthOperationService.name, () => {
 
       await sut.run(operationOf(scanSnapshot), 'token');
 
-      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(expect.any(String), { released: false });
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(expect.any(String), 'token', { released: false });
       expect(mediaHealth.setRunState).toHaveBeenLastCalledWith(scanSnapshot, 'cancelled', expect.anything());
       expect(operations.complete).not.toHaveBeenCalled();
     });
