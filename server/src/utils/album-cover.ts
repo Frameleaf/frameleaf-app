@@ -18,6 +18,7 @@ export const albumCoverCandidates = (eb: ExpressionBuilder<DB, 'album'>) =>
     )
     .whereRef('album_asset.albumId', '=', 'album.id');
 
-/** The automatic cover of an album: its newest candidate, or null when it has none. */
-export const automaticAlbumCover = (eb: ExpressionBuilder<DB, 'album'>) =>
-  albumCoverCandidates(eb).select('album_asset.assetId').orderBy('asset.fileCreatedAt', 'desc').limit(sql.lit(1));
+// The automatic cover an album takes (which candidate, in what order) is `albumCoverReplacement` in
+// `src/utils/cover-references.ts`: Best Photos first, then newest, never sensitive for an album anyone
+// besides its owner sees. `AlbumRepository.updateThumbnails` uses it directly so there is one picker,
+// not two that could disagree (FL-53).
