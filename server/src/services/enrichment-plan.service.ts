@@ -196,18 +196,15 @@ export class EnrichmentPlanService {
     const { machineLearning } = await this.config();
     const [rows, routes] = await Promise.all([this.mlDestinations.getAll(), this.mlDestinations.getRoutes()]);
 
-    const destinations: EnrichmentOptionsResponseDto['destinations'] = [];
-    for (const row of rows) {
-      destinations.push({
-        id: row.id,
-        name: row.name,
-        kind: row.kind,
-        cloud: isCloudDestination(row.kind),
-        health: row.lastProbeHealth,
-        enrichment: await this.admission(row, MlWorkload.Enrichment),
-        search: await this.admission(row, MlWorkload.Clip),
-      });
-    }
+    const destinations: EnrichmentOptionsResponseDto['destinations'] = Array.from(rows, (row) => ({
+      id: row.id,
+      name: row.name,
+      kind: row.kind,
+      cloud: isCloudDestination(row.kind),
+      health: row.lastProbeHealth,
+      enrichment: this.admission(row, MlWorkload.Enrichment),
+      search: this.admission(row, MlWorkload.Clip),
+    }));
 
     return {
       destinations,
@@ -862,14 +859,14 @@ export class EnrichmentPlanService {
     if (!destination) {
       throw new BadRequestException('That processing destination does not exist');
     }
-    const verdict = await this.admission(destination, workload);
+    const verdict = this.admission(destination, workload);
     if (!verdict.admitted && !TRANSIENT_REFUSALS.has(verdict.refusal as MlAdmissionRefusal)) {
       throw new BadRequestException(`${destination.name} cannot run this work (${verdict.refusal})`);
     }
     return destination;
   }
 
-  private async admission(row: MlDestinationRow, workload: MlWorkload) {
+  private admission(row: MlDestinationRow, workload: MlWorkload) {
     const verdict = evaluateAdmission({
       destination: row,
       workload,

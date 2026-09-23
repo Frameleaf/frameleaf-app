@@ -212,6 +212,18 @@ describe(RestorationWorkerService.name, () => {
       completeCheckpoint: vi.fn().mockResolvedValue(true),
       invalidateCheckpointsFrom: vi.fn().mockResolvedValue(undefined),
       getAggregates: vi.fn(),
+      createExclusive: vi.fn(),
+      getActiveOfKind: vi.fn(),
+      getByRequestKey: vi.fn(),
+      getClaimants: vi.fn(),
+      getDestinationLoad: vi.fn(),
+      getLockedAssetIds: vi.fn(),
+      getLockedIds: vi.fn(),
+      listExpiredBundleExports: vi.fn(),
+      listRecentOfKind: vi.fn(),
+      requestPause: vi.fn(),
+      resume: vi.fn(),
+      setFinishedResult: vi.fn(),
     };
 
     mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));

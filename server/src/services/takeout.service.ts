@@ -433,7 +433,7 @@ export class TakeoutService {
         if (!item || (item.withheld && !includeLocked)) {
           throw new TakeoutNotFound('Item not found');
         }
-        if (item.state === 'imported' || item.state === 'matched' || item.state === 'importing') {
+        if (['imported', 'matched', 'importing'].includes(item.state)) {
           throw new TakeoutConflict('This item is already in your library');
         }
 

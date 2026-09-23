@@ -252,7 +252,7 @@ describe(PersonRepository.name, () => {
       const { person: to } = await ctx.newPerson({ ownerId: user.id });
       const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: from.personGroupId });
 
-      expect(assetFace.correctedAt).toBeNull();
+      await expect(sut.getCorrections(from.personGroupId)).resolves.toEqual([]);
 
       const changed = await sut.reassignFace(assetFace.id, to.personGroupId);
       expect(changed).toBe(1);
