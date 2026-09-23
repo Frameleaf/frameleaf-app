@@ -3,7 +3,7 @@ import { load as loadYaml } from 'js-yaml';
 import { cloneDeep, get, isEmpty, isEqual, set } from 'lodash-es';
 import { createHash } from 'node:crypto';
 import type { DeepPartial } from 'src/types.js';
-import { AdminConfigDto, SystemConfig, defaults } from 'src/dtos/config.dto.js';
+import { AdminConfigDto, SystemConfig, defaults, mapAdminConfig } from 'src/dtos/config.dto.js';
 import { DatabaseLock, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
@@ -45,6 +45,16 @@ export const getConfig = async (repos: RepoDeps, { withCache }: { withCache: boo
 };
 
 /**
+ * FL-66: the saved configuration read straight from storage, never from the cache. A cached read
+ * can hand back a configuration built before another save committed, which must not be what a
+ * revision check or a read-modify-write under the settings lock starts from.
+ */
+export const readConfig = async (repos: RepoDeps): Promise<SystemConfig> => {
+  const config = await buildConfig(repos);
+  return repos.forkSchemaRepo ? repos.forkSchemaRepo.overlayConfig(config) : config;
+};
+
+/**
  * FL-66: values the server writes on its own (bookkeeping for the image description re-queue
  * reminder). Every update keeps the stored values whatever a client sends, so they are left out
  * of the revision: deferring a re-queue must not make another administrator's draft stale.
@@ -63,10 +73,14 @@ export const SYSTEM_CONFIG_CHANGED_MESSAGE =
  * `revision`. It changes whenever a saved value changes, so a save made against settings that
  * another administrator (or a resource action such as RunPod provisioning) changed since they
  * were loaded can be refused instead of silently overwriting them. The revision is never
- * stored, so no schema change is needed. Only administrators ever see it.
+ * stored, so no schema change is needed.
+ *
+ * It digests exactly what an administrator can read (`mapAdminConfig`): write-only secrets (the
+ * RunPod API key and HuggingFace token) only count through their "configured" flags, so the
+ * revision can never be used to test guesses of a secret the API does not show.
  */
 export const getConfigRevision = (config: SystemConfig): string => {
-  const comparable = cloneDeep(config) as unknown as Record<string, unknown>;
+  const comparable = cloneDeep(mapAdminConfig(config)) as unknown as Record<string, unknown>;
   for (const path of SERVER_MANAGED_CONFIG_PATHS) {
     set(comparable, path, undefined);
   }
@@ -97,7 +111,8 @@ export const updateConfig = async (repos: RepoDeps, newConfig: SystemConfig): Pr
 
   clearConfigCache();
 
-  return getConfig(repos, { withCache: false });
+  // FL-66: what was just written, read from storage, so the revision a save reports is its own.
+  return readConfig(repos);
 };
 
 const loadFromFile = async ({ metadataRepo, logger }: RepoDeps, filepath: string) => {

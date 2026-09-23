@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import { cloneDeep } from 'lodash-es';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { mapConfig } from 'src/dtos/system-config.dto.js';
 import {
@@ -1087,10 +1088,62 @@ describe(SystemConfigService.name, () => {
       expect(mocks.event.emit).not.toHaveBeenCalledWith('ConfigValidate', expect.anything());
     });
 
+    it('should refuse a draft when another save lands between validation and the write', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(partialConfig);
+      const { revision } = await sut.getAdminConfigWithRevision();
+
+      // Validation still sees the loaded settings; under the lock the settings have moved on.
+      mocks.systemMetadata.get
+        .mockResolvedValueOnce(partialConfig)
+        .mockResolvedValue({ ...partialConfig, trash: { days: 30 } });
+
+      await expect(
+        sut.updateAdminConfigWithRevision({ config: updatedConfig, expectedRevision: revision }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.event.emit).toHaveBeenCalledWith('ConfigValidate', expect.anything());
+      expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('ConfigUpdate', expect.anything());
+    });
+
+    it('should prepare and validate a save without a revision again when the settings moved on', async () => {
+      mocks.systemMetadata.get
+        .mockResolvedValueOnce(partialConfig)
+        .mockResolvedValue({ ...partialConfig, trash: { days: 30 } });
+
+      await sut.updateAdminConfig(updatedConfig);
+
+      const validations = mocks.event.emit.mock.calls.filter(([name]) => name === 'ConfigValidate');
+      expect(validations).toHaveLength(2);
+      expect(mocks.forkSchema.persistConfig).toHaveBeenCalledTimes(1);
+    });
+
+    it('should keep the re-queue reminder saved in between rather than the one seen at validation', async () => {
+      mocks.systemMetadata.get.mockResolvedValueOnce(partialConfig).mockResolvedValue({
+        ...partialConfig,
+        machineLearning: { imageDescription: { pendingRequeueAt: '2026-09-23T10:00:00.000Z' } },
+      });
+
+      await sut.updateAdminConfig(cloneDeep(updatedConfig));
+
+      const persisted = mocks.forkSchema.persistConfig.mock.calls.at(-1)![1] as SystemConfig;
+      expect(persisted.machineLearning.imageDescription.pendingRequeueAt).toBe('2026-09-23T10:00:00.000Z');
+    });
+
     it('should serialize saves without a revision through the same lock', async () => {
       mocks.systemMetadata.get.mockResolvedValue(partialConfig);
 
       await sut.updateAdminConfig(updatedConfig);
+
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.SystemConfigUpdate, expect.any(Function));
+    });
+
+    it('should write the re-queue reminder under the settings lock from the saved settings', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        ...partialConfig,
+        machineLearning: { imageDescription: { enabled: true } },
+      });
+
+      await sut.deferDescriptionRequeue();
 
       expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.SystemConfigUpdate, expect.any(Function));
     });

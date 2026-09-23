@@ -21,6 +21,18 @@ describe('getConfigRevision (FL-66 settings revision)', () => {
     expect(revisions.size).toBe(4);
   });
 
+  it('never digests write-only secrets, only whether they are set', () => {
+    const first = cloneDeep(defaults);
+    first.machineLearning.runpod.apiKey = 'rp_first';
+    first.machineLearning.runpod.hfToken = 'hf_first';
+    const second = cloneDeep(defaults);
+    second.machineLearning.runpod.apiKey = 'rp_second';
+    second.machineLearning.runpod.hfToken = 'hf_second';
+
+    expect(getConfigRevision(first)).toBe(getConfigRevision(second));
+    expect(getConfigRevision(first)).not.toBe(getConfigRevision(defaults));
+  });
+
   it('ignores the re-queue bookkeeping the server writes on its own', () => {
     const deferred = cloneDeep(defaults);
     deferred.machineLearning.imageDescription.pendingRequeueAt = '2026-09-23T10:00:00.000Z';
