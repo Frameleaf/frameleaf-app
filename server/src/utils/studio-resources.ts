@@ -92,7 +92,8 @@ export enum StudioAccessCheck {
   /**
    * `checkAccess(Permission.AssetRead)`: owner, shared album or partner access, with the Locked
    * space excluded and the acting user's sensitive and suppressed content filters applied.
-   * Studio additionally refuses Locked assets even for an elevated session.
+   * Interactive Studio sessions additionally refuse Locked assets even when elevated; background
+   * renderers acting for the owner may read them (owner decision, September 22, 2026).
    */
   AssetRead = 'asset-read',
   /** `checkAccess(Permission.AssetFileRead)` after `AssetRead` on the parent: owner only. */
@@ -162,7 +163,7 @@ export enum StudioRefusalReason {
   NotFound = 'not-found',
   /** The acting user has no read access to the source. */
   NoAccess = 'no-access',
-  /** The source is in the Locked space. Studio never handles Locked media. */
+  /** The source is in the Locked space; interactive Studio sessions never handle Locked media. */
   Locked = 'locked',
   /** The source is in the trash. */
   Trashed = 'trashed',
