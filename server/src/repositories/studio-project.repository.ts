@@ -3,6 +3,7 @@ import { Kysely, RawBuilder, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { DB } from 'src/schema/index.js';
 import {
+  StudioBundleUploadTable,
   StudioProjectCommentTable,
   StudioProjectRevisionTable,
   StudioProjectTable,
@@ -13,6 +14,39 @@ export type StudioProjectRevision = Selectable<StudioProjectRevisionTable>;
 /** A history row: everything about a revision except the document itself. */
 export type StudioProjectRevisionSummary = Omit<StudioProjectRevision, 'envelope'>;
 export type StudioProjectComment = Selectable<StudioProjectCommentTable>;
+export type StudioBundleUpload = Selectable<StudioBundleUploadTable>;
+
+export type StudioBundleUploadCreate = {
+  ownerId: string;
+  path: string;
+  sizeBytes: number;
+  digest: string;
+  originalFileName: string;
+  manifest: Record<string, unknown>;
+  expiresAt: Date;
+};
+
+/**
+ * A project created with its first revision already in place: a duplicate of another project's
+ * head, or a project read out of a portable bundle (FL-91).
+ */
+export type StudioProjectSeed = {
+  ownerId: string;
+  name: string;
+  spaceId?: string | null;
+  duplicatedFromId?: string | null;
+  importedFromDigest?: string | null;
+  /** The import job that creates it. Unique: a retried job finds the first attempt's project. */
+  importOperationId?: string | null;
+  revision: {
+    authorId: string;
+    envelope: Record<string, unknown>;
+    digest: string;
+    graphBytes: number;
+    summary: Record<string, unknown>;
+    requestKey: string | null;
+  };
+};
 
 export type StudioProjectCreate = {
   ownerId: string;
@@ -38,10 +72,14 @@ export type StudioPage = { take: number; skip: number };
  */
 export type StudioProjectState = 'active' | 'archived' | 'trashed';
 
+/** `recent` orders by the last time the project was opened in an editor, then by change. */
+export type StudioProjectSort = 'updated' | 'recent' | 'name';
+
 export type StudioProjectListOptions = StudioPage & {
   state?: StudioProjectState;
   /** Case-insensitive substring of the name. */
   query?: string | null;
+  sort?: StudioProjectSort;
 };
 
 export type StudioRevisionAppend = {
@@ -125,6 +163,75 @@ export class StudioProjectRepository {
       .executeTakeFirstOrThrow() as unknown as Promise<StudioProject>;
   }
 
+  /**
+   * Create a project whose revision 1 is already written, in one transaction (FL-91).
+   *
+   * The lease is left free: nobody is editing a project that was just duplicated or imported, and
+   * the first editor to open it takes the lease as usual. An import carries its job id; when a
+   * retried job finds that id already taken, the first attempt's project is returned instead of a
+   * second one being made.
+   */
+  async createWithRevision(seed: StudioProjectSeed): Promise<{ project: StudioProject; created: boolean }> {
+    if (seed.importOperationId) {
+      const existing = await this.getByImportOperation(seed.importOperationId);
+      if (existing) {
+        return { project: existing, created: false };
+      }
+    }
+
+    try {
+      const project = await this.db.transaction().execute(async (trx) => {
+        const row = await trx
+          .insertInto('studio_project')
+          .values({
+            ownerId: seed.ownerId,
+            name: seed.name,
+            spaceId: seed.spaceId ?? null,
+            currentRevision: 1,
+            duplicatedFromId: seed.duplicatedFromId ?? null,
+            importedFromDigest: seed.importedFromDigest ?? null,
+            importOperationId: seed.importOperationId ?? null,
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+
+        await trx
+          .insertInto('studio_project_revision')
+          .values({
+            projectId: row.id,
+            revision: 1,
+            authorId: seed.revision.authorId,
+            envelope: seed.revision.envelope,
+            digest: seed.revision.digest,
+            graphBytes: seed.revision.graphBytes,
+            summary: seed.revision.summary,
+            requestKey: seed.revision.requestKey,
+            restoredFromRevision: null,
+          })
+          .execute();
+
+        return row as unknown as StudioProject;
+      });
+      return { project, created: true };
+    } catch (error) {
+      if (seed.importOperationId && isUniqueViolation(error)) {
+        const existing = await this.getByImportOperation(seed.importOperationId);
+        if (existing) {
+          return { project: existing, created: false };
+        }
+      }
+      throw error;
+    }
+  }
+
+  async getByImportOperation(operationId: string): Promise<StudioProject | undefined> {
+    return this.db
+      .selectFrom('studio_project')
+      .selectAll()
+      .where('importOperationId', '=', operationId)
+      .executeTakeFirst() as unknown as Promise<StudioProject | undefined>;
+  }
+
   /** Unscoped read. The service decides access from `ownerId` and `spaceId`; nothing else may. */
   async getById(id: string): Promise<StudioProject | undefined> {
     return this.db.selectFrom('studio_project').selectAll().where('id', '=', id).executeTakeFirst() as unknown as
@@ -174,8 +281,24 @@ export class StudioProjectRepository {
       query = query.where('studio_project.name', 'ilike', `%${term.replaceAll(/[%_\\]/g, String.raw`\$&`)}%`);
     }
 
+    const sort = page.sort ?? 'updated';
+    const ordered = (() => {
+      const selected = query.selectAll();
+      switch (sort) {
+        case 'recent': {
+          return selected.orderBy(sql`coalesce("studio_project"."lastOpenedAt", "studio_project"."updatedAt")`, 'desc');
+        }
+        case 'name': {
+          return selected.orderBy(sql`lower("studio_project"."name")`, 'asc');
+        }
+        default: {
+          return selected.orderBy('studio_project.updatedAt', 'desc');
+        }
+      }
+    })();
+
     const [items, total] = await Promise.all([
-      query.selectAll().orderBy('updatedAt', 'desc').orderBy('id', 'desc').limit(page.take).offset(page.skip).execute(),
+      ordered.orderBy('studio_project.id', 'desc').limit(page.take).offset(page.skip).execute(),
       query
         .select((eb) => eb.fn.countAll<string>().as('count'))
         .executeTakeFirst()
@@ -505,6 +628,70 @@ export class StudioProjectRepository {
       .orderBy('revision', 'asc')
       .limit(limit)
       .execute() as unknown as Promise<StudioProjectRevisionSummary[]>;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Bundle uploads (FL-91)                                              */
+  /* ------------------------------------------------------------------ */
+
+  async createUpload(upload: StudioBundleUploadCreate): Promise<StudioBundleUpload> {
+    return this.db
+      .insertInto('studio_bundle_upload')
+      .values({
+        ownerId: upload.ownerId,
+        path: upload.path,
+        sizeBytes: String(upload.sizeBytes),
+        digest: upload.digest,
+        originalFileName: upload.originalFileName,
+        manifest: upload.manifest,
+        expiresAt: upload.expiresAt,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow() as unknown as Promise<StudioBundleUpload>;
+  }
+
+  /** Owner-scoped. Somebody else's upload and an upload that never existed look the same. */
+  async getUpload(id: string, ownerId: string): Promise<StudioBundleUpload | undefined> {
+    return this.db
+      .selectFrom('studio_bundle_upload')
+      .selectAll()
+      .where('id', '=', id)
+      .where('ownerId', '=', ownerId)
+      .executeTakeFirst() as unknown as Promise<StudioBundleUpload | undefined>;
+  }
+
+  async markUploadConsumed(id: string): Promise<void> {
+    await this.db
+      .updateTable('studio_bundle_upload')
+      .set({ consumedAt: sql<Date>`coalesce("consumedAt", now())` })
+      .where('id', '=', id)
+      .execute();
+  }
+
+  /** Owner-scoped delete. Returns the row so the caller can remove its file. */
+  async deleteUpload(id: string, ownerId: string): Promise<StudioBundleUpload | undefined> {
+    return this.db
+      .deleteFrom('studio_bundle_upload')
+      .where('id', '=', id)
+      .where('ownerId', '=', ownerId)
+      .returningAll()
+      .executeTakeFirst() as unknown as Promise<StudioBundleUpload | undefined>;
+  }
+
+  /** The sweep: uploads past their expiry, oldest first. Their files go with them. */
+  async deleteExpiredUploads(now: Date, limit = 200): Promise<Array<{ id: string; path: string }>> {
+    return this.db
+      .deleteFrom('studio_bundle_upload')
+      .where('id', 'in', (eb) =>
+        eb
+          .selectFrom('studio_bundle_upload')
+          .select('id')
+          .where('expiresAt', '<', now)
+          .orderBy('expiresAt', 'asc')
+          .limit(limit),
+      )
+      .returning(['id', 'path'])
+      .execute();
   }
 
   /* ------------------------------------------------------------------ */
