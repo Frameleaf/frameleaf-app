@@ -959,7 +959,7 @@
       "objective": "Local Trash/large-file workflows share sample state; bind them to source lifecycle and recheck the current server empty-trash semantics against sensitive-media policy.",
       "paths": [
         "web/src/routes/(user)/trash/[[photos=photos]]/[[assetId=id]]/+page.svelte",
-        "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/LargeFilesUtility.svelte",
         "server/src/services/trash.service.ts",
         "server/src/repositories/trash.repository.ts",
         "e2e/src/specs/server/api/trash.e2e-spec.ts",
@@ -1104,7 +1104,7 @@
         "web/src/lib/stores/preferences.store.ts",
         "server/src/services/map.service.ts",
         "e2e/src/specs/server/api/map.e2e-spec.ts",
-        "web/src/routes/(user)/utilities/geolocation/+page.svelte"
+        "web/src/lib/components/frameleaf/GeolocationUtility.svelte"
       ],
       "phase": 4,
       "priority": "Medium",
@@ -1513,7 +1513,7 @@
         "web/src/routes/(user)/culling/+page.svelte",
         "web/src/lib/components/culling/CullingCompare.svelte",
         "server/src/repositories/culling.repository.ts",
-        "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/DuplicateUtility.svelte",
         "prototypes/frameleaf/src/UtilitiesManager.jsx",
         "e2e/src/specs/web/duplicates.e2e-spec.ts"
       ],
@@ -1753,7 +1753,7 @@
       "id": "IMP-004",
       "objective": "The source presents photo/video candidates and confidence; preserve this complete relationship-editing flow beyond sample pair state.",
       "paths": [
-        "web/src/routes/(user)/utilities/live-photos/+page.svelte",
+        "web/src/lib/components/frameleaf/LivePhotosUtility.svelte",
         "server/src/services/asset.service.ts",
         "server/src/dtos/asset.dto.ts",
         "web/src/lib/frameleaf/bulk-actions.ts",
