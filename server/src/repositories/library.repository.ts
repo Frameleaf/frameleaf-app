@@ -3,10 +3,13 @@ import { type Insertable, type Kysely, type RawBuilder, type Updateable, sql } f
 import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { LibraryStatsResponseDto, ManagedUploadsStatsResponseDto } from 'src/dtos/library.dto.js';
-import { AssetType, AssetVisibility, UserStatus } from 'src/enum.js';
+import { AssetType, AssetVisibility, MediaOperationKind, MediaOperationStatus, UserStatus } from 'src/enum.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { asUuid, isNotLockedAsset } from 'src/utils/database.js';
+import { LibraryScanStopReason, libraryPathsFingerprint } from 'src/utils/library-scan.js';
+import { isNotLocked } from 'src/utils/locked.js';
 
 /**
  * What removing a library would take with it (FL-78). Counts only: never a path, a name or an id of
@@ -32,7 +35,7 @@ const physicalUsage = (scope: RawBuilder<unknown>) =>
       SELECT DISTINCT ON ("scoped"."originalPath") "scoped_exif"."fileSizeInByte" AS "size"
       FROM "asset" AS "scoped"
       LEFT JOIN "asset_exif" AS "scoped_exif" ON "scoped_exif"."assetId" = "scoped"."id"
-      WHERE "scoped"."deletedAt" IS NULL AND ${scope}
+      WHERE "scoped"."deletedAt" IS NULL AND ${isNotLocked('scoped')} AND ${scope}
     ) AS "distinct_originals"
   )`;
 
@@ -131,6 +134,7 @@ export class LibraryRepository {
       )
       .select((eb) => eb.fn.coalesce((eb) => eb.fn.sum('asset_exif.fileSizeInByte'), eb.val(0)).as('usage'))
       .where('asset.deletedAt', 'is', null)
+      .where(isNotLocked('asset'))
       .groupBy('library.id')
       .where('library.id', '=', id)
       .executeTakeFirst();
@@ -172,7 +176,11 @@ export class LibraryRepository {
     const rows = await this.db
       .selectFrom('user')
       .leftJoin('asset', (join) =>
-        join.onRef('asset.ownerId', '=', 'user.id').on('asset.libraryId', 'is', null).on('asset.deletedAt', 'is', null),
+        join
+          .onRef('asset.ownerId', '=', 'user.id')
+          .on('asset.libraryId', 'is', null)
+          .on('asset.deletedAt', 'is', null)
+          .on(isNotLocked('asset')),
       )
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .select('user.id as ownerId')
@@ -216,6 +224,44 @@ export class LibraryRepository {
       usage: Number(row.usage),
       usagePhysical: Number(row.usagePhysical),
     }));
+  }
+
+  /** Fence scan mutations against cancellation, replacement claims and changed library settings. */
+  async withScanClaim<T>(
+    claim: { operationId: string; claimToken: string; libraryId: string; fingerprint: string },
+    mutate: (assets: AssetRepository, library: LibraryRepository) => Promise<T>,
+  ): Promise<{ value: T } | { stopReason: LibraryScanStopReason } | undefined> {
+    return this.db.transaction().execute(async (tx) => {
+      const operation = await tx
+        .selectFrom('media_operation')
+        .select('id')
+        .where('id', '=', claim.operationId)
+        .where('claimToken', '=', claim.claimToken)
+        .where('kind', '=', MediaOperationKind.LibraryScan)
+        .where('status', '=', MediaOperationStatus.Rendering)
+        .where('claimExpiresAt', '>', sql<Date>`now()`)
+        .where('cancelRequestedAt', 'is', null)
+        .where('pauseRequestedAt', 'is', null)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!operation) return;
+      const library = await tx
+        .selectFrom('library')
+        .selectAll()
+        .where('id', '=', claim.libraryId)
+        .forShare()
+        .executeTakeFirst();
+      if (!library || library.deletedAt) return { stopReason: 'library_removed' };
+      if (libraryPathsFingerprint(library) !== claim.fingerprint) return { stopReason: 'paths_changed' };
+      const owner = await tx
+        .selectFrom('user')
+        .select(['id', 'deletedAt', 'status'])
+        .where('id', '=', library.ownerId)
+        .forShare()
+        .executeTakeFirst();
+      if (!owner || owner.deletedAt || owner.status !== UserStatus.Active) return { stopReason: 'owner_deleted' };
+      return { value: await mutate(new AssetRepository(tx), new LibraryRepository(tx)) };
+    });
   }
 
   /** One page of a library's item ids in id order, after `afterId` (FL-78 scan check phase). */
