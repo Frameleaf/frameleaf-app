@@ -39,8 +39,20 @@ These are local results, not current-head GitHub Actions results. The complete P
 
 FL-83 privacy and conformance work remains outside the integration branch. Independent review of `41cec1edb1993ac5c7683e892a71f981df291d00` requested repairs for cached portal dialogs reappearing after lock and native modal state blocking the lock shield's Retry button. Offscreen selection and per-asset memory operation results were accepted. The owner is repairing those remaining findings before another review.
 
-FL-69 is implementing the prototype's Utilities area inside the Command Center, including account-appropriate access, existing tool hosts and legacy URL redirects. Its owner also traced settings navigation bouncing back to accordion teardown issuing another navigation. Standalone utilities placement is not accepted.
+FL-69 candidate `0b723a1768cb4f5bab694fa0213de272574394cd` was independently approved and integrated at `b6ec8a00a1`. Utilities now use the prototype Command Center directory and tool sections, with account-appropriate access and legacy URL redirects. Repairs cover accordion teardown navigation, geolocation actions respecting the visible selection, and verified Live Photo outcomes retained for the loaded review. Outcome history is not persisted across reloads. The integration passed 22 focused utility tests, 17 route/ledger checks, TypeScript and Svelte checks with zero errors or warnings. Four moved backlog anchors were updated at `6b09791780`; all ten documentation-coverage checks pass with source digest `079e756405c87945bf1809377799cb764973e1559de5803cb05125afa2267fd3`.
 
-FL-80 is porting login, first-admin registration, forced password change and PIN screens from the prototype. A real session-cookie/OAuth contract is still needed for the prototype's unchecked “Keep me signed in” state; a decorative checkbox is not accepted. Full onboarding, maintenance and supporter screens remain separate work.
+FL-80 is porting login, first-admin registration, forced password change and PIN screens from the prototype. The real session-cookie/OAuth contract was independently approved at `ea0f67d624f119050884b24807ca550cfc422eca` and integrated at `66e9246bfa`. An explicit false value omits persistence only on authentication cookies; omitted or true retains the existing lifetime. All 135 focused authentication and cookie-controller checks passed. Web wiring, OAuth continuation and forced-password handling remain under implementation. Full onboarding, maintenance and supporter screens remain separate work.
 
 The broader conformance backlog remains open: full Command Center structure, workflow All accounts administration, remaining library/viewer/editor/people/queue flows, complete browser journeys, SDK qualification and release gates. Native/mobile and the dependent Studio editor remain parked as recorded in the original handoff. Hardware and rights checks remain explicit acceptance dependencies. No issue is marked Done merely because a candidate passed review or local tests.
+
+## Hosted qualification after the recovery push
+
+PR #137 was updated to `d8031e062c2d4c5cf8fb216f1815b84c54e9013b` on September 23 at 18:26 UTC. At 18:41 UTC, 28 checks had succeeded; fork integration and both web E2E jobs were still running. This is a dated snapshot, not a claim about the current PR head.
+
+Exact failed-job logs identified these repairs:
+
+- Docs build job `107321950937`: inherited handoff formatting, repaired at `43c267a787`. Full local documentation format and build passed; two existing broken-anchor warnings remain.
+- CLI unit job `107321951435`: the migration report test imported the web TypeScript parser through a build path requiring generated SvelteKit state. Commit `4b101d5a5f` loads the same parser through Node's TypeScript transform. All 69 CLI tests, type checking and scoped lint/format passed.
+- Server/CLI E2E ARM job `107321951693`: six failures remain assigned for repair—three album response expectations missing the new smart-album fields and three offline-library fixtures rejected by strict import-root validation. The run recorded 413 server tests passed, six failed and 14 skipped; all 20 CLI E2E checks passed. The x64 sibling was cancelled.
+
+The cookie, Utilities and local hosted-failure repairs described above are newer than the pushed `d8031e062c` checkpoint. They require another combined push and hosted qualification.
