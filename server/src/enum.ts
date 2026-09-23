@@ -415,6 +415,7 @@ export enum Permission {
   AdminUserDelete = 'adminUser.delete',
 
   AdminSessionRead = 'adminSession.read',
+  AdminSessionDelete = 'adminSession.delete',
 
   AdminAuthUnlinkAll = 'adminAuth.unlinkAll',
 }
@@ -867,6 +868,73 @@ export const PetObservationSourceSchema = z
   .meta({ id: 'PetObservationSource' });
 
 /**
+ * Documents: text read from photos, and the owner's corrections to it (FL-63).
+ *
+ * Recognized text (`asset_ocr`) is replaceable model output: reading a photo again deletes and
+ * rewrites it. What the owner decides about that text is durable (`asset_document_edit`) and is
+ * never written into the recognized rows, so the raw recognition stays inspectable as provenance.
+ */
+export enum DocumentEditAction {
+  /** Accept a suggested field value as it was read. */
+  Confirm = 'confirm',
+  /** Replace the recognized text, or a field value, with the owner's own. */
+  Correct = 'correct',
+  /** Set a line or a field suggestion aside. */
+  Dismiss = 'dismiss',
+}
+
+export const DocumentEditActionSchema = z
+  .enum(DocumentEditAction)
+  .describe('What the owner decided about recognized text')
+  .meta({ id: 'DocumentEditAction' });
+
+/** Values suggested from recognized text. A suggestion is never a verified record. */
+export enum DocumentField {
+  Date = 'date',
+  Total = 'total',
+  Reference = 'reference',
+  Email = 'email',
+  Phone = 'phone',
+}
+
+export const DocumentFieldSchema = z
+  .enum(DocumentField)
+  .describe('A value suggested from recognized text')
+  .meta({ id: 'DocumentField' });
+
+export enum DocumentLineStatus {
+  /** As the text recognition read it. */
+  Recognized = 'recognized',
+  /** The owner's correction replaces the recognized text. */
+  Corrected = 'corrected',
+  /** The owner set the line aside. */
+  Dismissed = 'dismissed',
+  /**
+   * The owner's correction whose recognized line is gone because the photo was read again. It is
+   * kept, with its region, and only its owner sees it.
+   */
+  Kept = 'kept',
+}
+
+export const DocumentLineStatusSchema = z
+  .enum(DocumentLineStatus)
+  .describe('Where the text of a document line comes from')
+  .meta({ id: 'DocumentLineStatus' });
+
+export enum DocumentFieldStatus {
+  /** Read from the text; not checked by anyone. */
+  Suggested = 'suggested',
+  Confirmed = 'confirmed',
+  Corrected = 'corrected',
+  Dismissed = 'dismissed',
+}
+
+export const DocumentFieldStatusSchema = z
+  .enum(DocumentFieldStatus)
+  .describe('Whether a document field is a suggestion or the owner decided it')
+  .meta({ id: 'DocumentFieldStatus' });
+
+/**
  * Durable, user-visible media operations (FL-43, FL-104).
  *
  * One persistent job contract covers every long-running workload a person can see in Activity.
@@ -940,12 +1008,78 @@ export enum MediaOperationBulkAction {
   RefreshMetadata = 'refresh-metadata',
   RefreshEncoded = 'refresh-encoded',
   RefreshFaces = 'refresh-faces',
+  /** Reassemble a separated Live Photo still + motion video pair (FL-70). */
+  RelinkLivePhoto = 'relink-live-photo',
+  /** Apply the owner's duplicate review decisions, one complete group at a time (FL-61). */
+  ResolveDuplicates = 'resolve-duplicates',
+  /** Reverse earlier duplicate review decisions that nothing has changed since (FL-61). */
+  UndoDuplicates = 'undo-duplicates',
 }
 
 export const MediaOperationBulkActionSchema = z
   .enum(MediaOperationBulkAction)
   .describe('Bulk action a durable media operation applies')
   .meta({ id: 'MediaOperationBulkAction' });
+
+/**
+ * What the owner decided for one duplicate group (FL-61).
+ *
+ * - `keepers`: keep the chosen photos and move every other photo of the group to the trash.
+ * - `keep-all`: every photo stays; the group is dismissed.
+ * - `stack`: every photo stays, stacked together with the first keeper (or the first photo) on top.
+ */
+export enum DuplicateDecisionKind {
+  Keepers = 'keepers',
+  KeepAll = 'keep-all',
+  Stack = 'stack',
+}
+
+export const DuplicateDecisionKindSchema = z
+  .enum(DuplicateDecisionKind)
+  .describe('What the owner decided for a duplicate group')
+  .meta({ id: 'DuplicateDecisionKind' });
+
+/**
+ * How a duplicate group reads (FL-61). A `burst` is several moments captured in quick succession, not
+ * copies of one photo, so its frames are never suggested for the trash.
+ */
+export enum DuplicateGroupKind {
+  Duplicates = 'duplicates',
+  Burst = 'burst',
+}
+
+export const DuplicateGroupKindSchema = z
+  .enum(DuplicateGroupKind)
+  .describe('Whether a duplicate group holds copies of one photo or frames of a burst')
+  .meta({ id: 'DuplicateGroupKind' });
+
+/** Why a duplicate group cannot be decided from this session (FL-61). */
+export enum DuplicateGroupBlock {
+  /** Some photos of the group are not shown to this session (suppressed while not unlocked). */
+  HiddenMembers = 'hidden-members',
+  /** The group holds photos another account owns: only the owner of every photo may decide. */
+  OtherOwner = 'other-owner',
+}
+
+export const DuplicateGroupBlockSchema = z
+  .enum(DuplicateGroupBlock)
+  .describe('Why a duplicate group cannot be decided from this session')
+  .meta({ id: 'DuplicateGroupBlock' });
+
+/** The evidence behind a keeper suggestion, per photo (FL-61). Translated by the client. */
+export enum DuplicateQualityReason {
+  OriginalFormat = 'original-format',
+  LargestFile = 'largest-file',
+  HighestResolution = 'highest-resolution',
+  MostMetadata = 'most-metadata',
+  CompressedCopy = 'compressed-copy',
+  LowerResolution = 'lower-resolution',
+}
+
+export const DuplicateQualityReasonSchema = z
+  .enum(DuplicateQualityReason)
+  .describe('Evidence behind a duplicate keeper suggestion')
+  .meta({ id: 'DuplicateQualityReason' });
 
 /** The outcome recorded for one item of a bulk operation. */
 export enum MediaOperationItemStatus {
@@ -2007,6 +2141,7 @@ export enum ApiTag {
   ConfigPublic = 'Config (public)',
   DatabaseBackups = 'Database Backups (admin)',
   Deprecated = 'Deprecated',
+  Documents = 'Documents',
   Download = 'Download',
   Duplicates = 'Duplicates',
   Enrichment = 'Enrichment',

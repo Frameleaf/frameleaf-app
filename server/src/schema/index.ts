@@ -50,6 +50,7 @@ import {
   AssetHealthRunTable,
   AssetHealthTable,
 } from 'src/schema/tables/asset-health.table.js';
+import { AssetDocumentEditTable } from 'src/schema/tables/asset-document-edit.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetLockTable } from 'src/schema/tables/asset-lock.table.js';
 import { AssetMetadataAuditTable } from 'src/schema/tables/asset-metadata-audit.table.js';
@@ -61,6 +62,7 @@ import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-dup
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
+import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
@@ -176,6 +178,7 @@ export class ImmichDatabase {
     AssetMetadataAuditTable,
     AssetJobStatusTable,
     AssetLockTable,
+    AssetDocumentEditTable,
     AssetOcrTable,
     AssetOcrAuditTable,
     AssetRestorationTable,
@@ -188,6 +191,7 @@ export class ImmichDatabase {
     AssetVideoDuplicateFrameTable,
     ClusterGroupTable,
     ClusterGroupRequestTable,
+    DuplicateDecisionTable,
     FaceSearchTable,
     GeodataPlacesTable,
     IntegrityReportTable,
@@ -329,6 +333,7 @@ export interface DB {
   asset_metadata_audit: AssetMetadataAuditTable;
   asset_job_status: AssetJobStatusTable;
   asset_lock: AssetLockTable;
+  asset_document_edit: AssetDocumentEditTable;
   asset_ocr: AssetOcrTable;
   asset_ocr_audit: AssetOcrAuditTable;
   asset_restoration: AssetRestorationTable;
@@ -337,6 +342,8 @@ export interface DB {
   asset_keyframe: AssetKeyframeTable;
   asset_video_duplicate_frame: AssetVideoDuplicateFrameTable;
   ocr_search: OcrSearchTable;
+
+  duplicate_decision: DuplicateDecisionTable;
 
   face_search: FaceSearchTable;
 

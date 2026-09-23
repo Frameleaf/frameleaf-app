@@ -708,6 +708,13 @@ export class AssetService extends BaseService {
           break;
         }
 
+        case AssetJobName.REFRESH_OCR: {
+          // FL-63: the same text recognition job the library runs; it admits the request only against
+          // the destination routed for text recognition (FL-110) and never picks another one
+          jobs.push({ name: JobName.Ocr, data: { id } });
+          break;
+        }
+
         case AssetJobName.REGENERATE_THUMBNAIL: {
           jobs.push({ name: JobName.AssetGenerateThumbnails, data: { id } });
           break;

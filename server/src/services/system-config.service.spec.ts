@@ -164,6 +164,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
       minDetectionScore: 0.5,
       minRecognitionScore: 0.8,
       maxResolution: 736,
+      documentFields: false,
     },
     imageDescription: {
       enabled: true,

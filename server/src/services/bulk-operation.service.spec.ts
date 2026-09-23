@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   AssetVisibility,
+  DuplicateDecisionKind,
   MediaOperationBulkAction,
   MediaOperationItemStatus,
   MediaOperationKind,
@@ -52,6 +53,8 @@ describe(BulkOperationService.name, () => {
   let enrichment: { updateAssetEnrichment: any; unlockAssets: any };
   let users: { get: any; getMetadata: any };
   let apiKeys: { getById: any };
+  let livePhoto: { relinkOne: any };
+  let duplicateDecisions: { applyGroup: any; undoGroup: any; getLockedIds: any };
 
   const running = { status: MediaOperationStatus.Rendering, cancelRequestedAt: null, pauseRequestedAt: null };
 
@@ -71,7 +74,7 @@ describe(BulkOperationService.name, () => {
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
       settlePause: vi.fn().mockResolvedValue(true),
       getDateTimeOriginals: vi.fn().mockResolvedValue(new Map()),
-      getLockedAssetIds: vi.fn().mockResolvedValue(new Set()),
+      getLockedIds: vi.fn().mockResolvedValue(new Set()),
     } as unknown as MediaOperationRepository;
     assets = {
       updateAll: vi.fn().mockResolvedValue(undefined),
@@ -90,6 +93,12 @@ describe(BulkOperationService.name, () => {
     };
     users = { get: vi.fn().mockResolvedValue({ ...authStub.user1.user }), getMetadata: vi.fn().mockResolvedValue([]) };
     apiKeys = { getById: vi.fn() };
+    livePhoto = { relinkOne: vi.fn().mockResolvedValue({ success: true }) };
+    duplicateDecisions = {
+      applyGroup: vi.fn(),
+      undoGroup: vi.fn(),
+      getLockedIds: vi.fn().mockResolvedValue(new Set()),
+    };
 
     sut = new BulkOperationService(
       mocks.logger as never,
@@ -103,6 +112,8 @@ describe(BulkOperationService.name, () => {
       trash as never,
       stacks as never,
       enrichment as never,
+      livePhoto as never,
+      duplicateDecisions as never,
     );
   });
 
@@ -168,7 +179,7 @@ describe(BulkOperationService.name, () => {
       const snapshot = snapshotOf({ action: MediaOperationBulkAction.Archive });
       const [lockedSince, ...rest] = snapshot.assetIds;
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
-      vi.mocked(operations.getLockedAssetIds).mockResolvedValue(new Set([lockedSince]));
+      vi.mocked(operations.getLockedIds).mockResolvedValue(new Set([lockedSince]));
 
       const outcomes = await sut.applyBatch(auth, snapshot, snapshot.assetIds);
 
@@ -187,7 +198,7 @@ describe(BulkOperationService.name, () => {
 
       await sut.applyBatch(auth, snapshot, snapshot.assetIds);
 
-      expect(operations.getLockedAssetIds).not.toHaveBeenCalled();
+      expect(operations.getLockedIds).not.toHaveBeenCalled();
       expect(enrichment.unlockAssets).toHaveBeenCalledWith(auth, { ids: snapshot.assetIds });
     });
 
@@ -238,6 +249,73 @@ describe(BulkOperationService.name, () => {
       expect(albums.addAssets).not.toHaveBeenCalled();
       expect(albums.removeAssets).not.toHaveBeenCalled();
       expect(outcomes.every((outcome) => outcome.status === MediaOperationItemStatus.Ok)).toBe(true);
+    });
+
+    it('relinks each still with its paired video, one pair at a time (FL-70)', async () => {
+      const [photoA, photoB] = [newUuid(), newUuid()];
+      const [videoA, videoB] = [newUuid(), newUuid()];
+      const snapshot = snapshotOf({
+        action: MediaOperationBulkAction.RelinkLivePhoto,
+        assetIds: [photoA, photoB],
+        payload: {
+          pairs: [
+            { photoId: photoA, videoId: videoA },
+            { photoId: photoB, videoId: videoB },
+          ],
+        },
+      });
+      livePhoto.relinkOne.mockResolvedValueOnce({ success: true }).mockResolvedValueOnce({
+        success: false,
+        error: 'Image is already linked to a motion video',
+      });
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
+
+      expect(livePhoto.relinkOne).toHaveBeenNthCalledWith(1, authStub.user1, photoA, videoA);
+      expect(livePhoto.relinkOne).toHaveBeenNthCalledWith(2, authStub.user1, photoB, videoB);
+      expect(mocks.access.asset.checkOwnerAccess).not.toHaveBeenCalled();
+      expect(outcomes).toEqual([
+        { id: photoA, status: MediaOperationItemStatus.Ok },
+        expect.objectContaining({
+          id: photoB,
+          status: MediaOperationItemStatus.Skipped,
+          reasonKey: 'frameleaf_bulk_reason_live_photo_relink_rejected',
+          message: 'Image is already linked to a motion video',
+        }),
+      ]);
+    });
+
+    it('retries a relink pair whose service call throws, rather than treating it as a permanent refusal', async () => {
+      const photoId = newUuid();
+      const videoId = newUuid();
+      const snapshot = snapshotOf({
+        action: MediaOperationBulkAction.RelinkLivePhoto,
+        assetIds: [photoId],
+        payload: { pairs: [{ photoId, videoId }] },
+      });
+      livePhoto.relinkOne.mockRejectedValue(new Error('database said no'));
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
+
+      expect(outcomes).toEqual([
+        expect.objectContaining({ id: photoId, status: MediaOperationItemStatus.Failed, message: 'database said no' }),
+      ]);
+    });
+
+    it('skips a still the payload has no pair for, without calling the relink service', async () => {
+      const photoId = newUuid();
+      const snapshot = snapshotOf({
+        action: MediaOperationBulkAction.RelinkLivePhoto,
+        assetIds: [photoId],
+        payload: { pairs: [] },
+      });
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
+
+      expect(livePhoto.relinkOne).not.toHaveBeenCalled();
+      expect(outcomes).toEqual([
+        { id: photoId, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_not_found' },
+      ]);
     });
 
     it('reports an item already in the album as skipped', async () => {
@@ -666,6 +744,114 @@ describe(BulkOperationService.name, () => {
 
       expect(operations.claimNext).toHaveBeenCalledWith(expect.objectContaining({ kinds: [MediaOperationKind.Bulk] }));
       expect(operations.recoverExpiredClaims).not.toHaveBeenCalled();
+    });
+  });
+  describe('duplicate decisions (FL-61)', () => {
+    const operationId = '0195e2a0-0000-7000-8000-0000000000d1';
+    const groupOf = (size: number) => ({
+      duplicateId: newUuid(),
+      decision: DuplicateDecisionKind.Keepers,
+      memberIds: Array.from({ length: size }, () => newUuid()),
+      keepAssetIds: [] as string[],
+    });
+    const decisionSnapshot = (groups: ReturnType<typeof groupOf>[], overrides: Partial<BulkOperationSnapshot> = {}) =>
+      snapshotOf({
+        action: MediaOperationBulkAction.ResolveDuplicates,
+        assetIds: groups.flatMap((group) => group.memberIds),
+        payload: {
+          duplicateGroups: groups.map((group) => ({ ...group, keepAssetIds: [group.memberIds[0]] })),
+        },
+        ...overrides,
+      });
+    const okAll = (ids: string[]) => ids.map((id) => ({ id, status: MediaOperationItemStatus.Ok }));
+
+    it('hands every complete group of the batch to the decision service, as the job', async () => {
+      const [first, second] = [groupOf(2), groupOf(3)];
+      const snapshot = decisionSnapshot([first, second], { elevated: true });
+      duplicateDecisions.applyGroup.mockImplementation((_auth: unknown, _id: string, group: { memberIds: string[] }) =>
+        Promise.resolve(okAll(group.memberIds)),
+      );
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {}, operationId);
+
+      expect(duplicateDecisions.applyGroup).toHaveBeenCalledTimes(2);
+      expect(duplicateDecisions.applyGroup).toHaveBeenCalledWith(
+        authStub.user1,
+        operationId,
+        expect.objectContaining({ duplicateId: first.duplicateId, memberIds: first.memberIds }),
+      );
+      expect(outcomes).toEqual(okAll([...first.memberIds, ...second.memberIds]));
+      // a decision never goes through the per-item update paths
+      expect(assets.updateAll).not.toHaveBeenCalled();
+      expect(duplicateDecisions.getLockedIds).not.toHaveBeenCalled();
+    });
+
+    it('skips a whole group that holds an item locked since a job queued without the PIN', async () => {
+      const [lockedGroup, openGroup] = [groupOf(2), groupOf(2)];
+      const snapshot = decisionSnapshot([lockedGroup, openGroup], { elevated: false });
+      duplicateDecisions.getLockedIds.mockResolvedValue(new Set([lockedGroup.memberIds[1]]));
+      duplicateDecisions.applyGroup.mockResolvedValue(okAll(openGroup.memberIds));
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {}, operationId);
+
+      expect(duplicateDecisions.applyGroup).toHaveBeenCalledTimes(1);
+      expect(outcomes).toEqual([
+        ...lockedGroup.memberIds.map((id) =>
+          expect.objectContaining({
+            id,
+            status: MediaOperationItemStatus.Skipped,
+            reasonKey: 'frameleaf_bulk_reason_locked',
+          }),
+        ),
+        ...okAll(openGroup.memberIds),
+      ]);
+    });
+
+    it('reports every member of a group that threw as refused, and carries on with the next group', async () => {
+      const [broken, fine] = [groupOf(2), groupOf(2)];
+      const snapshot = decisionSnapshot([broken, fine], { elevated: true });
+      duplicateDecisions.applyGroup
+        .mockRejectedValueOnce(new Error('database went away'))
+        .mockResolvedValueOnce(okAll(fine.memberIds));
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {}, operationId);
+
+      expect(outcomes.slice(0, 2)).toEqual(
+        broken.memberIds.map((id) => expect.objectContaining({ id, status: MediaOperationItemStatus.Failed })),
+      );
+      expect(outcomes.slice(2)).toEqual(okAll(fine.memberIds));
+    });
+
+    it('routes an undo job to the undo side', async () => {
+      const group = groupOf(2);
+      const snapshot = decisionSnapshot([group], { action: MediaOperationBulkAction.UndoDuplicates, elevated: true });
+      duplicateDecisions.undoGroup.mockResolvedValue(okAll(group.memberIds));
+
+      await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds, {}, operationId);
+
+      expect(duplicateDecisions.undoGroup).toHaveBeenCalledWith(authStub.user1, operationId, expect.anything());
+      expect(duplicateDecisions.applyGroup).not.toHaveBeenCalled();
+    });
+
+    it('never splits a group across two batches', async () => {
+      // 499 ids of small groups, then one group of three that straddles the 500 boundary
+      const small = Array.from({ length: 249 }, () => groupOf(2));
+      const straddling = groupOf(3);
+      const tail = groupOf(2);
+      const snapshot = decisionSnapshot([...small, straddling, tail], { elevated: true });
+      duplicateDecisions.applyGroup.mockImplementation((_auth: unknown, _id: string, group: { memberIds: string[] }) =>
+        Promise.resolve(okAll(group.memberIds)),
+      );
+      const applyBatch = vi.spyOn(sut, 'applyBatch');
+
+      await sut.run(operationOf(snapshot), 'claim-token');
+
+      const batches = applyBatch.mock.calls.map(([, , batch]) => batch);
+      expect(batches).toHaveLength(2);
+      expect(batches[0]).toHaveLength(498 + 3);
+      expect(batches[0].slice(-3)).toEqual(straddling.memberIds);
+      expect(batches[1]).toEqual(tail.memberIds);
+      expect(applyBatch.mock.calls[0][4]).toBe(operationOf(snapshot).id);
     });
   });
 });

@@ -15,7 +15,9 @@ import { ConfigAdminController } from 'src/controllers/config-admin.controller.j
 import { ConfigPublicController } from 'src/controllers/config-public.controller.js';
 import { ConfigUserController } from 'src/controllers/config-user.controller.js';
 import { DatabaseBackupController } from 'src/controllers/database-backup.controller.js';
+import { DocumentController } from 'src/controllers/document.controller.js';
 import { DownloadController } from 'src/controllers/download.controller.js';
+import { DuplicateReviewController } from 'src/controllers/duplicate-review.controller.js';
 import { DuplicateController } from 'src/controllers/duplicate.controller.js';
 import { EnrichmentController } from 'src/controllers/enrichment.controller.js';
 import { FaceController } from 'src/controllers/face.controller.js';
@@ -84,8 +86,10 @@ export const controllers = [
   ConfigAdminController,
   ConfigPublicController,
   DatabaseBackupController,
+  DocumentController,
   DownloadController,
   DuplicateController,
+  DuplicateReviewController,
   EnrichmentController,
   FaceController,
   IntegrityAdminController,
