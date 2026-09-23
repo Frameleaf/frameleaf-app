@@ -15207,6 +15207,939 @@
         ],
         "type": "string"
       },
+      "RenderWorkerAdmissionDto": {
+        "properties": {
+          "codecs": {
+            "description": "Encoder and decoder names the check verified",
+            "items": {
+              "maxLength": 60,
+              "type": "string"
+            },
+            "maxItems": 64,
+            "type": "array"
+          },
+          "conformanceReportedAt": {
+            "description": "When the conformance check ran",
+            "format": "date-time",
+            "type": "string"
+          },
+          "engineDigest": {
+            "description": "Digest of the engine and patches actually loaded",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "enrolmentSecret": {
+            "minLength": 16,
+            "type": "string"
+          },
+          "gpuMemoryBytes": {
+            "description": "GPU memory measured by the conformance check",
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "softwareRenderer": {
+            "description": "True when the renderer is a software or fallback device",
+            "type": "boolean"
+          },
+          "workerId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conformanceReportedAt",
+          "engineDigest",
+          "enrolmentSecret",
+          "gpuMemoryBytes",
+          "softwareRenderer",
+          "workerId"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerAuditDto": {
+        "properties": {
+          "actorId": {
+            "description": "The administrator who acted, when one did",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "detail": {
+            "additionalProperties": {},
+            "description": "Operator detail. Never a secret, never a path",
+            "nullable": true,
+            "type": "object"
+          },
+          "event": {
+            "$ref": "#/components/schemas/RenderWorkerAuditEvent"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "operationId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "reason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RenderWorkerRefusalReason"
+              }
+            ],
+            "nullable": true
+          },
+          "workerId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "actorId",
+          "createdAt",
+          "detail",
+          "event",
+          "id",
+          "operationId",
+          "reason",
+          "workerId"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerAuditEvent": {
+        "description": "Render worker audit event",
+        "enum": [
+          "enrolled",
+          "admitted",
+          "refused",
+          "claim_refused",
+          "limit_exceeded",
+          "revoked",
+          "updated"
+        ],
+        "type": "string"
+      },
+      "RenderWorkerCancelAckDto": {
+        "properties": {
+          "claimToken": {
+            "description": "The claim token this operation was handed out with",
+            "format": "uuid",
+            "type": "string"
+          },
+          "released": {
+            "description": "True when remote resources are confirmed gone",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "claimToken",
+          "released"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerCheckpointCompleteDto": {
+        "properties": {
+          "chunkKey": {
+            "description": "Must match the planned chunk; a re-planned chunk cannot be completed",
+            "minLength": 1,
+            "type": "string"
+          },
+          "claimToken": {
+            "description": "The claim token this operation was handed out with",
+            "format": "uuid",
+            "type": "string"
+          },
+          "outputChecksum": {
+            "pattern": "^[\\da-f]+$",
+            "type": "string"
+          },
+          "outputPath": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "sizeInBytes": {
+            "pattern": "^\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chunkKey",
+          "claimToken",
+          "outputChecksum",
+          "outputPath",
+          "sizeInBytes"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerCheckpointPlanDto": {
+        "properties": {
+          "chunkKey": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "claimToken": {
+            "description": "The claim token this operation was handed out with",
+            "format": "uuid",
+            "type": "string"
+          },
+          "configDigest": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "endTicks": {
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "historyDigest": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "inputDigest": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "prerollTicks": {
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "requiresSequentialContext": {
+            "type": "boolean"
+          },
+          "seed": {
+            "nullable": true,
+            "type": "string"
+          },
+          "sequence": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "startTicks": {
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "timebase": {
+            "pattern": "^\\d+\\/\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chunkKey",
+          "claimToken",
+          "configDigest",
+          "endTicks",
+          "historyDigest",
+          "inputDigest",
+          "seed",
+          "sequence",
+          "startTicks",
+          "timebase"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerClaimDto": {
+        "properties": {
+          "attempt": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "checkpoints": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationCheckpointDto"
+            },
+            "type": "array"
+          },
+          "claimToken": {
+            "description": "Required on every write to this operation",
+            "format": "uuid",
+            "type": "string"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/RenderWorkerInputGrantDto"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MediaOperationKind"
+          },
+          "leaseMs": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/RenderWorkerClaimLimitsDto"
+          },
+          "operationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "projectId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "revisionId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "snapshot": {
+            "additionalProperties": {},
+            "type": "object"
+          }
+        },
+        "required": [
+          "attempt",
+          "checkpoints",
+          "claimToken",
+          "inputs",
+          "kind",
+          "leaseMs",
+          "limits",
+          "operationId",
+          "projectId",
+          "revisionId",
+          "settings",
+          "snapshot"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerClaimLimitsDto": {
+        "properties": {
+          "maxOutputBytes": {
+            "nullable": true,
+            "type": "string"
+          },
+          "maxWallClockMs": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "maxOutputBytes",
+          "maxWallClockMs"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerClaimRequestDto": {
+        "properties": {
+          "kinds": {
+            "description": "Narrow the claim to these kinds",
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "RenderWorkerCompleteDto": {
+        "properties": {
+          "claimToken": {
+            "description": "The claim token this operation was handed out with",
+            "format": "uuid",
+            "type": "string"
+          },
+          "resultAssetId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claimToken",
+          "resultAssetId"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerCreateDto": {
+        "properties": {
+          "conformanceMaxAgeMs": {
+            "maximum": 9007199254740991,
+            "minimum": 60000,
+            "type": "integer"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/MediaOperationDestination"
+          },
+          "engineDigest": {
+            "maxLength": 200,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          },
+          "gpuMemoryBytes": {
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "kinds": {
+            "description": "Operation kinds this worker may claim",
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "maxConcurrentOperations": {
+            "maximum": 64,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxOutputBytes": {
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "maxWallClockMs": {
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "destination",
+          "kinds",
+          "name"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerCreateResponseDto": {
+        "properties": {
+          "enrolmentSecret": {
+            "description": "Shown once. Give it to the worker; the server keeps only its hash",
+            "type": "string"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/RenderWorkerDto"
+          }
+        },
+        "required": [
+          "enrolmentSecret",
+          "worker"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerDto": {
+        "properties": {
+          "activeOperations": {
+            "description": "Operations the worker currently holds",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "conformanceMaxAgeMs": {
+            "description": "Oldest conformance evidence admission accepts, in milliseconds",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/MediaOperationDestination"
+          },
+          "engineDigest": {
+            "description": "Engine and patch digest the worker must keep reporting",
+            "nullable": true,
+            "type": "string"
+          },
+          "gpuMemoryBytes": {
+            "description": "GPU memory the worker was qualified with, in bytes",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Render worker ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "kinds": {
+            "description": "Operation kinds this worker may claim",
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            },
+            "type": "array"
+          },
+          "lastAdmittedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "maxConcurrentOperations": {
+            "description": "Operations this worker may hold at once",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "maxOutputBytes": {
+            "description": "Most output bytes one operation may produce here",
+            "nullable": true,
+            "type": "string"
+          },
+          "maxWallClockMs": {
+            "description": "Longest one operation may run here, in milliseconds",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "What the administrator calls this worker",
+            "type": "string"
+          },
+          "revokedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RenderWorkerStatus"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "activeOperations",
+          "conformanceMaxAgeMs",
+          "createdAt",
+          "destination",
+          "engineDigest",
+          "gpuMemoryBytes",
+          "id",
+          "kinds",
+          "lastAdmittedAt",
+          "lastSeenAt",
+          "maxConcurrentOperations",
+          "maxOutputBytes",
+          "maxWallClockMs",
+          "name",
+          "revokedAt",
+          "status",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerFailDto": {
+        "properties": {
+          "claimToken": {
+            "description": "The claim token this operation was handed out with",
+            "format": "uuid",
+            "type": "string"
+          },
+          "error": {
+            "maxLength": 4000,
+            "type": "string"
+          },
+          "errorCode": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "claimToken",
+          "error",
+          "errorCode"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerHeartbeatDto": {
+        "properties": {
+          "claimToken": {
+            "description": "The claim token this operation was handed out with",
+            "format": "uuid",
+            "type": "string"
+          },
+          "outputBytes": {
+            "description": "Total output bytes produced so far",
+            "pattern": "^\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claimToken"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerHeartbeatResponseDto": {
+        "properties": {
+          "cancelRequested": {
+            "description": "The owner asked to stop; acknowledge with cancel-ack",
+            "type": "boolean"
+          },
+          "leaseExtended": {
+            "type": "boolean"
+          },
+          "leaseMs": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "refusal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RenderWorkerRefusalReason"
+              }
+            ],
+            "description": "Set when a limit stopped the operation",
+            "nullable": true
+          }
+        },
+        "required": [
+          "cancelRequested",
+          "leaseExtended",
+          "leaseMs",
+          "refusal"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerInputGrantDto": {
+        "properties": {
+          "checksum": {
+            "description": "Digest the manifest was resolved against, when known",
+            "nullable": true,
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "inputId": {
+            "description": "FL-90 resource key, or `source` for a single-asset workload",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Resource class: library-asset, edited-master, font, lut, …",
+            "type": "string"
+          },
+          "resourceId": {
+            "description": "Asset or resource id. Never a path",
+            "type": "string"
+          },
+          "url": {
+            "description": "Relative URL, valid for this claim only and only until expiresAt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checksum",
+          "expiresAt",
+          "inputId",
+          "kind",
+          "resourceId",
+          "url"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerLimitDto": {
+        "properties": {
+          "maxConcurrentOperations": {
+            "description": "Operations one account may have claimed at once",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "maxOutputBytes": {
+            "nullable": true,
+            "type": "string"
+          },
+          "maxWallClockMs": {
+            "nullable": true,
+            "type": "string"
+          },
+          "subject": {
+            "description": "`instance` for the default, otherwise a user ID",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "maxConcurrentOperations",
+          "maxOutputBytes",
+          "maxWallClockMs",
+          "subject",
+          "updatedAt",
+          "userId"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerLimitUpdateDto": {
+        "properties": {
+          "maxConcurrentOperations": {
+            "maximum": 64,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxOutputBytes": {
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "maxWallClockMs": {
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "userId": {
+            "description": "Omit or null for the instance default",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "maxConcurrentOperations",
+          "maxOutputBytes",
+          "maxWallClockMs"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerLimitsResponseDto": {
+        "properties": {
+          "instance": {
+            "$ref": "#/components/schemas/RenderWorkerLimitDto"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/RenderWorkerLimitDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "instance",
+          "users"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerProgressDto": {
+        "properties": {
+          "claimToken": {
+            "description": "The claim token this operation was handed out with",
+            "format": "uuid",
+            "type": "string"
+          },
+          "outputBytes": {
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "processedUnits": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "preparing",
+              "rendering"
+            ],
+            "type": "string"
+          },
+          "totalUnits": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "claimToken",
+          "processedUnits",
+          "status",
+          "totalUnits"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerRefusalReason": {
+        "description": "Render worker refusal reason",
+        "enum": [
+          "invalid_credential",
+          "worker_revoked",
+          "session_expired",
+          "conformance_stale",
+          "conformance_replayed",
+          "engine_digest_mismatch",
+          "software_renderer",
+          "destination_mismatch",
+          "worker_mismatch",
+          "scope_exceeded",
+          "worker_concurrency_exceeded",
+          "user_concurrency_exceeded",
+          "gpu_memory_insufficient",
+          "wall_clock_exceeded",
+          "output_bytes_exceeded",
+          "destination_unavailable",
+          "manifest_incomplete"
+        ],
+        "type": "string"
+      },
+      "RenderWorkerSessionDto": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "heartbeatIntervalMs": {
+            "description": "How often the worker should heartbeat a held claim",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "leaseMs": {
+            "description": "How long a claim lasts without a heartbeat",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            },
+            "type": "array"
+          },
+          "sessionToken": {
+            "description": "Present as the x-frameleaf-worker-session header on every worker call",
+            "type": "string"
+          },
+          "workerId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "heartbeatIntervalMs",
+          "leaseMs",
+          "scopes",
+          "sessionToken",
+          "workerId"
+        ],
+        "type": "object"
+      },
+      "RenderWorkerStatus": {
+        "description": "Render worker status",
+        "enum": [
+          "active",
+          "revoked"
+        ],
+        "type": "string"
+      },
+      "RenderWorkerUpdateDto": {
+        "properties": {
+          "conformanceMaxAgeMs": {
+            "maximum": 9007199254740991,
+            "minimum": 60000,
+            "type": "integer"
+          },
+          "engineDigest": {
+            "maxLength": 200,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          },
+          "gpuMemoryBytes": {
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "kinds": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "maxConcurrentOperations": {
+            "maximum": 64,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxOutputBytes": {
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "maxWallClockMs": {
+            "nullable": true,
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "RenderWorkerWriteResultDto": {
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "refusal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RenderWorkerRefusalReason"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "accepted",
+          "refusal"
+        ],
+        "type": "object"
+      },
       "ReverseGeocodingStateResponseDto": {
         "properties": {
           "lastImportFileName": {
@@ -24628,6 +25561,487 @@
           "Maintenance (admin)"
         ],
         "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/render-workers": {
+      "get": {
+        "description": "Every enrolled worker identity with its destination, scopes, ceilings and current load.",
+        "operationId": "listRenderWorkers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RenderWorkerDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List render workers",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Creates a worker identity and returns its enrolment secret once. The server stores only a hash; the secret cannot be recovered later.",
+        "operationId": "createRenderWorker",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerCreateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Enrol a render worker",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/render-workers/audit": {
+      "get": {
+        "description": "Enrolments, admissions, refusals, limit breaches and revocations, newest first. Never a secret or a path.",
+        "operationId": "searchRenderWorkerAudit",
+        "parameters": [
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "workerId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RenderWorkerAuditDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Search the render worker audit trail",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/render-workers/limits": {
+      "get": {
+        "description": "The instance default and every per-account ceiling on concurrent operations, wall-clock and output size.",
+        "operationId": "getRenderWorkerLimits",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerLimitsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get render limits",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Sets the instance default when `userId` is omitted, otherwise the ceiling for one account.",
+        "operationId": "updateRenderWorkerLimits",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerLimitUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerLimitDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Set render limits",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/render-workers/limits/{id}": {
+      "delete": {
+        "description": "The account falls back to the instance default.",
+        "operationId": "deleteRenderWorkerUserLimit",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove an account’s render limits",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/render-workers/{id}": {
+      "delete": {
+        "description": "Revokes the identity and every session it holds. Claims it held expire into the recovery pass; the record is kept for the audit trail.",
+        "operationId": "revokeRenderWorker",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Revoke a render worker",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "One worker identity with its current load.",
+        "operationId": "getRenderWorker",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a render worker",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Changes the name, scopes, required engine digest and ceilings. A revoked worker cannot be changed.",
+        "operationId": "updateRenderWorker",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update a render worker",
+        "tags": [
+          "Render workers"
+        ],
         "x-immich-history": [
           {
             "version": "v3.0.0",
@@ -38422,6 +39836,690 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/render-workers/admission": {
+      "post": {
+        "description": "Exchanges the enrolment secret and fresh conformance evidence for a scoped, expiring session credential. Refusals are audited and answered generically.",
+        "operationId": "admitRenderWorker",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerAdmissionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerSessionDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Admit a render worker",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/claims": {
+      "post": {
+        "description": "Returns the oldest queued operation this worker is admitted to run, with its claim token, checkpoints and short-lived input grants. Answers 204 when nothing is admissible.",
+        "operationId": "claimRenderOperation",
+        "parameters": [
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerClaimRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerClaimDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Claim the next admitted operation",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/cancel-ack": {
+      "post": {
+        "description": "The worker confirms it stopped. Only then does the operation become `cancelled`.",
+        "operationId": "acknowledgeRenderCancel",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerCancelAckDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Acknowledge a cancellation",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/checkpoints": {
+      "post": {
+        "description": "Records a chunk and every digest that identifies it. Re-planning a sequence replaces its identity.",
+        "operationId": "planRenderCheckpoint",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerCheckpointPlanDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Plan a render checkpoint",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/checkpoints/{sequence}/complete": {
+      "post": {
+        "description": "Marks a planned chunk rendered. The chunk key must still match; a re-planned chunk cannot be completed.",
+        "operationId": "completeRenderCheckpoint",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sequence",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerCheckpointCompleteDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Complete a render checkpoint",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/complete": {
+      "post": {
+        "description": "Publishes a validated result under the same claim. A previous valid result is kept until this succeeds.",
+        "operationId": "completeRenderOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerCompleteDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Complete a claimed operation",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/fail": {
+      "post": {
+        "description": "Records a stable error code and operator detail. A finished operation is not reopened.",
+        "operationId": "failRenderOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerFailDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Fail a claimed operation",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/heartbeat": {
+      "post": {
+        "description": "Extends the lease, enforces the wall-clock and output ceilings and reports whether the owner asked to cancel.",
+        "operationId": "heartbeatRenderOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerHeartbeatDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerHeartbeatResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Heartbeat a claimed operation",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/inputs/{grant}": {
+      "get": {
+        "description": "Streams one input under a grant issued with the claim. The grant is bound to this operation, this claim and this session, and owner access is re-checked on every read.",
+        "operationId": "readRenderOperationInput",
+        "parameters": [
+          {
+            "name": "grant",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "maxLength": 8192,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Read an operation input",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/progress": {
+      "post": {
+        "description": "Counted units only; the percentage is derived on the server.",
+        "operationId": "reportRenderOperationProgress",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerProgressDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Report progress on a claimed operation",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/operations/{id}/validate": {
+      "post": {
+        "description": "Moves the operation to `validating`. Nothing is published until `complete`.",
+        "operationId": "validateRenderOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderWorkerCompleteDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Begin validating a claimed operation",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/runpod/backfill": {
       "post": {
         "description": "Queues smart-search, face detection, duplicates, OCR, image description, and NSFW detection.",
@@ -47143,6 +49241,10 @@
     {
       "name": "Queues",
       "description": "Queues and background jobs are used for processing tasks asynchronously. Queues can be paused and resumed as needed."
+    },
+    {
+      "name": "Render workers",
+      "description": "Render workers are the GPU processes that run Studio exports, restorations and edits. An administrator enrols a worker identity and sets its ceilings; the worker is admitted against conformance evidence, claims queued media operations one at a time and reads their inputs only through grants scoped to that claim."
     },
     {
       "name": "RunPod (admin)",

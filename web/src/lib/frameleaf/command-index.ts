@@ -34,6 +34,7 @@ import {
   mdiLockOutline,
   mdiLockSmart,
   mdiMapMarkerOutline,
+  mdiMemory,
   mdiPaletteOutline,
   mdiRobotOutline,
   mdiServerOutline,
@@ -117,6 +118,12 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
       { id: 'admin:users', title: $t('admin.user_management'), icon: mdiAccountMultipleOutline, href: Route.users() },
       { id: 'admin:settings', title: $t('admin.system_settings'), icon: mdiCogOutline, href: Route.systemSettings() },
       { id: 'admin:queues', title: $t('admin.queues'), icon: mdiSync, href: Route.queues() },
+      {
+        id: 'admin:render-workers',
+        title: $t('admin.render_workers'),
+        icon: mdiMemory,
+        href: Route.renderWorkers(),
+      },
       { id: 'admin:libraries', title: $t('external_libraries'), icon: mdiBookshelf, href: Route.libraries() },
       { id: 'admin:status', title: $t('server_stats'), icon: mdiServerOutline, href: Route.systemStatistics() },
       {

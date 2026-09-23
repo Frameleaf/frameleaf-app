@@ -26,6 +26,8 @@ export enum ImmichHeader {
   CorrelationId = 'X-Correlation-ID',
   HlsInitSegment = 'x-immich-hls-msn',
   HlsPosition = 'x-immich-hls-pos',
+  /** The scoped, expiring session credential a render worker was handed at admission (FL-95). */
+  RenderWorkerSession = 'x-frameleaf-worker-session',
 }
 
 export enum ImmichQuery {
@@ -1043,6 +1045,87 @@ export const StudioPreviewStatusSchema = z
   .describe('Studio preview status')
   .meta({ id: 'StudioPreviewStatus' });
 
+/**
+ * Render worker admission (FL-95 `STU-401`).
+ *
+ * A worker is an identity an administrator enrolled, not a machine that showed up. It is
+ * either active or revoked; there is no "pending" because a worker that has not been admitted
+ * simply has no session, and an admission that fails is an audit row, not a worker state.
+ */
+export enum RenderWorkerStatus {
+  Active = 'active',
+  Revoked = 'revoked',
+}
+
+export const RenderWorkerStatusSchema = z
+  .enum(RenderWorkerStatus)
+  .describe('Render worker status')
+  .meta({ id: 'RenderWorkerStatus' });
+
+/** What the audit trail records about a worker. Never a secret, never media. */
+export enum RenderWorkerAuditEvent {
+  /** An administrator created the identity. */
+  Enrolled = 'enrolled',
+  /** A worker presented a valid enrolment secret and fresh evidence and received a session. */
+  Admitted = 'admitted',
+  /** Admission was refused; `reason` says why. */
+  Refused = 'refused',
+  /** A claim was refused at admission time by a worker, user or hardware limit. */
+  ClaimRefused = 'claim_refused',
+  /** A running operation was stopped because it exceeded a limit. */
+  LimitExceeded = 'limit_exceeded',
+  /** An administrator revoked the worker; every session it held is dead. */
+  Revoked = 'revoked',
+  /** An administrator changed the worker's limits or scopes. */
+  Updated = 'updated',
+}
+
+export const RenderWorkerAuditEventSchema = z
+  .enum(RenderWorkerAuditEvent)
+  .describe('Render worker audit event')
+  .meta({ id: 'RenderWorkerAuditEvent' });
+
+/**
+ * Why a worker was turned away. Stable codes: the admin page turns them into messages, and
+ * the same code is written on a refused operation so its owner sees why it is still queued.
+ */
+export enum RenderWorkerRefusalReason {
+  InvalidCredential = 'invalid_credential',
+  WorkerRevoked = 'worker_revoked',
+  SessionExpired = 'session_expired',
+  /** The conformance evidence is older than the worker's configured maximum age. */
+  ConformanceStale = 'conformance_stale',
+  /** The evidence has been presented before; a replayed report is not fresh evidence. */
+  ConformanceReplayed = 'conformance_replayed',
+  /** The engine or patch digest the worker reports is not the one it was enrolled with. */
+  EngineDigestMismatch = 'engine_digest_mismatch',
+  /** A software or fallback renderer was reported where a GPU is required. */
+  SoftwareRenderer = 'software_renderer',
+  /** The worker's destination is not the destination the operation was submitted to. */
+  DestinationMismatch = 'destination_mismatch',
+  /** The operation names a worker and this is not it. */
+  WorkerMismatch = 'worker_mismatch',
+  /** The operation kind is outside the worker's admitted scopes. */
+  ScopeExceeded = 'scope_exceeded',
+  /** The worker already holds as many operations as it is allowed. */
+  WorkerConcurrency = 'worker_concurrency_exceeded',
+  /** The operation's owner already has as many operations running as they are allowed. */
+  UserConcurrency = 'user_concurrency_exceeded',
+  /** The operation needs more GPU memory than the worker was admitted with. */
+  GpuMemoryInsufficient = 'gpu_memory_insufficient',
+  WallClockExceeded = 'wall_clock_exceeded',
+  OutputBytesExceeded = 'output_bytes_exceeded',
+  /** The chosen destination reports itself unavailable. */
+  DestinationUnavailable = 'destination_unavailable',
+  /** FL-90 refused at least one graph resource; a render needs a complete manifest. */
+  ManifestIncomplete = 'manifest_incomplete',
+}
+
+export const RenderWorkerRefusalReasonSchema = z
+  .enum(RenderWorkerRefusalReason)
+  .describe('Render worker refusal reason')
+  .meta({ id: 'RenderWorkerRefusalReason' });
+
 export enum LogLevel {
   Verbose = 'verbose',
   Debug = 'debug',
@@ -1762,6 +1845,7 @@ export enum ApiTag {
   Map = 'Map',
   MediaHealth = 'Media Health',
   MediaOperations = 'Media operations',
+  RenderWorkers = 'Render workers',
   Memories = 'Memories',
   MlDestinations = 'ML destinations',
   Notifications = 'Notifications',
