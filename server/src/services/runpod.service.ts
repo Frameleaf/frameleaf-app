@@ -297,13 +297,15 @@ export class RunPodService extends BaseService {
     }
 
     // Persist the privacy ack and the max runtime hours back to config if changed.
+    // FL-66: written under the settings lock from the saved settings, so it cannot overwrite an
+    // administrator's save made in between (and the settings page picks it up as saved state).
     if (!runpod.dataPrivacyAcknowledged || (dto.maxRuntimeHours && dto.maxRuntimeHours !== runpod.maxRuntimeHours)) {
-      const next = JSON.parse(JSON.stringify(config));
-      next.machineLearning.runpod.dataPrivacyAcknowledged = true;
-      if (dto.maxRuntimeHours) {
-        next.machineLearning.runpod.maxRuntimeHours = dto.maxRuntimeHours;
-      }
-      await this.updateConfig(next);
+      await this.updateConfigExclusively((next) => {
+        next.machineLearning.runpod.dataPrivacyAcknowledged = true;
+        if (dto.maxRuntimeHours) {
+          next.machineLearning.runpod.maxRuntimeHours = dto.maxRuntimeHours;
+        }
+      });
     }
 
     const instanceTag =

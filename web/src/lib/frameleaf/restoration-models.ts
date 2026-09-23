@@ -12,6 +12,7 @@ import {
   type MlDestinationResponseDto,
   type RestorationMeasuredThroughputDto,
 } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 
 export const RESTORATION_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.RestorationFaithful,
@@ -22,12 +23,12 @@ export const RESTORATION_WORKLOADS: readonly MlWorkload[] = [
 export const allowsRestoration = (destination: Pick<MlDestinationResponseDto, 'workloads'>): boolean =>
   destination.workloads.some((workload) => RESTORATION_WORKLOADS.includes(workload));
 
-export const restorationModeLabelKey = (mode: AssetRestorationMode): string =>
+export const restorationModeLabelKey = (mode: AssetRestorationMode): Translations =>
   mode === AssetRestorationMode.Creative
     ? 'admin.frameleaf_restoration_models_mode_creative'
     : 'admin.frameleaf_restoration_models_mode_faithful';
 
-export const restorationModelStateLabelKey = (state: RestorationModelState): string => {
+export const restorationModelStateLabelKey = (state: RestorationModelState): Translations => {
   switch (state) {
     case RestorationModelState.Available: {
       return 'admin.frameleaf_restoration_models_state_available';

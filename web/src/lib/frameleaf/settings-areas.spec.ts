@@ -31,7 +31,15 @@ describe('Frameleaf settings areas', () => {
     expect(areaForSection('takeout')).toBe('backup');
     // External library settings live with the Libraries manager (FL-78).
     expect(areaForSection('external-library')).toBe('libraries');
+    // Server migration is the last Storage & originals section, as in the template (FL-75).
+    expect(areaForSection('migration')).toBe('storage');
+    expect(SETTINGS_AREAS.find((area) => area.id === 'storage')?.sections.at(-1)).toBe('migration');
     expect(areaForSection('unknown')).toBeUndefined();
+  });
+
+  it('keeps Originals & preservation with imports and database backups (FL-74)', () => {
+    expect(areaForSection('preservation')).toBe('backup');
+    expect(resolveSettingsArea({ isOpen: 'preservation' })).toBe('backup');
   });
 
   describe(resolveSettingsArea.name, () => {
@@ -61,6 +69,13 @@ describe('Frameleaf settings areas', () => {
     it('returns the area sections in area order and skips keys with no component', () => {
       expect(sectionsForArea(sections, 'storage').map((s) => s.key)).toEqual(['storage-template', 'trash']);
       expect(sectionsForArea(sections, 'care')).toEqual([]);
+    });
+
+    it('keeps the change history as its own personal area without settings forms (FL-66)', () => {
+      const history = SETTINGS_AREAS.find((area) => area.id === 'history');
+      expect(history).toEqual({ id: 'history', group: 'personal', sections: [] });
+      expect(sectionsForArea(sections, 'history')).toEqual([]);
+      expect(resolveSettingsArea({ area: 'history' })).toBe('history');
     });
   });
 });

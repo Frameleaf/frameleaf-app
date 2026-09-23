@@ -1,6 +1,12 @@
 import { type Kysely, sql } from 'kysely';
 
 export async function up(db: Kysely<any>): Promise<void> {
+  // These tables carry the shared updated_at() trigger, which also stamps "updateId".
+  await sql`ALTER TABLE "render_worker_limit" ADD "updateId" uuid NOT NULL DEFAULT immich_uuid_v7();`.execute(db);
+  await sql`ALTER TABLE "studio_project_comment" ADD "updateId" uuid NOT NULL DEFAULT immich_uuid_v7();`.execute(db);
+  await sql`ALTER TABLE "video_moment_index" ADD "updateId" uuid NOT NULL DEFAULT immich_uuid_v7();`.execute(db);
+  await sql`ALTER TABLE "video_moment_frame" ADD "updateId" uuid NOT NULL DEFAULT immich_uuid_v7();`.execute(db);
+  await sql`ALTER TABLE "video_moment" ADD "updateId" uuid NOT NULL DEFAULT immich_uuid_v7();`.execute(db);
   await sql`CREATE INDEX "media_operation_ownerId_idx" ON "media_operation" ("ownerId");`.execute(db);
   await sql`CREATE INDEX "media_operation_assetId_idx" ON "media_operation" ("assetId");`.execute(db);
   await sql`CREATE INDEX "media_operation_resultAssetId_idx" ON "media_operation" ("resultAssetId");`.execute(db);
@@ -26,9 +32,28 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_video_moment_index_updatedAt', '{"type":"trigger","name":"video_moment_index_updatedAt","sql":"CREATE OR REPLACE TRIGGER \\"video_moment_index_updatedAt\\"\\n  BEFORE UPDATE ON \\"video_moment_index\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(db);
   await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_video_moment_frame_updatedAt', '{"type":"trigger","name":"video_moment_frame_updatedAt","sql":"CREATE OR REPLACE TRIGGER \\"video_moment_frame_updatedAt\\"\\n  BEFORE UPDATE ON \\"video_moment_frame\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(db);
   await sql`INSERT INTO "migration_overrides" ("name", "value") VALUES ('trigger_video_moment_updatedAt', '{"type":"trigger","name":"video_moment_updatedAt","sql":"CREATE OR REPLACE TRIGGER \\"video_moment_updatedAt\\"\\n  BEFORE UPDATE ON \\"video_moment\\"\\n  FOR EACH ROW\\n  EXECUTE FUNCTION updated_at();"}'::jsonb);`.execute(db);
+  // asset_video_duplicate_frame is mirrored column for column by the fork v2 sidecar, so it keeps no
+  // updateId: its trigger stamps only updatedAt, as the media health tables do (2100000000060).
+  await sql`CREATE OR REPLACE TRIGGER "asset_video_duplicate_frame_updatedAt"
+    BEFORE UPDATE ON "asset_video_duplicate_frame"
+    FOR EACH ROW EXECUTE FUNCTION media_health_updated_at();`.execute(db);
+  await sql`UPDATE "migration_overrides"
+    SET "value" = jsonb_set("value", '{sql}', to_jsonb(replace("value"->>'sql', 'FUNCTION updated_at()', 'FUNCTION media_health_updated_at()')))
+    WHERE "name" = 'trigger_asset_video_duplicate_frame_updatedAt';`.execute(db);
 }
 
 export async function down(db: Kysely<any>): Promise<void> {
+  await sql`CREATE OR REPLACE TRIGGER "asset_video_duplicate_frame_updatedAt"
+    BEFORE UPDATE ON "asset_video_duplicate_frame"
+    FOR EACH ROW EXECUTE FUNCTION updated_at();`.execute(db);
+  await sql`UPDATE "migration_overrides"
+    SET "value" = jsonb_set("value", '{sql}', to_jsonb(replace("value"->>'sql', 'FUNCTION media_health_updated_at()', 'FUNCTION updated_at()')))
+    WHERE "name" = 'trigger_asset_video_duplicate_frame_updatedAt';`.execute(db);
+  await sql`ALTER TABLE "render_worker_limit" DROP COLUMN "updateId";`.execute(db);
+  await sql`ALTER TABLE "studio_project_comment" DROP COLUMN "updateId";`.execute(db);
+  await sql`ALTER TABLE "video_moment_index" DROP COLUMN "updateId";`.execute(db);
+  await sql`ALTER TABLE "video_moment_frame" DROP COLUMN "updateId";`.execute(db);
+  await sql`ALTER TABLE "video_moment" DROP COLUMN "updateId";`.execute(db);
   await sql`DROP INDEX "memory_export_ownerId_idx";`.execute(db);
   await sql`DROP INDEX "memory_export_memoryId_idx";`.execute(db);
   await sql`DROP INDEX "ml_workload_accounting_destinationId_idx";`.execute(db);

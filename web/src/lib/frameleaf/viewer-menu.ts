@@ -1,3 +1,5 @@
+import type { Translations } from 'svelte-i18n';
+
 /**
  * Frameleaf viewer "More" menu composition (FL-35).
  *
@@ -69,7 +71,7 @@ export type ViewerMenuGroupId = 'download' | 'trash' | 'organize' | 'stack' | 's
 export interface ViewerMenuGroup {
   id: ViewerMenuGroupId;
   /** i18n key for the group heading. */
-  labelKey: string;
+  labelKey: Translations;
   items: ViewerActionId[];
 }
 

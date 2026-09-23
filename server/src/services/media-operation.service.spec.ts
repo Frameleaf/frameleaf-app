@@ -64,11 +64,19 @@ describe(MediaOperationService.name, () => {
   let repository: MediaOperationRepository;
   let icloud: { queueOperation: ReturnType<typeof vi.fn>; endRun: ReturnType<typeof vi.fn> };
   let jobs: { queue: ReturnType<typeof vi.fn> };
+  let preservation: Record<string, ReturnType<typeof vi.fn>>;
 
   beforeEach(() => {
     mocks = getMocks();
     icloud = { queueOperation: vi.fn(), endRun: vi.fn() };
     jobs = { queue: vi.fn().mockResolvedValue(undefined) };
+    preservation = {
+      activeOperation: vi.fn().mockResolvedValue(undefined),
+      getPackage: vi.fn(),
+      getRestore: vi.fn(),
+      resetFailedItems: vi.fn().mockResolvedValue(0),
+      resetFailedRestoreItems: vi.fn().mockResolvedValue(0),
+    };
     repository = {
       create: vi.fn(),
       getForOwner: vi.fn(),
@@ -85,6 +93,12 @@ describe(MediaOperationService.name, () => {
       countLockedAssets: vi.fn().mockResolvedValue(0),
       getLockedAssetIds: vi.fn().mockResolvedValue(new Set()),
     } as unknown as MediaOperationRepository;
+    // The race-safe insert (FL-43) goes through `create`; the unique-index answer is covered by the
+    // medium spec.
+    repository.createRetry = vi.fn().mockImplementation(async (value) => ({
+      operation: await repository.create(value),
+      created: true,
+    }));
 
     sut = new MediaOperationService(
       mocks.logger as never,
@@ -92,6 +106,7 @@ describe(MediaOperationService.name, () => {
       mocks.access as never,
       icloud as never,
       jobs as never,
+      preservation as never,
     );
   });
 
@@ -189,6 +204,52 @@ describe(MediaOperationService.name, () => {
       );
       expect(elevated.bulkItems.map(({ id }) => id)).toEqual([lockedId, visibleId]);
       expect(repository.getLockedAssetIds).not.toHaveBeenCalled();
+    });
+
+    it('withholds the file name and snapshot of a job about a Locked item from a locked session (FL-43)', async () => {
+      const operation = operationStub({
+        kind: MediaOperationKind.Restoration,
+        assetId: lockedId,
+        label: 'IMG_0412.MOV',
+        snapshot: { assetId: lockedId, sourceWidth: 1920, sourceHeight: 1080 },
+      });
+      vi.mocked(repository.list).mockResolvedValue({ items: [operation], total: 1 });
+      vi.mocked(repository.getForOwner).mockResolvedValue(operation);
+      vi.mocked(repository.getLockedAssetIds).mockResolvedValue(new Set([lockedId]));
+
+      const { items } = await sut.search(authStub.user1, {} as never);
+      expect(items[0]).toEqual(expect.objectContaining({ label: '', withheld: true, assetId: null }));
+      expect(JSON.stringify(items[0])).not.toContain('IMG_0412');
+
+      const detail = await sut.get(authStub.user1, operation.id);
+      expect(detail).toEqual(expect.objectContaining({ label: '', withheld: true, snapshot: {} }));
+      expect(JSON.stringify(detail)).not.toContain(lockedId);
+
+      const running = await sut.listUnfinished(authStub.user1, 50);
+      expect(running[0]).toEqual(expect.objectContaining({ label: '', withheld: true }));
+    });
+
+    it('shows the same job in full once the session is unlocked (FL-43)', async () => {
+      const operation = operationStub({
+        kind: MediaOperationKind.Restoration,
+        assetId: lockedId,
+        label: 'IMG_0412.MOV',
+      });
+      vi.mocked(repository.getForOwner).mockResolvedValue(operation);
+
+      const detail = await sut.get(
+        { ...authStub.user1, session: { id: 'session-id', hasElevatedPermission: true } } as never,
+        operation.id,
+      );
+
+      expect(detail).toEqual(
+        expect.objectContaining({
+          label: 'IMG_0412.MOV',
+          withheld: false,
+          assetId: lockedId,
+          snapshot: operation.snapshot,
+        }),
+      );
     });
   });
 
@@ -401,14 +462,153 @@ describe(MediaOperationService.name, () => {
   });
 
   describe('retry', () => {
+    describe('a preservation job (FL-74)', () => {
+      const packageId = '0195e2a0-0000-7000-8000-00000000a001';
+      const restoreId = '0195e2a0-0000-7000-8000-00000000b001';
+      const packageRow = (overrides: Record<string, unknown> = {}) => ({
+        id: packageId,
+        ownerId: authStub.user1.user.id,
+        includeLocked: false,
+        removedAt: null,
+        ...overrides,
+      });
+
+      beforeEach(() => {
+        vi.mocked(repository.create).mockImplementation((row) =>
+          Promise.resolve(operationStub({ ...(row as Partial<MediaOperation>), id: 'retried' })),
+        );
+      });
+
+      it('carries an export on from its package, giving failed items their retry back', async () => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({
+            kind: MediaOperationKind.PreservationExport,
+            status: MediaOperationStatus.Failed,
+            snapshot: { kind: 'preservation-export', packageId, requestKey: 'first', elevated: false },
+          }),
+        );
+        preservation.getPackage.mockResolvedValue(packageRow());
+
+        await sut.retry(authStub.user1, 'op');
+
+        expect(preservation.getPackage).toHaveBeenCalledWith(packageId, authStub.user1.user.id);
+        expect(preservation.resetFailedItems).toHaveBeenCalledWith(packageId);
+        // Through the race-safe insert (FL-43), never a plain create that a second click could collide with.
+        expect(repository.createRetry).toHaveBeenCalledWith(expect.objectContaining({ retryOfId: expect.any(String) }));
+        expect(repository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            kind: MediaOperationKind.PreservationExport,
+            retryOfId: expect.any(String),
+            snapshot: expect.objectContaining({ packageId, requestKey: null }),
+          }),
+        );
+      });
+
+      it('answers a second retry that lost the race with the winner, not a unique violation', async () => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({
+            kind: MediaOperationKind.PreservationVerify,
+            status: MediaOperationStatus.Failed,
+            snapshot: { kind: 'preservation-verify', packageId },
+          }),
+        );
+        preservation.getPackage.mockResolvedValue(packageRow());
+        const winner = operationStub({ id: 'winner', kind: MediaOperationKind.PreservationVerify });
+        vi.mocked(repository.createRetry).mockResolvedValue({ operation: winner, created: false });
+
+        const result = await sut.retry(authStub.user1, 'op');
+
+        expect(result.id).toBe('winner');
+        expect(repository.create).not.toHaveBeenCalled();
+      });
+
+      it('answers with the job already working on the same package', async () => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({
+            kind: MediaOperationKind.PreservationVerify,
+            status: MediaOperationStatus.Cancelled,
+            snapshot: { kind: 'preservation-verify', packageId },
+          }),
+        );
+        const running = operationStub({ id: 'running', kind: MediaOperationKind.PreservationExport });
+        preservation.activeOperation.mockResolvedValue(running);
+
+        const result = await sut.retry(authStub.user1, 'op');
+
+        expect(result.id).toBe('running');
+        expect(repository.create).not.toHaveBeenCalled();
+      });
+
+      it('retries an export holding Locked items only from an unlocked session', async () => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({
+            kind: MediaOperationKind.PreservationExport,
+            status: MediaOperationStatus.Failed,
+            snapshot: { kind: 'preservation-export', packageId, requestKey: null, elevated: true },
+          }),
+        );
+        preservation.getPackage.mockResolvedValue(packageRow({ includeLocked: true }));
+
+        await expect(sut.retry(authStub.user1, 'op')).rejects.toBeInstanceOf(ForbiddenException);
+        expect(preservation.resetFailedItems).not.toHaveBeenCalled();
+        expect(repository.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses a job whose package was removed', async () => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({
+            kind: MediaOperationKind.PreservationVerify,
+            status: MediaOperationStatus.Failed,
+            snapshot: { kind: 'preservation-verify', packageId },
+          }),
+        );
+        preservation.getPackage.mockResolvedValue(packageRow({ removedAt: new Date() }));
+
+        await expect(sut.retry(authStub.user1, 'op')).rejects.toBeInstanceOf(BadRequestException);
+        expect(repository.create).not.toHaveBeenCalled();
+      });
+
+      it('carries a restore on and gives its failed items their retry back', async () => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({
+            kind: MediaOperationKind.PreservationRestore,
+            status: MediaOperationStatus.Failed,
+            snapshot: { kind: 'preservation-restore', restoreId, packageId, requestKey: null },
+          }),
+        );
+        preservation.getPackage.mockResolvedValue(packageRow());
+        preservation.getRestore.mockResolvedValue({ id: restoreId, status: 'ready' });
+
+        await sut.retry(authStub.user1, 'op');
+
+        expect(preservation.activeOperation).toHaveBeenCalledWith(authStub.user1.user.id, 'restoreId', restoreId);
+        expect(preservation.resetFailedRestoreItems).toHaveBeenCalledWith(restoreId);
+        expect(repository.create).toHaveBeenCalledWith(
+          expect.objectContaining({ kind: MediaOperationKind.PreservationRestore }),
+        );
+      });
+    });
+
     it('refuses to retry a running job', async () => {
       vi.mocked(repository.getForOwner).mockResolvedValue(operationStub());
 
       await expect(sut.retry(authStub.user1, operationStub().id)).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it.each([MediaOperationKind.StudioExport, MediaOperationKind.StudioExportPublish])(
+      'refuses to copy a %s job: a Studio export is exported again as a new version (FL-106)',
+      async (kind) => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({ kind, status: MediaOperationStatus.Failed }),
+        );
+        await expect(sut.retry(authStub.user1, 'id')).rejects.toBeInstanceOf(BadRequestException);
+        expect(repository.create).not.toHaveBeenCalled();
+      },
+    );
+
     it('copies the snapshot and destination into a new row and records the lineage', async () => {
       const failed = operationStub({
+        kind: MediaOperationKind.Restoration,
         status: MediaOperationStatus.Failed,
         destination: MediaOperationDestination.RunPod,
       });
@@ -435,6 +635,66 @@ describe(MediaOperationService.name, () => {
       );
       expect(result.retryOfId).toBe(failed.id);
       expect(result.status).toBe(MediaOperationStatus.Queued);
+      expect(repository.createRetry).toHaveBeenCalledWith(expect.objectContaining({ retryOfId: failed.id }));
+    });
+
+    it('answers a second retry request with the retry already queued, for every kind (FL-43)', async () => {
+      // A Studio export is exported again rather than copied (FL-106); a quick edit is copied.
+      const failed = operationStub({ kind: MediaOperationKind.QuickEdit, status: MediaOperationStatus.Failed });
+      const waiting = operationStub({
+        id: '0195e2a0-0000-7000-8000-000000000002',
+        status: MediaOperationStatus.Queued,
+        retryOfId: failed.id,
+      });
+      vi.mocked(repository.getForOwner).mockResolvedValue(failed);
+      vi.mocked(repository.getActiveRetry).mockResolvedValue(waiting);
+
+      const result = await sut.retry(authStub.user1, failed.id);
+
+      expect(result.id).toBe(waiting.id);
+      expect(repository.getActiveRetry).toHaveBeenCalledWith(failed.id, authStub.user1.user.id);
+      expect(repository.createRetry).not.toHaveBeenCalled();
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
+    it('answers with the winner when two retry requests race past the first look (FL-43)', async () => {
+      // A Studio export is exported again rather than copied (FL-106); a quick edit is copied.
+      const failed = operationStub({ kind: MediaOperationKind.QuickEdit, status: MediaOperationStatus.Failed });
+      const winner = operationStub({
+        id: '0195e2a0-0000-7000-8000-000000000009',
+        status: MediaOperationStatus.Queued,
+        retryOfId: failed.id,
+      });
+      vi.mocked(repository.getForOwner).mockResolvedValue(failed);
+      vi.mocked(repository.createRetry).mockResolvedValue({ operation: winner, created: false });
+
+      const result = await sut.retry(authStub.user1, failed.id);
+
+      expect(result.id).toBe(winner.id);
+    });
+
+    it('needs the unlocked session to retry a job over an item that is Locked now (FL-43)', async () => {
+      const assetId = '0195e2a0-0000-7000-8000-0000000000aa';
+      const failed = operationStub({
+        kind: MediaOperationKind.Restoration,
+        status: MediaOperationStatus.Failed,
+        assetId,
+      });
+      vi.mocked(repository.getForOwner).mockResolvedValue(failed);
+      vi.mocked(repository.countLockedAssets).mockResolvedValue(1);
+
+      await expect(sut.retry(authStub.user1, failed.id)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repository.countLockedAssets).toHaveBeenCalledWith(authStub.user1.user.id, [assetId]);
+      expect(repository.createRetry).not.toHaveBeenCalled();
+
+      vi.mocked(repository.create).mockResolvedValue(
+        operationStub({ status: MediaOperationStatus.Queued, retryOfId: failed.id }),
+      );
+      await sut.retry(
+        { ...authStub.user1, session: { id: 'session-id', hasElevatedPermission: true } } as never,
+        failed.id,
+      );
+      expect(repository.createRetry).toHaveBeenCalledTimes(1);
     });
 
     describe('an iCloud sync run (FL-68)', () => {

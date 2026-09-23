@@ -54,9 +54,12 @@ import { OcrService } from 'src/services/ocr.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { PetService } from 'src/services/pet.service.js';
+import { PhotoToolsService } from 'src/services/photo-tools.service.js';
 import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
 import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
 import { PluginService } from 'src/services/plugin.service.js';
+import { PreservationWorkerService } from 'src/services/preservation-worker.service.js';
+import { PreservationService } from 'src/services/preservation.service.js';
 import { QueueService } from 'src/services/queue.service.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
@@ -73,6 +76,7 @@ import { StackService } from 'src/services/stack.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
+import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
@@ -141,6 +145,7 @@ export const services = [
   MediaHealthService,
   MediaOperationService,
   MediaOperationSweepService,
+  PhotoToolsService,
   RenderWorkerService,
   MediaService,
   MemoryService,
@@ -157,6 +162,8 @@ export const services = [
   PhysicalDeduplicationPlanService,
   PhysicalDeduplicationService,
   PluginService,
+  PreservationService,
+  PreservationWorkerService,
   QueueService,
   RunPodService,
   RestorationWorkerService,
@@ -170,6 +177,7 @@ export const services = [
   SmartInfoService,
   ZeroShotTaggingService,
   StackService,
+  StudioExportService,
   StudioPreviewService,
   StorageService,
   StorageTemplateService,

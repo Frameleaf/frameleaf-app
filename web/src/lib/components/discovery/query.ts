@@ -1067,11 +1067,16 @@ const DATE_FILTER_FIELDS = ['takenAt', 'createdAt', 'updatedAt', 'trashedAt'] as
 const dayStart = (day: string) => `${day}T00:00:00.000Z`;
 const nextDayStart = (day: string) => new Date(Date.parse(dayStart(day)) + DAY_MS).toISOString();
 
-const narrowest = (values: string[], pick: 'max' | 'min') =>
-  values.reduce((best, value) => {
+const narrowest = (values: string[], pick: 'max' | 'min') => {
+  let best = values[0];
+  for (const value of values.slice(1)) {
     const later = Date.parse(value) > Date.parse(best);
-    return (pick === 'max' ? later : !later) ? value : best;
-  });
+    if (pick === 'max' ? later : !later) {
+      best = value;
+    }
+  }
+  return best;
+};
 
 /**
  * A date condition as the server takes it (FL-48). The filter panel edits whole UTC calendar days
@@ -1081,6 +1086,10 @@ const narrowest = (values: string[], pick: 'max' | 'min') =>
  * After leave the whole day out. Datetime operands pass through. Where one side ends up with more
  * than one bound, the narrowest is kept, which is exactly the conjunction the condition stated.
  */
+type RangeOperator = 'gte' | 'gt' | 'lt' | 'lte';
+const RANGE_OPERATORS: ReadonlySet<string> = new Set<RangeOperator>(['gte', 'gt', 'lt', 'lte']);
+const isRangeOperator = (operator: string): operator is RangeOperator => RANGE_OPERATORS.has(operator);
+
 export const toServerDateCondition = (condition: Record<string, unknown>): Record<string, unknown> => {
   const result: Record<string, unknown> = {};
   const collected: Record<'gte' | 'gt' | 'lt' | 'lte', string[]> = { gte: [], gt: [], lt: [], lte: [] };
@@ -1110,10 +1119,7 @@ export const toServerDateCondition = (condition: Record<string, unknown>): Recor
         }
       }
     }
-    if (
-      (operator === 'gte' || operator === 'gt' || operator === 'lt' || operator === 'lte') &&
-      typeof operand === 'string'
-    ) {
+    if (isRangeOperator(operator) && typeof operand === 'string') {
       collected[operator].push(operand);
       continue;
     }

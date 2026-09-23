@@ -785,7 +785,9 @@ export class MachineLearningRepository implements RestorationInference {
             yield chunk;
           }
         },
-        output.createWriteStream({ autoClose: false }),
+        // The stream closes the handle when it finishes or fails. With `autoClose: false` the
+        // `close()` in `finally` never settled after a completed write, and the restoration hung.
+        output.createWriteStream(),
       );
 
       const sha256 = hash.digest('hex');

@@ -1,3 +1,5 @@
+import type { Translations } from 'svelte-i18n';
+
 /**
  * Command index and ranking for the Frameleaf command palette and the search dialog's
  * "Go to" section (FL-49).
@@ -25,7 +27,7 @@ export type CommandGroupId = 'actions' | 'pages' | 'settings' | 'people' | 'coll
 export interface CommandGroup {
   id: CommandGroupId;
   /** Key in `i18n/en.json` for the group heading. */
-  labelKey: string;
+  labelKey: Translations;
 }
 
 /** Canonical group order. Ties in the ranking fall back to it. */

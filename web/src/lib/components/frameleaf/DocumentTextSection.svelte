@@ -376,26 +376,30 @@
   /** Waits for the new reading: the photo's text changes when the recognition job finishes. */
   const pollForReading = (assetId: string, before: string | null, attempt: number) => {
     rereadPending = true;
-    pollTimer = setTimeout(async () => {
-      pollTimer = undefined;
-      if (assetId !== asset.id) {
-        rereadPending = false;
-        return;
-      }
-      const next = await load(assetId);
-      if (next && next.recognizedAt !== before) {
-        rereadPending = false;
-        // the boxes drawn over the photo come from the recognized text, which was just replaced
-        assetCacheManager.invalidateAsset(assetId);
-        await ocrManager.getAssetOcr(assetId);
-        return;
-      }
-      if (attempt + 1 < DOCUMENT_REREAD_POLL_LIMIT) {
-        pollForReading(assetId, before, attempt + 1);
-      } else {
-        rereadPending = false;
-      }
-    }, DOCUMENT_REREAD_POLL_MS);
+    pollTimer = setTimeout(
+      () =>
+        void (async () => {
+          pollTimer = undefined;
+          if (assetId !== asset.id) {
+            rereadPending = false;
+            return;
+          }
+          const next = await load(assetId);
+          if (next && next.recognizedAt !== before) {
+            rereadPending = false;
+            // the boxes drawn over the photo come from the recognized text, which was just replaced
+            assetCacheManager.invalidateAsset(assetId);
+            await ocrManager.getAssetOcr(assetId);
+            return;
+          }
+          if (attempt + 1 < DOCUMENT_REREAD_POLL_LIMIT) {
+            pollForReading(assetId, before, attempt + 1);
+          } else {
+            rereadPending = false;
+          }
+        })(),
+      DOCUMENT_REREAD_POLL_MS,
+    );
   };
 
   const readAgain = async () => {

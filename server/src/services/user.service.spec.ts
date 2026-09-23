@@ -402,6 +402,10 @@ describe(UserService.name, () => {
         expect.stringContaining('/data/encoded-video/deleted-user'),
         options,
       );
+      expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(
+        expect.stringContaining('/data/exports/deleted-user'),
+        options,
+      );
       expect(mocks.album.deleteAll).toHaveBeenCalledWith(user.id);
       expect(mocks.asset.deleteAll).toHaveBeenCalledWith(user.id);
       expect(mocks.user.delete).toHaveBeenCalledWith(user, true);

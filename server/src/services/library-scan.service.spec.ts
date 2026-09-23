@@ -385,12 +385,24 @@ describe(LibraryScanService.name, () => {
 
       await sut.run(operationOf(), 'token');
 
-      expect(operations.acknowledgeCancel).toHaveBeenCalled();
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(expect.any(String), 'token', { released: false });
       expect(operations.setFinishedResult).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({ stopReason: 'library_removed' }),
       );
       expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('does not write a cancellation result after losing the scan claim', async () => {
+      const result = { ...emptyLibraryScanResult(), fingerprint: 'an-older-set-of-folders' };
+      operations.acknowledgeCancel.mockResolvedValue(false);
+      const operation = operationOf({ result: result as never });
+
+      await sut.run(operation, 'stale-token');
+
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(operation.id, 'stale-token', { released: false });
+      expect(operations.setFinishedResult).not.toHaveBeenCalled();
+      expect(mocks.storage.walk).not.toHaveBeenCalled();
     });
 
     it('hands the scan back at a batch boundary when a pause was asked for', async () => {
