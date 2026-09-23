@@ -73,6 +73,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000310-LockWholeStacksAndRecordProfileImageSource',
   '2100000000320-AddAssetLock',
   '2100000000340-AddMediaOperationPause',
+  '2100000000390-AddDuplicateDecision',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(
