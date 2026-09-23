@@ -16,6 +16,7 @@ import {
   mdiMapOutline,
   mdiMovieEditOutline,
   mdiPawOutline,
+  mdiProgressClock,
   mdiShieldCheckOutline,
   mdiShieldLockOutline,
   mdiStarOutline,
@@ -24,6 +25,66 @@ import {
   mdiTuneVariant,
 } from '@mdi/js';
 import { Route } from '$lib/route';
+
+/**
+ * Frameleaf primary destinations (FL-30).
+ *
+ * The top bar's switcher in `design/frameleaf/template/src/App.jsx` (`.primary-nav`): Library,
+ * Studio and Activity, in that order, as text only. They are the product's three workspaces, so
+ * they live in the top bar and never in the rail.
+ *
+ * - Library opens the library home.
+ * - Studio opens the project library (FL-91), where every project, the archive and the trash
+ *   live; the editor itself is reached from there.
+ * - Activity opens the Activity page (FL-104).
+ *
+ * The icons are the ones the prototype's command index gives the same pages; the switcher itself
+ * shows only the labels.
+ */
+
+export type PrimaryDestinationId = 'library' | 'studio' | 'activity';
+
+export interface PrimaryDestination {
+  id: PrimaryDestinationId;
+  /** Key in i18n/en.json. */
+  labelKey: string;
+  icon: string;
+  href: string;
+}
+
+export const buildPrimaryDestinations = (): PrimaryDestination[] => [
+  { id: 'library', labelKey: 'library', icon: mdiImageMultipleOutline, href: Route.photos() },
+  { id: 'studio', labelKey: 'frameleaf_studio_title', icon: mdiMovieEditOutline, href: Route.studioProjects() },
+  { id: 'activity', labelKey: 'activity', icon: mdiProgressClock, href: Route.activity() },
+];
+
+const pathOf = (href: string) => href.split('?')[0].split('#')[0];
+
+const isWithin = (pathname: string, root: string) => pathname === root || pathname.startsWith(`${root}/`);
+
+/** Settings, account and administration: the prototype's settings screen, where no workspace is current. */
+const SETTINGS_ROOTS = ['/admin', '/user-settings'];
+
+/**
+ * Which workspace the current page belongs to, for the switcher's current state.
+ *
+ * Studio covers the project library and the editor (`/studio`, `/studio/projects`); Activity covers
+ * its own page. Settings and administration belong to none, as in the prototype, where the
+ * settings screen leaves the switcher without a current item. Every other page of the signed-in
+ * app is part of the library, the workspace the rail navigates, so Library stays current there.
+ */
+export const currentPrimaryDestination = (pathname: string): PrimaryDestinationId | null => {
+  if (isWithin(pathname, pathOf(Route.studio()))) {
+    return 'studio';
+  }
+  if (isWithin(pathname, pathOf(Route.activity()))) {
+    return 'activity';
+  }
+  if (SETTINGS_ROOTS.some((root) => isWithin(pathname, root))) {
+    return null;
+  }
+  return 'library';
+};
 
 /**
  * Frameleaf rail destinations (FL-30).
@@ -35,8 +96,11 @@ import { Route } from '$lib/route';
  *   Albums: All albums, each collection with its albums, Shared links
  *   Shared spaces
  *   Explore: Explore, People, Pets, Memories, Places, Map, Tags, Folders, Documents
- *   Tools: Studio, Workflows, Trash
+ *   Tools: Workflows, Trash
  *   Library Care, Settings, Support
+ *
+ * Studio and Activity are primary destinations in the top bar (see above), not rail entries, so
+ * the rail's Tools section holds only Workflows and Trash, as in the prototype.
  *
  * Every entry points at a route that exists in production, so the rail never renders a
  * dead link. Pets landed with the identity model in FL-58 and is unconditional: it is a
@@ -68,7 +132,6 @@ export type RailDestinationId =
   | 'map'
   | 'tags'
   | 'folders'
-  | 'studio'
   | 'workflows'
   | 'trash'
   | 'libraryCare'
@@ -185,8 +248,6 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
       id: 'tools',
       labelKey: 'frameleaf_tools',
       destinations: [
-        // The prototype's primary "Studio" destination; it opens the project library (FL-91).
-        destination('studio', 'frameleaf_studio_title', mdiMovieEditOutline, Route.studioProjects()),
         destination('workflows', 'workflows', mdiTuneVariant, Route.workflows()),
         ...keep(capabilities.trash, destination('trash', 'trash', mdiTrashCanOutline, Route.trash())),
       ],
