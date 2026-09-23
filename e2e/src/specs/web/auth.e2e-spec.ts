@@ -42,7 +42,7 @@ test.describe('Registration', () => {
     await page.getByRole('button', { name: 'Done' }).click();
 
     // success
-    await expect(page).toHaveURL('/photos');
+    await expect(page).toHaveURL(/\/photos(\?|$)/);
   });
 
   test('user registration', async ({ context, page }) => {
@@ -53,11 +53,13 @@ test.describe('Registration', () => {
     await page.goto('/admin/user-management');
     await expect(page).toHaveTitle(/User Management/);
     await page.getByRole('button', { name: 'Create user' }).click();
-    await page.getByLabel('Email').fill('user@immich.cloud');
-    await page.getByLabel('Password', { exact: true }).fill('password');
-    await page.getByLabel('Confirm Password').fill('password');
-    await page.getByLabel('Name').fill('Immich User');
-    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Create account' });
+    await dialog.getByLabel('Email').fill('user@immich.cloud');
+    await dialog.getByLabel('Initial password').fill('password');
+    await dialog.getByLabel('Confirm password').fill('password');
+    await dialog.getByLabel('Name').fill('Immich User');
+    await dialog.getByRole('button', { name: 'Create account' }).click();
+    await expect(dialog).toHaveCount(0);
 
     // logout
     await context.clearCookies();

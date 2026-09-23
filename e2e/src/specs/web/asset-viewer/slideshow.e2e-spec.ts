@@ -11,13 +11,15 @@ test.describe('Slideshow', () => {
     await utils.resetDatabase();
     admin = await utils.adminSetup();
     asset = await utils.createAsset(admin.accessToken);
+    // MediaViewer.jsx offers Play slideshow only when there is another item to move to.
+    await utils.createAsset(admin.accessToken);
   });
 
   const openSlideshow = async (page: Page) => {
     await page.goto(`/photos/${asset.id}`);
     await page.waitForSelector('#immich-asset-viewer');
-    await page.getByRole('button', { name: 'More' }).click();
-    await page.getByRole('menuitem', { name: 'Slideshow' }).click();
+    await page.getByRole('button', { name: /^More( actions)?$/ }).click();
+    await page.getByRole('menuitem', { name: 'Play slideshow' }).click();
   };
 
   test('open slideshow', async ({ context, page }) => {

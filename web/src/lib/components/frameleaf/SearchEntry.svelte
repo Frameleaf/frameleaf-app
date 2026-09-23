@@ -16,6 +16,7 @@
   import { buildCommandIndex, type CommandItem } from '$lib/frameleaf/command-palette';
   import { isSettingsRoute } from '$lib/frameleaf/navigation';
   import { searchContextFor } from '$lib/frameleaf/search-context';
+  import { SEARCH_SHORTCUT_EVENT } from '$lib/frameleaf/search-shortcuts';
   import '$lib/frameleaf/tokens.css';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -186,12 +187,18 @@
   };
 
   onDestroy(() => catalogueController?.abort());
+
+  // Ctrl/Cmd+K and "/" arrive through the root layout's capture listener (search-shortcuts.ts),
+  // which keeps them from the upstream command palette.
+  $effect(() => {
+    const onShortcut = () => openEntry();
+    addEventListener(SEARCH_SHORTCUT_EVENT, onShortcut);
+    return () => removeEventListener(SEARCH_SHORTCUT_EVENT, onShortcut);
+  });
 </script>
 
 <svelte:document
   use:shortcuts={[
-    { shortcut: { ctrl: true, key: 'k' }, onShortcut: openEntry },
-    { shortcut: { meta: true, key: 'k' }, onShortcut: openEntry },
     { shortcut: { ctrl: true, shift: true, key: 'p' }, onShortcut: () => openPalette() },
     { shortcut: { meta: true, shift: true, key: 'p' }, onShortcut: () => openPalette() },
   ]}
