@@ -33,6 +33,7 @@ import {
   carriedShiftOrigins,
   emptyBulkResult,
   isBulkAction,
+  isMediaHealthBulkAction,
   parseBulkResult,
   parseBulkSnapshot,
   type BulkOperationSnapshot,
@@ -290,9 +291,19 @@ export class MediaOperationService {
    *
    * Duplicate ids are removed and order is kept; the order is the resume cursor.
    */
-  async createBulk(auth: AuthDto, dto: MediaOperationBulkCreateDto): Promise<MediaOperationDto> {
+  async createBulk(
+    auth: AuthDto,
+    dto: MediaOperationBulkCreateDto,
+    options: { libraryCare?: boolean } = {},
+  ): Promise<MediaOperationDto> {
     if (auth.sharedLink) {
       throw new ForbiddenException('Bulk operations are not available on a shared link');
+    }
+
+    // FL-69: Library Care's relink, recovery and trash jobs carry gates this endpoint cannot see — the
+    // reviewer's consent, a typed confirmation, fresh evidence — so they are only queued by Library Care.
+    if (isMediaHealthBulkAction(dto.action) && !options.libraryCare) {
+      throw new BadRequestException('Submit this action from Library Care');
     }
 
     const requested = BULK_ACTION_PERMISSIONS[dto.action];

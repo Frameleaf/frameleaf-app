@@ -7,8 +7,12 @@ import { MediaHealthController } from 'src/controllers/media-health.controller.j
 import { LivePhotoRelinkDto } from 'src/dtos/live-photo.dto.js';
 import {
   MediaHealthBulkActionDto,
+  MediaHealthChooseCandidatesDto,
   MediaHealthDeleteCorruptDto,
   MediaHealthListQueryDto,
+  MediaHealthLocateDto,
+  MediaHealthRecoverDto,
+  MediaHealthSummaryQueryDto,
 } from 'src/dtos/media-health.dto.js';
 import { AuthenticatedOptions, getAuthenticatedOptions } from 'src/middleware/auth.guard.js';
 
@@ -175,7 +179,10 @@ describe('controllers', () => {
 describe('request DTO runtime metadata', () => {
   it.each([
     [MediaHealthController, 'list', MediaHealthListQueryDto],
-    [MediaHealthController, 'locateMissing', MediaHealthBulkActionDto],
+    [MediaHealthController, 'getSummary', MediaHealthSummaryQueryDto],
+    [MediaHealthController, 'locateMissing', MediaHealthLocateDto],
+    [MediaHealthController, 'chooseCandidates', MediaHealthChooseCandidatesDto],
+    [MediaHealthController, 'recoverDamaged', MediaHealthRecoverDto],
     [MediaHealthController, 'relinkMissing', MediaHealthBulkActionDto],
     [MediaHealthController, 'dismiss', MediaHealthBulkActionDto],
     [MediaHealthController, 'deleteCorrupt', MediaHealthDeleteCorruptDto],
