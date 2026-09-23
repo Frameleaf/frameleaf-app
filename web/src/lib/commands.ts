@@ -18,6 +18,7 @@ import {
   mdiMagnify,
   mdiMapMarkerOutline,
   mdiMapOutline,
+  mdiRobotOutline,
   mdiServer,
   mdiStateMachine,
   mdiSync,
@@ -72,6 +73,12 @@ export const getPagesProvider = ($t: MessageFormatter) => {
       description: $t('admin.maintenance_settings_description'),
       icon: mdiWrench,
       onAction: () => goto(Route.systemMaintenance()),
+    },
+    {
+      title: $t('admin.frameleaf_ml_destinations_title'),
+      description: $t('admin.frameleaf_ml_destinations_description'),
+      icon: mdiRobotOutline,
+      onAction: () => goto(Route.systemProcessingDestinations()),
     },
   ].map((route) => ({ ...route, $if: () => authManager.authenticated && authManager.user.isAdmin }));
 

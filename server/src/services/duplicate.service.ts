@@ -14,6 +14,7 @@ import {
   AssetVisibility,
   JobName,
   JobStatus,
+  MlWorkload,
   Permission,
   QueueName,
   StorageFolder,
@@ -471,7 +472,12 @@ export class DuplicateService extends BaseService {
 
       try {
         await this.mediaRepository.transcode(asset.originalPath, path, command);
-        const embedding = await this.machineLearningRepository.encodeImage(path, machineLearning.clip);
+        const selection = await this.selectRoutedMlDestination({
+          workload: MlWorkload.Clip,
+          jobId: asset.id,
+          jobName: JobName.AssetGenerateVideoDuplicateFrames,
+        });
+        const embedding = await this.machineLearningRepository.encodeImage(selection, path, machineLearning.clip);
 
         frames.push({
           assetId: asset.id,

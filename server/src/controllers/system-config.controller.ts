@@ -1,10 +1,11 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Put, Query } from '@nestjs/common';
 import { ApiBody, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AdminConfigDto, ConfigTemplateStorageOptionDto } from 'src/dtos/config.dto.js';
 import {
   ImageDescriptionRequeueEstimateDto,
   ImageDescriptionRequeueResponseDto,
+  MachineLearningHardwareQueryDto,
   MachineLearningHardwareResponseDto,
   SmartAlbumReevaluateEstimateDto,
   SmartAlbumReevaluateRequestDto,
@@ -57,11 +58,14 @@ export class SystemConfigController {
   @Authenticated({ permission: Permission.SystemConfigRead, admin: true })
   @Endpoint({
     summary: 'Get machine learning hardware',
-    description: 'Retrieve available hardware acceleration providers from the machine learning service.',
+    description:
+      'Retrieve available hardware acceleration providers from one machine learning destination. Without `destinationId` the first enabled local destination is probed; a cloud destination is never chosen implicitly.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  getMachineLearningHardware(): Promise<MachineLearningHardwareResponseDto> {
-    return this.service.getMachineLearningHardware();
+  getMachineLearningHardware(
+    @Query() { destinationId }: MachineLearningHardwareQueryDto,
+  ): Promise<MachineLearningHardwareResponseDto> {
+    return this.service.getMachineLearningHardware(destinationId);
   }
 
   @Put()
