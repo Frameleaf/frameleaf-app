@@ -18,6 +18,7 @@ export type SettingsHostSection = {
 };
 
 export type SettingsAreaId =
+  | 'utilities'
   | 'analytics'
   | 'storage'
   | 'backup'
@@ -47,6 +48,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   { id: 'backup', group: 'library', sections: ['external-library', 'takeout', 'backup', 'preservation'] },
   { id: 'intelligence', group: 'library', sections: ['machine-learning', 'smart-albums', 'metadata'] },
   { id: 'editing', group: 'library', sections: ['image', 'video-transcoding'] },
+  { id: 'utilities', group: 'library', sections: [] },
   { id: 'care', group: 'library', sections: ['integrity-checks'] },
   { id: 'processing', group: 'server', sections: ['job', 'nightly-tasks'] },
   { id: 'security', group: 'server', sections: ['authentication'] },
@@ -70,7 +72,7 @@ export const isSettingsAreaId = (value: string | null | undefined): value is Set
   SETTINGS_AREAS.some((area) => area.id === value);
 
 /** Areas that are screens of their own rather than lists of settings sections (FL-79). */
-export const SCREEN_AREAS: readonly SettingsAreaId[] = Object.freeze(['analytics']);
+export const SCREEN_AREAS: readonly SettingsAreaId[] = Object.freeze(['analytics', 'utilities']);
 
 export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area);
 

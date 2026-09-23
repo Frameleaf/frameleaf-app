@@ -1,18 +1,19 @@
 <script lang="ts">
+  import { page } from '$app/state';
   import type { Action } from '$lib/components/asset-viewer/actions/action';
   import LargeFilesReview from '$lib/components/frameleaf/LargeFilesReview.svelte';
-  import Theme from '$lib/components/frameleaf/Theme.svelte';
-  import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import { AssetAction } from '$lib/constants';
   import Portal from '$lib/elements/Portal.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { handlePromiseError } from '$lib/utils';
   import { getNextAsset, getPreviousAsset, navigateToAsset } from '$lib/utils/asset-utils';
   import { navigate } from '$lib/utils/navigation';
-  import type { AssetResponseDto } from '@immich/sdk';
-  import { Container, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { onDestroy } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
-  import type { PageData } from './$types';
+  import type { UtilityData } from '$lib/frameleaf/utilities-load';
+  type PageData = Extract<UtilityData, { tool: 'large-files' }>;
 
   /**
    * Settings → Utilities → Large files (FL-47): the Frameleaf review from the design template.
@@ -28,12 +29,13 @@
   const assets = $derived(data.assets);
   const trashed = new SvelteSet<string>();
   const removed = new SvelteSet<string>();
-  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 
   /** What the viewer steps through: largest first, without what went to the trash or was deleted. */
   const inLibrary = $derived(assets.filter((asset) => !trashed.has(asset.id) && !removed.has(asset.id)));
 
   const onOpen = async (asset: AssetResponseDto) => {
+    const info = await getAssetInfo({ ...authManager.params, id: asset.id });
+    assetViewerManager.setAsset(info);
     await navigate({ targetRoute: 'current', assetId: asset.id });
   };
 
@@ -60,15 +62,28 @@
         assetViewerManager.showAssetViewer(false);
     }
   };
+  onDestroy(() => assetViewerManager.showAssetViewer(false));
+  $effect(() => {
+    const id = page.url.searchParams.get('assetId');
+    if (!id) {
+      assetViewerManager.showAssetViewer(false);
+      return;
+    }
+    let active = true;
+    void getAssetInfo({ ...authManager.params, id })
+      .then((asset) => {
+        if (active) assetViewerManager.setAsset(asset);
+      })
+      .catch(() => {
+        if (active) assetViewerManager.showAssetViewer(false);
+      });
+    return () => {
+      active = false;
+    };
+  });
 </script>
 
-<UserPageLayout title={data.meta.title} scrollbar={true}>
-  <Container size="large" center class="my-4">
-    <Theme theme={appTheme}>
-      <LargeFilesReview {assets} {trashed} {removed} onOpen={(asset) => void onOpen(asset)} />
-    </Theme>
-  </Container>
-</UserPageLayout>
+<LargeFilesReview {assets} {trashed} {removed} onOpen={(asset) => void onOpen(asset)} />
 
 {#if assetViewerManager.isViewing}
   {#await import('$lib/components/asset-viewer/AssetViewer.svelte') then { default: AssetViewer }}
