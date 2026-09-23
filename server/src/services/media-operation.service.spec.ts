@@ -779,6 +779,42 @@ describe(MediaOperationService.name, () => {
       expect(JSON.stringify(result.snapshot)).not.toContain(assetIds[1]);
     });
 
+    it("never names another account's copies of a physical deduplication plan on the detail view (FL-73)", async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(
+        operationStub({
+          kind: MediaOperationKind.PhysicalDeduplication,
+          snapshot: {
+            version: 1,
+            planId: 'PD-ABCDEF12',
+            reviewToken: 'cd'.repeat(32),
+            items: [{ assetId: assetIds[1], originalPath: '/upload/jamie/private.jpg' }],
+            retained: [{ assetId: assetIds[0], originalPath: '/upload/taylor/private.jpg' }],
+            excludedRetainedAssetIds: [assetIds[2]],
+          },
+        }),
+      );
+
+      const result = await sut.get(authStub.user1, operationStub().id);
+
+      expect(result.snapshot).toEqual({
+        version: 1,
+        planId: 'PD-ABCDEF12',
+        copyCount: 1,
+        retainedCount: 1,
+        excludedCount: 1,
+      });
+      expect(JSON.stringify(result.snapshot)).not.toContain('private.jpg');
+    });
+
+    it('never copies a physical deduplication plan; a new reviewed plan is applied instead (FL-73)', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(
+        operationStub({ kind: MediaOperationKind.PhysicalDeduplication, status: MediaOperationStatus.Failed }),
+      );
+
+      await expect(sut.retry(authStub.user1, operationStub().id)).rejects.toThrow('Physical deduplication page');
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
     it('sends a Library Care relink, recovery or trash back to Library Care instead of copying it (FL-69)', async () => {
       vi.mocked(repository.getForOwner).mockResolvedValue(
         bulkStub({

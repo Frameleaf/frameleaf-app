@@ -259,6 +259,10 @@ const ICLOUD_WORKING: readonly MediaOperationStatus[] = [
 export const isWaitingICloudSync = (operation: Pick<MediaOperationDto, 'status' | 'autoRetries' | 'retryAt'>) =>
   operation.status === MediaOperationStatus.Queued && !!operation.retryAt && (operation.autoRetries ?? 0) === 0;
 
+/** A physical deduplication plan's name, `PD-` and eight characters, or nothing. */
+const asPlanName = (value: unknown): string | null =>
+  typeof value === 'string' && /^PD-[\dA-F]{8}$/.test(value) ? value : null;
+
 /**
  * One durable server job as a row.
  *
@@ -281,6 +285,10 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
   // delayed queued run that has not failed is waiting, not retrying.
   const waiting = icloud && isWaitingICloudSync(operation);
   const retrying = !waiting && isRetryingMediaOperation(operation);
+  // A physical deduplication job is titled by what it is and names its plan, which reads the same in
+  // every language (FL-73).
+  const dedup = operation.kind === MediaOperationKind.PhysicalDeduplication;
+  const dedupPlan = dedup ? asPlanName(operation.settings?.planId) : null;
 
   return {
     id: `job:${operation.id}`,
@@ -298,6 +306,7 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
             : `frameleaf_activity_status_${status}`,
     tone: retrying || pause.pausePending ? 'warning' : STATUS_TONE[status],
     title: operation.label,
+    ...(dedup ? { titleKey: 'frameleaf_activity_title_physical_deduplication' } : {}),
     progress: status === MediaOperationStatus.Completed ? 100 : counted ? clampPercent(operation.progress) : null,
     running,
     ...pause,
@@ -306,16 +315,18 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     finished,
     failed,
     destinationKey: DESTINATION_KEY[operation.destination],
-    details: activitySettingsDetails(operation.settings),
+    details: dedup ? (dedupPlan ? [dedupPlan] : []) : activitySettingsDetails(operation.settings),
     error: operation.error ?? undefined,
     errorCode: operation.errorCode ?? undefined,
     startedAt: Date.parse(operation.startedAt ?? operation.createdAt),
     assetId: operation.resultAssetId ?? operation.assetId ?? undefined,
     // The server decides; these only mirror its rules so the buttons are not offered pointlessly.
     canCancel: running || pause.paused,
-    // A Library Care scan or search is started again from Library Care, not copied (FL-69).
+    // A Library Care scan or search is started again from Library Care, not copied (FL-69); a
+    // deduplication plan is reviewed again on its page and applied as a new plan (FL-73).
     canRetry:
       operation.kind !== MediaOperationKind.MediaHealth &&
+      !dedup &&
       (status === MediaOperationStatus.Failed || status === MediaOperationStatus.Cancelled),
     canDismiss: finished,
     browserLocal: false,

@@ -16,6 +16,7 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import {
     RENDER_LIMIT_MAX_CONCURRENCY,
+    RENDER_WORKER_KINDS,
     destinationKey,
     operationKindKey,
     parseWorkerForm,
@@ -44,7 +45,7 @@
   let error = $state<RenderWorkerField | null>(null);
 
   const editing = $derived(!!worker);
-  const kinds = Object.values(MediaOperationKind);
+  const kinds = RENDER_WORKER_KINDS;
   const destinations = Object.values(MediaOperationDestination);
 
   const nameId = $props.id();

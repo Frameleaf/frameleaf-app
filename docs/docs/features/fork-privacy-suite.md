@@ -162,10 +162,10 @@ Physical deduplication changes how files are referenced on disk, so treat it lik
 4. Enable `Physical deduplication`.
 5. Select the master account.
 6. Save the system settings.
-7. Click `Dry run physical deduplication` and review the logs or recorded summary.
-8. Confirm the dry run looks reasonable: expected duplicate counts, expected reclaimable bytes, skipped external-library files, and skipped assets without a master match.
-9. Click `Apply physical deduplication` only after the dry run has completed successfully.
-10. Watch storage, migration, and file-delete jobs until the queue is clear.
+7. Open `Administration > Physical deduplication` and prepare a preview plan. No file changes during the preview.
+8. Check each retained original and its copies: checksums, reference counts, reclaimable bytes, skipped external-library files and copies without a master match. Leave out any group you want to keep separate.
+9. Mark the plan reviewed; the server checks it against the library again. Then apply it by typing `APPLY` and the plan's name. Anything that changed since the preview is refused, and only the reviewed copies are applied.
+10. Follow the job on the page or in Activity until it finishes. See [Physical deduplication](./physical-deduplication.md) for every check it makes.
 
 New uploads are handled automatically after the feature is enabled. A non-master user's upload is still checked for duplicates inside that same user's library. Cross-user matches are not rejected at upload time; after Immich computes the checksum, it reuses a master physical file only when the master account already has an exact upload-managed match with the same checksum and size.
 
@@ -174,7 +174,7 @@ If the master account does not have a matching file, the upload remains independ
 ## Physical Deduplication Safety Notes
 
 - Keep a verified backup before running the apply migration.
-- Start with dry run. Apply is intended to be idempotent, but it still deletes redundant duplicate bytes after reference checks pass.
+- Start with a preview. Applying a reviewed plan is idempotent and checks every file's checksum on disk first, but it still deletes redundant duplicate bytes after those checks and the reference checks pass.
 - External-library files are ignored. They are not moved, linked, or deleted by this feature.
 - Sidecars remain per asset. A non-master linked asset does not write sidecar metadata beside the shared original.
 - Deleting one linked asset does not remove shared bytes while another asset still references them.

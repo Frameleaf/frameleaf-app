@@ -59,6 +59,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { RENDER_WORKER_LIMIT_INSTANCE_SUBJECT } from 'src/schema/tables/render-worker.table.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { isRenderWorkerMediaOperationKind, RENDER_WORKER_MEDIA_OPERATION_KINDS } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   AuthorizedManifest,
@@ -205,6 +206,20 @@ type ResolvedManifest =
   | { complete: false; refused: Array<{ key: string; reason: string }> };
 
 /**
+ * A render worker only ever renders (FL-73). Bulk jobs, project bundles, enrichment plans, Library
+ * Care, iCloud and Google Photos imports and physical deduplication run on this server's own
+ * workers; enrolling or re-scoping a worker for one of them is refused, whatever its destination.
+ */
+const requireRenderKinds = (kinds: readonly MediaOperationKind[]) => {
+  const refused = kinds.filter((kind) => !isRenderWorkerMediaOperationKind(kind));
+  if (refused.length > 0) {
+    throw new BadRequestException(
+      `A render worker can only take ${RENDER_WORKER_MEDIA_OPERATION_KINDS.join(', ')}; not ${refused.join(', ')}`,
+    );
+  }
+};
+
+/**
  * Authenticated renderer admission and resource limits (FL-95 `STU-401`).
  *
  * Two audiences, two rule sets:
@@ -262,6 +277,7 @@ export class RenderWorkerService {
    * the same shape as an API key. It is never logged.
    */
   async create(auth: AuthDto, dto: RenderWorkerCreateDto): Promise<RenderWorkerCreateResponseDto> {
+    requireRenderKinds(dto.kinds);
     const enrolmentSecret = this.cryptoRepository.randomBytesAsText(32);
 
     const worker = await this.repository.createWorker({
@@ -290,6 +306,9 @@ export class RenderWorkerService {
   }
 
   async update(auth: AuthDto, id: string, dto: RenderWorkerUpdateDto): Promise<RenderWorkerDto> {
+    if (dto.kinds) {
+      requireRenderKinds(dto.kinds);
+    }
     await this.findWorker(id);
 
     const updated = await this.repository.updateWorker(id, {
@@ -463,10 +482,13 @@ export class RenderWorkerService {
     const gpuMemoryBytes =
       reported === null ? qualified : qualified === null ? reported : Math.min(reported, qualified);
 
+    // FL-73: a scope saved before the render-only rule keeps only its renders in the session.
+    const scopes = (worker.kinds as MediaOperationKind[]).filter((kind) => isRenderWorkerMediaOperationKind(kind));
+
     await this.repository.createSession({
       workerId: worker.id,
       token: this.cryptoRepository.hashSha256(sessionToken),
-      scopes: worker.kinds,
+      scopes,
       gpuMemoryBytes: gpuMemoryBytes === null ? null : String(gpuMemoryBytes),
       engineDigest: dto.engineDigest,
       conformanceReportedAt: reportedAt,
@@ -490,7 +512,7 @@ export class RenderWorkerService {
       workerId: worker.id,
       sessionToken,
       expiresAt: expiresAt.toISOString(),
-      scopes: worker.kinds as MediaOperationKind[],
+      scopes,
       leaseMs: RENDER_WORKER_LEASE_MS,
       heartbeatIntervalMs: RENDER_WORKER_HEARTBEAT_INTERVAL_MS,
     };
@@ -544,7 +566,8 @@ export class RenderWorkerService {
     const { worker, session } = await this.authenticate(sessionToken);
     const now = new Date();
 
-    const scopes = session.scopes as MediaOperationKind[];
+    // FL-73: a saved scope may predate the render-only rule; server-side jobs are never handed out.
+    const scopes = (session.scopes as MediaOperationKind[]).filter((kind) => isRenderWorkerMediaOperationKind(kind));
     const kinds = dto.kinds ? dto.kinds.filter((kind) => scopes.includes(kind)) : scopes;
     if (kinds.length === 0) {
       throw new ForbiddenException('Requested kinds are outside this session’s scopes');
