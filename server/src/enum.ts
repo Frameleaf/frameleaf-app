@@ -1831,6 +1831,10 @@ export enum AssetVisibility {
    * Video part of the LivePhotos and MotionPhotos
    */
   Hidden = 'hidden',
+  /**
+   * Never stored (FL-34). In a request or a response it stands for a locked asset: one with an
+   * `asset_lock` record, whatever its stored visibility. See `src/utils/locked.ts`.
+   */
   Locked = 'locked',
 }
 
@@ -1838,6 +1842,24 @@ export const AssetVisibilitySchema = z
   .enum(AssetVisibility)
   .describe('Asset visibility')
   .meta({ id: 'AssetVisibility' });
+
+/**
+ * Why an asset is locked (FL-34). A lock is metadata: the asset keeps its albums and organisation and
+ * is hidden everywhere except its owner's elevated (PIN-unlocked) session.
+ */
+export enum AssetLockReason {
+  /** The owner locked it (Lock, the former Mark Sensitive, or a request for `visibility: locked`). */
+  Marked = 'marked',
+  /** Sensitive-content detection flagged it; reviewable and reversible in the Locked view. */
+  Detected = 'detected',
+  /** It was in the upstream Locked folder (`visibility = locked`) when the library was upgraded. */
+  ImmichLockedFolder = 'immich-locked-folder',
+}
+
+export const AssetLockReasonSchema = z
+  .enum(AssetLockReason)
+  .describe('Why an asset is locked')
+  .meta({ id: 'AssetLockReason' });
 
 export enum ReleaseChannel {
   Stable = 'stable',
