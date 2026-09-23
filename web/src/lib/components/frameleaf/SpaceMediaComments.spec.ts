@@ -208,4 +208,30 @@ describe('SpaceMediaComments', () => {
       expect(screen.getByRole('textbox', { name: en.comments_are_disabled })).toBeDisabled();
     });
   });
+
+  describe('as the album view of a space', () => {
+    it('offers the space’s own like beside the conversation', async () => {
+      vi.mocked(getSharedSpaceComments).mockResolvedValue({ comments: [] });
+      const onToggle = vi.fn();
+
+      render(SpaceMediaComments, { spaceId: 'space-1', likes: { count: 0, liked: false, onToggle } });
+      await screen.findByText(en.frameleaf_spaces_comments_empty_space);
+
+      const like = screen.getByRole('button', { name: en.frameleaf_album_activity_like });
+      expect(like).toHaveAttribute('aria-pressed', 'false');
+      await fireEvent.click(like);
+      expect(onToggle).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes on Escape instead of letting the page go back', async () => {
+      vi.mocked(getSharedSpaceComments).mockResolvedValue({ comments: [] });
+      const onClose = vi.fn();
+
+      render(SpaceMediaComments, { spaceId: 'space-1', onClose });
+      const box = await screen.findByRole('textbox', { name: en.frameleaf_spaces_comments_placeholder });
+      await fireEvent.keyDown(box, { key: 'Escape' });
+
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
 });
