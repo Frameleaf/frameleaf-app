@@ -180,7 +180,9 @@
           <div class="flex flex-col gap-4">
             <Field
               label={$t('gcast_enabled')}
-              description={castDisabledByAdmin ? $t('frameleaf_cast_disabled_by_admin') : $t('gcast_enabled_description')}
+              description={castDisabledByAdmin
+                ? $t('frameleaf_cast_disabled_by_admin')
+                : $t('gcast_enabled_description')}
               disabled={castDisabledByAdmin}
             >
               <Switch bind:checked={gCastEnabled} />

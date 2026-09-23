@@ -180,7 +180,7 @@
             <FeatureSetting title={$t('show_supporter_badge')} state={userPreferences.purchase.showSupportBadge} />
             <FeatureSetting title={$t('tags')} state={userPreferences.tags.enabled} />
             <FeatureSetting title={$t('gcast_enabled')} state={userPreferences.cast.gCastEnabled} />
-            <!-- FL-77: casting is the one administrator-enforced feature; the rows above are the account's own choices. -->
+            <!-- FL-77: casting is administrator-enforced; the rows above are the account's own choices. -->
             <AdminCastPermission {user} preferences={userPreferences} />
           </Stack>
         </AdminCard>
