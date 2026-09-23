@@ -22,6 +22,7 @@
   import { QueryParameter } from '$lib/constants';
   import { brandedArchiveName, namedEntitySegments } from '$lib/frameleaf/archive-name';
   import { resolveEntityName, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
+  import { LibrarySearchSession, type LibrarySearchQuery } from '$lib/frameleaf/library-search-session.svelte';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import {
     discoveryContextChips,
@@ -44,18 +45,12 @@
   import { isAlbumsRoute, isPeopleRoute } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import {
-    type AlbumResponseDto,
     type AssetResponseDto,
-    askSearch,
-    type AskSearchResponseDto,
-    AssetVisibility,
     getPerson,
     getPet,
     getTagById,
     ImageEnrichmentFilter,
     type MetadataSearchDto,
-    searchAssets,
-    searchSmart,
     type SmartSearchDto,
   } from '@immich/sdk';
   import { Button, Icon, LoadingSpinner } from '@immich/ui';
@@ -69,7 +64,7 @@
     mdiImageOffOutline,
     mdiMapMarkerOutline,
   } from '@mdi/js';
-  import { tick, untrack } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   const ASK_QUERY_PARAMETER = 'ask';
@@ -78,16 +73,12 @@
   // To prevent that we store the previous page manually and navigate back to that.
   let previousRoute = $state<string>(Route.explore());
 
-  let nextPage = $state(1);
-  let nextCursor = $state<string | null>(null);
-  let searchResultAlbums: AlbumResponseDto[] = $state([]);
-  let searchResultAssets: AssetResponseDto[] = $state([]);
-  let isLoading = $state(true);
+  const searchSession = new LibrarySearchSession();
+  onDestroy(() => searchSession.destroy());
+  const searchResultAssets = $derived(searchSession.assets);
+  const isLoading = $derived(searchSession.loading);
   let askQuery = $state('');
-  let askResponse = $state<AskSearchResponseDto>();
-  let askNextPage = $state<number | null>(null);
-  let isAskLoading = $state(false);
-  let askSearchRequestId = 0;
+  const askResponse = $derived(searchSession.askResponse);
   let scrollY = $state(0);
   let scrollYHistory = 0;
 
@@ -117,32 +108,34 @@
   );
   let hasSearchQuery = $derived(discoveryQuery !== undefined || Object.keys(terms).length > 0);
   let canUseAskSearch = $derived(featureFlagsManager.value.search && featureFlagsManager.value.smartSearch);
+  const isAskLoading = $derived(!hasSearchQuery && searchSession.loading);
 
-  $effect(() => {
-    // we want this to *only* be reactive on `terms`
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-    terms;
-    untrack(() => handlePromiseError(onSearchQueryUpdate()));
+  // Endpoint and query identity share one request owner. Opening a result changes neither.
+  const activeSearch = $derived.by((): LibrarySearchQuery | null => {
+    if (hasSearchQuery) {
+      const request = discoveryQuery
+        ? discoverySearchRequest(discoveryQuery, null)
+        : terms.filter !== undefined || terms.orderBy !== undefined || terms.cursor !== undefined
+          ? structuredSearchRequest(terms, null)
+          : terms;
+      const smart = ('query' in request || 'queryAssetId' in request) && smartSearchEnabled;
+      return { kind: smart ? 'smart' : 'metadata', terms: request };
+    }
+    const query = askSearchQuery.trim();
+    return query && canUseAskSearch ? { kind: 'ask', query } : null;
   });
 
+  const activeSearchKey = $derived(JSON.stringify(activeSearch));
   $effect(() => {
-    // we want this to *only* be reactive on `askSearchQuery` and `hasSearchQuery`
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-    askSearchQuery;
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-    hasSearchQuery;
+    // Asset-only route navigation and equivalent query objects retain the collection and draft.
+    const key = activeSearchKey;
     untrack(() => {
-      if (hasSearchQuery) {
-        return;
+      const query = JSON.parse(key) as LibrarySearchQuery | null;
+      searchSession.reset(query);
+      if (query?.kind === 'ask') {
+        askQuery = query.query;
       }
-
-      if (!askSearchQuery.trim()) {
-        resetAskSearch();
-        return;
-      }
-
-      askQuery = askSearchQuery;
-      handlePromiseError(runAskSearch(askSearchQuery, { force: true }));
+      handlePromiseError(loadNextPage());
     });
   });
 
@@ -178,7 +171,7 @@
 
   const onAssetDelete = (assetIds: string[]) => {
     const assetIdSet = new Set(assetIds);
-    searchResultAssets = searchResultAssets.filter((asset: AssetResponseDto) => !assetIdSet.has(asset.id));
+    searchSession.assets = searchResultAssets.filter((asset: AssetResponseDto) => !assetIdSet.has(asset.id));
   };
 
   const handleSelectAll = () => librarySession.selectAll(searchResultAssets.map((asset) => asset.id));
@@ -345,63 +338,12 @@
     }
   };
 
-  async function onSearchQueryUpdate() {
-    nextPage = 1;
-    nextCursor = null;
-    searchResultAssets = [];
-    searchResultAlbums = [];
-    resetAskSearch(false);
-    if (!hasSearchQuery) {
-      isLoading = false;
-      return;
-    }
-    await loadNextPage(true);
-  }
-
   // eslint-disable-next-line svelte/valid-prop-names-in-kit-pages
-  export const loadNextPage = async (force?: boolean) => {
-    if (!nextPage || (isLoading && !force)) {
-      return;
-    }
-    isLoading = true;
-
-    // A search from the search dialog carries a structured filter (a pet, a person, a place, ...). The
-    // server refuses flat fields such as `page` and `visibility` beside it, so that request is built
-    // by `structuredSearchRequest` and pages by cursor; a flat (legacy) search is sent as before.
-    // FL-48: a search from the dialog goes through the one query-to-request path, so the space, the
-    // similar-photo reference and every date bound reach the server as the dialog stated them.
-    const structured = discoveryQuery !== undefined || terms.filter !== undefined;
-    const searchDto: SearchTerms = discoveryQuery
-      ? discoverySearchRequest(discoveryQuery, nextCursor)
-      : structured
-        ? structuredSearchRequest(terms, nextCursor)
-        : { page: nextPage, withExif: true, ...terms };
-
+  export const loadNextPage = async () => {
     try {
-      const { albums, assets } =
-        ('query' in searchDto || 'queryAssetId' in searchDto) && smartSearchEnabled
-          ? await searchSmart({
-              smartSearchDto: structured
-                ? { ...searchDto, language: $lang }
-                : { visibility: AssetVisibility.Timeline, ...searchDto, language: $lang },
-            })
-          : await searchAssets({
-              metadataSearchDto: structured ? searchDto : { visibility: AssetVisibility.Timeline, ...searchDto },
-            });
-
-      searchResultAlbums.push(...albums.items);
-      searchResultAssets.push(...assets.items);
-
-      if (structured) {
-        nextCursor = assets.nextCursor;
-        nextPage = assets.nextCursor ? nextPage + 1 : 0;
-      } else {
-        nextPage = Number(assets.nextPage) || 0;
-      }
+      await searchSession.loadNextPage({ language: $lang });
     } catch (error) {
       handleError(error, $t('loading_search_results_failed'));
-    } finally {
-      isLoading = false;
     }
   };
 
@@ -524,7 +466,7 @@
 
     if (terms.isNotInAlbum || terms.filter?.hasAlbums?.eq === false) {
       const assetIdSet = new Set(assetIds);
-      searchResultAssets = searchResultAssets.filter((asset) => !assetIdSet.has(asset.id));
+      searchSession.assets = searchResultAssets.filter((asset) => !assetIdSet.has(asset.id));
     }
   };
 
@@ -562,19 +504,6 @@
   const discoverySearchUrl = (query: DiscoveryQuery) =>
     isEmptyDiscoverySearch(query) ? Route.search() : discoveryUrl(query);
 
-  function resetAskSearch(clearInput = true) {
-    askSearchRequestId++;
-    askResponse = undefined;
-    askNextPage = null;
-    isAskLoading = false;
-
-    if (clearInput) {
-      askQuery = '';
-      searchResultAssets = [];
-      searchResultAlbums = [];
-    }
-  }
-
   async function updateAskSearchUrl(query: string) {
     const normalizedQuery = query.trim();
     if (!normalizedQuery || isAskLoading) {
@@ -583,66 +512,20 @@
 
     const url = new URL(page.url);
     url.searchParams.delete(QueryParameter.QUERY);
+    url.searchParams.delete(DISCOVERY_QUERY_PARAMETER);
     url.searchParams.set(ASK_QUERY_PARAMETER, normalizedQuery);
 
     if (url.href === page.url.href) {
-      await runAskSearch(normalizedQuery, { force: true });
+      searchSession.reset({ kind: 'ask', query: normalizedQuery });
+      await loadNextPage();
       return;
     }
 
     await goto(url, { keepFocus: true, noScroll: true });
   }
 
-  async function runAskSearch(query = askQuery, options: { force?: boolean; append?: boolean } = {}) {
-    const normalizedQuery = query.trim();
-    if (!normalizedQuery || (isAskLoading && !options.force) || !canUseAskSearch) {
-      return;
-    }
-
-    const requestId = ++askSearchRequestId;
-    const pageToLoad = options.append ? askNextPage : 1;
-    if (!pageToLoad) {
-      return;
-    }
-
-    isAskLoading = true;
-    askQuery = normalizedQuery;
-
-    if (!options.append) {
-      askResponse = undefined;
-      askNextPage = null;
-      searchResultAssets = [];
-      searchResultAlbums = [];
-    }
-
-    try {
-      const response = await askSearch({ askSearchDto: { query: normalizedQuery, page: pageToLoad, language: $lang } });
-      if (requestId !== askSearchRequestId) {
-        return;
-      }
-
-      askResponse = response;
-      askNextPage = Number(response.results.assets.nextPage) || null;
-      if (options.append) {
-        searchResultAlbums.push(...response.results.albums.items);
-        searchResultAssets.push(...response.results.assets.items);
-      } else {
-        searchResultAlbums = response.results.albums.items;
-        searchResultAssets = response.results.assets.items;
-      }
-    } catch (error) {
-      if (requestId === askSearchRequestId) {
-        handleError(error, $t('loading_search_results_failed'));
-      }
-    } finally {
-      if (requestId === askSearchRequestId) {
-        isAskLoading = false;
-      }
-    }
-  }
-
   async function loadNextAskPage() {
-    await runAskSearch(askResponse?.query ?? askQuery, { append: true });
+    await loadNextPage();
   }
 
   function onAskSubmit(event: SubmitEvent) {

@@ -17,10 +17,11 @@
   let { asset = $bindable(), onAction }: Props = $props();
 
   const handleRestoreAsset = async () => {
+    const target = asset;
     try {
-      await restoreAssets({ bulkIdsDto: { ids: [asset.id] } });
-      asset.isTrashed = false;
-      onAction({ type: AssetAction.RESTORE, asset: toTimelineAsset(asset) });
+      await restoreAssets({ bulkIdsDto: { ids: [target.id] } });
+      target.isTrashed = false;
+      onAction({ type: AssetAction.RESTORE, asset: toTimelineAsset(target) });
       toastManager.primary($t('restored_asset'));
     } catch (error) {
       handleError(error, $t('errors.unable_to_restore_assets'));
