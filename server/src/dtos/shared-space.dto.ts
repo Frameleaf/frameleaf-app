@@ -228,7 +228,9 @@ const SharedSpaceEventResponseSchema = z
     type: SharedSpaceEventTypeSchema,
     createdAt: z.string().meta({ format: 'date-time' }).describe('When it happened'),
     actor: UserResponseSchema.nullable().describe('Who did it; null once that account is gone'),
-    targetUser: UserResponseSchema.nullable().describe('The member a member event is about; null otherwise'),
+    targetUser: UserResponseSchema.nullable().describe(
+      'The member a member event is about, or the author of the comment a reply answers; null otherwise',
+    ),
     subject: z
       .string()
       .nullable()
@@ -240,7 +242,10 @@ const SharedSpaceEventResponseSchema = z
       ),
     assetCount: z.int().min(0).describe('How many of the items this event is about the reader may see'),
     activityId: z.uuidv4().nullable().describe('The comment or like this event announces, if any'),
-    comment: z.string().nullable().describe('The comment text, for a comment event. Mentions are @{userId} tokens.'),
+    comment: z
+      .string()
+      .nullable()
+      .describe('The comment text, for a comment or reply event. Mentions are @{userId} tokens.'),
     mentions: z.array(UserResponseSchema).describe('Members named in the comment'),
   })
   .meta({ id: 'SharedSpaceEventResponseDto' });
@@ -276,6 +281,10 @@ const SharedSpaceActivitySearchSchema = z.object({
  * `mentions` resolves them, so a client renders names without ever having sent
  * one. `canEdit` and `canDelete` are the server's answer for the caller —
  * the author edits, and the author or a space owner or editor removes.
+ *
+ * Threads are one level deep: a reply names its top-level comment in
+ * `parentId`, and a top-level comment carries its `replyCount`. Removing a
+ * top-level comment removes its replies with it.
  */
 const SharedSpaceCommentResponseSchema = z
   .object({
@@ -288,6 +297,11 @@ const SharedSpaceCommentResponseSchema = z
     mentions: z.array(UserResponseSchema).describe('Members named in the comment'),
     canEdit: z.boolean().describe('True when the caller may change the text'),
     canDelete: z.boolean().describe('True when the caller may remove the comment'),
+    parentId: z.uuidv4().nullable().describe('The top-level comment this reply answers; null for a top-level comment'),
+    replyCount: z
+      .int()
+      .min(0)
+      .describe('How many replies this comment has that the caller can see; always 0 for a reply'),
   })
   .meta({ id: 'SharedSpaceCommentResponseDto' });
 
@@ -315,6 +329,12 @@ const SharedSpaceCommentCreateSchema = z
   .object({
     assetId: z.uuidv4().optional().describe('The item to comment on. Left out, the comment is on the space itself.'),
     comment: CommentTextSchema,
+    parentId: z
+      .uuidv4()
+      .optional()
+      .describe(
+        'Reply to this comment. Replying to a reply joins the same thread, under its top-level comment. A reply is on the same item as the comment it answers.',
+      ),
   })
   .meta({ id: 'SharedSpaceCommentCreateDto' });
 

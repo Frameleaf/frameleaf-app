@@ -30,20 +30,25 @@ import {
   canDeleteSpaceComment,
   canEditSpaceComment,
   canUnlink,
+  isCommentEventType,
   isNewSpaceEvent,
   isSpaceMember,
   narrowSpaceEvent,
   parseMentions,
+  replyRecipient,
   requireCommentDeleteRights,
   requireCommentEditRights,
   requireLinkableAlbum,
   requireMentionableMembers,
+  requireReplyOnSameItem,
   requireSharedSpace,
   requireSpaceContributor,
   requireSpaceMember,
   requireSpaceOwner,
   requireUnlinkRights,
   spaceOwnerId,
+  threadComments,
+  type CommentThreadInfo,
   type SpaceLike,
 } from 'src/utils/shared-space.js';
 
@@ -79,6 +84,9 @@ const UNREAD_EVENT_LIMIT = 500;
  */
 const spaceViewerOptions = (auth: AuthDto): HiddenContentQueryOptions =>
   auth.hiddenContent ? { hiddenContent: { ...auth.hiddenContent, includeNsfw: true } } : SPACE_CONTENT_OPTIONS;
+
+/** A comment with no thread row: top level, and no replies the caller can see. */
+const TOP_LEVEL: CommentThreadInfo = { parentId: null, replyCount: 0 };
 
 /** A per-request cache of user lookups, so a feed page names each person once. */
 type UserMemo = { get: (userId: string | null) => Promise<UserResponseDto | null> };
@@ -544,7 +552,7 @@ export class SharedSpaceService extends BaseService {
 
     const users = this.userMemo();
     const mentions = await this.mentionsByActivity(
-      visible.filter(({ type }) => type === SharedSpaceEventType.Comment).map(({ activityId }) => activityId!),
+      visible.filter(({ type }) => isCommentEventType(type)).map(({ activityId }) => activityId!),
     );
     const events: SharedSpaceEventResponseDto[] = [];
     for (const event of visible) {
@@ -558,7 +566,7 @@ export class SharedSpaceService extends BaseService {
         assetIds: event.assetIds,
         assetCount: event.assetCount,
         activityId: event.activityId,
-        comment: event.type === SharedSpaceEventType.Comment ? event.activityComment : null,
+        comment: isCommentEventType(event.type) ? event.activityComment : null,
         mentions: await this.mapMentions(mentions.get(event.activityId ?? '') ?? [], users),
       });
     }
@@ -575,7 +583,11 @@ export class SharedSpaceService extends BaseService {
   /* Comments on the space and its items (FL-55)                         */
   /* ------------------------------------------------------------------ */
 
-  /** The comments on one item in the space, or on the space itself. Oldest first. */
+  /**
+   * The comments on one item in the space, or on the space itself. Oldest first,
+   * flat: a reply names its top-level comment in `parentId`, and a top-level
+   * comment carries how many replies the caller can see.
+   */
   async getComments(auth: AuthDto, id: string, dto: SharedSpaceCommentSearchDto): Promise<SharedSpaceCommentsResponseDto> {
     const space = await this.requireSpaceMembership(auth, id);
     if (dto.assetId) {
@@ -588,18 +600,25 @@ export class SharedSpaceService extends BaseService {
       isLiked: false,
       ...spaceViewerOptions(auth),
     });
-    const mentions = await this.mentionsByActivity(rows.map(({ id }) => id));
+    const ids = rows.map(({ id }) => id);
+    const [mentions, parents] = await Promise.all([
+      this.mentionsByActivity(ids),
+      this.albumUserRepository.getCommentParents(ids),
+    ]);
+    const threads = threadComments(ids, parents);
     const users = this.userMemo();
 
     const comments: SharedSpaceCommentResponseDto[] = [];
     for (const row of rows) {
-      comments.push(await this.mapComment(space, auth, row, mentions.get(row.id) ?? [], users));
+      comments.push(
+        await this.mapComment(space, auth, row, mentions.get(row.id) ?? [], users, threads.get(row.id) ?? TOP_LEVEL),
+      );
     }
     return { comments };
   }
 
   /**
-   * Write a comment, on an item or on the space.
+   * Write a comment, on an item or on the space, or a reply to one.
    *
    * The comment is an `activity` row, so the album's own rule applies too:
    * commenting must be enabled on the space. The item, if any, must be one
@@ -607,12 +626,21 @@ export class SharedSpaceService extends BaseService {
    * `@{userId}` tokens, every one must name a current member, and each
    * mentioned member other than the author gets a notification through the
    * ordinary notification system.
+   *
+   * A reply (`parentId`) is stored under the top-level comment of the thread,
+   * even when it answers another reply, and is on the same item as that
+   * comment. It is announced in the feed as a reply, and the author of the
+   * top-level comment is told — in the app only — unless that is the replier,
+   * they have left the space, or the reply already mentions them.
    */
   async createComment(auth: AuthDto, id: string, dto: SharedSpaceCommentCreateDto): Promise<SharedSpaceCommentResponseDto> {
     const space = await this.requireSpaceMembership(auth, id);
     await this.requireAccess({ auth, permission: Permission.ActivityCreate, ids: [id] });
-    if (dto.assetId) {
-      await this.requireVisibleSpaceAsset(auth, id, dto.assetId);
+
+    const root = dto.parentId ? await this.requireThreadRoot(auth, id, dto.parentId, dto.assetId) : null;
+    const assetId = root ? root.assetId : (dto.assetId ?? null);
+    if (!root && assetId) {
+      await this.requireVisibleSpaceAsset(auth, id, assetId);
     }
 
     const mentioned = parseMentions(dto.comment);
@@ -621,20 +649,55 @@ export class SharedSpaceService extends BaseService {
     const activity = await this.activityRepository.create({
       userId: auth.user.id,
       albumId: id,
-      assetId: dto.assetId ?? null,
+      assetId,
       isLiked: false,
       comment: dto.comment,
     });
-    await this.albumUserRepository.createMentions(activity.id, mentioned);
-    await this.albumUserRepository.createSpaceEvent({
-      albumId: id,
-      actorId: auth.user.id,
-      type: SharedSpaceEventType.Comment,
-      activityId: activity.id,
-    });
-    await this.notifyMentioned(auth, id, dto.assetId ?? null, activity.id, mentioned, []);
 
-    return this.mapComment(space, auth, activity, mentioned, this.userMemo());
+    if (root) {
+      try {
+        await this.albumUserRepository.createCommentThread({
+          activityId: activity.id,
+          parentActivityId: root.id,
+          albumId: id,
+        });
+      } catch (error) {
+        // Never leave a reply behind as a stray top-level comment.
+        await this.activityRepository.delete(activity.id);
+        throw error;
+      }
+    }
+
+    await this.albumUserRepository.createMentions(activity.id, mentioned);
+    await this.albumUserRepository.createSpaceEvent(
+      root
+        ? {
+            albumId: id,
+            actorId: auth.user.id,
+            type: SharedSpaceEventType.Reply,
+            activityId: activity.id,
+            targetUserId: root.userId,
+          }
+        : { albumId: id, actorId: auth.user.id, type: SharedSpaceEventType.Comment, activityId: activity.id },
+    );
+    await this.notifyMentioned(auth, id, assetId, activity.id, mentioned, []);
+
+    const recipient = root ? replyRecipient(space, root, auth.user.id, mentioned) : null;
+    if (root && recipient) {
+      await this.eventRepository.emit('SharedSpaceReply', {
+        id,
+        assetId,
+        activityId: activity.id,
+        parentActivityId: root.id,
+        userId: recipient,
+        senderName: auth.user.name,
+      });
+    }
+
+    return this.mapComment(space, auth, activity, mentioned, this.userMemo(), {
+      parentId: root?.id ?? null,
+      replyCount: 0,
+    });
   }
 
   /** Change what a comment says. Only its author may; newly mentioned members are told. */
@@ -657,19 +720,59 @@ export class SharedSpaceService extends BaseService {
     await this.albumUserRepository.createMentions(commentId, mentioned);
     await this.notifyMentioned(auth, id, updated.assetId, commentId, mentioned, previous);
 
-    return this.mapComment(space, auth, updated, mentioned, this.userMemo());
+    // Editing never moves a comment between threads; report where it already is.
+    const [[parent], replies] = await Promise.all([
+      this.albumUserRepository.getCommentParents([commentId]),
+      this.albumUserRepository.getCommentReplies([commentId]),
+    ]);
+
+    return this.mapComment(space, auth, updated, mentioned, this.userMemo(), {
+      parentId: parent?.parentActivityId ?? null,
+      replyCount: parent ? 0 : replies.length,
+    });
   }
 
   /**
    * Remove a comment. Its author may, and so may a space owner or editor —
-   * that is moderation. The mentions and the feed entry go with it.
+   * that is moderation. The mentions and the feed entry go with it, and so do
+   * its replies: removing a top-level comment removes its whole thread.
    */
   async deleteComment(auth: AuthDto, id: string, commentId: string): Promise<void> {
     const space = await this.requireSpaceMembership(auth, id);
     const existing = await this.requireSpaceComment(id, commentId);
     requireCommentDeleteRights(space, existing, auth.user.id);
 
-    await this.activityRepository.delete(commentId);
+    await this.albumUserRepository.deleteCommentWithReplies(commentId);
+  }
+
+  /**
+   * The top-level comment a reply joins.
+   *
+   * The comment being answered must be one of this space's comments, on an
+   * item the caller can see (or on the space itself); anything else is "not
+   * found", with the same answer whichever it was, so a guessed id says
+   * nothing about a comment on an item the caller cannot see. Answering a reply
+   * joins that reply's own thread, so threads stay one level deep.
+   */
+  private async requireThreadRoot(auth: AuthDto, spaceId: string, parentId: string, assetId: string | undefined) {
+    const replied = await this.requireSpaceComment(spaceId, parentId);
+    const [thread] = await this.albumUserRepository.getCommentParents([replied.id]);
+    const root = thread ? await this.requireSpaceComment(spaceId, thread.parentActivityId) : replied;
+
+    if (root.assetId) {
+      const visible = await this.albumUserRepository.filterVisibleSpaceAssetIds(
+        spaceId,
+        [root.assetId],
+        spaceViewerOptions(auth),
+        { inSpace: true },
+      );
+      if (!visible.has(root.assetId)) {
+        throw new NotFoundException('Comment not found');
+      }
+    }
+
+    requireReplyOnSameItem(root, assetId);
+    return root;
   }
 
   /** Narrow a page of stored events to what this member may see, dropping what they may not. */
@@ -772,6 +875,7 @@ export class SharedSpaceService extends BaseService {
     row: CommentRow,
     mentionIds: string[],
     users: UserMemo,
+    thread: CommentThreadInfo,
   ): Promise<SharedSpaceCommentResponseDto> {
     return {
       id: row.id,
@@ -783,6 +887,8 @@ export class SharedSpaceService extends BaseService {
       mentions: await this.mapMentions(mentionIds, users),
       canEdit: canEditSpaceComment(row, auth.user.id),
       canDelete: canDeleteSpaceComment(space, row, auth.user.id),
+      parentId: thread.parentId,
+      replyCount: thread.replyCount,
     };
   }
 

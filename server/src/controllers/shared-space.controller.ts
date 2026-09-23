@@ -240,7 +240,7 @@ export class SharedSpaceController {
   @Endpoint({
     summary: 'List comments in a shared space',
     description:
-      'The comments on one item in the shared space (`assetId`), or on the space itself when `assetId` is left out. Oldest first. Only current members may read them, and an item the caller cannot see is not in the space as far as they are concerned (404). Mentions stay as `@{userId}` tokens in the text and are resolved in `mentions`.',
+      'The comments on one item in the shared space (`assetId`), or on the space itself when `assetId` is left out. Oldest first. Only current members may read them, and an item the caller cannot see is not in the space as far as they are concerned (404). Mentions stay as `@{userId}` tokens in the text and are resolved in `mentions`. Threads are one level deep: a reply names its top-level comment in `parentId`, and a top-level comment carries its `replyCount`.',
     history: new HistoryBuilder().added('v3'),
   })
   getSharedSpaceComments(
@@ -256,7 +256,7 @@ export class SharedSpaceController {
   @Endpoint({
     summary: 'Comment in a shared space',
     description:
-      'Write a comment on one item in the shared space, or on the space itself when `assetId` is left out. Commenting must be enabled on the space, and the item must be one the caller can see. Mention a member with `@{userId}`: mentions are by id, never by name, every mention must name a current member (400 otherwise), and each mentioned member other than the author is notified.',
+      'Write a comment on one item in the shared space, or on the space itself when `assetId` is left out. Commenting must be enabled on the space, and the item must be one the caller can see. Mention a member with `@{userId}`: mentions are by id, never by name, every mention must name a current member (400 otherwise), and each mentioned member other than the author is notified. Reply with `parentId`: a reply to a reply joins the same thread under its top-level comment, is on the same item, and notifies the top-level comment’s author in the app.',
     history: new HistoryBuilder().added('v3'),
   })
   createSharedSpaceComment(
@@ -289,7 +289,7 @@ export class SharedSpaceController {
   @Endpoint({
     summary: 'Remove a shared space comment',
     description:
-      'Remove a comment. Its author may, and so may a shared space owner or editor — that is how a space is moderated. A viewer removes only their own. The comment’s mentions and its entry in the activity feed go with it.',
+      'Remove a comment. Its author may, and so may a shared space owner or editor — that is how a space is moderated. A viewer removes only their own. The comment’s mentions and its entry in the activity feed go with it, and removing a top-level comment removes its replies.',
     history: new HistoryBuilder().added('v3'),
   })
   deleteSharedSpaceComment(@Auth() auth: AuthDto, @Param() { id, commentId }: SharedSpaceCommentParamDto): Promise<void> {

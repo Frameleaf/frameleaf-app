@@ -182,6 +182,54 @@ describe(NotificationService.name, () => {
     });
   });
 
+  describe('onSharedSpaceReply', () => {
+    it('tells the author of the answered comment in the app only, never by email', async () => {
+      const album = AlbumFactory.create({ albumName: 'Family' });
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent);
+
+      await sut.onSharedSpaceReply({
+        id: album.id,
+        assetId: null,
+        activityId: 'reply-1',
+        parentActivityId: 'comment-1',
+        userId: '42',
+        senderName: 'Bo',
+      });
+
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: '42',
+          type: 'SharedSpaceReply',
+          description: 'Bo replied to your comment in Family',
+          data: JSON.stringify({
+            albumId: album.id,
+            assetId: null,
+            activityId: 'reply-1',
+            parentActivityId: 'comment-1',
+          }),
+        }),
+      );
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_notification', '42', expect.anything());
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('does nothing once the space is gone', async () => {
+      mocks.album.getById.mockResolvedValue(void 0);
+
+      await sut.onSharedSpaceReply({
+        id: newUuid(),
+        assetId: null,
+        activityId: 'reply-1',
+        parentActivityId: 'comment-1',
+        userId: '42',
+        senderName: 'Bo',
+      });
+
+      expect(mocks.notification.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('onSessionDeleteEvent', () => {
     it('should send a on_session_delete client event', () => {
       vi.useFakeTimers();

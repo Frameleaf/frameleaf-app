@@ -46,6 +46,17 @@ type EventMap = {
 
   // shared space events (FL-55): members named in a comment
   SharedSpaceMention: [{ id: string; assetId: string | null; activityId: string; userIds: string[]; senderName: string }];
+  // shared space events (FL-55): somebody answered a member's comment
+  SharedSpaceReply: [
+    {
+      id: string;
+      assetId: string | null;
+      activityId: string;
+      parentActivityId: string;
+      userId: string;
+      senderName: string;
+    },
+  ];
 
   // asset events
   AssetCreate: [{ asset: Pick<Asset, 'id' | 'ownerId'>; file?: UploadFile }];
