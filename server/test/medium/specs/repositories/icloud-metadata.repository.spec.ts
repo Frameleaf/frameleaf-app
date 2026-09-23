@@ -26,6 +26,13 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
       'CREATE TABLE asset_job_status("assetId" uuid PRIMARY KEY REFERENCES asset,"metadataExtractedAt" timestamptz)',
       'CREATE TABLE album(id uuid PRIMARY KEY,"albumThumbnailAssetId" uuid REFERENCES asset)',
       'CREATE TABLE album_asset("albumId" uuid REFERENCES album,"assetId" uuid REFERENCES asset,PRIMARY KEY("albumId","assetId"))',
+      // the other covers a Locked photo releases (FL-53), and what choosing their replacements reads
+      'ALTER TABLE asset ADD COLUMN is_nsfw boolean NOT NULL DEFAULT false',
+      'CREATE TABLE immich_fork.asset_privacy("assetId" uuid PRIMARY KEY,"isNsfw" boolean NOT NULL)',
+      `CREATE TABLE asset_face(id uuid PRIMARY KEY,"assetId" uuid REFERENCES asset,"personGroupId" uuid,"deletedAt" timestamptz,"isVisible" boolean DEFAULT true)`,
+      `CREATE TABLE person("ownerId" uuid,"personGroupId" uuid,"faceAssetId" uuid REFERENCES asset_face,"thumbnailPath" text DEFAULT '',PRIMARY KEY("ownerId","personGroupId"))`,
+      'CREATE TABLE shared_space_person(id uuid PRIMARY KEY,"albumId" uuid REFERENCES album,"personGroupId" uuid,"coverAssetId" uuid REFERENCES asset)',
+      'CREATE TABLE pet(id uuid PRIMARY KEY,"featuredAssetId" uuid REFERENCES asset,"updatedAt" timestamptz)',
     ]) {
       await sql.raw(statement).execute(db);
     }
@@ -124,6 +131,46 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
     expect(Object.fromEntries(covers.rows.map((row) => [row.id, row.albumThumbnailAssetId]))).toEqual({
       [ownAlbumId]: otherAssetId,
       [otherAlbumId]: null,
+    });
+  });
+
+  it('releases every other cover, featured photo and face thumbnail the photo it locks was (FL-53)', async () => {
+    const ctx = await setup();
+    const otherAssetId = randomUUID();
+    const [spaceId, personGroupId, lockedFaceId, otherFaceId, linkId, petId] = Array.from({ length: 6 }, () =>
+      randomUUID(),
+    );
+    await sql`INSERT INTO asset(id,"ownerId") VALUES(${otherAssetId}::uuid,${ctx.ownerId}::uuid)`.execute(db);
+    // the fork phase is active, so an asset counts as not sensitive only with a privacy row saying so
+    await sql`INSERT INTO immich_fork.asset_privacy VALUES(${ctx.assetId}::uuid,false),(${otherAssetId}::uuid,false)`.execute(
+      db,
+    );
+    await sql`INSERT INTO album VALUES(${spaceId}::uuid,NULL)`.execute(db);
+    await sql`INSERT INTO album_asset VALUES(${spaceId}::uuid,${ctx.assetId}::uuid),(${spaceId}::uuid,${otherAssetId}::uuid)`.execute(
+      db,
+    );
+    await sql`INSERT INTO asset_face(id,"assetId","personGroupId") VALUES(${lockedFaceId}::uuid,${ctx.assetId}::uuid,${personGroupId}::uuid),(${otherFaceId}::uuid,${otherAssetId}::uuid,${personGroupId}::uuid)`.execute(
+      db,
+    );
+    await sql`INSERT INTO person VALUES(${ctx.ownerId}::uuid,${personGroupId}::uuid,${lockedFaceId}::uuid,'/thumbs/person.jpeg')`.execute(
+      db,
+    );
+    await sql`INSERT INTO shared_space_person VALUES(${linkId}::uuid,${spaceId}::uuid,${personGroupId}::uuid,${ctx.assetId}::uuid)`.execute(
+      db,
+    );
+    await sql`INSERT INTO pet VALUES(${petId}::uuid,${ctx.assetId}::uuid,now())`.execute(db);
+
+    expect(await service.reconcile(ctx.connectionId, ctx.ownerId)).toBe(true);
+
+    expect(await target(ctx.assetId)).toMatchObject({ visibility: 'locked' });
+    expect(
+      await first(sql`SELECT "faceAssetId","thumbnailPath" FROM person WHERE "personGroupId"=${personGroupId}::uuid`),
+    ).toEqual({ faceAssetId: otherFaceId, thumbnailPath: '' });
+    expect(await first(sql`SELECT "coverAssetId" FROM shared_space_person WHERE id=${linkId}::uuid`)).toEqual({
+      coverAssetId: otherAssetId,
+    });
+    expect(await first(sql`SELECT "featuredAssetId" FROM pet WHERE id=${petId}::uuid`)).toEqual({
+      featuredAssetId: null,
     });
   });
 
