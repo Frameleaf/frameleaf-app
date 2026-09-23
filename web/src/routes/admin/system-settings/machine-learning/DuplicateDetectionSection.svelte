@@ -1,7 +1,7 @@
 <script lang="ts">
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import type { AdminConfigMachineLearningDto } from '@immich/sdk';
@@ -16,20 +16,20 @@
   let { workingConfig, savedConfig, disabled }: Props = $props();
 </script>
 
-<SettingAccordion
+<SettingGroup
   key="duplicate-detection"
   title={$t('admin.machine_learning_duplicate_detection')}
   subtitle={$t('admin.machine_learning_duplicate_detection_setting_description')}
 >
-  <div class="ms-4 mt-4 flex flex-col gap-4">
-    <SettingSwitch
+  <div class="flex flex-col gap-4">
+    <SettingToggle
       title={$t('admin.machine_learning_duplicate_detection_enabled')}
       subtitle={$t('admin.machine_learning_duplicate_detection_enabled_description')}
       bind:checked={workingConfig.duplicateDetection.enabled}
       disabled={disabled || !workingConfig.enabled || !workingConfig.clip.enabled}
     />
 
-    <SettingSwitch
+    <SettingToggle
       title={$t('admin.machine_learning_duplicate_detection_prefer_original_format')}
       subtitle={$t('admin.machine_learning_duplicate_detection_prefer_original_format_description')}
       bind:checked={workingConfig.duplicateDetection.preferOriginalFormat}
@@ -38,7 +38,7 @@
 
     <hr />
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.NUMBER}
       label={$t('admin.machine_learning_max_detection_distance')}
       bind:value={workingConfig.duplicateDetection.maxDistance}
@@ -52,14 +52,14 @@
 
     <hr />
 
-    <SettingSwitch
+    <SettingToggle
       title={$t('admin.enhanced_video_duplicate_detection_enabled')}
       subtitle={$t('admin.enhanced_video_duplicate_detection_enabled_description')}
       bind:checked={workingConfig.duplicateDetection.enhancedVideo.enabled}
       disabled={disabled || !featureFlagsManager.value.duplicateDetection}
     />
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.NUMBER}
       label={$t('admin.enhanced_video_duplicate_detection_frame_count')}
       bind:value={workingConfig.duplicateDetection.enhancedVideo.frameCount}
@@ -72,7 +72,7 @@
         savedConfig.duplicateDetection.enhancedVideo.frameCount}
     />
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.NUMBER}
       label={$t('admin.enhanced_video_duplicate_detection_min_matching_frames')}
       bind:value={workingConfig.duplicateDetection.enhancedVideo.minMatchingFrames}
@@ -85,7 +85,7 @@
         savedConfig.duplicateDetection.enhancedVideo.minMatchingFrames}
     />
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.NUMBER}
       label={$t('admin.enhanced_video_duplicate_detection_max_distance')}
       bind:value={workingConfig.duplicateDetection.enhancedVideo.maxDistance}
@@ -98,4 +98,4 @@
         savedConfig.duplicateDetection.enhancedVideo.maxDistance}
     />
   </div>
-</SettingAccordion>
+</SettingGroup>

@@ -2,6 +2,7 @@ import { ActivityController } from 'src/controllers/activity.controller.js';
 import { AlbumController } from 'src/controllers/album.controller.js';
 import { ApiKeyController } from 'src/controllers/api-key.controller.js';
 import { AppController } from 'src/controllers/app.controller.js';
+import { AssetDevelopController } from 'src/controllers/asset-develop.controller.js';
 import { AssetFilesController } from 'src/controllers/asset-file.controller.js';
 import { AssetMediaController } from 'src/controllers/asset-media.controller.js';
 import { AssetController } from 'src/controllers/asset.controller.js';
@@ -36,6 +37,7 @@ import { OAuthController } from 'src/controllers/oauth.controller.js';
 import { PartnerController } from 'src/controllers/partner.controller.js';
 import { PersonController } from 'src/controllers/person.controller.js';
 import { PetController } from 'src/controllers/pet.controller.js';
+import { PhysicalDeduplicationController } from 'src/controllers/physical-deduplication.controller.js';
 import { PluginController } from 'src/controllers/plugin.controller.js';
 import { QueueController } from 'src/controllers/queue.controller.js';
 import { RunPodController } from 'src/controllers/runpod.controller.js';
@@ -43,6 +45,7 @@ import { SearchController } from 'src/controllers/search.controller.js';
 import { ServerController } from 'src/controllers/server.controller.js';
 import { SessionController } from 'src/controllers/session.controller.js';
 import { SharedLinkController } from 'src/controllers/shared-link.controller.js';
+import { SharedSpaceController } from 'src/controllers/shared-space.controller.js';
 import { StackController } from 'src/controllers/stack.controller.js';
 import { SyncController } from 'src/controllers/sync.controller.js';
 import { SystemConfigController } from 'src/controllers/system-config.controller.js';
@@ -63,6 +66,7 @@ export const controllers = [
   AlbumController,
   AppController,
   AssetController,
+  AssetDevelopController,
   AssetFilesController,
   AssetMediaController,
   AuthController,
@@ -93,6 +97,7 @@ export const controllers = [
   PartnerController,
   PersonController,
   PetController,
+  PhysicalDeduplicationController,
   PluginController,
   QueueController,
   RunPodController,
@@ -100,6 +105,7 @@ export const controllers = [
   ServerController,
   SessionController,
   SharedLinkController,
+  SharedSpaceController,
   StackController,
   SyncController,
   SystemConfigController,

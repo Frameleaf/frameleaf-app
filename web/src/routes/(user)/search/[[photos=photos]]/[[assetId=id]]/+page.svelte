@@ -1,33 +1,18 @@
 <script lang="ts">
   import { afterNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
-  import ActionMenuItem from '$lib/components/ActionMenuItem.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
-  import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import ControlAppBar from '$lib/components/shared-components/ControlAppBar.svelte';
-  import GalleryViewer from '$lib/components/shared-components/gallery-viewer/GalleryViewer.svelte';
+  import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
+  import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
-  import ArchiveAction from '$lib/components/timeline/actions/ArchiveAction.svelte';
-  import ChangeDate from '$lib/components/timeline/actions/ChangeDateAction.svelte';
-  import ChangeDescription from '$lib/components/timeline/actions/ChangeDescriptionAction.svelte';
-  import ChangeLocation from '$lib/components/timeline/actions/ChangeLocationAction.svelte';
-  import CreateSharedLink from '$lib/components/timeline/actions/CreateSharedLinkAction.svelte';
-  import DeleteAssets from '$lib/components/timeline/actions/DeleteAssetsAction.svelte';
-  import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
-  import FavoriteAction from '$lib/components/timeline/actions/FavoriteAction.svelte';
-  import MarkNsfwAction from '$lib/components/timeline/actions/MarkNsfwAction.svelte';
-  import SetVisibilityAction from '$lib/components/timeline/actions/SetVisibilityAction.svelte';
-  import TagAction from '$lib/components/timeline/actions/TagAction.svelte';
-  import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
   import { QueryParameter } from '$lib/constants';
-  import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
-  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import type { Viewport } from '$lib/managers/timeline-manager/types';
   import { Route } from '$lib/route';
-  import { getAssetBulkActions } from '$lib/services/asset.service';
   import { lang, locale } from '$lib/stores/preferences.store';
   import { handlePromiseError } from '$lib/utils';
+  import { navigateToAsset } from '$lib/utils/asset-utils';
   import { parseUtcDate } from '$lib/utils/date-time';
   import { handleError } from '$lib/utils/handle-error';
   import { isAlbumsRoute, isPeopleRoute } from '$lib/utils/navigation';
@@ -46,29 +31,24 @@
     searchSmart,
     type SmartSearchDto,
   } from '@immich/sdk';
-  import { ActionButton, Button, CommandPaletteDefaultProvider, Icon, IconButton, LoadingSpinner } from '@immich/ui';
+  import { Button, Icon, LoadingSpinner } from '@immich/ui';
   import {
     mdiAccountMultipleOutline,
     mdiArrowLeft,
     mdiCalendarHeart,
     mdiClose,
-    mdiDotsVertical,
     mdiFileDocumentOutline,
     mdiImageAlbum,
     mdiImageOffOutline,
     mdiMapMarkerOutline,
-    mdiSelectAll,
   } from '@mdi/js';
   import { tick, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
-  const viewport: Viewport = $state({ width: 0, height: 0 });
   const ASK_QUERY_PARAMETER = 'ask';
-  let searchResultsElement: HTMLElement | undefined = $state();
 
-  // The GalleryViewer pushes it's own history state, which causes weird
-  // behavior for history.back(). To prevent that we store the previous page
-  // manually and navigate back to that.
+  // The viewer pushes its own history state, which causes weird behavior for history.back().
+  // To prevent that we store the previous page manually and navigate back to that.
   let previousRoute = $state<string>(Route.explore());
 
   let nextPage = $state(1);
@@ -154,13 +134,15 @@
     searchResultAssets = searchResultAssets.filter((asset: AssetResponseDto) => !assetIdSet.has(asset.id));
   };
 
-  const handleSetVisibility = (assetIds: string[]) => {
-    assetMultiSelectManager.clear();
-    onAssetDelete(assetIds);
-  };
+  const handleSelectAll = () => librarySession.selectAll(searchResultAssets.map((asset) => asset.id));
 
-  const handleSelectAll = () => {
-    assetMultiSelectManager.selectAssets(searchResultAssets.map((asset) => toTimelineAsset(asset)));
+  const timelineAssets = $derived(searchResultAssets.map((asset) => toTimelineAsset(asset)));
+
+  const updateAsset = (updated: AssetResponseDto) => {
+    const index = searchResultAssets.findIndex((asset) => asset.id === updated.id);
+    if (index !== -1) {
+      searchResultAssets[index] = updated;
+    }
   };
 
   async function onSearchQueryUpdate() {
@@ -310,7 +292,7 @@
   }
 
   const onAlbumAddAssets = ({ assetIds }: { assetIds: string[] }) => {
-    assetMultiSelectManager.clear();
+    librarySession.clearSelection();
 
     if (terms.isNotInAlbum) {
       const assetIdSet = new Set(assetIds);
@@ -325,7 +307,7 @@
   function removeFilter(key: keyof SearchTerms) {
     const nextTerms = { ...terms };
     delete nextTerms[key];
-    assetMultiSelectManager.clear();
+    librarySession.clearSelection();
     void goto(Route.search(nextTerms));
   }
 
@@ -481,12 +463,7 @@
   </section>
 {/if}
 
-<section
-  class="m-4 mb-12 max-h-screen bg-immich-bg dark:bg-immich-dark-bg"
-  bind:clientHeight={viewport.height}
-  bind:clientWidth={viewport.width}
-  bind:this={searchResultsElement}
->
+<section class="m-4 mb-12 max-h-screen bg-immich-bg dark:bg-immich-dark-bg">
   <section id="search-content">
     {#if !hasSearchQuery && canUseAskSearch}
       <div class="mx-auto mt-24 flex w-full max-w-5xl flex-col gap-8 px-6 text-gray-700 dark:text-gray-200">
@@ -535,14 +512,12 @@
         </div>
 
         {#if askResponse && searchResultAssets.length > 0}
-          <GalleryViewer
-            assets={searchResultAssets}
-            assetInteraction={assetMultiSelectManager}
-            showArchiveIcon={true}
-            {viewport}
-            onReload={runAskSearch}
-            onEndReached={loadNextAskPage}
-            slidingWindowOffset={searchResultsElement.offsetTop}
+          <ResultsView
+            assets={timelineAssets}
+            onEndReached={() => void loadNextAskPage()}
+            onRemoved={onAssetDelete}
+            onSelectAll={handleSelectAll}
+            onOpen={(asset) => void navigateToAsset(asset)}
           />
         {:else if askResponse && !isAskLoading}
           <div class="flex min-h-56 w-full place-content-center items-center dark:text-white">
@@ -555,14 +530,12 @@
         {/if}
       </div>
     {:else if hasSearchQuery && searchResultAssets.length > 0}
-      <GalleryViewer
-        assets={searchResultAssets}
-        assetInteraction={assetMultiSelectManager}
-        onEndReached={loadNextPage}
-        showArchiveIcon={true}
-        {viewport}
-        onReload={onSearchQueryUpdate}
-        slidingWindowOffset={searchResultsElement.offsetTop}
+      <ResultsView
+        assets={timelineAssets}
+        onEndReached={() => void loadNextPage()}
+        onRemoved={onAssetDelete}
+        onSelectAll={handleSelectAll}
+        onOpen={(asset) => void navigateToAsset(asset)}
       />
     {:else if hasSearchQuery && !isLoading}
       <div class="flex min-h-[calc(66vh-11rem)] w-full place-content-center items-center dark:text-white">
@@ -582,71 +555,23 @@
   </section>
 
   <section>
-    {#if assetMultiSelectManager.selectionActive}
-      <div class="fixed inset-s-0 top-0 z-2 w-full">
-        <AssetSelectControlBar>
-          {@const Actions = getAssetBulkActions($t)}
-          <CommandPaletteDefaultProvider name={$t('assets')} actions={Object.values(Actions)} />
-
-          <CreateSharedLink />
-          <IconButton
-            shape="round"
-            color="secondary"
-            variant="ghost"
-            aria-label={$t('select_all')}
-            icon={mdiSelectAll}
-            onclick={handleSelectAll}
-          />
-          <ActionButton action={Actions.AddToAlbum} />
-          {#if assetMultiSelectManager.isAllUserOwned}
-            <FavoriteAction
-              removeFavorite={assetMultiSelectManager.isAllFavorite}
-              onFavorite={(ids, isFavorite) => {
-                for (const id of ids) {
-                  const asset = searchResultAssets.find((asset) => asset.id === id);
-                  if (asset) {
-                    asset.isFavorite = isFavorite;
-                  }
-                }
-              }}
-            />
-
-            <ButtonContextMenu icon={mdiDotsVertical} title={$t('menu')}>
-              <ActionMenuItem action={Actions.AddToAlbum} />
-              <DownloadAction menuItem />
-              <ChangeDate menuItem />
-              <ChangeDescription menuItem />
-              <ChangeLocation menuItem />
-              <ArchiveAction menuItem unarchive={assetMultiSelectManager.isAllArchived} />
-              {#if assetMultiSelectManager.ownedAssets.length > 0}
-                <MarkNsfwAction menuItem />
-                <MarkNsfwAction menuItem markSafe />
-              {/if}
-              <SetVisibilityAction menuItem onVisibilitySet={handleSetVisibility} />
-              {#if authManager.preferences.tags.enabled}
-                <TagAction menuItem />
-              {/if}
-              <DeleteAssets menuItem {onAssetDelete} onUndoDelete={onSearchQueryUpdate} />
-              <hr />
-              <ActionMenuItem action={Actions.RegenerateThumbnailJob} />
-              <ActionMenuItem action={Actions.RefreshMetadataJob} />
-              <ActionMenuItem action={Actions.TranscodeVideoJob} />
-            </ButtonContextMenu>
-          {:else}
-            <DownloadAction />
-          {/if}
-        </AssetSelectControlBar>
-      </div>
-    {:else}
-      <div class="fixed inset-s-0 top-0 z-2 w-full">
-        <ControlAppBar onClose={() => goto(previousRoute)} backIcon={mdiArrowLeft}>
-          <div class="mx-auto w-full max-w-2xl pe-2">
-            <!-- FL-49: the same single search entry as the top bar; it reads the current
-                 search from the URL, so reopening it resumes this query. -->
-            <SearchEntry />
-          </div>
-        </ControlAppBar>
-      </div>
-    {/if}
+    <!-- FL-33 cleanup: the legacy select bar is gone; the Frameleaf selection bar floats over the
+         results, so the search entry stays available while a selection is being made. -->
+    <div class="fixed inset-s-0 top-0 z-2 w-full">
+      <ControlAppBar onClose={() => goto(previousRoute)} backIcon={mdiArrowLeft}>
+        <div class="mx-auto w-full max-w-2xl pe-2">
+          <!-- FL-49: the same single search entry as the top bar; it reads the current
+               search from the URL, so reopening it resumes this query. -->
+          <SearchEntry />
+        </div>
+      </ControlAppBar>
+    </div>
   </section>
 </section>
+
+<ResultsAssetViewer
+  assets={searchResultAssets}
+  onAssetChange={updateAsset}
+  onRemove={(id) => onAssetDelete([id])}
+  emptyRoute={previousRoute}
+/>

@@ -1,7 +1,7 @@
 <script lang="ts">
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import type { AdminConfigNsfwDetectionDto, AdminConfigMachineLearningDto } from '@immich/sdk';
   import { t } from 'svelte-i18n';
@@ -16,13 +16,13 @@
   let { workingConfig, nsfwDetection, savedNsfwDetection, disabled }: Props = $props();
 </script>
 
-<SettingAccordion
+<SettingGroup
   key="nsfw-detection"
   title={$t('admin.machine_learning_nsfw_detection')}
   subtitle={$t('admin.machine_learning_nsfw_detection_description')}
 >
-  <div class="mt-4 ml-4 flex flex-col gap-4">
-    <SettingSwitch
+  <div class="flex flex-col gap-4">
+    <SettingToggle
       title={$t('admin.machine_learning_nsfw_detection_enabled')}
       subtitle={$t('admin.machine_learning_nsfw_detection_enabled_description')}
       bind:checked={nsfwDetection.enabled}
@@ -30,7 +30,7 @@
       isEdited={nsfwDetection.enabled !== savedNsfwDetection.enabled}
     />
 
-    <SettingSwitch
+    <SettingToggle
       title={$t('admin.machine_learning_nsfw_detection_hide_from_library')}
       subtitle={$t('admin.machine_learning_nsfw_detection_hide_from_library_description')}
       bind:checked={nsfwDetection.hideFromLibrary}
@@ -40,7 +40,7 @@
 
     <hr />
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.TEXT}
       label={$t('admin.machine_learning_nsfw_detection_model')}
       bind:value={nsfwDetection.modelName}
@@ -49,7 +49,7 @@
       isEdited={nsfwDetection.modelName !== savedNsfwDetection.modelName}
     />
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.NUMBER}
       label={$t('admin.machine_learning_nsfw_detection_threshold')}
       description={$t('admin.machine_learning_nsfw_detection_threshold_description')}
@@ -61,7 +61,7 @@
       isEdited={nsfwDetection.threshold !== savedNsfwDetection.threshold}
     />
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.TEXT}
       label={$t('admin.machine_learning_hardware_device')}
       bind:value={nsfwDetection.device}
@@ -70,4 +70,4 @@
       isEdited={nsfwDetection.device !== savedNsfwDetection.device}
     />
   </div>
-</SettingAccordion>
+</SettingGroup>
