@@ -32,7 +32,7 @@ describe(UserAdminController.name, () => {
         password: 'password',
         pinCode: null,
       });
-      expect(service.create).toHaveBeenCalledWith(expect.objectContaining({ pinCode: null }));
+      expect(service.create).toHaveBeenCalledWith(undefined, expect.objectContaining({ pinCode: null }));
     });
 
     it('should allow a null avatarColor', async () => {
@@ -42,7 +42,7 @@ describe(UserAdminController.name, () => {
         password: 'password',
         avatarColor: null,
       });
-      expect(service.create).toHaveBeenCalledWith(expect.objectContaining({ avatarColor: null }));
+      expect(service.create).toHaveBeenCalledWith(undefined, expect.objectContaining({ avatarColor: null }));
     });
 
     for (const [key, message] of [
@@ -124,5 +124,54 @@ describe(UserAdminController.name, () => {
         expect(body).toEqual(errorDto.validationError([{ path: [key], message }]));
       });
     }
+  });
+
+  describe('GET /admin/users/:id/history (FL-76)', () => {
+    it('should pass the page to the service', async () => {
+      const id = factory.uuid();
+
+      const { status } = await request(ctx.getHttpServer()).get(`/admin/users/${id}/history`).query({ take: 20 });
+
+      expect(status).toBe(200);
+      expect(service.getHistory).toHaveBeenCalledWith(undefined, id, { take: 20 });
+    });
+
+    it('should reject a page size over 200', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .get(`/admin/users/${factory.uuid()}/history`)
+        .query({ take: 201 })
+        .set('Authorization', `Bearer token`);
+      expect(status).toBe(400);
+    });
+
+    it('should reject a cursor that is not an event id', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .get(`/admin/users/${factory.uuid()}/history`)
+        .query({ before: 'not-a-uuid' })
+        .set('Authorization', `Bearer token`);
+      expect(status).toBe(400);
+    });
+  });
+
+  describe('DELETE /admin/users/:id/sessions/:sessionId (FL-76)', () => {
+    it('should call the service with both ids', async () => {
+      const id = factory.uuid();
+      const sessionId = factory.uuid();
+
+      const { status } = await request(ctx.getHttpServer()).delete(`/admin/users/${id}/sessions/${sessionId}`);
+
+      expect(status).toBe(204);
+      expect(service.deleteSession).toHaveBeenCalledWith(undefined, id, sessionId);
+    });
+
+    it('should reject a non-uuid session id', async () => {
+      const { status, body } = await request(ctx.getHttpServer())
+        .delete(`/admin/users/${factory.uuid()}/sessions/not-a-uuid`)
+        .set('Authorization', `Bearer token`);
+      expect(status).toBe(400);
+      expect(body).toEqual(
+        errorDto.validationError([{ path: ['sessionId'], message: 'Invalid UUID' }]),
+      );
+    });
   });
 });

@@ -28,6 +28,7 @@ import {
   user_metadata_audit,
 } from 'src/schema/functions.js';
 import { ActivityTable } from 'src/schema/tables/activity.table.js';
+import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.js';
 import { AlbumAssetAuditTable } from 'src/schema/tables/album-asset-audit.table.js';
 import { AlbumAssetTable } from 'src/schema/tables/album-asset.table.js';
 import { AlbumAuditTable } from 'src/schema/tables/album-audit.table.js';
@@ -50,6 +51,7 @@ import {
   AssetHealthRunTable,
   AssetHealthTable,
 } from 'src/schema/tables/asset-health.table.js';
+import { AssetDocumentEditTable } from 'src/schema/tables/asset-document-edit.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetLockTable } from 'src/schema/tables/asset-lock.table.js';
 import { AssetMetadataAuditTable } from 'src/schema/tables/asset-metadata-audit.table.js';
@@ -61,6 +63,7 @@ import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-dup
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
+import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
@@ -139,6 +142,12 @@ import { UserMetadataTable } from 'src/schema/tables/user-metadata.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { VersionHistoryTable } from 'src/schema/tables/version-history.table.js';
 import {
+  VideoMomentFrameEmbeddingTable,
+  VideoMomentFrameTable,
+  VideoMomentIndexTable,
+  VideoMomentTable,
+} from 'src/schema/tables/video-moment.table.js';
+import {
   VideoStreamSegmentTable,
   VideoStreamSessionTable,
   VideoStreamVariantTable,
@@ -152,6 +161,7 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 export class ImmichDatabase {
   tables = [
     ActivityTable,
+    AdminAuditEventTable,
     AlbumAssetTable,
     AlbumAssetAuditTable,
     AlbumAuditTable,
@@ -170,6 +180,7 @@ export class ImmichDatabase {
     AssetMetadataAuditTable,
     AssetJobStatusTable,
     AssetLockTable,
+    AssetDocumentEditTable,
     AssetOcrTable,
     AssetOcrAuditTable,
     AssetRestorationTable,
@@ -182,6 +193,7 @@ export class ImmichDatabase {
     AssetVideoDuplicateFrameTable,
     ClusterGroupTable,
     ClusterGroupRequestTable,
+    DuplicateDecisionTable,
     FaceSearchTable,
     GeodataPlacesTable,
     IntegrityReportTable,
@@ -247,6 +259,10 @@ export class ImmichDatabase {
     UserMetadataAuditTable,
     UserTable,
     VersionHistoryTable,
+    VideoMomentIndexTable,
+    VideoMomentFrameTable,
+    VideoMomentFrameEmbeddingTable,
+    VideoMomentTable,
     VideoStreamSessionTable,
     VideoStreamVariantTable,
     VideoStreamSegmentTable,
@@ -292,6 +308,7 @@ export interface DB {
   kysely_migrations: { timestamp: string; name: string };
 
   activity: ActivityTable;
+  admin_audit_event: AdminAuditEventTable;
 
   album: AlbumTable;
   album_audit: AlbumAuditTable;
@@ -319,6 +336,7 @@ export interface DB {
   asset_metadata_audit: AssetMetadataAuditTable;
   asset_job_status: AssetJobStatusTable;
   asset_lock: AssetLockTable;
+  asset_document_edit: AssetDocumentEditTable;
   asset_ocr: AssetOcrTable;
   asset_ocr_audit: AssetOcrAuditTable;
   asset_restoration: AssetRestorationTable;
@@ -327,6 +345,8 @@ export interface DB {
   asset_keyframe: AssetKeyframeTable;
   asset_video_duplicate_frame: AssetVideoDuplicateFrameTable;
   ocr_search: OcrSearchTable;
+
+  duplicate_decision: DuplicateDecisionTable;
 
   face_search: FaceSearchTable;
 
@@ -420,6 +440,11 @@ export interface DB {
   user_metadata_audit: UserMetadataAuditTable;
 
   version_history: VersionHistoryTable;
+
+  video_moment_index: VideoMomentIndexTable;
+  video_moment_frame: VideoMomentFrameTable;
+  video_moment_frame_embedding: VideoMomentFrameEmbeddingTable;
+  video_moment: VideoMomentTable;
 
   video_stream_session: VideoStreamSessionTable;
   video_stream_variant: VideoStreamVariantTable;

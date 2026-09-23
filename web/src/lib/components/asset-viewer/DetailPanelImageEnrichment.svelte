@@ -23,6 +23,7 @@
    * the signed-in user does not have.
    */
   import ViewerInlineEditError from '$lib/components/frameleaf/ViewerInlineEditError.svelte';
+  import { staleReasonKey } from '$lib/frameleaf/enrichment';
   import { descriptionReview, sensitivityReview, type DescriptionReview } from '$lib/frameleaf/info-panel';
   import { classifyInlineEditError, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
   import { handlePromiseError } from '$lib/utils';
@@ -277,6 +278,13 @@
 
             {#if description.error}
               <p class="text-xs text-red-600 dark:text-red-400">{description.error}</p>
+            {/if}
+
+            {#if enrichment.description.staleReason}
+              <!-- FL-59: the generated text no longer matches its original, names or prompt. -->
+              <p class="text-xs text-amber-700 dark:text-amber-300" data-testid="frameleaf-description-stale">
+                {$t(staleReasonKey[enrichment.description.staleReason])}
+              </p>
             {/if}
 
             <div class="flex flex-wrap gap-2">

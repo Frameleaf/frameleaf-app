@@ -674,6 +674,26 @@ describe(MediaOperationService.name, () => {
       ]);
     });
 
+    it('never names the photos of a duplicate decision job on the detail view (FL-61)', async () => {
+      const groups = [
+        { duplicateId: 'g1', decision: 'keepers', memberIds: [assetIds[0], assetIds[1]], keepAssetIds: [assetIds[0]] },
+      ];
+      vi.mocked(repository.getForOwner).mockResolvedValue(
+        bulkStub({
+          snapshot: {
+            action: MediaOperationBulkAction.ResolveDuplicates,
+            assetIds,
+            payload: { duplicateGroups: groups },
+          },
+        }),
+      );
+
+      const result = await sut.get(authStub.user1, bulkStub().id);
+
+      expect(result.snapshot.payload).toEqual({ groupCount: 1 });
+      expect(JSON.stringify(result.snapshot)).not.toContain(assetIds[1]);
+    });
+
     it('sends a Library Care relink, recovery or trash back to Library Care instead of copying it (FL-69)', async () => {
       vi.mocked(repository.getForOwner).mockResolvedValue(
         bulkStub({

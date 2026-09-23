@@ -1,5 +1,6 @@
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
+import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
@@ -16,7 +17,9 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { DocumentRepository } from 'src/repositories/document.repository.js';
 import { DownloadRepository } from 'src/repositories/download.repository.js';
+import { DuplicateDecisionRepository } from 'src/repositories/duplicate-decision.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -75,6 +78,7 @@ import { TagRepository } from 'src/repositories/tag.repository.js';
 import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
+import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
 import { VideoStreamRepository } from 'src/repositories/video-stream.repository.js';
 import { ViewRepository } from 'src/repositories/view-repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
@@ -89,6 +93,7 @@ export const repositories = [
   ICloudSyncRepository,
   AccessRepository,
   ActivityRepository,
+  AdminAuditRepository,
   AlbumRepository,
   AlbumUserRepository,
   ApiKeyRepository,
@@ -104,7 +109,9 @@ export const repositories = [
   CronRepository,
   CryptoRepository,
   DatabaseRepository,
+  DocumentRepository,
   DownloadRepository,
+  DuplicateDecisionRepository,
   DuplicateRepository,
   EmailRepository,
   EventRepository,
@@ -159,6 +166,7 @@ export const repositories = [
   UserRepository,
   ViewRepository,
   VersionHistoryRepository,
+  VideoMomentRepository,
   VideoStreamRepository,
   WebsocketRepository,
   WorkflowRepository,
