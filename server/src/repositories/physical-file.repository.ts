@@ -6,7 +6,8 @@ import { dirname, join, parse } from 'node:path';
 import { AssetFileType, AssetStatus, ChecksumAlgorithm, PhysicalFileType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
-import { asUuid } from 'src/utils/database.js';
+import { anyUuid, asUuid } from 'src/utils/database.js';
+import type { PhysicalDeduplicationEvidenceRow } from 'src/utils/physical-deduplication-plan.js';
 
 type PhysicalFile = Selectable<PhysicalFileTable>;
 
@@ -142,6 +143,59 @@ export class PhysicalFileRepository {
       .where('asset.deletedAt', 'is', null)
       .executeTakeFirstOrThrow();
     return Number(count);
+  }
+
+  /**
+   * Physical files' reference counts, as `countOriginalReferences` counts one (FL-73). A file
+   * nothing references is absent from the map.
+   */
+  async countOriginalReferencesFor(physicalFileIds: string[]): Promise<Map<string, number>> {
+    const ids = [...new Set(physicalFileIds)];
+    if (ids.length === 0) {
+      return new Map();
+    }
+
+    const rows = await this.db
+      .selectFrom('asset')
+      .select(['asset.physicalOriginalFileId'])
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('asset.physicalOriginalFileId', '=', anyUuid(ids))
+      .where('asset.deletedAt', 'is', null)
+      .groupBy('asset.physicalOriginalFileId')
+      .execute();
+    return new Map(rows.map((row) => [row.physicalOriginalFileId as string, Number(row.count)]));
+  }
+
+  /**
+   * What a reviewed deduplication plan is checked against before review, before apply and before
+   * each copy's file is touched (FL-73): owner, path, checksum, size, state and physical original
+   * of every named asset, whatever its visibility. Background work reaches Locked assets.
+   */
+  async getPlanEvidence(assetIds: string[]): Promise<PhysicalDeduplicationEvidenceRow[]> {
+    const ids = [...new Set(assetIds)];
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const rows = await this.db
+      .selectFrom('asset')
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .select([
+        'asset.id',
+        'asset.ownerId',
+        'asset.originalPath',
+        'asset.checksum',
+        'asset.deletedAt',
+        'asset.status',
+        'asset.isExternal',
+        'asset.isOffline',
+        'asset.libraryId',
+        'asset.physicalOriginalFileId',
+        'asset_exif.fileSizeInByte as sizeInBytes',
+      ])
+      .where('asset.id', '=', anyUuid(ids))
+      .execute();
+    return rows as unknown as PhysicalDeduplicationEvidenceRow[];
   }
 
   getPhysicalFile(id: string): Promise<PhysicalFile | undefined> {

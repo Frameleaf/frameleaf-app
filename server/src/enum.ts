@@ -1085,6 +1085,13 @@ export enum MediaOperationKind {
    * records what it has done per file, so a resumed or retried run carries on without repeating it.
    */
   TakeoutImport = 'takeout_import',
+  /**
+   * Physical deduplication (FL-73): an administrator's reviewed plan applied copy by copy. The
+   * snapshot freezes exactly the copies the reviewed plan listed with their checksum and reference
+   * evidence; every copy is checked again before its file is shared, and the job records each one,
+   * so it can pause, survive a restart and carry on without applying anything twice.
+   */
+  PhysicalDeduplication = 'physical_deduplication',
 }
 
 export const MediaOperationKindSchema = z
@@ -1928,6 +1935,8 @@ export enum DatabaseLock {
   Migrations = 200,
   SystemFileMounts = 300,
   StorageTemplateMigration = 420,
+  /** One reviewed physical deduplication plan at a time (FL-73): held while the job row is created. */
+  PhysicalDeduplicationApply = 425,
   VersionHistory = 500,
   CLIPDimSize = 512,
   Library = 1337,

@@ -1,5 +1,11 @@
 import { Kysely } from 'kysely';
-import { AssetVisibility, MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import {
+  AssetVisibility,
+  DatabaseLock,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+} from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -834,6 +840,85 @@ describe(MediaOperationRepository.name, () => {
       const byKind = Object.fromEntries(items.map((item) => [item.kind, item.status]));
       expect(byKind[MediaOperationKind.Bulk]).toBe(MediaOperationStatus.Queued);
       expect(byKind[MediaOperationKind.StudioExport]).toBe(MediaOperationStatus.Queued);
+    });
+  });
+
+  describe('physical deduplication plans (FL-73)', () => {
+    const plan = (fingerprint: string) => ({
+      kind: MediaOperationKind.PhysicalDeduplication,
+      label: 'Physical deduplication PD-ABABABAB (1 copy)',
+      snapshot: {
+        version: 1,
+        planId: 'PD-ABABABAB',
+        fingerprint,
+        estimatedBytes: 10,
+        items: [{ assetId: 'copy-1', originalPath: '/upload/private/copy-1.jpg' }],
+        retained: [{ assetId: 'master-1', originalPath: '/upload/private/master-1.jpg' }],
+        excludedRetainedAssetIds: ['master-2'],
+      },
+      settings: {},
+      result: {
+        items: [{ id: 'copy-1', state: 'applied', message: '/upload/private/copy-1.jpg' }],
+        inFlight: 'copy-1',
+        summary: { applied: 1, alreadyApplied: 0, skipped: 0, failed: 0, reclaimedBytes: 10 },
+      },
+    });
+
+    it("lists every administrator's plans newest first, without the copies they name", async () => {
+      const { ctx, sut } = setup();
+      const { user: first } = await ctx.newUser();
+      const { user: second } = await ctx.newUser();
+      await newOperation(sut, first.id, plan('a'.repeat(64)));
+      await newOperation(sut, second.id, plan('b'.repeat(64)));
+      await newOperation(sut, first.id);
+
+      const rows = await sut.listRecentOfKind(MediaOperationKind.PhysicalDeduplication, 10);
+
+      expect(rows.map((row) => (row.snapshot as Record<string, unknown>).fingerprint)).toEqual([
+        'b'.repeat(64),
+        'a'.repeat(64),
+      ]);
+      const serialized = JSON.stringify(rows);
+      expect(serialized).not.toContain('/upload/private');
+      expect(serialized).not.toContain('master-2');
+      expect(rows[0].result).toEqual({
+        summary: { applied: 1, alreadyApplied: 0, skipped: 0, failed: 0, reclaimedBytes: 10 },
+      });
+    });
+
+    it('finds an unfinished plan whoever applied it, and none once it finished', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id, plan('c'.repeat(64)));
+
+      await expect(sut.getActiveOfKind(MediaOperationKind.PhysicalDeduplication)).resolves.toEqual({
+        id: operation.id,
+        fingerprint: 'c'.repeat(64),
+      });
+
+      await sut.requestCancel(operation.id, user.id);
+      await expect(sut.getActiveOfKind(MediaOperationKind.PhysicalDeduplication)).resolves.toBeUndefined();
+    });
+
+    it('starts only one of two plans applied at the same moment', async () => {
+      const { ctx, sut } = setup();
+      const { user: first } = await ctx.newUser();
+      const { user: second } = await ctx.newUser();
+      const values = (ownerId: string, fingerprint: string) => ({
+        ownerId,
+        destination: MediaOperationDestination.Local,
+        ...plan(fingerprint),
+      });
+
+      const outcomes = await Promise.all([
+        sut.createExclusive(values(first.id, 'd'.repeat(64)), DatabaseLock.PhysicalDeduplicationApply),
+        sut.createExclusive(values(second.id, 'e'.repeat(64)), DatabaseLock.PhysicalDeduplicationApply),
+      ]);
+
+      expect(outcomes.filter((outcome) => 'created' in outcome)).toHaveLength(1);
+      expect(outcomes.filter((outcome) => 'active' in outcome)).toHaveLength(1);
+      const rows = await sut.listRecentOfKind(MediaOperationKind.PhysicalDeduplication, 10);
+      expect(rows).toHaveLength(1);
     });
   });
 });

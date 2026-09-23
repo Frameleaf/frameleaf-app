@@ -20,6 +20,7 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { MediaOperationDestination, MediaOperationKind, RenderWorkerRefusalReason } from 'src/enum.js';
+import { isRenderWorkerMediaOperationKind } from 'src/utils/media-operation.js';
 
 /* ------------------------------------------------------------------ */
 /* Seams                                                                */
@@ -259,7 +260,12 @@ export const evaluateClaimAdmission = (input: ClaimAdmissionInput): AdmissionDec
     return refuse(RenderWorkerRefusalReason.WorkerMismatch);
   }
 
-  if (!session.scopes.includes(operation.kind) || !worker.kinds.includes(operation.kind)) {
+  // FL-73: whatever a scope says, a remote renderer is never handed a job that runs on the server.
+  if (
+    !isRenderWorkerMediaOperationKind(operation.kind) ||
+    !session.scopes.includes(operation.kind) ||
+    !worker.kinds.includes(operation.kind)
+  ) {
     return refuse(RenderWorkerRefusalReason.ScopeExceeded);
   }
 
