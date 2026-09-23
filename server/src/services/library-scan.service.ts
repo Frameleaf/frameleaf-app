@@ -383,12 +383,18 @@ export class LibraryScanService {
       return;
     }
 
+    const controller = new AbortController();
     const keepAlive = setInterval(() => {
-      this.operations.heartbeat(operation.id, claimToken, LIBRARY_SCAN_LEASE_MS).catch(() => false);
+      void this.operations
+        .heartbeat(operation.id, claimToken, LIBRARY_SCAN_LEASE_MS)
+        .then((held) => {
+          if (!held) controller.abort();
+        })
+        .catch(() => controller.abort());
     }, LIBRARY_SCAN_LEASE_MS / 4);
 
     try {
-      await this.scan(operation, claimToken, snapshot);
+      await this.scan(operation, claimToken, snapshot, controller.signal);
     } catch (error) {
       const refusal = error instanceof LibraryScanRefusal ? error : undefined;
       const message = bulkErrorMessage(error);
@@ -402,7 +408,12 @@ export class LibraryScanService {
     }
   }
 
-  private async scan(operation: MediaOperation, claimToken: string, snapshot: LibraryScanSnapshot) {
+  private async scan(
+    operation: MediaOperation,
+    claimToken: string,
+    snapshot: LibraryScanSnapshot,
+    signal: AbortSignal,
+  ) {
     const { id } = operation;
     const library = await this.libraryRepository.get(snapshot.libraryId);
     if (!library) {
@@ -437,7 +448,7 @@ export class LibraryScanService {
     }
 
     if (result.phase === 'crawl') {
-      const crawled = await this.crawl(operation, claimToken, library, roots, result);
+      const crawled = await this.crawl(operation, claimToken, library, roots, result, signal);
       if (!crawled) {
         return;
       }
@@ -445,14 +456,21 @@ export class LibraryScanService {
     }
 
     if (result.phase === 'check') {
-      const checked = await this.check(operation, claimToken, library, roots, result);
+      const checked = await this.check(operation, claimToken, library, roots, result, signal);
       if (!checked) {
         return;
       }
       result = checked;
     }
 
-    await this.libraryRepository.update(library.id, { refreshedAt: new Date() });
+    if (
+      signal.aborted ||
+      !(await this.applyBatch(operation, claimToken, library, result, (_assets, repository) =>
+        repository.update(library.id, { refreshedAt: new Date() }),
+      ))
+    ) {
+      return;
+    }
     result = { ...result, phase: 'done' };
     const units = libraryScanUnits(result);
     const written = await this.operations.setBulkResult(id, claimToken, {
@@ -484,6 +502,7 @@ export class LibraryScanService {
     library: LibraryRow,
     roots: string[],
     initial: LibraryScanResult,
+    signal: AbortSignal,
   ): Promise<LibraryScanResult | undefined> {
     // A crawl always starts from the top: a resumed one finds what it imported already and skips it.
     let result: LibraryScanResult = {
@@ -501,6 +520,7 @@ export class LibraryScanService {
     });
 
     for await (const batch of batches) {
+      if (signal.aborted) return;
       if (this.stopping) {
         await this.operations.requeue(operation.id, claimToken, { delayMs: 0, returnAttempt: true });
         return;
@@ -513,36 +533,22 @@ export class LibraryScanService {
         }
       }
 
-      const fresh = await this.assetRepository.filterNewExternalAssetPaths(library.id, batch);
-      const added = await this.importFiles(library, fresh);
+      const added = await this.importFiles(operation, claimToken, library, batch, result);
+      if (added === undefined) return;
       result = { ...result, crawled: result.crawled + batch.length, added: result.added + added };
       if (!(await this.write(operation, claimToken, result))) {
         return;
       }
     }
 
-    // Items outside the folders or matching an exclusion go offline: that is what the settings say.
-    const excluded = await this.assetRepository.detectOfflineExternalAssets(
-      library.id,
-      library.importPaths,
-      library.exclusionPatterns,
+    await this.requireNonemptySources(library, roots, found);
+    if (signal.aborted) return;
+    // Only the current claim for these exact settings may mark excluded items offline.
+    const excluded = await this.applyBatch(operation, claimToken, library, result, (assets) =>
+      assets.detectOfflineExternalAssets(library.id, library.importPaths, library.exclusionPatterns),
     );
+    if (!excluded) return;
     result = { ...result, offlined: result.offlined + Number(excluded.numUpdatedRows ?? 0) };
-
-    // A folder that turned up empty while items are still indexed from it is a folder that is not
-    // there any more — an unmounted share looks exactly like this — not photos that were deleted.
-    for (const [root, count] of found) {
-      if (count > 0) {
-        continue;
-      }
-      const indexed = await this.libraryRepository.countOnlineAssetsUnder(library.id, root);
-      if (indexed > 0) {
-        throw new LibraryScanRefusal(
-          'library_source_empty',
-          `${root} has no files but ${indexed} indexed items are in it; if it is disconnected, reconnect it and scan again, or remove it from the library`,
-        );
-      }
-    }
 
     result = {
       ...result,
@@ -561,10 +567,12 @@ export class LibraryScanService {
     library: LibraryRow,
     roots: string[],
     initial: LibraryScanResult,
+    signal: AbortSignal,
   ): Promise<LibraryScanResult | undefined> {
     let result = initial;
 
     while (true) {
+      if (signal.aborted) return;
       if (this.stopping) {
         await this.operations.requeue(operation.id, claimToken, { delayMs: 0, returnAttempt: true });
         return;
@@ -580,9 +588,15 @@ export class LibraryScanService {
       await this.requireSources(roots);
 
       const counts = await this.checkAssets(
+        operation,
+        claimToken,
         library,
         page.map(({ id }) => id),
+        roots,
+        result,
+        signal,
       );
+      if (!counts) return;
       result = {
         ...result,
         cursor: page.at(-1)!.id,
@@ -597,7 +611,15 @@ export class LibraryScanService {
     }
   }
 
-  private async checkAssets(library: LibraryRow, assetIds: string[]) {
+  private async checkAssets(
+    operation: MediaOperation,
+    claimToken: string,
+    library: LibraryRow,
+    assetIds: string[],
+    roots: string[],
+    result: LibraryScanResult,
+    signal: AbortSignal,
+  ) {
     const assets = await this.assetJobRepository.getForSyncAssets(assetIds);
     const stats = await Promise.all(
       assets.map((asset) => this.storageRepository.stat(asset.originalPath).catch(() => null)),
@@ -633,33 +655,33 @@ export class LibraryScanService {
       }
     }
 
-    const now = new Date();
-    const writes: Promise<unknown>[] = [];
-    if (toOffline.length > 0) {
-      writes.push(this.assetRepository.updateAll(toOffline, { isOffline: true, deletedAt: now }));
-    }
-    if (trashedToOffline.length > 0) {
-      writes.push(this.assetRepository.updateAll(trashedToOffline, { isOffline: true }));
-    }
-    if (toOnline.length > 0) {
-      writes.push(this.assetRepository.updateAll(toOnline, { isOffline: false, deletedAt: null }));
-    }
-    if (trashedToOnline.length > 0) {
-      writes.push(this.assetRepository.updateAll(trashedToOnline, { isOffline: false }));
-    }
-    if (toUpdate.length > 0) {
-      writes.push(this.queuePostSyncJobs(toUpdate));
-    }
-    await Promise.all(writes);
-
-    return {
-      offlined: toOffline.length + trashedToOffline.length,
-      onlined: toOnline.length + trashedToOnline.length,
-      updated: toUpdate.length,
-    };
+    // stat may have waited on a share that disconnected. Recheck before any offline/online write.
+    await this.requireSources(roots);
+    await this.requireNonemptySources(library, roots);
+    if (signal.aborted) return;
+    const counts = await this.applyBatch(operation, claimToken, library, result, async (assets) => {
+      const now = new Date();
+      if (toOffline.length > 0) await assets.updateAll(toOffline, { isOffline: true, deletedAt: now });
+      if (trashedToOffline.length > 0) await assets.updateAll(trashedToOffline, { isOffline: true });
+      if (toOnline.length > 0) await assets.updateAll(toOnline, { isOffline: false, deletedAt: null });
+      if (trashedToOnline.length > 0) await assets.updateAll(trashedToOnline, { isOffline: false });
+      return {
+        offlined: toOffline.length + trashedToOffline.length,
+        onlined: toOnline.length + trashedToOnline.length,
+        updated: toUpdate.length,
+      };
+    });
+    if (counts && toUpdate.length > 0) await this.queuePostSyncJobs(toUpdate);
+    return counts;
   }
 
-  private async importFiles(library: LibraryRow, paths: string[]): Promise<number> {
+  private async importFiles(
+    operation: MediaOperation,
+    claimToken: string,
+    library: LibraryRow,
+    paths: string[],
+    result: LibraryScanResult,
+  ): Promise<number | undefined> {
     if (paths.length === 0) {
       return 0;
     }
@@ -682,7 +704,17 @@ export class LibraryScanService {
       }
     }
 
-    const assetIds = await this.assetRepository.createAll(rows);
+    const assetIds = await this.applyBatch(operation, claimToken, library, result, async (assets) => {
+      const fresh = new Set(
+        await assets.filterNewExternalAssetPaths(
+          library.id,
+          rows.map((row) => row.originalPath),
+        ),
+      );
+      return assets.createAll(rows.filter((row) => fresh.has(row.originalPath)));
+    });
+    if (!assetIds) return;
+    if (assetIds.length === 0) return 0;
     await Promise.all(
       assetIds.map((assetId) =>
         this.eventRepository.emit('AssetCreate', { asset: { id: assetId, ownerId: library.ownerId } }),
@@ -713,6 +745,55 @@ export class LibraryScanService {
         unavailable.map((check) => `${check.importPath}: ${check.message}`).join('; '),
       );
     }
+  }
+
+  /** An empty readable mount point is unavailable when it still has indexed online items. */
+  private async requireNonemptySources(library: LibraryRow, roots: string[], found?: Map<string, number>) {
+    for (const root of roots) {
+      let count = found?.get(root) ?? 0;
+      if (count === 0) {
+        for await (const batch of this.storageRepository.walk({
+          pathsToCrawl: [root],
+          includeHidden: false,
+          exclusionPatterns: [],
+          take: 1,
+        })) {
+          if (batch.length > 0) {
+            count = batch.length;
+            break;
+          }
+        }
+      }
+      if (count > 0) continue;
+      const indexed = await this.libraryRepository.countOnlineAssetsUnder(library.id, root);
+      if (indexed > 0)
+        throw new LibraryScanRefusal(
+          'library_source_empty',
+          `${root} has no files but ${indexed} indexed items are in it; if it is disconnected, reconnect it and scan again, or remove it from the library`,
+        );
+    }
+  }
+
+  private async applyBatch<T>(
+    operation: MediaOperation,
+    claimToken: string,
+    library: LibraryRow,
+    result: LibraryScanResult,
+    mutate: (assets: AssetRepository, library: LibraryRepository) => Promise<T>,
+  ): Promise<T | undefined> {
+    const outcome = await this.libraryRepository.withScanClaim(
+      { operationId: operation.id, claimToken, libraryId: library.id, fingerprint: result.fingerprint! },
+      mutate,
+    );
+    if (!outcome) {
+      await this.write(operation, claimToken, result);
+      return;
+    }
+    if ('stopReason' in outcome) {
+      await this.stopSelf(operation, claimToken, result, outcome.stopReason);
+      return;
+    }
+    return outcome.value;
   }
 
   private async requireActiveOwner(library: LibraryRow) {
@@ -788,7 +869,7 @@ export class LibraryScanService {
     result: LibraryScanResult,
     reason: LibraryScanStopReason,
   ) {
-    await this.operations.requestCancel(operation.id, operation.ownerId);
+    await this.operations.requestCancel(operation.id, operation.ownerId, claimToken);
     if (!(await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false }))) {
       return;
     }

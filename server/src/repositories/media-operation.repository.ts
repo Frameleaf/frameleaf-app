@@ -1030,7 +1030,7 @@ export class MediaOperationRepository {
    * has died instead, the lease expiring is how recovery finds out. Revoking the token here would
    * leave the job stuck at `cancelling` with nobody able to settle it.
    */
-  async requestCancel(id: string, ownerId: string): Promise<MediaOperation | undefined> {
+  async requestCancel(id: string, ownerId: string, claimToken?: string): Promise<MediaOperation | undefined> {
     return (await this.db
       .updateTable('media_operation')
       .set((eb) => ({
@@ -1067,6 +1067,7 @@ export class MediaOperationRepository {
       }))
       .where('id', '=', id)
       .where('ownerId', '=', ownerId)
+      .$if(claimToken !== undefined, (qb) => qb.where('claimToken', '=', claimToken!))
       .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
       .returningAll()
       .executeTakeFirst()) as unknown as MediaOperation | undefined;

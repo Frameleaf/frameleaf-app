@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
   AdminAuditAction,
+  AssetLockReason,
   AssetStatus,
   JobName,
   JobStatus,
@@ -28,6 +29,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
+import { libraryAssetFromFile, libraryPathsFingerprint } from 'src/utils/library-scan.js';
 import { MediumTestContext, testAssetsDir } from 'test/medium.factory.js';
 import { factory, newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -991,7 +993,159 @@ describe(LibraryService.name, () => {
     });
   });
 
+  describe('scan mutation fence', () => {
+    const claimedScan = async () => {
+      const { ctx } = setup();
+      const library = await ctx.createLibrary({ importPaths: [importPath] });
+      const { operation } = await ctx.scans().queue(library, { ownerId: library.ownerId, trigger: 'manual' });
+      const operations = new MediaOperationRepository(defaultDatabase);
+      const claim = { operation, claimToken: newUuid() };
+      await defaultDatabase
+        .updateTable('media_operation')
+        .set({
+          status: MediaOperationStatus.Rendering,
+          claimToken: claim.claimToken,
+          claimExpiresAt: new Date(Date.now() + 60_000),
+        })
+        .where('id', '=', operation.id)
+        .execute();
+      return {
+        ctx,
+        library,
+        operations,
+        claim: {
+          operationId: claim.operation.id,
+          claimToken: claim.claimToken,
+          libraryId: library.id,
+          fingerprint: libraryPathsFingerprint(library),
+        },
+      };
+    };
+
+    it.each(['replacement', 'expired', 'cancelled', 'paths', 'removed', 'owner'])(
+      'rejects asset mutations after %s changes',
+      async (change) => {
+        const { ctx, library, claim } = await claimedScan();
+        switch (change) {
+          case 'replacement': {
+            await defaultDatabase
+              .updateTable('media_operation')
+              .set({ claimToken: newUuid() })
+              .where('id', '=', claim.operationId)
+              .execute();
+            break;
+          }
+          case 'expired': {
+            await defaultDatabase
+              .updateTable('media_operation')
+              .set({ claimExpiresAt: new Date(0) })
+              .where('id', '=', claim.operationId)
+              .execute();
+            break;
+          }
+          case 'cancelled': {
+            await defaultDatabase
+              .updateTable('media_operation')
+              .set({ status: MediaOperationStatus.Cancelling })
+              .where('id', '=', claim.operationId)
+              .execute();
+            break;
+          }
+          case 'paths': {
+            await ctx.get(LibraryRepository).update(library.id, { importPaths: ['/different'] });
+            break;
+          }
+          case 'removed': {
+            await ctx.get(LibraryRepository).softDelete(library.id);
+            break;
+          }
+          case 'owner': {
+            await defaultDatabase
+              .updateTable('user')
+              .set({ deletedAt: new Date() })
+              .where('id', '=', library.ownerId)
+              .execute();
+            // No default
+            break;
+          }
+        }
+        const mutate = vi.fn().mockResolvedValue(true);
+        await ctx.get(LibraryRepository).withScanClaim(claim, mutate);
+        expect(mutate).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rolls back asset creation with its claim transaction', async () => {
+      const { ctx, library, claim } = await claimedScan();
+      await expect(
+        ctx.get(LibraryRepository).withScanClaim(claim, async (assets) => {
+          await assets.createAll([
+            libraryAssetFromFile(
+              { path: join(importPath, 'file.jpg'), mtime: new Date() },
+              { ownerId: library.ownerId, libraryId: library.id },
+              () => Buffer.from('checksum'),
+              false,
+            ),
+          ]);
+          throw new Error('abort batch');
+        }),
+      ).rejects.toThrow('abort batch');
+      expect(await ctx.get(AssetRepository).getLibraryAssetCount(library.id)).toBe(0);
+    });
+
+    it('does not let a stale scan cancel its replacement', async () => {
+      const { operations, claim } = await claimedScan();
+      const replacement = newUuid();
+      await defaultDatabase
+        .updateTable('media_operation')
+        .set({ claimToken: replacement })
+        .where('id', '=', claim.operationId)
+        .execute();
+      const operation = await defaultDatabase
+        .selectFrom('media_operation')
+        .selectAll()
+        .where('id', '=', claim.operationId)
+        .executeTakeFirstOrThrow();
+      expect(await operations.requestCancel(claim.operationId, operation.ownerId, claim.claimToken)).toBeUndefined();
+      expect(await operations.getForOwner(claim.operationId, operation.ownerId)).toMatchObject({
+        claimToken: replacement,
+        status: MediaOperationStatus.Rendering,
+        cancelRequestedAt: null,
+      });
+    });
+  });
+
   describe('managed uploads (FL-78)', () => {
+    it('excludes Locked originals from managed and external byte totals', async () => {
+      const { ctx } = setup();
+      const library = await ctx.createLibrary();
+      for (const libraryId of [null, library.id]) {
+        const { asset } = await ctx.newAsset({
+          ownerId: library.ownerId,
+          libraryId,
+          originalPath: `/test/${libraryId ?? 'managed'}.jpg`,
+        });
+        await ctx
+          .get(AssetRepository)
+          .upsertExif({ exif: { assetId: asset.id!, fileSizeInByte: 1234 }, lockedPropertiesBehavior: 'override' });
+        await ctx.get(AssetRepository).lock([asset.id!], AssetLockReason.Marked, library.ownerId);
+        const { asset: visible } = await ctx.newAsset({
+          ownerId: library.ownerId,
+          libraryId,
+          originalPath: `/test/${libraryId ?? 'managed'}-visible.jpg`,
+        });
+        await ctx.get(AssetRepository).upsertExif({
+          exif: { assetId: visible.id!, fileSizeInByte: 567 },
+          lockedPropertiesBehavior: 'override',
+        });
+      }
+      const repository = ctx.get(LibraryRepository);
+      expect(await repository.getStatistics(library.id)).toMatchObject({ total: 1, usage: 567, usagePhysical: 567 });
+      expect(
+        (await repository.getManagedUploadStatistics()).find((row) => row.ownerId === library.ownerId),
+      ).toMatchObject({ total: 1, usage: 567, usagePhysical: 567 });
+    });
+
     it("counts an account's uploads and leaves its external library items out", async () => {
       const { sut, ctx } = setup();
       await createFile(join(importPath, 'asset1.png'));

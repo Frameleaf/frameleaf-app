@@ -13,6 +13,7 @@ import { AssetSyncResult } from 'src/repositories/library.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import {
   LIBRARY_SCAN_BATCH,
+  LIBRARY_SCAN_LEASE_MS,
   LibraryScanService,
   checkExistingAsset,
   mapLibraryScan,
@@ -98,6 +99,10 @@ describe(LibraryScanService.name, () => {
     );
 
     mocks.library.get.mockResolvedValue(library);
+    mocks.library.update.mockResolvedValue(library);
+    mocks.library.withScanClaim.mockImplementation(async (_claim, mutate) => ({
+      value: await mutate(mocks.asset as never, mocks.library as never),
+    }));
     mocks.user.get.mockResolvedValue(UserFactory.create({ id: library.ownerId }));
     mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }) as never);
     mocks.storage.checkFileExists.mockResolvedValue(true);
@@ -364,13 +369,102 @@ describe(LibraryScanService.name, () => {
       expect(operations.complete).toHaveBeenCalled();
     });
 
+    it.each(['resume', 'mid-stat'])('refuses an empty readable root during %s checking', async (when) => {
+      const result = { ...emptyLibraryScanResult(), phase: 'check', fingerprint: libraryPathsFingerprint(library) };
+      mocks.library.getAssetIdPage.mockResolvedValueOnce([{ id: 'asset-1' }]).mockResolvedValue([]);
+      mocks.assetJob.getForSyncAssets.mockResolvedValue([
+        { id: 'asset-1', originalPath: '/mnt/photos/gone.jpg', isOffline: false, status: AssetStatus.Active },
+      ] as never);
+      mocks.library.countOnlineAssetsUnder.mockResolvedValue(12);
+      let disconnected = when === 'resume';
+      mocks.storage.walk.mockImplementation(() => (disconnected ? walkOf() : walkOf(['/mnt/photos/gone.jpg'])));
+      mocks.storage.stat.mockImplementation((path: string) => {
+        if (path === '/mnt/photos') return Promise.resolve(directory);
+        disconnected = true;
+        return enoent();
+      });
+      await sut.run(operationOf({ result: result as never }), 'token');
+      expect(operations.fail).toHaveBeenCalledWith(
+        expect.any(String),
+        'token',
+        expect.objectContaining({ errorCode: 'library_source_empty' }),
+      );
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it.each(['crawl', 'check'])('fences an old %s runner after a replacement finishes', async (phase) => {
+      const waiting = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      let held = 'old';
+      mocks.library.withScanClaim.mockImplementation(async (claim, mutate) =>
+        claim.claimToken === held ? { value: await mutate(mocks.asset as never, mocks.library as never) } : undefined,
+      );
+      operations.setBulkResult.mockImplementation((_id, token) => (token === held ? running : undefined));
+      const result = { ...emptyLibraryScanResult(), phase, fingerprint: libraryPathsFingerprint(library) };
+      const operation = operationOf({ result: result as never });
+      if (phase === 'crawl') {
+        mocks.storage.walk.mockImplementationOnce(async function* () {
+          waiting.resolve();
+          await release.promise;
+          yield ['/mnt/photos/stale.jpg'];
+        });
+      } else {
+        mocks.library.getAssetIdPage.mockResolvedValueOnce([{ id: 'asset-1' }]).mockResolvedValue([]);
+        mocks.assetJob.getForSyncAssets.mockResolvedValue([
+          { id: 'asset-1', originalPath: '/mnt/photos/old.jpg', isOffline: false, status: AssetStatus.Active },
+        ] as never);
+        mocks.storage.stat.mockImplementation(async (path: string) => {
+          if (path === '/mnt/photos') return directory;
+          waiting.resolve();
+          await release.promise;
+          return null as never;
+        });
+      }
+      const old = sut.run(operation, 'old');
+      await waiting.promise;
+      held = 'replacement';
+      await sut.run(operation, held);
+      release.resolve();
+      await old;
+      expect(operations.complete).toHaveBeenCalledExactlyOnceWith(operation.id, held, { resultAssetId: null });
+      expect(mocks.asset.createAll).not.toHaveBeenCalled();
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+      expect(operations.requestCancel).not.toHaveBeenCalled();
+    });
+
+    it('stops a delayed walk when its heartbeat loses the claim', async () => {
+      vi.useFakeTimers();
+      try {
+        const waiting = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        operations.heartbeat.mockResolvedValue(false);
+        mocks.storage.walk.mockImplementationOnce(async function* () {
+          waiting.resolve();
+          await release.promise;
+          yield ['/mnt/photos/stale.jpg'];
+        });
+        const run = sut.run(operationOf(), 'token');
+        await waiting.promise;
+        await vi.advanceTimersByTimeAsync(LIBRARY_SCAN_LEASE_MS / 4);
+        release.resolve();
+        await run;
+        expect(operations.heartbeat).toHaveBeenCalled();
+        expect(mocks.library.withScanClaim).not.toHaveBeenCalled();
+        expect(mocks.asset.createAll).not.toHaveBeenCalled();
+        expect(operations.complete).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('stops, saying why, when the folders changed while the scan waited', async () => {
       const result = { ...emptyLibraryScanResult(), fingerprint: 'an-older-set-of-folders' };
       const operation = operationOf({ result: result as never });
 
       await sut.run(operation, 'token');
 
-      expect(operations.requestCancel).toHaveBeenCalledWith(operation.id, operation.ownerId);
+      expect(operations.requestCancel).toHaveBeenCalledWith(operation.id, operation.ownerId, 'token');
       expect(operations.setFinishedResult).toHaveBeenCalledWith(
         operation.id,
         expect.objectContaining({ stopReason: 'paths_changed' }),
