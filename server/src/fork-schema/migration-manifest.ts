@@ -66,6 +66,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000240-AddAssetRestorationTable',
   '2100000000260-AddSharedSpaceCollaboration',
   '2100000000270-AddMediaOperationAutoRetry',
+  '2100000000280-AddSharedSpaceCommentThread',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(
