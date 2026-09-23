@@ -93,6 +93,7 @@ describe('Frameleaf rail destinations', () => {
       'sharing',
       'pets',
       'places',
+      'studio',
       'workflows',
       'libraryCare',
       'settings',

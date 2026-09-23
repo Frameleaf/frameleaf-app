@@ -883,6 +883,13 @@ export enum MediaOperationKind {
    * batches through the same services a single request would use, so it survives the browser.
    */
   Bulk = 'bulk',
+  /**
+   * A portable Studio project bundle written for download (FL-91): the project document, a
+   * manifest with digests, and either references to or copies of the sources it uses.
+   */
+  StudioBundleExport = 'studio_bundle_export',
+  /** A portable Studio project bundle read back into a new project of the importer's (FL-91). */
+  StudioBundleImport = 'studio_bundle_import',
 }
 
 export const MediaOperationKindSchema = z
@@ -1769,6 +1776,7 @@ export enum NotificationType {
   AlbumUpdate = 'AlbumUpdate',
   ClusterGroupRequest = 'ClusterGroupRequest',
   SharedSpaceMention = 'SharedSpaceMention',
+  SharedSpaceReply = 'SharedSpaceReply',
   Custom = 'Custom',
 }
 
@@ -1795,6 +1803,8 @@ export enum SharedSpaceEventType {
   MemberRemoved = 'MemberRemoved',
   MemberRoleChanged = 'MemberRoleChanged',
   Comment = 'Comment',
+  /** A reply to a comment (threaded replies); `targetUserId` is the author of the comment it answers. */
+  Reply = 'Reply',
   Like = 'Like',
 }
 

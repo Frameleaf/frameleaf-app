@@ -46,21 +46,6 @@ Run all server checks with `mise //server:checklist`
 Use `mise //server:lint-fix` and `mise //server:format-fix` to automatically correct some issues.
 :::
 
-## Mobile Checklist
-
-- [ ] `mise //mobile:codegen` (auto-generate files using build_runner)
-- [ ] `mise //mobile:lint` (static analysis via Dart Analyzer and DCM)
-- [ ] `mise //mobile:format` (formatting via Dart Formatter)
-- [ ] `mise //mobile:test` (unit tests)
-
-:::tip
-Run all these commands at once with `mise //mobile:checklist`
-:::
-
-:::tip Auto Fix
-You can use `mise //mobile:lint-fix` to potentially correct some issues automatically for `mise //mobile:lint`.
-:::
-
 ## Machine Learning Checklist
 
 - [ ] `mise //machine-learning:lint` (linting via ruff)

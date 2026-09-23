@@ -2,7 +2,14 @@
   import SpaceCommentComposer from '$lib/components/frameleaf/SpaceCommentComposer.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
-  import { EVENT_THUMBNAILS, isNewSpaceEvent, spaceEventMessageKey, splitMentions } from '$lib/frameleaf/shared-space';
+  import {
+    canReplyToEvent,
+    EVENT_THUMBNAILS,
+    eventReplyPrefill,
+    isNewSpaceEvent,
+    spaceEventMessageKey,
+    splitMentions,
+  } from '$lib/frameleaf/shared-space';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
@@ -17,7 +24,7 @@
     type SharedSpaceMemberResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiCheckAll, mdiClose, mdiHistory } from '@mdi/js';
+  import { mdiCheckAll, mdiClose, mdiHistory, mdiReply } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   /**
@@ -32,6 +39,10 @@
    *
    * A comment on the space itself is written here, with @mentions; comments on an item belong to
    * that item's viewer. A picture in the feed opens the item in the space's own viewer.
+   *
+   * A comment or reply in the feed can be answered from here: the reply joins that comment's thread
+   * (the server files it under the thread's top-level comment and on the same item), and answering
+   * a reply starts with an @mention of its author.
    */
   interface Props {
     space: AlbumResponseDto;
@@ -56,6 +67,7 @@
   let busy = $state(false);
   let status = $state('');
   let draft = $state('');
+  let replyTarget = $state<SharedSpaceEventResponseDto | null>(null);
 
   const currentUserId = $derived(authManager.user.id);
   const mentionUsers = $derived(members.map(({ user }) => user));
@@ -121,12 +133,27 @@
     }
   };
 
+  const startReply = (event: SharedSpaceEventResponseDto) => {
+    replyTarget = event;
+    draft = eventReplyPrefill(event, currentUserId, members);
+  };
+
+  const cancelReply = () => {
+    replyTarget = null;
+    draft = '';
+  };
+
   const post = async (text: string) => {
     busy = true;
+    const parentId = replyTarget?.activityId ?? undefined;
     try {
-      await createSharedSpaceComment({ id: space.id, sharedSpaceCommentCreateDto: { comment: text } });
+      await createSharedSpaceComment({
+        id: space.id,
+        sharedSpaceCommentCreateDto: parentId ? { comment: text, parentId } : { comment: text },
+      });
       draft = '';
-      status = $t('frameleaf_spaces_comments_posted');
+      replyTarget = null;
+      status = parentId ? $t('frameleaf_spaces_comments_reply_posted') : $t('frameleaf_spaces_comments_posted');
       await refresh(space.id);
     } catch (error) {
       handleError(error, $t('frameleaf_spaces_comments_error_send'));
@@ -244,6 +271,20 @@
             <time datetime={event.createdAt} title={new Date(event.createdAt).toLocaleString($locale)}>
               {timeAgo(event.createdAt)}
             </time>
+            {#if space.isActivityEnabled && canReplyToEvent(event)}
+              <button
+                type="button"
+                class="reply"
+                disabled={busy}
+                aria-label={$t('frameleaf_spaces_comments_reply_to', {
+                  values: { name: event.actor?.name ?? someone() },
+                })}
+                onclick={() => startReply(event)}
+              >
+                <Icon icon={mdiReply} size="14" aria-hidden={true} />
+                {$t('frameleaf_spaces_comments_reply')}
+              </button>
+            {/if}
           </div>
         </li>
       {/each}
@@ -259,15 +300,30 @@
   <Status message={status} {busy} />
 
   <footer>
-    <SpaceCommentComposer
-      {members}
-      {currentUserId}
-      bind:value={draft}
-      {busy}
-      disabled={!space.isActivityEnabled}
-      placeholder={space.isActivityEnabled ? $t('frameleaf_spaces_comments_placeholder') : $t('comments_are_disabled')}
-      onSubmit={post}
-    />
+    {#if replyTarget}
+      <p class="replying">
+        {$t('frameleaf_spaces_comments_replying_to', { values: { name: replyTarget.actor?.name ?? someone() } })}
+      </p>
+    {/if}
+    <!-- Re-created when the reply target changes, so the box takes focus with the caret after any @mention. -->
+    {#key replyTarget?.id}
+      <SpaceCommentComposer
+        {members}
+        {currentUserId}
+        bind:value={draft}
+        {busy}
+        disabled={!space.isActivityEnabled}
+        placeholder={space.isActivityEnabled
+          ? replyTarget
+            ? $t('frameleaf_spaces_comments_reply_placeholder')
+            : $t('frameleaf_spaces_comments_placeholder')
+          : $t('comments_are_disabled')}
+        submitLabel={replyTarget ? $t('frameleaf_spaces_comments_reply_send') : undefined}
+        autofocus={!!replyTarget}
+        onSubmit={post}
+        onCancel={replyTarget ? cancelReply : undefined}
+      />
+    {/key}
   </footer>
 </section>
 
@@ -426,6 +482,23 @@
     font-size: 0.8125rem;
   }
   time {
+    color: var(--fl-muted);
+    font-size: 0.75rem;
+  }
+  .reply {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.375rem;
+    border: 0;
+    border-radius: var(--fl-radius);
+    background: transparent;
+    color: var(--fl-muted);
+    font-size: 0.75rem;
+  }
+  .replying {
+    margin: 0 0 0.25rem;
     color: var(--fl-muted);
     font-size: 0.75rem;
   }

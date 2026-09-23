@@ -3,11 +3,13 @@
   import { page } from '$app/state';
   import Combobox, { type ComboBoxOption } from '$lib/components/shared-components/Combobox.svelte';
   import TagPill from '$lib/components/shared-components/TagPill.svelte';
+  import { isUnnamedPet, sortPets } from '$lib/frameleaf/pets';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { getPeopleThumbnailUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import {
+    getAllPets,
     getAllTags,
     getAuthStatus,
     getPerson,
@@ -16,6 +18,7 @@
     updateMyPreferences,
     upsertTags,
     type PersonResponseDto,
+    type PetResponseDto,
     type TagResponseDto,
   } from '@immich/sdk';
   import { Button, Field, IconButton, Text, toastManager } from '@immich/ui';
@@ -32,6 +35,9 @@
   let selectedTagIds: string[] = $state(authManager.preferences.privacy?.suppression?.tagIds ?? []);
   let selectedPeople: PersonResponseDto[] = $state([]);
   let selectedPersonIds: string[] = $state(authManager.preferences.privacy?.suppression?.personIds ?? []);
+  // FL-58: the owner's own pets; read in full once the session is unlocked (a person has few pets)
+  let allPets: PetResponseDto[] = $state([]);
+  let selectedPetIds: string[] = $state(authManager.preferences.privacy?.suppression?.petIds ?? []);
   let scope: SuppressionScope = $state(authManager.preferences.privacy?.suppression?.scope ?? SuppressionScope.Owned);
   // Mirror the auth preferences snapshot we last initialised from so we can
   // detect if the source moves out from under us (saved-then-reloaded in
@@ -39,6 +45,7 @@
   const initialPrefsSnapshotKey = JSON.stringify({
     tagIds: authManager.preferences.privacy?.suppression?.tagIds ?? [],
     personIds: authManager.preferences.privacy?.suppression?.personIds ?? [],
+    petIds: authManager.preferences.privacy?.suppression?.petIds ?? [],
     scope: authManager.preferences.privacy?.suppression?.scope ?? SuppressionScope.Owned,
   });
   let lastPrefsSnapshotKey = $state(initialPrefsSnapshotKey);
@@ -48,14 +55,14 @@
   // silently clobber them; instead, surface a "preferences updated elsewhere"
   // banner so the user can choose to discard or merge.
   let baselineSnapshotKey = $state(initialPrefsSnapshotKey);
-  let pendingExternalPrefs = $state<{ tagIds: string[]; personIds: string[]; scope: SuppressionScope } | undefined>(
-    undefined,
-  );
+  type SuppressionState = { tagIds: string[]; personIds: string[]; petIds: string[]; scope: SuppressionScope };
+  let pendingExternalPrefs = $state<SuppressionState | undefined>(undefined);
 
   const localSnapshotKey = $derived(
     JSON.stringify({
       tagIds: selectedTagIds,
       personIds: selectedPersonIds,
+      petIds: selectedPetIds,
       scope,
     }),
   );
@@ -70,6 +77,7 @@
 
   const tagMap = $derived(Object.fromEntries(allTags.map((tag) => [tag.id, tag])));
   const selectedPeopleIds = $derived(new Set(selectedPeople.map((person) => person.id)));
+  const sortedPets = $derived(sortPets(allPets));
   const canSave = $derived(isElevated && !isSaving);
 
   const continueUrl = () => page.url.pathname + '?isOpen=suppressed-content';
@@ -92,6 +100,7 @@
     const incoming = {
       tagIds: prefs?.tagIds ?? [],
       personIds: prefs?.personIds ?? [],
+      petIds: prefs?.petIds ?? [],
       scope: prefs?.scope ?? SuppressionScope.Owned,
     };
     const key = JSON.stringify(incoming);
@@ -109,9 +118,10 @@
     applyExternalPrefs(incoming);
   });
 
-  const applyExternalPrefs = (incoming: { tagIds: string[]; personIds: string[]; scope: SuppressionScope }) => {
+  const applyExternalPrefs = (incoming: SuppressionState) => {
     selectedTagIds = incoming.tagIds;
     selectedPersonIds = incoming.personIds;
+    selectedPetIds = incoming.petIds;
     scope = incoming.scope;
     baselineSnapshotKey = JSON.stringify(incoming);
     pendingExternalPrefs = undefined;
@@ -153,9 +163,10 @@
   };
 
   const loadSuppressionNames = async () => {
-    const [tags, people] = await Promise.all([
+    const [tags, people, pets] = await Promise.all([
       getAllTags(),
       Promise.allSettled(selectedPersonIds.map((id) => getPerson({ id }))),
+      getAllPets({ withHidden: true }),
     ]);
     const tagIds = new Set(tags.map((tag) => tag.id));
     const peopleIds = new Set(selectedPersonIds);
@@ -168,6 +179,16 @@
     selectedTagIds = selectedTagIds.filter((id) => tagIds.has(id));
     selectedPeople = resolvedPeople;
     selectedPersonIds = resolvedPeople.map((person) => person.id);
+    // a pet that was deleted since it was suppressed drops out, like a deleted tag
+    const petIds = new Set(pets.map((pet) => pet.id));
+    allPets = pets;
+    selectedPetIds = selectedPetIds.filter((id) => petIds.has(id));
+  };
+
+  const togglePet = (id: string) => {
+    selectedPetIds = selectedPetIds.includes(id)
+      ? selectedPetIds.filter((petId) => petId !== id)
+      : [...selectedPetIds, id];
   };
 
   const unlock = async () => {
@@ -278,6 +299,7 @@
             suppression: {
               tagIds: selectedTagIds,
               personIds: selectedPersonIds,
+              petIds: selectedPetIds,
               scope,
             },
           },
@@ -290,6 +312,7 @@
       baselineSnapshotKey = JSON.stringify({
         tagIds: selectedTagIds,
         personIds: selectedPersonIds,
+        petIds: selectedPetIds,
         scope,
       });
       pendingExternalPrefs = undefined;
@@ -453,6 +476,32 @@
             </div>
           {/each}
         </section>
+      </Field>
+
+      <Field label={$t('suppressed_pets')} description={$t('suppressed_pets_description')}>
+        {#if sortedPets.length === 0}
+          <Text color="muted" size="small">{$t('suppressed_pets_empty')}</Text>
+        {:else}
+          <section class="flex flex-wrap gap-2">
+            {#each sortedPets as pet (pet.id)}
+              {@const selected = selectedPetIds.includes(pet.id)}
+              <button
+                type="button"
+                class="rounded-full border px-3 py-1 text-sm transition-colors"
+                class:border-primary={selected}
+                class:bg-primary={selected}
+                class:text-white={selected}
+                class:dark:text-immich-dark-gray={selected}
+                class:border-gray-300={!selected}
+                class:dark:border-gray-700={!selected}
+                aria-pressed={selected}
+                onclick={() => togglePet(pet.id)}
+              >
+                {isUnnamedPet(pet) ? $t('frameleaf_pets_unnamed') : pet.name}
+              </button>
+            {/each}
+          </section>
+        {/if}
       </Field>
 
       <div class="flex flex-wrap justify-between gap-3">

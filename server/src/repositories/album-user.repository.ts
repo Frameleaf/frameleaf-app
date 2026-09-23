@@ -2,10 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { InjectKysely } from 'nestjs-kysely';
 import { sql, type Insertable, type Kysely, type Updateable } from 'kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
+import { AlbumUserRole, AssetVisibility, SharedSpaceEventType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
 import { SharedSpaceAlbumTable } from 'src/schema/tables/shared-space-album.table.js';
+import { SharedSpaceCommentThreadTable } from 'src/schema/tables/shared-space-comment-thread.table.js';
 import { SharedSpaceEventTable } from 'src/schema/tables/shared-space-event.table.js';
 import { SharedSpaceInviteTable } from 'src/schema/tables/shared-space-invite.table.js';
 import { SharedSpacePersonTable } from 'src/schema/tables/shared-space-person.table.js';
@@ -101,6 +102,12 @@ export type SharedSpaceEvent = {
 export type SharedSpaceMention = {
   activityId: string;
   userId: string;
+};
+
+/** A reply, and the top-level comment it answers. */
+export type SharedSpaceCommentThread = {
+  activityId: string;
+  parentActivityId: string;
 };
 
 @Injectable()
@@ -303,6 +310,10 @@ export class AlbumUserRepository {
    * appearing, but nothing of the person row is selected: the space's identity
    * for somebody is the link's own `name` and `coverAssetId`, never the
    * owner's private naming of their own faces.
+   *
+   * A Locked photo is never the cover (FL-53). Moving a photo into the Locked
+   * folder already replaces it (`releaseLockedCoverReferences`); the read still
+   * answers no cover rather than a Locked id, whatever wrote the row.
    */
   async getLinkedPeople(spaceId: string): Promise<SharedSpacePersonLink[]> {
     return this.db
@@ -312,6 +323,9 @@ export class AlbumUserRepository {
           .onRef('person.ownerId', '=', 'link.personOwnerId')
           .onRef('person.personGroupId', '=', 'link.personGroupId'),
       )
+      .leftJoin('asset as cover', (join) =>
+        join.onRef('cover.id', '=', 'link.coverAssetId').on('cover.visibility', '=', sql.lit(AssetVisibility.Locked)),
+      )
       .where('link.albumId', '=', spaceId)
       .select([
         'link.id as id',
@@ -319,7 +333,7 @@ export class AlbumUserRepository {
         'link.personOwnerId as personOwnerId',
         'link.personGroupId as personGroupId',
         'link.name as name',
-        'link.coverAssetId as coverAssetId',
+        sql<string | null>`case when "cover"."id" is null then "link"."coverAssetId" end`.as('coverAssetId'),
         'link.createdAt as createdAt',
       ])
       .orderBy('link.name', 'asc')
@@ -647,6 +661,66 @@ export class AlbumUserRepository {
       .selectFrom('shared_space_mention')
       .select(['activityId', 'userId'])
       .where('activityId', 'in', activityIds)
+      .execute();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Threaded replies (FL-55)                                            */
+  /* ------------------------------------------------------------------ */
+
+  /** Record that a comment is a reply. The parent is always a top-level comment. */
+  async createCommentThread(thread: Insertable<SharedSpaceCommentThreadTable>): Promise<void> {
+    await this.db.insertInto('shared_space_comment_thread').values(thread).execute();
+  }
+
+  /** Of these comments, the ones that are replies, with the comment each answers. */
+  async getCommentParents(activityIds: string[]): Promise<SharedSpaceCommentThread[]> {
+    if (activityIds.length === 0) {
+      return [];
+    }
+    return this.db
+      .selectFrom('shared_space_comment_thread')
+      .select(['activityId', 'parentActivityId'])
+      .where('activityId', 'in', activityIds)
+      .execute();
+  }
+
+  /** The replies under these top-level comments. */
+  async getCommentReplies(parentActivityIds: string[]): Promise<SharedSpaceCommentThread[]> {
+    if (parentActivityIds.length === 0) {
+      return [];
+    }
+    return this.db
+      .selectFrom('shared_space_comment_thread')
+      .select(['activityId', 'parentActivityId'])
+      .where('parentActivityId', 'in', parentActivityIds)
+      .execute();
+  }
+
+  /**
+   * Delete a comment and every reply under it, in one statement.
+   *
+   * Removing a comment removes its thread: the reply `activity` rows go with
+   * the parent, and with them — through the existing cascades — their
+   * mentions, their feed events and their thread rows. One statement, so a
+   * failure leaves the thread whole rather than half gone.
+   */
+  async deleteCommentWithReplies(activityId: string): Promise<void> {
+    await this.db
+      .deleteFrom('activity')
+      .where((eb) =>
+        eb.or([
+          eb('activity.id', '=', activityId),
+          eb(
+            'activity.id',
+            'in',
+            eb
+              .selectFrom('shared_space_comment_thread')
+              .select('shared_space_comment_thread.activityId')
+              .where('shared_space_comment_thread.parentActivityId', '=', activityId),
+          ),
+        ]),
+      )
       .execute();
   }
 }

@@ -107,6 +107,7 @@ import { SessionTable } from 'src/schema/tables/session.table.js';
 import { SharedLinkAssetTable } from 'src/schema/tables/shared-link-asset.table.js';
 import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
 import { SharedSpaceAlbumTable } from 'src/schema/tables/shared-space-album.table.js';
+import { SharedSpaceCommentThreadTable } from 'src/schema/tables/shared-space-comment-thread.table.js';
 import { SharedSpaceEventTable } from 'src/schema/tables/shared-space-event.table.js';
 import { SharedSpaceInviteTable } from 'src/schema/tables/shared-space-invite.table.js';
 import { SharedSpaceMentionTable } from 'src/schema/tables/shared-space-mention.table.js';
@@ -121,6 +122,7 @@ import { StackAuditTable } from 'src/schema/tables/stack-audit.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
 import { StudioPreviewFrameTable } from 'src/schema/tables/studio-preview.table.js';
 import {
+  StudioBundleUploadTable,
   StudioProjectCommentTable,
   StudioProjectRevisionTable,
   StudioProjectTable,
@@ -215,6 +217,7 @@ export class ImmichDatabase {
     SharedLinkAssetTable,
     SharedLinkTable,
     SharedSpaceAlbumTable,
+    SharedSpaceCommentThreadTable,
     SharedSpaceEventTable,
     SharedSpaceInviteTable,
     SharedSpaceMentionTable,
@@ -231,6 +234,7 @@ export class ImmichDatabase {
     StudioProjectTable,
     StudioProjectRevisionTable,
     StudioProjectCommentTable,
+    StudioBundleUploadTable,
     SessionSyncCheckpointTable,
     SystemMetadataTable,
     TagTable,
@@ -378,6 +382,7 @@ export interface DB {
   shared_link: SharedLinkTable;
   shared_link_asset: SharedLinkAssetTable;
   shared_space_album: SharedSpaceAlbumTable;
+  shared_space_comment_thread: SharedSpaceCommentThreadTable;
   shared_space_event: SharedSpaceEventTable;
   shared_space_invite: SharedSpaceInviteTable;
   shared_space_mention: SharedSpaceMentionTable;
@@ -398,6 +403,7 @@ export interface DB {
   studio_project: StudioProjectTable;
   studio_project_revision: StudioProjectRevisionTable;
   studio_project_comment: StudioProjectCommentTable;
+  studio_bundle_upload: StudioBundleUploadTable;
 
   system_metadata: SystemMetadataTable;
 

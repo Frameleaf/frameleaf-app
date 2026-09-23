@@ -20,6 +20,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
 import { requireAccess } from 'src/utils/access.js';
+import { getHiddenContentQueryOptions, isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import {
   filterReviewedCandidates,
@@ -52,9 +53,11 @@ export class PetService {
   // ------------------------------------------------------------------------- identity
 
   async getAll(auth: AuthDto, dto: PetSearchDto): Promise<PetResponseDto[]> {
-    // photo counts include the caller's Locked media only in their elevated session (FL-34)
+    // FL-58: suppressed pets, like suppressed people and tags, stay out of a session that is not unlocked;
+    // FL-34: photo counts include the caller's Locked media only in their elevated session
     const pets = await this.petRepository.getAll(auth.user.id, {
       withHidden: dto.withHidden ?? false,
+      ...getHiddenContentQueryOptions(auth),
       ...getLockedVisibilityOptions(auth),
     });
     return pets.map((pet) => mapPet(pet));
@@ -119,9 +122,13 @@ export class PetService {
     }
 
     const sources = await this.petRepository.getByIds(auth.user.id, sourceIds);
-    if (sources.length !== sourceIds.length) {
+    if (
+      sources.length !== sourceIds.length ||
+      sourceIds.some((sourceId) => isSuppressedWhileLocked(auth, 'pet', sourceId))
+    ) {
       // Owner-scoped lookup: a missing row is either gone or someone else's, and the
-      // caller is told the same thing either way.
+      // caller is told the same thing either way. A pet suppressed while the session is
+      // not unlocked is told the same again.
       throw new BadRequestException('Pet not found');
     }
 
@@ -185,7 +192,7 @@ export class PetService {
       observationId,
       getLockedVisibilityOptions(auth),
     );
-    if (!observation) {
+    if (!observation || isSuppressedWhileLocked(auth, 'pet', observation.petId)) {
       throw new NotFoundException('Pet observation not found');
     }
 
@@ -201,8 +208,14 @@ export class PetService {
     ]);
 
     // A pairing the owner has already answered never comes back, whatever model revision
-    // proposed it this time.
-    const unreviewed = sortCandidatesForReview(filterReviewedCandidates(candidates, decisions));
+    // proposed it this time. A proposal naming a pet suppressed while the session is not
+    // unlocked stays out too, since the pet itself is not there.
+    const unreviewed = sortCandidatesForReview(
+      filterReviewedCandidates(
+        candidates.filter((candidate) => !isSuppressedWhileLocked(auth, 'pet', candidate.petId)),
+        decisions,
+      ),
+    );
 
     return {
       candidates: unreviewed.map((candidate) => mapPetCandidate(candidate)),
@@ -277,7 +290,15 @@ export class PetService {
 
   // ---------------------------------------------------------------------------- helpers
 
+  /**
+   * Every read and write of one pet comes through here. While the session is not unlocked a
+   * suppressed pet answers exactly like a missing one (owner decision, September 22, 2026).
+   */
   private async findOrFail(auth: AuthDto, id: string) {
+    if (isSuppressedWhileLocked(auth, 'pet', id)) {
+      throw new NotFoundException('Pet not found');
+    }
+
     const pet = await this.petRepository.getById(auth.user.id, id, getLockedVisibilityOptions(auth));
     if (!pet) {
       throw new NotFoundException('Pet not found');
@@ -287,7 +308,7 @@ export class PetService {
 
   private async findCandidateOrFail(auth: AuthDto, id: string) {
     const candidate = await this.petRepository.getCandidateById(auth.user.id, id, getLockedVisibilityOptions(auth));
-    if (!candidate) {
+    if (!candidate || isSuppressedWhileLocked(auth, 'pet', candidate.petId)) {
       throw new NotFoundException('Pet recognition candidate not found');
     }
     return candidate;
@@ -296,6 +317,10 @@ export class PetService {
   /**
    * A featured photo must be one this account owns, or nothing. Callers that mean "leave
    * it alone" must not call this at all; a missing value here means "clear it".
+   *
+   * A Locked photo is never a featured photo (FL-53): the pet's thumbnail shows on the pets
+   * page and in search whatever the session. Only the owner's own asset gets this far, so
+   * the refusal can say why.
    */
   private async resolveFeaturedAsset(auth: AuthDto, assetId: string | null | undefined) {
     if (assetId === null || assetId === undefined) {
@@ -303,6 +328,10 @@ export class PetService {
     }
 
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetUpdate, ids: [assetId] });
+    if (await this.petRepository.isOwnLockedAsset(auth.user.id, assetId)) {
+      throw new BadRequestException('A Locked photo cannot be a featured photo');
+    }
+
     return assetId;
   }
 

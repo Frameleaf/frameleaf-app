@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Insertable, Kysely, Selectable, Updateable } from 'kysely';
+import { sql, type Insertable, type Kysely, type Selectable, type Updateable } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { PetObservationState } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -10,7 +10,14 @@ import {
   PetObservationTable,
   PetTable,
 } from 'src/schema/tables/pet.table.js';
-import { lockedOwnerScope } from 'src/utils/database.js';
+import {
+  anyUuid,
+  getHiddenContentFilter,
+  hiddenContentAssetIdExists,
+  isLockedAsset,
+  lockedOwnerScope,
+} from 'src/utils/database.js';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 
 export type Pet = Selectable<PetTable>;
@@ -27,6 +34,8 @@ export interface PetWithCounts extends Pet {
  * proposals include their Locked media (FL-34). `withLocked` is for writes that must see every
  * observation (merging), never for a response.
  */
+type PetListOptions = { withHidden: boolean } & HiddenContentQueryOptions & LockedVisibilityOptions;
+
 export type PetLockedOptions = LockedVisibilityOptions & { withLocked?: boolean };
 
 export interface PetReviewCandidate {
@@ -68,10 +77,20 @@ export class PetRepository {
 
   // ---------------------------------------------------------------- durable: identity
 
-  getAll(
-    ownerId: string,
-    { withHidden, lockedOwnerId }: { withHidden: boolean } & LockedVisibilityOptions,
-  ): Promise<PetWithCounts[]> {
+  /**
+   * The owner's pets. With a hidden-content filter (a session that is not unlocked while the owner
+   * suppresses content, FL-58) a pet behaves like a suppressed person or tag: a pet the owner
+   * suppressed is left out, so is a pet whose every confirmed photo is hidden, and the count covers
+   * only the photos that session may see. A pet with no confirmed photo yet stays listed, as an
+   * empty tag does. The count includes the owner's Locked photos only in their elevated session
+   * (`lockedOwnerId`, FL-34).
+   */
+  getAll(ownerId: string, { withHidden, lockedOwnerId, ...privacy }: PetListOptions): Promise<PetWithCounts[]> {
+    const hiddenContent = getHiddenContentFilter(privacy);
+    const visiblePhoto = hiddenContent
+      ? sql<boolean>`not ${hiddenContentAssetIdExists(sql.ref('pet_observation.assetId'), hiddenContent)}`
+      : undefined;
+    const suppressedPetIds = hiddenContent?.petIds ?? [];
     return this.db
       .selectFrom('pet')
       .selectAll('pet')
@@ -82,11 +101,24 @@ export class PetRepository {
           .whereRef('pet_observation.petId', '=', 'pet.id')
           .where('pet_observation.state', '=', PetObservationState.Confirmed)
           .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
+          .$if(!!visiblePhoto, (qb) => qb.where(visiblePhoto!))
           .select((inner) => inner.fn.countAll<number>().as('count'))
           .as('assetCount'),
       )
       .where('pet.ownerId', '=', ownerId)
       .$if(!withHidden, (qb) => qb.where('pet.isHidden', '=', false))
+      .$if(suppressedPetIds.length > 0, (qb) => qb.where((eb) => eb.not(eb('pet.id', '=', anyUuid(suppressedPetIds)))))
+      .$if(!!visiblePhoto, (qb) =>
+        qb.where((eb) => {
+          const confirmed = () =>
+            eb
+              .selectFrom('pet_observation')
+              .select('pet_observation.id')
+              .whereRef('pet_observation.petId', '=', 'pet.id')
+              .where('pet_observation.state', '=', PetObservationState.Confirmed);
+          return eb.or([eb.not(eb.exists(confirmed())), eb.exists(confirmed().where(visiblePhoto!))]);
+        }),
+      )
       // Favorites first and then oldest first, which is a stable order for paging. The
       // display order the design asks for (favorites, named alphabetically, unnamed last)
       // is applied in `web/src/lib/frameleaf/pets.ts`, where it is unit tested and where
@@ -161,6 +193,18 @@ export class PetRepository {
       .where('asset.id', '=', assetId)
       .where('asset.ownerId', '=', ownerId)
       .where('asset.deletedAt', 'is', null)
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  /** Whether an asset is this owner's own and Locked, which is never a featured photo (FL-53). */
+  async isOwnLockedAsset(ownerId: string, assetId: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', '=', assetId)
+      .where('asset.ownerId', '=', ownerId)
+      .where((eb) => isLockedAsset(eb))
       .executeTakeFirst();
     return !!row;
   }

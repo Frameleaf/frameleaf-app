@@ -1,4 +1,4 @@
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { AuthSharedLink } from 'src/database.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
@@ -106,6 +106,18 @@ export const requireAccess = async (access: AccessRepository, request: AccessReq
   const allowedIds = await checkAccess(access, request);
   if (!areSetsEqual(new Set(request.ids), allowedIds)) {
     throw new BadRequestException(`Not found or no ${request.permission} access`);
+  }
+};
+
+/**
+ * `requireAccess` for a route that names one person or tag (FL-37, FL-46, FL-58). An id that does
+ * not exist, one that belongs to someone else and one the session suppresses while it is not
+ * unlocked all answer the same 404, so nothing tells a suppressed entity apart from a missing one.
+ */
+export const requireEntityAccess = async (access: AccessRepository, request: AccessRequest, entity: string) => {
+  const allowedIds = await checkAccess(access, request);
+  if (!areSetsEqual(new Set(request.ids), allowedIds)) {
+    throw new NotFoundException(`${entity} not found`);
   }
 };
 

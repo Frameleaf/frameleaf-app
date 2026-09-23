@@ -49,6 +49,7 @@ import {
   onBeforeLink,
   onBeforeUnlink,
 } from 'src/utils/asset.util.js';
+import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { extractTimeZone } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -178,6 +179,9 @@ export class AssetService extends BaseService {
     await this.updateExif({ id, description, dateTimeOriginal, latitude, longitude, rating });
 
     const asset = await this.assetRepository.update({ id, ...getAssetDateTimeUpdates(dateTimeOriginal), ...rest });
+    if (rest.visibility === AssetVisibility.Locked) {
+      await this.queueReleasedFaceThumbnails([id]);
+    }
 
     if (previousMotion && asset) {
       await onAfterUnlink(repos, {
@@ -246,11 +250,24 @@ export class AssetService extends BaseService {
       await this.assetRepository.updateAll(ids, assetDto);
     }
 
+    if (visibility === AssetVisibility.Locked) {
+      await this.queueReleasedFaceThumbnails(ids);
+    }
+
     // Moving into the Locked folder keeps album membership (owner decision, September 22, 2026): the
     // asset stays in its albums and every album read hides it from everyone but its owner's elevated
     // session, so it is back in place when it leaves the folder. Upstream removed it from all albums here.
 
     await this.jobRepository.queueAll(ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
+  }
+
+  /**
+   * Moving into the Locked folder released every cover, featured photo and face thumbnail the assets
+   * were (FL-53, `releaseLockedCoverReferences`); the people whose featured face moved get a new
+   * thumbnail from the face that replaced it.
+   */
+  private queueReleasedFaceThumbnails(ids: string[]) {
+    return queueReleasedPersonThumbnails({ person: this.personRepository, job: this.jobRepository }, ids);
   }
 
   /**

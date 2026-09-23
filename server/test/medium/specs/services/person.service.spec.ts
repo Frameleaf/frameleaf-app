@@ -133,9 +133,7 @@ describe(PersonService.name, () => {
       const auth = factory.auth({ user });
       const hiddenAuth = { ...auth, hideNsfwAssets: true };
 
-      await expect(sut.getById(hiddenAuth, nsfwOnlyPerson.personGroupId)).rejects.toThrow(
-        'Not found or no person.read access',
-      );
+      await expect(sut.getById(hiddenAuth, nsfwOnlyPerson.personGroupId)).rejects.toThrow('Person not found');
       await expect(sut.getById(hiddenAuth, mixedPerson.personGroupId)).resolves.toEqual(
         expect.objectContaining({ id: mixedPerson.personGroupId }),
       );
@@ -230,12 +228,56 @@ describe(PersonService.name, () => {
     });
   });
 
+  describe('suppressed people (owner decision, September 22, 2026)', () => {
+    it('should answer a suppressed person like a missing one while locked, with or without photos', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user } = await ctx.newUser();
+      const { person: withPhoto } = await ctx.newPerson({ ownerId: user.id, name: 'With photo' });
+      const { person: withoutPhoto } = await ctx.newPerson({ ownerId: user.id, name: 'Without photo' });
+      const { person: visible } = await ctx.newPerson({ ownerId: user.id, name: 'Visible' });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: otherAsset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newAssetFace({ personGroupId: withPhoto.personGroupId, assetId: asset.id });
+      await ctx.newAssetFace({ personGroupId: visible.personGroupId, assetId: otherAsset.id });
+
+      const auth = factory.auth({ user });
+      const hiddenContent = {
+        userId: user.id,
+        includeNsfw: false,
+        tagIds: [],
+        personIds: [withPhoto.personGroupId, withoutPhoto.personGroupId],
+        petIds: [],
+        scope: 'owned' as const,
+      };
+      const lockedAuth = { ...auth, hideNsfwAssets: true, hiddenContent };
+      const unlockedAuth = { ...auth, suppressedContent: hiddenContent };
+
+      const missing = await sut.getById(lockedAuth, factory.uuid()).catch((error: Error) => error.message);
+      expect(missing).toBe('Person not found');
+      for (const person of [withPhoto, withoutPhoto]) {
+        await expect(sut.getById(lockedAuth, person.personGroupId)).rejects.toThrow(missing);
+        await expect(sut.getStatistics(lockedAuth, person.personGroupId)).rejects.toThrow(missing);
+        await expect(sut.update(lockedAuth, person.personGroupId, { name: 'Renamed' })).rejects.toThrow(missing);
+        await expect(sut.getById(unlockedAuth, person.personGroupId)).resolves.toEqual(
+          expect.objectContaining({ id: person.personGroupId }),
+        );
+      }
+
+      await expect(sut.getById(lockedAuth, visible.personGroupId)).resolves.toEqual(
+        expect.objectContaining({ id: visible.personGroupId }),
+      );
+      await expect(ctx.get(PersonRepository).getByGroupId(withoutPhoto)).resolves.toEqual(
+        expect.objectContaining({ name: 'Without photo' }),
+      );
+    });
+  });
+
   describe('delete', () => {
     it('should throw an error when there is no access', async () => {
       const { sut } = setup();
       const auth = factory.auth();
       const personId = factory.uuid();
-      await expect(sut.delete(auth, personId)).rejects.toThrow('Not found or no person.delete access');
+      await expect(sut.delete(auth, personId)).rejects.toThrow('Person not found');
     });
 
     it('should delete the person', async () => {

@@ -48,7 +48,7 @@ import {
 
 /** How often an idle worker asks for the next restoration job. */
 export const RESTORATION_POLL_MS = 2000;
-/** How often recovery, alignment and retention run. */
+/** How often alignment and retention run. */
 export const RESTORATION_SWEEP_MS = 60_000;
 /** The claim lease. Heartbeats renew it at a third of this. */
 export const RESTORATION_LEASE_MS = 90_000;
@@ -207,26 +207,16 @@ export class RestorationWorkerService {
   }
 
   /**
-   * Recovery, alignment and retention.
+   * Alignment and retention.
    *
-   * Recovery returns jobs whose lease lapsed to the queue; one that has spent its attempts gets its
-   * one automatic retry, and fails only after that (FL-104). This sweep is the single owner of
-   * recovery for every kind of media operation — bulk jobs included, whose worker no longer runs a
-   * recovery of its own — so a lapsed claim is never judged twice. Alignment brings restoration rows into line with jobs that ended without a worker
-   * writing back — a queued job cancelled from Activity, for one. Retention removes preview files
-   * past their date and marks a never-reviewed preview expired; the row itself stays as history.
+   * Lapsed claims are not recovered here: `MediaOperationSweepService` owns recovery for every
+   * kind of media operation, restorations included, so a lapsed claim is judged once (FL-104).
+   * Alignment brings restoration rows into line with jobs that ended without a worker writing
+   * back — a queued job cancelled from Activity, or one that recovery failed after its automatic
+   * retry. Retention removes preview files past their date and marks a never-reviewed preview
+   * expired; the row itself stays as history.
    */
   async sweep() {
-    const recovered = await this.operationRepository.recoverExpiredClaims({
-      errorCode: 'lease_expired',
-      error: 'The worker stopped responding before the job finished and it ran out of attempts',
-    });
-    if (recovered.requeued || recovered.retried || recovered.failed || recovered.abandonedCancels) {
-      this.logger.log(
-        `Recovered media operations: ${recovered.requeued} requeued, ${recovered.retried} retrying, ${recovered.failed} failed, ${recovered.abandonedCancels} cancelled`,
-      );
-    }
-
     const aligned = await this.restorationRepository.alignWithOperations();
     if (aligned.preview || aligned.full) {
       this.logger.log(`Aligned ${aligned.preview} preview and ${aligned.full} full restorations with their finished jobs`);
@@ -260,7 +250,7 @@ export class RestorationWorkerService {
       this.logger.log(`Restoration retention removed ${removed} expired files`);
     }
 
-    return { recovered, aligned, removed };
+    return { aligned, removed };
   }
 
   /* ------------------------------------------------------------------ */

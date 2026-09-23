@@ -377,7 +377,12 @@
 
 {#snippet spaceComments(asset: AssetResponseDto)}
   <div class="space-comments" data-space-comments-mount data-space-id={space.id} data-comments-asset-id={asset.id}>
-    <SpaceMediaComments spaceId={space.id} assetId={asset.id} onClose={() => assetViewerManager.closeActivityPanel()} />
+    <SpaceMediaComments
+      spaceId={space.id}
+      assetId={asset.id}
+      canComment={space.isActivityEnabled}
+      onClose={() => assetViewerManager.closeActivityPanel()}
+    />
   </div>
 {/snippet}
 

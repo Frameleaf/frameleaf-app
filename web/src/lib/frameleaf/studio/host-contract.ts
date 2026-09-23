@@ -154,7 +154,45 @@ export interface StudioHostContext {
   preview: StudioPreviewView;
   /** False when the browser reports no network; the engine must go read-only. */
   online: boolean;
+  /**
+   * The workspace layout, when the host can store one (FL-91). Absent or `unavailable` means the
+   * engine uses its defaults and must not assume anything it lays out is kept.
+   */
+  workspace?: StudioWorkspaceView;
 }
+
+/* ------------------------------------------------------------------ */
+/* Workspace layout (FL-91)                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The editor's own workspace: which panels are open, their sizes, the zoom of the timeline.
+ *
+ * Freecut keeps this in a workspace folder (`infrastructure/storage/workspace-fs`). In Frameleaf
+ * it would be stored per account on the server, never in a folder handle, so it follows the person
+ * to Safari and Firefox and to another device. What it contains is the engine's to define, and the
+ * engine is not part of this build yet, so the host says so plainly: `unavailable` means the engine
+ * starts from its own defaults and nothing it lays out is persisted. It is never a silent no-op
+ * that looks like a save.
+ *
+ * The project document itself is not workspace state. It is stored, versioned and exported through
+ * the project session and portable bundles, which work today.
+ */
+export type StudioWorkspaceView =
+  | { state: 'unavailable'; reason: 'engine-absent' }
+  | {
+      state: 'ready';
+      /** Opaque engine layout, stored and returned byte for byte like the project graph. */
+      layout: unknown;
+      savedAt: string | null;
+    };
+
+export type StudioWorkspaceSaveResult = { status: 'saved'; savedAt: string } | { status: 'unavailable' };
+
+export const unavailableStudioWorkspace = (): StudioWorkspaceView => ({
+  state: 'unavailable',
+  reason: 'engine-absent',
+});
 
 /* ------------------------------------------------------------------ */
 /* What the engine may ask the host to do                               */
@@ -196,6 +234,11 @@ export interface StudioHostServices {
   setDirty(dirty: boolean): void;
   /** Report a fatal engine error so the host can show its error state and dispose. */
   reportFatal(error: unknown): void;
+  /**
+   * Keep the workspace layout (FL-91). Optional: a host without workspace storage leaves it out or
+   * answers `unavailable`, and the engine then keeps its layout for the session only.
+   */
+  saveWorkspace?(layout: unknown): Promise<StudioWorkspaceSaveResult>;
 }
 
 /* ------------------------------------------------------------------ */
