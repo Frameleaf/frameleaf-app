@@ -211,10 +211,13 @@ describe(ActivityService.name, () => {
       const activity = ActivityFactory.create();
 
       mocks.access.activity.checkOwnerAccess.mockResolvedValue(new Set([activity.id]));
+      mocks.albumUser.deleteCommentReplies.mockResolvedValue();
       mocks.activity.delete.mockResolvedValue();
 
       await sut.delete(AuthFactory.create(), activity.id);
 
+      // FL-55: a shared space comment's replies go with it.
+      expect(mocks.albumUser.deleteCommentReplies).toHaveBeenCalledWith(activity.id);
       expect(mocks.activity.delete).toHaveBeenCalledWith(activity.id);
     });
 
@@ -222,6 +225,7 @@ describe(ActivityService.name, () => {
       const activity = ActivityFactory.create();
 
       mocks.access.activity.checkAlbumOwnerAccess.mockResolvedValue(new Set([activity.id]));
+      mocks.albumUser.deleteCommentReplies.mockResolvedValue();
       mocks.activity.delete.mockResolvedValue();
 
       await sut.delete(AuthFactory.create(), activity.id);
