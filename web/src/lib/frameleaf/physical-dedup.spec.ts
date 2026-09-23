@@ -44,6 +44,7 @@ const retained = (overrides: Partial<PhysicalDeduplicationRetainedDto> = {}): Ph
   checksum: 'a'.repeat(40),
   referencesBefore: 1,
   referencesAfter: 3,
+  hiddenCopies: 0,
   ...overrides,
 });
 
@@ -230,9 +231,22 @@ describe('Frameleaf physical deduplication helpers', () => {
     });
 
     it('includes the copies it cannot list because they are Locked media of another account', () => {
-      expect(planSelection(plan({ applicableCopies: 5 }), new Set(['master-1']))).toEqual({
-        copies: 3,
+      expect(planSelection(plan({ applicableCopies: 5 }), new Set())).toEqual({
+        copies: 5,
         hiddenCopies: 3,
+        listedBytes: 14_850_240 * 2,
+        keptGroups: 0,
+      });
+    });
+
+    it('leaves out the unlisted copies of a group left out, with the group', () => {
+      const current = plan({
+        applicableCopies: 5,
+        retained: [retained({ hiddenCopies: 2 })],
+      });
+      expect(planSelection(current, new Set(['master-1']))).toEqual({
+        copies: 1,
+        hiddenCopies: 1,
         listedBytes: 0,
         keptGroups: 1,
       });

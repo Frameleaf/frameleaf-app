@@ -30,7 +30,7 @@ Each group whose copies would share its retained original has **Share this origi
 
 **Mark plan reviewed** asks the server to check the plan against the library again. It is refused, and nothing changes, when:
 
-- a newer preview replaced the plan on screen, or the plan was already applied;
+- a newer preview replaced the plan on screen, or the plan was already applied (fully or partly);
 - any copy or retained original in the plan was removed, trashed, moved to another account, or changed path, checksum or size;
 - a copy already points at its retained original;
 - the retained original gained or lost references since the preview.
@@ -43,13 +43,15 @@ The page then shows the current state; prepare a new plan. Changing a group's de
 
 - another plan is being applied (by anyone);
 - the saved retained account changed, or the feature was turned off;
-- the decisions differ from the reviewed ones.
+- the decisions differ from the reviewed ones, or the review is no longer valid (reviews are signed by the server and do not survive a server restart; review the plan again).
 
-Applying is a durable background job. It is listed in Activity and the notifications panel of the administrator who applied it, and on the Physical deduplication page for every administrator. The administrator who applied it can pause, resume or stop it; it survives closing the browser and restarting the server, and carries on from the last copy it finished.
+Only one plan is applied at a time: two administrators applying at the same moment cannot both start one. Applying is a durable background job. It is listed in Activity and the notifications panel of the administrator who applied it, and on the Physical deduplication page for every administrator. The administrator who applied it can pause, resume or stop it; it survives closing the browser and restarting the server, and carries on from the last copy it finished.
 
 For each copy, in order, the job:
 
-1. reads the copy and its retained original again, and leaves the copy alone if anything differs from the reviewed evidence;
+Every time the job starts or resumes, it checks that the administrator who applied it is still an administrator, that physical deduplication is still enabled and that the saved retained account is still the plan's; otherwise it stops.
+
+1. reads the copy and its retained original again (owner, path, checksum, size and state), and leaves the copy alone if anything differs from the reviewed evidence; reference counts are checked when the plan is reviewed and applied, not per copy, since the plan itself changes them;
 2. checks that the retained original's file is on disk and still hashes to the reviewed checksum and size (a retained original is checked once per run); without that, the copy is never removed;
 3. checks that the copy's file still holds the reviewed bytes;
 4. moves the copy's XMP sidecar to the copy's own upload folder, points the copy's asset at the retained original, and only then removes the copy's old file, and only while no asset or generated file still uses it;
@@ -57,7 +59,9 @@ For each copy, in order, the job:
 
 Originals are never written to, and a retained original is never deleted. Asset rows are never removed or merged, so albums, faces, stacks, shared links and lock records keep pointing at the same assets.
 
-The job records what happened to every copy (shared, already shared by an earlier attempt, left as it was, failed) and the bytes actually removed from disk. A copy that fails is retried once, after a short wait, before it is reported; a copy left alone because its evidence changed is not retried. A job that fails as a whole is also retried once automatically. Running a copy again after an interruption finishes what the interrupted attempt started and never applies it twice. **Retry** in Activity runs the same reviewed copies again with the same checks.
+The job records what happened to every copy (shared, already shared by an earlier attempt, left as it was, failed) and the bytes actually removed from disk. A copy that fails is retried once, after a short wait, before it is reported; a copy left alone because its evidence changed is not retried. A job that fails as a whole is also retried once automatically. Running a copy again after an interruption finishes what the interrupted attempt started and never applies it twice.
+
+As soon as a job changes a file, the plan reads **Applied**, or **Partly applied** if its job then stops or fails. Such a plan cannot be reviewed or applied again, and Activity offers no **Retry** for it: prepare a new plan, which skips the copies already shared, and review and apply that.
 
 **Review history** lists recent plans with who applied them and their counts.
 
