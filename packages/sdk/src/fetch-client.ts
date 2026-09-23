@@ -3777,6 +3777,46 @@ export type SessionUpdateDto = {
     /** Reset pending sync state */
     isPendingSyncReset?: boolean;
 };
+export type SharedSpacePreviewResponseDto = {
+    /** True once the recipient has joined the space */
+    accepted: boolean;
+    /** Shared space name */
+    albumName: string;
+    /** Items the recipient would see. Media marked sensitive, and Locked media, are not counted. */
+    assetCount: number;
+    /** Shared space description */
+    description: string;
+    /** Latest item date, sensitive and Locked media excluded */
+    endDate?: string;
+    /** Icon: a Material Design Icons name (null = default icon) */
+    icon: string | null;
+    /** Shared space ID */
+    id: string;
+    /** When the invitation was sent */
+    invitedAt: string;
+    /** Who sent the invitation */
+    invitedBy: UserResponseDto | null;
+    /** People already in the shared space, including its owner */
+    memberCount: number;
+    /** Who owns the shared space */
+    owner: UserResponseDto;
+    /** The role the recipient gets on accept */
+    role: AlbumUserRole;
+    /** Earliest item date, sensitive and Locked media excluded */
+    startDate?: string;
+};
+export type SharedSpaceMemberResponseDto = {
+    /** When a pending invitation was sent */
+    invitedAt?: string;
+    /** True while the invitation has not been accepted */
+    pending: boolean;
+    role: AlbumUserRole;
+    user: UserResponseDto;
+};
+export type SharedSpaceMembersResponseDto = {
+    /** Members and pending invitations, owner first */
+    members: SharedSpaceMemberResponseDto[];
+};
 export type SharedLinkResponseDto = {
     album?: AlbumResponseDto;
     /** Allow downloads */
@@ -8335,6 +8375,80 @@ export function addSharedLinkAssets({ id, assetIdsDto }: {
         method: "PUT",
         body: assetIdsDto
     })));
+}
+/**
+ * List shared space invitations
+ */
+export function getSharedSpaceInvitations(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpacePreviewResponseDto[];
+    }>("/shared-spaces/invitations", {
+        ...opts
+    }));
+}
+/**
+ * Accept a shared space invitation
+ */
+export function acceptSharedSpaceInvitation({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/accept`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Decline a shared space invitation
+ */
+export function declineSharedSpaceInvitation({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/invitation`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Withdraw a shared space invitation
+ */
+export function removeSharedSpaceInvitation({ id, userId }: {
+    id: string;
+    userId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/invitations/${encodeURIComponent(userId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * List shared space members
+ */
+export function getSharedSpaceMembers({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceMembersResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/members`, {
+        ...opts
+    }));
+}
+/**
+ * Preview a shared space
+ */
+export function getSharedSpacePreview({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpacePreviewResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/preview`, {
+        ...opts
+    }));
 }
 /**
  * Delete stacks

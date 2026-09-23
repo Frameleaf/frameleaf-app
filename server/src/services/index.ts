@@ -50,6 +50,7 @@ import { SearchService } from 'src/services/search.service.js';
 import { ServerService } from 'src/services/server.service.js';
 import { SessionService } from 'src/services/session.service.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
+import { SharedSpaceService } from 'src/services/shared-space.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { StackService } from 'src/services/stack.service.js';
@@ -123,6 +124,7 @@ export const services = [
   ServerService,
   SessionService,
   SharedLinkService,
+  SharedSpaceService,
   SmartAlbumService,
   SmartInfoService,
   ZeroShotTaggingService,
