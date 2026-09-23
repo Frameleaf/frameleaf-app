@@ -75,6 +75,8 @@ export class TrashRepository {
         qb.where('asset.deletedAt', 'is not', null).where('asset.status', '!=', AssetStatus.Deleted),
       )
       .$if(status !== 'listed', (qb) => qb.where('asset.status', '=', status as AssetStatus))
+      // a missing external original is active with a deletion date; it is the library scan's, not the library's
+      .$if(status === AssetStatus.Active, (qb) => qb.where('asset.deletedAt', 'is', null))
       .where('asset.visibility', '!=', AssetVisibility.Hidden)
       .$if(lockedOwnerId !== userId, (qb) => qb.where(isNotLocked('asset')))
       .$call((qb) => withHiddenContentFilter(qb, privacy));
