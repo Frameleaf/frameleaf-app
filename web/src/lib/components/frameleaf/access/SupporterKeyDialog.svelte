@@ -31,7 +31,9 @@
   const trimmed = $derived(key.trim());
   const wrongKind = $derived(trimmed.length > 0 && licenseKeyKind(trimmed) !== kind);
   const server = $derived(kind === 'server');
-  const title = $derived(server ? $t('frameleaf_access_server_key_register') : $t('frameleaf_access_supporter_activate'));
+  const title = $derived(
+    server ? $t('frameleaf_access_server_key_register') : $t('frameleaf_access_supporter_activate'),
+  );
   const hint = $derived(server ? $t('frameleaf_access_server_key_hint') : $t('frameleaf_access_supporter_key_hint'));
   const wrongKindText = $derived(
     server ? $t('frameleaf_access_server_key_wrong_kind') : $t('frameleaf_access_supporter_key_wrong_kind'),
