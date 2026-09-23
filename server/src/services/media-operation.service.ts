@@ -201,6 +201,14 @@ const UUID_PATTERN = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/
 
 const unlessHidden = (id: string | null, hidden: ReadonlySet<string>) => (id && hidden.has(id) ? null : id);
 
+/**
+ * Whether a job is about one of the caller's Locked items that this session may not see (FL-43,
+ * FL-34). Its label is that item's file name and its snapshot names the item, so both are withheld;
+ * the row itself stays, so the owner still sees that something is running and can stop it.
+ */
+const isWithheld = (operation: Pick<MediaOperation, 'assetId'>, hidden: ReadonlySet<string>) =>
+  !!operation.assetId && hidden.has(operation.assetId);
+
 /** `hidden`: the caller's Locked media, never named to a session that has not unlocked it (FL-34). */
 export const mapOperation = (
   operation: MediaOperation,
@@ -211,7 +219,8 @@ export const mapOperation = (
   status: operation.status as MediaOperationStatus,
   destination: operation.destination as MediaOperationDestination,
   destinationDetail: operation.destinationDetail,
-  label: operation.label,
+  label: isWithheld(operation, hidden) ? '' : operation.label,
+  withheld: isWithheld(operation, hidden),
   assetId: unlessHidden(operation.assetId, hidden),
   resultAssetId: unlessHidden(operation.resultAssetId, hidden),
   retryOfId: operation.retryOfId,
@@ -314,7 +323,8 @@ export class MediaOperationService {
 
     return {
       ...mapOperation(operation, hidden),
-      snapshot: mapSnapshot(operation),
+      // A job about a Locked item names it throughout its snapshot; a locked session sees none of it.
+      snapshot: isWithheld(operation, hidden) ? {} : mapSnapshot(operation),
       checkpoints: checkpoints.map((checkpoint) => mapCheckpoint(checkpoint)),
       bulkItems: mapBulkItems(operation, hidden),
       bulkRetryPending: mapBulkRetryPending(operation, hidden),
@@ -541,16 +551,22 @@ export class MediaOperationService {
       throw new BadRequestException('Only a failed or cancelled job can be retried');
     }
 
-    // A Google Photos import step (FL-65) resumes from its import's rows, so asking twice must not
-    // queue two runs of the same step: the retry already waiting answers instead.
-    if (operation.kind === MediaOperationKind.TakeoutImport) {
-      const active = await this.repository.getActiveRetry(operation.id, auth.user.id);
-      if (active) {
-        return this.present(auth, active);
-      }
+    // Asking twice answers with the retry already waiting (FL-43; FL-65 for Google Photos import
+    // steps, which resume from their import's rows): a double click, a second tab or a resent
+    // request never queues the same work twice.
+    const active = await this.repository.getActiveRetry(operation.id, auth.user.id);
+    if (active) {
+      return this.present(auth, active);
     }
 
-    const retried = await this.repository.create({
+    // A retry is a new submission and is checked like one (FL-43): access to the item may have
+    // changed since the job was first queued, and a job over an item that is Locked now needs the
+    // unlocked session, exactly as queueing it afresh would.
+    if (operation.assetId) {
+      await this.requireUnlockedFor(auth, [operation.assetId]);
+    }
+
+    const { operation: retried } = await this.repository.createRetry({
       ownerId: operation.ownerId,
       kind: operation.kind,
       destination: operation.destination,
@@ -668,7 +684,7 @@ export class MediaOperationService {
       elevated: auth.session?.hasElevatedPermission === true,
     };
 
-    const retried = await this.repository.create({
+    const { operation: retried } = await this.repository.createRetry({
       ownerId: operation.ownerId,
       kind: MediaOperationKind.Bulk,
       destination: operation.destination,
@@ -725,7 +741,7 @@ export class MediaOperationService {
     const record = enrichmentRetryRecord(snapshot, result, remaining);
     // The retry acts with the retrying session's PIN, which was just checked above.
     const retrySnapshot = { ...record.snapshot, elevated: auth.session?.hasElevatedPermission === true };
-    const retried = await this.repository.create({
+    const { operation: retried } = await this.repository.createRetry({
       ownerId: operation.ownerId,
       kind: MediaOperationKind.EnrichmentPlan,
       destination: operation.destination,

@@ -306,6 +306,7 @@ describe(EnrichmentPlanService.name, () => {
       expect(moments.runIndexStage).not.toHaveBeenCalled();
       expect(operations.requeue).toHaveBeenCalledWith(expect.any(String), 'token', {
         delayMs: MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
+        returnAttempt: true,
       });
       expect(operations.complete).not.toHaveBeenCalled();
       const last = parseEnrichmentPlanResult(vi.mocked(operations.setBulkResult).mock.calls.at(-1)![2].result);

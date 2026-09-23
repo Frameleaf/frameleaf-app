@@ -545,7 +545,7 @@ export class EnrichmentPlanService {
       progress: enrichmentPlanProgress(processed, total),
     });
     if (!running) {
-      await this.operations.acknowledgeCancel(id, { released: false });
+      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
       return;
     }
 
@@ -589,11 +589,16 @@ export class EnrichmentPlanService {
       if (!(await this.proceed(id, claimToken, await this.write(id, claimToken, result, processed, total)))) {
         return;
       }
-      if (await this.operations.requeue(id, claimToken, { delayMs: MEDIA_OPERATION_AUTO_RETRY_DELAY_MS })) {
+      if (
+        await this.operations.requeue(id, claimToken, {
+          delayMs: MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
+          returnAttempt: true,
+        })
+      ) {
         this.logger.log(`Enrichment plan ${id}: retrying ${planned.retry?.ids.length ?? 0} failed items once`);
         return;
       }
-      await this.operations.acknowledgeCancel(id, { released: false });
+      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
       return;
     }
 
@@ -622,8 +627,10 @@ export class EnrichmentPlanService {
       }
     }
 
-    if (await this.operations.beginValidation(id, claimToken)) {
-      await this.operations.complete(id, claimToken, { resultAssetId: null });
+    if (
+      (await this.operations.beginValidation(id, claimToken)) &&
+      (await this.operations.complete(id, claimToken, { resultAssetId: null }))
+    ) {
       const counts = countEnrichmentItems(
         enrichmentItemStates(snapshot, result, { status: MediaOperationStatus.Completed }),
       );
@@ -633,7 +640,7 @@ export class EnrichmentPlanService {
       return;
     }
 
-    await this.operations.acknowledgeCancel(id, { released: false });
+    await this.operations.acknowledgeCancel(id, claimToken, { released: false });
   }
 
   /**
@@ -791,7 +798,7 @@ export class EnrichmentPlanService {
       return false;
     }
     if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
-      await this.operations.acknowledgeCancel(id, { released: false });
+      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
       this.logger.log(`Enrichment plan ${id} cancelled by its owner`);
       return false;
     }

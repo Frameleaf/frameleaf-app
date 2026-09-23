@@ -1049,7 +1049,7 @@ export class StudioBundleService {
       return false;
     }
     if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
-      await this.operations.acknowledgeCancel(id, { released: false });
+      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
       this.logger.log(`Studio bundle job ${id} cancelled by its owner`);
       return false;
     }
@@ -1076,11 +1076,13 @@ export class StudioBundleService {
     if (!written) {
       throw new BundleJobError('bundle_claim_lost', 'The job was taken over before it could finish');
     }
-    if (await this.operations.beginValidation(id, claimToken)) {
-      await this.operations.complete(id, claimToken, { resultAssetId: null });
+    if (
+      (await this.operations.beginValidation(id, claimToken)) &&
+      (await this.operations.complete(id, claimToken, { resultAssetId: null }))
+    ) {
       return true;
     }
-    await this.operations.acknowledgeCancel(id, { released: false });
+    await this.operations.acknowledgeCancel(id, claimToken, { released: false });
     return false;
   }
 

@@ -307,7 +307,7 @@ export class TakeoutWorkerService {
         progress: 0,
       });
       if (!started) {
-        await this.operations.acknowledgeCancel(id, { released: false });
+        await this.operations.acknowledgeCancel(id, claimToken, { released: false });
         return;
       }
 
@@ -323,7 +323,7 @@ export class TakeoutWorkerService {
       }
       if (this.stopping && controller.signal.aborted) {
         // Shutting down: hand the job back where it got to; the next worker resumes it.
-        await this.operations.requeue(id, claimToken, { delayMs: 0 });
+        await this.operations.requeue(id, claimToken, { delayMs: 0, returnAttempt: true });
         return;
       }
       if (controller.signal.aborted && controller.signal.reason instanceof TakeoutStop) {
@@ -677,12 +677,13 @@ export class TakeoutWorkerService {
         await this.checkpoint(run, true);
         const requeued = await this.operations.requeue(run.operation.id, run.claimToken, {
           delayMs: MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
+          returnAttempt: true,
         });
         if (requeued) {
           this.logger.log(`Google Photos import ${row.id}: retrying ${retried} failed items once`);
           return;
         }
-        await this.operations.acknowledgeCancel(run.operation.id, { released: false });
+        await this.operations.acknowledgeCancel(run.operation.id, run.claimToken, { released: false });
         return;
       }
     }
@@ -951,7 +952,7 @@ export class TakeoutWorkerService {
   private async settleInterrupt(run: TakeoutRun, interrupt: TakeoutInterrupt): Promise<void> {
     const { id } = run.operation;
     if (interrupt.request === 'cancel') {
-      await this.operations.acknowledgeCancel(id, { released: false });
+      await this.operations.acknowledgeCancel(id, run.claimToken, { released: false });
       this.logger.log(`Google Photos import job ${id} cancelled by its owner`);
       return;
     }
@@ -960,7 +961,7 @@ export class TakeoutWorkerService {
       return;
     }
     // Resumed again before the pause landed: hand the job back so the next claim carries on.
-    await this.operations.requeue(id, run.claimToken, { delayMs: 0 });
+    await this.operations.requeue(id, run.claimToken, { delayMs: 0, returnAttempt: true });
   }
 
   /**
@@ -991,7 +992,7 @@ export class TakeoutWorkerService {
       throw new TakeoutStop('claim lost');
     }
     if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
-      await this.operations.acknowledgeCancel(id, { released: false });
+      await this.operations.acknowledgeCancel(id, run.claimToken, { released: false });
       this.logger.log(`Google Photos import job ${id} cancelled by its owner`);
       throw new TakeoutStop('cancelled');
     }
@@ -1008,11 +1009,13 @@ export class TakeoutWorkerService {
   }
 
   private async finish(id: string, claimToken: string) {
-    if (await this.operations.beginValidation(id, claimToken)) {
-      await this.operations.complete(id, claimToken, { resultAssetId: null });
+    if (
+      (await this.operations.beginValidation(id, claimToken)) &&
+      (await this.operations.complete(id, claimToken, { resultAssetId: null }))
+    ) {
       return;
     }
-    await this.operations.acknowledgeCancel(id, { released: false });
+    await this.operations.acknowledgeCancel(id, claimToken, { released: false });
   }
 
   /**
