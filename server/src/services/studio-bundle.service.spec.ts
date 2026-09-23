@@ -435,7 +435,7 @@ describe(StudioBundleService.name, () => {
       expect(byId.get(assetA)).toMatchObject({
         mode: 'embedded',
         fileName: 'Lake.MOV',
-        path: `media/library-asset-${assetA}.MOV`,
+        path: `media/library-asset-${assetA}.mov`,
       });
       expect(byId.get(assetB)).toMatchObject({ mode: 'reference', fileName: null, sha256: null });
       expect(byId.get(assetC)).toMatchObject({ mode: 'reference', fileName: 'c.jpg' });
