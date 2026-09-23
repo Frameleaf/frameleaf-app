@@ -220,7 +220,7 @@
       id: current.id,
       offset,
       limit: PAGE,
-      state: itemFilter ? (itemFilter as TakeoutItemState) : undefined,
+      state: (itemFilter as TakeoutItemState) || undefined,
     });
     if (request === loadGeneration) {
       page = result;
@@ -375,8 +375,7 @@
       current = await resolveTakeoutItem({
         id: current.id,
         itemId: item.id,
-        takeoutResolveDto:
-          decision.skip === undefined ? { sidecarId: choice ? choice : null } : { skip: decision.skip },
+        takeoutResolveDto: decision.skip === undefined ? { sidecarId: choice || null } : { skip: decision.skip },
       });
       await loadItems();
     });
@@ -448,7 +447,7 @@
 
   const primary = $derived.by((): { label: string; disabled: boolean; action: () => void } => {
     if (!current) {
-      return { label: $t('frameleaf_takeout_continue'), disabled: busy || !name.trim(), action: create };
+      return { label: $t('frameleaf_takeout_continue'), disabled: busy || !name.trim(), action: () => void create() };
     }
     if (viewing && TAKEOUT_STAGES.indexOf(viewing) < TAKEOUT_STAGES.indexOf(serverStage)) {
       const next = TAKEOUT_STAGES[TAKEOUT_STAGES.indexOf(viewing) + 1];
@@ -459,11 +458,15 @@
       };
     }
     if (serverStage === 'stage') {
-      return { label: $t('frameleaf_takeout_continue'), disabled: busy || !!upload || !staged, action: scan };
+      return {
+        label: $t('frameleaf_takeout_continue'),
+        disabled: busy || !!upload || !staged,
+        action: () => void scan(),
+      };
     }
     if (serverStage === 'scan') {
       return canRetryScan(current)
-        ? { label: $t('frameleaf_takeout_scan_again'), disabled: busy || !staged, action: scan }
+        ? { label: $t('frameleaf_takeout_scan_again'), disabled: busy || !staged, action: () => void scan() }
         : { label: $t('frameleaf_takeout_continue'), disabled: true, action: () => {} };
     }
     if (current.state === TakeoutState.Completed && !pendingImport) {
@@ -475,7 +478,7 @@
         : current.state === TakeoutState.Completed
           ? $t('frameleaf_takeout_import_remaining')
           : $t('frameleaf_takeout_import');
-    return { label, disabled: busy || !reviewable || blocked, action: startImport };
+    return { label, disabled: busy || !reviewable || blocked, action: () => void startImport() };
   });
 
   const secondary = () => {

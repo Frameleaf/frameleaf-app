@@ -5,11 +5,9 @@
     title?: string;
     children?: Snippet;
     withHeader?: boolean;
-    withBackdrop?: boolean;
   }
 
-  // `withBackdrop` is accepted for call-site compatibility only: the Frameleaf auth
-  // shell has no logo backdrop to suppress.
+  // The Frameleaf auth shell has no logo backdrop, so there is no `withBackdrop` to pass.
   let { title, children, withHeader = true }: Props = $props();
 </script>
 

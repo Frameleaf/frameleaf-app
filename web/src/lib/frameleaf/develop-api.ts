@@ -86,7 +86,7 @@ export function followDevelop(
       }
       onUpdate(develop);
       if (anyRevisionBusy(develop.revisions)) {
-        timer = setTimeout(tick, interval);
+        timer = setTimeout(() => void tick(), interval);
       }
     } catch (error) {
       if (!stopped) {
