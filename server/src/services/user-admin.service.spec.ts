@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { describe } from 'vitest';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { mapUserAdmin } from 'src/dtos/user.dto.js';
-import { JobName, UserStatus } from 'src/enum.js';
+import { AssetVisibility, JobName, UserStatus } from 'src/enum.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
@@ -304,6 +304,33 @@ describe(UserAdminService.name, () => {
       mocks.user.restore.mockResolvedValue(userStub.user1);
       await expect(sut.restore(authStub.admin, userStub.user1.id)).resolves.toEqual(mapUserAdmin(userStub.user1));
       expect(mocks.user.restore).toHaveBeenCalledWith(userStub.user1.id);
+    });
+  });
+
+  describe('getStatistics', () => {
+    it("should refuse another user's Locked statistics, even to an elevated administrator (FL-34)", async () => {
+      const auth = authStub.adminWithElevatedPermission;
+
+      await expect(
+        sut.getStatistics(auth, userStub.user1.id, { visibility: AssetVisibility.Locked }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.asset.getStatistics).not.toHaveBeenCalled();
+    });
+
+    it('should refuse the administrator their own Locked statistics without an elevated session', async () => {
+      await expect(
+        sut.getStatistics(authStub.admin, authStub.admin.user.id, { visibility: AssetVisibility.Locked }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.asset.getStatistics).not.toHaveBeenCalled();
+    });
+
+    it('should count other visibilities as before', async () => {
+      mocks.asset.getStatistics.mockResolvedValue({ image: 1, video: 2, audio: 0, other: 0 } as any);
+
+      await sut.getStatistics(authStub.admin, userStub.user1.id, { visibility: AssetVisibility.Timeline });
+      expect(mocks.asset.getStatistics).toHaveBeenCalledWith(userStub.user1.id, {
+        visibility: AssetVisibility.Timeline,
+      });
     });
   });
 });
