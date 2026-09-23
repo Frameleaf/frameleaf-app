@@ -24,8 +24,17 @@
   import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
-  import { mdiAlertCircleOutline, mdiArrowLeft, mdiCheckCircle, mdiLockOutline, mdiProgressClock } from '@mdi/js';
+  import {
+    mdiAlertCircleOutline,
+    mdiArrowLeft,
+    mdiCheckCircle,
+    mdiCloudOffOutline,
+    mdiHistory,
+    mdiLockOutline,
+    mdiProgressClock,
+  } from '@mdi/js';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import StudioHistoryPanel from '$lib/components/frameleaf/StudioHistoryPanel.svelte';
   import { loadStudioEngine as defaultLoadStudioEngine, type StudioEngineResolution } from '$lib/frameleaf/studio/engine-loader';
   import type {
     StudioAssetRef,
@@ -45,6 +54,13 @@
     studioHostHeadingKey,
     type StudioHostEvent,
   } from '$lib/frameleaf/studio/host-state';
+  import {
+    STUDIO_DRAFT_PROJECT_ID,
+    type StudioConflict,
+    type StudioProjectAccess,
+    type StudioProjectSession,
+    type StudioProjectStatus,
+  } from '$lib/frameleaf/studio/project-session';
   import { readStudioThemeTokens } from '$lib/frameleaf/studio/theme';
 
   let {
@@ -60,6 +76,14 @@
     dirty = false,
     queuedJobs = 0,
     droppedAssetCount = 0,
+    session = null,
+    saveStatus = 'saved',
+    conflict = null,
+    access = null,
+    onReload,
+    onReacquire,
+    onTakeOver,
+    onSaveCopy,
     /** Injected in tests; production always resolves the registered engine. */
     loadEngine = defaultLoadStudioEngine,
   }: {
@@ -83,6 +107,20 @@
     queuedJobs?: number;
     /** Handoff items this session could not read, reported rather than silently missing. */
     droppedAssetCount?: number;
+    /** The project session (FL-89). When present the header offers history and review. */
+    session?: StudioProjectSession | null;
+    /** Persistence state from the session; drives the save indicator and the banner. */
+    saveStatus?: StudioProjectStatus;
+    conflict?: StudioConflict | null;
+    access?: StudioProjectAccess | null;
+    /** Discard the draft and load the head. Shown for `conflict`. */
+    onReload?: () => void;
+    /** Ask for the lease again. Shown for `lease-lost`. */
+    onReacquire?: () => void;
+    /** Take the lease from another of this account's instances. Explicit; shown for `lease-lost`. */
+    onTakeOver?: () => void;
+    /** Keep the draft by saving it as a new project. Shown for `conflict` and `lease-lost`. */
+    onSaveCopy?: () => void;
     loadEngine?: () => Promise<StudioEngineResolution>;
   } = $props();
 
@@ -90,6 +128,12 @@
   let stage = $state<HTMLDivElement>();
   let root = $state<HTMLElement>();
   let online = $state(true);
+  let historyOpen = $state(false);
+
+  const hasSavedProject = $derived(session !== null && project.id !== STUDIO_DRAFT_PROJECT_ID);
+  const showBanner = $derived(
+    saveStatus === 'conflict' || saveStatus === 'lease-lost' || saveStatus === 'offline' || saveStatus === 'error',
+  );
 
   /**
    * Held outside `$state`: the engine instance is not reactive data and must never be
@@ -260,7 +304,19 @@
     <div class="fl-studio-project">
       <h1>{project.name}</h1>
       <span class="fl-studio-save" role="status" aria-live="polite">
-        {#if state.dirty}
+        {#if saveStatus === 'saving'}
+          <Icon icon={mdiProgressClock} size="14" />
+          {$t('frameleaf_studio_saving')}
+        {:else if saveStatus === 'offline'}
+          <Icon icon={mdiCloudOffOutline} size="14" />
+          {$t('frameleaf_studio_offline_title')}
+        {:else if saveStatus === 'conflict'}
+          <Icon icon={mdiAlertCircleOutline} size="14" />
+          {$t('frameleaf_studio_conflict_title')}
+        {:else if saveStatus === 'lease-lost'}
+          <Icon icon={mdiLockOutline} size="14" />
+          {$t('frameleaf_studio_lease_lost_title')}
+        {:else if state.dirty || saveStatus === 'dirty'}
           {$t('frameleaf_studio_unsaved')}
         {:else if !project.hasLease}
           <Icon icon={mdiLockOutline} size="14" />
@@ -287,8 +343,51 @@
       </Button>
     {/if}
 
+    {#if hasSavedProject}
+      <Button variant="quiet" pressed={historyOpen} onclick={() => (historyOpen = !historyOpen)}>
+        <Icon icon={mdiHistory} size="16" />
+        {$t('frameleaf_studio_history_title')}
+      </Button>
+    {/if}
+
     <span class="fl-studio-editor-as">{$t('frameleaf_studio_editing_as', { values: { name: auth.name } })}</span>
   </header>
+
+  {#if showBanner}
+    <!--
+      Persistence trouble is the person's to resolve, so it is stated in plain terms with the
+      choices spelled out. Nothing here discards the draft on its own: reload and save-as-copy
+      are explicit, and taking a lease away from another window is never implied by a retry.
+    -->
+    <div class="fl-studio-banner" role="alert" data-testid="studio-save-banner" data-status={saveStatus}>
+      <Icon icon={saveStatus === 'offline' ? mdiCloudOffOutline : mdiAlertCircleOutline} size="18" />
+      <p>
+        {#if saveStatus === 'conflict'}
+          {$t('frameleaf_studio_conflict_body')}
+        {:else if saveStatus === 'lease-lost'}
+          {$t('frameleaf_studio_lease_lost_body')}
+        {:else if saveStatus === 'offline'}
+          {$t('frameleaf_studio_offline_saving')}
+        {:else}
+          {$t('frameleaf_studio_save_failed')}
+        {/if}
+      </p>
+      <div class="fl-studio-banner-actions">
+        {#if saveStatus === 'conflict' && onReload}
+          <Button variant="quiet" onclick={onReload}>{$t('frameleaf_studio_conflict_reload')}</Button>
+        {/if}
+        {#if saveStatus === 'lease-lost' && onReacquire}
+          <Button variant="quiet" onclick={onReacquire}>{$t('frameleaf_studio_lease_lost_reacquire')}</Button>
+        {/if}
+        {#if saveStatus === 'lease-lost' && conflict?.lease?.heldByAnother && onTakeOver}
+          <Button variant="quiet" onclick={onTakeOver}>{$t('frameleaf_studio_lease_lost_take_over')}</Button>
+        {/if}
+        {#if (saveStatus === 'conflict' || saveStatus === 'lease-lost') && onSaveCopy}
+          <Button variant="primary" onclick={onSaveCopy}>{$t('frameleaf_studio_conflict_save_copy')}</Button>
+        {/if}
+      </div>
+    </div>
+  {/if}
 
   <div class="fl-studio-body">
     <!--
@@ -302,6 +401,19 @@
       data-testid="studio-stage"
       aria-hidden={state.phase === 'ready' ? undefined : 'true'}
     ></div>
+
+    {#if historyOpen && session && hasSavedProject}
+      <div class="fl-studio-drawer">
+        <StudioHistoryPanel
+          {session}
+          revision={project.revision}
+          userId={auth.userId}
+          {access}
+          canRestore={project.hasLease && saveStatus !== 'conflict' && saveStatus !== 'lease-lost'}
+          onClose={() => (historyOpen = false)}
+        />
+      </div>
+    {/if}
 
     {#if headingKey}
       <div class="fl-studio-state" data-testid="studio-state" data-phase={state.phase}>
@@ -346,8 +458,8 @@
     position: fixed;
     inset: 0;
     z-index: 30;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
     background: var(--fl-canvas);
     color: var(--fl-text);
   }
@@ -386,9 +498,39 @@
   .fl-studio-grow {
     flex: 1 1 auto;
   }
+  .fl-studio-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--fl-border);
+    background: var(--fl-warning);
+    color: var(--fl-warning-text);
+  }
+  .fl-studio-banner p {
+    margin: 0;
+    flex: 1 1 16rem;
+    font-size: 0.875rem;
+  }
+  .fl-studio-banner-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
   .fl-studio-body {
     position: relative;
+    flex: 1 1 auto;
     min-height: 0;
+  }
+  .fl-studio-drawer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
+    display: flex;
+    box-shadow: var(--fl-shadow-1);
   }
   .fl-studio-stage {
     position: absolute;
