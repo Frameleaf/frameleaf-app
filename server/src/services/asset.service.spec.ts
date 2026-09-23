@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { AssetJobName, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
-import { AssetEditAction } from 'src/dtos/editing.dto.js';
+import { AssetEditAction, type AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import {
   AssetFileType,
   AssetLockReason,
@@ -1132,7 +1132,7 @@ describe(AssetService.name, () => {
     });
 
     it('should allow video edits and queue video edit generation', async () => {
-      const edit = {
+      const edit: AssetEditActionItem = {
         action: AssetEditAction.Trim,
         parameters: { startMs: 1000, endMs: 5000 },
       };
@@ -1185,7 +1185,7 @@ describe(AssetService.name, () => {
       expect(mocks.assetEdit.replaceAll).not.toHaveBeenCalled();
     });
 
-    it.each([
+    it.each<[string, AssetEditActionItem, string]>([
       [
         'speed',
         { action: AssetEditAction.Speed, parameters: { rate: 0.5, startMs: 500, endMs: 900 } },
@@ -1223,7 +1223,7 @@ describe(AssetService.name, () => {
     });
 
     it('should allow non-overlapping video speed segments', async () => {
-      const edit = {
+      const edit: AssetEditActionItem = {
         action: AssetEditAction.Speed,
         parameters: { rate: 0.5, startMs: 1000, endMs: 3000 },
       };
