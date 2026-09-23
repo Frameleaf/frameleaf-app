@@ -10,6 +10,7 @@
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
   import ThemeButton from '$lib/components/shared-components/ThemeButton.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
+  import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
   import '$lib/frameleaf/tokens.css';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -30,7 +31,7 @@
     mdiLockOutline,
     mdiMenu,
   } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
@@ -55,6 +56,11 @@
   let isSessionLoading = $state(true);
 
   const hasUnreadNotifications = $derived(notificationManager.notifications.length > 0);
+  // FL-104: background jobs the viewer may see (queues too, for administrators) are in the panel.
+  const runningCount = $derived(runningJobsSession.activeCount);
+  const bellLabel = $derived(
+    runningCount > 0 ? $t('frameleaf_running_bell', { values: { count: runningCount } }) : $t('notifications'),
+  );
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   const isAdminRoute = $derived(page.url.pathname.startsWith('/admin'));
   const lockedLabel = $derived(isElevated ? $t('lock_sensitive_content') : $t('unlock_sensitive_content'));
@@ -70,10 +76,23 @@
     void refreshNotifications();
     void refreshAuthStatus();
 
-    return eventManager.on({
+    // One poll for everything running; fast only while the panel is open or something runs.
+    const stopRunningJobs = runningJobsSession.watch();
+    const stopEvents = eventManager.on({
       SessionLocked: () => (isElevated = false),
       SessionAccessChanged: ({ isElevated: elevated }) => (isElevated = elevated),
     });
+
+    return () => {
+      stopRunningJobs();
+      stopEvents();
+    };
+  });
+
+  // Open panel: poll at the fast pace so its bars keep up; closed: back to following the work.
+  $effect(() => {
+    const open = showNotifications;
+    untrack(() => runningJobsSession.setPanelOpen(open));
   });
 
   const refreshNotifications = async () => {
@@ -222,8 +241,14 @@
               size="medium"
               icon={hasUnreadNotifications ? mdiBellBadge : mdiBellOutline}
               onclick={() => (showNotifications = !showNotifications)}
-              aria-label={$t('notifications')}
+              aria-label={bellLabel}
+              aria-haspopup="dialog"
+              aria-expanded={showNotifications}
             />
+            {#if runningCount > 0}
+              <!-- Jobs are running: a small turning ring at the bell's foot, still for reduced motion. -->
+              <span class="fl-bell-running" aria-hidden="true"></span>
+            {/if}
             {#if hasUnreadNotifications}
               <div
                 class="pointer-events-none absolute top-0 right-1 flex size-5 items-center justify-center rounded-full border bg-primary text-[10px] font-bold text-light"
@@ -234,7 +259,7 @@
           </div>
 
           {#if showNotifications}
-            <NotificationPanel />
+            <NotificationPanel onClose={() => (showNotifications = false)} />
           {/if}
         </div>
 
@@ -272,5 +297,29 @@
   }
   .fl-no-border {
     border-bottom: 0;
+  }
+  .fl-bell-running {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--fl-border);
+    border-top-color: var(--fl-accent);
+    border-radius: 50%;
+    background: var(--fl-panel);
+    pointer-events: none;
+    animation: fl-bell-spin 900ms linear infinite;
+  }
+  @keyframes fl-bell-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fl-bell-running {
+      border-color: var(--fl-accent);
+      animation: none;
+    }
   }
 </style>
