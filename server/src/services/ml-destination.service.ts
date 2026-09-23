@@ -1,0 +1,418 @@
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import { OnEvent } from 'src/decorators.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import {
+  MlAdmissionRequestDto,
+  MlAdmissionResponseDto,
+  MlCapabilitiesResponseDto,
+  MlDestinationConsentRequestDto,
+  MlDestinationCreateDto,
+  MlDestinationHealthStateDto,
+  MlDestinationResponseDto,
+  MlDestinationUpdateDto,
+  MlWorkloadCapabilityDto,
+  MlWorkloadRouteUpdateDto,
+  MlWorkloadRoutesResponseDto,
+} from 'src/dtos/ml-destination.dto.js';
+import {
+  BootstrapEventPriority,
+  DatabaseLock,
+  ImmichWorker,
+  LIBRARY_ML_WORKLOADS,
+  MlDestinationHealth,
+  MlDestinationKind,
+  MlWorkload,
+} from 'src/enum.js';
+import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
+import { BaseService } from 'src/services/base.service.js';
+import {
+  ML_BUDGET_WINDOW_DAYS,
+  hasRequiredConsent,
+  healthFromProbe,
+  isCloudDestination,
+  resolveEndpoint,
+  summarizeProbe,
+} from 'src/utils/ml-destination.js';
+
+/** Window over which measured throughput is averaged for estimates. */
+export const ML_ESTIMATE_WINDOW_DAYS = 30;
+
+const windowStart = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+/**
+ * Administration of machine-learning destinations, workload routes, consent, cost controls
+ * and health probes, plus the capability snapshot the Studio host reads (FL-110).
+ *
+ * Bootstrap creates a local destination for each configured ML URL and routes the library
+ * workloads to the first one when they have no route; that is the only implicit creation,
+ * and it is local. RunPod destinations are created by an administrator, need a separate
+ * recorded consent, and are never routed automatically.
+ */
+@Injectable()
+export class MlDestinationService extends BaseService {
+  private probeHandle?: ReturnType<typeof setInterval>;
+
+  @OnEvent({ name: 'ConfigInit', priority: BootstrapEventPriority.SystemConfig + 2 })
+  async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
+    await this.reconcile(newConfig.machineLearning);
+  }
+
+  @OnEvent({ name: 'ConfigUpdate', server: true })
+  async onConfigUpdate({ newConfig }: ArgOf<'ConfigUpdate'>) {
+    await this.reconcile(newConfig.machineLearning);
+  }
+
+  @OnEvent({ name: 'AppShutdown' })
+  onShutdown() {
+    this.stopProbing();
+  }
+
+  private async reconcile(machineLearning: { urls: string[]; availabilityChecks: { enabled: boolean; interval: number } }) {
+    try {
+      await this.databaseRepository.withLock(DatabaseLock.MlDestinationBootstrap, () =>
+        this.ensureLocalDestinations(machineLearning.urls),
+      );
+    } catch (error) {
+      this.logger.warn(`Could not reconcile local machine-learning destinations: ${error}`);
+    }
+
+    this.stopProbing();
+    if (machineLearning.availabilityChecks.enabled && this.configRepository.getWorker() === ImmichWorker.Api) {
+      this.probeHandle = setInterval(() => {
+        void this.probeAll().catch((error) => this.logger.warn(`Destination probe sweep failed: ${error}`));
+      }, machineLearning.availabilityChecks.interval);
+    }
+  }
+
+  private stopProbing() {
+    if (this.probeHandle) {
+      clearInterval(this.probeHandle);
+      this.probeHandle = undefined;
+    }
+  }
+
+  /**
+   * Make sure every configured ML URL has a local destination and every library workload
+   * has a route. Nothing here touches LAN or RunPod rows.
+   */
+  private async ensureLocalDestinations(urls: string[]) {
+    let first: MlDestinationRow | undefined;
+    for (const url of urls) {
+      let row = await this.mlDestinationRepository.getByUrl(MlDestinationKind.Local, url);
+      if (!row) {
+        row = await this.mlDestinationRepository.create({
+          kind: MlDestinationKind.Local,
+          name: urls.length === 1 ? 'This server' : `This server (${new URL(url).host})`,
+          url,
+          authToken: null,
+          enabled: true,
+          workloads: [...LIBRARY_ML_WORKLOADS],
+          budgetLimitUsd: null,
+          maxRuntimeMinutes: null,
+          maxUploadBytes: null,
+        });
+        this.logger.log(`Created local machine-learning destination for ${url}`);
+      }
+      first ??= row;
+    }
+
+    if (!first) {
+      return;
+    }
+
+    for (const workload of LIBRARY_ML_WORKLOADS) {
+      const route = await this.mlDestinationRepository.getRoute(workload);
+      if (!route) {
+        await this.mlDestinationRepository.setRoute(workload, first.id);
+        this.logger.log(`Routed ${workload} to local destination ${first.name}`);
+      }
+    }
+  }
+
+  async list(): Promise<MlDestinationResponseDto[]> {
+    const rows = await this.mlDestinationRepository.getAll();
+    return Promise.all(rows.map((row) => this.toDto(row)));
+  }
+
+  async get(id: string): Promise<MlDestinationResponseDto> {
+    return this.toDto(await this.require(id));
+  }
+
+  async create(dto: MlDestinationCreateDto): Promise<MlDestinationResponseDto> {
+    if (dto.kind === MlDestinationKind.RunPod) {
+      if (dto.url || dto.authToken) {
+        throw new BadRequestException('A RunPod destination takes its URL and credentials from the RunPod service');
+      }
+      const existing = (await this.mlDestinationRepository.getAll()).find((row) => row.kind === MlDestinationKind.RunPod);
+      if (existing) {
+        throw new BadRequestException('There is already a RunPod destination; edit it instead');
+      }
+    } else if (dto.kind === MlDestinationKind.Lan && !dto.url) {
+      throw new BadRequestException('A LAN destination needs a URL');
+    }
+
+    const row = await this.mlDestinationRepository.create({
+      kind: dto.kind,
+      name: dto.name,
+      url: dto.url ?? null,
+      authToken: dto.authToken ?? null,
+      enabled: dto.enabled,
+      workloads: this.uniqueWorkloads(dto.workloads),
+      budgetLimitUsd: dto.budgetLimitUsd ?? null,
+      maxRuntimeMinutes: dto.maxRuntimeMinutes ?? null,
+      maxUploadBytes: dto.maxUploadBytes ?? null,
+    });
+    return this.toDto(row);
+  }
+
+  async update(id: string, dto: MlDestinationUpdateDto): Promise<MlDestinationResponseDto> {
+    const current = await this.require(id);
+    if (current.kind === MlDestinationKind.RunPod && (dto.url || dto.authToken)) {
+      throw new BadRequestException('A RunPod destination takes its URL and credentials from the RunPod service');
+    }
+    if (current.kind === MlDestinationKind.Lan && dto.url === null) {
+      throw new BadRequestException('A LAN destination needs a URL');
+    }
+
+    const row = await this.mlDestinationRepository.update(id, {
+      name: dto.name,
+      url: dto.url === undefined ? undefined : dto.url,
+      authToken: dto.authToken === undefined ? undefined : dto.authToken,
+      enabled: dto.enabled,
+      workloads: dto.workloads === undefined ? undefined : this.uniqueWorkloads(dto.workloads),
+      budgetLimitUsd: dto.budgetLimitUsd,
+      maxRuntimeMinutes: dto.maxRuntimeMinutes,
+      maxUploadBytes: dto.maxUploadBytes,
+    });
+    return this.toDto(row);
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.require(id);
+    // Routes cascade with the row, so the workloads that pointed here become unrouted and
+    // their jobs are refused until an administrator routes them again. That is the point:
+    // a removed destination never redirects work elsewhere.
+    await this.mlDestinationRepository.delete(id);
+  }
+
+  async grantConsent(auth: AuthDto, id: string, dto: MlDestinationConsentRequestDto): Promise<MlDestinationResponseDto> {
+    if (dto.acknowledgeMediaLeavesNetwork !== true) {
+      throw new BadRequestException('Consent must be acknowledged explicitly');
+    }
+    const current = await this.require(id);
+    if (!isCloudDestination(current.kind)) {
+      throw new BadRequestException(`${current.name} keeps media on this network and needs no consent`);
+    }
+    const row = await this.mlDestinationRepository.update(id, {
+      consentAcknowledgedAt: new Date(),
+      consentAcknowledgedBy: auth.user.id,
+    });
+    return this.toDto(row);
+  }
+
+  async revokeConsent(id: string): Promise<MlDestinationResponseDto> {
+    await this.require(id);
+    const row = await this.mlDestinationRepository.update(id, {
+      consentAcknowledgedAt: null,
+      consentAcknowledgedBy: null,
+    });
+    return this.toDto(row);
+  }
+
+  /** Probe one destination now and persist the result. */
+  async probe(id: string): Promise<MlDestinationHealthStateDto> {
+    const row = await this.require(id);
+    return this.probeRow(row);
+  }
+
+  private async probeRow(row: MlDestinationRow): Promise<MlDestinationHealthStateDto> {
+    const endpoint = resolveEndpoint(row, this.machineLearningRepository.getRunPodEndpoint());
+    const probedAt = new Date();
+    if (!endpoint) {
+      const summary =
+        row.kind === MlDestinationKind.RunPod ? 'No running pod or ready serverless worker' : 'No URL configured';
+      await this.mlDestinationRepository.recordProbe(row.id, {
+        health: MlDestinationHealth.Unhealthy,
+        summary,
+        workloads: null,
+        probedAt,
+      });
+      return { status: MlDestinationHealth.Unhealthy, probedAt: probedAt.toISOString(), summary, servedWorkloads: null };
+    }
+
+    const probe = await this.machineLearningRepository.probe(endpoint);
+    const health = healthFromProbe(probe);
+    const summary = summarizeProbe(probe);
+    const servedWorkloads = probe.reachable ? probe.workloads : null;
+    await this.mlDestinationRepository.recordProbe(row.id, {
+      health,
+      summary,
+      workloads: servedWorkloads,
+      probedAt: probe.probedAt,
+    });
+    return { status: health, probedAt: probe.probedAt.toISOString(), summary, servedWorkloads };
+  }
+
+  private async probeAll() {
+    const rows = await this.mlDestinationRepository.getAll();
+    for (const row of rows) {
+      if (row.enabled) {
+        await this.probeRow(row);
+      }
+    }
+  }
+
+  async getRoutes(): Promise<MlWorkloadRoutesResponseDto> {
+    const routes = await this.mlDestinationRepository.getRoutes();
+    const byWorkload = new Map(routes.map((route) => [route.workload, route.destinationId]));
+    return {
+      routes: Object.values(MlWorkload).map((workload) => ({
+        workload,
+        destinationId: byWorkload.get(workload) ?? null,
+      })),
+    };
+  }
+
+  async setRoute(workload: MlWorkload, dto: MlWorkloadRouteUpdateDto): Promise<MlWorkloadRoutesResponseDto> {
+    if (dto.destinationId === null) {
+      await this.mlDestinationRepository.clearRoute(workload);
+      return this.getRoutes();
+    }
+    const destination = await this.require(dto.destinationId);
+    if (!destination.workloads.includes(workload)) {
+      throw new BadRequestException(`${destination.name} is not allowed to run ${workload}`);
+    }
+    if (!hasRequiredConsent(destination)) {
+      throw new BadRequestException(`${destination.name} sends media off this network; record consent before routing to it`);
+    }
+    await this.mlDestinationRepository.setRoute(workload, destination.id);
+    return this.getRoutes();
+  }
+
+  /**
+   * The per-request selection API over HTTP: admit `workload` against exactly the named
+   * destination. Refusals surface as 4xx errors carrying the refusal code; nothing here ever
+   * answers with a different destination.
+   */
+  async admit(id: string, dto: MlAdmissionRequestDto): Promise<MlAdmissionResponseDto> {
+    const selection = await this.selectMlDestination({
+      workload: dto.workload,
+      destinationId: id,
+      jobId: dto.jobId ?? null,
+    });
+    const row = await this.require(id);
+    const sample = await this.mlDestinationRepository.getThroughput(
+      id,
+      windowStart(ML_ESTIMATE_WINDOW_DAYS),
+      dto.workload,
+    );
+    return {
+      destinationId: selection.destinationId,
+      kind: selection.kind,
+      workload: selection.workload,
+      health: this.healthOf(row),
+      estimate: {
+        sampleCount: sample.sampleCount,
+        bytesPerSecond:
+          sample.sampleCount > 0 && sample.durationMs > 0 ? (sample.bytesSent * 1000) / sample.durationMs : null,
+        windowDays: ML_ESTIMATE_WINDOW_DAYS,
+      },
+    };
+  }
+
+  /**
+   * What this deployment can run right now, per workload, from the persisted probe state.
+   * The Studio host reads `studio`; gpuWorker and renderWorker stay false here because the
+   * render worker admission (FL-95, FL-104) owns them and this service has no evidence of one.
+   */
+  async getCapabilities(): Promise<MlCapabilitiesResponseDto> {
+    const [rows, routes] = await Promise.all([this.mlDestinationRepository.getAll(), this.mlDestinationRepository.getRoutes()]);
+    const routed = new Map(routes.map((route) => [route.workload, route.destinationId]));
+
+    const workloads: MlWorkloadCapabilityDto[] = Object.values(MlWorkload).map((workload) => {
+      const destinations = rows.map((row) => {
+        const consentGranted = hasRequiredConsent(row);
+        const available =
+          row.enabled &&
+          consentGranted &&
+          row.workloads.includes(workload) &&
+          row.lastProbeHealth === MlDestinationHealth.Healthy &&
+          (row.lastProbeWorkloads ?? []).includes(workload);
+        return { id: row.id, kind: row.kind, name: row.name, health: row.lastProbeHealth, consentGranted, available };
+      });
+      return {
+        workload,
+        available: destinations.some((destination) => destination.available),
+        routedDestinationId: routed.get(workload) ?? null,
+        destinations,
+      };
+    });
+
+    const available = (workload: MlWorkload) => workloads.find((entry) => entry.workload === workload)?.available ?? false;
+
+    return {
+      workloads,
+      studio: {
+        gpuWorker: false,
+        renderWorker: false,
+        restorationWorker: available(MlWorkload.RestorationFaithful) || available(MlWorkload.RestorationCreative),
+        transcriptionWorker: available(MlWorkload.StudioAi),
+      },
+      probedAt: new Date().toISOString(),
+    };
+  }
+
+  private async require(id: string): Promise<MlDestinationRow> {
+    const row = await this.mlDestinationRepository.getById(id);
+    if (!row) {
+      throw new NotFoundException(`Machine learning destination ${id} does not exist`);
+    }
+    return row;
+  }
+
+  private uniqueWorkloads(workloads: MlWorkload[]): MlWorkload[] {
+    return [...new Set(workloads)];
+  }
+
+  private healthOf(row: MlDestinationRow): MlDestinationHealthStateDto {
+    return {
+      status: row.lastProbeHealth,
+      probedAt: row.lastProbeAt ? new Date(row.lastProbeAt).toISOString() : null,
+      summary: row.lastProbeSummary,
+      servedWorkloads: row.lastProbeWorkloads,
+    };
+  }
+
+  private async toDto(row: MlDestinationRow): Promise<MlDestinationResponseDto> {
+    const spentUsd =
+      row.budgetLimitUsd === null
+        ? 0
+        : await this.mlDestinationRepository.getSpend(row.id, windowStart(ML_BUDGET_WINDOW_DAYS));
+    const endpoint = resolveEndpoint(row, this.machineLearningRepository.getRunPodEndpoint());
+    return {
+      id: row.id,
+      kind: row.kind,
+      name: row.name,
+      url: endpoint?.url ?? null,
+      authTokenConfigured: row.kind === MlDestinationKind.RunPod ? Boolean(endpoint?.authToken) : row.authToken !== null,
+      enabled: row.enabled,
+      workloads: row.workloads,
+      consent: {
+        required: isCloudDestination(row.kind),
+        acknowledgedAt: row.consentAcknowledgedAt ? new Date(row.consentAcknowledgedAt).toISOString() : null,
+        acknowledgedBy: row.consentAcknowledgedBy,
+      },
+      costControls: {
+        budgetLimitUsd: row.budgetLimitUsd,
+        maxRuntimeMinutes: row.maxRuntimeMinutes,
+        maxUploadBytes: row.maxUploadBytes === null ? null : Number(row.maxUploadBytes),
+        spentUsd,
+        budgetWindowDays: ML_BUDGET_WINDOW_DAYS,
+      },
+      health: this.healthOf(row),
+      createdAt: new Date(row.createdAt).toISOString(),
+      updatedAt: new Date(row.updatedAt).toISOString(),
+    };
+  }
+}

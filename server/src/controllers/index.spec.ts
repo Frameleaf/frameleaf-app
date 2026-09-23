@@ -21,6 +21,16 @@ const UNAUTHENTICATED_ADMIN_ROUTES = new Set([
 /** Admin-only routes that live outside `admin/`, i.e. `@Authenticated({ admin: true })` */
 const ADMIN_ROUTES = new Set([
   'DELETE libraries/:id',
+  'DELETE ml-destinations/:id',
+  'DELETE ml-destinations/:id/consent',
+  'GET ml-destinations',
+  'GET ml-destinations/:id',
+  'GET ml-destinations/routes',
+  'POST ml-destinations',
+  'POST ml-destinations/:id/probe',
+  'PUT ml-destinations/:id',
+  'PUT ml-destinations/:id/consent',
+  'PUT ml-destinations/routes/:workload',
   'DELETE runpod/endpoint',
   'DELETE runpod/pods/current',
   'GET runpod/gpus',
