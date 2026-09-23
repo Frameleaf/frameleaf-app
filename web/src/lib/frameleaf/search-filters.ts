@@ -407,7 +407,8 @@ export const describeFilterChips = (
   fields: string[] = activeFilterFields(query),
 ): FilterChipDescriptor[] =>
   fields.map((field) => {
-    const label = FIELD_LABEL_KEYS[field] ? $t(FIELD_LABEL_KEYS[field]) : field;
+    const labelKey = FIELD_LABEL_KEYS[field];
+    const label = labelKey ? $t(labelKey) : field;
 
     if (field === ENRICHMENT_FIELD) {
       return {
@@ -433,8 +434,9 @@ export const describeFilterChips = (
       return { field, personIds: [], label: `${label}: ${$t('frameleaf_search_invalid_filter')}` };
     }
 
-    if (BOOLEAN_LABEL_KEYS[field] && isOnly(condition, 'eq') && typeof condition.eq === 'boolean') {
-      const [whenFalse, whenTrue] = BOOLEAN_LABEL_KEYS[field];
+    const booleanLabels = BOOLEAN_LABEL_KEYS[field];
+    if (booleanLabels && isOnly(condition, 'eq') && typeof condition.eq === 'boolean') {
+      const [whenFalse, whenTrue] = booleanLabels;
       return { field, personIds: [], label: $t(condition.eq ? whenTrue : whenFalse) };
     }
 

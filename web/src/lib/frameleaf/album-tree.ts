@@ -68,7 +68,7 @@ const toCollectionNode = (entry: AlbumCollectionResponseDto): FrameleafAlbumNode
  * level, never nested.
  */
 export const buildAlbumTree = (tree: AlbumTreeResponseDto): FrameleafAlbumTree => ({
-  collections: tree.collections.map(toCollectionNode),
+  collections: tree.collections.map((collection) => toCollectionNode(collection)),
   albums: tree.albums.map((album) => toNode(album, 'album')),
   spaces: tree.spaces.map((album) => toNode(album, 'space')),
 });

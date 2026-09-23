@@ -270,7 +270,7 @@ export class HistoryBuilder {
 export const extraModels: Function[] = [];
 
 export const ExtraModel = (): ClassDecorator => {
-  // eslint-disable-next-line unicorn/consistent-function-scoping, @typescript-eslint/no-unsafe-function-type
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   return (object: Function) => {
     extraModels.push(object);
   };

@@ -253,7 +253,7 @@
 
         {#if moments.frames.length > 0}
           <ol class="moments-frames" aria-label={$t('frameleaf_moments_frames')}>
-            {#each moments.frames.toSorted((a, b) => a.rank - b.rank) as frame (frame.id)}
+            {#each [...moments.frames].sort((a, b) => a.rank - b.rank) as frame (frame.id)}
               <li>
                 <button
                   type="button"

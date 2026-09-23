@@ -105,7 +105,7 @@ const LIBRARY_ROOTS = [
   Route.sharing(),
   Route.explore(),
   Route.search(),
-].map(pathOf);
+].map((route) => pathOf(route));
 
 /**
  * `people` is the prototype's "people" screen, in the Library-highlight set — but only its list.

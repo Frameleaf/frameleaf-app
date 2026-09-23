@@ -323,7 +323,7 @@
               return undefined;
             }
             const key = entityNameKey(field, id);
-            if (!(key in filterEntityNames)) {
+            if (!Object.hasOwn(filterEntityNames, key)) {
               return '…';
             }
             return filterEntityNames[key] ?? $t(FILTER_ENTITY_FALLBACK_KEYS[kind]);

@@ -211,7 +211,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
   const spaceViewerMatching = snapshot && !!context.spaceViewerMatching;
   /** True when no asset is loaded: the descriptor cannot inspect the selection, so it offers. */
   const unknown = assets.length === 0;
-  const any = (predicate: (asset: BulkAsset) => boolean) => assets.some(predicate);
+  const any = (predicate: (asset: BulkAsset) => boolean) => assets.some((asset) => predicate(asset));
   const resolved = has && !snapshot;
 
   const rows: (Omit<BulkAction, 'danger' | 'dialog' | 'confirm' | 'undoable' | 'albumId'> &

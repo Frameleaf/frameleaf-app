@@ -99,13 +99,15 @@ export const searchAlbumTargets = (directory: AlbumTargetDirectory, query: strin
   }
   const hit = (target: AlbumTarget) => matches(target.name, tokens);
   return {
-    albums: directory.albums.filter(hit),
+    albums: directory.albums.filter((target) => hit(target)),
     collections: directory.collections
       .map((collection) =>
-        matches(collection.name, tokens) ? collection : { ...collection, albums: collection.albums.filter(hit) },
+        matches(collection.name, tokens)
+          ? collection
+          : { ...collection, albums: collection.albums.filter((target) => hit(target)) },
       )
       .filter((collection) => collection.albums.length > 0),
-    spaces: directory.spaces.filter(hit),
+    spaces: directory.spaces.filter((target) => hit(target)),
   };
 };
 

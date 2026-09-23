@@ -51,14 +51,14 @@
   // load the two items on show; their ratings are the starting point for the decisions
   $effect(() => {
     for (const id of shown) {
-      if (assets[id] || loading.has(id)) {
+      if (Object.hasOwn(assets, id) || loading.has(id)) {
         continue;
       }
       loading.add(id);
       void getAssetInfo({ ...authManager.params, id })
         .then((asset) => {
           assets = { ...assets, [id]: asset };
-          if (!(id in ratings)) {
+          if (!Object.hasOwn(ratings, id)) {
             ratings = { ...ratings, [id]: asset.exifInfo?.rating ?? null };
           }
         })
