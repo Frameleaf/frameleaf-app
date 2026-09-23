@@ -205,7 +205,7 @@ export class BulkOperationService {
    * Work through the queue until it is empty or we are stopping.
    *
    * Lapsed claims are not recovered here. One sweep owns recovery for every kind of media
-   * operation, so it never runs twice with two different answers: `RestorationWorkerService.sweep`
+   * operation, so it never runs twice with two different answers: `MediaOperationSweepService`
    * returns lapsed bulk jobs to the queue (or gives them their automatic retry) with the rest.
    */
   async drain(): Promise<void> {
