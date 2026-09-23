@@ -133,6 +133,14 @@ import { SystemMetadataTable } from 'src/schema/tables/system-metadata.table.js'
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { TagClosureTable } from 'src/schema/tables/tag-closure.table.js';
 import { TagTable } from 'src/schema/tables/tag.table.js';
+import {
+  TakeoutAlbumTable,
+  TakeoutFileTable,
+  TakeoutImportTable,
+  TakeoutItemTable,
+  TakeoutPairTable,
+  TakeoutSourceTable,
+} from 'src/schema/tables/takeout.table.js';
 import { UserAuditTable } from 'src/schema/tables/user-audit.table.js';
 import { UserMetadataAuditTable } from 'src/schema/tables/user-metadata-audit.table.js';
 import { UserMetadataTable } from 'src/schema/tables/user-metadata.table.js';
@@ -237,6 +245,12 @@ export class ImmichDatabase {
     StudioProjectRevisionTable,
     StudioProjectCommentTable,
     StudioBundleUploadTable,
+    TakeoutImportTable,
+    TakeoutSourceTable,
+    TakeoutFileTable,
+    TakeoutItemTable,
+    TakeoutPairTable,
+    TakeoutAlbumTable,
     SessionSyncCheckpointTable,
     SystemMetadataTable,
     TagTable,
@@ -409,6 +423,13 @@ export interface DB {
   studio_bundle_upload: StudioBundleUploadTable;
 
   system_metadata: SystemMetadataTable;
+
+  takeout_album: TakeoutAlbumTable;
+  takeout_file: TakeoutFileTable;
+  takeout_import: TakeoutImportTable;
+  takeout_item: TakeoutItemTable;
+  takeout_pair: TakeoutPairTable;
+  takeout_source: TakeoutSourceTable;
 
   tag: TagTable;
   tag_asset: TagAssetTable;
