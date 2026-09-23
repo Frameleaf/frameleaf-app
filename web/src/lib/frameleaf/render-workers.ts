@@ -161,6 +161,7 @@ export const operationKindKey: Readonly<Record<MediaOperationKind, Translations>
   [MediaOperationKind.StudioBundleImport]: 'frameleaf_render_workers_kind_studio_bundle_import',
   [MediaOperationKind.EnrichmentPlan]: 'frameleaf_render_workers_kind_enrichment_plan',
   [MediaOperationKind.MediaHealth]: 'frameleaf_render_workers_kind_media_health',
+  [MediaOperationKind.PhysicalDeduplication]: 'frameleaf_render_workers_kind_physical_deduplication',
 };
 
 /**

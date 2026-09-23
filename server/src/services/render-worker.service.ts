@@ -59,6 +59,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { RENDER_WORKER_LIMIT_INSTANCE_SUBJECT } from 'src/schema/tables/render-worker.table.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { isRenderWorkerMediaOperationKind } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   AuthorizedManifest,
@@ -544,7 +545,8 @@ export class RenderWorkerService {
     const { worker, session } = await this.authenticate(sessionToken);
     const now = new Date();
 
-    const scopes = session.scopes as MediaOperationKind[];
+    // FL-73: a saved scope may predate the render-only rule; server-side jobs are never handed out.
+    const scopes = (session.scopes as MediaOperationKind[]).filter((kind) => isRenderWorkerMediaOperationKind(kind));
     const kinds = dto.kinds ? dto.kinds.filter((kind) => scopes.includes(kind)) : scopes;
     if (kinds.length === 0) {
       throw new ForbiddenException('Requested kinds are outside this session’s scopes');
