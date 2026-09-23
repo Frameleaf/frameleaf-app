@@ -14,6 +14,14 @@ import { DUPLICATE_DECISION_MAX_GROUPS } from 'src/utils/duplicate-review.js';
 
 const JsonObjectSchema = z.record(z.string(), z.unknown());
 
+/** One still + motion video pair to relink (FL-70). */
+const MediaOperationLivePhotoPairSchema = z
+  .object({
+    photoId: z.uuidv4().describe('Still image asset ID'),
+    videoId: z.uuidv4().describe('Motion video asset ID'),
+  })
+  .meta({ id: 'MediaOperationLivePhotoPairDto' });
+
 /**
  * What a checkpoint shows the owner.
  *
@@ -114,6 +122,7 @@ const MediaOperationBulkPayloadSchema = z
     longitude: z.number().min(-180).max(180).optional(),
     primaryId: z.uuidv4().optional(),
     stackIds: z.array(z.uuidv4()).max(1000).optional(),
+    pairs: z.array(MediaOperationLivePhotoPairSchema).max(BULK_MAX_ITEMS).optional(),
     duplicateGroups: z
       .array(MediaOperationDuplicateGroupSchema)
       .max(DUPLICATE_DECISION_MAX_GROUPS)

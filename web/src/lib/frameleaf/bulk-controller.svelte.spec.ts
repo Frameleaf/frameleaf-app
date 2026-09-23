@@ -16,9 +16,10 @@ vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 vi.mock('@immich/ui', () => ({ toastManager: { primary: vi.fn(), danger: vi.fn() } }));
 vi.mock('$lib/frameleaf/activity-session.svelte', () => ({ activitySession: { refresh: vi.fn() } }));
 
+// FL-48: a structured search pages by cursor, so the next page is announced as `nextCursor`
 const page = (ids: string[], nextPage: string | null, total = ids.length) => ({
   albums: { items: [], count: 0, total: 0, facets: [], nextPage: null, nextCursor: null },
-  assets: { items: ids.map((id) => ({ id })), count: ids.length, total, facets: [], nextPage, nextCursor: null },
+  assets: { items: ids.map((id) => ({ id })), count: ids.length, total, facets: [], nextPage, nextCursor: nextPage },
 });
 
 describe('the bulk controller', () => {
@@ -139,9 +140,12 @@ describe('the bulk controller', () => {
   });
 
   it('reports a refused scope as a failed operation without calling anything', async () => {
+    // A shared space with an id resolves to the album condition it is (FL-48 map/space
+    // follow-ups, `bulk-operations.spec.ts`); a space scope with none is still refused, the
+    // same as an album scope with none.
     await controller.runMatching('archive', {
       ...session.state,
-      scope: { kind: 'space', id: 'space-1' },
+      scope: { kind: 'space' },
     });
     expect(session.operations[0].status).toBe('failed');
     expect(session.operations[0].errorKey).toBe('frameleaf_bulk_reason_scope_unsupported');

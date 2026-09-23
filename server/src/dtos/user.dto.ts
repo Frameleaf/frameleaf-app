@@ -116,6 +116,18 @@ const UserAdminDeleteSchema = z
 
 export class UserAdminDeleteDto extends createZodDto(UserAdminDeleteSchema) {}
 
+/**
+ * FL-76: an administrator revoking one of an account's signed-in devices. `sessionId` alone is
+ * not enough to scope the request to the account named in the URL, so the service checks the
+ * session actually belongs to `id` before deleting it.
+ */
+const UserAdminSessionParamSchema = z.object({
+  id: z.uuidv4(),
+  sessionId: z.uuidv4(),
+});
+
+export class UserAdminSessionParamDto extends createZodDto(UserAdminSessionParamSchema) {}
+
 const UserAdminResponseSchema = UserResponseSchema.extend({
   clusterGroupId: z
     .uuidv4()

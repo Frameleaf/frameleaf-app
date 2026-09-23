@@ -160,7 +160,7 @@ export class MediaRecoveryRepository {
           ELSE COALESCE(s.sha1 = ${verified.sha1} AND s.sha256 = ${verified.sha256}, false)
         END AS "matchesContent",
         (to_jsonb(a)->>'physicalOriginalFileId') AS "physicalOriginalFileId", p."physicalFileId" AS "forkPhysicalFileId", e."fileSizeInByte"::float8 AS "sizeInBytes",
-        (a.visibility = 'locked' OR EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId" = a.id) OR ${hidden}) AS hidden,
+        (EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId" = a.id) OR ${hidden}) AS hidden,
         EXISTS (SELECT 1 FROM ${sql.id(readsForkSidecar(phase) ? 'immich_fork' : 'public', 'asset_health')} h
           WHERE h."assetId" = a.id AND h.category IN ('missing', 'corrupt') AND h."resolvedAt" IS NULL
           AND h.status NOT IN ('resolved', 'relinked', 'trashed')) AS damaged

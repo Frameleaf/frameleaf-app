@@ -415,6 +415,7 @@ export enum Permission {
   AdminUserDelete = 'adminUser.delete',
 
   AdminSessionRead = 'adminSession.read',
+  AdminSessionDelete = 'adminSession.delete',
 
   AdminAuthUnlinkAll = 'adminAuth.unlinkAll',
 }
@@ -934,6 +935,8 @@ export enum MediaOperationBulkAction {
   RefreshMetadata = 'refresh-metadata',
   RefreshEncoded = 'refresh-encoded',
   RefreshFaces = 'refresh-faces',
+  /** Reassemble a separated Live Photo still + motion video pair (FL-70). */
+  RelinkLivePhoto = 'relink-live-photo',
   /** Apply the owner's duplicate review decisions, one complete group at a time (FL-61). */
   ResolveDuplicates = 'resolve-duplicates',
   /** Reverse earlier duplicate review decisions that nothing has changed since (FL-61). */

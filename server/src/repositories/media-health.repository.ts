@@ -33,6 +33,7 @@ import {
 } from 'src/schema/tables/asset-health.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { anyUuid, asUuid, lockedOwnerScope, withHiddenContentFilter } from 'src/utils/database.js';
+import { isLocked } from 'src/utils/locked.js';
 
 /**
  * What an interactive read may show: the viewer's hidden-content settings, and their Locked media only
@@ -84,6 +85,8 @@ export type MediaHealthAsset = Pick<
 > & {
   previewPath: string | null;
   thumbnailPath: string | null;
+  /** FL-34: selected by `getAssets`, so a listed asset reports `locked` (`effectiveVisibilityOf`) */
+  isLocked?: boolean | null;
 };
 
 export type UpsertMediaHealthFinding = Omit<
@@ -752,6 +755,8 @@ export class MediaHealthRepository {
       .withSchema('public')
       .selectFrom('asset')
       .selectAll('asset')
+      // the stored visibility is never `locked` (FL-34): the lock record tells the response
+      .select(isLocked('asset').as('isLocked'))
       .select((eb) => [
         eb
           .selectFrom('asset_file')
