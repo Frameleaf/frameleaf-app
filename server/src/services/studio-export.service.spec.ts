@@ -138,7 +138,9 @@ describe(StudioExportService.name, () => {
   let resources: Record<string, ReturnType<typeof vi.fn>>;
   let users: Record<string, ReturnType<typeof vi.fn>>;
   let access: { asset: Record<string, ReturnType<typeof vi.fn>> };
-  let storage: Record<string, ReturnType<typeof vi.fn>>;
+  let storage: Record<string, ReturnType<typeof vi.fn>> & {
+    checkFileExists: ReturnType<typeof vi.fn<(path: string) => Promise<boolean>>>;
+  };
   let crypto: Record<string, ReturnType<typeof vi.fn>>;
   let jobs: Record<string, ReturnType<typeof vi.fn>>;
   let staged: string;
