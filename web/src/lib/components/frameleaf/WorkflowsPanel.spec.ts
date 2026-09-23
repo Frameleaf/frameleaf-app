@@ -2,7 +2,9 @@ import { WorkflowIssueCode, WorkflowTrigger, type WorkflowResponseDto } from '@i
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import * as utils from '$lib/utils';
+import { userAdminFactory } from '@test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
 import WorkflowsPanel from './WorkflowsPanel.svelte';
 
@@ -12,6 +14,7 @@ vi.mock('$lib/managers/plugin-manager.svelte', () => ({
     methods: [],
     triggers: [{ trigger: 'AssetCreate', types: ['AssetV1'] }],
     templates: [],
+    ready: () => Promise.resolve(),
   },
 }));
 
@@ -37,6 +40,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   sdkMock.getAllTags.mockResolvedValue([]);
   sdkMock.getAllAlbums.mockResolvedValue([]);
+  authManager.setUser(userAdminFactory.build({ name: 'Taylor', isAdmin: false }));
 });
 
 describe('WorkflowsPanel', () => {
@@ -60,7 +64,7 @@ describe('WorkflowsPanel', () => {
     expect(screen.getByText(/Blocked/)).toBeInTheDocument();
     expect(screen.getByText('Step 1: this plugin method is unavailable.')).toBeInTheDocument();
     expect(screen.getByText(/^Paused/)).toBeInTheDocument();
-    expect(screen.getByText(/Photo or video uploaded · 1 step/)).toBeInTheDocument();
+    expect(screen.getByText(/Taylor · Photo or video uploaded · 1 step/)).toBeInTheDocument();
   });
 
   it('exports the server’s portable definition with its additional fields', async () => {
@@ -110,6 +114,17 @@ describe('WorkflowsPanel', () => {
     expect(await screen.findByText(t.imported)).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: t.enable_workflow })).not.toBeChecked();
     expect(screen.getByRole('button', { name: /1\. Unavailable plugin method/ })).toBeInTheDocument();
+  });
+
+  it('loads its own workflows when mounted without them, and opens one in place', async () => {
+    sdkMock.searchWorkflows.mockResolvedValue([workflow()]);
+    render(WorkflowsPanel, {});
+
+    await fireEvent.click(await screen.findByRole('button', { name: t.open }));
+
+    expect(sdkMock.searchWorkflows).toHaveBeenCalledWith({});
+    expect(screen.getByRole('button', { name: t.tab_steps })).toBeInTheDocument();
+    expect(screen.getByLabelText(t.name)).toHaveValue('Receipts');
   });
 
   it('refuses to enable a paused workflow the server cannot run', () => {
