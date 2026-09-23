@@ -384,14 +384,14 @@
       "version": 2
     },
     {
-      "bytes": 14761,
+      "bytes": 14878,
       "category": "features",
       "id": "61440280",
       "source": "docs/docs/features/fork-privacy-suite.md",
-      "sourceSha256": "dd9f4a8bae7d1b24cfaea4d80e4c931c16680ccdf1f52e89b10cec40ec390f52",
+      "sourceSha256": "094cf6dc74a09bce4e20a33bce6e02f8c8b2307657559296547ad9f47c4b3873",
       "title": "Feature Reference — Fork Privacy Suite",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440280/Feature+Reference+Fork+Privacy+Suite",
-      "version": 2
+      "version": 3
     },
     {
       "bytes": 2889,
@@ -404,14 +404,14 @@
       "version": 2
     },
     {
-      "bytes": 14648,
+      "bytes": 14847,
       "category": "features",
       "id": "61374970",
       "source": "docs/docs/features/image-enrichment.md",
-      "sourceSha256": "18f9267fcd625956c8e8ae532221552530d099e5cd7cb50e7a1511c5cf398042",
+      "sourceSha256": "8343daa64ed0bc280349aed29410a8efc7047d5e652fd89d9eef4a5021653d3e",
       "title": "Feature Reference — Image Enrichment",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374970/Feature+Reference+Image+Enrichment",
-      "version": 2
+      "version": 3
     },
     {
       "bytes": 3873,
@@ -677,17 +677,17 @@
       "version": 10
     },
     {
-      "bytes": 2045,
+      "bytes": 7458,
       "category": "plan",
       "id": "61408007",
       "source": "studio/README.md",
-      "sourceSha256": "04642a8139e9784074c2c60ae1c73322f7c178e995d23e618204084c984e27d0",
+      "sourceSha256": "b3c72dcd99eb939b4c6e60274e31e3e0f91fc9e02a7196a9381265fa70ece2fe",
       "title": "Studio and Freecut Source Inventory",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61408007/Studio+and+Freecut+Source+Inventory",
-      "verification": "source hash marker, fetched baseline and terminal content read back after creation",
+      "verification": "Version 5 adds, above the retained FL-84/FL-86 engine-workspace candidate mirror, the integration-branch studio/README.md (FL-88 host boundary, FL-90 resource inventory, FL-92 command catalogue) with its SHA-256 and byte count, mirrored by FL-44 from branch codex/FL-44-inventory-ledger-sync (not merged, no PR); the two candidate lines are labelled as not yet reconciled, every earlier section and receipt is preserved unchanged; full page read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-20T09:33:30.000Z",
-      "version": 1
+      "verifiedAt": "2026-09-23T10:36:50.135Z",
+      "version": 5
     },
     {
       "bytes": 9292,
