@@ -64,3 +64,44 @@ worker-bound grants, which are re-checked against live access on every use. A cl
 destination without recorded consent fails before anything is enumerated. Nothing in this
 directory or in the resolver claims that a graph renders; that remains the engine conformance
 work.
+## Canonical command catalogue (FL-92)
+
+`frameleaf-studio-commands.json` is the published Studio command vocabulary: 88 commands,
+each with its payload fields, scope, whether it changes the stored graph, whether it is
+undoable, the worker capability it needs, the story that owns its semantics, the prototype
+function or pinned Freecut feature that specifies it, and the manifest rows it is the way
+to reach.
+
+Payload fields typed `time`, `duration` and `rate` are exact rationals, never floats
+(FL-93 / `VID-102`): an instant on the timeline, a length, and a cadence or speed
+multiplier. They travel as a reduced `{ num, den }` pair of integers — `StudioTime`,
+`StudioDuration` and `StudioRate` on the web side, `isRational` on the server, and
+`FrameleafStudioRational` with named integer fields on native. `object` and `object[]`
+fields are opaque and travel unread.
+
+The catalogue is the single source for three checked-in contracts:
+
+- `web/src/lib/frameleaf/studio/commands.ts` — the typed web vocabulary FL-88's bridge routes.
+- `server/src/utils/studio-commands.generated.ts` — the server mirror used by
+  `server/src/utils/studio-commands.ts` to validate an envelope without trusting a client.
+- `mobile/lib/frameleaf/studio_commands.g.dart` — the native contract, so a tablet cannot
+  express a command the web host and the server do not know.
+
+`scripts/frameleaf-studio-commands.mjs` writes all three and, with no arguments, verifies
+them. It fails when a checked-in file is stale, when the web vocabulary drifts from the
+catalogue, when a mutating function of the prototype project model
+(`design/frameleaf/template/src/studio-project.mjs`) has no command id, or when a row of
+`freecut-feature-manifest.json` is neither mapped to a command nor listed in
+`nonCommandRows` with a reason and an owner. 182 rows are reachable through a command and
+28 are declared non-command rows (module inventories, playback and storage behaviour,
+read-only surfaces, host lifecycle).
+
+```sh
+node scripts/frameleaf-studio-commands.mjs            # verify, the CI default
+node scripts/frameleaf-studio-commands.mjs --write    # regenerate after editing the catalogue
+node --test scripts/frameleaf-studio-commands.test.mjs
+```
+
+Publishing the vocabulary is not implementing it. Every row names a later story, and the
+bridge answers `not-implemented` until that story lands; no command's editing semantics,
+renderer or worker admission is delivered by this catalogue.

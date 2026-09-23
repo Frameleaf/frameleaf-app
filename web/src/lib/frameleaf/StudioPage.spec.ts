@@ -42,7 +42,13 @@ const services = (): StudioHostServices => ({
   reportFatal: vi.fn(),
 });
 
-const capable = { gpuWorker: true, renderWorker: true, restorationWorker: true, transcriptionWorker: true };
+const capable = {
+  ...emptyStudioCapabilities(),
+  gpuWorker: true,
+  renderWorker: true,
+  restorationWorker: true,
+  transcriptionWorker: true,
+};
 
 const auth = { userId: 'user-1', name: 'Taylor', avatarUrl: null, locale: 'en' };
 
