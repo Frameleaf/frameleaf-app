@@ -9,11 +9,6 @@ import {
   UpdateDateColumn,
 } from '@immich/sql-tools';
 import type { Generated, Int8, Timestamp } from '@immich/sql-tools';
-import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
-import { AlbumTable } from 'src/schema/tables/album.table.js';
-import { AssetTable } from 'src/schema/tables/asset.table.js';
-import { MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
-import { UserTable } from 'src/schema/tables/user.table.js';
 import type {
   TakeoutFileKind,
   TakeoutItemState,
@@ -24,6 +19,11 @@ import type {
   TakeoutSidecarCandidate,
   TakeoutSourceKind,
 } from 'src/utils/takeout.js';
+import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
+import { AlbumTable } from 'src/schema/tables/album.table.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
 
 /**
  * A Google Photos import (FL-65, `IMP-001`). Mirrors migration 2100000000460-AddTakeoutImport.

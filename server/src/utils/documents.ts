@@ -227,7 +227,8 @@ export const compareReadingOrder = (a: DocumentRegion, b: DocumentRegion) => {
 
 type SourceLine = { id: string; text: string; region: DocumentRegion; confidence: number | null };
 
-const MONTH = String.raw`(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)`;
+const MONTH =
+  '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
 
 const isDay = (value: number) => value >= 1 && value <= 31;
 const isMonth = (value: number) => value >= 1 && value <= 12;

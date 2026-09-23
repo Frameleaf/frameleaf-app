@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Response } from 'express';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   AssetRestorationFileQueryDto,
@@ -25,7 +26,6 @@ import {
   AssetRestorationResponseDto,
   AssetRestorationSelectDto,
 } from 'src/dtos/asset-restoration.dto.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { ApiTag, Permission, RouteKey } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';

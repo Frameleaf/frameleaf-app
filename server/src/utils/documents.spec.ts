@@ -1,9 +1,10 @@
+import { describe, expect, it } from 'vitest';
 import { DocumentEditAction, DocumentField, DocumentFieldStatus, DocumentLineStatus } from 'src/enum.js';
 import {
-  assembleDocument,
   DocumentEditRow,
   DocumentOcrLine,
   DocumentRegion,
+  assembleDocument,
   fieldKey,
   isRegionInsideCrop,
   lineKey,
@@ -11,7 +12,6 @@ import {
   regionOverlap,
   suggestDocumentFields,
 } from 'src/utils/documents.js';
-import { describe, expect, it } from 'vitest';
 
 const box = (x: number, y: number, width = 0.3, height = 0.05): DocumentRegion => ({
   x1: x,

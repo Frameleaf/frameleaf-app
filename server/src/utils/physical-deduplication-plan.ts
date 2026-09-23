@@ -188,7 +188,7 @@ export const physicalDeduplicationPlanId = (fingerprint: string) => `PD-${finger
 export const physicalDeduplicationConfirmation = (planId: string) => `APPLY ${planId}`;
 
 /** The left-out groups in one canonical order, so the same decisions always give the same token. */
-export const normalizeExcluded = (ids: readonly string[] | undefined) => [...new Set(ids ?? [])].sort();
+export const normalizeExcluded = (ids: readonly string[] | undefined) => [...new Set(ids)].sort();
 
 /** Binds the plan to the administrator's per-group decisions, keyed with the server's secret. */
 export const physicalDeduplicationReviewToken = (
@@ -423,7 +423,12 @@ export const parsePhysicalDeduplicationSnapshot = (value: unknown): PhysicalDedu
   };
 };
 
-const ITEM_STATES: readonly PhysicalDeduplicationItemState[] = ['applied', 'already-applied', 'skipped', 'failed'];
+const ITEM_STATES: ReadonlySet<PhysicalDeduplicationItemState> = new Set([
+  'applied',
+  'already-applied',
+  'skipped',
+  'failed',
+]);
 
 export const emptyPhysicalDeduplicationResult = (): PhysicalDeduplicationApplyResult => ({
   version: 1,
@@ -471,7 +476,7 @@ export const parsePhysicalDeduplicationResult = (value: unknown): PhysicalDedupl
     if (!isRecord(raw) || typeof raw.id !== 'string') {
       continue;
     }
-    const state = ITEM_STATES.includes(raw.state as PhysicalDeduplicationItemState)
+    const state = ITEM_STATES.has(raw.state as PhysicalDeduplicationItemState)
       ? (raw.state as PhysicalDeduplicationItemState)
       : 'failed';
     items.push({

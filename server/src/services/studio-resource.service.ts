@@ -46,6 +46,7 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getLockedOwnerId, isLockedAssetRow } from 'src/utils/locked-visibility.js';
 import {
+  STUDIO_MAX_GRAPH_BYTES,
   StudioAudioSource,
   StudioDestination,
   StudioEgress,
@@ -60,7 +61,6 @@ import {
   isStudioUuid,
   measureStudioGraph,
   studioReferenceKey,
-  STUDIO_MAX_GRAPH_BYTES,
 } from 'src/utils/studio-resources.js';
 
 /* ------------------------------------------------------------------ */
@@ -313,18 +313,14 @@ export class StudioResourceService extends BaseService {
     const refusedSequences = new Map(sequenceCheck.refused.map((item) => [item.id, item]));
 
     const entries: StudioAuthorizedEntry[] = [];
-    const refused: StudioRefusedReference[] = [];
-
-    for (const [index, violation] of violations.entries()) {
-      refused.push({
-        key: `graph:${violation.reason}:${index}`,
-        kind: null,
-        id: violation.detail,
-        graphPath: violation.graphPath,
-        reason: violation.reason,
-        detail: violation.detail,
-      });
-    }
+    const refused: StudioRefusedReference[] = Array.from(violations, (violation, index) => ({
+      key: `graph:${violation.reason}:${index}`,
+      kind: null,
+      id: violation.detail,
+      graphPath: violation.graphPath,
+      reason: violation.reason,
+      detail: violation.detail,
+    }));
 
     const refuse = (reference: StudioResourceReference, reason: StudioRefusalReason, detail: string) => {
       refused.push({
@@ -379,13 +375,12 @@ export class StudioResourceService extends BaseService {
     const assetIds = new Set<string>();
     for (const reference of references) {
       if (
-        reference.kind === StudioResourceKind.LibraryAsset ||
-        reference.kind === StudioResourceKind.EditedMaster ||
-        (reference.kind === StudioResourceKind.Audio && reference.source === 'asset')
+        (reference.kind === StudioResourceKind.LibraryAsset ||
+          reference.kind === StudioResourceKind.EditedMaster ||
+          (reference.kind === StudioResourceKind.Audio && reference.source === 'asset')) &&
+        isStudioUuid(reference.id)
       ) {
-        if (isStudioUuid(reference.id)) {
-          assetIds.add(reference.id);
-        }
+        assetIds.add(reference.id);
       }
     }
     const assetDecisions = await this.decideAssets(auth, assetIds, {
@@ -466,9 +461,7 @@ export class StudioResourceService extends BaseService {
               const decision = decideAsset(reference);
               if (!decision.ok) {
                 refuse(reference, decision.reason, decision.detail);
-              } else if (decision.asset.type !== AssetType.Video) {
-                refuse(reference, StudioRefusalReason.UnsupportedMediaType, 'Only a video carries an audio stream.');
-              } else {
+              } else if (decision.asset.type === AssetType.Video) {
                 authorize(reference, {
                   ownerId: decision.asset.ownerId,
                   checksum: decision.asset.checksum.toString('base64'),
@@ -476,14 +469,14 @@ export class StudioResourceService extends BaseService {
                   sourceAccess: decision.sourceAccess,
                   grant: 'render',
                 });
+              } else {
+                refuse(reference, StudioRefusalReason.UnsupportedMediaType, 'Only a video carries an audio stream.');
               }
               break;
             }
             case 'import': {
               const declared = declaredImport(reference);
-              if (!declared.ok) {
-                refuse(reference, declared.reason, declared.detail);
-              } else {
+              if (declared.ok) {
                 authorize(reference, {
                   ownerId: context.ownerId,
                   checksum: declared.item.checksum,
@@ -491,14 +484,14 @@ export class StudioResourceService extends BaseService {
                   sourceAccess: 'project',
                   grant: 'render',
                 });
+              } else {
+                refuse(reference, declared.reason, declared.detail);
               }
               break;
             }
             case 'catalog': {
               const entry = catalog.audio[reference.id];
-              if (!entry) {
-                refuse(reference, StudioRefusalReason.NotBundled, 'No bundled track with this id.');
-              } else {
+              if (entry) {
                 authorize(reference, {
                   ownerId: null,
                   checksum: entry.checksum,
@@ -506,6 +499,8 @@ export class StudioResourceService extends BaseService {
                   sourceAccess: 'deployment',
                   grant: 'render',
                 });
+              } else {
+                refuse(reference, StudioRefusalReason.NotBundled, 'No bundled track with this id.');
               }
               break;
             }
@@ -608,9 +603,7 @@ export class StudioResourceService extends BaseService {
         case StudioResourceKind.Lut: {
           if (reference.lutSource === 'import') {
             const declared = declaredImport(reference);
-            if (!declared.ok) {
-              refuse(reference, declared.reason, declared.detail);
-            } else {
+            if (declared.ok) {
               authorize(reference, {
                 ownerId: context.ownerId,
                 checksum: declared.item.checksum,
@@ -618,6 +611,8 @@ export class StudioResourceService extends BaseService {
                 sourceAccess: 'project',
                 grant: 'render',
               });
+            } else {
+              refuse(reference, declared.reason, declared.detail);
             }
             break;
           }
@@ -1066,14 +1061,14 @@ export class StudioResourceService extends BaseService {
           reason: StudioRefusalReason.Offline,
           detail: 'The original is missing from storage.',
         });
-      } else if (!timelineTypes.has(asset.type)) {
+      } else if (timelineTypes.has(asset.type)) {
+        decisions.set(id, { ok: true, asset, sourceAccess: isOwner ? 'owner' : 'shared' });
+      } else {
         decisions.set(id, {
           ok: false,
           reason: StudioRefusalReason.UnsupportedMediaType,
           detail: 'Only images and video can be placed on a timeline.',
         });
-      } else {
-        decisions.set(id, { ok: true, asset, sourceAccess: isOwner ? 'owner' : 'shared' });
       }
     }
 

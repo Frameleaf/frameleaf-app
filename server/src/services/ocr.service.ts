@@ -7,7 +7,7 @@ import { OCR } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getDimensions } from 'src/utils/asset.util.js';
 import { tokenizeForSearch } from 'src/utils/database.js';
-import { cropBoxOf, DocumentRegion, isRegionInsideCrop } from 'src/utils/documents.js';
+import { DocumentRegion, cropBoxOf, isRegionInsideCrop } from 'src/utils/documents.js';
 import { batched, isOcrEnabled } from 'src/utils/misc.js';
 
 @Injectable()
@@ -103,7 +103,7 @@ export class OcrService extends BaseService {
         boxScore: boxScore[i],
         textScore: textScore[i],
         text: rawText,
-        ...(isVisible ? { isVisible: visible } : {}),
+        ...(isVisible && { isVisible: visible }),
       });
       if (visible) {
         searchTokens.push(...tokenizeForSearch(rawText));

@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { FRAME_RATE_NTSC_30, rational } from 'src/utils/rational-time.js';
 import {
   STUDIO_ENGINE_REVISION,
+  type StudioCommandEnvelope,
   studioBatchCapabilities,
   studioBatchMutatesGraph,
   studioCommandIds,
   studioCommandMirror,
   validateStudioCommandEnvelope,
   validateStudioCommandPayload,
-  type StudioCommandEnvelope,
 } from 'src/utils/studio-commands.js';
 
 const envelope = (overrides: Record<string, unknown> = {}): unknown => ({
@@ -65,7 +65,7 @@ describe('validateStudioCommandEnvelope', () => {
       { revision: 1.5 },
       { idempotencyKey: '' },
       { idempotencyKey: 'k'.repeat(129) },
-      { issuedAt: Number.NaN },
+      { issuedAt: NaN },
     ]) {
       expect(validateStudioCommandEnvelope(envelope(bad))).toMatchObject({
         valid: false,

@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import type { ArgOf } from 'src/repositories/event.repository.js';
-import { OnEvent } from 'src/decorators.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
+import { OnEvent } from 'src/decorators.js';
 import {
   MlAdmissionRequestDto,
   MlAdmissionResponseDto,
@@ -27,7 +28,6 @@ import {
   MlWorkload,
   RESTORATION_ML_WORKLOADS,
 } from 'src/enum.js';
-import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
@@ -104,10 +104,12 @@ export class MlDestinationService extends BaseService {
   }
 
   private stopProbing() {
-    if (this.probeHandle) {
-      clearInterval(this.probeHandle);
-      this.probeHandle = undefined;
+    if (!this.probeHandle) {
+      return;
     }
+
+    clearInterval(this.probeHandle);
+    this.probeHandle = undefined;
   }
 
   /**
@@ -276,7 +278,7 @@ export class MlDestinationService extends BaseService {
     id: string,
     dto: MlDestinationConsentRequestDto,
   ): Promise<MlDestinationResponseDto> {
-    if (dto.acknowledgeMediaLeavesNetwork !== true) {
+    if (!dto.acknowledgeMediaLeavesNetwork) {
       throw new BadRequestException('Consent must be acknowledged explicitly');
     }
     const current = await this.require(id);
@@ -551,7 +553,7 @@ export class MlDestinationService extends BaseService {
     if (problem) {
       throw new BadRequestException(problem);
     }
-    if (sharesLibraryHardware && !workloads.some((workload) => RESTORATION_ML_WORKLOADS.includes(workload))) {
+    if (sharesLibraryHardware && workloads.every((workload) => !RESTORATION_ML_WORKLOADS.includes(workload))) {
       throw new BadRequestException(
         'Only a restoration worker can be marked as sharing hardware with library analysis',
       );

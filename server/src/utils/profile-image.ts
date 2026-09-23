@@ -1,12 +1,12 @@
 import { join } from 'node:path';
+import type { JobRepository } from 'src/repositories/job.repository.js';
+import type { LoggingRepository } from 'src/repositories/logging.repository.js';
+import type { UserRepository } from 'src/repositories/user.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { JobName, StorageFolder } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
-import type { JobRepository } from 'src/repositories/job.repository.js';
-import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
-import type { UserRepository } from 'src/repositories/user.repository.js';
 
 type Repos = {
   media: MediaRepository;

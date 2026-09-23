@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
   DocumentFieldEditDto,
   DocumentLineEditDto,
@@ -21,14 +21,14 @@ import { getDimensions } from 'src/utils/asset.util.js';
 import { getConfig } from 'src/utils/config.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import {
-  assembleDocument,
   AssembledDocument,
-  cropBoxOf,
   DocumentOcrLine,
   DocumentRegion,
+  LINE_KEY_PREFIX,
+  assembleDocument,
+  cropBoxOf,
   fieldKey,
   isRegionInsideCrop,
-  LINE_KEY_PREFIX,
   lineKey,
   regionOf,
 } from 'src/utils/documents.js';

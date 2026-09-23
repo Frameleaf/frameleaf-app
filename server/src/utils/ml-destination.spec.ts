@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { MachineLearningRepository, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
+import type { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import {
   MlAdmissionRefusal,
   MlDestinationHealth,
@@ -8,8 +10,6 @@ import {
   MlWorkerRole,
   MlWorkload,
 } from 'src/enum.js';
-import type { MachineLearningRepository, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
-import type { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import {
   MlDestinationNotFoundError,
   MlDestinationRefusedError,
@@ -401,8 +401,8 @@ describe('library-analysis and restoration workers stay separate (FL-72)', () =>
   });
 
   it('compares endpoints without caring about a trailing slash', () => {
-    expect(sameEndpointUrl('http://gpu.lan:3004', 'http://GPU.lan:3004/')).toBe(true);
-    expect(sameEndpointUrl('http://gpu.lan:3003', 'http://gpu.lan:3004')).toBe(false);
+    expect(sameEndpointUrl('http://gpu:3004', 'http://GPU:3004/')).toBe(true);
+    expect(sameEndpointUrl('http://gpu:3003', 'http://gpu:3004')).toBe(false);
   });
 });
 

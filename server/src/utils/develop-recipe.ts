@@ -1,7 +1,7 @@
 import {
   ASSET_DEVELOP_RECIPE_VERSION,
-  AssetDevelopPreset,
   type AssetDevelopCrop,
+  AssetDevelopPreset,
   type AssetDevelopRecipe,
 } from 'src/dtos/asset-develop.dto.js';
 
@@ -258,8 +258,8 @@ export function planDevelopGeometry(recipe: AssetDevelopRecipe, width: number, h
 
 export type DevelopToneLuts = { r: Uint8Array; g: Uint8Array; b: Uint8Array };
 
-const srgbToLinear = (v: number) => (v <= 0.040_45 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
-const linearToSrgb = (v: number) => (v <= 0.003_130_8 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055);
+const srgbToLinear = (v: number) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+const linearToSrgb = (v: number) => (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055);
 
 /**
  * Per-channel lookup for the global tone operations. Exposure multiplies linear light; the
@@ -304,14 +304,14 @@ export function buildToneLuts(params: DevelopSliders): DevelopToneLuts {
 
 /** Small deterministic generator so grain is identical for every render of a revision. */
 export function createNoise(seed: number) {
-  let state = seed >>> 0 || 0x9e37_79b9;
+  let state = seed >>> 0 || 0x9e_37_79_b9;
   return () => {
     state ^= state << 13;
     state >>>= 0;
     state ^= state >>> 17;
     state ^= state << 5;
     state >>>= 0;
-    return state / 0x1_0000_0000;
+    return state / 0x1_00_00_00_00;
   };
 }
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import logo from '../../../../../design/frameleaf/brand-kit/frameleaf-logo-white.svg?url';
+  import logo from '../../assets/frameleaf/frameleaf-logo-white.svg?url';
 </script>
 
 <span class="brand"><img src={logo} alt="Frameleaf" width="180" height="44" /></span>

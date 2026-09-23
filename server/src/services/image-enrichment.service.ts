@@ -8,12 +8,13 @@ import { join } from 'node:path';
 import type { Insertable } from 'kysely';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { ImageDescriptionResult, NsfwDetectionResult } from 'src/repositories/machine-learning.repository.js';
 import type { JobItem, JobOf } from 'src/types.js';
 import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
+import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import {
   AssetImageEnrichmentAction,
   AssetImageEnrichmentActionRequestDto,
@@ -35,7 +36,6 @@ import {
   StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository, PrivacySidecar } from 'src/repositories/fork-privacy.repository.js';
 import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
@@ -171,7 +171,7 @@ const withPinnedConfig = (
   ...machineLearning,
   imageDescription: { ...machineLearning.imageDescription, ...options.imageDescription },
   nsfwDetection: { ...machineLearning.nsfwDetection, ...options.nsfwDetection },
-  clip: { ...machineLearning.clip, ...(options.clipModelName ? { modelName: options.clipModelName } : {}) },
+  clip: { ...machineLearning.clip, ...(options.clipModelName && { modelName: options.clipModelName }) },
 });
 
 const GENERATED_DESCRIPTION_PREFIX = 'AI description:';
@@ -667,7 +667,7 @@ export class ImageEnrichmentService extends BaseService {
         result,
         appliedTagHash,
         appliedTagValues,
-        provenance: { destinationId, ...(options.configHash ? { planConfigHash: options.configHash } : {}) },
+        provenance: { destinationId, ...(options.configHash && { planConfigHash: options.configHash }) },
       };
       await this.saveEnrichmentMetadata(id, m, trx);
       return m;
@@ -851,8 +851,8 @@ export class ImageEnrichmentService extends BaseService {
     const provenance: EnrichmentResultProvenance = {
       destinationId,
       identityHash: identityHash(knownPersons.map(({ name }) => name)),
-      ...(fingerprintBefore ? { sourceFingerprint: fingerprintBefore } : {}),
-      ...(options.configHash ? { planConfigHash: options.configHash } : {}),
+      ...(fingerprintBefore && { sourceFingerprint: fingerprintBefore }),
+      ...(options.configHash && { planConfigHash: options.configHash }),
     };
 
     // Phase: serialize the RMW so reviewer / NSFW writes can't clobber the
@@ -899,7 +899,7 @@ export class ImageEnrichmentService extends BaseService {
 
     // A plan that pinned no search destination (search was off when it was queued) leaves the
     // description embedding alone rather than sending the text to an unpinned destination.
-    if (isSmartSearchEnabled(machineLearning) && !(options.planRun && !options.searchDestinationId)) {
+    if (isSmartSearchEnabled(machineLearning) && (!options.planRun || options.searchDestinationId)) {
       await this.upsertDescriptionEmbedding(id, result.description, machineLearning.clip, options);
     }
 

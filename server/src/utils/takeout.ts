@@ -122,7 +122,7 @@ export const parseTakeoutOptions = (value: unknown): TakeoutOptions => {
     albums: flag('albums'),
     sidecarReview: flag('sidecarReview'),
     updateMatchedMetadata: flag('updateMatchedMetadata'),
-    ...(selected ? { selectedAlbums: selected } : {}),
+    ...(selected && { selectedAlbums: selected }),
   };
 };
 
@@ -240,16 +240,15 @@ export function parseTakeoutSidecar(value: unknown): TakeoutMetadata | undefined
   );
   return {
     title: data.title.slice(0, 4096),
-    ...(typeof data.description === 'string' && data.description !== ''
-      ? { description: data.description.slice(0, 100_000) }
-      : {}),
-    ...(takenAt ? { takenAt } : {}),
-    ...(createdAt ? { createdAt } : {}),
-    ...(geo ? { latitude: geo.latitude as number, longitude: geo.longitude as number } : {}),
-    ...(typeof data.favorited === 'boolean' ? { favorite: data.favorited } : {}),
-    ...(typeof data.archived === 'boolean' ? { archived: data.archived } : {}),
-    ...(data.inLockedFolder === true ? { locked: true } : {}),
-    ...(data.trashed === true ? { trashed: true } : {}),
+    ...(typeof data.description === 'string' &&
+      data.description !== '' && { description: data.description.slice(0, 100_000) }),
+    ...(takenAt && { takenAt }),
+    ...(createdAt && { createdAt }),
+    ...(geo && { latitude: geo.latitude as number, longitude: geo.longitude as number }),
+    ...(typeof data.favorited === 'boolean' && { favorite: data.favorited }),
+    ...(typeof data.archived === 'boolean' && { archived: data.archived }),
+    ...(data.inLockedFolder === true && { locked: true }),
+    ...(data.trashed === true && { trashed: true }),
   };
 }
 
@@ -449,8 +448,14 @@ export const takeoutMatchedPatch = (
 };
 
 /** Operation statuses that mean the job is waiting for a worker. */
-const WAITING: readonly MediaOperationStatus[] = [MediaOperationStatus.Queued, MediaOperationStatus.Preparing];
-const WORKING: readonly MediaOperationStatus[] = [MediaOperationStatus.Rendering, MediaOperationStatus.Validating];
+const WAITING: ReadonlySet<MediaOperationStatus> = new Set([
+  MediaOperationStatus.Queued,
+  MediaOperationStatus.Preparing,
+]);
+const WORKING: ReadonlySet<MediaOperationStatus> = new Set([
+  MediaOperationStatus.Rendering,
+  MediaOperationStatus.Validating,
+]);
 
 /**
  * The state an import is in, from its phase and the latest job that worked on it. A scan or import
@@ -468,10 +473,10 @@ export const takeoutState = (
     return 'failed';
   }
   const status = operation.status;
-  if (WAITING.includes(status)) {
+  if (WAITING.has(status)) {
     return 'queued';
   }
-  if (WORKING.includes(status)) {
+  if (WORKING.has(status)) {
     return phase;
   }
   switch (status) {

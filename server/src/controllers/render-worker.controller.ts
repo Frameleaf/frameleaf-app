@@ -17,8 +17,8 @@ import { ApiHeader, ApiTags } from '@nestjs/swagger';
 import { type NextFunction, type Response } from 'express';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   RenderWorkerAdmissionDto,
   RenderWorkerAuditDto,

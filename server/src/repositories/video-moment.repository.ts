@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Selectable, sql, Updateable } from 'kysely';
+import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetStatus, AssetType, AssetVisibility, VideoMomentSource } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';

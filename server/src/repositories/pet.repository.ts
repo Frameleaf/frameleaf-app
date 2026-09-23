@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { sql, type Insertable, type Kysely, type Selectable, type Updateable } from 'kysely';
+import { type Insertable, type Kysely, type Selectable, type Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { PetObservationState } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -12,8 +14,6 @@ import {
   isLockedAsset,
   lockedOwnerScope,
 } from 'src/utils/database.js';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 
 export type Pet = Selectable<PetTable>;
 export type PetObservation = Selectable<PetObservationTable>;

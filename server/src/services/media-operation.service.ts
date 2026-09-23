@@ -26,9 +26,9 @@ import {
   MediaOperationRepository,
 } from 'src/repositories/media-operation.repository.js';
 import { isGranted, requireAccess } from 'src/utils/access.js';
-import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import {
   BULK_ACTION_PERMISSIONS,
+  type BulkOperationSnapshot,
   bulkOperationLabel,
   bulkPayloadProblem,
   bulkResumeIds,
@@ -39,7 +39,6 @@ import {
   isMediaHealthBulkAction,
   parseBulkResult,
   parseBulkSnapshot,
-  type BulkOperationSnapshot,
 } from 'src/utils/bulk-operation.js';
 import {
   enrichmentPlanLabel,
@@ -48,6 +47,7 @@ import {
   parseEnrichmentPlanResult,
   parseEnrichmentPlanSnapshot,
 } from 'src/utils/enrichment-plan.js';
+import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import {
   ACTIVE_MEDIA_OPERATION_STATUSES,
   PAUSABLE_MEDIA_OPERATION_KINDS,
@@ -773,7 +773,7 @@ export class MediaOperationService {
       case 'busy': {
         this.logger.log(`iCloud sync run ${operation.id} retried as ${queued.operation.id} (${queued.outcome})`);
         // Wake the worker now instead of at its next tick; losing the nudge only costs that delay.
-        void this.jobs.queue({ name: JobName.ICloudSync, data: { id: connectionId } }).catch(() => undefined);
+        void this.jobs.queue({ name: JobName.ICloudSync, data: { id: connectionId } }).catch(() => {});
         return this.present(auth, queued.operation);
       }
       case 'not-ready': {

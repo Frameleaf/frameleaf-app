@@ -133,13 +133,10 @@ export class MlDestinationRepository {
         lastProbeHealth: probe.health,
         lastProbeSummary: probe.summary,
         lastProbeWorkloads: probe.workloads === null ? null : (toJson(probe.workloads) as unknown as MlWorkload[]),
-        ...(probe.hardware === undefined
-          ? {}
-          : {
-              lastProbeHardware:
-                probe.hardware === null ? null : (toJson(probe.hardware) as unknown as MlProbeHardware),
-            }),
-        ...(probe.latencyMs === undefined ? {} : { lastProbeLatencyMs: probe.latencyMs }),
+        ...(probe.hardware !== undefined && {
+          lastProbeHardware: probe.hardware === null ? null : (toJson(probe.hardware) as unknown as MlProbeHardware),
+        }),
+        ...(probe.latencyMs !== undefined && { lastProbeLatencyMs: probe.latencyMs }),
       })
       .where('id', '=', id)
       .execute();

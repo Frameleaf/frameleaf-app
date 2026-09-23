@@ -79,7 +79,6 @@ import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { getErrorMessage } from 'src/utils/media-health.js';
 import {
   MediaHealthOperationSnapshot,
   MediaHealthRunState,
@@ -94,11 +93,12 @@ import {
   libraryRootId,
   publishVerifiedCopy,
   recoveryRootId,
-  retainFile,
   resolveInsideRoot,
+  retainFile,
   rootForPath,
   rootKindOf,
 } from 'src/utils/media-health-roots.js';
+import { getErrorMessage } from 'src/utils/media-health.js';
 import { ACTIVE_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
@@ -114,7 +114,7 @@ const RECOVERY_FOLDER = '.library-care';
 type DurableScan = { missingRunId: string; corruptRunId: string; operationId: string };
 
 /** Run states that mean "a job is still working on this". */
-const OPEN_RUN_STATES: readonly string[] = ['running', 'paused', 'retrying'];
+const OPEN_RUN_STATES: ReadonlySet<string> = new Set(['running', 'paused', 'retrying']);
 /** A trash job is created just after its findings are queued; leave them this long before releasing them. */
 const TRASH_QUEUE_GRACE_MS = 10 * 60_000;
 
@@ -150,8 +150,8 @@ const outcome = (
 ): BulkOperationItem => ({
   id,
   status,
-  ...(reasonKey ? { reasonKey } : {}),
-  ...(message ? { message } : {}),
+  ...(reasonKey && { reasonKey }),
+  ...(message && { message }),
 });
 
 /** The finding changed since it was reviewed: a business answer, so it is not retried automatically. */
@@ -457,7 +457,7 @@ export class MediaHealthService {
     const cancelled = latest?.status === MediaOperationStatus.Cancelled;
     return Promise.all(
       runs.map(async (run) => {
-        if (!run || !OPEN_RUN_STATES.includes(run.status)) {
+        if (!run || !OPEN_RUN_STATES.has(run.status)) {
           return run;
         }
         const settled = await this.mediaHealthRepository.finishRun(run.id, {
@@ -707,7 +707,7 @@ export class MediaHealthService {
    * kept where it is, recorded on the finding. The reviewer confirms all of that explicitly.
    */
   async recoverDamaged(auth: AuthDto, dto: MediaHealthRecoverDto): Promise<MediaHealthBulkResponseDto> {
-    if (dto.confirmed !== true) {
+    if (!dto.confirmed) {
       throw new BadRequestException('Confirm the verified replacement and retention of the previous source');
     }
 
@@ -1198,11 +1198,9 @@ export class MediaHealthService {
       return { outcome: outcome(id, MediaOperationItemStatus.Skipped, 'frameleaf_bulk_reason_not_found') };
     }
 
-    if (asset.ownerId !== auth.user.id) {
-      // Another account's original: an administrator's to repair, never while it is Locked.
-      if (!auth.user.isAdmin || asset.isLocked) {
-        return { outcome: outcome(id, MediaOperationItemStatus.Skipped, 'frameleaf_bulk_reason_no_permission') };
-      }
+    // Another account's original: an administrator's to repair, never while it is Locked.
+    if (asset.ownerId !== auth.user.id && (!auth.user.isAdmin || asset.isLocked)) {
+      return { outcome: outcome(id, MediaOperationItemStatus.Skipped, 'frameleaf_bulk_reason_no_permission') };
     }
 
     return { finding, asset };
@@ -1270,7 +1268,7 @@ export class MediaHealthService {
    */
   private relinkCandidate(finding: MediaHealthFinding, candidates: MediaHealthCandidate[], auth: AuthDto) {
     if (finding.status !== MediaHealthStatus.Found) {
-      return undefined;
+      return;
     }
     const verified = candidates.filter(
       (candidate) =>

@@ -3,6 +3,7 @@ import { type ExpressionBuilder, type Insertable, type Kysely, type Updateable, 
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { AssetFace } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, SourceType, UserMetadataKey } from 'src/enum.js';
@@ -24,7 +25,6 @@ import {
   withLockedOwnerScope,
 } from 'src/utils/database.js';
 import { effectiveVisibility, isTimelineVisible } from 'src/utils/locked.js';
-import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
 
 export interface PersonSearchOptions extends HiddenContentQueryOptions {

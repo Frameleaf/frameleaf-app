@@ -1,7 +1,9 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { MediaOperationDto } from 'src/dtos/media-operation.dto.js';
+import { StudioBundleExportCreateDto } from 'src/dtos/studio-bundle.dto.js';
 import {
   StudioCommentCreateDto,
   StudioCommentDto,
@@ -29,8 +31,6 @@ import {
   StudioProjectUpdateDto,
   StudioRevisionParamDto,
 } from 'src/dtos/studio-project.dto.js';
-import { MediaOperationDto } from 'src/dtos/media-operation.dto.js';
-import { StudioBundleExportCreateDto } from 'src/dtos/studio-bundle.dto.js';
 import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';

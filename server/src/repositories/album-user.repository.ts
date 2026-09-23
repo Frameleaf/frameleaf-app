@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { type Insertable, type Kysely, type Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { sql, type Insertable, type Kysely, type Updateable } from 'kysely';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
@@ -12,7 +13,6 @@ import { SharedSpaceInviteTable } from 'src/schema/tables/shared-space-invite.ta
 import { SharedSpacePersonTable } from 'src/schema/tables/shared-space-person.table.js';
 import { withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 import { isLocked } from 'src/utils/locked.js';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 
 export type AlbumPermissionId = {
   albumId: string;

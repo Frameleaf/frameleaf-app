@@ -30,10 +30,8 @@ import { MaintenanceController } from 'src/controllers/maintenance.controller.js
 import { MapController } from 'src/controllers/map.controller.js';
 import { MediaHealthController } from 'src/controllers/media-health.controller.js';
 import { MediaOperationController } from 'src/controllers/media-operation.controller.js';
-import { RenderWorkerAdminController, RenderWorkerController } from 'src/controllers/render-worker.controller.js';
 import { MemoryController } from 'src/controllers/memory.controller.js';
 import { MlDestinationController } from 'src/controllers/ml-destination.controller.js';
-import { WorkerInventoryController } from 'src/controllers/worker-inventory.controller.js';
 import { NotificationAdminController } from 'src/controllers/notification-admin.controller.js';
 import { NotificationController } from 'src/controllers/notification.controller.js';
 import { OAuthController } from 'src/controllers/oauth.controller.js';
@@ -43,6 +41,7 @@ import { PetController } from 'src/controllers/pet.controller.js';
 import { PhysicalDeduplicationController } from 'src/controllers/physical-deduplication.controller.js';
 import { PluginController } from 'src/controllers/plugin.controller.js';
 import { QueueController } from 'src/controllers/queue.controller.js';
+import { RenderWorkerAdminController, RenderWorkerController } from 'src/controllers/render-worker.controller.js';
 import { RunPodController } from 'src/controllers/runpod.controller.js';
 import { SearchController } from 'src/controllers/search.controller.js';
 import { ServerController } from 'src/controllers/server.controller.js';
@@ -64,6 +63,7 @@ import { UserAdminController } from 'src/controllers/user-admin.controller.js';
 import { UserController } from 'src/controllers/user.controller.js';
 import { VideoStreamController } from 'src/controllers/video-stream.controller.js';
 import { ViewController } from 'src/controllers/view.controller.js';
+import { WorkerInventoryController } from 'src/controllers/worker-inventory.controller.js';
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [

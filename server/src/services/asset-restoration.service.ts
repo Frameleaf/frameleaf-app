@@ -1,4 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
@@ -18,7 +20,6 @@ import {
   AssetRestorationStatus,
   DEFAULT_RESTORATION_REGION,
 } from 'src/dtos/asset-restoration.dto.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   AssetType,
   CacheControl,
@@ -34,7 +35,6 @@ import {
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
@@ -99,7 +99,7 @@ export const parseDurationSeconds = (value: unknown): number | null => {
     return value;
   }
   if (typeof value === 'string') {
-    const parts = value.split(':').map((part) => Number(part));
+    const parts = value.split(':').map(Number);
     if (parts.length === 3 && parts.every((part) => Number.isFinite(part))) {
       const seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
       return seconds > 0 ? seconds : null;
@@ -486,7 +486,7 @@ export class AssetRestorationService {
           force: true,
         },
       )
-      .catch(() => undefined);
+      .catch(() => {});
   }
 
   /**
@@ -585,7 +585,7 @@ export class AssetRestorationService {
     const exif = asset.exifInfo;
     let width = Number(exif?.exifImageWidth ?? 0);
     let height = Number(exif?.exifImageHeight ?? 0);
-    if (['5', '6', '7', '8'].includes(String(exif?.orientation ?? ''))) {
+    if (['5', '6', '7', '8'].includes(exif?.orientation ?? '')) {
       [width, height] = [height, width];
     }
     if (!(width > 0 && height > 0)) {

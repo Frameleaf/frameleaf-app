@@ -67,14 +67,14 @@ export const AssetDevelopCropSchema = z
     w: z.number().meta({ format: 'double' }).min(0.05).max(1).describe('Crop width as a fraction of the frame'),
     h: z.number().meta({ format: 'double' }).min(0.05).max(1).describe('Crop height as a fraction of the frame'),
   })
-  .refine((rect) => rect.x + rect.w <= 1.000_01 && rect.y + rect.h <= 1.000_01, {
+  .refine((rect) => rect.x + rect.w <= 1.00001 && rect.y + rect.h <= 1.00001, {
     error: 'Crop must stay inside the frame',
   })
   .meta({ id: 'AssetDevelopCrop' });
 
 export const AssetDevelopRecipeSchema = z
   .object({
-    version: z.literal(ASSET_DEVELOP_RECIPE_VERSION).describe('Recipe contract version'),
+    version: z.literal(ASSET_DEVELOP_RECIPE_VERSION).meta({ format: 'double' }).describe('Recipe contract version'),
     exposure: z
       .number()
       .meta({ format: 'double' })

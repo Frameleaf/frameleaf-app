@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { hostname } from 'node:os';
 import path from 'node:path';
+import type { SystemConfig } from 'src/dtos/config.dto.js';
+import type { RawImageInfo } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { AssetRestorationSourceType, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
-import type { SystemConfig } from 'src/dtos/config.dto.js';
 import {
   Colorspace,
   ImageFormat,
@@ -26,7 +27,6 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
-import type { RawImageInfo } from 'src/types.js';
 import { getConfig } from 'src/utils/config.js';
 import { StoredChunk, mediaOperationProgress, planChunkResume } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -208,9 +208,7 @@ export class RestorationWorkerService {
         kinds: RESTORATION_OPERATION_KINDS,
         workerId: this.workerId,
         leaseMs: RESTORATION_LEASE_MS,
-        ...(holdBack.length > 0
-          ? { holdBack: { kinds: [MediaOperationKind.Restoration], destinationIds: holdBack } }
-          : {}),
+        ...(holdBack.length > 0 && { holdBack: { kinds: [MediaOperationKind.Restoration], destinationIds: holdBack } }),
       });
       if (!claim) {
         return false;
@@ -269,7 +267,7 @@ export class RestorationWorkerService {
         previewBeforePath: null,
         previewAfterPath: null,
         previewExpiresAt: null,
-        ...(unreviewed ? { status: AssetRestorationStatus.Expired } : {}),
+        ...(unreviewed && { status: AssetRestorationStatus.Expired }),
       });
       if (files.length > 0) {
         await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
@@ -702,7 +700,7 @@ export class RestorationWorkerService {
         break;
       }
     }
-    for (const key of [...reusable.keys()]) {
+    for (const key of reusable.keys()) {
       if (key >= boundary) {
         reusable.delete(key);
       }
@@ -789,7 +787,7 @@ export class RestorationWorkerService {
       if (!completed) {
         throw new RestorationInterrupted();
       }
-      await this.storageRepository.unlink(chunkIn).catch(() => undefined);
+      await this.storageRepository.unlink(chunkIn).catch(() => {});
       outputs.push(result.outputPath);
       processed += 1;
       await this.progress(ctx, MediaOperationStatus.Rendering, processed, total);
@@ -799,7 +797,7 @@ export class RestorationWorkerService {
     const listPath = this.scratch(ctx, path.join(workDir, `concat-${operation.id}.txt`));
     await this.storageRepository.createOrOverwriteFile(
       listPath,
-      Buffer.from(outputs.map((file) => `file '${file.replaceAll("'", "'\\''")}'`).join('\n') + '\n'),
+      Buffer.from(outputs.map((file) => `file '${file.replaceAll("'", String.raw`'\''`)}'`).join('\n') + '\n'),
     );
     const joined = this.scratch(ctx, path.join(workDir, `joined-${operation.id}.mp4`));
     await this.mediaRepository.transcode(listPath, joined, {
@@ -878,7 +876,7 @@ export class RestorationWorkerService {
 
     const now = new Date();
     const provenance = {
-      ...(typeof restoration.provenance === 'object' && restoration.provenance ? restoration.provenance : {}),
+      ...(typeof restoration.provenance === 'object' && restoration.provenance && restoration.provenance),
       [stage]: {
         operationId: operation.id,
         destinationId: snapshot.destinationId,
@@ -922,7 +920,7 @@ export class RestorationWorkerService {
       );
     }
     if (stage === 'full') {
-      await this.storageRepository.unlinkDir(ctx.workDir, { recursive: true, force: true }).catch(() => undefined);
+      await this.storageRepository.unlinkDir(ctx.workDir, { recursive: true, force: true }).catch(() => {});
     }
     this.logger.log(
       `Restoration ${restoration.id} ${stage} finished on ${snapshot.destinationKind} destination ${snapshot.destinationId}`,
@@ -1000,7 +998,7 @@ export class RestorationWorkerService {
       return false;
     }
     // A pause lands before validation starts; once the output is being checked it is let finish.
-    return !(current?.pauseRequestedAt && current.status !== MediaOperationStatus.Validating);
+    return !current?.pauseRequestedAt || current.status === MediaOperationStatus.Validating;
   }
 
   private async progress(
@@ -1039,12 +1037,12 @@ export class RestorationWorkerService {
    * otherwise fail on its own leftover. Only paths inside this job's work directory reach here.
    */
   private async clearStaleOutput(file: string): Promise<void> {
-    await this.storageRepository.unlink(file).catch(() => undefined);
+    await this.storageRepository.unlink(file).catch(() => {});
   }
 
   private async discard(files: string[]): Promise<void> {
     for (const file of files) {
-      await this.storageRepository.unlink(file).catch(() => undefined);
+      await this.storageRepository.unlink(file).catch(() => {});
     }
   }
 

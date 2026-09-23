@@ -1,5 +1,8 @@
 import { AssetStatus, PhysicalDeduplicationDecision, PhysicalDeduplicationSkipReason } from 'src/enum.js';
 import {
+  type PhysicalDeduplicationEvidenceRow,
+  type PhysicalDeduplicationItemOutcome,
+  type PhysicalDeduplicationStoredPlan,
   copyEvidenceProblem,
   currentReferences,
   emptyPhysicalDeduplicationResult,
@@ -15,9 +18,6 @@ import {
   physicalDeduplicationReviewToken,
   planPhysicalDeduplicationRetry,
   retainedEvidenceProblem,
-  type PhysicalDeduplicationEvidenceRow,
-  type PhysicalDeduplicationItemOutcome,
-  type PhysicalDeduplicationStoredPlan,
 } from 'src/utils/physical-deduplication-plan.js';
 
 const hex = 'aa'.repeat(20);

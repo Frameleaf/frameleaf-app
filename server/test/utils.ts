@@ -84,6 +84,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { RepositoryInterface } from 'src/types.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { ClusterGroupFactory } from 'test/factories/cluster-group.factory.js';
+import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 import { IAccessRepositoryMock, newAccessRepositoryMock } from 'test/repositories/access.repository.mock.js';
 import { newAssetRepositoryMock } from 'test/repositories/asset.repository.mock.js';
 import { newConfigRepositoryMock } from 'test/repositories/config.repository.mock.js';
@@ -94,7 +95,6 @@ import { newMediaRepositoryMock } from 'test/repositories/media.repository.mock.
 import { newMetadataRepositoryMock } from 'test/repositories/metadata.repository.mock.js';
 import { newStorageRepositoryMock } from 'test/repositories/storage.repository.mock.js';
 import { newSystemMetadataRepositoryMock } from 'test/repositories/system-metadata.repository.mock.js';
-import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 
 export type ControllerContext = {
   authenticate: Mock;

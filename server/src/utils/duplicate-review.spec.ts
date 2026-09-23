@@ -1,5 +1,6 @@
 import { AssetType, DuplicateDecisionKind, DuplicateGroupKind, DuplicateQualityReason } from 'src/enum.js';
 import {
+  type DuplicateGroupDecision,
   classifyDuplicateGroup,
   duplicateDecisionProblem,
   duplicateGroupIndex,
@@ -8,7 +9,6 @@ import {
   duplicateTrashIds,
   groupAlignedBatchSize,
   parseDuplicateGroups,
-  type DuplicateGroupDecision,
 } from 'src/utils/duplicate-review.js';
 
 const image = (id: string, dateTimeOriginal: string | null, exif: Record<string, unknown> = {}) =>

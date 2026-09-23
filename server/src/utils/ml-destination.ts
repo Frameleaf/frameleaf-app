@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import type { MlProbeHardware } from 'src/schema/tables/ml-destination.table.js';
 import {
   CLOUD_ML_DESTINATION_KINDS,
   LIBRARY_ML_WORKLOADS,
@@ -12,15 +13,14 @@ import {
   RESTORATION_ML_WORKLOADS,
 } from 'src/enum.js';
 import {
-  MachineLearningRepository,
   ML_PROBE_FRESHNESS_MS,
+  MachineLearningRepository,
   MlEndpoint,
   MlEndpointProbe,
   MlSelection,
   MlUsage,
 } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
-import type { MlProbeHardware } from 'src/schema/tables/ml-destination.table.js';
 
 /**
  * Explicit destination selection (FL-110).

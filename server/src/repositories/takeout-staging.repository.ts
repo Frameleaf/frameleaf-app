@@ -5,9 +5,9 @@ import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, statfs } f
 import path from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { createInflateRaw, crc32 } from 'node:zlib';
-import { StorageCore } from 'src/cores/storage.core.js';
+import { crc32, createInflateRaw } from 'node:zlib';
 import type { TakeoutSource } from 'src/repositories/takeout.repository.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import {
   TakeoutZipEntry,
   TakeoutZipSource,
@@ -144,7 +144,7 @@ export class TakeoutStagingRepository {
   /** The folder still lies inside one of the permitted roots (they may have changed since it was chosen). */
   async isInsideRoots(directory: string, roots: readonly string[]): Promise<boolean> {
     for (const root of roots) {
-      const realRoot = await realpath(root).catch(() => undefined);
+      const realRoot = await realpath(root).catch(() => {});
       if (realRoot && (directory === realRoot || directory.startsWith(realRoot + path.sep))) {
         return true;
       }

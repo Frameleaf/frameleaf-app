@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { MachineLearningRepository, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
+import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import {
   AssetRestorationMode,
   AssetRestorationSourceType,
@@ -11,8 +13,6 @@ import {
   MlDestinationKind,
   MlWorkload,
 } from 'src/enum.js';
-import type { MachineLearningRepository, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
-import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import { MlDestinationRefusedError, selectMlDestination } from 'src/utils/ml-destination.js';
 import {
   RESTORATION_PREVIEW_AFTER_DECISION_DAYS,
@@ -33,9 +33,9 @@ import {
   previewExpiryAfterReady,
   previewInputBytes,
   previewRegionPixels,
+  restorationAdmissionOf,
   restorationChunkIdentity,
   restorationEstimate,
-  restorationAdmissionOf,
   restorationOutputPaths,
   selectRestorationDestination,
   stageOfKind,

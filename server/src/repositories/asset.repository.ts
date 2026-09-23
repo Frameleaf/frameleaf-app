@@ -32,7 +32,6 @@ import {
   TimeBucketDateType,
 } from 'src/enum.js';
 import { isForkWriteEnabled } from 'src/fork-schema/authority.js';
-import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import { getForkSchemaPhase } from 'src/repositories/fork-derived-results.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
@@ -44,6 +43,7 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import {
   anyUuid,
   asUuid,
@@ -75,6 +75,7 @@ import {
   withTagId,
   withTags,
 } from 'src/utils/database.js';
+import { onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
 import {
   effectiveVisibility,
   isLocked,
@@ -84,7 +85,6 @@ import {
   lockedForReason,
   visibilityIs,
 } from 'src/utils/locked.js';
-import { onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 

@@ -1,8 +1,8 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Next, Param, Post, Put, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Response } from 'express';
-import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   EnrichmentOptionsResponseDto,
   EnrichmentPlanCreateDto,
@@ -15,8 +15,8 @@ import {
   VideoMomentParamDto,
   VideoMomentSearchDto,
   VideoMomentSearchResponseDto,
-  VideoMomentsResponseDto,
   VideoMomentUpdateDto,
+  VideoMomentsResponseDto,
 } from 'src/dtos/enrichment.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
