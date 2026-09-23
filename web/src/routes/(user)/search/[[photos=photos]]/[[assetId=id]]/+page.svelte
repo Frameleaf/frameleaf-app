@@ -6,7 +6,7 @@
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import ControlAppBar from '$lib/components/shared-components/ControlAppBar.svelte';
   import GalleryViewer from '$lib/components/shared-components/gallery-viewer/GalleryViewer.svelte';
-  import SearchBar from '$lib/components/shared-components/search-bar/SearchBar.svelte';
+  import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
   import ArchiveAction from '$lib/components/timeline/actions/ArchiveAction.svelte';
   import ChangeDate from '$lib/components/timeline/actions/ChangeDateAction.svelte';
   import ChangeDescription from '$lib/components/timeline/actions/ChangeDescriptionAction.svelte';
@@ -23,7 +23,6 @@
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { searchManager } from '$lib/managers/search-manager.svelte';
   import type { Viewport } from '$lib/managers/timeline-manager/types';
   import { Route } from '$lib/route';
   import { getAssetBulkActions } from '$lib/services/asset.service';
@@ -60,7 +59,7 @@
     mdiMapMarkerOutline,
     mdiSelectAll,
   } from '@mdi/js';
-  import { onMount, tick, untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   const viewport: Viewport = $state({ width: 0, height: 0 });
@@ -328,10 +327,7 @@
     delete nextTerms[key];
     assetMultiSelectManager.clear();
     void goto(Route.search(nextTerms));
-    searchManager.setQuery(nextTerms);
   }
-
-  onMount(() => searchManager.setQuery(terms));
 
   function resetAskSearch(clearInput = true) {
     askSearchRequestId++;
@@ -645,7 +641,9 @@
       <div class="fixed inset-s-0 top-0 z-2 w-full">
         <ControlAppBar onClose={() => goto(previousRoute)} backIcon={mdiArrowLeft}>
           <div class="mx-auto w-full max-w-2xl pe-2">
-            <SearchBar grayTheme={false} />
+            <!-- FL-49: the same single search entry as the top bar; it reads the current
+                 search from the URL, so reopening it resumes this query. -->
+            <SearchEntry />
           </div>
         </ControlAppBar>
       </div>

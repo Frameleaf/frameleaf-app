@@ -3,26 +3,23 @@
 </script>
 
 <script lang="ts">
-  import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { clickOutside } from '$lib/actions/click-outside';
   import TopBar from '$lib/components/frameleaf/TopBar.svelte';
   import ElevatedSessionToggle from '$lib/components/shared-components/navigation-bar/ElevatedSessionToggle.svelte';
   import NotificationPanel from '$lib/components/shared-components/navigation-bar/NotificationPanel.svelte';
-  import SearchBar from '$lib/components/shared-components/search-bar/SearchBar.svelte';
+  import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
   import { frameleafShell } from '$lib/frameleaf/rollout';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import SearchFilterModal from '$lib/modals/SearchFilterModal.svelte';
   import { Route } from '$lib/route';
   import { getGlobalActions } from '$lib/services/app.service';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { notificationManager } from '$lib/stores/notification-manager.svelte';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
-  import { handlePromiseError } from '$lib/utils';
-  import { ActionButton, Button, IconButton, Logo, modalManager } from '@immich/ui';
-  import { mdiBellBadge, mdiBellOutline, mdiMagnify, mdiMenu, mdiTrayArrowUp, mdiTune } from '@mdi/js';
+  import { ActionButton, Button, IconButton, Logo } from '@immich/ui';
+  import { mdiBellBadge, mdiBellOutline, mdiMenu, mdiTrayArrowUp } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import ThemeButton from '../ThemeButton.svelte';
@@ -39,7 +36,6 @@
 
   let shouldShowAccountInfoPanel = $state(false);
   let shouldShowNotificationPanel = $state(false);
-  let isSearchOptionsOpen = $state(false);
   let innerWidth: number = $state(0);
   const hasUnreadNotifications = $derived(notificationManager.notifications.length > 0);
 
@@ -50,25 +46,6 @@
       console.error('Failed to load notifications on mount', error);
     }
   });
-
-  const openSearchOptions = async () => {
-    if (isSearchOptionsOpen) {
-      return;
-    }
-
-    isSearchOptionsOpen = true;
-
-    try {
-      const result = modalManager.open(SearchFilterModal, { searchQuery: {} });
-      const searchResult = await result.onClose;
-
-      if (searchResult) {
-        await goto(Route.search(searchResult));
-      }
-    } finally {
-      isSearchOptionsOpen = false;
-    }
-  };
 
   const { Cast } = $derived(getGlobalActions($t));
 </script>
@@ -112,38 +89,15 @@
         </a>
       </div>
       <div class="flex justify-between gap-4 pe-6 lg:gap-8">
-        <div class="hidden w-full max-w-5xl flex-1 sm:block tall:ps-0">
+        <!-- FL-49: the Frameleaf search entry is the product's only search entry point, so the
+             legacy bar hosts it too rather than keeping a second, differently behaved one. -->
+        <div class="w-full max-w-5xl flex-1 tall:ps-0">
           {#if featureFlagsManager.value.search}
-            <SearchBar grayTheme={true} />
+            <SearchEntry />
           {/if}
         </div>
 
         <section class="flex w-full place-items-center justify-end gap-1 sm:w-auto md:gap-2">
-          {#if featureFlagsManager.value.search}
-            <IconButton
-              color="secondary"
-              shape="round"
-              variant="ghost"
-              size="medium"
-              icon={mdiMagnify}
-              href={Route.search()}
-              id="search-button"
-              class="sm:hidden"
-              aria-label={$t('go_to_search')}
-            />
-            <IconButton
-              color="secondary"
-              shape="round"
-              variant="ghost"
-              size="medium"
-              icon={mdiTune}
-              onclick={() => handlePromiseError(openSearchOptions())}
-              id="search-options-button"
-              class="sm:hidden"
-              aria-label={$t('show_search_options')}
-            />
-          {/if}
-
           {#if !page.url.pathname.includes('/admin') && onUploadClick}
             <ElevatedSessionToggle />
             <Button
