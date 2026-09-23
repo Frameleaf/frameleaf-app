@@ -100,19 +100,12 @@ export const cutFrames = async (
   return cut.map((frame) => ({ ...frame, rank: ranks.get(frame.frameIndex) ?? cut.length }));
 };
 
-/**
- * Make sure a video has current reusable frames, cutting them when it has none or when its
- * original changed since they were cut. With `force` they are cut again regardless.
- *
- * Publication is guarded by the source fingerprint read before cutting: if the original was
- * replaced while ffmpeg ran, the new files are removed and nothing is published (`source-changed`).
- * The old frames' files are deleted only after the new ones are in the database.
- */
-export const ensureVideoFrames = async (
+/** The body of `ensureVideoFrames`, run while its frame lock is held. */
+const cutAndPublish = async (
   deps: VideoFrameDeps,
   assetId: string,
   config: Pick<SystemConfig, 'ffmpeg' | 'image'>,
-  options: { force?: boolean } = {},
+  options: { force?: boolean },
 ): Promise<FrameCutOutcome> => {
   const source = await deps.moments.getVideoSource(assetId);
   if (!source) {
@@ -168,6 +161,24 @@ export const ensureVideoFrames = async (
   await Promise.all(published.stalePaths.map((path) => deps.storage.unlink(path).catch(() => {})));
   return { status: 'cut', frames: published.frames };
 };
+
+/**
+ * Make sure a video has current reusable frames, cutting them when it has none or when its
+ * original changed since they were cut. With `force` they are cut again regardless.
+ *
+ * Publication is guarded by the source fingerprint read before cutting: if the original was
+ * replaced while ffmpeg ran, the new files are removed and nothing is published (`source-changed`).
+ * The old frames' files are deleted only after the new ones are in the database. Concurrent calls
+ * for the same video are serialised by `withFrameLock`, so two cuts never race each other.
+ */
+export const ensureVideoFrames = (
+  deps: VideoFrameDeps,
+  assetId: string,
+  config: Pick<SystemConfig, 'ffmpeg' | 'image'>,
+  options: { force?: boolean } = {},
+): Promise<FrameCutOutcome> =>
+  // Whoever gets the lock second finds the frames the first one cut and uses them as they are.
+  deps.moments.withFrameLock(assetId, () => cutAndPublish(deps, assetId, config, options));
 
 /**
  * Cut frames into a temporary folder for a preview, without touching the library: nothing is

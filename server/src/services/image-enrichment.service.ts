@@ -134,6 +134,11 @@ export type EnrichmentRunOptions = {
   configHash?: string;
   /** The durable job the requests belong to, recorded with the destination's accounting. */
   jobId?: string;
+  /**
+   * Set by an enrichment plan. A plan only ever uses the destinations it pinned: a workload it
+   * pinned none for is not sent anywhere, never to the routed destination instead.
+   */
+  planRun?: boolean;
 };
 
 /** What one stage did to one asset, for the plan's per-asset record. */
@@ -890,7 +895,9 @@ export class ImageEnrichmentService extends BaseService {
     // a sensitive verdict from either the detector or the description locks it (FL-34)
     await this.lockIfDetected(id, metadata, isNsfwHidingEnabled(machineLearning));
 
-    if (isSmartSearchEnabled(machineLearning)) {
+    // A plan that pinned no search destination (search was off when it was queued) leaves the
+    // description embedding alone rather than sending the text to an unpinned destination.
+    if (isSmartSearchEnabled(machineLearning) && !(options.planRun && !options.searchDestinationId)) {
       await this.upsertDescriptionEmbedding(id, result.description, machineLearning.clip, options);
     }
 
@@ -1046,6 +1053,9 @@ export class ImageEnrichmentService extends BaseService {
   ) {
     const destinationId = workload === MlWorkload.Clip ? options.searchDestinationId : options.enrichmentDestinationId;
     const jobId = options.jobId ?? assetId;
+    if (options.planRun && !destinationId) {
+      throw new BadRequestException(`This plan has no processing destination for ${workload}`);
+    }
     return destinationId
       ? this.selectMlDestination({ workload, destinationId, jobId, jobName })
       : this.selectRoutedMlDestination({ workload, jobId, jobName });

@@ -56,6 +56,7 @@ describe(VideoMomentIndexService.name, () => {
   beforeEach(() => {
     mocks = getMocks();
     moments = {
+      withFrameLock: vi.fn((_assetId: string, callback: () => Promise<unknown>) => callback()),
       getVideoSource: vi.fn().mockResolvedValue(source),
       getFingerprints: vi.fn().mockResolvedValue(new Map([[assetId, fingerprint]])),
       getAssetKinds: vi.fn().mockResolvedValue(new Map([[assetId, { type: AssetType.Video, ownerId }]])),
@@ -169,6 +170,17 @@ describe(VideoMomentIndexService.name, () => {
       );
     });
 
+    it('stops before the next frame when the plan has lost its claim', async () => {
+      mocks.machineLearning.encodeImage.mockResolvedValue('[0.1]');
+      const heartbeat = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false);
+
+      const outcome = await sut.runIndexStage(assetId, { destinationId: mlDestinationStub.local.id, heartbeat });
+
+      expect(outcome).toEqual(expect.objectContaining({ state: EnrichmentItemState.Failed, reasonKey: 'stage-error' }));
+      expect(mocks.machineLearning.encodeImage).toHaveBeenCalledTimes(1);
+      expect(moments.publishIndex).not.toHaveBeenCalled();
+    });
+
     it('fails in place when the destination refuses, without trying another', async () => {
       mocks.mlDestination.getById.mockResolvedValue(undefined);
 
@@ -249,6 +261,13 @@ describe(VideoMomentIndexService.name, () => {
   });
 
   describe('getMoments', () => {
+    it('answers a missing frame exactly like a frame of a video the caller cannot read', async () => {
+      moments.getFrame = vi.fn().mockResolvedValue(undefined);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+
+      await expect(sut.getFrameFile(authStub.user1, newUuid())).rejects.toThrow(BadRequestException);
+    });
+
     it('needs read access to the video', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
 
@@ -317,7 +336,11 @@ describe(VideoMomentIndexService.name, () => {
 
       const { hits } = await sut.search(authStub.user1, { query: 'waves' });
 
-      expect(moments.searchFrames).toHaveBeenCalledWith('[0.3]', { ownerId, lockedOwnerId: undefined, limit: 24 });
+      expect(moments.searchFrames).toHaveBeenCalledWith('[0.3]', defaults.machineLearning.clip.modelName, {
+        ownerId,
+        lockedOwnerId: undefined,
+        limit: 24,
+      });
       expect(hits).toEqual([expect.objectContaining({ assetId, timestampMs: 20_000, match: 'visual' })]);
     });
 

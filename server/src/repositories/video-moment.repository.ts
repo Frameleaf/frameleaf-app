@@ -113,6 +113,23 @@ export class VideoMomentRepository {
     return new Map(rows.map((row) => [row.id, { type: row.type as AssetType, ownerId: row.ownerId }]));
   }
 
+  /**
+   * One cut of one video's frames at a time, across every worker and process (FL-59). A description
+   * job and a plan can reach the same video together; without this the second publish would delete
+   * the files the first had just handed to its caller. A session advisory lock on its own connection,
+   * held for the cut (six seeks at most), keyed apart from the asset metadata lock.
+   */
+  withFrameLock<R>(assetId: string, callback: () => Promise<R>): Promise<R> {
+    return this.db.connection().execute(async (connection) => {
+      await sql`SELECT pg_advisory_lock(-59, hashtext(${assetId})::int)`.execute(connection);
+      try {
+        return await callback();
+      } finally {
+        await sql`SELECT pg_advisory_unlock(-59, hashtext(${assetId})::int)`.execute(connection);
+      }
+    });
+  }
+
   getIndex(assetId: string): Promise<VideoMomentIndex | undefined> {
     return this.db
       .selectFrom('video_moment_index')
@@ -482,10 +499,16 @@ export class VideoMomentRepository {
   }
 
   /**
-   * Frames nearest a text embedding in one library. Only videos an ordinary read may show:
-   * active, not deleted, Timeline or Archive, and not Locked unless the owner's session is unlocked.
+   * Frames nearest a text embedding in one library. Only embeddings from `modelName`, the model the
+   * text was encoded with: vectors from another model are not comparable. Only videos an ordinary
+   * read may show: active, not deleted, Timeline or Archive, and not Locked unless the owner's
+   * session is unlocked.
    */
-  async searchFrames(embedding: string, scope: VideoMomentSearchScope): Promise<VideoMomentSearchHit[]> {
+  async searchFrames(
+    embedding: string,
+    modelName: string,
+    scope: VideoMomentSearchScope,
+  ): Promise<VideoMomentSearchHit[]> {
     const rows = await this.db
       .selectFrom('video_moment_frame_embedding')
       .innerJoin('video_moment_frame', 'video_moment_frame.id', 'video_moment_frame_embedding.frameId')
@@ -502,6 +525,7 @@ export class VideoMomentRepository {
         'video_moment.caption',
         sql<number>`video_moment_frame_embedding.embedding <=> ${embedding}`.as('distance'),
       ])
+      .where('video_moment_frame_embedding.modelName', '=', modelName)
       .where('asset.ownerId', '=', asUuid(scope.ownerId))
       .where('asset.status', '=', AssetStatus.Active)
       .where('asset.deletedAt', 'is', null)

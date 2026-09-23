@@ -402,18 +402,24 @@ export type EnrichmentItemView = {
  *   `cancelled` once the plan stopped (cancelled or failed as a whole) before it did.
  * - The asset a running worker has in hand is `running`.
  * - A failed asset waiting for its automatic retry is `queued` again, with its stages kept.
+ * - An asset a manual retry carried over with its earlier outcomes is `queued` until the cursor
+ *   reaches it (`processedUnits`): what it carries is history, not this plan's answer yet.
  */
 export const enrichmentItemStates = (
   snapshot: Pick<EnrichmentPlanSnapshot, 'assetIds'>,
   result: EnrichmentPlanResult,
-  operation: { status: MediaOperationStatus },
+  operation: { status: MediaOperationStatus; processedUnits?: number | string | null },
 ): EnrichmentItemView[] => {
   const recorded = new Map(result.items.map((item) => [item.id, item]));
   const pending = new Set(enrichmentRetryPending(result));
   const running = RUNNING_STATUSES.has(operation.status);
   const stopped = STOPPED_STATUSES.has(operation.status);
+  const cursor =
+    operation.processedUnits === undefined || operation.processedUnits === null
+      ? snapshot.assetIds.length
+      : Math.max(0, Number(operation.processedUnits) || 0);
 
-  return snapshot.assetIds.map((id) => {
+  return snapshot.assetIds.map((id, index) => {
     const item = recorded.get(id);
     const stages = item?.stages ?? {};
     if (running && result.inFlight === id) {
@@ -427,7 +433,7 @@ export const enrichmentItemStates = (
         retryPending: !stopped,
       };
     }
-    if (item) {
+    if (item && index < cursor) {
       return { id, state: enrichmentItemOutcome(item), stages, retryPending: false };
     }
     return {
@@ -490,12 +496,12 @@ export const stableStringify = (value: unknown): string => {
 export const enrichmentConfigHash = (config: unknown): string => digest(stableStringify(config), 16);
 
 /**
- * Digest of the original a result was made from: its checksum, where it is and when it was last
- * modified. A replaced original, a re-imported file or an edited-in-place file all change it.
+ * Digest of the original a result was made from: its checksum and when it was last modified. A
+ * replaced original, a re-imported file or an edited-in-place file all change it. Where the file
+ * lives does not: a storage-template move or a library path change keeps every generated result.
  */
 export const sourceFingerprint = (source: {
   checksum: Buffer | string | null;
-  originalPath: string;
   fileModifiedAt: Date | string | null;
 }): string => {
   let checksum = '';
@@ -508,7 +514,7 @@ export const sourceFingerprint = (source: {
       : source.fileModifiedAt instanceof Date
         ? source.fileModifiedAt.toISOString()
         : new Date(source.fileModifiedAt).toISOString();
-  return digest(`${checksum}|${source.originalPath}|${modified}`, 32);
+  return digest(`${checksum}|${modified}`, 32);
 };
 
 /** Digest of the confirmed names a prompt was given. Order and duplicates do not matter. */

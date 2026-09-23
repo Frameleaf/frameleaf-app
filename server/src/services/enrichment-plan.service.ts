@@ -227,13 +227,15 @@ export class EnrichmentPlanService {
 
   /**
    * Describe a few samples with a draft model or prompt, one at a time, writing nothing: no
-   * description, tag, Locked state, embedding or frame is changed (FL-59). The samples must be
-   * ones the caller may read, so a Locked sample needs the unlocked session. The destination is
-   * the one named, or the routed one; a cloud destination still needs its recorded consent.
+   * description, tag, Locked state, embedding or frame is changed (FL-59). The samples must be the
+   * caller's own (a Locked one only in the unlocked session): a partner's or an album member's
+   * media is never sent to a destination by somebody else's preview, least of all a cloud one.
+   * The destination is the one named, or the routed one; a cloud destination still needs its
+   * recorded consent.
    */
   async preview(auth: AuthDto, dto: EnrichmentPreviewRequestDto): Promise<EnrichmentPreviewResponseDto> {
     const assetIds = [...new Set(dto.assetIds)];
-    await requireAccess(this.access, { auth, permission: Permission.AssetRead, ids: assetIds });
+    await requireAccess(this.access, { auth, permission: Permission.AssetUpdate, ids: assetIds });
 
     const { machineLearning } = await this.config();
     const destinationId = dto.destinationId ?? (await this.routedDestinationId(MlWorkload.Enrichment));
@@ -381,7 +383,7 @@ export class EnrichmentPlanService {
     };
 
     const primary = enrichmentDestination ?? searchDestination;
-    const created = await this.operations.create({
+    const created = await this.createOnce(auth.user.id, dto.requestKey, {
       ownerId: auth.user.id,
       kind: MediaOperationKind.EnrichmentPlan,
       destination: toOperationDestination(primary?.kind),
@@ -408,6 +410,28 @@ export class EnrichmentPlanService {
 
     this.logger.log(`Enrichment plan queued as media operation ${created.id} (${assetIds.length} items, ${stages})`);
     return this.present(auth, created);
+  }
+
+  /**
+   * Insert a plan, answering a concurrent submit of the same idempotency key with the plan that won.
+   * The unique index on (owner, request key) is what decides the race; the loser reads the winner.
+   */
+  private async createOnce(
+    ownerId: string,
+    requestKey: string | undefined,
+    values: Parameters<MediaOperationRepository['create']>[0],
+  ): Promise<MediaOperation> {
+    try {
+      return await this.operations.create(values);
+    } catch (error) {
+      if (requestKey) {
+        const existing = await this.operations.getByRequestKey(ownerId, MediaOperationKind.EnrichmentPlan, requestKey);
+        if (existing) {
+          return existing;
+        }
+      }
+      throw error;
+    }
   }
 
   /**
@@ -672,11 +696,20 @@ export class EnrichmentPlanService {
         failed.add(stage);
       }
 
-      // A stage can take minutes; keep the lease while this asset is in hand.
-      await this.operations.heartbeat(job.id, job.claimToken, ENRICHMENT_PLAN_LEASE_MS);
+      // A stage can take minutes; keep the lease while this asset is in hand. A lost claim stops
+      // here: the next write fails too, and the worker that took the plan over reruns this asset.
+      if (!(await this.heartbeat(job))) {
+        this.logger.warn(`Enrichment plan ${job.id}: claim lost while running ${assetId}, stopping`);
+        break;
+      }
     }
 
     return item;
+  }
+
+  /** Extend the lease; false when the claim is no longer this worker's. */
+  private heartbeat(job: PlanRun): Promise<boolean> {
+    return this.operations.heartbeat(job.id, job.claimToken, ENRICHMENT_PLAN_LEASE_MS);
   }
 
   private async runStage(job: PlanRun, stage: EnrichmentStage, assetId: string): Promise<MomentStageOutcome> {
@@ -689,6 +722,7 @@ export class EnrichmentPlanService {
       clipModelName: snapshot.config.search.modelName,
       configHash: snapshot.configHash,
       jobId: job.id,
+      planRun: true,
     };
     const fromResult = (result: EnrichmentStageResult): MomentStageOutcome => ({
       state: toState(result.status),
@@ -711,6 +745,7 @@ export class EnrichmentPlanService {
           destinationId: snapshot.destinations.search,
           modelName: snapshot.config.search.modelName,
           jobId: job.id,
+          heartbeat: () => this.heartbeat(job),
         });
       }
       case EnrichmentStage.MomentCaptions: {
@@ -723,6 +758,7 @@ export class EnrichmentPlanService {
           },
           planConfigHash: snapshot.configHash,
           jobId: job.id,
+          heartbeat: () => this.heartbeat(job),
         });
       }
     }
@@ -872,7 +908,10 @@ export class EnrichmentPlanService {
   private async present(auth: AuthDto, operation: MediaOperation): Promise<EnrichmentPlanResponseDto> {
     const snapshot = parseEnrichmentPlanSnapshot(operation.snapshot);
     const result = parseEnrichmentPlanResult(operation.result);
-    const views = enrichmentItemStates(snapshot, result, { status: operation.status as MediaOperationStatus });
+    const views = enrichmentItemStates(snapshot, result, {
+      status: operation.status as MediaOperationStatus,
+      processedUnits: operation.processedUnits,
+    });
 
     // FL-34: a session that has not unlocked is never told which of its assets are Locked.
     const hidden = getLockedOwnerId(auth)
