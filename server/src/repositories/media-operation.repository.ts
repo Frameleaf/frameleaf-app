@@ -80,7 +80,6 @@ export type MediaOperationListOptions = {
   skip: number;
 };
 
-/** What the admin aggregate may contain: counts, ages and destinations. Never media, never names. */
 /** One server process holding claims (FL-72 worker inventory). Identity only, never whose media. */
 export type MediaOperationClaimantRow = {
   workerId: string;
@@ -96,6 +95,7 @@ export type MediaOperationDestinationLoadRow = {
   active: number;
 };
 
+/** What the admin aggregate may contain: counts, ages and destinations. Never media, never names. */
 export type MediaOperationAggregateRow = {
   kind: MediaOperationKind;
   status: MediaOperationStatus;
@@ -1234,6 +1234,7 @@ export class MediaOperationRepository {
         sql<string>`count(*) filter (where "status" = any(${[...CLAIMED_MEDIA_OPERATION_STATUSES]}::text[]))`.as('active'),
       ])
       .where('kind', 'in', [...kinds])
+      .where('status', 'in', [MediaOperationStatus.Queued, ...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where(destinationId, 'is not', null)
       .groupBy(destinationId)
       .execute();

@@ -431,6 +431,7 @@
         <p class="callout">{$t('admin.frameleaf_workers_ml_disabled')}</p>
       {/if}
       <p class="muted">{$t('admin.frameleaf_workers_ml_note')}</p>
+      <p class="muted">{$t('admin.frameleaf_workers_order_note')}</p>
       {#if listError}
         <p class="error" role="alert">{listError}</p>
       {/if}
@@ -624,6 +625,9 @@
           <input type="url" bind:value={form.url} maxlength="2048" placeholder="http://machine-learning:3003" required />
         </label>
         <p class="muted">{$t('admin.frameleaf_workers_endpoint_hint')}</p>
+        {#if form.kind === 'edit'}
+          <p class="muted">{$t('admin.frameleaf_workers_edit_note')}</p>
+        {/if}
       {/if}
       {#if formError}
         <p class="error" role="alert">{formError}</p>

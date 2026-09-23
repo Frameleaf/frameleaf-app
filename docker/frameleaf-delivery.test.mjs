@@ -156,9 +156,9 @@ test("the restoration overlay adds a separate worker and leaves library analysis
       volume.endsWith(":/restoration/weights:ro"),
     ),
   );
-  // Its own GPU, chosen by the operator, never "any GPU" next to the ML container.
+  // Its own GPU, chosen by the operator (no default), never "any GPU" next to the ML container.
   const [gpu] = worker.deploy.resources.reservations.devices;
-  assert.deepEqual(gpu.device_ids, ["${FRAMELEAF_RESTORATION_GPU:-0}"]);
+  assert.match(gpu.device_ids[0], /^\$\{FRAMELEAF_RESTORATION_GPU:\?/);
   assert.equal(gpu.count, undefined);
   assert.ok(Object.hasOwn(overlay.volumes, "restoration-work"));
 });
