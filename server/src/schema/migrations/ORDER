@@ -135,3 +135,4 @@
 2100000000270-AddMediaOperationAutoRetry
 2100000000280-AddSharedSpaceCommentThread
 2100000000290-ClearLockedAlbumCovers
+2100000000300-ClearLockedCoverReferences

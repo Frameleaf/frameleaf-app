@@ -274,6 +274,15 @@ export class PersonService extends BaseService {
         throw new BadRequestException('Invalid assetId for feature face or asset is offline');
       }
 
+      // A Locked photo is never a featured face (FL-53). The caller's own is refused plainly; anyone
+      // else's gets the generic answer, so it never reveals that another person's photo is Locked.
+      if (face.visibility === AssetVisibility.Locked) {
+        if (face.ownerId === auth.user.id) {
+          throw new BadRequestException('A Locked photo cannot be a featured photo');
+        }
+        throw new BadRequestException('Invalid assetId for feature face or asset is offline');
+      }
+
       faceId = face.id;
     }
 
@@ -616,20 +625,29 @@ export class PersonService extends BaseService {
     }
 
     if (personGroupId) {
+      // A face on a Locked photo is never a person's thumbnail (FL-53): such a person takes another
+      // face of theirs once this one is assigned, or none.
+      const isLocked = face.asset.visibility === AssetVisibility.Locked;
       const person = await this.personRepository.getByGroupId({ ownerId, personGroupId });
       if (person) {
         this.logger.debug(`Face ${id} matched person ${person.personGroupId}`);
       } else {
-        await this.personRepository.create({ ownerId, faceAssetId: face.id, personGroupId });
+        await this.personRepository.create({ ownerId, faceAssetId: isLocked ? null : face.id, personGroupId });
         this.logger.log(`Created person for face ${id} in group ${personGroupId}`);
-        await this.jobRepository.queue({
-          name: JobName.PersonGenerateThumbnail,
-          data: { ownerId, personGroupId },
-        });
+        if (!isLocked) {
+          await this.jobRepository.queue({
+            name: JobName.PersonGenerateThumbnail,
+            data: { ownerId, personGroupId },
+          });
+        }
       }
 
       this.logger.debug(`Assigning face ${id} to person group ${personGroupId}`);
       await this.personRepository.reassignFaces({ faceIds: [id], newPersonGroupId: personGroupId });
+
+      if (!person && isLocked) {
+        await this.createNewFeaturePhoto([{ ownerId, personGroupId }]);
+      }
     }
 
     return JobStatus.Success;

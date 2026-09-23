@@ -11,6 +11,7 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
@@ -34,6 +35,7 @@ const setup = (db?: Kysely<DB>) => {
       AssetJobRepository,
       AlbumRepository,
       AccessRepository,
+      PersonRepository,
       SharedLinkAssetRepository,
       StackRepository,
       UserRepository,
@@ -954,7 +956,7 @@ describe(AssetService.name, () => {
           .where('id', '=', albumId)
           .executeTakeFirstOrThrow()
           .then(({ albumThumbnailAssetId }) => albumThumbnailAssetId);
-      return { sut, auth, cover, fallback, album, sharedAlbum, coverOf };
+      return { sut, ctx, auth, cover, fallback, album, sharedAlbum, coverOf };
     };
 
     it('releases the cover when one asset is moved', async () => {
@@ -981,6 +983,42 @@ describe(AssetService.name, () => {
       await sut.updateAll(auth, { ids: [cover.id], visibility: AssetVisibility.Archive });
 
       await expect(coverOf(album.id)).resolves.toBe(cover.id);
+    });
+
+    it("moves a person's featured face off the photo and queues a new thumbnail from the next face", async () => {
+      const { sut, ctx, auth, cover, fallback } = await coverSetup();
+      const { person } = await ctx.newPerson({ ownerId: auth.user.id, thumbnailPath: '/thumbs/person.jpeg' });
+      const { assetFace: lockedFace } = await ctx.newAssetFace({
+        assetId: cover.id,
+        personGroupId: person.personGroupId,
+      });
+      const { assetFace: nextFace } = await ctx.newAssetFace({
+        assetId: fallback.id,
+        personGroupId: person.personGroupId,
+      });
+      await ctx.database
+        .updateTable('person')
+        .set({ faceAssetId: lockedFace.id })
+        .where('ownerId', '=', auth.user.id)
+        .where('personGroupId', '=', person.personGroupId)
+        .execute();
+
+      await sut.updateAll(auth, { ids: [cover.id], visibility: AssetVisibility.Locked });
+
+      await expect(
+        ctx.database
+          .selectFrom('person')
+          .select(['faceAssetId', 'thumbnailPath'])
+          .where('ownerId', '=', auth.user.id)
+          .where('personGroupId', '=', person.personGroupId)
+          .executeTakeFirstOrThrow(),
+      ).resolves.toEqual({ faceAssetId: nextFace.id, thumbnailPath: '' });
+      expect(ctx.getMock(JobRepository).queueAll).toHaveBeenCalledWith([
+        {
+          name: JobName.PersonGenerateThumbnail,
+          data: { ownerId: auth.user.id, personGroupId: person.personGroupId },
+        },
+      ]);
     });
   });
 });
