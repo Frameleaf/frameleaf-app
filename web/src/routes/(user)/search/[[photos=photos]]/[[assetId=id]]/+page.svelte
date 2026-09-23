@@ -5,6 +5,7 @@
   import ControlAppBar from '$lib/components/shared-components/ControlAppBar.svelte';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
+  import VideoMomentResults from '$lib/components/frameleaf/VideoMomentResults.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
   import { emptyDiscoveryQuery, structuredSearchRequest } from '$lib/components/discovery/query';
   import { QueryParameter } from '$lib/constants';
@@ -678,6 +679,10 @@
 
 <section class="m-4 mb-12 max-h-screen bg-immich-bg dark:bg-immich-dark-bg">
   <section id="search-content">
+    {#if typeof terms.query === 'string' && terms.query.trim()}
+      <!-- FL-59: timestamped moments inside the person's own videos, above the photo results. -->
+      <VideoMomentResults query={terms.query} />
+    {/if}
     {#if !hasSearchQuery && canUseAskSearch}
       <div class="mx-auto mt-24 flex w-full max-w-5xl flex-col gap-8 px-6 text-gray-700 dark:text-gray-200">
         <form class="mx-auto flex w-full max-w-3xl gap-2" onsubmit={onAskSubmit}>
