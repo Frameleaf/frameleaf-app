@@ -20,7 +20,7 @@ import {
   StudioBundleSourceDto,
   StudioBundleUploadDto,
 } from 'src/dtos/studio-bundle.dto.js';
-import { AssetVisibility, ImmichWorker, MediaOperationKind, MediaOperationStatus, StorageFolder } from 'src/enum.js';
+import { ImmichWorker, MediaOperationKind, MediaOperationStatus, StorageFolder } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -31,6 +31,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { mapOperation } from 'src/services/media-operation.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
+import { isLockedAsset } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   STUDIO_BUNDLE_DESTINATION,
@@ -657,7 +658,7 @@ export class StudioBundleService {
       const entry = entries.get(key.key);
       const asset = assets.get(key.id);
       // Locked media never leaves in a download, not even by name: it travels as a bare reference.
-      const known = entry && asset && asset.visibility !== AssetVisibility.Locked ? { entry, asset } : null;
+      const known = entry && asset && !isLockedAsset(asset) ? { entry, asset } : null;
       const fileName = known ? known.asset.originalFileName : null;
       const contentType = fileName ? mimeTypes.lookup(fileName) || null : null;
       const embedPath =

@@ -1,9 +1,9 @@
 import { ExpressionBuilder, sql } from 'kysely';
-import { AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
+import { isNotLocked } from 'src/utils/locked.js';
 
 /**
- * The album assets that may serve as its cover. Locked media never does (owner decision, September
+ * The album assets that may serve as its cover. Locked media (FL-34, the lock record) never does (owner decision, September
  * 22, 2026): the cover shows on album lists, in shared links and to other members, none of whom may
  * see it. Trashed media does not either.
  */
@@ -14,7 +14,7 @@ export const albumCoverCandidates = (eb: ExpressionBuilder<DB, 'album'>) =>
       join
         .onRef('album_asset.assetId', '=', 'asset.id')
         .on('asset.deletedAt', 'is', null)
-        .on('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
+        .on(isNotLocked('asset')),
     )
     .whereRef('album_asset.albumId', '=', 'album.id');
 

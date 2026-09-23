@@ -2,13 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
-import { AssetVisibility, MediaOperationCheckpointState, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import { MediaOperationCheckpointState, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import {
   MediaOperationCheckpointTable,
   MediaOperationTable,
 } from 'src/schema/tables/media-operation.table.js';
 import { anyUuid } from 'src/utils/database.js';
+import { isLocked } from 'src/utils/locked.js';
 import {
   CLAIMED_MEDIA_OPERATION_STATUSES,
   MEDIA_OPERATION_AUTO_RETRIES,
@@ -241,7 +242,7 @@ export class MediaOperationRepository {
   }
 
   /**
-   * How many of these assets are the owner's and sit in the Locked folder (FL-32).
+   * How many of these assets are the owner's and locked (FL-32; FL-34: the lock record).
    *
    * The bulk worker acts on Locked items, so the Locked folder's PIN is enforced when the job is
    * submitted: a session that has not been unlocked may not queue a job that reaches them.
@@ -256,7 +257,7 @@ export class MediaOperationRepository {
       .select((eb) => eb.fn.countAll<string>().as('count'))
       .where('ownerId', '=', ownerId)
       .where('id', '=', anyUuid(assetIds))
-      .where('visibility', '=', AssetVisibility.Locked)
+      .where(isLocked('asset'))
       .executeTakeFirst();
 
     return Number(row?.count ?? 0);
