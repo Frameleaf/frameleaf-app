@@ -13,7 +13,6 @@
     mdiContentDuplicate,
     mdiMemory,
     mdiRobotOutline,
-    mdiServer,
     mdiTrayFull,
     mdiWrench,
   } from '@mdi/js';
@@ -54,7 +53,6 @@
         href={Route.systemProcessingDestinations()}
         icon={mdiRobotOutline}
       />
-      <NavbarItem title={$t('frameleaf_analytics_title')} href={Route.systemStatistics()} icon={mdiServer} />
     </div>
 
     <div class="me-4 mb-2">

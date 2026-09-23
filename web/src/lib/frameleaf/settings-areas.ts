@@ -6,7 +6,7 @@
  */
 import type { Component } from 'svelte';
 
-export type SettingsGroupId = 'library' | 'server';
+export type SettingsGroupId = 'command' | 'library' | 'server';
 
 /** One settings form as the host renders it: an existing system-config section with its copy. */
 export type SettingsHostSection = {
@@ -18,7 +18,16 @@ export type SettingsHostSection = {
 };
 
 export type SettingsAreaId =
-  'storage' | 'backup' | 'intelligence' | 'editing' | 'care' | 'processing' | 'security' | 'notifications' | 'server';
+  | 'analytics'
+  | 'storage'
+  | 'backup'
+  | 'intelligence'
+  | 'editing'
+  | 'care'
+  | 'processing'
+  | 'security'
+  | 'notifications'
+  | 'server';
 
 export type SettingsAreaDefinition = {
   id: SettingsAreaId;
@@ -28,6 +37,9 @@ export type SettingsAreaDefinition = {
 };
 
 export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
+  // FL-79: the template's Command center group. Library analytics is a screen, not a set of
+  // config forms, so it owns no sections; the host renders it in place of the section list.
+  { id: 'analytics', group: 'command', sections: [] },
   { id: 'storage', group: 'library', sections: ['storage-template', 'trash', 'user-settings'] },
   { id: 'backup', group: 'library', sections: ['external-library', 'takeout', 'backup'] },
   { id: 'intelligence', group: 'library', sections: ['machine-learning', 'smart-albums', 'metadata'] },
@@ -39,12 +51,29 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   { id: 'server', group: 'server', sections: ['server', 'version-check', 'logging', 'location', 'theme'] },
 ]);
 
-export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = Object.freeze(['library', 'server']);
+export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = Object.freeze(['command', 'library', 'server']);
 
 export const DEFAULT_SETTINGS_AREA: SettingsAreaId = 'storage';
 
 export const isSettingsAreaId = (value: string | null | undefined): value is SettingsAreaId =>
   SETTINGS_AREAS.some((area) => area.id === value);
+
+/** Areas that are screens of their own rather than lists of settings sections (FL-79). */
+export const SCREEN_AREAS: readonly SettingsAreaId[] = Object.freeze(['analytics']);
+
+export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area);
+
+/** The address of Library analytics in the command center, optionally for one scope and range. */
+export const analyticsAreaUrl = (params: { scope?: string; range?: string } = {}) => {
+  const search = new URLSearchParams({ area: 'analytics' });
+  if (params.scope) {
+    search.set('scope', params.scope);
+  }
+  if (params.range) {
+    search.set('range', params.range);
+  }
+  return `/admin/system-settings?${search.toString()}`;
+};
 
 /** The area that owns a section key, for `?isOpen=` links written before the areas existed. */
 export const areaForSection = (sectionKey: string): SettingsAreaId | undefined =>

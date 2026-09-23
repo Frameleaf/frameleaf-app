@@ -11,8 +11,10 @@
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
   import SettingsSection from '$lib/components/frameleaf/settings/SettingsSection.svelte';
   import {
+    isScreenArea,
     resolveSettingsArea,
     searchSettingsSections,
     sectionsForArea,
@@ -29,6 +31,7 @@
   import {
     mdiBackupRestore,
     mdiBellOutline,
+    mdiChartTimelineVariant,
     mdiDesktopTowerMonitor,
     mdiHarddisk,
     mdiImageSearchOutline,
@@ -46,6 +49,11 @@
   const AREA_PARAM = 'area';
 
   const areaCopy: Record<SettingsAreaId, { title: string; description: string; icon: string }> = $derived({
+    analytics: {
+      title: $t('frameleaf_settings_area_analytics'),
+      description: $t('frameleaf_settings_area_analytics_description'),
+      icon: mdiChartTimelineVariant,
+    },
     storage: {
       title: $t('frameleaf_settings_area_storage'),
       description: $t('frameleaf_settings_area_storage_description'),
@@ -94,6 +102,7 @@
   });
 
   const groupCopy: Record<SettingsGroupId, string> = $derived({
+    command: $t('frameleaf_settings_group_command'),
     library: $t('frameleaf_settings_group_library'),
     server: $t('frameleaf_settings_group_server'),
   });
@@ -202,6 +211,11 @@
           </SettingsSection>
         {/each}
       </div>
+    {:else if isScreenArea(area)}
+      <!-- As in the template, Library analytics carries its own heading instead of the area's. -->
+      {#if area === 'analytics'}
+        <AnalyticsArea />
+      {/if}
     {:else}
       <header class="heading">
         <p class="overline">{groupCopy[SETTINGS_AREAS.find((item) => item.id === area)?.group ?? 'library']}</p>

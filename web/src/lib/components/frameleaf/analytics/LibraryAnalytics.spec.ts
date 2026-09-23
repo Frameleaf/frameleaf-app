@@ -14,7 +14,7 @@ import en from '../../../../../../i18n/en.json';
 
 const goto = vi.hoisted(() => vi.fn());
 vi.mock('$app/navigation', () => ({ goto }));
-vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/admin/server-status') } }));
+vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/admin/system-settings?area=analytics') } }));
 const downloadBlob = vi.hoisted(() => vi.fn());
 vi.mock('$lib/utils', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/utils')>()),
