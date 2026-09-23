@@ -35,6 +35,7 @@ import { MapRepository } from 'src/repositories/map.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { MoveRepository } from 'src/repositories/move.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
@@ -67,6 +68,11 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access.js';
 import { getConfig, updateConfig } from 'src/utils/config.js';
+import {
+  MlSelectionRequest,
+  routedMlDestinationId,
+  selectMlDestination,
+} from 'src/utils/ml-destination.js';
 
 export const BASE_SERVICE_DEPENDENCIES = [
   LoggingRepository,
@@ -98,6 +104,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   MediaRepository,
   MemoryRepository,
   MetadataRepository,
+  MlDestinationRepository,
   MoveRepository,
   NotificationRepository,
   OAuthRepository,
@@ -163,6 +170,7 @@ export class BaseService {
     protected mediaRepository: MediaRepository,
     protected memoryRepository: MemoryRepository,
     protected metadataRepository: MetadataRepository,
+    protected mlDestinationRepository: MlDestinationRepository,
     protected moveRepository: MoveRepository,
     protected notificationRepository: NotificationRepository,
     protected oauthRepository: OAuthRepository,
@@ -237,6 +245,7 @@ export class BaseService {
       ctx.mediaRepository,
       ctx.memoryRepository,
       ctx.metadataRepository,
+      ctx.mlDestinationRepository,
       ctx.moveRepository,
       ctx.notificationRepository,
       ctx.oauthRepository,
@@ -292,6 +301,27 @@ export class BaseService {
 
   updateConfig(newConfig: SystemConfig) {
     return updateConfig(this.configRepos, newConfig);
+  }
+
+  /**
+   * Admit one machine-learning request against the destination the caller names (FL-110).
+   * Refuses when the destination is missing, disabled, unconsented, over budget, unhealthy or
+   * does not serve the workload; never substitutes another destination.
+   */
+  protected selectMlDestination(request: MlSelectionRequest) {
+    return selectMlDestination(
+      { mlDestinationRepository: this.mlDestinationRepository, machineLearningRepository: this.machineLearningRepository },
+      request,
+    );
+  }
+
+  /**
+   * Admit a library workload against the destination the administrator routed it to. The
+   * route is explicit configuration; a workload without one is refused, not sent anywhere.
+   */
+  protected async selectRoutedMlDestination(request: Omit<MlSelectionRequest, 'destinationId'>) {
+    const destinationId = await routedMlDestinationId(this.mlDestinationRepository, request.workload);
+    return this.selectMlDestination({ ...request, destinationId });
   }
 
   requireAccess(request: AccessRequest) {
