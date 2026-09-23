@@ -2,7 +2,10 @@ import {
   AlbumKind,
   AlbumUserRole,
   type AlbumResponseDto,
+  type PersonResponseDto,
+  type SharedSpaceAlbumResponseDto,
   type SharedSpaceMemberResponseDto,
+  type SharedSpaceNewResponseDto,
   type SharedSpacePreviewResponseDto,
 } from '@immich/sdk';
 import { createLibrarySession, type LibraryViewState } from '$lib/frameleaf/library-session';
@@ -108,3 +111,95 @@ export const spaceAddScope = (source: SpaceAddSource): LibraryViewState => {
 /** The albums offered as a source: plain albums only, and never the space itself. */
 export const addSourceOptions = (albums: AlbumResponseDto[], spaceId: string): AlbumResponseDto[] =>
   albums.filter((album) => album.id !== spaceId && album.kind === AlbumKind.Album);
+
+/* -------------------------------------------------------------------------- */
+/* The space page's panels (FL-55)                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The panels a shared space page offers, in the order they appear.
+ *
+ * `timeline` first, because a space is somewhere you look at photos before it
+ * is anything else; `people`, `places` and `activity` are ways back into the
+ * same set; `albums` and `members` are how the space is put together.
+ */
+export const SPACE_PANELS = ['timeline', 'albums', 'people', 'places', 'activity', 'members'] as const;
+
+export type SpacePanel = (typeof SPACE_PANELS)[number];
+
+export const isSpacePanel = (value: string | null | undefined): value is SpacePanel =>
+  !!value && (SPACE_PANELS as readonly string[]).includes(value);
+
+/**
+ * The albums this member could link into the space.
+ *
+ * One level, and one level only: a space links albums, never another space and
+ * never a collection, because a collection is itself a container and linking
+ * one would make the space two deep. The space itself and anything already
+ * linked are gone too, so the picker never offers a no-op. The server enforces
+ * all of this again — this is only about not offering a control that will be
+ * refused.
+ */
+export const linkableAlbums = (
+  albums: AlbumResponseDto[],
+  spaceId: string,
+  linkedIds: Iterable<string> = [],
+): AlbumResponseDto[] => {
+  const linked = new Set(linkedIds);
+  return albums.filter(
+    (album) => album.id !== spaceId && album.kind === AlbumKind.Album && !linked.has(album.id),
+  );
+};
+
+/**
+ * Whether a linked album has anything to show yet.
+ *
+ * A link is a reference: it says "this album belongs to this space", not "copy
+ * these photos here". So a freshly linked album can honestly be empty in the
+ * space until somebody adds its items, and the panel says so rather than
+ * implying a broken link.
+ */
+export const linkedAlbumIsEmpty = (album: Pick<SharedSpaceAlbumResponseDto, 'assetCount'>): boolean =>
+  album.assetCount === 0;
+
+/** Whether the "new since your last visit" banner has anything to say. */
+export const hasNewSinceVisit = (info: Pick<SharedSpaceNewResponseDto, 'assetCount'> | null | undefined): boolean =>
+  !!info && info.assetCount > 0;
+
+/**
+ * The ids the timeline is narrowed to when a member asks to see only what is
+ * new, or `undefined` to show the whole space.
+ *
+ * The server caps the list, so a very large catch-up shows the most it can name
+ * rather than a number nothing backs up; when the count is bigger than the
+ * list, the banner says how many there are and the filter shows the ones it
+ * has. An empty filter would mean "show nothing", which is never what is meant,
+ * so it collapses to `undefined`.
+ */
+export const newSinceFilter = (
+  info: SharedSpaceNewResponseDto | null | undefined,
+  showing: boolean,
+): Set<string> | undefined => {
+  if (!showing || !info || info.assetIds.length === 0) {
+    return undefined;
+  }
+  return new Set(info.assetIds);
+};
+
+/** True when the banner is showing fewer ids than it counted. */
+export const newSinceIsPartial = (info: Pick<SharedSpaceNewResponseDto, 'assetCount' | 'assetIds'>): boolean =>
+  info.assetIds.length < info.assetCount;
+
+/**
+ * The name a person link is offered under before the member edits it.
+ *
+ * It defaults to the member's own name for them purely as a convenience; the
+ * space stores its own copy, so changing it here never renames the person in
+ * the member's library, and renaming them there never changes what the space
+ * calls them.
+ */
+export const defaultSpacePersonName = (person: Pick<PersonResponseDto, 'name'>): string => person.name ?? '';
+
+/** People worth offering: the caller's own, seen in the space, that have a name or a face count. */
+export const spacePersonCandidates = (people: PersonResponseDto[]): PersonResponseDto[] =>
+  people.filter((person) => !person.isHidden);

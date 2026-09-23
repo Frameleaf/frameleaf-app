@@ -4150,6 +4150,64 @@ export type SharedSpaceMembersResponseDto = {
     /** Members and pending invitations, owner first */
     members: SharedSpaceMemberResponseDto[];
 };
+export type SharedSpaceAlbumResponseDto = {
+    /** The linked album name */
+    albumName: string;
+    /** Items that are in both this album and the shared space. Media marked sensitive, and Locked media, are not counted. */
+    assetCount: number;
+    /** True when the caller may remove this link */
+    canUnlink: boolean;
+    /** Icon: a Material Design Icons name (null = default icon) */
+    icon: string | null;
+    /** The linked album ID */
+    id: string;
+    /** When the album was linked */
+    linkedAt: string;
+    /** The member who linked this album */
+    linkedBy: UserResponseDto | null;
+    /** An item that is already in the shared space, used as the tile picture */
+    thumbnailAssetId: string | null;
+};
+export type SharedSpaceAlbumsResponseDto = {
+    /** Albums linked into the shared space, by name */
+    albums: SharedSpaceAlbumResponseDto[];
+};
+export type SharedSpaceNewResponseDto = {
+    /** Items other members added since then */
+    assetCount: number;
+    /** Up to 500 of those items, so the timeline can show exactly what is new */
+    assetIds: string[];
+    /** When this member last marked the shared space seen; null if they never have */
+    lastVisitedAt: string | null;
+};
+export type SharedSpacePersonResponseDto = {
+    /** Items in the shared space that show this person. Media marked sensitive, and Locked media, are not counted. */
+    assetCount: number;
+    /** True when the caller may remove this link */
+    canUnlink: boolean;
+    /** An item already in the shared space that shows this person, used as the tile picture */
+    coverAssetId: string | null;
+    /** The link ID. Not a person ID: a person is never disclosed across a space. */
+    id: string;
+    /** When the person was linked */
+    linkedAt: string;
+    /** The member who linked this person */
+    linkedBy: UserResponseDto;
+    /** The name this shared space uses, independent of the owner's own name for them */
+    name: string;
+};
+export type SharedSpacePeopleResponseDto = {
+    /** People of the caller's own that appear in the shared space and are not linked yet. Only the caller's own people are ever listed here. */
+    candidates: PersonResponseDto[];
+    /** People published into the shared space */
+    linked: SharedSpacePersonResponseDto[];
+};
+export type SharedSpacePersonLinkDto = {
+    /** The name the shared space will use. Defaults to the caller's own name for them. */
+    name?: string;
+    /** A person of the caller's own to publish into the shared space */
+    personId: string;
+};
 export type SharedLinkResponseDto = {
     album?: AlbumResponseDto;
     /** Allow downloads */
@@ -9039,6 +9097,46 @@ export function acceptSharedSpaceInvitation({ id }: {
     }));
 }
 /**
+ * List albums linked into a shared space
+ */
+export function getSharedSpaceAlbums({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceAlbumsResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/albums`, {
+        ...opts
+    }));
+}
+/**
+ * Unlink an album from a shared space
+ */
+export function unlinkSharedSpaceAlbum({ id, albumId }: {
+    id: string;
+    albumId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/albums/${encodeURIComponent(albumId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Link an album into a shared space
+ */
+export function linkSharedSpaceAlbum({ id, albumId }: {
+    id: string;
+    albumId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceAlbumsResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/albums/${encodeURIComponent(albumId)}`, {
+        ...opts,
+        method: "PUT"
+    }));
+}
+/**
  * Decline a shared space invitation
  */
 export function declineSharedSpaceInvitation({ id }: {
@@ -9075,6 +9173,60 @@ export function getSharedSpaceMembers({ id }: {
     }));
 }
 /**
+ * What is new in a shared space since your last visit
+ */
+export function getSharedSpaceNew({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceNewResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/new`, {
+        ...opts
+    }));
+}
+/**
+ * People in a shared space
+ */
+export function getSharedSpacePeople({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpacePeopleResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/people`, {
+        ...opts
+    }));
+}
+/**
+ * Link a person into a shared space
+ */
+export function linkSharedSpacePerson({ id, sharedSpacePersonLinkDto }: {
+    id: string;
+    sharedSpacePersonLinkDto: SharedSpacePersonLinkDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpacePeopleResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/people`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: sharedSpacePersonLinkDto
+    })));
+}
+/**
+ * Unlink a person from a shared space
+ */
+export function unlinkSharedSpacePerson({ id, linkId }: {
+    id: string;
+    linkId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/people/${encodeURIComponent(linkId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Preview a shared space
  */
 export function getSharedSpacePreview({ id }: {
@@ -9085,6 +9237,20 @@ export function getSharedSpacePreview({ id }: {
         data: SharedSpacePreviewResponseDto;
     }>(`/shared-spaces/${encodeURIComponent(id)}/preview`, {
         ...opts
+    }));
+}
+/**
+ * Mark a shared space seen
+ */
+export function markSharedSpaceVisited({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceNewResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/visit`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
