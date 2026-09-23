@@ -164,12 +164,18 @@ describe(RestorationWorkerService.name, () => {
       reportProgress: vi.fn().mockResolvedValue(true),
       complete: vi.fn().mockResolvedValue(true),
       beginValidation: vi.fn().mockResolvedValue(true),
-      fail: vi.fn().mockResolvedValue(true),
+      fail: vi.fn().mockResolvedValue('failed'),
+      requeue: vi.fn().mockResolvedValue(true),
+      setBulkResult: vi.fn(),
+      getBulkByRequestId: vi.fn(),
+      getActiveRetry: vi.fn(),
+      countLockedAssets: vi.fn().mockResolvedValue(0),
+      getDateTimeOriginals: vi.fn().mockResolvedValue(new Map()),
       requestCancel: vi.fn(),
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
       getUnreleasedRemoteOperations: vi.fn(),
       markRemoteReleased: vi.fn(),
-      recoverExpiredClaims: vi.fn().mockResolvedValue({ requeued: 0, failed: 0, abandonedCancels: 0 }),
+      recoverExpiredClaims: vi.fn().mockResolvedValue({ requeued: 0, retried: 0, failed: 0, abandonedCancels: 0 }),
       upsertCheckpoint: vi.fn().mockResolvedValue(true),
       completeCheckpoint: vi.fn().mockResolvedValue(true),
       invalidateCheckpointsFrom: vi.fn().mockResolvedValue(undefined),
@@ -269,6 +275,24 @@ describe(RestorationWorkerService.name, () => {
         expect.objectContaining({ status: AssetRestorationStatus.PreviewFailed }),
       );
       expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
+    });
+
+    it('leaves the row running while the job waits for its automatic retry (FL-104)', async () => {
+      delete (mocks.machineLearning as unknown as { restore?: unknown }).restore;
+      operations.fail.mockResolvedValue('retrying');
+
+      await sut.run(operation(), CLAIM);
+
+      expect(operations.fail).toHaveBeenCalledWith(
+        OPERATION_ID,
+        CLAIM,
+        expect.objectContaining({ errorCode: RestorationErrorCode.AdapterMissing }),
+      );
+      expect(restorations.transition).not.toHaveBeenCalledWith(
+        RESTORATION_ID,
+        [AssetRestorationStatus.PreviewRendering],
+        expect.objectContaining({ status: AssetRestorationStatus.PreviewFailed }),
+      );
     });
 
     it('fails in place when the destination refuses, never moving the media elsewhere', async () => {

@@ -17,7 +17,7 @@ import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { LockableProperty, Stack } from 'src/database.js';
-import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
+import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import {
   AssetFileType,
   AssetMetadataKey,
@@ -51,6 +51,7 @@ import {
   removeUndefinedKeys,
   truncatedDate,
   unnest,
+  withAlbumVisibility,
   withDefaultVisibility,
   withEdits,
   withExif,
@@ -118,6 +119,11 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
   bbox?: BoundingBox;
   /** owners whose location columns (city, country, latitude, longitude) come back null for this viewer */
   locationHiddenOwnerIds?: string[];
+  /**
+   * The one owner whose Locked media may show when no visibility is requested: the viewer, in an
+   * elevated session, looking at an album (see `withAlbumVisibility`). Never set for the main timeline.
+   */
+  lockedOwnerId?: string;
 }
 
 export interface TimeBucketOptions extends AssetBuilderOptions {
@@ -378,6 +384,24 @@ export class AssetRepository {
       .where('assetId', 'in', ids)
       .returning(['assetId', 'dateTimeOriginal', 'timeZone'])
       .execute();
+  }
+
+  /**
+   * Set one asset's capture date outright, locking it as `updateDateTimeOriginal` does (FL-32).
+   *
+   * The durable bulk shift uses this with `recorded start + minutes`, which lands where the relative
+   * update would and can be repeated without moving the date again. The time zone is not touched.
+   */
+  setDateTimeOriginal(assetId: string, dateTimeOriginal: Date) {
+    return this.db
+      .updateTable('asset_exif')
+      .set((eb) => ({
+        dateTimeOriginal,
+        lockedProperties: distinctLocked(eb, ['dateTimeOriginal', 'timeZone']),
+      }))
+      .where('assetId', '=', assetId)
+      .returning(['assetId', 'dateTimeOriginal'])
+      .executeTakeFirst();
   }
 
   @GenerateSql({ params: [DummyValue.UUID, ['description']] })
@@ -720,6 +744,22 @@ export class AssetRepository {
   @ChunkedArray()
   getByIds(ids: string[]) {
     return this.db.selectFrom('asset').selectAll('asset').where('asset.id', '=', anyUuid(ids)).execute();
+  }
+
+  /** Which of these assets sit in the Locked folder, whoever owns them. */
+  @ChunkedSet()
+  async getLockedAssetIds(ids: string[]): Promise<Set<string>> {
+    if (ids.length === 0) {
+      return new Set();
+    }
+
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', '=', anyUuid(ids))
+      .where('asset.visibility', '=', sql.lit(AssetVisibility.Locked))
+      .execute();
+    return new Set(rows.map(({ id }) => id));
   }
 
   @GenerateSql({ params: [[DummyValue.UUID]] })
@@ -1092,7 +1132,7 @@ export class AssetRepository {
 
             return withBoundingBox(withBoundingCircle, bbox);
           })
-          .$if(options.visibility === undefined, withDefaultVisibility)
+          .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
           .$call((qb) => withHiddenContentFilter(qb, options))
           .$if(!!options.albumId, (qb) =>
@@ -1112,7 +1152,10 @@ export class AssetRepository {
             qb.where((eb) => {
               // TODO this should become a shared `hasAccess` style helper once implement sharing in more places
               const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
-              return options.personId && auth ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
+              // a person's shared-album media widens the owner scope, except for a Locked request:
+              // Locked media is owner-private, so other members' Locked items never join it
+              const widenToSharedAlbums = !!options.personId && !!auth && options.visibility !== AssetVisibility.Locked;
+              return widenToSharedAlbums ? eb.or([isOwner, inSharedAlbum(eb, auth!.user.id)]) : isOwner;
             }),
           )
           .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
@@ -1205,7 +1248,7 @@ export class AssetRepository {
             qb.select([locationColumn('latitude'), locationColumn('longitude')]),
           )
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
-          .$if(options.visibility === undefined, withDefaultVisibility)
+          .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
           .$call((qb) => withHiddenContentFilter(qb, options))
           .$if(!!options.bbox, (qb) => {
@@ -1235,7 +1278,9 @@ export class AssetRepository {
           .$if(!!options.userIds, (qb) =>
             qb.where((eb) => {
               const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
-              return options.personId ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
+              // see getTimeBuckets: a Locked request never widens to other members' shared-album media
+              const widenToSharedAlbums = !!options.personId && options.visibility !== AssetVisibility.Locked;
+              return widenToSharedAlbums ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
             }),
           )
           .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))

@@ -115,6 +115,24 @@ export function withDefaultVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>)
   return qb.where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)]);
 }
 
+/**
+ * What an album read shows (owner decision, September 22, 2026): Timeline and Archive media, plus the
+ * Locked media of `lockedOwnerId` — the viewer, when their session is elevated. Locked media of anyone
+ * else never shows, whatever the viewer's own session. Without an owner this is `withDefaultVisibility`.
+ */
+export function withAlbumVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>, lockedOwnerId?: string) {
+  if (!lockedOwnerId) {
+    return withDefaultVisibility(qb);
+  }
+
+  return qb.where((eb) =>
+    eb.or([
+      eb('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)]),
+      eb.and([eb('asset.visibility', '=', sql.lit(AssetVisibility.Locked)), eb('asset.ownerId', '=', lockedOwnerId)]),
+    ]),
+  );
+}
+
 const selectExifInfo = (eb: AssetExpressionBuilder) =>
   eb.fn
     .toJson(eb.table('asset_exif'))

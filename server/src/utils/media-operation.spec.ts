@@ -4,6 +4,8 @@ import {
   canRetryMediaOperation,
   canReuseChunk,
   canTransitionMediaOperation,
+  MEDIA_OPERATION_AUTO_RETRIES,
+  MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
   mediaOperationProgress,
   planChunkResume,
   type ChunkPlan,
@@ -69,6 +71,13 @@ describe('media operation state machine', () => {
     expect(canDismissMediaOperation(MediaOperationStatus.Completed)).toBe(true);
     expect(canDismissMediaOperation(MediaOperationStatus.Queued)).toBe(false);
     expect(canDismissMediaOperation(MediaOperationStatus.Cancelling)).toBe(false);
+  });
+});
+
+describe('automatic retry (FL-104)', () => {
+  it('gives every job exactly one automatic retry, after a delay', () => {
+    expect(MEDIA_OPERATION_AUTO_RETRIES).toBe(1);
+    expect(MEDIA_OPERATION_AUTO_RETRY_DELAY_MS).toBeGreaterThan(0);
   });
 });
 

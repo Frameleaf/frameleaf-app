@@ -182,6 +182,7 @@ where
   )
   and "user"."id" = $2
   and "album"."deletedAt" is null
+  and "asset"."visibility" != 'locked'
 
 -- AccessRepository.asset.checkOwnerAccess
 select
@@ -223,9 +224,11 @@ from
   left join "shared_link_asset" on "shared_link_asset"."sharedLinkId" = "shared_link"."id"
   left join "asset" on "asset"."id" = "shared_link_asset"."assetId"
   and "asset"."deletedAt" is null
+  and "asset"."visibility" != 'locked'
   left join "album_asset" on "album_asset"."albumId" = "album"."id"
   left join "asset" as "albumAssets" on "albumAssets"."id" = "album_asset"."assetId"
   and "albumAssets"."deletedAt" is null
+  and "albumAssets"."visibility" != 'locked'
 where
   "shared_link"."id" = $1
   and array[

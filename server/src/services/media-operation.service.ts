@@ -28,6 +28,8 @@ import {
   bulkOperationLabel,
   bulkPayloadProblem,
   bulkResumeIds,
+  bulkRetryPending,
+  carriedShiftOrigins,
   emptyBulkResult,
   isBulkAction,
   parseBulkResult,
@@ -94,6 +96,7 @@ const mapBulkSummary = (operation: MediaOperation): MediaOperationDto['bulk'] =>
     skipped: result.skipped,
     snapshotTruncated: snapshot.truncated === true,
     itemsTruncated: result.itemsTruncated,
+    retried: result.retry?.total ?? 0,
   };
 };
 
@@ -124,6 +127,12 @@ const mapBulkItems = (operation: MediaOperation) => {
   }));
 };
 
+/** The items a bulk job's automatic retry pass has not reached yet. */
+const mapBulkRetryPending = (operation: MediaOperation): string[] =>
+  operation.kind === MediaOperationKind.Bulk
+    ? bulkRetryPending(parseBulkResult(operation.result, Number(operation.totalUnits ?? 0)))
+    : [];
+
 const mapOperation = (operation: MediaOperation): MediaOperationDto => ({
   id: operation.id,
   kind: operation.kind as MediaOperationKind,
@@ -144,6 +153,8 @@ const mapOperation = (operation: MediaOperation): MediaOperationDto => ({
   totalUnits: operation.totalUnits === null || operation.totalUnits === undefined ? null : String(operation.totalUnits),
   attempt: operation.attempt,
   maxAttempts: operation.maxAttempts,
+  autoRetries: operation.autoRetries ?? 0,
+  retryAt: asIso(operation.retryAt),
   error: operation.error,
   errorCode: operation.errorCode,
   cancelRequestedAt: asIso(operation.cancelRequestedAt),
@@ -210,6 +221,7 @@ export class MediaOperationService {
       snapshot: mapSnapshot(operation),
       checkpoints: checkpoints.map((checkpoint) => mapCheckpoint(checkpoint)),
       bulkItems: mapBulkItems(operation),
+      bulkRetryPending: mapBulkRetryPending(operation),
     };
   }
 
@@ -402,10 +414,12 @@ export class MediaOperationService {
   /**
    * Retry a bulk operation: resume it, not repeat it.
    *
-   * The new job covers exactly the items the old one did not finish — those that failed and those
-   * it never reached — and nothing it already applied or refused for lack of access. A completed
+   * The new job covers exactly the items the old one did not finish — those that failed, those it
+   * never reached (a batch interrupted mid-flight included) and those still waiting for their
+   * automatic retry — and nothing it already applied or refused for lack of access. A completed
    * job with failures inside it can be retried too, because "completed" there means the worker got
-   * to the end, not that every item worked.
+   * to the end, not that every item worked. This manual retry is a new job and gets its own one
+   * automatic retry (owner decision, September 22, 2026).
    *
    * Asking twice while a retry is still running answers with that retry.
    */
@@ -458,7 +472,12 @@ export class MediaOperationService {
       snapshot: retrySnapshot as unknown as Record<string, unknown>,
       settings: operation.settings,
       estimate: null,
-      result: emptyBulkResult(remaining.length) as unknown as Record<string, unknown>,
+      // A relative date shift carries the starting dates it recorded: an item it may have reached
+      // must be shifted from where it started, not from where it is now.
+      result: {
+        ...emptyBulkResult(remaining.length),
+        shiftFrom: carriedShiftOrigins(result, remaining),
+      } as unknown as Record<string, unknown>,
       totalUnits: String(remaining.length),
       maxAttempts: operation.maxAttempts,
     });
