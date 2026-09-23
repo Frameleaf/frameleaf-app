@@ -114,6 +114,10 @@ describe('pause and resume (FL-104)', () => {
     expect(isPausableMediaOperationKind(MediaOperationKind.MediaHealth)).toBe(true);
     expect(isPausableMediaOperationKind(MediaOperationKind.ICloudSync)).toBe(true);
     expect(isPausableMediaOperationKind(MediaOperationKind.PhysicalDeduplication)).toBe(true);
+    expect(isPausableMediaOperationKind(MediaOperationKind.PreservationExport)).toBe(true);
+    expect(isPausableMediaOperationKind(MediaOperationKind.PreservationVerify)).toBe(true);
+    expect(isPausableMediaOperationKind(MediaOperationKind.PreservationReview)).toBe(true);
+    expect(isPausableMediaOperationKind(MediaOperationKind.PreservationRestore)).toBe(true);
     expect(isPausableMediaOperationKind(MediaOperationKind.StudioPreview)).toBe(false);
     expect(isPausableMediaOperationKind(MediaOperationKind.RestorationPreview)).toBe(false);
     expect(isPausableMediaOperationKind(MediaOperationKind.QuickEdit)).toBe(false);

@@ -288,6 +288,11 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
   // every language (FL-73).
   const dedup = operation.kind === MediaOperationKind.PhysicalDeduplication;
   const dedupPlan = dedup ? asPlanName(operation.settings?.planId) : null;
+  // FL-74: a preservation job copies and checks files; "Rendering" would say something untrue.
+  const workingKey =
+    isPreservationKind(operation.kind) && BULK_WORKING.has(status)
+      ? 'frameleaf_activity_bulk_running'
+      : `frameleaf_activity_status_${status}`;
 
   return {
     id: `job:${operation.id}`,
@@ -302,7 +307,7 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
           ? 'frameleaf_activity_status_retrying'
           : icloud && ICLOUD_WORKING.has(status)
             ? 'frameleaf_activity_icloud_syncing'
-            : `frameleaf_activity_status_${status}`,
+            : workingKey,
     tone: retrying || pause.pausePending ? 'warning' : STATUS_TONE[status],
     title: operation.label,
     ...(dedup && { titleKey: 'frameleaf_activity_title_physical_deduplication' }),
@@ -332,6 +337,16 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     ...(status === MediaOperationStatus.Completed && studioBundleOf(operation.kind)),
   };
 };
+
+/** The four preservation kinds (FL-74), which Activity lists beside every other job. */
+const PRESERVATION_KINDS: readonly MediaOperationKind[] = [
+  MediaOperationKind.PreservationExport,
+  MediaOperationKind.PreservationVerify,
+  MediaOperationKind.PreservationReview,
+  MediaOperationKind.PreservationRestore,
+];
+
+const isPreservationKind = (kind: MediaOperationKind) => PRESERVATION_KINDS.includes(kind);
 
 /** A finished bundle job's follow-up (FL-91), or nothing for every other kind. */
 const studioBundleOf = (kind: MediaOperationKind): Pick<ActivityItem, 'studioBundle'> => {
