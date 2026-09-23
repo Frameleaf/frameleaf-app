@@ -8,7 +8,7 @@ import { ArgsOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 
-import { effectiveVisibilityOf, isLockedAsset } from 'src/utils/locked.js';
+import { effectiveVisibilityOf, isLockedRow } from 'src/utils/locked.js';
 import { isFacialRecognitionEnabled, isImageDescriptionEnabled, isNsfwDetectionEnabled } from 'src/utils/misc.js';
 
 const asJobItem = (dto: JobCreateDto): JobItem => {
@@ -261,7 +261,7 @@ export class JobService extends BaseService {
         // a locked upload (FL-34) stays out of every open timeline; the Locked view fetches it itself
         if (
           (asset.visibility === AssetVisibility.Timeline || asset.visibility === AssetVisibility.Archive) &&
-          !isLockedAsset(asset)
+          !isLockedRow(asset)
         ) {
           this.websocketRepository.clientSend('on_upload_success', asset.ownerId, mapAsset(asset));
           if (asset.exifInfo) {

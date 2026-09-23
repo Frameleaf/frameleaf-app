@@ -5,6 +5,7 @@ import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { TrashResponseDto } from 'src/dtos/trash.dto.js';
 import { JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { batched } from 'src/utils/misc.js';
 
 @Injectable()
@@ -25,7 +26,11 @@ export class TrashService extends BaseService {
   }
 
   async restore(auth: AuthDto): Promise<TrashResponseDto> {
-    const count = await this.trashRepository.restore(auth.user.id);
+    // the caller's Locked media in the trash only from their elevated session (FL-34)
+    const lockedOptions = getLockedVisibilityOptions(auth);
+    const count = lockedOptions.lockedOwnerId
+      ? await this.trashRepository.restore(auth.user.id, lockedOptions)
+      : await this.trashRepository.restore(auth.user.id);
     if (count > 0) {
       this.logger.log(`Restored ${count} asset(s) from trash`);
     }
@@ -33,7 +38,10 @@ export class TrashService extends BaseService {
   }
 
   async empty(auth: AuthDto): Promise<TrashResponseDto> {
-    const count = await this.trashRepository.empty(auth.user.id);
+    const lockedOptions = getLockedVisibilityOptions(auth);
+    const count = lockedOptions.lockedOwnerId
+      ? await this.trashRepository.empty(auth.user.id, lockedOptions)
+      : await this.trashRepository.empty(auth.user.id);
     if (count > 0) {
       await this.jobRepository.queue({ name: JobName.AssetEmptyTrash, data: {} });
     }

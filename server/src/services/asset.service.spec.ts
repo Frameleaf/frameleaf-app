@@ -114,6 +114,26 @@ describe(AssetService.name, () => {
       );
     });
 
+    it('should name the viewer as the Locked owner of the stack read only when elevated (FL-34)', async () => {
+      const asset = AssetFactory.create();
+      const ordinary = AuthFactory.create({ id: asset.ownerId });
+      const elevated = AuthFactory.from({ id: asset.ownerId }).session({ hasElevatedPermission: true }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      await sut.get(ordinary, asset.id);
+      expect(mocks.asset.getById).toHaveBeenLastCalledWith(
+        asset.id,
+        expect.objectContaining({ stack: { assets: true } }),
+      );
+
+      await sut.get(elevated, asset.id);
+      expect(mocks.asset.getById).toHaveBeenLastCalledWith(
+        asset.id,
+        expect.objectContaining({ stack: { assets: true, lockedOwnerId: asset.ownerId } }),
+      );
+    });
+
     it("should hide location on a partner's asset when the partner turned location sharing off", async () => {
       const auth = AuthFactory.create();
       const sharer = UserFactory.create();

@@ -257,14 +257,13 @@ describe(StudioBundleService.name, () => {
       getByRequestKey: vi.fn().mockResolvedValue(undefined),
       getForOwner: vi.fn(),
       claimNext: vi.fn().mockResolvedValue(undefined),
-      recoverExpiredClaims: vi.fn().mockResolvedValue({ requeued: 0, failed: 0, abandonedCancels: 0 }),
+      recoverExpiredClaims: vi.fn().mockResolvedValue({ requeued: 0, retried: 0, failed: 0, abandonedCancels: 0 }),
       setBulkResult: vi.fn().mockResolvedValue({ status: MediaOperationStatus.Rendering, cancelRequestedAt: null }),
       reportProgress: vi.fn().mockResolvedValue(true),
       beginValidation: vi.fn().mockResolvedValue(true),
       complete: vi.fn().mockResolvedValue(true),
-      fail: vi.fn().mockResolvedValue(true),
+      fail: vi.fn().mockResolvedValue('retrying'),
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
-      requeueAfterFailure: vi.fn().mockResolvedValue(true),
       listExpiredBundleExports: vi.fn().mockResolvedValue([]),
       setFinishedResult: vi.fn().mockResolvedValue(true),
     };
@@ -321,7 +320,7 @@ describe(StudioBundleService.name, () => {
       const created = operations.create.mock.calls[0][0];
       expect(created).toMatchObject({
         kind: MediaOperationKind.StudioBundleExport,
-        maxAttempts: 2,
+        maxAttempts: STUDIO_BUNDLE_MAX_ATTEMPTS,
         label: 'Lake trip',
       });
       expect(created.snapshot.embed).toEqual([{ key: `library-asset:${assetA}`, kind: 'library-asset', id: assetA }]);
@@ -453,7 +452,6 @@ describe(StudioBundleService.name, () => {
       await sut.run({ operation: exportJob, claimToken: 'token' });
 
       expect(operations.fail).not.toHaveBeenCalled();
-      expect(operations.requeueAfterFailure).not.toHaveBeenCalled();
       expect(operations.complete).toHaveBeenCalledWith(exportJob.id, 'token', { resultAssetId: null });
       const exported = lastResult();
       expect(exported).toMatchObject({ embedded: 1, referenced: 2, fileName: 'Lake-trip.frameleaf-studio.zip' });
@@ -533,7 +531,7 @@ describe(StudioBundleService.name, () => {
   });
 
   describe('run', () => {
-    it('retries a failed job once, and fails it when the retry is spent', async () => {
+    it('retries a failed job once through the shared retry, and fails it when the retry is spent', async () => {
       projects.getById.mockResolvedValue(undefined);
       const job = operationOf({
         kind: MediaOperationKind.StudioBundleExport,
@@ -541,19 +539,49 @@ describe(StudioBundleService.name, () => {
       } as never);
 
       await sut.run({ operation: job, claimToken: 'token' });
-      expect(operations.requeueAfterFailure).toHaveBeenCalledWith(job.id, 'token', {
+      // One path for every kind (FL-104): the repository decides between the retry and the failure.
+      expect(operations.fail).toHaveBeenCalledTimes(1);
+      expect(operations.fail).toHaveBeenCalledWith(job.id, 'token', {
         error: expect.any(String),
         errorCode: 'bundle_project_unavailable',
       });
-      expect(operations.fail).not.toHaveBeenCalled();
+      // The failure was ours to report, so the partial export is cleared before the retry runs.
+      expect(fs.storage.unlink).toHaveBeenCalledWith(expect.stringContaining(`${job.id}.zip.partial`));
 
-      operations.requeueAfterFailure.mockResolvedValue(false);
-      await sut.run({ operation: { ...job, attempt: 2 } as MediaOperation, claimToken: 'token' });
-      expect(operations.fail).toHaveBeenCalledWith(
+      operations.fail.mockResolvedValue('failed');
+      await sut.run({ operation: { ...job, attempt: 2, autoRetries: 1 } as MediaOperation, claimToken: 'token' });
+      expect(operations.fail).toHaveBeenCalledTimes(2);
+      expect(operations.fail).toHaveBeenLastCalledWith(
         job.id,
         'token',
         expect.objectContaining({ errorCode: 'bundle_project_unavailable' }),
       );
+    });
+
+    it('leaves the files alone when the claim was already lost', async () => {
+      projects.getById.mockResolvedValue(undefined);
+      const job = operationOf({
+        kind: MediaOperationKind.StudioBundleExport,
+        snapshot: { kind: 'studio-bundle-export', projectId: newUuidV7(), revision: 1, digest: 'd', embed: [] },
+      } as never);
+      operations.fail.mockResolvedValue(false);
+
+      await sut.run({ operation: job, claimToken: 'stale' });
+
+      expect(operations.fail).toHaveBeenCalledWith(
+        job.id,
+        'stale',
+        expect.objectContaining({ errorCode: 'bundle_project_unavailable' }),
+      );
+      // Another worker may hold the job now and be writing the same file.
+      expect(fs.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('does not recover lapsed claims itself', async () => {
+      await sut.drain();
+
+      expect(operations.claimNext).toHaveBeenCalled();
+      expect(operations.recoverExpiredClaims).not.toHaveBeenCalled();
     });
 
     it('refuses an import whose upload changed after it was checked', async () => {
@@ -570,7 +598,7 @@ describe(StudioBundleService.name, () => {
       } as never);
 
       await sut.run({ operation: job, claimToken: 'token' });
-      expect(operations.requeueAfterFailure).toHaveBeenCalledWith(
+      expect(operations.fail).toHaveBeenCalledWith(
         job.id,
         'token',
         expect.objectContaining({ errorCode: 'bundle_upload_changed' }),
@@ -640,7 +668,7 @@ describe(StudioBundleService.name, () => {
       expect(operations.create.mock.calls[0][0]).toMatchObject({
         kind: MediaOperationKind.StudioBundleImport,
         label: 'Lake trip',
-        maxAttempts: 2,
+        maxAttempts: STUDIO_BUNDLE_MAX_ATTEMPTS,
         snapshot: { uploadId: item.id, digest: item.digest, mapping: { [`library-asset:${assetA}`]: standIn } },
       });
     });

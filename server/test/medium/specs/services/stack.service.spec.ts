@@ -1,4 +1,5 @@
 import { Kysely } from 'kysely';
+import { AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -39,6 +40,59 @@ describe(StackService.name, () => {
       await expect(
         ctx.database.selectFrom('stack').selectAll().where('ownerId', '=', user.id).execute(),
       ).resolves.toEqual([]);
+    });
+  });
+
+  describe('Locked media (FL-34)', () => {
+    it('should return a stack led by Locked media only to its owner in an elevated session', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: lockedPrimary } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      const { asset: member } = await ctx.newAsset({ ownerId: user.id });
+      const { stack } = await ctx.newStack({ ownerId: user.id }, [lockedPrimary.id, member.id]);
+
+      const ordinary = factory.auth({ user });
+      const elevated = factory.auth({ user, session: { hasElevatedPermission: true } });
+
+      await expect(sut.search(ordinary, {})).resolves.toEqual([]);
+      await expect(sut.search(ordinary, { primaryAssetId: lockedPrimary.id })).resolves.toEqual([]);
+      await expect(sut.get(ordinary, stack.id)).rejects.toThrow();
+
+      await expect(sut.search(elevated, {})).resolves.toEqual([
+        expect.objectContaining({
+          id: stack.id,
+          primaryAssetId: lockedPrimary.id,
+          assets: [expect.objectContaining({ id: lockedPrimary.id }), expect.objectContaining({ id: member.id })],
+        }),
+      ]);
+      await expect(sut.get(elevated, stack.id)).resolves.toEqual(
+        expect.objectContaining({ primaryAssetId: lockedPrimary.id }),
+      );
+
+      // the member's own read leaves the stack off unless the owner has unlocked
+      const assets = ctx.get(AssetRepository);
+      const ordinaryRead = await assets.getById(member.id, { stack: { assets: true } });
+      expect(ordinaryRead?.stack).toBeNull();
+      const elevatedRead = await assets.getById(member.id, { stack: { assets: true, lockedOwnerId: user.id } });
+      expect(elevatedRead?.stack).toEqual(expect.objectContaining({ primaryAssetId: lockedPrimary.id }));
+    });
+
+    it('should list a Locked member only for its owner in an elevated session', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: primary } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: lockedMember } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      const { stack } = await ctx.newStack({ ownerId: user.id }, [primary.id, lockedMember.id]);
+
+      const memberIds = async (auth: ReturnType<typeof factory.auth>) => {
+        const { assets } = await sut.get(auth, stack.id);
+        return assets.map(({ id }) => id);
+      };
+
+      await expect(memberIds(factory.auth({ user }))).resolves.toEqual([primary.id]);
+      await expect(
+        memberIds(factory.auth({ user, session: { hasElevatedPermission: true } })),
+      ).resolves.toEqual([primary.id, lockedMember.id]);
     });
   });
 });

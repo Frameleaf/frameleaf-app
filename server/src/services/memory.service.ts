@@ -37,7 +37,7 @@ import { ImmichReadStream } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { type HiddenContentQueryOptions, getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import { isLockedAsset } from 'src/utils/locked.js';
+import { isLockedRow } from 'src/utils/locked.js';
 import { groupEventStories, placeLabel } from 'src/utils/memory-story.js';
 import { findOrFail } from 'src/utils/misc.js';
 
@@ -492,7 +492,7 @@ export class MemoryService extends BaseService {
           asset.ownerId !== claimed.ownerId ||
           asset.deletedAt !== null ||
           asset.visibility !== AssetVisibility.Timeline ||
-          isLockedAsset(asset)
+          isLockedRow(asset)
         ) {
           continue;
         }

@@ -41,7 +41,7 @@ export class DownloadService extends BaseService {
     } else if (dto.userId) {
       const userId = dto.userId;
       await this.requireAccess({ auth, permission: Permission.TimelineDownload, ids: [userId] });
-      // FL-34: locked media only for the viewer's own timeline in an elevated session
+      // the caller's own library: their Locked media only once they have unlocked it (FL-34)
       const userOptions = { ...nsfwOptions, ...getLockedVisibilityOptions(auth) };
       assets =
         Object.keys(userOptions).length > 0

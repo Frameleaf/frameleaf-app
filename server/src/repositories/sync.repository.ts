@@ -8,7 +8,13 @@ import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetMetadataKey } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { getHiddenContentFilter, hiddenContentAssetIdExists, withHiddenContentFilter } from 'src/utils/database.js';
-import { effectiveVisibility, isDefaultVisible, isNotLocked, isTimelineVisible, lockedOwnerScope } from 'src/utils/locked.js';
+import {
+  effectiveVisibility,
+  isDefaultVisible,
+  isNotLocked,
+  isTimelineVisible,
+  notLockedOrOwnedBy,
+} from 'src/utils/locked.js';
 
 export type SyncBackfillOptions = HiddenContentQueryOptions & {
   nowId: string;
@@ -82,7 +88,7 @@ const syncChecksum = () =>
  * thumbhash, checksum or exif. Applied to every album-asset and album-to-asset stream. Locked is the
  * lock record (FL-34, `src/utils/locked.ts`).
  */
-const albumAssetVisibleTo = (userId: string) => lockedOwnerScope(userId, 'asset');
+const albumAssetVisibleTo = (userId: string) => notLockedOrOwnedBy(userId, 'asset');
 
 /**
  * The visibility a device receives (FL-34): `locked` for a locked asset, so a client that keeps the
