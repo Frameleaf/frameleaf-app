@@ -6,6 +6,7 @@ import {
   canRetryMediaOperation,
   isActiveMediaOperation,
   isPausableMediaOperationKind,
+  isRenderWorkerMediaOperationKind,
   canReuseChunk,
   canTransitionMediaOperation,
   MEDIA_OPERATION_AUTO_RETRIES,
@@ -78,6 +79,32 @@ describe('media operation state machine', () => {
   });
 });
 
+describe('render worker kinds (FL-73)', () => {
+  it('hands a remote render worker only renders, never a job that runs on the server', () => {
+    for (const kind of [
+      MediaOperationKind.StudioExport,
+      MediaOperationKind.StudioPreview,
+      MediaOperationKind.Restoration,
+      MediaOperationKind.RestorationPreview,
+      MediaOperationKind.QuickEdit,
+    ]) {
+      expect(isRenderWorkerMediaOperationKind(kind)).toBe(true);
+    }
+    for (const kind of [
+      MediaOperationKind.Bulk,
+      MediaOperationKind.StudioBundleExport,
+      MediaOperationKind.StudioBundleImport,
+      MediaOperationKind.EnrichmentPlan,
+      MediaOperationKind.MediaHealth,
+      MediaOperationKind.ICloudSync,
+      MediaOperationKind.TakeoutImport,
+      MediaOperationKind.PhysicalDeduplication,
+    ]) {
+      expect(isRenderWorkerMediaOperationKind(kind)).toBe(false);
+    }
+  });
+});
+
 describe('pause and resume (FL-104)', () => {
   it('pauses only the kinds that can carry on from where they stopped', () => {
     expect(isPausableMediaOperationKind(MediaOperationKind.Bulk)).toBe(true);
@@ -86,6 +113,7 @@ describe('pause and resume (FL-104)', () => {
     expect(isPausableMediaOperationKind(MediaOperationKind.EnrichmentPlan)).toBe(true);
     expect(isPausableMediaOperationKind(MediaOperationKind.MediaHealth)).toBe(true);
     expect(isPausableMediaOperationKind(MediaOperationKind.ICloudSync)).toBe(true);
+    expect(isPausableMediaOperationKind(MediaOperationKind.PhysicalDeduplication)).toBe(true);
     expect(isPausableMediaOperationKind(MediaOperationKind.StudioPreview)).toBe(false);
     expect(isPausableMediaOperationKind(MediaOperationKind.RestorationPreview)).toBe(false);
     expect(isPausableMediaOperationKind(MediaOperationKind.QuickEdit)).toBe(false);

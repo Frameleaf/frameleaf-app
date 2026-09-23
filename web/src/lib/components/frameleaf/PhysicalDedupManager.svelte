@@ -1,15 +1,22 @@
 <script lang="ts">
   /**
-   * Physical deduplication preview and apply (FL-71), ported from the design template's
-   * `PhysicalDedupManager.jsx`. The template kept a sample plan in localStorage; this page reads
-   * the server's dry-run result (`getPhysicalDeduplicationPreview`), prepares a new one through
-   * `requestPhysicalDeduplicationPreview` and applies through the existing manual job.
+   * Physical deduplication preview, review and apply (FL-71, FL-73), ported from the design
+   * template's `PhysicalDedupManager.jsx`. The template kept a sample plan in localStorage; this
+   * page reads the server's dry-run result (`getPhysicalDeduplicationPreview`), prepares a new one
+   * through `requestPhysicalDeduplicationPreview`, has the server check the plan against the
+   * library again when it is marked reviewed (`reviewPhysicalDeduplicationPlan`), and applies
+   * exactly that reviewed plan as a durable job (`applyPhysicalDeduplicationPlan`).
    *
    * Rules carried over from the server contract:
    * - A preview may retain originals in an account chosen here when none is saved.
    * - Applying always uses the saved `physicalDeduplication.masterUserId`; the server refuses
    *   otherwise, and the page mirrors that refusal before offering the action.
+   * - Each group can be left as it is. The review binds those decisions to the plan, and changing a
+   *   decision after the review asks for a new review.
+   * - Anything that changed since the preview is refused (409); the page then shows the current
+   *   state instead of applying something nobody reviewed.
    * - Thumbnails are the requester's own asset access (`canView`), never widened by admin rights.
+   *   Another account's Locked copies are counted, never listed.
    */
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -21,28 +28,43 @@
   import Status from '$lib/components/frameleaf/Status.svelte';
   import {
     applyBlockedReason,
+    applyForPlan,
+    applyStatusKey,
+    blocksReview,
+    checksumAlgorithmKey,
     confirmationPhrase,
     DEDUP_SCOPE_ALL,
     formatBytes,
     groupPlanCopies,
+    isApplyActive,
+    isDecidableGroup,
     matchesConfirmation,
-    planLabel,
+    normalizeExcluded,
     planMetrics,
+    planSelection,
     planStaleReason,
     reviewExport,
+    reviewMatches,
     skipReasonKey,
   } from '$lib/frameleaf/physical-dedup';
   import { OpenQueryParam } from '$lib/constants';
   import { Route } from '$lib/route';
-  import { handleCreateJob } from '$lib/services/job.service';
   import { handleError } from '$lib/utils/handle-error';
   import {
+    applyPhysicalDeduplicationPlan,
+    cancelMediaOperation,
     getPhysicalDeduplicationPreview,
-    ManualJobName,
+    isHttpError,
+    MediaOperationStatus,
+    pauseMediaOperation,
     PhysicalDeduplicationDecision,
     PhysicalDeduplicationPlanMode,
     requestPhysicalDeduplicationPreview,
+    resumeMediaOperation,
+    reviewPhysicalDeduplicationPlan,
+    type PhysicalDeduplicationApplyDto,
     type PhysicalDeduplicationPreviewResponseDto,
+    type PhysicalDeduplicationReviewResponseDto,
     type UserAdminResponseDto,
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
@@ -52,13 +74,16 @@
     mdiDownload,
     mdiFolderSearchOutline,
     mdiHelpCircleOutline,
+    mdiHistory,
     mdiLinkVariant,
     mdiLinkVariantOff,
+    mdiLockOutline,
     mdiMinusCircleOutline,
     mdiShieldCheckOutline,
   } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { onDestroy } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { t } from 'svelte-i18n';
 
   let {
@@ -73,10 +98,13 @@
   let scope = $state(DEDUP_SCOPE_ALL);
   let previewMaster = $state<string | undefined>(initial.savedMasterUserId ?? users[0]?.id);
   let view = $state<'media' | 'table'>('media');
-  let reviewedPlan = $state<string | null>(null);
+  /** Retained originals whose group the administrator decided to leave as it is. */
+  const excluded = new SvelteSet<string>();
+  let review = $state<PhysicalDeduplicationReviewResponseDto | null>(null);
   let confirmOpen = $state(false);
   let confirmation = $state('');
   let notice = $state('');
+  let conflict = $state('');
   let busy = $state(false);
   let pollTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -91,7 +119,13 @@
   const masterOptions = $derived(users.map((user) => ({ label: `${user.name} (${user.email})`, value: user.id })));
   const groups = $derived(plan ? groupPlanCopies(plan) : []);
   const metrics = $derived(plan ? planMetrics(plan) : null);
+  const selection = $derived(plan ? planSelection(plan, excluded) : null);
   const stale = $derived(plan ? planStaleReason(plan, { scope, masterUserId: effectiveMaster }) : null);
+  /** The newest job applying the plan on screen. */
+  const planApply = $derived(applyForPlan(preview.applies, plan));
+  /** Whichever job is applying a plan right now, this one or another administrator's. */
+  const activeApply = $derived(preview.applies.find((apply) => isApplyActive(apply)) ?? null);
+  const applied = $derived(planApply?.status === MediaOperationStatus.Completed);
   const applyBlocked = $derived(
     plan
       ? applyBlockedReason({
@@ -99,28 +133,48 @@
           enabled: preview.enabled,
           savedMasterUserId: preview.savedMasterUserId,
           running: preview.running,
+          applying: preview.applying,
+          applied,
+          selectedCopies: selection?.copies ?? 0,
         })
       : null,
   );
-  const label = $derived(plan ? planLabel(plan) : '');
-  const reviewed = $derived(!!plan && reviewedPlan === plan.ranAt);
-  const canConfirm = $derived(!!plan && reviewed && !stale && !applyBlocked && matchesConfirmation(plan, confirmation));
+  const reviewBlocked = $derived(blocksReview(applyBlocked));
+  /**
+   * Decisions stay open while no copy is selected, so leaving every group out can be undone; they
+   * only lock while a preview is prepared or a plan is being or has been applied.
+   */
+  const decisionsLocked = $derived(
+    applyBlocked === 'running' || applyBlocked === 'applying' || applyBlocked === 'applied',
+  );
+  const reviewed = $derived(reviewMatches(review, plan, excluded));
+  const canConfirm = $derived(
+    !!plan && reviewed && !stale && !applyBlocked && !busy && matchesConfirmation(plan, confirmation),
+  );
 
   const time = (value: string) => DateTime.fromISO(value).toLocaleString(DateTime.DATETIME_MED);
 
   const refresh = async () => {
     try {
       const next = await getPhysicalDeduplicationPreview();
-      const arrived = next.plan?.ranAt !== preview.plan?.ranAt;
+      const arrived = next.plan?.fingerprint !== preview.plan?.fingerprint;
+      const wasApplying = preview.applying;
       preview = next;
-      if (arrived && next.plan) {
-        notice =
-          next.plan.mode === PhysicalDeduplicationPlanMode.Apply
-            ? $t('frameleaf_dedup_notice_applied')
-            : $t('frameleaf_dedup_notice_preview_ready');
-        view = 'media';
+      if (arrived) {
+        excluded.clear();
+        review = null;
+        if (next.plan) {
+          notice = $t('frameleaf_dedup_notice_preview_ready');
+          view = 'media';
+        }
       }
-      if (!next.running) {
+      if (wasApplying && !next.applying) {
+        const finished = applyForPlan(next.applies, next.plan);
+        if (finished?.status === MediaOperationStatus.Completed) {
+          notice = $t('frameleaf_dedup_notice_applied');
+        }
+      }
+      if (!next.running && !next.applying) {
         stopPolling();
       }
     } catch (error) {
@@ -143,9 +197,24 @@
 
   onDestroy(stopPolling);
 
-  if (initial.running) {
+  if (initial.running || initial.applying) {
     startPolling();
   }
+
+  /** A 409 means the plan on screen no longer describes the library; show what is true now. */
+  const handleConflict = async (error: unknown, fallback: string) => {
+    if (isHttpError(error) && error.status === 409) {
+      review = null;
+      confirmOpen = false;
+      conflict = $t('frameleaf_dedup_conflict');
+      await refresh();
+      if (preview.applying) {
+        startPolling();
+      }
+      return;
+    }
+    handleError(error, fallback);
+  };
 
   const prepare = async () => {
     if (!effectiveMaster) {
@@ -159,9 +228,11 @@
           scopeUserId: scope === DEDUP_SCOPE_ALL ? undefined : scope,
         },
       });
-      reviewedPlan = null;
+      review = null;
+      excluded.clear();
       confirmation = '';
       notice = '';
+      conflict = '';
       preview = { ...preview, running: true };
       startPolling();
     } catch (error) {
@@ -171,27 +242,77 @@
     }
   };
 
-  const markReviewed = () => {
+  const toggleGroup = (retainedAssetId: string) => {
+    if (excluded.has(retainedAssetId)) {
+      excluded.delete(retainedAssetId);
+    } else {
+      excluded.add(retainedAssetId);
+    }
+    confirmation = '';
+  };
+
+  const markReviewed = async () => {
     if (!plan) {
       return;
     }
-    reviewedPlan = plan.ranAt;
-    notice = $t('frameleaf_dedup_notice_reviewed', { values: { plan: label } });
+    busy = true;
+    conflict = '';
+    try {
+      review = await reviewPhysicalDeduplicationPlan({
+        physicalDeduplicationReviewRequestDto: {
+          fingerprint: plan.fingerprint,
+          excludedRetainedAssetIds: normalizeExcluded(excluded),
+        },
+      });
+      notice = $t('frameleaf_dedup_notice_reviewed', { values: { plan: plan.planId } });
+    } catch (error) {
+      await handleConflict(error, $t('frameleaf_dedup_unable_to_review'));
+    } finally {
+      busy = false;
+    }
   };
 
   const apply = async () => {
-    if (!canConfirm) {
+    if (!plan || !review || !canConfirm) {
       return;
     }
     busy = true;
+    conflict = '';
     try {
-      const queued = await handleCreateJob({ name: ManualJobName.PhysicalDeduplicationApply });
-      if (queued) {
-        confirmOpen = false;
-        confirmation = '';
-        preview = { ...preview, running: true };
-        startPolling();
-      }
+      await applyPhysicalDeduplicationPlan({
+        physicalDeduplicationApplyRequestDto: {
+          fingerprint: plan.fingerprint,
+          reviewToken: review.reviewToken,
+          excludedRetainedAssetIds: review.excludedRetainedAssetIds,
+          confirmation: confirmation.trim(),
+        },
+      });
+      confirmOpen = false;
+      confirmation = '';
+      notice = $t('frameleaf_dedup_notice_applying', { values: { plan: plan.planId } });
+      preview = { ...preview, applying: true };
+      await refresh();
+      startPolling();
+    } catch (error) {
+      await handleConflict(error, $t('frameleaf_dedup_unable_to_apply'));
+    } finally {
+      busy = false;
+    }
+  };
+
+  const control = async (job: PhysicalDeduplicationApplyDto, action: 'pause' | 'resume' | 'cancel') => {
+    busy = true;
+    try {
+      const id = job.operationId;
+      await (action === 'pause'
+        ? pauseMediaOperation({ id })
+        : action === 'resume'
+          ? resumeMediaOperation({ id })
+          : cancelMediaOperation({ id }));
+      await refresh();
+      startPolling();
+    } catch (error) {
+      handleError(error, $t('frameleaf_dedup_unable_to_control'));
     } finally {
       busy = false;
     }
@@ -201,10 +322,12 @@
     if (!plan) {
       return;
     }
-    const url = URL.createObjectURL(new Blob([reviewExport(plan)], { type: 'application/json' }));
+    const url = URL.createObjectURL(
+      new Blob([reviewExport(plan, excluded, reviewed ? review : null)], { type: 'application/json' }),
+    );
     const link = document.createElement('a');
     link.href = url;
-    link.download = `frameleaf-deduplication-${label}.json`;
+    link.download = `frameleaf-deduplication-${plan.planId}.json`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -213,6 +336,9 @@
     switch (applyBlocked) {
       case 'running': {
         return $t('frameleaf_dedup_apply_blocked_running');
+      }
+      case 'applying': {
+        return $t('frameleaf_dedup_apply_blocked_applying');
       }
       case 'applied': {
         return $t('frameleaf_dedup_apply_blocked_applied');
@@ -242,6 +368,23 @@
         ? $t('frameleaf_dedup_stale_master')
         : '',
   );
+
+  const planBadge = $derived.by(() => {
+    if (planApply && isApplyActive(planApply)) {
+      return { label: $t('frameleaf_dedup_plan_applying'), tone: 'blue' as const };
+    }
+    if (applied) {
+      return { label: $t('frameleaf_dedup_plan_applied'), tone: 'teal' as const };
+    }
+    if (plan?.mode === PhysicalDeduplicationPlanMode.Apply) {
+      // Its job stopped or failed after changing some files; the rest need a new plan.
+      return { label: $t('frameleaf_dedup_plan_partly_applied'), tone: 'warning' as const };
+    }
+    if (reviewed) {
+      return { label: $t('frameleaf_dedup_plan_reviewed'), tone: 'blue' as const };
+    }
+    return { label: $t('frameleaf_dedup_plan_preview'), tone: 'blue' as const };
+  });
 
   const settingsHref = Route.systemSettings({ isOpen: OpenQueryParam.STORAGE_TEMPLATE });
 </script>
@@ -303,6 +446,61 @@
   {:else if notice}
     <Status message={notice} />
   {/if}
+  {#if conflict}
+    <p class="message error" role="alert">{conflict}</p>
+  {/if}
+
+  {#if activeApply}
+    {@const current = activeApply}
+    <section class="apply-panel" aria-label={$t('frameleaf_dedup_apply_panel_label')}>
+      <div class="apply-head">
+        <div>
+          <Badge value={$t(applyStatusKey(current))} label={$t(applyStatusKey(current))} tone="blue" />
+          <strong>{current.planId}</strong>
+          <small>
+            {$t('frameleaf_dedup_apply_by', {
+              values: { name: current.requestedByName, time: time(current.createdAt) },
+            })}
+          </small>
+        </div>
+        {#if current.mine}
+          <div class="apply-buttons">
+            {#if current.status === MediaOperationStatus.Paused || current.pauseRequested}
+              <Button disabled={busy} onclick={() => control(current, 'resume')}>
+                {$t('frameleaf_dedup_resume')}
+              </Button>
+            {:else if current.status !== MediaOperationStatus.Cancelling}
+              <Button disabled={busy} onclick={() => control(current, 'pause')}>{$t('frameleaf_dedup_pause')}</Button>
+            {/if}
+            {#if current.status !== MediaOperationStatus.Cancelling}
+              <Button disabled={busy} onclick={() => control(current, 'cancel')}>{$t('frameleaf_dedup_stop')}</Button>
+            {/if}
+          </div>
+        {/if}
+      </div>
+      <progress
+        aria-label={$t('frameleaf_dedup_apply_panel_label')}
+        max={Math.max(current.total, 1)}
+        value={current.processed}
+      ></progress>
+      <p class="apply-counts">
+        {$t('frameleaf_dedup_apply_counts', {
+          values: {
+            processed: current.processed,
+            total: current.total,
+            applied: current.applied + current.alreadyApplied,
+            skipped: current.skipped,
+            failed: current.failed,
+            bytes: formatBytes(current.reclaimedBytes),
+          },
+        })}
+      </p>
+      <p class="note">
+        {current.mine ? $t('frameleaf_dedup_apply_activity') : $t('frameleaf_dedup_apply_other_admin')}
+        <a href={Route.activity({ filter: 'running' })}>{$t('frameleaf_dedup_open_activity')}</a>
+      </p>
+    </section>
+  {/if}
 
   {#if !plan}
     <Pane label={$t('admin.physical_deduplication')}>
@@ -315,20 +513,8 @@
   {:else}
     <div class="plan-heading">
       <div>
-        <Badge
-          value={plan.mode === PhysicalDeduplicationPlanMode.Apply
-            ? $t('frameleaf_dedup_plan_applied')
-            : reviewed
-              ? $t('frameleaf_dedup_plan_reviewed')
-              : $t('frameleaf_dedup_plan_preview')}
-          label={plan.mode === PhysicalDeduplicationPlanMode.Apply
-            ? $t('frameleaf_dedup_plan_applied')
-            : reviewed
-              ? $t('frameleaf_dedup_plan_reviewed')
-              : $t('frameleaf_dedup_plan_preview')}
-          tone={plan.mode === PhysicalDeduplicationPlanMode.Apply ? 'teal' : 'blue'}
-        />
-        <h2>{label}</h2>
+        <Badge value={planBadge.label} label={planBadge.label} tone={planBadge.tone} />
+        <h2>{plan.planId}</h2>
         <p>
           {$t('frameleaf_dedup_plan_meta', {
             values: {
@@ -380,7 +566,15 @@
     {/if}
     {#if plan.copiesTruncated}
       <p class="message" role="status">
-        {$t('frameleaf_dedup_truncated', { values: { count: plan.copies.length } })}
+        {$t('frameleaf_dedup_truncated_applies', {
+          values: { count: plan.copies.length, applicable: plan.applicableCopies },
+        })}
+      </p>
+    {/if}
+    {#if selection && selection.hiddenCopies > 0}
+      <p class="message" role="status">
+        <Icon icon={mdiLockOutline} size="1em" aria-hidden={true} />
+        {$t('frameleaf_dedup_hidden_copies', { values: { count: selection.hiddenCopies } })}
       </p>
     {/if}
 
@@ -388,9 +582,11 @@
       <div class="groups">
         {#each groups as group (group.key)}
           {@const first = group.copies[0]}
+          {@const decidable = isDecidableGroup(group)}
+          {@const kept = !!group.retained && excluded.has(group.retained.assetId)}
           <article
             class="group"
-            class:skipped={group.shares === 0}
+            class:skipped={group.shares === 0 || kept}
             aria-label={group.retained
               ? $t('frameleaf_dedup_group_label', { values: { name: group.retained.originalFileName } })
               : $t('frameleaf_dedup_group_unmatched_label', { values: { name: first.originalFileName } })}
@@ -413,12 +609,23 @@
                   <small class="references">
                     <Icon icon={mdiLinkVariant} size="0.8125rem" aria-hidden={true} />
                     {$t('frameleaf_dedup_references_now', { values: { count: group.retained.referencesBefore } })}
-                    {#if group.shares > 0}
+                    {#if group.shares > 0 && !kept}
                       · {$t('frameleaf_dedup_references_after', {
                         values: { before: group.retained.referencesBefore, after: group.retained.referencesAfter },
                       })}
                     {/if}
                   </small>
+                  {#if decidable}
+                    <label class="group-decision">
+                      <input
+                        type="checkbox"
+                        checked={!kept}
+                        disabled={busy || decisionsLocked}
+                        onchange={() => toggleGroup(group.retained!.assetId)}
+                      />
+                      <span>{$t('frameleaf_dedup_group_include')}</span>
+                    </label>
+                  {/if}
                   <details class="evidence">
                     <summary>{$t('frameleaf_dedup_location')}</summary>
                     <code>{group.retained.originalPath}</code>
@@ -437,26 +644,29 @@
               {/if}
             </div>
             <div class="link" aria-hidden="true">
-              <Icon icon={group.shares > 0 ? mdiLinkVariant : mdiLinkVariantOff} size="1.125rem" />
+              <Icon icon={group.shares > 0 && !kept ? mdiLinkVariant : mdiLinkVariantOff} size="1.125rem" />
             </div>
             <ul class="copies" aria-label={$t('frameleaf_dedup_copies_label')}>
               {#each group.copies as copy (copy.assetId)}
-                <li class="copy" class:skipped={copy.decision !== PhysicalDeduplicationDecision.Share}>
+                {@const shares = copy.decision === PhysicalDeduplicationDecision.Share && !kept}
+                <li class="copy" class:skipped={!shares}>
                   <PhysicalDedupThumb assetId={copy.assetId} type={copy.type} canView={copy.canView} />
                   <div class="copy-text">
                     <strong>{$t('frameleaf_dedup_copy_of', { values: { name: copy.ownerName } })}</strong>
                     <small>{copy.originalFileName} · {formatBytes(copy.sizeInBytes)}</small>
-                    <span class="decision" class:share={copy.decision === PhysicalDeduplicationDecision.Share}>
+                    <span class="decision" class:share={shares}>
                       <Icon
-                        icon={copy.decision === PhysicalDeduplicationDecision.Share
-                          ? mdiCheckCircleOutline
-                          : mdiMinusCircleOutline}
+                        icon={shares ? mdiCheckCircleOutline : mdiMinusCircleOutline}
                         size="0.875rem"
                         aria-hidden={true}
                       />
-                      {copy.decision === PhysicalDeduplicationDecision.Share
-                        ? $t('frameleaf_dedup_decision_share', { values: { size: formatBytes(copy.sizeInBytes) } })
-                        : $t('frameleaf_dedup_decision_skip', { values: { reason: $t(skipReasonKey(copy.reason)) } })}
+                      {#if shares}
+                        {$t('frameleaf_dedup_decision_share', { values: { size: formatBytes(copy.sizeInBytes) } })}
+                      {:else if copy.decision === PhysicalDeduplicationDecision.Share}
+                        {$t('frameleaf_dedup_decision_kept')}
+                      {:else}
+                        {$t('frameleaf_dedup_decision_skip', { values: { reason: $t(skipReasonKey(copy.reason)) } })}
+                      {/if}
                     </span>
                     <details class="evidence">
                       <summary>{$t('frameleaf_dedup_evidence')}</summary>
@@ -466,7 +676,7 @@
                           <dd><code>{copy.originalPath}</code></dd>
                         </div>
                         <div>
-                          <dt>{$t('frameleaf_dedup_evidence_sha1')}</dt>
+                          <dt>{$t(checksumAlgorithmKey(copy.checksum))}</dt>
                           <dd><code>{copy.checksum}</code></dd>
                         </div>
                         {#if group.retained}
@@ -513,6 +723,8 @@
           <tbody>
             {#each plan.copies as copy (copy.assetId)}
               {@const retained = plan.retained.find((item) => item.assetId === copy.retainedAssetId)}
+              {@const kept = !!copy.retainedAssetId && excluded.has(copy.retainedAssetId)}
+              {@const shares = copy.decision === PhysicalDeduplicationDecision.Share && !kept}
               <tr>
                 <th scope="row">
                   <span class="cell-media">
@@ -546,7 +758,7 @@
                       : $t('frameleaf_dedup_evidence_no_match')}
                   </span>
                   <details>
-                    <summary>{$t('frameleaf_dedup_evidence_sha1')}</summary>
+                    <summary>{$t(checksumAlgorithmKey(copy.checksum))}</summary>
                     <code>{copy.checksum}</code>
                     {#if retained}
                       <small>{$t('frameleaf_dedup_evidence_retained')}</small>
@@ -556,16 +768,22 @@
                 </td>
                 <td>
                   {#if retained}
-                    <strong>{retained.referencesBefore} → {retained.referencesAfter}</strong>
+                    <strong>
+                      {retained.referencesBefore} → {kept ? retained.referencesBefore : retained.referencesAfter}
+                    </strong>
                   {:else}
                     <span class="muted">—</span>
                   {/if}
                 </td>
                 <td>
-                  <strong class:share={copy.decision === PhysicalDeduplicationDecision.Share}>
-                    {copy.decision === PhysicalDeduplicationDecision.Share
-                      ? $t('frameleaf_dedup_decision_share', { values: { size: formatBytes(copy.sizeInBytes) } })
-                      : $t('frameleaf_dedup_decision_skip', { values: { reason: $t(skipReasonKey(copy.reason)) } })}
+                  <strong class:share={shares}>
+                    {#if shares}
+                      {$t('frameleaf_dedup_decision_share', { values: { size: formatBytes(copy.sizeInBytes) } })}
+                    {:else if copy.decision === PhysicalDeduplicationDecision.Share}
+                      {$t('frameleaf_dedup_decision_kept')}
+                    {:else}
+                      {$t('frameleaf_dedup_decision_skip', { values: { reason: $t(skipReasonKey(copy.reason)) } })}
+                    {/if}
                   </strong>
                 </td>
               </tr>
@@ -583,19 +801,31 @@
     <div class="queue-actions">
       <div class="queue-note">
         <Icon icon={mdiShieldCheckOutline} size="1.125rem" aria-hidden={true} />
-        <span>{blockedMessage || $t('frameleaf_dedup_apply_requires')}</span>
+        <span>
+          {#if selection && selection.keptGroups > 0 && !applyBlocked}
+            {$t('frameleaf_dedup_selection', { values: { copies: selection.copies, kept: selection.keptGroups } })}
+          {:else}
+            {blockedMessage || $t('frameleaf_dedup_apply_requires')}
+          {/if}
+        </span>
       </div>
       <div class="queue-buttons">
-        {#if plan.mode === PhysicalDeduplicationPlanMode.DryRun && !reviewed}
-          <Button disabled={!!stale || !!applyBlocked} onclick={markReviewed}>
+        {#if applied || plan.mode === PhysicalDeduplicationPlanMode.Apply}
+          <span class="done">
+            <Icon icon={mdiCheckCircleOutline} size="1em" aria-hidden={true} />
+            {$t('frameleaf_dedup_plan_recorded')}
+          </span>
+        {:else if !reviewed}
+          <Button disabled={!!stale || reviewBlocked || busy} onclick={markReviewed}>
             {$t('frameleaf_dedup_mark_reviewed')}
           </Button>
-        {:else if plan.mode === PhysicalDeduplicationPlanMode.DryRun}
+        {:else}
           <Button
             variant="primary"
-            disabled={!!stale || !!applyBlocked}
+            disabled={!!stale || !!applyBlocked || busy}
             onclick={() => {
               confirmation = '';
+              conflict = '';
               confirmOpen = true;
             }}
           >
@@ -605,14 +835,46 @@
       </div>
     </div>
   {/if}
+
+  {#if preview.applies.length > 0}
+    <details class="history">
+      <summary>
+        <Icon icon={mdiHistory} size="1.125rem" aria-hidden={true} />
+        {$t('frameleaf_dedup_history')}
+        <span class="count">{preview.applies.length}</span>
+      </summary>
+      <ol>
+        {#each preview.applies as entry (entry.operationId)}
+          <li>
+            <div>
+              <strong>{$t(applyStatusKey(entry))} · {entry.planId}</strong>
+              <span>
+                {$t('frameleaf_dedup_history_counts', {
+                  values: {
+                    applied: entry.applied + entry.alreadyApplied,
+                    total: entry.total,
+                    skipped: entry.skipped,
+                    failed: entry.failed,
+                    bytes: formatBytes(entry.reclaimedBytes),
+                    name: entry.requestedByName,
+                  },
+                })}
+              </span>
+            </div>
+            <time datetime={entry.finishedAt ?? entry.createdAt}>{time(entry.finishedAt ?? entry.createdAt)}</time>
+          </li>
+        {/each}
+      </ol>
+    </details>
+  {/if}
 </div>
 
 <Dialog title={$t('frameleaf_dedup_confirm_title')} closeLabel={$t('close')} bind:open={confirmOpen}>
-  {#if plan}
+  {#if plan && review}
     <div class="confirm">
       <p>{$t('frameleaf_dedup_confirm_body')}</p>
       <dl>
-        <div><dt>{$t('frameleaf_dedup_plan_preview')}</dt><dd>{label}</dd></div>
+        <div><dt>{$t('frameleaf_dedup_confirm_plan')}</dt><dd>{plan.planId}</dd></div>
         <div>
           <dt>{$t('frameleaf_dedup_scan_scope')}</dt>
           <dd>
@@ -620,20 +882,31 @@
           </dd>
         </div>
         <div><dt>{$t('frameleaf_dedup_retain_in')}</dt><dd>{plan.masterUserName}</dd></div>
-        <div><dt>{$t('frameleaf_dedup_metric_copies')}</dt><dd>{plan.eligibleAssets}</dd></div>
-        <div><dt>{$t('frameleaf_dedup_metric_reclaim')}</dt><dd>{formatBytes(plan.reclaimableBytes)}</dd></div>
+        <div><dt>{$t('frameleaf_dedup_metric_copies')}</dt><dd>{review.copies}</dd></div>
+        <div><dt>{$t('frameleaf_dedup_confirm_estimate')}</dt><dd>{formatBytes(review.estimatedBytes)}</dd></div>
+        {#if review.excludedRetainedAssetIds.length > 0}
+          <div>
+            <dt>{$t('frameleaf_dedup_confirm_kept')}</dt>
+            <dd>{review.excludedRetainedAssetIds.length}</dd>
+          </div>
+        {/if}
       </dl>
+      {#if review.hiddenCopies > 0}
+        <p>{$t('frameleaf_dedup_hidden_copies', { values: { count: review.hiddenCopies } })}</p>
+      {/if}
       <p>{$t('frameleaf_dedup_confirm_backup')}</p>
       <label>
         <span>{$t('frameleaf_dedup_confirm_label', { values: { phrase: confirmationPhrase(plan) } })}</span>
         <input type="text" autocomplete="off" spellcheck="false" maxlength="90" bind:value={confirmation} />
       </label>
-      {#if blockedMessage || staleMessage}
-        <p class="message" role="alert">{blockedMessage || staleMessage}</p>
+      {#if conflict || blockedMessage || staleMessage}
+        <p class="message" role="alert">{conflict || blockedMessage || staleMessage}</p>
       {/if}
       <div class="confirm-actions">
         <Button onclick={() => (confirmOpen = false)} disabled={busy}>{$t('cancel')}</Button>
-        <Button variant="primary" disabled={!canConfirm || busy} onclick={apply}>{$t('frameleaf_dedup_apply')}</Button>
+        <Button variant="primary" disabled={!canConfirm} onclick={apply}>
+          {$t('frameleaf_dedup_apply_confirm')}
+        </Button>
       </div>
     </div>
   {/if}
@@ -1017,6 +1290,122 @@
     display: flex;
     justify-content: flex-end;
     gap: 0.5rem;
+  }
+  .message.error {
+    border-color: var(--fl-danger);
+    color: var(--fl-danger-text);
+  }
+  .message :global(svg) {
+    vertical-align: -0.125em;
+  }
+  .group-decision {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4375rem;
+    margin-block-start: 0.25rem;
+    font-size: var(--fl-font-small);
+    cursor: pointer;
+  }
+  .group-decision input {
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--fl-accent);
+  }
+  .apply-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.875rem 1rem;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+  }
+  .apply-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .apply-head > div:first-child {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .apply-head small {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-micro);
+  }
+  .apply-buttons {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .apply-panel progress {
+    width: 100%;
+    height: 0.375rem;
+    accent-color: var(--fl-accent);
+  }
+  .apply-counts {
+    margin: 0;
+    font-size: var(--fl-font-small);
+  }
+  .apply-panel a {
+    color: var(--fl-accent);
+    text-decoration: underline;
+  }
+  .done {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    color: var(--fl-teal);
+    font-size: var(--fl-font-small);
+    font-weight: 600;
+  }
+  .history {
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+  }
+  .history summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 0.875rem;
+    font-size: var(--fl-font-small);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .history .count {
+    color: var(--fl-muted);
+    font-weight: 400;
+  }
+  .history ol {
+    list-style: none;
+    margin: 0;
+    padding: 0 0.875rem 0.75rem;
+  }
+  .history li {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-block: 0.5rem;
+    border-block-start: 1px solid var(--fl-border);
+  }
+  .history li > div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 0;
+  }
+  .history li strong {
+    font-size: var(--fl-font-small);
+  }
+  .history li span,
+  .history time {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-micro);
   }
   @media (max-width: 56rem) {
     .group {
