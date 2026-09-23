@@ -323,6 +323,11 @@ export class RenderWorkerRepository {
   /**
    * Take one specific queued job. The `status = queued` guard is what makes the race safe: two
    * admitted workers that both decided on the same candidate update the row once between them.
+   *
+   * A claim is also where an attempt's ceilings start from zero: `attemptStartedAt` and
+   * `outputBytes` are reset, while `startedAt` keeps the first attempt's start for Activity. The
+   * automatic retry every operation gets is therefore charged for its own wall clock and output
+   * only, and the previous attempt's grants and writes, bound to the old claim token, stop verifying.
    */
   async claimQueued(options: {
     id: string;
@@ -340,6 +345,8 @@ export class RenderWorkerRepository {
         claimExpiresAt: sql<Date>`now() + ${sql.lit(options.leaseMs)} * interval '1 millisecond'`,
         heartbeatAt: sql<Date>`now()`,
         startedAt: sql<Date>`coalesce("startedAt", now())`,
+        attemptStartedAt: sql<Date>`now()`,
+        outputBytes: '0',
         attempt: sql<number>`"attempt" + 1`,
         lastAdmissionRefusalReason: null,
         lastAdmissionRefusedAt: null,
