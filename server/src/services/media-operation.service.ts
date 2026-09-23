@@ -527,6 +527,12 @@ export class MediaOperationService {
       throw new BadRequestException('Start the scan or search again from Library Care');
     }
 
+    // FL-73: a deduplication plan is applied only after a fresh review, the typed confirmation and
+    // the one-plan-at-a-time check; copying the old row would skip all of them.
+    if (operation.kind === MediaOperationKind.PhysicalDeduplication) {
+      throw new BadRequestException('Apply a new reviewed plan from the Physical deduplication page');
+    }
+
     if (operation.kind === MediaOperationKind.ICloudSync) {
       return this.retryICloudSync(auth, operation);
     }

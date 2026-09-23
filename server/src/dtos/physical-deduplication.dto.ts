@@ -65,6 +65,13 @@ export type PhysicalDeduplicationCopyState = z.infer<typeof PhysicalDeduplicatio
 const PhysicalDeduplicationRetainedResponseSchema = PhysicalDeduplicationRetainedStateSchema.extend({
   ownerName: z.string().describe('Display name of the retained account'),
   canView: z.boolean().describe('Whether the requesting administrator may view this asset and its thumbnail'),
+  hiddenCopies: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe(
+      'Copies this retained original would share that are Locked media of another account; counted, never named (FL-73)',
+    ),
 }).meta({ id: 'PhysicalDeduplicationRetainedDto' });
 
 const PhysicalDeduplicationCopyResponseSchema = PhysicalDeduplicationCopyStateSchema.extend({

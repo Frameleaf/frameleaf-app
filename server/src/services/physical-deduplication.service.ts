@@ -115,6 +115,17 @@ const skipped = (reasonKey: PhysicalDeduplicationItemReason): PhysicalDeduplicat
  */
 @Injectable()
 export class PhysicalDeduplicationService extends BaseService {
+  /**
+   * Keys review tokens (FL-73), so a token can only come from a review this server made. Kept in
+   * memory like the Studio grant secret: a restart only means reviewing the plan again.
+   */
+  #reviewSecret: string | null = null;
+
+  private get reviewSecret(): string {
+    this.#reviewSecret ??= this.cryptoRepository.randomBytesAsText(32);
+    return this.#reviewSecret;
+  }
+
   @OnJob({ name: JobName.PhysicalDeduplicationMigrationDryRun, queue: QueueName.StorageTemplateMigration })
   async handleDryRun(job: JobOf<JobName.PhysicalDeduplicationMigrationDryRun>): Promise<JobStatus> {
     const state = await this.forkSchemaRepository.getState();
@@ -218,6 +229,15 @@ export class PhysicalDeduplicationService extends BaseService {
     // of a hidden retained original are hidden with it (FL-73): their checksum, name and link would
     // otherwise describe the Locked original.
     const { retained, copies } = await this.visibleRows(auth, state);
+    // Per group, the copies it would share that are not listed, so the page can count a group it
+    // leaves out exactly (FL-73).
+    const shown = new Set(copies.map((item) => item.assetId));
+    const hiddenShares = new Map<string, number>();
+    for (const item of physicalDeduplicationPlanItems(state, []).items) {
+      if (!shown.has(item.assetId)) {
+        hiddenShares.set(item.retainedAssetId, (hiddenShares.get(item.retainedAssetId) ?? 0) + 1);
+      }
+    }
     const users = await this.userRepository.getList({ withDeleted: true });
     const nameOf = (userId: string) => users.find((user) => user.id === userId)?.name ?? userId;
     const viewable = await this.checkAccess({
@@ -244,6 +264,7 @@ export class PhysicalDeduplicationService extends BaseService {
         ...item,
         ownerName: nameOf(item.ownerId),
         canView: viewable.has(item.assetId),
+        hiddenCopies: hiddenShares.get(item.assetId) ?? 0,
       })),
       copies: copies.map((item) => ({
         ...item,
@@ -309,11 +330,10 @@ export class PhysicalDeduplicationService extends BaseService {
       throw new ConflictException('This plan has already been applied.');
     }
 
-    const excluded = normalizeExcluded(dto.excludedRetainedAssetIds);
+    // Only groups of this plan can be left out; any other id is ignored rather than answered, so
+    // the endpoint never tells which ids are retained originals (FL-73).
     const retainedIds = new Set((state.retained ?? []).map((item) => item.assetId));
-    if (excluded.some((id) => !retainedIds.has(id))) {
-      throw new BadRequestException('A group left out of the plan is not part of it.');
-    }
+    const excluded = normalizeExcluded(dto.excludedRetainedAssetIds).filter((id) => retainedIds.has(id));
 
     const { items, retained } = physicalDeduplicationPlanItems(state, excluded);
     if (items.length === 0) {
@@ -331,7 +351,7 @@ export class PhysicalDeduplicationService extends BaseService {
     return {
       planId,
       fingerprint,
-      reviewToken: physicalDeduplicationReviewToken(fingerprint, excluded),
+      reviewToken: physicalDeduplicationReviewToken(this.reviewSecret, fingerprint, excluded),
       confirmation: physicalDeduplicationConfirmation(planId),
       masterUserId: state.masterUserId,
       scopeUserId: state.scopeUserId ?? null,
@@ -363,6 +383,27 @@ export class PhysicalDeduplicationService extends BaseService {
     if (!(await this.isActiveUser(plan.masterUserId))) {
       throw new ConflictException('The retained account no longer exists. Prepare a new plan.');
     }
+  }
+
+  /**
+   * Record on the stored plan that a job has started changing files for it (FL-73), so the page and
+   * the review report it as applied, or partly applied while its job has not completed, instead of
+   * as a preview whose evidence merely changed. Only the plan the job was reviewed from is marked; a
+   * newer preview is left alone. Taken under the storage migration lock, like the preview's write.
+   */
+  async recordPlanApplied(fingerprint: string, counts: { linkedAssets: number; deletedBytes: number }) {
+    await this.databaseRepository.withLock(DatabaseLock.StorageTemplateMigration, async () => {
+      const state = await this.systemMetadataRepository.get(SystemMetadataKey.PhysicalDeduplicationMigration);
+      if (!state || physicalDeduplicationFingerprint(state) !== fingerprint) {
+        return;
+      }
+      await this.systemMetadataRepository.set(SystemMetadataKey.PhysicalDeduplicationMigration, {
+        ...state,
+        mode: 'apply',
+        linkedAssets: counts.linkedAssets,
+        deletedBytes: counts.deletedBytes,
+      });
+    });
   }
 
   /** Whether the storage handoff lets physical files be shared at all right now. */

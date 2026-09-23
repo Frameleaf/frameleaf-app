@@ -104,6 +104,10 @@ describe('physical deduplication plans (FL-73)', () => {
       );
     });
 
+    it('stays the same once the plan is applied, so its job can still be found by it', () => {
+      expect(physicalDeduplicationFingerprint(plan({ mode: 'apply' }))).toBe(physicalDeduplicationFingerprint(plan()));
+    });
+
     it('names the plan and the phrase that confirms it', () => {
       const fingerprint = physicalDeduplicationFingerprint(plan());
       const planId = physicalDeduplicationPlanId(fingerprint);
@@ -116,14 +120,21 @@ describe('physical deduplication plans (FL-73)', () => {
   describe('review token', () => {
     it('binds the decisions, in any order, to one plan', () => {
       const fingerprint = physicalDeduplicationFingerprint(plan());
-      expect(physicalDeduplicationReviewToken(fingerprint, ['garden', 'lake'])).toBe(
-        physicalDeduplicationReviewToken(fingerprint, ['lake', 'garden', 'lake']),
+      expect(physicalDeduplicationReviewToken('secret', fingerprint, ['garden', 'lake'])).toBe(
+        physicalDeduplicationReviewToken('secret', fingerprint, ['lake', 'garden', 'lake']),
       );
-      expect(physicalDeduplicationReviewToken(fingerprint, ['lake'])).not.toBe(
-        physicalDeduplicationReviewToken(fingerprint, []),
+      expect(physicalDeduplicationReviewToken('secret', fingerprint, ['lake'])).not.toBe(
+        physicalDeduplicationReviewToken('secret', fingerprint, []),
       );
-      expect(physicalDeduplicationReviewToken(fingerprint, [])).not.toBe(
-        physicalDeduplicationReviewToken('ff'.repeat(32), []),
+      expect(physicalDeduplicationReviewToken('secret', fingerprint, [])).not.toBe(
+        physicalDeduplicationReviewToken('secret', 'ff'.repeat(32), []),
+      );
+    });
+
+    it('cannot be made without the server secret', () => {
+      const fingerprint = physicalDeduplicationFingerprint(plan());
+      expect(physicalDeduplicationReviewToken('secret', fingerprint, [])).not.toBe(
+        physicalDeduplicationReviewToken('another', fingerprint, []),
       );
     });
 

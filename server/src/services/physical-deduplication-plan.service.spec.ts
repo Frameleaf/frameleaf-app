@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import { DatabaseLock, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
@@ -97,7 +97,9 @@ describe(PhysicalDeduplicationPlanService.name, () => {
   beforeEach(() => {
     const mocks = getMocks();
     operations = {
-      create: vi.fn().mockImplementation((values) => Promise.resolve(operationOf({ ...values, id: 'created-1' }))),
+      createExclusive: vi
+        .fn()
+        .mockImplementation((values) => Promise.resolve({ created: operationOf({ ...values, id: 'created-1' }) })),
       getActiveOfKind: vi.fn().mockResolvedValue(undefined),
       getForOwner: vi.fn(),
       listRecentOfKind: vi.fn().mockResolvedValue([]),
@@ -129,6 +131,7 @@ describe(PhysicalDeduplicationPlanService.name, () => {
       requireApplyAllowed: vi.fn().mockResolvedValue(undefined),
       canApplyPlans: vi.fn().mockResolvedValue(true),
       applyPlanItem: vi.fn().mockResolvedValue(applied),
+      recordPlanApplied: vi.fn().mockResolvedValue(undefined),
     };
     sut = new PhysicalDeduplicationPlanService(
       mocks.logger as never,
@@ -169,10 +172,12 @@ describe(PhysicalDeduplicationPlanService.name, () => {
       const queued = await sut.apply(authStub.admin, dto);
 
       expect(deduplication.requireApplyAllowed).toHaveBeenCalledWith(prepared);
-      expect(operations.create).toHaveBeenCalledWith(
+      expect(operations.createExclusive).toHaveBeenCalledWith(
         expect.objectContaining({
           ownerId: authStub.admin.user.id,
           kind: MediaOperationKind.PhysicalDeduplication,
+          label: 'PD-ABABABAB',
+          settings: { planId: 'PD-ABABABAB', copies: 2 },
           assetId: null,
           snapshot: expect.objectContaining({
             version: 1,
@@ -184,36 +189,45 @@ describe(PhysicalDeduplicationPlanService.name, () => {
           }),
           totalUnits: '2',
         }),
+        DatabaseLock.PhysicalDeduplicationApply,
       );
       expect(queued.id).toBe('created-1');
+    });
+
+    it('refuses with 409 when another administrator started a plan in the same moment', async () => {
+      operations.createExclusive.mockResolvedValue({
+        active: { id: 'other', ownerId: 'someone-else', fingerprint: 'ff'.repeat(32) },
+      });
+
+      await expect(sut.apply(authStub.admin, dto)).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('refuses with 409 when the decisions differ from the reviewed ones', async () => {
       await expect(sut.apply(authStub.admin, { ...dto, reviewToken: 'ee'.repeat(32) })).rejects.toBeInstanceOf(
         ConflictException,
       );
-      expect(operations.create).not.toHaveBeenCalled();
+      expect(operations.createExclusive).not.toHaveBeenCalled();
     });
 
     it('refuses a confirmation that does not name this plan', async () => {
       await expect(sut.apply(authStub.admin, { ...dto, confirmation: 'APPLY PD-00000000' })).rejects.toBeInstanceOf(
         BadRequestException,
       );
-      expect(operations.create).not.toHaveBeenCalled();
+      expect(operations.createExclusive).not.toHaveBeenCalled();
     });
 
     it('refuses with 409 when anything changed since the review', async () => {
       deduplication.preparePlan.mockRejectedValue(new ConflictException('File or reference evidence changed.'));
 
       await expect(sut.apply(authStub.admin, dto)).rejects.toBeInstanceOf(ConflictException);
-      expect(operations.create).not.toHaveBeenCalled();
+      expect(operations.createExclusive).not.toHaveBeenCalled();
     });
 
     it('refuses when the retained account or feature settings do not allow it', async () => {
       deduplication.requireApplyAllowed.mockRejectedValue(new BadRequestException('Enable file reuse'));
 
       await expect(sut.apply(authStub.admin, dto)).rejects.toBeInstanceOf(BadRequestException);
-      expect(operations.create).not.toHaveBeenCalled();
+      expect(operations.createExclusive).not.toHaveBeenCalled();
     });
 
     it('refuses with 409 while another plan is being applied', async () => {
@@ -230,7 +244,7 @@ describe(PhysicalDeduplicationPlanService.name, () => {
       const answer = await sut.apply(authStub.admin, dto);
 
       expect(answer.id).toBe('operation-1');
-      expect(operations.create).not.toHaveBeenCalled();
+      expect(operations.createExclusive).not.toHaveBeenCalled();
     });
 
     it("refuses another administrator's repeat of a plan already being applied", async () => {
@@ -307,6 +321,35 @@ describe(PhysicalDeduplicationPlanService.name, () => {
         }),
       );
       expect(operations.complete).toHaveBeenCalledWith('operation-1', 'token', { resultAssetId: null });
+      // The stored plan reads as applied from the first copy that changed, and gets the final counts.
+      expect(deduplication.recordPlanApplied).toHaveBeenCalledWith(fingerprint, { linkedAssets: 1, deletedBytes: 10 });
+      expect(deduplication.recordPlanApplied).toHaveBeenLastCalledWith(fingerprint, {
+        linkedAssets: 2,
+        deletedBytes: 20,
+      });
+    });
+
+    it('checks the feature and the saved retained account on every claim', async () => {
+      deduplication.requireApplyAllowed.mockRejectedValue(new ConflictException('The retained account changed.'));
+
+      await sut.run(operationOf(), 'token');
+
+      expect(deduplication.requireApplyAllowed).toHaveBeenCalledWith({ masterUserId: 'master-user' });
+      expect(deduplication.applyPlanItem).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalled();
+    });
+
+    it('does not mark the plan applied when no copy changed', async () => {
+      deduplication.applyPlanItem.mockResolvedValue({
+        state: 'skipped',
+        reasonKey: 'copy-changed',
+        message: null,
+        reclaimedBytes: 0,
+      });
+
+      await sut.run(operationOf(), 'token');
+
+      expect(deduplication.recordPlanApplied).not.toHaveBeenCalled();
     });
 
     it('resumes from the cursor after a restart, without applying a finished copy again', async () => {
@@ -331,6 +374,7 @@ describe(PhysicalDeduplicationPlanService.name, () => {
 
       expect(operations.requeue).toHaveBeenCalledWith('operation-1', 'token', {
         delayMs: MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
+        returnAttempt: true,
       });
       expect(operations.setBulkResult).toHaveBeenLastCalledWith(
         'operation-1',

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { AssetStatus, PhysicalDeduplicationDecision } from 'src/enum.js';
 
 /**
@@ -12,10 +12,11 @@ import { AssetStatus, PhysicalDeduplicationDecision } from 'src/enum.js';
  * 1. **Fingerprint.** A digest over the stored plan's evidence. It changes with every new preview,
  *    and its first eight characters are the plan's name (`PD-1A2B3C4D`), so the typed confirmation
  *    names the exact plan the administrator looked at.
- * 2. **Review token.** A digest over the fingerprint and the administrator's per-group decisions
- *    (which retained originals to leave out). "Mark plan reviewed" checks the evidence against the
- *    library again and hands this back; applying must present the same token, so the set applied is
- *    the set reviewed.
+ * 2. **Review token.** A keyed digest (HMAC with a secret the server keeps) over the fingerprint and
+ *    the administrator's per-group decisions (which retained originals to leave out). "Mark plan
+ *    reviewed" checks the evidence against the library again and hands this back; applying must
+ *    present the same token, so the set applied is the set reviewed, and a token can only come from
+ *    a review this server made.
  * 3. **Frozen items.** The copies the reviewed plan shares, each with its evidence, go into the
  *    durable job's snapshot. The worker checks each one again before it touches a file.
  */
@@ -34,8 +35,6 @@ export type PhysicalDeduplicationItemReason =
   | 'retained-missing'
   /** The retained original's bytes on disk no longer match the reviewed checksum and size. */
   | 'retained-mismatch'
-  /** More or fewer files point at the retained original than the reviewed plan recorded. */
-  | 'references-changed'
   /** Something unexpected went wrong; the copy is retried once and otherwise left as it was. */
   | 'error';
 
@@ -140,7 +139,8 @@ const byAssetId = <T extends { assetId: string }>(a: T, b: T) => a.assetId.local
 
 /**
  * The plan's fingerprint: every piece of evidence the administrator reviews, in a fixed order. Two
- * previews never share one, because the time it ran is part of it.
+ * previews never share one, because the time it ran is part of it. Whether the plan was applied is
+ * not evidence: a plan keeps its name and fingerprint once applied, so its job can be found by it.
  */
 export const physicalDeduplicationFingerprint = (plan: PhysicalDeduplicationStoredPlan): string => {
   const retained = [...(plan.retained ?? [])]
@@ -170,7 +170,6 @@ export const physicalDeduplicationFingerprint = (plan: PhysicalDeduplicationStor
     JSON.stringify([
       'frameleaf-physical-deduplication-plan',
       1,
-      plan.mode,
       plan.ranAt,
       plan.masterUserId,
       plan.scopeUserId ?? null,
@@ -191,16 +190,22 @@ export const physicalDeduplicationConfirmation = (planId: string) => `APPLY ${pl
 /** The left-out groups in one canonical order, so the same decisions always give the same token. */
 export const normalizeExcluded = (ids: readonly string[] | undefined) => [...new Set(ids ?? [])].sort();
 
-/** Binds the plan to the administrator's per-group decisions. */
-export const physicalDeduplicationReviewToken = (fingerprint: string, excludedRetainedAssetIds: readonly string[]) =>
-  sha256(
-    JSON.stringify([
-      'frameleaf-physical-deduplication-review',
-      1,
-      fingerprint,
-      normalizeExcluded(excludedRetainedAssetIds),
-    ]),
-  );
+/** Binds the plan to the administrator's per-group decisions, keyed with the server's secret. */
+export const physicalDeduplicationReviewToken = (
+  secret: string,
+  fingerprint: string,
+  excludedRetainedAssetIds: readonly string[],
+) =>
+  createHmac('sha256', secret)
+    .update(
+      JSON.stringify([
+        'frameleaf-physical-deduplication-review',
+        1,
+        fingerprint,
+        normalizeExcluded(excludedRetainedAssetIds),
+      ]),
+    )
+    .digest('hex');
 
 /**
  * The copies a reviewed plan applies: every copy the preview decided to share, except those whose
@@ -520,6 +525,3 @@ export const planPhysicalDeduplicationRetry = (
 
 export const physicalDeduplicationProgress = (processed: number, total: number) =>
   total > 0 ? Math.min(100, Math.round((processed / total) * 10_000) / 100) : 100;
-
-export const physicalDeduplicationLabel = (planId: string, count: number) =>
-  `Physical deduplication ${planId} (${count} ${count === 1 ? 'copy' : 'copies'})`;

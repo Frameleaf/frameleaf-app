@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
-import { MediaOperationCheckpointState, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import { DatabaseLock, MediaOperationCheckpointState, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import {
   MediaOperationCheckpointTable,
@@ -273,6 +273,40 @@ export class MediaOperationRepository {
       .orderBy('id', 'desc')
       .limit(take)
       .execute() as unknown as Promise<MediaOperation[]>;
+  }
+
+  /**
+   * Create a job of a kind that runs one at a time across the whole server, or answer with the one
+   * already unfinished (FL-73). The check and the insert happen under one transaction-scoped
+   * advisory lock, so two administrators applying at the same moment cannot both start a job.
+   */
+  async createExclusive(
+    operation: MediaOperationCreate,
+    lock: DatabaseLock,
+  ): Promise<{ created: MediaOperation } | { active: { id: string; ownerId: string; fingerprint: string | null } }> {
+    return this.db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(${lock})`.execute(trx);
+
+      const active = await trx
+        .selectFrom('media_operation')
+        .select(['id', 'ownerId'])
+        .select(sql<string | null>`"snapshot"->>'fingerprint'`.as('fingerprint'))
+        .where('kind', '=', operation.kind)
+        .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+        .orderBy('createdAt', 'asc')
+        .limit(1)
+        .executeTakeFirst();
+      if (active) {
+        return { active };
+      }
+
+      const created = await trx
+        .insertInto('media_operation')
+        .values(operation)
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      return { created: created as unknown as MediaOperation };
+    });
   }
 
   /** Any unfinished job of one kind, whoever owns it (FL-73), with the plan it is applying. */
