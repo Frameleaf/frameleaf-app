@@ -595,8 +595,20 @@ describe(MediaOperationService.name, () => {
       await expect(sut.retry(authStub.user1, operationStub().id)).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it.each([MediaOperationKind.StudioExport, MediaOperationKind.StudioExportPublish])(
+      'refuses to copy a %s job: a Studio export is exported again as a new version (FL-106)',
+      async (kind) => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({ kind, status: MediaOperationStatus.Failed }),
+        );
+        await expect(sut.retry(authStub.user1, 'id')).rejects.toBeInstanceOf(BadRequestException);
+        expect(repository.create).not.toHaveBeenCalled();
+      },
+    );
+
     it('copies the snapshot and destination into a new row and records the lineage', async () => {
       const failed = operationStub({
+        kind: MediaOperationKind.Restoration,
         status: MediaOperationStatus.Failed,
         destination: MediaOperationDestination.RunPod,
       });
@@ -627,7 +639,8 @@ describe(MediaOperationService.name, () => {
     });
 
     it('answers a second retry request with the retry already queued, for every kind (FL-43)', async () => {
-      const failed = operationStub({ status: MediaOperationStatus.Failed });
+      // A Studio export is exported again rather than copied (FL-106); a quick edit is copied.
+      const failed = operationStub({ kind: MediaOperationKind.QuickEdit, status: MediaOperationStatus.Failed });
       const waiting = operationStub({
         id: '0195e2a0-0000-7000-8000-000000000002',
         status: MediaOperationStatus.Queued,
@@ -645,7 +658,8 @@ describe(MediaOperationService.name, () => {
     });
 
     it('answers with the winner when two retry requests race past the first look (FL-43)', async () => {
-      const failed = operationStub({ status: MediaOperationStatus.Failed });
+      // A Studio export is exported again rather than copied (FL-106); a quick edit is copied.
+      const failed = operationStub({ kind: MediaOperationKind.QuickEdit, status: MediaOperationStatus.Failed });
       const winner = operationStub({
         id: '0195e2a0-0000-7000-8000-000000000009',
         status: MediaOperationStatus.Queued,

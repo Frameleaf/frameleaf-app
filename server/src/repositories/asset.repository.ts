@@ -75,6 +75,7 @@ import {
   withTagId,
   withTags,
 } from 'src/utils/database.js';
+import { lockDerivedResults } from 'src/utils/derivative-locks.js';
 import { onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
 import {
   effectiveVisibility,
@@ -861,7 +862,10 @@ export class AssetRepository {
     `.execute(tx);
     const lockedIds = rows.map(({ assetId }) => assetId);
     if (lockedIds.length > 0) {
+      // This update waits for any Studio export publication holding these rows, so the propagation
+      // below sees every version it committed (FL-106).
       await tx.updateTable('asset').set({ updatedAt: new Date() }).where('id', '=', anyUuid(lockedIds)).execute();
+      lockedIds.push(...(await lockDerivedResults(tx, lockedIds)));
       await releaseLockedCoverReferences(tx, lockedIds);
     }
 

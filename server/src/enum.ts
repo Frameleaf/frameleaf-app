@@ -1111,6 +1111,14 @@ export enum MediaOperationKind {
   PreservationReview = 'preservation_review',
   /** A reviewed package restored into the owner's library, never over an existing original (FL-74). */
   PreservationRestore = 'preservation_restore',
+  /**
+   * Publication of a validated Studio export (FL-106): the rendered file is checked against the
+   * checksum its render reported, every source is checked again for the owner's current access,
+   * the union of the sources' Locked and sensitive evidence is installed and only then does the
+   * result become a new version, in one transaction. Runs on this server's own workers, never on a
+   * render worker, and gets the one automatic retry every job gets.
+   */
+  StudioExportPublish = 'studio_export_publish',
 }
 
 export const MediaOperationKindSchema = z
@@ -2293,6 +2301,64 @@ export enum AssetLockReason {
   /** It was in the upstream Locked folder (`visibility = locked`) when the library was upgraded. */
   ImmichLockedFolder = 'immich-locked-folder',
 }
+
+/**
+ * Where a Studio export version stands (FL-106). A version is created with its render job and only
+ * ever moves forward; a version that failed or was cancelled leaves every earlier published version
+ * exactly as it was.
+ */
+export enum StudioExportVersionState {
+  /** Queued or rendering. */
+  Rendering = 'rendering',
+  /** The render finished and its file is staged; publication is queued. */
+  Staged = 'staged',
+  /** Published: numbered, with its privacy installed and its provenance recorded. */
+  Published = 'published',
+  Failed = 'failed',
+  /** Stopped by its owner, or because the owner, the project or a source went away, or a handoff. */
+  Cancelled = 'cancelled',
+}
+
+export const StudioExportVersionStateSchema = z
+  .enum(StudioExportVersionState)
+  .describe('Studio export version state')
+  .meta({ id: 'StudioExportVersionState' });
+
+/**
+ * Where a published Studio export lives (FL-106).
+ *
+ * - `library`: every library source is the owner's, so the result is a new asset in their library,
+ *   carrying the union of its sources' Locked and sensitive evidence.
+ * - `project`: at least one source reached the owner through sharing. The result stays with the
+ *   project and every read re-checks that the owner can still see every source, so a temporary
+ *   share never becomes a permanent, unrestricted copy.
+ */
+export enum StudioExportScope {
+  Library = 'library',
+  Project = 'project',
+}
+
+export const StudioExportScopeSchema = z
+  .enum(StudioExportScope)
+  .describe('Where a published Studio export lives')
+  .meta({ id: 'StudioExportScope' });
+
+/** Why a remote destination is asked to drop something it holds for a Studio export (FL-106). */
+export enum StudioExportRemoteReason {
+  /**
+   * A render was handed to a remote worker. Recorded when it is claimed, so the obligation exists
+   * before anything can go wrong; acknowledged when the render finishes or the worker confirms a
+   * cancel released everything. Until then the remote job must be stopped if it is still running.
+   */
+  Cancel = 'cancel',
+  /** The remote copy of the output is no longer needed (published, failed or cancelled). */
+  Delete = 'delete',
+}
+
+export const StudioExportRemoteReasonSchema = z
+  .enum(StudioExportRemoteReason)
+  .describe('Why a remote destination is asked to drop Studio export data')
+  .meta({ id: 'StudioExportRemoteReason' });
 
 export const AssetLockReasonSchema = z
   .enum(AssetLockReason)

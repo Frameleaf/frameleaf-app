@@ -4118,6 +4118,7 @@
   "frameleaf_render_workers_kind_studio_bundle_export": "Project export",
   "frameleaf_render_workers_kind_studio_bundle_import": "Project import",
   "frameleaf_render_workers_kind_studio_export": "Studio export",
+  "frameleaf_render_workers_kind_studio_export_publish": "Studio export publishing",
   "frameleaf_render_workers_kind_studio_preview": "Studio preview",
   "frameleaf_render_workers_kind_takeout_import": "Google Photos import",
   "frameleaf_render_workers_limit_dialog_account": "Account",

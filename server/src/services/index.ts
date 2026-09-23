@@ -75,6 +75,7 @@ import { StackService } from 'src/services/stack.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
+import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
@@ -174,6 +175,7 @@ export const services = [
   SmartInfoService,
   ZeroShotTaggingService,
   StackService,
+  StudioExportService,
   StudioPreviewService,
   StorageService,
   StorageTemplateService,

@@ -17,6 +17,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { DocumentRepository } from 'src/repositories/document.repository.js';
 import { DownloadRepository } from 'src/repositories/download.repository.js';
 import { DuplicateDecisionRepository } from 'src/repositories/duplicate-decision.repository.js';
@@ -72,6 +73,7 @@ import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
 import { StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
@@ -160,6 +162,8 @@ export const repositories = [
   ServerInfoRepository,
   SmartAlbumRepository,
   StudioProjectRepository,
+  StudioExportRepository,
+  DerivativePrivacyRepository,
   SessionRepository,
   SharedLinkRepository,
   SharedLinkAssetRepository,
