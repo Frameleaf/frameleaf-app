@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { UserAdmin } from 'src/database.js';
-import { AssetVisibility, CacheControl, JobName, UserMetadataKey } from 'src/enum.js';
+import { AssetVisibility, CacheControl, CalendarHeatmapType, JobName, UserMetadataKey } from 'src/enum.js';
 import { UserService } from 'src/services/user.service.js';
 import { UserMetadataItem } from 'src/types.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
@@ -108,7 +108,7 @@ describe(UserService.name, () => {
       const auth = AuthFactory.create();
       mocks.asset.getCalendarHeatmap.mockResolvedValue([]);
 
-      await sut.getCalendarHeatmap(auth, {});
+      await sut.getCalendarHeatmap(auth, { type: CalendarHeatmapType.Upload });
 
       expect(mocks.asset.getCalendarHeatmap).toHaveBeenCalledWith(
         auth.user.id,
@@ -120,7 +120,7 @@ describe(UserService.name, () => {
       const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
       mocks.asset.getCalendarHeatmap.mockResolvedValue([]);
 
-      await sut.getCalendarHeatmap(auth, {});
+      await sut.getCalendarHeatmap(auth, { type: CalendarHeatmapType.Upload });
 
       expect(mocks.asset.getCalendarHeatmap).toHaveBeenCalledWith(
         auth.user.id,

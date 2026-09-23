@@ -588,7 +588,7 @@ describe(BulkOperationService.name, () => {
 
       const marked = vi
         .mocked(operations.setBulkResult)
-        .mock.calls.findIndex(([, , patch]) => (patch.result as { inFlight: unknown }).inFlight !== null);
+        .mock.calls.findIndex((call) => (call[2].result as { inFlight: unknown }).inFlight !== null);
       expect(vi.mocked(operations.setBulkResult).mock.calls[marked][2].result).toEqual(
         expect.objectContaining({
           inFlight: { start: 0, size: 3 },
@@ -905,7 +905,7 @@ describe(BulkOperationService.name, () => {
 
       await sut.run(operationOf(snapshot), 'claim-token');
 
-      const batches = applyBatch.mock.calls.map(([, , batch]) => batch);
+      const batches = applyBatch.mock.calls.map((call) => call[2]);
       expect(batches).toHaveLength(2);
       expect(batches[0]).toHaveLength(498 + 3);
       expect(batches[0].slice(-3)).toEqual(straddling.memberIds);

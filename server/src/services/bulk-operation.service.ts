@@ -924,7 +924,7 @@ export class BulkOperationService {
 
     if (starts.size > 0) {
       outcomes.push(
-        ...(await this.inLists([...starts.keys()], (chunk) =>
+        ...(await this.inLists(starts.keys().toArray(), (chunk) =>
           this.assets.shiftDateTimeOriginalFrom(
             auth,
             chunk.map((id) => ({ id, from: starts.get(id) as Date })),
