@@ -1,9 +1,9 @@
 <script lang="ts">
   import TemplateSettings from './TemplateSettings.svelte';
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -64,9 +64,9 @@
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" class="mt-4" onsubmit={(event) => event.preventDefault()}>
       <div class="flex flex-col gap-4">
-        <SettingAccordion key="email" title={$t('email')} subtitle={$t('admin.notification_email_setting_description')}>
-          <div class="ms-4 mt-4 flex flex-col gap-4">
-            <SettingSwitch
+        <SettingGroup key="email" title={$t('email')} subtitle={$t('admin.notification_email_setting_description')}>
+          <div class="flex flex-col gap-4">
+            <SettingToggle
               title={$t('admin.notification_enable_email_notifications')}
               {disabled}
               bind:checked={configToEdit.notifications.smtp.enabled}
@@ -74,7 +74,7 @@
 
             <hr />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.TEXT}
               required
               label={$t('host')}
@@ -84,7 +84,7 @@
               isEdited={configToEdit.notifications.smtp.transport.host !== config.notifications.smtp.transport.host}
             />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.NUMBER}
               required
               label={$t('port')}
@@ -94,7 +94,7 @@
               isEdited={configToEdit.notifications.smtp.transport.port !== config.notifications.smtp.transport.port}
             />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.TEXT}
               label={$t('username')}
               description={$t('admin.notification_email_username_description')}
@@ -104,7 +104,7 @@
                 config.notifications.smtp.transport.username}
             />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.PASSWORD}
               label={$t('password')}
               description={$t('admin.notification_email_password_description')}
@@ -114,14 +114,14 @@
                 config.notifications.smtp.transport.password}
             />
 
-            <SettingSwitch
+            <SettingToggle
               title={$t('admin.notification_email_secure')}
               subtitle={$t('admin.notification_email_secure_description')}
               disabled={disabled || !configToEdit.notifications.smtp.enabled}
               bind:checked={configToEdit.notifications.smtp.transport.secure}
             />
 
-            <SettingSwitch
+            <SettingToggle
               title={$t('admin.notification_email_ignore_certificate_errors')}
               subtitle={$t('admin.notification_email_ignore_certificate_errors_description')}
               disabled={disabled || !configToEdit.notifications.smtp.enabled}
@@ -130,7 +130,7 @@
 
             <hr />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.TEXT}
               required
               label={$t('admin.notification_email_from_address')}
@@ -156,11 +156,11 @@
               </Button>
             </div>
           </div>
-        </SettingAccordion>
+        </SettingGroup>
       </div>
     </form>
   </div>
   <TemplateSettings bind:config={configToEdit} />
 
-  <SettingButtonsRow bind:configToEdit keys={['notifications', 'templates']} {disabled} />
+  <SettingActions bind:configToEdit keys={['notifications', 'templates']} {disabled} />
 </div>

@@ -89,6 +89,63 @@ describe(PersonService.name, () => {
     });
   });
 
+  describe('getMergeSuggestions', () => {
+    it('should suggest pairs under the facial-recognition distance and drop the rest', async () => {
+      const auth = AuthFactory.create();
+      const [alice, bob] = [PersonFactory.create({ name: 'Alice' }), PersonFactory.create({ name: 'Bob' })];
+
+      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { facialRecognition: { maxDistance: 0.5 } } });
+      mocks.person.getMergeSuggestions.mockResolvedValue([
+        { personId: alice.personGroupId, suggestionId: bob.personGroupId, distance: 0.42 },
+      ]);
+      mocks.person.getForMergePerson.mockResolvedValue([alice, bob]);
+
+      await expect(sut.getMergeSuggestions(auth)).resolves.toEqual({
+        suggestions: [
+          {
+            person: expect.objectContaining({ id: alice.personGroupId, name: 'Alice' }),
+            suggestion: expect.objectContaining({ id: bob.personGroupId, name: 'Bob' }),
+            distance: 0.42,
+          },
+        ],
+      });
+      expect(mocks.person.getMergeSuggestions).toHaveBeenCalledWith(auth.user.id, { maxDistance: 0.5, limit: 20 });
+    });
+
+    it('should return no suggestions when nothing is close enough', async () => {
+      const auth = AuthFactory.create();
+      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { facialRecognition: { maxDistance: 0.5 } } });
+      mocks.person.getMergeSuggestions.mockResolvedValue([]);
+
+      await expect(sut.getMergeSuggestions(auth)).resolves.toEqual({ suggestions: [] });
+      expect(mocks.person.getForMergePerson).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getCorrectionHistory', () => {
+    it('should require person.read permission', async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create();
+      await expect(sut.getCorrectionHistory(auth, person.personGroupId)).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.access.person.checkOwnerAccess).toHaveBeenCalledWith(auth.user.id, new Set([person.personGroupId]));
+    });
+
+    it('should map manual corrections for the person, most recent first', async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create();
+      const face = AssetFaceFactory.create({ personGroupId: person.personGroupId });
+      const correctedAt = newDate();
+
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      mocks.person.getCorrections.mockResolvedValue([{ id: face.id, assetId: face.assetId, correctedAt }]);
+
+      await expect(sut.getCorrectionHistory(auth, person.personGroupId)).resolves.toEqual({
+        corrections: [{ faceId: face.id, assetId: face.assetId, correctedAt: correctedAt.toISOString() }],
+      });
+      expect(mocks.person.getCorrections).toHaveBeenCalledWith(person.personGroupId);
+    });
+  });
+
   describe('getById', () => {
     it('should require person.read permission', async () => {
       const auth = AuthFactory.create();

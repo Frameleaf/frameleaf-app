@@ -4,36 +4,27 @@
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';
   import ActivityPanel from '$lib/components/frameleaf/ActivityPanel.svelte';
   import AlbumHeader from '$lib/components/frameleaf/AlbumHeader.svelte';
-  import SelectionBar from '$lib/components/frameleaf/SelectionBar.svelte';
+  import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
+  import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import HeaderActionButton from '$lib/components/HeaderActionButton.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import ControlAppBar from '$lib/components/shared-components/ControlAppBar.svelte';
-  import GalleryViewer from '$lib/components/shared-components/gallery-viewer/GalleryViewer.svelte';
-  import Timeline from '$lib/components/timeline/Timeline.svelte';
+  import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import { AlbumPageViewMode } from '$lib/constants';
-  import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
-  import { type BulkActionId, type BulkAsset } from '$lib/frameleaf/bulk-actions';
-  import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
+  import Portal from '$lib/elements/Portal.svelte';
   import { canEdit } from '$lib/frameleaf/album-directory';
-  import {
-    createLibrarySession,
-    reduceLibrarySession,
-    type LibrarySession,
-    type LibrarySessionAction,
-  } from '$lib/frameleaf/library-session';
+  import { librarySession, LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import { activityManager } from '$lib/managers/activity-manager.svelte';
-  import { assetMultiSelectManager, AssetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
+  import { AssetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
-  import type { TimelineAsset, Viewport } from '$lib/managers/timeline-manager/types';
   import { Route } from '$lib/route';
   import { getAlbumAssetsActions, handleDeleteAlbum } from '$lib/services/album.service';
   import { getGlobalActions } from '$lib/services/app.service';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
-  import { selectAllAssets } from '$lib/utils/asset-utils';
   import { isAlbumsRoute, navigate, type AssetGridRouteSearchParams } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import {
@@ -54,13 +45,15 @@
   import type { PageData } from './$types';
 
   /**
-   * The album, collection and shared space detail page (FL-53).
+   * The album, collection and shared space detail page (FL-53, FL-33 cleanup).
    *
    * The Frameleaf header replaces the legacy album title, description, summary and app-bar
-   * controls outright; the floating Frameleaf selection bar replaces the legacy select bar
-   * on this route, bound to the shared library session so a bulk action here behaves as it
-   * does everywhere else. A collection shows its albums as a strip above its photos, and its
-   * photos are the union of those albums, read through the existing metadata search.
+   * controls outright. An album's photos are the Frameleaf library scoped to the album
+   * (`LibraryView`); a collection's photos are the union of its albums, read through the existing
+   * metadata search and drawn in the flat Frameleaf grid (`ResultsView`). Both mount FL-32's
+   * selection bar over the same library session, so a bulk action here behaves as it does
+   * everywhere else. Adding photos is a picking step over its own session, so the album's own
+   * selection is untouched while it runs.
    */
   interface Props {
     data: PageData;
@@ -74,10 +67,13 @@
   let oldAt: AssetGridRouteSearchParams | null | undefined = $state();
   let viewMode: AlbumPageViewMode = $state(AlbumPageViewMode.VIEW);
   let timelineManager = $state<TimelineManager>() as TimelineManager;
+  let viewerInvisible = $state(false);
   let activityOpen = $state(false);
   let tagOptions = $state<{ id: string; name: string }[]>([]);
 
   const timelineMultiSelectManager = new AssetMultiSelectManager();
+  /** The "add photos" step picks over its own session, so the album's selection survives it. */
+  const addAssetsSession = new LibrarySessionStore();
 
   // The page keeps its own copy so an inline edit renders what the server returned without
   // waiting for a loader re-run; navigating to a different album replaces it outright.
@@ -92,7 +88,6 @@
   const isCollection = $derived(album.kind === AlbumKind.Collection);
   const showAlbumUsers = $derived(timelineManager?.showAssetOwners ?? false);
   const containsEditors = $derived(album.shared && album.albumUsers.some(({ role }) => role === AlbumUserRole.Editor));
-  const albumUsers = $derived(showAlbumUsers && containsEditors ? album.albumUsers.map(({ user }) => user) : []);
   const isShared = $derived(viewMode === AlbumPageViewMode.SELECT_ASSETS ? false : album.albumUsers.length > 1);
 
   /* ------------------------------------------------------------------ */
@@ -120,7 +115,6 @@
   /* Collection photos: the union of its albums                          */
   /* ------------------------------------------------------------------ */
   const COLLECTION_PAGE = 250;
-  const viewport: Viewport = $state({ width: 0, height: 0 });
   let collectionAssets = $state<AssetResponseDto[]>([]);
   let collectionPage = $state(1);
   let collectionLoading = $state(false);
@@ -168,62 +162,23 @@
   /* ------------------------------------------------------------------ */
   /* Library session and bulk actions                                    */
   /* ------------------------------------------------------------------ */
-  let session = $state<LibrarySession>(createLibrarySession());
 
   /**
-   * The one place a session action is applied on this route. A bulk action that removed
-   * assets reports them here, so the grid, the selection and the album counts all drop the
-   * same ids instead of each discovering the change on its own.
+   * A bulk action that removed assets reports them here, so the collection's own list and the
+   * album counts drop the same ids instead of each discovering the change on its own. The library
+   * view and the results view already drop them from the grid and the selection.
    */
-  const dispatch = (action: LibrarySessionAction) => {
-    session = reduceLibrarySession(session, action);
-    if (action.type === 'mutated' && action.removedIds.length > 0) {
-      timelineManager?.removeAssets(action.removedIds);
-      const removed = new Set(action.removedIds);
-      for (const id of action.removedIds) {
-        assetMultiSelectManager.removeAssetFromMultiselectGroup(id);
-      }
-      collectionAssets = collectionAssets.filter(({ id }) => !removed.has(id));
-      handlePromiseError(refreshAlbum());
-    }
+  const handleMutated = (removedIds: string[]) => {
+    const removed = new Set(removedIds);
+    collectionAssets = collectionAssets.filter(({ id }) => !removed.has(id));
+    handlePromiseError(refreshAlbum());
   };
-
-  const bulk = new BulkController({
-    dispatch,
-    context: () => ({
-      currentUserId,
-      ownerById: Object.fromEntries(assetMultiSelectManager.assets.map((asset) => [asset.id, asset.ownerId])),
-    }),
-  });
-
-  const toBulk = (asset: TimelineAsset): BulkAsset => ({
-    id: asset.id,
-    ownerId: asset.ownerId,
-    isVideo: asset.isVideo,
-    isFavorite: asset.isFavorite,
-    isArchived: asset.visibility === AssetVisibility.Archive,
-    isTrashed: asset.isTrashed,
-    isLivePhoto: !!asset.livePhotoVideoId,
-    stackId: asset.stack?.id ?? null,
-  });
-
-  const selectedBulkAssets = $derived(assetMultiSelectManager.assets.map((asset) => toBulk(asset)));
 
   // The album is the scope of everything the bar does here.
   $effect(() => {
     const scope = { kind: album.kind === AlbumKind.Space ? ('space' as const) : ('album' as const), id: albumId };
-    if (session.state.scope.kind !== scope.kind || session.state.scope.id !== scope.id) {
-      dispatch({ type: 'scope', scope });
-    }
-  });
-
-  // The grid owns the selection; the session mirrors it so the bar and the bulk coordinator
-  // see exactly what is selected without a second source of truth.
-  $effect(() => {
-    const ids = assetMultiSelectManager.assets.map(({ id }) => id);
-    const unchanged = ids.length === session.selection.length && ids.every((id, index) => session.selection[index] === id);
-    if (!unchanged) {
-      dispatch({ type: 'selection', ids });
+    if (librarySession.state.scope.kind !== scope.kind || librarySession.state.scope.id !== scope.id) {
+      librarySession.setScope(scope);
     }
   });
 
@@ -240,19 +195,12 @@
    * album an item actually lives in, so the album-scoped bulk actions are offered on an album
    * or a shared space only. A collection's cover is set from the header instead.
    */
-  const bulkContext = $derived({ albumId: isCollection ? null : albumId, currentUserId });
+  const bulkContext = $derived({ albumId: isCollection ? null : albumId });
 
-  const runBulk = (action: BulkActionId, payload?: BulkPayload) => {
-    handlePromiseError(bulk.run(action, session.selection, payload));
-  };
+  const collectionTimelineAssets = $derived(collectionAssets.map((asset) => toTimelineAsset(asset)));
 
-  const selectEverything = () => {
-    if (isCollection) {
-      assetMultiSelectManager.selectAssets(collectionAssets.map((asset) => toTimelineAsset(asset)));
-      return;
-    }
-    handlePromiseError(selectAllAssets(timelineManager, assetMultiSelectManager));
-  };
+  const selectEverythingInCollection = () =>
+    librarySession.selectAll(collectionAssets.map((asset) => asset.id));
 
   /* ------------------------------------------------------------------ */
   /* Album lifecycle                                                     */
@@ -292,6 +240,7 @@
   };
 
   const handleCloseSelectAssets = async () => {
+    addAssetsSession.clearSelection();
     timelineMultiSelectManager.clear();
     await setModeToView();
   };
@@ -319,8 +268,8 @@
     if (assetViewerManager.isViewing) {
       return;
     }
-    if (assetMultiSelectManager.selectionActive) {
-      assetMultiSelectManager.clear();
+    if (librarySession.selection.length > 0) {
+      librarySession.clearSelection();
       return;
     }
     await goto(Route.albums());
@@ -382,6 +331,7 @@
       return;
     }
     await refreshAlbum();
+    addAssetsSession.clearSelection();
     timelineMultiSelectManager.clear();
     await setModeToView();
   };
@@ -466,47 +416,64 @@
     <main class="relative h-dvh overflow-hidden px-2 pt-(--navbar-height) max-md:pt-(--navbar-height-md) md:px-6">
       {#if isCollection}
         <Theme theme={appTheme}>
-          <div
-            class="h-full overflow-y-auto"
-            bind:clientWidth={viewport.width}
-            bind:clientHeight={viewport.height}
-            onscrollend={loadMoreCollectionAssets}
-          >
+          <div class="h-full overflow-y-auto">
             <section class="pt-8 md:pt-24">{@render header()}</section>
-            {#if collectionAssets.length > 0}
-              <GalleryViewer
-                bind:assets={collectionAssets}
-                assetInteraction={assetMultiSelectManager}
-                {viewport}
-                onEndReached={loadMoreCollectionAssets}
-                onReload={() => void loadCollectionAssets(1)}
-              />
-            {/if}
+            <ResultsView
+              assets={collectionTimelineAssets}
+              {bulkContext}
+              {tagOptions}
+              {albumOptions}
+              onEndReached={loadMoreCollectionAssets}
+              onRemoved={handleMutated}
+              onSelectAll={selectEverythingInCollection}
+              onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
+            />
           </div>
         </Theme>
-      {:else}
-        <Timeline
-          enableRouting={viewMode !== AlbumPageViewMode.SELECT_ASSETS}
-          {album}
-          {albumUsers}
+      {:else if viewMode === AlbumPageViewMode.SELECT_ASSETS}
+        <!-- Adding photos is a picking step: its own session, its own manager, no bulk bar. -->
+        <LibraryView
+          session={addAssetsSession}
+          multiSelect={timelineMultiSelectManager}
           bind:timelineManager
           {options}
-          assetInteraction={viewMode === AlbumPageViewMode.SELECT_ASSETS
-            ? timelineMultiSelectManager
-            : assetMultiSelectManager}
-          {isShared}
-          isSelectionMode={viewMode === AlbumPageViewMode.SELECT_ASSETS}
-          singleSelect={false}
-          showArchiveIcon={viewMode !== AlbumPageViewMode.SELECT_ASSETS}
-          onEscape={handleEscape}
-          withStacked={true}
+          destination={{ kind: 'library' }}
+          selectionMode
+          noSelectionBar
+          syncUrl={false}
+        />
+      {:else}
+        <LibraryView
+          enableRouting
+          syncUrl={false}
+          selectAll="loaded"
+          bind:timelineManager
+          {options}
+          destination={{ kind: 'album', id: albumId }}
+          {bulkContext}
+          {tagOptions}
+          {albumOptions}
+          onMutated={handleMutated}
+          onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
         >
-          {#if viewMode !== AlbumPageViewMode.SELECT_ASSETS}
-            <Theme theme={appTheme}>
-              <section class="pt-8 md:pt-24">{@render header()}</section>
-            </Theme>
-          {/if}
-        </Timeline>
+          <Theme theme={appTheme}>
+            <section class="pt-8 md:pt-24">{@render header()}</section>
+          </Theme>
+
+          {#snippet viewer()}
+            <Portal target="body">
+              {#if assetViewerManager.isViewing}
+                <TimelineAssetViewer
+                  bind:invisible={viewerInvisible}
+                  {timelineManager}
+                  {album}
+                  {isShared}
+                  withStacked
+                />
+              {/if}
+            </Portal>
+          {/snippet}
+        </LibraryView>
       {/if}
     </main>
 
@@ -543,25 +510,3 @@
     </Theme>
   {/if}
 </div>
-
-{#if viewMode !== AlbumPageViewMode.SELECT_ASSETS}
-  <Theme theme={appTheme}>
-    <SelectionBar
-      count={session.selection.length}
-      total={assetCount}
-      assets={selectedBulkAssets}
-      context={bulkContext}
-      {tagOptions}
-      {albumOptions}
-      operations={session.operations}
-      undoLabel={bulk.undo?.label}
-      onAction={runBulk}
-      onUndo={() => handlePromiseError(bulk.undo?.run() ?? Promise.resolve())}
-      onClear={() => assetMultiSelectManager.clear()}
-      onSelectAllMatching={selectEverything}
-      onCancelOperation={(requestId) => bulk.cancel(requestId)}
-      onRetryOperation={(operation) => handlePromiseError(bulk.retry(operation))}
-      onDismissOperation={(requestId) => bulk.dismiss(requestId)}
-    />
-  </Theme>
-{/if}

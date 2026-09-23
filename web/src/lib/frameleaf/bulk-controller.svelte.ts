@@ -64,7 +64,17 @@ export class BulkController {
 
   /** Assets that left the page, so the session can drop its references to them. */
   #removed(action: BulkActionId, result: BulkResult): string[] {
-    return ['delete', 'delete-permanently', 'restore', 'remove-from-album'].includes(action) ? result.succeeded : [];
+    return [
+      'delete',
+      'delete-permanently',
+      'restore',
+      'remove-from-album',
+      // Both directions of the Locked folder move the asset out of the destination it was run from.
+      'move-to-locked',
+      'remove-from-locked',
+    ].includes(action)
+      ? result.succeeded
+      : [];
   }
 
   async #report(action: BulkActionId, result: BulkResult) {

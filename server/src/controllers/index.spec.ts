@@ -53,6 +53,7 @@ const ADMIN_ROUTES = new Set([
   'GET libraries',
   'GET libraries/:id',
   'GET libraries/:id/statistics',
+  'GET media-operations/statistics',
   'GET queues',
   'GET queues/:name',
   'GET queues/:name/jobs',

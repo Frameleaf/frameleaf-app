@@ -43,6 +43,8 @@
     mdiLayersPlus,
     mdiLinkOff,
     mdiLinkVariant,
+    mdiLockOpenVariantOutline,
+    mdiLockOutline,
     mdiMapMarkerOutline,
     mdiMotionPauseOutline,
     mdiMotionPlayOutline,
@@ -78,6 +80,8 @@
     mdiLayersPlus,
     mdiLinkOff,
     mdiLinkVariant,
+    mdiLockOpenVariantOutline,
+    mdiLockOutline,
     mdiMapMarkerOutline,
     mdiMotionPauseOutline,
     mdiMotionPlayOutline,
@@ -148,10 +152,11 @@
 
   let open = $derived(count > 0);
   let trash = $derived(!!context.trash);
+  let locked = $derived(!!context.locked);
   let actions = $derived(bulkActions({ ...context, assets, count }));
   let byId = $derived(bulkActionById(actions));
-  let primary = $derived(primaryBulkActions(actions, trash));
-  let menuGroups = $derived(menuBulkActions(actions, trash));
+  let primary = $derived(primaryBulkActions(actions, trash, locked));
+  let menuGroups = $derived(menuBulkActions(actions, trash, locked));
   const icon = (name: string) => ICONS[name] ?? mdiDotsHorizontal;
 
   $effect(() => {
@@ -279,7 +284,7 @@
 
   /** Escape closes the menu before it clears the selection, as the prototype does. */
   const handleEscape = () => (menuOpen ? closeMenu() : onClear());
-  const deleteKey = () => perform(trash ? 'delete-permanently' : 'delete');
+  const deleteKey = () => perform(trash || locked ? 'delete-permanently' : 'delete');
 </script>
 
 <svelte:window
@@ -415,6 +420,23 @@
   />
 {:else if dialog === 'delete-permanently'}
   <BulkConfirmDialog {count} bind:open={dialogOpen} onConfirm={() => submitDialog('delete-permanently')} />
+{:else if dialog === 'move-to-locked'}
+  <BulkConfirmDialog
+    {count}
+    bind:open={dialogOpen}
+    danger={false}
+    labelKey="frameleaf_bulk_move_to_locked"
+    messageKey="frameleaf_bulk_move_to_locked_confirm"
+    onConfirm={() => submitDialog('move-to-locked')}
+  />
+{:else if dialog === 'remove-from-locked'}
+  <BulkConfirmDialog
+    {count}
+    bind:open={dialogOpen}
+    labelKey="frameleaf_bulk_remove_from_locked"
+    messageKey="frameleaf_bulk_remove_from_locked_confirm"
+    onConfirm={() => submitDialog('remove-from-locked')}
+  />
 {/if}
 
 <style>

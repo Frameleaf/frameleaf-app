@@ -1,7 +1,7 @@
 <script lang="ts">
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import ImageDescriptionRequeueModal from '$lib/modals/ImageDescriptionRequeueModal.svelte';
   import {
@@ -18,7 +18,7 @@
   import { mdiRefresh } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
-  import SettingSelect from '../SettingSelect.svelte';
+  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
   import ImageDescriptionPromptSection from './ImageDescriptionPromptSection.svelte';
   import {
     CUSTOM_MODEL,
@@ -216,12 +216,12 @@
   };
 </script>
 
-<SettingAccordion
+<SettingGroup
   key="image-description"
   title={$t('admin.machine_learning_image_description')}
   subtitle={$t('admin.machine_learning_image_description_description')}
 >
-  <div class="mt-4 ml-4 flex flex-col gap-4">
+  <div class="flex flex-col gap-4">
     {#if savedImageDescription.pendingRequeueAt}
       <div
         class="flex flex-col gap-2 rounded-md border border-yellow-500/50 bg-yellow-100/40 p-3 text-sm sm:flex-row sm:items-center sm:justify-between dark:bg-yellow-900/20"
@@ -259,7 +259,7 @@
       onSelect={applyImageEnrichmentHardware}
     />
 
-    <SettingSwitch
+    <SettingToggle
       title={$t('admin.machine_learning_image_description_enabled')}
       subtitle={$t('admin.machine_learning_image_description_enabled_description')}
       bind:checked={imageDescription.enabled}
@@ -279,7 +279,7 @@
     />
 
     {#if descriptionModelChoice === CUSTOM_MODEL}
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.TEXT}
         label={$t('admin.machine_learning_custom_model_hf_id')}
         bind:value={imageDescription.modelName}
@@ -320,7 +320,7 @@
     />
 
     {#if fallbackModelChoice === CUSTOM_MODEL}
-      <SettingInputField
+      <SettingField
         inputType={SettingInputFieldType.TEXT}
         label={$t('admin.machine_learning_custom_fallback_model_hf_id')}
         bind:value={imageDescription.fallbackModelName}
@@ -330,7 +330,7 @@
       />
     {/if}
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.TEXT}
       label={$t('admin.machine_learning_hardware_device')}
       bind:value={imageDescription.device}
@@ -346,12 +346,12 @@
       {disabled}
     />
 
-    <SettingAccordion
+    <SettingGroup
       key="image-description-status-regen"
       title={$t('admin.image_description_status_section')}
       subtitle=""
     >
-      <div class="ms-4 mt-4 flex flex-col gap-4">
+      <div class="flex flex-col gap-4">
         {#if descriptionStatsLoading && !descriptionStats}
           <p class="text-sm text-immich-fg/60 dark:text-immich-dark-fg/60">
             {$t('admin.machine_learning_image_description_requeue_modal_loading')}
@@ -417,6 +417,6 @@
           </Button>
         </div>
       </div>
-    </SettingAccordion>
+    </SettingGroup>
   </div>
-</SettingAccordion>
+</SettingGroup>

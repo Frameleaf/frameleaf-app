@@ -1,8 +1,8 @@
 <script lang="ts">
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -14,7 +14,7 @@
   import { mdiRestart } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
-  import SettingSelect from './SettingSelect.svelte';
+  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
   const config = $derived(systemConfigManager.value);
@@ -65,13 +65,13 @@
 <div>
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(e) => e.preventDefault()}>
-      <div class="ms-4 mt-4 flex flex-col">
-        <SettingAccordion
+      <div class="flex flex-col">
+        <SettingGroup
           key="oauth"
           title={$t('admin.oauth_settings')}
           subtitle={$t('admin.oauth_settings_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
+          <div class="flex flex-col gap-4">
             <Text size="small">
               <FormatMessage key="admin.oauth_settings_more_details">
                 {#snippet children({ message })}
@@ -80,7 +80,7 @@
               </FormatMessage>
             </Text>
 
-            <SettingSwitch
+            <SettingToggle
               {disabled}
               title={$t('admin.oauth_enable_description')}
               bind:checked={configToEdit.oauth.enabled}
@@ -96,7 +96,7 @@
                 >
               </div>
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.TEXT}
                 label="issuer_url"
                 bind:value={configToEdit.oauth.issuerUrl}
@@ -105,7 +105,7 @@
                 isEdited={configToEdit.oauth.issuerUrl !== config.oauth.issuerUrl}
               />
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.TEXT}
                 label="client_id"
                 bind:value={configToEdit.oauth.clientId}
@@ -114,7 +114,7 @@
                 isEdited={configToEdit.oauth.clientId !== config.oauth.clientId}
               />
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.TEXT}
                 label="client_secret"
                 description={$t('admin.oauth_client_secret_description')}
@@ -137,7 +137,7 @@
                 />
               {/if}
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.TEXT}
                 label="scope"
                 bind:value={configToEdit.oauth.scope}
@@ -146,7 +146,7 @@
                 isEdited={configToEdit.oauth.scope !== config.oauth.scope}
               />
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.TEXT}
                 label="id_token_signed_response_alg"
                 bind:value={configToEdit.oauth.signingAlgorithm}
@@ -155,7 +155,7 @@
                 isEdited={configToEdit.oauth.signingAlgorithm !== config.oauth.signingAlgorithm}
               />
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.TEXT}
                 label="userinfo_signed_response_alg"
                 bind:value={configToEdit.oauth.profileSigningAlgorithm}
@@ -164,7 +164,7 @@
                 isEdited={configToEdit.oauth.profileSigningAlgorithm !== config.oauth.profileSigningAlgorithm}
               />
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.TEXT}
                 label="prompt"
                 description={$t('admin.oauth_prompt_description')}
@@ -174,7 +174,7 @@
                 isEdited={configToEdit.oauth.prompt !== config.oauth.prompt}
               />
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.TEXT}
                 label="end_session_endpoint"
                 description={$t('admin.oauth_end_session_url_description')}
@@ -184,7 +184,7 @@
                 isEdited={configToEdit.oauth.endSessionEndpoint !== config.oauth.endSessionEndpoint}
               />
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.NUMBER}
                 label={$t('admin.oauth_timeout')}
                 description={$t('admin.oauth_timeout_description')}
@@ -194,7 +194,7 @@
                 isEdited={configToEdit.oauth.timeout !== config.oauth.timeout}
               />
 
-              <SettingSwitch
+              <SettingToggle
                 title={$t('admin.oauth_allow_insecure_requests')}
                 subtitle={$t('admin.oauth_allow_insecure_requests_description')}
                 bind:checked={configToEdit.oauth.allowInsecureRequests}
@@ -202,7 +202,7 @@
                 isEdited={configToEdit.oauth.allowInsecureRequests !== config.oauth.allowInsecureRequests}
               />
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.TEXT}
                 label={$t('admin.oauth_storage_label_claim')}
                 description={$t('admin.oauth_storage_label_claim_description')}
@@ -212,7 +212,7 @@
                 isEdited={configToEdit.oauth.storageLabelClaim !== config.oauth.storageLabelClaim}
               />
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.TEXT}
                 label={$t('admin.oauth_role_claim')}
                 description={$t('admin.oauth_role_claim_description')}
@@ -222,7 +222,7 @@
                 isEdited={configToEdit.oauth.roleClaim !== config.oauth.roleClaim}
               />
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.TEXT}
                 label={$t('admin.oauth_storage_quota_claim')}
                 description={$t('admin.oauth_storage_quota_claim_description')}
@@ -232,7 +232,7 @@
                 isEdited={configToEdit.oauth.storageQuotaClaim !== config.oauth.storageQuotaClaim}
               />
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.NUMBER}
                 label={$t('admin.oauth_storage_quota_default')}
                 description={$t('admin.oauth_storage_quota_default_description')}
@@ -242,7 +242,7 @@
                 isEdited={configToEdit.oauth.defaultStorageQuota !== config.oauth.defaultStorageQuota}
               />
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.TEXT}
                 label={$t('admin.oauth_button_text')}
                 bind:value={configToEdit.oauth.buttonText}
@@ -251,7 +251,7 @@
                 isEdited={configToEdit.oauth.buttonText !== config.oauth.buttonText}
               />
 
-              <SettingInputField
+              <SettingField
                 inputType={SettingInputFieldType.TEXT}
                 label={$t('admin.oauth_account_management_url')}
                 description={$t('admin.oauth_account_management_url_description')}
@@ -261,21 +261,21 @@
                 isEdited={configToEdit.oauth.accountManagementUrl !== config.oauth.accountManagementUrl}
               />
 
-              <SettingSwitch
+              <SettingToggle
                 title={$t('admin.oauth_auto_register')}
                 subtitle={$t('admin.oauth_auto_register_description')}
                 bind:checked={configToEdit.oauth.autoRegister}
                 disabled={disabled || !configToEdit.oauth.enabled}
               />
 
-              <SettingSwitch
+              <SettingToggle
                 title={$t('admin.oauth_auto_launch')}
                 subtitle={$t('admin.oauth_auto_launch_description')}
                 disabled={disabled || !configToEdit.oauth.enabled}
                 bind:checked={configToEdit.oauth.autoLaunch}
               />
 
-              <SettingSwitch
+              <SettingToggle
                 title={$t('admin.oauth_mobile_redirect_uri_override')}
                 subtitle={$t('admin.oauth_mobile_redirect_uri_override_description', {
                   values: { callback: 'app.immich:///oauth-callback' },
@@ -286,7 +286,7 @@
               />
 
               {#if configToEdit.oauth.mobileOverrideEnabled}
-                <SettingInputField
+                <SettingField
                   inputType={SettingInputFieldType.TEXT}
                   label={$t('admin.oauth_mobile_redirect_uri')}
                   bind:value={configToEdit.oauth.mobileRedirectUri}
@@ -297,25 +297,25 @@
               {/if}
             {/if}
           </div>
-        </SettingAccordion>
+        </SettingGroup>
 
-        <SettingAccordion
+        <SettingGroup
           key="password"
           title={$t('admin.password_settings')}
           subtitle={$t('admin.password_settings_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
-            <div class="ms-4 mt-4 flex flex-col">
-              <SettingSwitch
+          <div class="flex flex-col gap-4">
+            <div class="flex flex-col">
+              <SettingToggle
                 title={$t('admin.password_enable_description')}
                 {disabled}
                 bind:checked={configToEdit.passwordLogin.enabled}
               />
             </div>
           </div>
-        </SettingAccordion>
+        </SettingGroup>
 
-        <SettingButtonsRow bind:configToEdit keys={['passwordLogin', 'oauth']} {onBeforeSave} {disabled} />
+        <SettingActions bind:configToEdit keys={['passwordLogin', 'oauth']} {onBeforeSave} {disabled} />
       </div>
     </form>
   </div>
