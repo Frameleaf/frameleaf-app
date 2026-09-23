@@ -25239,7 +25239,7 @@
       "sourceRowIds": ["settings:roadmap:migration"],
       "entrypoints": [
         "README.md",
-        "web/src/lib/components/frameleaf/MaintenanceMigrationPanel.svelte:maintenance/server-migration"
+        "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.svelte:storage/migration"
       ],
       "owners": {
         "primary": { "planId": "IMP-007", "jiraKey": "FL-75", "url": "https://heroit.atlassian.net/browse/FL-75" },
@@ -56650,7 +56650,7 @@
       "title": "Server migration",
       "entrypoints": [
         "README.md",
-        "web/src/lib/components/frameleaf/MaintenanceMigrationPanel.svelte:maintenance/server-migration"
+        "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.svelte:storage/migration"
       ],
       "qualification": "planned-not-qualified",
       "mappings": {
@@ -56658,13 +56658,12 @@
         "newUi": {
           "status": "mapped-unqualified",
           "target": {
-            "module": "web/src/lib/components/frameleaf/MaintenanceMigrationPanel.svelte",
-            "area": "maintenance",
-            "section": "server-migration",
-            "interimFor": "storage/migration"
+            "module": "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.svelte",
+            "area": "storage",
+            "section": "migration"
           },
           "evidence": [
-            "web/src/lib/components/frameleaf/MaintenanceMigrationPanel.spec.ts",
+            "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.spec.ts",
             "web/src/lib/frameleaf/migration-report.spec.ts",
             "packages/cli/src/commands/migrate/migrate-fixtures.spec.ts",
             "docs/docs/administration/server-migration.md"
@@ -78598,7 +78597,7 @@
     "Existing production route:backup/takeout": ["setting:roadmap:takeout"],
     "server/src/controllers/takeout.controller.ts": ["setting:roadmap:takeout"],
     "README.md": ["setting:roadmap:migration"],
-    "web/src/lib/components/frameleaf/MaintenanceMigrationPanel.svelte:maintenance/server-migration": [
+    "web/src/lib/components/frameleaf/settings/MigrationSettingsSection.svelte:storage/migration": [
       "setting:roadmap:migration"
     ],
     "Existing production route:backup/preservation": ["setting:roadmap:preservation"],

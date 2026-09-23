@@ -48,6 +48,16 @@
   },
   "pages": [
     {
+      "bytes": 10523,
+      "category": "reference",
+      "id": "63111169",
+      "source": "docs/docs/administration/server-migration.md",
+      "sourceSha256": "b8db949967c3235c75eefcc2011bf949e164549c8b5673223b82747fd1a0ae61",
+      "title": "Administration Reference — Server-to-server migration",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/63111169/Administration+Reference+Server-to-server+migration",
+      "version": 1
+    },
+    {
       "bytes": 12350,
       "category": "audits",
       "id": "61407287",
