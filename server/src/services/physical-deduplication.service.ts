@@ -28,6 +28,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 
 type MigrationSummary = PhysicalDeduplicationMigrationState;
 
@@ -165,8 +166,18 @@ export class PhysicalDeduplicationService extends BaseService {
       return response;
     }
 
-    const retained = state.retained ?? [];
-    const copies = state.copies ?? [];
+    // The plan was recorded by a background run, which sees Locked media. Its per-asset rows name ids,
+    // file names and paths, so a Locked asset's row reaches only its owner's elevated session (FL-34);
+    // the plan's totals stay whole.
+    const lockedIds = await this.assetRepository.getLockedAssetIds([
+      ...(state.retained ?? []).map((item) => item.assetId),
+      ...(state.copies ?? []).map((item) => item.assetId),
+    ]);
+    const lockedOwnerId = getLockedOwnerId(auth);
+    const isShown = (item: { assetId: string; ownerId: string }) =>
+      !lockedIds.has(item.assetId) || item.ownerId === lockedOwnerId;
+    const retained = (state.retained ?? []).filter((item) => isShown(item));
+    const copies = (state.copies ?? []).filter((item) => isShown(item));
     const users = await this.userRepository.getList({ withDeleted: true });
     const nameOf = (userId: string) => users.find((user) => user.id === userId)?.name ?? userId;
     const viewable = await this.checkAccess({
