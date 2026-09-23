@@ -121,7 +121,7 @@ const ImageDescriptionEnrichmentResponseSchema = z
     people: z
       .array(
         z.object({
-          count: z.number(),
+          count: z.number().int(),
           apparent_age_group: z.string(),
           activity: z.string(),
           confidence: z.string(),
@@ -149,7 +149,7 @@ const NsfwDetectionEnrichmentResponseSchema = z
     isNsfw: z.boolean().optional(),
     effectiveIsNsfw: z.boolean(),
     score: z.number().meta({ format: 'double' }).optional(),
-    labels: z.record(z.string(), z.number()).optional(),
+    labels: z.record(z.string(), z.number().meta({ format: 'double' })).optional(),
     review: ImageEnrichmentReviewSchema.optional(),
     appliedTags: z.boolean(),
   })

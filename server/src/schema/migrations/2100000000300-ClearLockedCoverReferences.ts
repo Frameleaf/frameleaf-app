@@ -49,9 +49,9 @@ export type LockedCondition = {
 
 /** The upstream Locked folder. */
 const lockedFolder: LockedCondition = {
-  lockedIds: sql`SELECT "id" FROM "asset" WHERE "visibility" = 'locked'`,
-  assetLocked: sql<boolean>`"asset"."visibility" = 'locked'`,
-  assetNotLocked: sql<boolean>`"asset"."visibility" != 'locked'`,
+  lockedIds: sql`SELECT "id" FROM "asset" WHERE "visibility"::text = 'locked'`,
+  assetLocked: sql<boolean>`"asset"."visibility"::text = 'locked'`,
+  assetNotLocked: sql<boolean>`"asset"."visibility"::text != 'locked'`,
 };
 
 /** The repair itself, for whichever Locked state `locked` describes. */

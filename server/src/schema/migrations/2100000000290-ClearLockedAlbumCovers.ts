@@ -9,6 +9,7 @@ import { Kysely, sql } from 'kysely';
  * visibility change itself releases the cover (`releaseLockedAlbumCovers`).
  */
 export async function up(db: Kysely<any>): Promise<void> {
+  // Fresh installs add the locked enum value in this migration batch, before its transaction commits.
   await sql`
     UPDATE "album"
     SET "albumThumbnailAssetId" = (
@@ -17,12 +18,12 @@ export async function up(db: Kysely<any>): Promise<void> {
       INNER JOIN "asset"
         ON "album_asset"."assetId" = "asset"."id"
         AND "asset"."deletedAt" IS NULL
-        AND "asset"."visibility" != 'locked'
+        AND "asset"."visibility"::text != 'locked'
       WHERE "album_asset"."albumId" = "album"."id"
       ORDER BY "asset"."fileCreatedAt" DESC
       LIMIT 1
     )
-    WHERE "albumThumbnailAssetId" IN (SELECT "id" FROM "asset" WHERE "visibility" = 'locked')
+    WHERE "albumThumbnailAssetId" IN (SELECT "id" FROM "asset" WHERE "visibility"::text = 'locked')
   `.execute(db);
 }
 

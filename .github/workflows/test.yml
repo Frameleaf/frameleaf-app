@@ -60,6 +60,18 @@ jobs:
           version: 2026.7.12
       - name: Run ci-unit
         run: mise run //server:ci-unit
+      - name: Capture automatic server lint fixes
+        if: failure()
+        run: |
+          pnpm --filter immich lint:fix || true
+          git diff --binary > "$RUNNER_TEMP/server-lint.patch"
+      - name: Archive automatic server lint fixes
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: server-lint-autofix
+          path: ${{ runner.temp }}/server-lint.patch
+          retention-days: 7
     timeout-minutes: 60
   cli-unit-tests:
     name: Unit Test CLI

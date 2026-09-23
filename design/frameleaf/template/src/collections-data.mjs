@@ -1,3 +1,5 @@
+import * as materialIcons from "@mdi/js";
+
 /**
  * Albums, the collections that group them, and shared spaces as first-class
  * managed objects. A "collection" holds albums; an "album" holds photos; a
@@ -286,7 +288,7 @@ export const collectionIcons = collectionIconGroups.flatMap((group) => group.ico
 export const collectionIconNames = collectionIcons.map((icon) => icon.name);
 /** Any Material icon name from the shared icon map is a valid collection icon. */
 export const isIconName = (value) =>
-  typeof value === "string" && /^mdi[A-Za-z0-9]{1,60}$/.test(value);
+  typeof value === "string" && Object.hasOwn(materialIcons, value);
 export const memberRoles = ["owner", "editor", "viewer"];
 export const displayOrders = ["newest", "oldest"];
 export const collectionKinds = ["album", "collection", "space"];

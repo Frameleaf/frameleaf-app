@@ -120,7 +120,7 @@ export const PetCandidateResponseSchema = z
     id: z.uuidv4().describe('Candidate ID'),
     petId: z.uuidv4().describe('Proposed pet ID'),
     assetId: z.uuidv4().describe('Asset the proposal is about'),
-    score: z.number().describe('Model confidence, 0 to 1'),
+    score: z.number().meta({ format: 'double' }).describe('Model confidence, 0 to 1'),
     detectedSpecies: z.string().nullable().describe("The detector's species guess, which is never the pet's species"),
     modelName: z.string().describe('Model that produced the detection'),
     modelRevision: z.string().describe('Revision of the model that produced the detection'),

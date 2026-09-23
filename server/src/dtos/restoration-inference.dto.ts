@@ -156,7 +156,7 @@ export const RestorationWorkerResultSchema = z.object({
     encodeMs: z.int().nonnegative(),
     totalMs: z.int().nonnegative(),
     /** Measured frames restored per second of runtime. */
-    framesPerSecond: z.number().nonnegative(),
+    framesPerSecond: z.number().meta({ format: 'double' }).nonnegative(),
   }),
   /** Device-wide peak GPU memory while the runtime ran, or null when it was not sampled. */
   peakVramBytes: z.int().nonnegative().nullable(),

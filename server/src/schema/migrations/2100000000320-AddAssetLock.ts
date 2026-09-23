@@ -2,7 +2,7 @@ import { Kysely, sql } from 'kysely';
 import {
   type LockedCondition,
   repairLockedCoverReferences,
-} from 'src/schema/migrations/2100000000300-ClearLockedCoverReferences.js';
+} from './2100000000300-ClearLockedCoverReferences.js';
 
 /**
  * One Locked state (owner decision, September 22, 2026, FL-34).
@@ -60,9 +60,9 @@ export async function up(db: Kysely<any>): Promise<void> {
   // 1. The old Locked folder.
   await sql`
     INSERT INTO "asset_lock" ("assetId", "reason", "lockedAt", "previousVisibility")
-    SELECT "asset"."id", 'immich-locked-folder', "asset"."updatedAt", 'locked'
+    SELECT "asset"."id", 'immich-locked-folder', "asset"."updatedAt", "asset"."visibility"
     FROM "asset"
-    WHERE "asset"."visibility" = 'locked'
+    WHERE "asset"."visibility"::text = 'locked'
     ON CONFLICT ("assetId") DO NOTHING
   `.execute(db);
   await sql`
@@ -71,7 +71,7 @@ export async function up(db: Kysely<any>): Promise<void> {
       WHEN EXISTS (SELECT 1 FROM "asset" AS "still" WHERE "still"."livePhotoVideoId" = "asset"."id") THEN 'hidden'
       ELSE 'timeline'
     END::asset_visibility_enum
-    WHERE "asset"."visibility" = 'locked'
+    WHERE "asset"."visibility"::text = 'locked'
   `.execute(db);
 
   // 2 and 3. Sensitive marks and detections.
