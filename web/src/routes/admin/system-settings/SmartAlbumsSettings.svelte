@@ -10,7 +10,7 @@
   import SmartAlbumReevaluateModal from '$lib/modals/SmartAlbumReevaluateModal.svelte';
   import { Button, modalManager, toastManager } from '@immich/ui';
   import { mdiRefresh } from '@mdi/js';
-  import { Kind, type AdminConfigSmartAlbumKindDto } from '@immich/sdk';
+  import { Kind3 as SmartAlbumKind, type AdminConfigSmartAlbumKindDto } from '@immich/sdk';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
 
@@ -30,7 +30,15 @@
       .map((l) => l.trim())
       .filter(Boolean);
 
-  const kindKeys = [Kind.Travel, Kind.Documents, Kind.Screenshots, Kind.Food, Kind.Pets, Kind.Nature] as const;
+  // The generated client names the built-in smart-album kind enum `Kind3`.
+  const kindKeys = [
+    SmartAlbumKind.Travel,
+    SmartAlbumKind.Documents,
+    SmartAlbumKind.Screenshots,
+    SmartAlbumKind.Food,
+    SmartAlbumKind.Pets,
+    SmartAlbumKind.Nature,
+  ] as const;
   type KindKey = (typeof kindKeys)[number];
 
   const kindTitle = (kind: KindKey): string => {

@@ -1,3 +1,5 @@
+import type { Translations } from 'svelte-i18n';
+
 /**
  * The one library key map. Ported for FL-33 from the approved prototype
  * `design/frameleaf/template/src/shortcuts.mjs`, merged with the keys the production viewer and
@@ -27,9 +29,9 @@ export type LibraryShortcut = {
   /** Display keys; `Mod` is substituted per platform. */
   keys: readonly string[];
   /** i18n key for the description shown in the help. */
-  label: string;
+  label: Translations;
   /** i18n key for the secondary note shown beside the description. */
-  info?: string;
+  info?: Translations;
   group: LibraryShortcutGroup;
   surfaces: readonly LibrarySurface[];
   /** Rating shortcuts carry the star value they apply. */
@@ -334,7 +336,7 @@ export type ShortcutHelpGroups = { general: ShortcutHelpEntry[]; actions: Shortc
  * caller's `$t`, so the table stays free of display strings.
  */
 export const libraryShortcutGroups = (
-  translate: (key: string) => string,
+  translate: (key: Translations) => string,
   {
     surface,
     mac = isMacPlatform(),

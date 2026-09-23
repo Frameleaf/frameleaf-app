@@ -34,7 +34,7 @@
     {/key}
   {:else}
     <span class="placeholder" aria-hidden="true">
-      <Icon icon={mdiPawOutline} size={Math.round(size / 2.5)} />
+      <Icon icon={mdiPawOutline} size={String(Math.round(size / 2.5))} />
     </span>
   {/if}
 </span>
