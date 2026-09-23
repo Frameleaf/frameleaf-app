@@ -1172,7 +1172,7 @@
       "paths": [
         "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/lib/modals/AlbumOptionsModal.svelte",
-        "web/src/lib/components/album-page/AlbumMap.svelte",
+        "web/src/lib/components/frameleaf/AlbumHeader.svelte",
         "web/src/lib/components/asset-viewer/ActivityViewer.svelte",
         "web/src/lib/services/album.service.ts"
       ],
