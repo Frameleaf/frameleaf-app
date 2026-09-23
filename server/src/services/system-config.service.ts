@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { cloneDeep, get, isEqual, omit, set } from 'lodash-es';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -15,15 +15,19 @@ import {
   mapUserConfig,
 } from 'src/dtos/config.dto.js';
 import {
+  AdminConfigRevisionResponseDto,
+  AdminConfigRevisionUpdateDto,
   ImageDescriptionRequeueEstimateDto,
   ImageDescriptionRequeueResponseDto,
   SmartAlbumReevaluateEstimateDto,
   SmartAlbumReevaluateRequestDto,
   SmartAlbumReevaluateResponseDto,
+  SystemConfigHistoryResponseDto,
 } from 'src/dtos/system-config.dto.js';
 import {
   BootstrapEventPriority,
   ConfigCredential,
+  DatabaseLock,
   JobName,
   MlDestinationKind,
   QueueName,
@@ -34,7 +38,8 @@ import {
   defaultMachineLearningHardware,
 } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
-import { clearConfigCache } from 'src/utils/config.js';
+import { appendConfigHistory, describeConfigChanges, readConfigHistory } from 'src/utils/config-history.js';
+import { SYSTEM_CONFIG_CHANGED_MESSAGE, clearConfigCache, getConfigRevision } from 'src/utils/config.js';
 import { isImageDescriptionEnabled } from 'src/utils/misc.js';
 import { resolveEndpoint } from 'src/utils/ml-destination.js';
 import { toPlainObject } from 'src/utils/object.js';
@@ -78,6 +83,56 @@ const stripCredentialFlags = (config: AdminConfigDto) => {
 /** The credentials whose stored value differs between two configurations. Only names leave this function. */
 const changedCredentials = (oldConfig: SystemConfig, newConfig: SystemConfig) =>
   Object.values(ConfigCredential).filter((name) => readCredential(oldConfig, name) !== readCredential(newConfig, name));
+
+/**
+ * Resolves the write-only credentials of a configuration sent by a client against the stored
+ * configuration. Reads redact them to '' (FL-67), so an empty value coming back means "keep the
+ * stored secret", but only for the account it belongs to: a new mail host or username, or a new
+ * identity provider, never gets the stored secret, which is cleared instead and has to be replaced
+ * for the new server. Clearing one explicitly is DELETE /admin/config/credentials/:name. The
+ * read-only `...Configured` flags are dropped so they are never stored and never make an unchanged
+ * section look changed (an SMTP section that looked changed would be verified on every save).
+ *
+ * FL-66: a save runs this twice: once to validate, and again under the settings lock against the
+ * configuration read there, because credentials are not part of the settings revision (only
+ * whether they are set is). A key rotated in between therefore never makes a draft stale, and
+ * the draft's "keep" must keep the rotated key rather than the one seen at validation.
+ */
+const resolveCredentials = (dto: AdminConfigDto, stored: SystemConfig) => {
+  stripCredentialFlags(dto);
+
+  const smtpTransport = dto.notifications?.smtp?.transport;
+  const storedTransport = stored.notifications.smtp.transport;
+  if (smtpTransport?.password === '') {
+    const sameAccount =
+      smtpTransport.host === storedTransport.host && smtpTransport.username === storedTransport.username;
+    smtpTransport.password = sameAccount ? storedTransport.password : '';
+  }
+  if (dto.oauth?.clientSecret === '') {
+    dto.oauth.clientSecret = dto.oauth.issuerUrl === stored.oauth.issuerUrl ? stored.oauth.clientSecret : '';
+  }
+
+  // The RunPod API key and the HuggingFace token forwarded to the ML worker keep their stored
+  // value on empty. They are cleared through the credentials endpoint (the key only while RunPod
+  // is off, so a running pod or endpoint can still be torn down).
+  const runpod = dto.machineLearning?.runpod;
+  if (runpod?.apiKey === '') {
+    runpod.apiKey = stored.machineLearning.runpod.apiKey;
+  }
+  if (runpod?.hfToken === '') {
+    runpod.hfToken = stored.machineLearning.runpod.hfToken;
+  }
+};
+
+/** Copies the credential values (where present) from one configuration onto another. */
+const copyCredentials = (target: AdminConfigDto, source: AdminConfigDto) => {
+  for (const path of Object.values(CREDENTIAL_PATHS)) {
+    const value: unknown = get(source, path);
+    if (typeof value === 'string') {
+      set(target, path, value);
+    }
+  }
+};
 
 @Injectable()
 export class SystemConfigService extends BaseService {
@@ -206,53 +261,110 @@ export class SystemConfigService extends BaseService {
     }
   }
 
+  /** FL-66: the saved settings with the revision the settings editor sends back on save. */
+  async getAdminConfigWithRevision(): Promise<AdminConfigRevisionResponseDto> {
+    const config = await this.readConfigForUpdate();
+    return { config: mapAdminConfig(config), revision: getConfigRevision(config) };
+  }
+
+  /**
+   * FL-66: save the settings editor's draft only when the saved settings still match the
+   * revision it was made against; otherwise nothing changes and the editor keeps the draft (409).
+   */
+  async updateAdminConfigWithRevision(
+    { config, expectedRevision }: AdminConfigRevisionUpdateDto,
+    auth?: AuthDto,
+  ): Promise<AdminConfigRevisionResponseDto> {
+    const newConfig = await this.saveAdminConfig(config, auth, expectedRevision);
+    return { config: mapAdminConfig(newConfig), revision: getConfigRevision(newConfig) };
+  }
+
   async updateAdminConfig(dto: AdminConfigDto, auth?: AuthDto): Promise<AdminConfigDto> {
+    return mapAdminConfig(await this.saveAdminConfig(dto, auth));
+  }
+
+  /**
+   * One settings save (FL-66). The transaction boundary is the configuration itself.
+   *
+   * 1. The save is prepared and validated against the saved settings. Validators may reach the
+   *    network (the SMTP check), so this happens before the lock; a draft made against older
+   *    settings is refused here already.
+   * 2. Under the settings lock, which every writer of the configuration holds, the saved settings
+   *    are read again straight from storage. If they changed since step 1 a revisioned save is
+   *    refused (409, nothing written); an unconditional save (older clients) is prepared and
+   *    validated again against them. The write itself is one database transaction
+   *    (ForkSchemaRepository.persistConfig). Two saves can never both pass the check.
+   * 3. Resources that follow from settings (local machine learning destinations, smart album
+   *    backfill, the RunPod serverless endpoint, queue concurrency) are reconciled afterwards by
+   *    the ConfigUpdate listeners through their own services; a failure there never rolls the
+   *    saved settings back.
+   */
+  private async saveAdminConfig(dto: AdminConfigDto, auth?: AuthDto, expectedRevision?: string): Promise<SystemConfig> {
     const { configFile } = this.configRepository.getEnv();
     if (configFile) {
       throw new BadRequestException(CONFIG_FILE_IN_USE_MESSAGE);
     }
 
-    const oldConfig = await this.getConfig({ withCache: false });
+    const incoming = cloneDeep(toPlainObject(dto));
+    let prepared = await this.prepareAdminConfig(cloneDeep(incoming), expectedRevision);
 
-    // FL-67: the `...Configured` flags a read returns are indicators only. They are dropped here so
-    // they are never stored and never make an unchanged section look changed (an SMTP section that
-    // looked changed would be verified against the mail server on every save).
-    stripCredentialFlags(dto);
+    const { oldConfig, newConfig } = await this.databaseRepository.withLock(
+      DatabaseLock.SystemConfigUpdate,
+      async () => {
+        const current = await this.readConfigForUpdate();
+        if (getConfigRevision(current) !== prepared.revision) {
+          if (expectedRevision !== undefined) {
+            throw new ConflictException(SYSTEM_CONFIG_CHANGED_MESSAGE);
+          }
+          prepared = await this.prepareAdminConfig(cloneDeep(incoming), undefined, current);
+        }
 
-    // FL-67: the SMTP password and the OAuth client secret are redacted on read like the RunPod
-    // key below, so an empty value coming back means "keep the stored secret", but only for the
-    // account it belongs to: a new mail host or username, or a new identity provider, never gets the stored
-    // secret, which is cleared instead and has to be replaced for the new server. Clearing one
-    // explicitly is DELETE /admin/config/credentials/:name.
-    const smtpTransport = dto.notifications?.smtp?.transport;
-    const storedTransport = oldConfig.notifications.smtp.transport;
-    if (smtpTransport?.password === '') {
-      const sameAccount =
-        smtpTransport.host === storedTransport.host && smtpTransport.username === storedTransport.username;
-      smtpTransport.password = sameAccount ? storedTransport.password : '';
-    }
-    if (dto.oauth?.clientSecret === '') {
-      dto.oauth.clientSecret = dto.oauth.issuerUrl === oldConfig.oauth.issuerUrl ? oldConfig.oauth.clientSecret : '';
+        // Credentials are not part of the revision, so one may have been replaced or cleared since
+        // step 1 without the draft becoming stale. Resolve the draft's credentials again against
+        // the settings read under the lock, so a "keep" keeps what is stored now.
+        const credentials = cloneDeep(incoming);
+        resolveCredentials(credentials, current);
+        copyCredentials(prepared.config, credentials);
+
+        // The re-queue reminder is not part of the revision and may have moved since step 1.
+        const description = prepared.config.machineLearning?.imageDescription;
+        if (description) {
+          const saved = current.machineLearning.imageDescription;
+          description.pendingRequeueAt = saved.pendingRequeueAt;
+          if (!prepared.descriptionChanged) {
+            description.lastConfigChangeAt = saved.lastConfigChangeAt;
+          }
+        }
+
+        const saved = await this.updateConfig(prepared.config);
+        await this.recordConfigHistory(current, saved, auth);
+        return { oldConfig: current, newConfig: saved };
+      },
+    );
+
+    await this.eventRepository.emit('ConfigUpdate', { newConfig, oldConfig });
+
+    // A client that still sends a secret through the whole configuration (an older script or a
+    // configuration import) is accepted for compatibility, and recorded like the explicit action.
+    for (const name of changedCredentials(oldConfig, newConfig)) {
+      this.recordCredentialChange(auth, name, readCredential(newConfig, name) ? 'replaced' : 'cleared');
     }
 
-    // mapConfig redacts machineLearning.runpod.apiKey to '' on read. Mirror
-    // the convention on write: an empty incoming apiKey means "preserve the
-    // existing value" (the user didn't intend to rotate the key), not "wipe
-    // the stored key". The user can clear the key by toggling RunPod off, or
-    // by sending a different non-empty placeholder; sending the redacted
-    // sentinel back unchanged must not destroy the real secret.
-    const incomingRunpodKey = dto.machineLearning?.runpod?.apiKey;
-    if (incomingRunpodKey === '' && oldConfig.machineLearning.runpod.apiKey !== '') {
-      dto.machineLearning.runpod.apiKey = oldConfig.machineLearning.runpod.apiKey;
+    return newConfig;
+  }
+
+  private async prepareAdminConfig(
+    dto: AdminConfigDto,
+    expectedRevision?: string,
+    saved?: SystemConfig,
+  ): Promise<{ config: AdminConfigDto; revision: string; descriptionChanged: boolean }> {
+    const oldConfig = saved ?? (await this.readConfigForUpdate());
+    const revision = getConfigRevision(oldConfig);
+    if (expectedRevision !== undefined && revision !== expectedRevision) {
+      throw new ConflictException(SYSTEM_CONFIG_CHANGED_MESSAGE);
     }
 
-    // Same preserve-on-empty semantics for the HuggingFace token forwarded to
-    // the ML worker. mapConfig redacts it to '' on read; an empty incoming
-    // value here means "keep the stored token" rather than "wipe it".
-    const incomingHfToken = dto.machineLearning?.runpod?.hfToken;
-    if (incomingHfToken === '' && oldConfig.machineLearning.runpod.hfToken !== '') {
-      dto.machineLearning.runpod.hfToken = oldConfig.machineLearning.runpod.hfToken;
-    }
+    resolveCredentials(dto, oldConfig);
 
     // The two timestamp fields below are server-managed (set by this service,
     // by the cost modal's defer endpoint, or by the re-queue trigger).
@@ -276,10 +388,9 @@ export class SystemConfigService extends BaseService {
       'pendingRequeueAt',
       'lastConfigChangeAt',
     ]);
-    if (
-      dto.machineLearning?.imageDescription &&
-      !isEqual(toPlainObject(oldDescription), toPlainObject(newDescription))
-    ) {
+    const descriptionChanged =
+      !!dto.machineLearning?.imageDescription && !isEqual(toPlainObject(oldDescription), toPlainObject(newDescription));
+    if (descriptionChanged) {
       dto.machineLearning.imageDescription.lastConfigChangeAt = new Date().toISOString();
     }
 
@@ -290,17 +401,7 @@ export class SystemConfigService extends BaseService {
       throw new BadRequestException(error instanceof Error ? error.message : error);
     }
 
-    const newConfig: SystemConfig = await this.updateConfig(dto);
-
-    await this.eventRepository.emit('ConfigUpdate', { newConfig, oldConfig });
-
-    // A client that still sends a secret through the whole configuration (an older script or a
-    // configuration import) is accepted for compatibility, and recorded like the explicit action.
-    for (const name of changedCredentials(oldConfig, newConfig)) {
-      this.recordCredentialChange(auth, name, readCredential(newConfig, name) ? 'replaced' : 'cleared');
-    }
-
-    return mapAdminConfig(newConfig);
+    return { config: dto, revision, descriptionChanged };
   }
 
   /** FL-67: whether each write-only credential is stored. Values are never returned. */
@@ -334,9 +435,52 @@ export class SystemConfigService extends BaseService {
       throw new BadRequestException(CONFIG_FILE_IN_USE_MESSAGE);
     }
 
-    const oldConfig = await this.getConfig({ withCache: false });
-    if (readCredential(oldConfig, name) === value) {
+    // Validators may reach the network (the SMTP check), so the change is validated before the
+    // settings lock and written under it (FL-66), starting from the settings read there. When
+    // another save landed in between it is checked and validated again against those settings.
+    const checked = await this.prepareCredential(name, value, await this.readConfigForUpdate());
+    if (!checked) {
       return { name, configured: value !== '' };
+    }
+
+    const result = await this.databaseRepository.withLock(DatabaseLock.SystemConfigUpdate, async () => {
+      const current = await this.readConfigForUpdate();
+      if (getConfigRevision(current) !== checked.revision && !(await this.prepareCredential(name, value, current))) {
+        return;
+      }
+      if (readCredential(current, name) === value) {
+        return;
+      }
+
+      const newConfig = cloneDeep(current);
+      set(newConfig, CREDENTIAL_PATHS[name], value);
+      const saved = await this.updateConfig(newConfig);
+      await this.recordConfigHistory(current, saved, auth);
+      return { oldConfig: current, newConfig: saved };
+    });
+
+    if (!result) {
+      return { name, configured: value !== '' };
+    }
+
+    const { oldConfig, newConfig: updated } = result;
+    await this.eventRepository.emit('ConfigUpdate', { newConfig: updated, oldConfig });
+    this.recordCredentialChange(auth, name, value ? 'replaced' : 'cleared');
+
+    return { name, configured: readCredential(updated, name) !== '' };
+  }
+
+  /**
+   * Checks and validates one credential change against the given settings. Returns nothing when
+   * the credential already has that value (nothing to write).
+   */
+  private async prepareCredential(
+    name: ConfigCredential,
+    value: string,
+    oldConfig: SystemConfig,
+  ): Promise<{ revision: string } | undefined> {
+    if (readCredential(oldConfig, name) === value) {
+      return;
     }
 
     // Without its key a running pod or serverless endpoint could no longer be stopped or torn
@@ -359,11 +503,42 @@ export class SystemConfigService extends BaseService {
       throw new BadRequestException(error instanceof Error ? error.message : error);
     }
 
-    const updated: SystemConfig = await this.updateConfig(newConfig);
-    await this.eventRepository.emit('ConfigUpdate', { newConfig: updated, oldConfig });
-    this.recordCredentialChange(auth, name, value ? 'replaced' : 'cleared');
+    return { revision: getConfigRevision(oldConfig) };
+  }
 
-    return { name, configured: readCredential(updated, name) !== '' };
+  /** FL-66: the settings change history, newest first. */
+  async getConfigHistory(): Promise<SystemConfigHistoryResponseDto> {
+    const stored = await this.systemMetadataRepository.get(SystemMetadataKey.SystemConfigHistory);
+    return readConfigHistory(stored);
+  }
+
+  /**
+   * FL-66: adds a saved change to the settings change history. Called under the settings lock
+   * right after the write, so entries are appended one at a time in the order the saves landed.
+   * Recording never fails or undoes the save it records: if it fails, the save stands and the
+   * failure is logged.
+   */
+  private async recordConfigHistory(oldConfig: SystemConfig, newConfig: SystemConfig, auth?: AuthDto) {
+    const changes = describeConfigChanges(oldConfig, newConfig);
+    if (changes.length === 0) {
+      return;
+    }
+
+    try {
+      const history = readConfigHistory(await this.systemMetadataRepository.get(SystemMetadataKey.SystemConfigHistory));
+      const entry = {
+        id: this.cryptoRepository.randomUUID(),
+        createdAt: new Date().toISOString(),
+        actorId: auth?.user.id ?? null,
+        actorName: auth?.user.name ?? null,
+      };
+      await this.systemMetadataRepository.set(
+        SystemMetadataKey.SystemConfigHistory,
+        appendConfigHistory(history, entry, changes),
+      );
+    } catch (error) {
+      this.logger.error(`Unable to record the settings change in the change history: ${error}`);
+    }
   }
 
   /**
@@ -461,20 +636,12 @@ export class SystemConfigService extends BaseService {
     pendingRequeueAt?: string | null;
     lastConfigChangeAt?: string | null;
   }): Promise<void> {
-    const oldConfig = await this.getConfig({ withCache: false });
-    const newConfig: SystemConfig = {
-      ...oldConfig,
-      machineLearning: {
-        ...oldConfig.machineLearning,
-        imageDescription: {
-          ...oldConfig.machineLearning.imageDescription,
-          ...timestamps,
-        },
-      },
-    };
-
-    const updated = await this.updateConfig(newConfig);
-    await this.eventRepository.emit('ConfigUpdate', { newConfig: updated, oldConfig });
+    // FL-66: under the settings lock, from the saved settings, so an administrator's save made in
+    // between is never written back over.
+    const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
+      Object.assign(config.machineLearning.imageDescription, timestamps);
+    });
+    await this.eventRepository.emit('ConfigUpdate', { newConfig, oldConfig });
   }
 
   async estimateSmartAlbumReevaluate(): Promise<SmartAlbumReevaluateEstimateDto> {
