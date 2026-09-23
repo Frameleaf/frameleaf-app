@@ -62,8 +62,16 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   { id: 'editing', group: 'library', sections: ['image', 'video-transcoding'] },
   { id: 'care', group: 'library', sections: ['integrity-checks'] },
   { id: 'processing', group: 'server', sections: ['job', 'nightly-tasks'] },
-  { id: 'security', group: 'server', sections: ['authentication'] },
-  { id: 'notifications', group: 'server', sections: ['notifications'] },
+  // The template's Access & security holds each account's own sign-in (password, PIN, provider),
+  // Locked tags & people, and devices & API keys next to the server's sign-in methods.
+  {
+    id: 'security',
+    group: 'server',
+    sections: ['authentication'],
+    personal: ['password', 'user-pin-code-settings', 'oauth', 'suppressed-content', 'authorized-devices', 'api-keys'],
+  },
+  // The account's own email notifications sit with the server's email delivery, as in the template.
+  { id: 'notifications', group: 'server', sections: ['notifications'], personal: ['email-preferences'] },
   {
     id: 'server',
     group: 'server',
@@ -74,21 +82,16 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     id: 'preferences',
     group: 'personal',
     sections: [],
+    // Profile, appearance, downloads and library features, as in the template. Usage, supporter
+    // status and partner sharing have no other home yet (sharing moves with People & sharing).
     personal: [
       'account',
       'app-settings',
-      'user-usage-info',
       'download-settings',
       'feature',
-      'notifications',
       'sharing',
-      'suppressed-content',
+      'user-usage-info',
       'user-purchase-settings',
-      'password',
-      'user-pin-code-settings',
-      'oauth',
-      'api-keys',
-      'authorized-devices',
     ],
   },
   // FL-78: the template moves external library settings out of "Import & protection" into their own
@@ -156,9 +159,15 @@ export const analyticsAreaUrl = (params: { scope?: string; range?: string } = {}
 export const areaForSection = (sectionKey: string): SettingsAreaId | undefined =>
   SETTINGS_AREAS.find((area) => area.sections.includes(sectionKey))?.id;
 
-/** The area that owns an account section key. */
+/** Account section keys the older personal settings page used under another name. */
+const PERSONAL_ALIASES: Record<string, string> = { notifications: 'email-preferences' };
+
+/** The account section a legacy key names. */
+export const personalSectionKey = (key: string) => PERSONAL_ALIASES[key] ?? key;
+
+/** The area that owns an account section key (or its older name). */
 export const areaForPersonalSection = (sectionKey: string): SettingsAreaId | undefined =>
-  SETTINGS_AREAS.find((area) => area.personal?.includes(sectionKey))?.id;
+  SETTINGS_AREAS.find((area) => area.personal?.includes(personalSectionKey(sectionKey)))?.id;
 
 /** Every section key of an area, server sections first, in display order. */
 export const areaSectionKeys = (areaId: SettingsAreaId): string[] => {
@@ -198,7 +207,18 @@ export const resolveSettingsSection = (
   if (params.section && keys.includes(params.section)) {
     return params.section;
   }
-  return (params.isOpen ?? '').split(' ').find((key) => keys.includes(key));
+  const area_ = SETTINGS_AREAS.find((item) => item.id === area);
+  // A bare legacy key names the account's section first, as `resolveSettingsArea` reads it; server
+  // links (`Route.systemSettings`) name their section explicitly.
+  for (const key of (params.isOpen ?? '').split(' ')) {
+    if (area_?.personal?.includes(personalSectionKey(key))) {
+      return personalSectionKey(key);
+    }
+    if (area_?.sections.includes(key)) {
+      return key;
+    }
+  }
+  return undefined;
 };
 
 export type SearchableSection = { key: string; title: string; subtitle?: string };

@@ -11,6 +11,8 @@ import type { PageLoad } from './$types';
  * `?isOpen=` link named (with an explicit area, since a bare key there means an account section)
  * and every other parameter.
  */
+// The empty +page.svelte beside this loader stays only because the Confluence-mirrored
+// docs/docs/developer/frameleaf-settings-inventory.md cites its path; retire it at the next re-sync.
 export const load = (async ({ url }) => {
   await authenticate(url, { admin: true });
   // FL-69: the utilities area is hosted once, where every account can reach it.

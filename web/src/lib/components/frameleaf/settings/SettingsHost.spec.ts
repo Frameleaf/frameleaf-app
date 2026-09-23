@@ -69,8 +69,9 @@ const sections = [
   serverSection('integrity-checks', 'Integrity checks'),
   serverSection('external-library', 'External libraries'),
   serverSection('notifications', 'Email delivery'),
+  accountSection('account', 'Your profile'),
   accountSection('takeout', 'Google Photos imports'),
-  accountSection('notifications', 'Your email notifications'),
+  accountSection('email-preferences', 'Your email notifications'),
   accountSection('oauth', 'Sign-in provider'),
 ];
 
@@ -137,7 +138,7 @@ describe('the Command Center (FL-71)', () => {
   });
 
   it('opens a section an older isOpen link names, and a bare key as the account section', async () => {
-    open('/user-settings?area=notifications&isOpen=notifications');
+    open('/user-settings?area=notifications&section=notifications&isOpen=notifications');
     const { unmount } = render(SettingsHost, { sections });
     expect(screen.getByRole('heading', { level: 1, name: 'Email delivery' })).toBeInTheDocument();
     unmount();
@@ -155,7 +156,13 @@ describe('the Command Center (FL-71)', () => {
   it('offers an account without administration only its own areas and sections', () => {
     open('/user-settings?area=storage', false);
     render(SettingsHost, { sections: sections.filter((section) => !section.admin) });
-    expect(areaNames()).toEqual(['Import & protection', 'Utilities', 'Your preferences']);
+    expect(areaNames()).toEqual([
+      'Import & protection',
+      'Utilities',
+      'Access & security',
+      'Notifications',
+      'Your preferences',
+    ]);
     // A server area falls back to the first area the account may open.
     expect(screen.getByRole('button', { name: 'Import & protection' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByRole('button', { name: /Database backups/ })).toBeNull();
