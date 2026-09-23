@@ -46,8 +46,9 @@
   let isAdmin = $state(user?.isAdmin ?? false);
   let avatarColor = $state<string>(user?.avatarColor ?? '');
   let storageLabel = $state(user?.storageLabel ?? '');
-  let quota = $state<string>(
-    typeof user?.quotaSizeInBytes === 'number' ? String(convertFromBytes(user.quotaSizeInBytes, ByteUnit.GiB)) : '',
+  // `bind:value` on a number input hands back a number, or null once the field is emptied.
+  let quota = $state<string | number | null>(
+    typeof user?.quotaSizeInBytes === 'number' ? convertFromBytes(user.quotaSizeInBytes, ByteUnit.GiB) : '',
   );
   let shouldChangePassword = $state(user?.shouldChangePassword ?? true);
   let notify = $state(true);
@@ -61,7 +62,10 @@
   const editing = $derived(!!user);
   const withPassword = $derived(!editing && authentication === 'password');
 
-  const quotaSizeInBytes = $derived(quota.trim() === '' ? null : convertToBytes(Number(quota), ByteUnit.GiB));
+  // The DTO takes whole bytes, so a fractional GiB is rounded rather than rejected by the server.
+  const quotaSizeInBytes = $derived(
+    String(quota ?? '').trim() === '' ? null : Math.round(convertToBytes(Number(quota), ByteUnit.GiB)),
+  );
   const quotaOverCapacity = $derived(
     !!quotaSizeInBytes && !!userInteraction.serverInfo && quotaSizeInBytes > userInteraction.serverInfo.diskSizeRaw,
   );
@@ -173,7 +177,7 @@
       </label>
       <label>
         <span>{$t('frameleaf_users_field_quota')}</span>
-        <input type="number" min="0" step="any" placeholder={$t('unlimited')} bind:value={quota} disabled={working} />
+        <input type="number" min="0" step="1" placeholder={$t('unlimited')} bind:value={quota} disabled={working} />
       </label>
       <label>
         <span>{$t('frameleaf_users_field_storage_label')}</span>

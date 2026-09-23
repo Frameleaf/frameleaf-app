@@ -63,7 +63,7 @@ describe(UserAdminService.name, () => {
     it('should hash a pin code supplied at creation', async () => {
       mocks.user.getAdmin.mockResolvedValue(userStub.admin);
       mocks.user.create.mockResolvedValue(userStub.user1);
-      mocks.crypto.hashBcrypt.mockImplementation((value: string) => Promise.resolve(`hashed:${value}`));
+      mocks.crypto.hashBcrypt.mockImplementation((value) => Promise.resolve(`hashed:${value as string}`));
 
       await sut.create({
         email: userStub.user1.email,
@@ -199,7 +199,7 @@ describe(UserAdminService.name, () => {
     // FL-76: an admin-set PIN is hashed on this path; the matching create path is covered above.
     it('should hash a pin code and lock the account sessions', async () => {
       mocks.user.update.mockResolvedValue(userStub.user1);
-      mocks.crypto.hashBcrypt.mockImplementation((value: string) => Promise.resolve(`hashed:${value}`));
+      mocks.crypto.hashBcrypt.mockImplementation((value) => Promise.resolve(`hashed:${value as string}`));
 
       await sut.update(authStub.admin, userStub.user1.id, { pinCode: '123456' });
 
