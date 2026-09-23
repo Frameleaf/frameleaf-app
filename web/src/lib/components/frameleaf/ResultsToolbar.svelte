@@ -99,7 +99,13 @@
           type="button"
           class="fl-layout"
           aria-pressed={session.layout === layout}
-          onclick={() => session.setLayout(layout)}
+          onclick={() => {
+            session.setLayout(layout);
+            // As in the prototype: the Timeline opens grouped by day rather than as one "All" group.
+            if (layout === 'timeline' && session.state.grouping === 'all') {
+              session.patchView({ grouping: 'days' });
+            }
+          }}
         >
           <Icon icon={LAYOUT_ICONS[layout]} size="16" />
           {$t(LAYOUT_LABELS[layout])}

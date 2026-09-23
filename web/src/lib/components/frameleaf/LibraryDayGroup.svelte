@@ -8,13 +8,12 @@
    * virtualized inside a bucket that is itself only mounted while it is in or near the viewport.
    */
   import AssetTile from '$lib/components/frameleaf/AssetTile.svelte';
+  import LibraryGroupHeader from '$lib/components/frameleaf/LibraryGroupHeader.svelte';
   import { groupSelectionState } from '$lib/frameleaf/library-session';
   import type { TimelineDay } from '$lib/managers/timeline-manager/timeline-day.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { fromTimelinePlainDate, getDateLocaleString } from '$lib/utils/timeline-util';
-  import { Icon } from '@immich/ui';
   import type { Snippet } from 'svelte';
-  import { mdiCheck, mdiMinus } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -25,6 +24,11 @@
     showHeader?: boolean;
     /** The space the timeline manager reserves above the rows; the header fills exactly this. */
     headerHeight?: number;
+    /**
+     * Month, year or "all" grouping: the day's tiles are part of its month's single flow, drawn
+     * under the month's group header, so the day draws no header and names no region of its own.
+     */
+    grouped?: boolean;
     /** Work shows the capture time under each tile. */
     captionFor?: (asset: TimelineAsset) => string | null;
     /** Rating for an asset, supplied by the host; the timeline model does not carry one. */
@@ -43,6 +47,7 @@
     selecting,
     showHeader = true,
     headerHeight = 48,
+    grouped = false,
     captionFor,
     ratingFor,
     onOpen,
@@ -72,35 +77,26 @@
 <section
   class="fl-day"
   class:is-selecting={selecting}
+  class:is-grouped={grouped}
   data-group
   data-testid="frameleaf-day-group"
-  aria-labelledby={showHeader ? headingId : undefined}
-  aria-label={showHeader ? undefined : timelineDay.groupTitle}
+  aria-labelledby={showHeader && !grouped ? headingId : undefined}
+  aria-label={showHeader || grouped ? undefined : timelineDay.groupTitle}
   style:position="absolute"
   style:inset-inline-start="{timelineDay.start}px"
   style:top="{timelineDay.top}px"
 >
-  {#if showHeader}
-    <header class="fl-day-header" style:width="{timelineDay.width}px" style:height="{headerHeight}px">
-      <label class="fl-day-select" class:is-active={state !== 'none'}>
-        <input
-          type="checkbox"
-          checked={state === 'all'}
-          indeterminate={state === 'some'}
-          aria-label={$t('frameleaf_library_select_all_in_group', { values: { title: timelineDay.groupTitle } })}
-          onchange={(event) => onSelectGroup?.(dayIds, event.currentTarget.checked)}
-        />
-        <span aria-hidden="true">
-          {#if state === 'all'}
-            <Icon icon={mdiCheck} size="13" />
-          {:else if state === 'some'}
-            <Icon icon={mdiMinus} size="13" />
-          {/if}
-        </span>
-      </label>
-      <h2 id={headingId} title={fullDate}>{timelineDay.groupTitle}</h2>
-      <span class="fl-day-count">{$t('items_count', { values: { count: dayIds.length } })}</span>
-    </header>
+  {#if showHeader && !grouped}
+    <LibraryGroupHeader
+      id={headingId}
+      title={timelineDay.groupTitle}
+      fullTitle={fullDate}
+      count={dayIds.length}
+      {state}
+      width={timelineDay.width}
+      height={headerHeight}
+      onSelect={(checked) => onSelectGroup?.(dayIds, checked)}
+    />
   {:else}
     <div style:height="{headerHeight}px" aria-hidden="true"></div>
   {/if}
@@ -140,72 +136,6 @@
   .fl-day {
     contain: layout paint style;
   }
-  .fl-day-header {
-    position: sticky;
-    top: 0;
-    z-index: 3;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0 0 6px;
-    background: linear-gradient(var(--fl-canvas) 78%, transparent);
-  }
-  .fl-day-header h2 {
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: var(--fl-font-size, 14px);
-    font-weight: 600;
-    line-height: 1.4;
-  }
-  .fl-day-count {
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small, 12px);
-    white-space: nowrap;
-  }
-  .fl-day-select {
-    position: relative;
-    display: grid;
-    place-items: center;
-    width: 32px;
-    height: 32px;
-    margin-inline-start: -6px;
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity var(--fl-motion-fast, 120ms) ease;
-  }
-  .fl-day:hover .fl-day-select,
-  .fl-day-select:focus-within,
-  .fl-day-select.is-active,
-  .fl-day.is-selecting .fl-day-select {
-    opacity: 1;
-  }
-  .fl-day-select input {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-    margin: 0;
-    opacity: 0;
-    cursor: pointer;
-  }
-  .fl-day-select > span {
-    display: grid;
-    place-items: center;
-    width: 20px;
-    height: 20px;
-    border: 2px solid var(--fl-muted);
-    border-radius: 50%;
-    color: var(--fl-accent-text);
-  }
-  .fl-day-select.is-active > span {
-    background: var(--fl-accent);
-    border-color: var(--fl-accent);
-  }
   .fl-day-rows {
     position: relative;
     overflow: clip;
@@ -213,9 +143,11 @@
   .fl-day-cell {
     position: absolute;
   }
-  @media (prefers-reduced-motion: reduce) {
-    .fl-day-select {
-      transition: none;
-    }
+  /* The days of a grouped month overlap: only their tiles take the pointer. */
+  .fl-day.is-grouped {
+    pointer-events: none;
+  }
+  .fl-day.is-grouped .fl-day-cell {
+    pointer-events: auto;
   }
 </style>
