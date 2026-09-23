@@ -7,7 +7,7 @@ import { AssetVisibility } from 'src/enum.js';
 import { isForkWriteEnabled } from 'src/fork-schema/authority.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
-import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
+import { onAssetsLocked } from 'src/utils/locked-stacks.js';
 
 type Values = { isFavorite?: boolean; isHidden?: boolean; fileCreatedAt?: string };
 type Baseline = {
@@ -149,8 +149,9 @@ export class ICloudMetadataRepository {
               .where('id', '=', candidate.assetId)
               .where('ownerId', '=', ownerId)
               .execute();
-            // a Locked photo is never a cover, featured photo or face thumbnail (FL-53)
-            await releaseLockedCoverReferences(db, [candidate.assetId]);
+            // the rest of its stack is Locked with it, and a Locked photo is never a cover, featured
+            // photo or face thumbnail (FL-53)
+            await onAssetsLocked(db, [candidate.assetId]);
             state.applied.visibility = AssetVisibility.Locked;
           } else {
             state.overridden.push('isHidden');
