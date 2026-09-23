@@ -288,10 +288,11 @@ export class StudioExportService {
     const { items, total } = await this.repository.listForProject(projectId, auth.user.id, {
       take: dto.take ?? 50,
       skip: dto.skip ?? 0,
+      includeLocked: !!getLockedOwnerId(auth),
     });
-    const counts = await Promise.all(items.map((item) => this.repository.getSources(item.id)));
+    const sources = await this.repository.getSourcesFor(items.map((item) => item.id));
     return {
-      items: items.map((item, index) => this.map(item, auth, counts[index])),
+      items: items.map((item) => this.map(item, auth, sources.get(item.id) ?? [])),
       total,
     };
   }
@@ -791,9 +792,15 @@ export class StudioExportService {
     }
   }
 
+  /**
+   * Complete the publication job. The version is already published; a cancel that landed on the
+   * job meanwhile has nothing left to stop, so it is acknowledged rather than left for the lease.
+   */
   private async finishJob(operation: MediaOperation, claimToken: string, resultAssetId: string | null): Promise<void> {
     await this.operations.beginValidation(operation.id, claimToken);
-    await this.operations.complete(operation.id, claimToken, { resultAssetId });
+    if (!(await this.operations.complete(operation.id, claimToken, { resultAssetId }))) {
+      await this.operations.acknowledgeCancel(operation.id, { released: true });
+    }
   }
 
   /** A cancelled version's publication ends as cancelled too. Nothing remote is involved here. */

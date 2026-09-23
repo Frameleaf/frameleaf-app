@@ -152,6 +152,9 @@ describe(StudioExportService.name, () => {
       getForOwner: vi.fn(),
       getByRenderOperation: vi.fn(),
       getSources: vi.fn().mockResolvedValue([sourceRow()]),
+      getSourcesFor: vi.fn((ids: string[]) =>
+        Promise.resolve(new Map(ids.map((id) => [id, [sourceRow({ versionId: id })]]))),
+      ),
       listForProject: vi.fn(),
       recordRenderClaim: vi.fn().mockResolvedValue(true),
       stage: vi.fn(),
@@ -573,6 +576,15 @@ describe(StudioExportService.name, () => {
       expect(storage.rename).toHaveBeenCalledTimes(1);
     });
 
+    it('acknowledges a cancel that landed on an already published job instead of leaving it to the lease', async () => {
+      repository.publish.mockResolvedValue(published());
+      operations.complete.mockResolvedValue(false);
+
+      await sut.run(job());
+
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(PUBLISH, { released: true });
+    });
+
     it('finishes only the job when an earlier attempt already published', async () => {
       repository.getById.mockResolvedValue(
         versionRow({ state: StudioExportVersionState.Published, version: 2, resultAssetId: 'asset-new' }),
@@ -657,7 +669,7 @@ describe(StudioExportService.name, () => {
       await expect(sut.download(elevated(), VERSION)).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('hides a Locked result’s asset and size from an ordinary session', async () => {
+    it('answers a Locked result only to an unlocked session, with its asset', async () => {
       repository.getForOwner.mockResolvedValue(
         projectResult({
           scope: StudioExportScope.Library,
@@ -668,6 +680,44 @@ describe(StudioExportService.name, () => {
       await expect(sut.get(auth(), VERSION)).rejects.toBeInstanceOf(NotFoundException);
       const shown = await sut.get(elevated(), VERSION);
       expect(shown).toEqual(expect.objectContaining({ resultAssetId: 'asset-new', locked: true }));
+    });
+  });
+
+  describe('list', () => {
+    it('leaves Locked results out of an ordinary session’s list and count, and shows them when unlocked', async () => {
+      repository.listForProject.mockResolvedValue({
+        items: [versionRow({ state: StudioExportVersionState.Published })],
+        total: 1,
+      });
+
+      const ordinary = await sut.list(auth(), PROJECT, {});
+      expect(repository.listForProject).toHaveBeenLastCalledWith(PROJECT, OWNER, {
+        take: 50,
+        skip: 0,
+        includeLocked: false,
+      });
+      expect(ordinary.total).toBe(1);
+
+      await sut.list(elevated(), PROJECT, {});
+      expect(repository.listForProject).toHaveBeenLastCalledWith(PROJECT, OWNER, {
+        take: 50,
+        skip: 0,
+        includeLocked: true,
+      });
+    });
+
+    it('reads the sources of the whole page in one query', async () => {
+      repository.listForProject.mockResolvedValue({
+        items: [versionRow({ id: 'v1' }), versionRow({ id: 'v2' })],
+        total: 2,
+      });
+
+      const listed = await sut.list(auth(), PROJECT, {});
+
+      expect(repository.getSourcesFor).toHaveBeenCalledTimes(1);
+      expect(repository.getSourcesFor).toHaveBeenCalledWith(['v1', 'v2']);
+      expect(repository.getSources).not.toHaveBeenCalled();
+      expect(listed.items.map((item) => item.sourceCount)).toEqual([1, 1]);
     });
   });
 
