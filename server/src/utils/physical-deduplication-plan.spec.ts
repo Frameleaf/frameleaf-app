@@ -86,7 +86,7 @@ const row = (
 describe('physical deduplication plans (FL-73)', () => {
   describe('fingerprint', () => {
     it('is stable for the same evidence, whatever order the rows were stored in', () => {
-      const reordered = plan({ copies: [...plan().copies!].reverse(), retained: [...plan().retained!].reverse() });
+      const reordered = plan({ copies: plan().copies!.toReversed(), retained: plan().retained!.toReversed() });
       expect(physicalDeduplicationFingerprint(reordered)).toBe(physicalDeduplicationFingerprint(plan()));
     });
 

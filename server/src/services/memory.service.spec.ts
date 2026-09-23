@@ -529,7 +529,7 @@ describe(MemoryService.name, () => {
       mocks.storage.createZipStream.mockReturnValue({
         stream,
         addFile,
-        finalize: vitest.fn().mockImplementation(async () => stream.end()),
+        finalize: vitest.fn().mockImplementation(() => Promise.resolve(stream.end())),
       } as never);
       mocks.storage.createWriteStream.mockReturnValue(new PassThrough());
       return { addFile };
