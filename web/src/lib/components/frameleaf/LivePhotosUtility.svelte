@@ -20,7 +20,7 @@
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { AssetMediaSize, LivePhotoMatchConfidence, type LivePhotoCandidateDto } from '@immich/sdk';
+  import { AssetMediaSize, getAssetInfo, LivePhotoMatchConfidence, type LivePhotoCandidateDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiPlayCircleOutline } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
@@ -33,11 +33,13 @@
 
   let { data }: Props = $props();
 
-  let candidates = $state<LivePhotoCandidateDto[]>(data.candidates.candidates);
+  const candidates = $state<LivePhotoCandidateDto[]>(data.candidates.candidates);
   /** Photo ids reported by the server for the last completed attempt on each pair, if it failed. */
   let failureReasons = $state(new Map<string, Translations>());
   /** Photo ids of a durable job this tab is following, so tiles keep their loader across polls. */
   let pendingPhotoIds = $state(new Set<string>());
+  let linkedPhotoIds = $state(new Set<string>());
+  let verifyingPhotoIds = $state(new Set<string>());
 
   let inspect = $state<LivePhotoCandidateDto | null>(null);
   let inspectOpen = $state(false);
@@ -58,17 +60,43 @@
     candidates.filter(
       (candidate) =>
         (account === 'all' || candidate.photo.ownerId === account) &&
-        (show === 'all' || !candidate.photo.isTrashed) &&
+        (show === 'all' || !linkedPhotoIds.has(candidate.photo.id)) &&
         `${candidate.photo.originalFileName} ${candidate.video.originalFileName} ${ownerName(candidate)}`
           .toLowerCase()
           .includes(query.trim().toLowerCase()),
     ),
   );
   const pairKey = (candidate: LivePhotoCandidateDto) => `${candidate.photo.id}:${candidate.video.id}`;
-  const highConfidence = $derived(rows.filter((candidate) => candidate.confidence === LivePhotoMatchConfidence.High));
+  const canReview = (candidate: LivePhotoCandidateDto) =>
+    candidate.photo.ownerId === authManager.user.id &&
+    candidate.video.ownerId === authManager.user.id &&
+    !linkedPhotoIds.has(candidate.photo.id) &&
+    !pendingPhotoIds.has(candidate.photo.id) &&
+    !verifyingPhotoIds.has(candidate.photo.id);
+  const highConfidence = $derived(
+    rows.filter((candidate) => candidate.confidence === LivePhotoMatchConfidence.High && canReview(candidate)),
+  );
+
+  const verifyLinked = async (photoId: string) => {
+    verifyingPhotoIds = new Set(verifyingPhotoIds).add(photoId);
+    try {
+      const asset = await getAssetInfo({ ...authManager.params, id: photoId });
+      if (
+        candidates.some((candidate) => candidate.photo.id === photoId && candidate.video.id === asset.livePhotoVideoId)
+      ) {
+        linkedPhotoIds = new Set(linkedPhotoIds).add(photoId);
+      }
+    } catch {
+      failureReasons = new Map(failureReasons).set(photoId, 'frameleaf_bulk_reason_failed');
+    } finally {
+      const next = new Set(verifyingPhotoIds);
+      next.delete(photoId);
+      verifyingPhotoIds = next;
+    }
+  };
 
   // Reconcile a durable job's answers into the page's own state: a pair that settled successfully
-  // leaves the list, a refusal is reported and kept, and a pending pair keeps its tile loader. This
+  // leaves Needs attention but remains in All results; failures keep their tile and reason. This
   // mirrors `DurableBulkTracker.apply`, scoped to this page's own candidates rather than a generic
   // asset grid, because a candidate pair is not a tile the tracker's `removesFromView` knows about.
   $effect(() => {
@@ -83,9 +111,9 @@
     for (const photoId of pendingPhotoIds) {
       const state = durableBulkTracker.stateOf(photoId);
       if (!state) {
-        // No longer tracked: the job answered for it and it was not a failure, so it relinked.
+        // A cleared marker can also mean cancellation; read the saved link before marking Linked.
         settled.push(photoId);
-        candidates = candidates.filter((candidate) => candidate.photo.id !== photoId);
+        void verifyLinked(photoId);
       } else if (state.state === 'failed') {
         settled.push(photoId);
         failureReasons = new Map(failureReasons).set(photoId, state.reasonKey);
@@ -101,6 +129,7 @@
   });
 
   const openReview = (pairs: LivePhotoCandidateDto[]) => {
+    pairs = pairs.filter((candidate) => canReview(candidate));
     if (pairs.length === 0 || bulk.busy) {
       return;
     }
@@ -129,8 +158,7 @@
         pendingPhotoIds = new Set([...pendingPhotoIds, ...photoIds]);
         return;
       }
-      const succeeded = new Set(result.succeeded);
-      candidates = candidates.filter((candidate) => !succeeded.has(candidate.photo.id));
+      linkedPhotoIds = new Set([...linkedPhotoIds, ...result.succeeded]);
       if (result.failed.length > 0) {
         const next = new Map(failureReasons);
         for (const outcome of result.failed) {
@@ -176,7 +204,8 @@
   </div>
   <div class="pairs">
     {#each rows as candidate (pairKey(candidate))}
-      {@const pending = pendingPhotoIds.has(candidate.photo.id)}
+      {@const pending = pendingPhotoIds.has(candidate.photo.id) || verifyingPhotoIds.has(candidate.photo.id)}
+      {@const linked = linkedPhotoIds.has(candidate.photo.id)}
       {@const failure = failureReasons.get(candidate.photo.id)}
       <article>
         <div class="pair-images">
@@ -203,6 +232,7 @@
                 : 'live_photos_confidence_low',
             )}</span
           >
+          {#if linked}<span class="badge">{$t('frameleaf_live_photos_linked')}</span>{/if}
           {#if failure}<p role="alert">{$t('frameleaf_bulk_tile_failed', { values: { reason: $t(failure) } })}</p>{/if}
         </div>
         <div class="actions">
@@ -213,7 +243,7 @@
               inspectOpen = true;
             }}>{$t('live_photos_inspect_button')}</ToolButton
           >
-          <ToolButton disabled={pending || bulk.busy} onclick={() => openReview([candidate])}
+          <ToolButton disabled={!canReview(candidate) || bulk.busy} onclick={() => openReview([candidate])}
             >{$t('live_photos_review_pair')}</ToolButton
           >
         </div>

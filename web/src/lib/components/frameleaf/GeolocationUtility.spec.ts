@@ -28,11 +28,9 @@ const asset = (id: string, ownerId = 'owner') => ({ id, ownerId, originalFileNam
 describe('location utility', () => {
   beforeAll(() => addMessages('dev', en));
   beforeEach(() => {
-    state.search
-      .mockReset()
-      .mockResolvedValue({
-        assets: { items: [asset('one'), asset('two'), asset('partner', 'other')], nextPage: null },
-      });
+    state.search.mockReset().mockResolvedValue({
+      assets: { items: [asset('one'), asset('two'), asset('partner', 'other')], nextPage: null },
+    });
     state.info
       .mockReset()
       .mockImplementation(({ id }) => Promise.resolve({ ...asset(id), exifInfo: { latitude: 10, longitude: 20 } }));
@@ -49,6 +47,30 @@ describe('location utility', () => {
     await fireEvent.input(screen.getByRole('spinbutton', { name: 'Longitude' }), { target: { value: '20' } });
     expect(apply).toBeDisabled();
     expect(state.run).not.toHaveBeenCalled();
+  });
+  it('applies only visible selections and keeps the reviewed scope frozen when the search changes', async () => {
+    state.search.mockResolvedValue({
+      assets: {
+        items: ['one', 'two'].map((id) => ({ ...asset(id), exifInfo: { latitude: 10, longitude: 20 } })),
+        nextPage: null,
+      },
+    });
+    render(GeolocationUtility);
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'one.jpg' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'two.jpg' }));
+    await fireEvent.input(screen.getByRole('spinbutton', { name: 'Latitude' }), { target: { value: '10' } });
+    await fireEvent.input(screen.getByRole('spinbutton', { name: 'Longitude' }), { target: { value: '20' } });
+    const search = screen.getByRole('searchbox', { name: 'Find items' });
+    await userEvent.type(search, 'one');
+    expect(await screen.findByLabelText('Map markers')).toHaveTextContent(/^one$/);
+    await userEvent.click(screen.getByRole('button', { name: 'Apply to 1 selected' }));
+    const dialog = screen.getByRole('dialog');
+    await fireEvent.input(search, { target: { value: 'two' } });
+    await userEvent.click(within(dialog).getByRole('button', { name: /Apply/ }));
+    await waitFor(() =>
+      expect(state.run).toHaveBeenCalledExactlyOnceWith('change-location', ['one'], { latitude: 10, longitude: 20 }),
+    );
+    expect(screen.getByRole('checkbox', { name: 'two.jpg' })).toBeChecked();
   });
   it('freezes reviewed IDs and coordinates and keeps unsuccessful items selected', async () => {
     render(GeolocationUtility);
