@@ -101,7 +101,7 @@ export function gfMultiply(x: number, y: number): number {
 }
 
 function reedSolomonDivisor(degree: number): number[] {
-  const result = Array.from({ length: degree }).fill(0);
+  const result = Array.from({ length: degree }, () => 0);
   result[degree - 1] = 1;
   let root = 1;
   for (let i = 0; i < degree; i++) {
@@ -197,8 +197,8 @@ class Matrix {
 
   constructor(size: number) {
     this.size = size;
-    this.modules = Array.from({ length: size }, () => Array.from({ length: size }).fill(false));
-    this.isFunction = Array.from({ length: size }, () => Array.from({ length: size }).fill(false));
+    this.modules = Array.from({ length: size }, () => Array.from({ length: size }, () => false));
+    this.isFunction = Array.from({ length: size }, () => Array.from({ length: size }, () => false));
   }
   setFunction(x: number, y: number, dark: boolean): void {
     this.modules[y][x] = dark;

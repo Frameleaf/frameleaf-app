@@ -10,8 +10,20 @@ import {
   type PetResponseDto,
 } from '@immich/sdk';
 import { toSearchDto, type DiscoveryQuery, type DiscoverySearchDto } from '$lib/components/discovery/query';
-import type { FilterPanelOptions } from '$lib/components/frameleaf/FilterPanel.svelte';
 import { sortPets } from '$lib/frameleaf/pets';
+
+export type FilterPanelOptions = {
+  people: PersonResponseDto[];
+  pets: PetResponseDto[];
+  tags: { value: string; label: string }[];
+  albums: { value: string; label: string }[];
+  cities: string[];
+  states: string[];
+  countries: string[];
+  makes: string[];
+  models: string[];
+  lenses: string[];
+};
 
 /**
  * Option lists and the live matching count for the Frameleaf filter panel (FL-49).

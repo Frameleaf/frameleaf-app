@@ -57,15 +57,14 @@ export class MediaOperationSweepService {
 
   /** Never overlaps itself: a tick while a pass is running waits for the next interval. */
   tick(): Promise<MediaOperationRecovery | undefined> {
-    this.active ??= this.sweep()
+    return (this.active ??= this.sweep()
       .catch((error) => {
         this.logger.warn(`Media operation recovery failed: ${error}`);
-        return;
+        return undefined;
       })
       .finally(() => {
         this.active = undefined;
-      });
-    return this.active;
+      }));
   }
 
   async sweep(): Promise<MediaOperationRecovery> {

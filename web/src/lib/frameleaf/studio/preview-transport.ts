@@ -9,7 +9,13 @@
  * lets its rules — revision binding, seek generations, caching, backpressure — be tested
  * without a network.
  */
-import { cancelStudioPreview, getStudioPreview, requestStudioPreview, viewStudioPreviewFrame } from '@immich/sdk';
+import {
+  cancelStudioPreview,
+  getStudioPreview,
+  requestStudioPreview,
+  StudioPreviewQuality as ApiStudioPreviewQuality,
+  viewStudioPreviewFrame,
+} from '@immich/sdk';
 import type {
   StudioPreviewIntent,
   StudioPreviewQuality,
@@ -20,6 +26,12 @@ import type {
   StudioPreviewTransportFailure,
 } from './preview';
 import { toPreviewTimeWire } from './preview';
+
+const apiQuality: Record<StudioPreviewQuality, ApiStudioPreviewQuality> = {
+  draft: ApiStudioPreviewQuality.Draft,
+  standard: ApiStudioPreviewQuality.Standard,
+  full: ApiStudioPreviewQuality.Full,
+};
 
 /** Carries the classified reason so the client can tell "stale" from "broken". */
 export class StudioPreviewTransportError extends Error {
@@ -89,7 +101,7 @@ export const classifyPreviewError = (error: unknown): StudioPreviewTransportFail
     return { kind: 'gone' };
   }
 
-  if ([401, 403, 404].includes(status)) {
+  if (status !== undefined && [401, 403, 404].includes(status)) {
     return { kind: 'forbidden' };
   }
 
@@ -124,7 +136,7 @@ export const createStudioPreviewTransport = (): StudioPreviewTransport => ({
           projectId: intent.projectId,
           revision: intent.revision,
           time: toPreviewTimeWire(intent.time),
-          quality: intent.quality as StudioPreviewQuality,
+          quality: apiQuality[intent.quality],
           viewportWidth: intent.viewportWidth,
           viewportHeight: intent.viewportHeight,
           seekGeneration,

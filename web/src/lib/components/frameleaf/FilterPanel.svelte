@@ -1,22 +1,3 @@
-<script lang="ts" module>
-  import type { PersonResponseDto, PetResponseDto } from '@immich/sdk';
-
-  /** Option lists for the panel's controls, loaded by the caller from the production APIs. */
-  export type FilterPanelOptions = {
-    people: PersonResponseDto[];
-    /** FL-58: the account's own visible pets. */
-    pets: PetResponseDto[];
-    tags: { value: string; label: string }[];
-    albums: { value: string; label: string }[];
-    cities: string[];
-    states: string[];
-    countries: string[];
-    makes: string[];
-    models: string[];
-    lenses: string[];
-  };
-</script>
-
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
   import FilterMultiSelect from '$lib/components/frameleaf/FilterMultiSelect.svelte';
@@ -43,6 +24,7 @@
     withFilterCondition,
     type SetCondition,
   } from '$lib/frameleaf/search-filters';
+  import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
   import '$lib/frameleaf/tokens.css';
   import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter } from '@immich/sdk';
   import { t } from 'svelte-i18n';
