@@ -357,8 +357,12 @@ describe(AssetMediaService.name, () => {
         sut.uploadAsset(authStub.user1, { ...createDto, visibility: AssetVisibility.Locked }, file),
       ).resolves.toEqual({ id: 'id_1', status: AssetMediaStatus.CREATED });
 
-      expect(mocks.asset.create).toHaveBeenCalledWith(expect.objectContaining({ visibility: AssetVisibility.Timeline }));
-      expect(mocks.asset.lock).toHaveBeenCalledWith(['id_1'], AssetLockReason.Marked, authStub.user1.user.id);
+      // the lock is written in the asset's own transaction, never as a second step
+      expect(mocks.asset.create).toHaveBeenCalledWith(expect.objectContaining({ visibility: AssetVisibility.Timeline }), {
+        reason: AssetLockReason.Marked,
+        lockedBy: authStub.user1.user.id,
+      });
+      expect(mocks.asset.lock).not.toHaveBeenCalled();
     });
 
     it('should handle a file upload', async () => {
