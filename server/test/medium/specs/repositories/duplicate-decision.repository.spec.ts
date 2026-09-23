@@ -54,6 +54,8 @@ describe(DuplicateDecisionRepository.name, () => {
       const duplicateId = factory.uuid();
       const { asset: mine } = await ctx.newAsset({ ownerId: owner.id, duplicateId });
       const { asset: theirs } = await ctx.newAsset({ ownerId: other.id, duplicateId });
+      await ctx.newExif({ assetId: mine.id, make: 'Canon' });
+      await ctx.newExif({ assetId: theirs.id, make: 'Canon' });
 
       const members = await sut.getGroupMembers([duplicateId]);
 
@@ -70,12 +72,30 @@ describe(DuplicateDecisionRepository.name, () => {
       const { user } = await ctx.newUser();
       const duplicateId = factory.uuid();
       const { asset: visible } = await ctx.newAsset({ ownerId: user.id, duplicateId });
-      await ctx.newAsset({ ownerId: user.id, duplicateId, visibility: AssetVisibility.Locked });
-      await ctx.newAsset({ ownerId: user.id, duplicateId, deletedAt: new Date(), status: AssetStatus.Trashed });
-      await ctx.newAsset({ ownerId: user.id, duplicateId, visibility: AssetVisibility.Hidden });
+      const { asset: locked } = await ctx.newAsset({
+        ownerId: user.id,
+        duplicateId,
+        visibility: AssetVisibility.Locked,
+      });
+      const { asset: trashed } = await ctx.newAsset({
+        ownerId: user.id,
+        duplicateId,
+        deletedAt: new Date(),
+        status: AssetStatus.Trashed,
+      });
+      const { asset: hidden } = await ctx.newAsset({
+        ownerId: user.id,
+        duplicateId,
+        visibility: AssetVisibility.Hidden,
+      });
       const { asset: stacked } = await ctx.newAsset({ ownerId: user.id, duplicateId });
       const { asset: sibling } = await ctx.newAsset({ ownerId: user.id });
       await ctx.newStack({ ownerId: user.id }, [stacked.id, sibling.id]);
+      for (const { id } of [visible, locked, trashed, hidden, stacked]) {
+        await ctx.newExif({ assetId: id, make: 'Canon' });
+      }
+      // no metadata at all: the review and resolve never read such a photo into a group either
+      await ctx.newAsset({ ownerId: user.id, duplicateId });
 
       const members = await sut.getGroupMembers([duplicateId]);
 

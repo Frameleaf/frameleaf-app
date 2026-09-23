@@ -94,6 +94,10 @@ describe(DuplicateDecisionService.name, () => {
       getLockedIds: vi.fn().mockResolvedValue(new Set()),
       getStackAssetIds: vi.fn().mockResolvedValue([]),
       relink: vi.fn().mockResolvedValue(undefined),
+      unlink: vi.fn().mockResolvedValue(undefined),
+      getOperation: vi.fn().mockResolvedValue(undefined),
+      adopt: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
       create: vi.fn().mockImplementation((values: Partial<DuplicateDecision>) => Promise.resolve(recorded(values))),
       getUnfinished: vi.fn().mockResolvedValue(undefined),
       getForOperation: vi.fn().mockResolvedValue(undefined),
@@ -214,6 +218,24 @@ describe(DuplicateDecisionService.name, () => {
       expect(history.recent[1].undoable).toBe(true);
     });
 
+    it('offers undo again after an unfinished undo job, never for copies gone for good', async () => {
+      const permanentJob = newUuidV7();
+      repository.listRecent.mockResolvedValue([
+        recorded({ appliedAt: new Date(), undoOperationId: newUuidV7() }),
+        recorded({ operationId: permanentJob, appliedAt: new Date(), state: { permanent: true } }),
+        recorded({ operationId: newUuidV7(), appliedAt: null, undoneAt: new Date() }),
+      ]);
+
+      const history = await sut.getHistory(elevated);
+
+      const byJob = new Map(history.recent.map((batch) => [batch.operationId, batch]));
+      expect(byJob.get(operationId)?.undoable).toBe(true);
+      expect(byJob.get(operationId)?.groups[0].undoing).toBe(false);
+      expect(byJob.get(permanentJob)?.undoable).toBe(false);
+      // a decision its job closed without applying is not history
+      expect(history.recent).toHaveLength(2);
+    });
+
     it('never names a Locked photo to a session that has not unlocked', async () => {
       repository.listRecent.mockResolvedValue([recorded({ appliedAt: new Date() })]);
       repository.listActiveOperations.mockResolvedValue([
@@ -279,16 +301,18 @@ describe(DuplicateDecisionService.name, () => {
       );
     });
 
-    it('refuses a group holding another account’s photo: duplicate review is actor only', async () => {
+    it('refuses a group holding another account’s photo exactly as one that does not exist', async () => {
       grantAll();
-      repository.getGroupMembers.mockResolvedValue(
+      repository.getGroupMembers.mockResolvedValueOnce(
         groupMembers(members, (id) => (id === other ? 'someone-else' : ownerId)),
       );
-
-      const outcomes = await sut.applyGroup(owner, operationId, group());
+      const foreign = await sut.applyGroup(owner, operationId, group());
+      repository.getGroupMembers.mockResolvedValueOnce([]);
+      const missing = await sut.applyGroup(owner, operationId, group());
 
       expect(duplicates.resolve).not.toHaveBeenCalled();
-      expect(outcomes[0]).toEqual(expect.objectContaining({ reasonKey: DuplicateDecisionReason.NotOwner }));
+      expect(foreign[0]).toEqual(expect.objectContaining({ reasonKey: DuplicateDecisionReason.NotFound }));
+      expect(missing[0]).toEqual(foreign[0]);
     });
 
     it('answers a replayed batch from the record instead of deciding the group twice', async () => {
@@ -316,8 +340,21 @@ describe(DuplicateDecisionService.name, () => {
       });
     });
 
+    it('lets a retry finish the same half-applied decision, and hands the record to the retry', async () => {
+      const failedJob = newUuidV7();
+      repository.getUnfinished.mockResolvedValue(recorded({ operationId: failedJob }));
+      repository.getOperation.mockResolvedValue({ id: operationId, status: 'rendering', retryOfId: failedJob });
+
+      await sut.applyGroup(owner, operationId, group());
+
+      expect(repository.adopt).toHaveBeenCalledWith(expect.any(String), operationId);
+      expect(duplicates.resolve).toHaveBeenCalled();
+    });
+
     it('leaves a different half-applied decision for the owner to review again', async () => {
-      repository.getUnfinished.mockResolvedValue(recorded({ operationId: newUuidV7(), keepAssetIds: [copy] }));
+      const failedJob = newUuidV7();
+      repository.getUnfinished.mockResolvedValue(recorded({ operationId: failedJob, keepAssetIds: [copy] }));
+      repository.getOperation.mockResolvedValue({ id: operationId, status: 'rendering', retryOfId: failedJob });
 
       const outcomes = await sut.applyGroup(owner, operationId, group());
 
@@ -325,13 +362,68 @@ describe(DuplicateDecisionService.name, () => {
       expect(outcomes[0]).toEqual(expect.objectContaining({ reasonKey: DuplicateDecisionReason.Changed }));
     });
 
-    it('keeps every photo by dismissing the group', async () => {
+    it('never touches a group another running job is deciding', async () => {
+      const otherJob = newUuidV7();
+      repository.getUnfinished.mockResolvedValue(recorded({ operationId: otherJob }));
+      repository.getOperation.mockImplementation((id: string) =>
+        Promise.resolve({ id, status: id === otherJob ? 'rendering' : 'rendering', retryOfId: null }),
+      );
+
+      const outcomes = await sut.applyGroup(owner, operationId, group());
+
+      expect(repository.close).not.toHaveBeenCalled();
+      expect(duplicates.resolve).not.toHaveBeenCalled();
+      expect(outcomes[0]).toEqual(expect.objectContaining({ reasonKey: DuplicateDecisionReason.Changed }));
+    });
+
+    it('closes a decision whose job ended with nobody retrying it, so the group can be decided again', async () => {
+      grantAll();
+      const deadJob = newUuidV7();
+      repository.getUnfinished.mockResolvedValue(recorded({ operationId: deadJob, keepAssetIds: [copy] }));
+      repository.getOperation.mockImplementation((id: string) =>
+        Promise.resolve({ id, status: id === deadJob ? 'failed' : 'rendering', retryOfId: null }),
+      );
+
+      await sut.applyGroup(owner, operationId, group());
+
+      expect(repository.close).toHaveBeenCalled();
+      expect(repository.create).toHaveBeenCalledWith(expect.objectContaining({ operationId, keepAssetIds: [keeper] }));
+    });
+
+    it('never decides a photo that joined the group after the review', async () => {
+      repository.getForOperation.mockResolvedValue(recorded({ decision: DuplicateDecisionKind.KeepAll }));
+      repository.getGroupMembers.mockResolvedValue(groupMembers([...members, newUuid()]));
+
+      const outcomes = await sut.applyGroup(owner, operationId, group({ decision: DuplicateDecisionKind.KeepAll }));
+
+      expect(repository.unlink).not.toHaveBeenCalled();
+      expect(outcomes[0]).toEqual(expect.objectContaining({ status: MediaOperationItemStatus.Failed }));
+    });
+
+    it('keeps every photo by taking exactly the reviewed photos out of the group', async () => {
       grantAll();
 
       await sut.applyGroup(owner, operationId, group({ decision: DuplicateDecisionKind.KeepAll, keepAssetIds: [] }));
 
-      expect(duplicates.delete).toHaveBeenCalledWith(owner, duplicateId);
+      expect(repository.unlink).toHaveBeenCalledWith(ownerId, members, duplicateId);
+      expect(duplicates.delete).not.toHaveBeenCalled();
       expect(duplicates.resolve).not.toHaveBeenCalled();
+    });
+
+    it('records a decision whose copies were deleted for good as one that cannot be undone', async () => {
+      grantAll();
+      repository.getAssetStates.mockResolvedValue([
+        { id: keeper, ownerId, duplicateId: null, stackId: null, status: AssetStatus.Active, deletedAt: null },
+        { id: copy, ownerId, duplicateId: null, stackId: null, status: AssetStatus.Deleted, deletedAt: new Date() },
+        { id: other, ownerId, duplicateId: null, stackId: null, status: AssetStatus.Deleted, deletedAt: new Date() },
+      ]);
+
+      await sut.applyGroup(owner, operationId, group());
+
+      expect(repository.markApplied).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ state: expect.objectContaining({ permanent: true }) }),
+      );
     });
 
     it('stacks the whole group with the chosen cover on top', async () => {
@@ -343,6 +435,7 @@ describe(DuplicateDecisionService.name, () => {
       await sut.applyGroup(owner, operationId, group({ decision: DuplicateDecisionKind.Stack, keepAssetIds: [copy] }));
 
       expect(stacks.create).toHaveBeenCalledWith(owner, { assetIds: [copy, keeper, other] });
+      expect(repository.unlink).toHaveBeenCalledWith(ownerId, members, duplicateId);
       expect(repository.markApplied).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({ stackId: 'stack-1' }),
@@ -410,6 +503,38 @@ describe(DuplicateDecisionService.name, () => {
       await sut.undoGroup(owner, undoOperationId, undoGroupOf(decision));
 
       expect(assets.updateAll).not.toHaveBeenCalled();
+    });
+
+    it('carries on an undo whose job ended unfinished, without reading its half-done work as a change', async () => {
+      const stalledUndo = newUuidV7();
+      const decision = applied({ undoOperationId: stalledUndo });
+      repository.getById.mockResolvedValue(decision);
+      repository.getOperation.mockResolvedValue({ id: stalledUndo, status: 'failed', retryOfId: null });
+      // half undone: a copy is already back from the trash, which a fresh check would call a change
+      repository.getAssetStates.mockImplementation((ids: string[]) =>
+        Promise.resolve(
+          statesAfterKeepers()
+            .map((state) => (state.id === copy ? { ...state, status: AssetStatus.Active, deletedAt: null } : state))
+            .filter(({ id }) => ids.includes(id)),
+        ),
+      );
+
+      const outcomes = await sut.undoGroup(owner, undoOperationId, undoGroupOf(decision));
+
+      expect(repository.beginUndo).toHaveBeenCalledWith(decision.id, undoOperationId, stalledUndo);
+      expect(trash.restoreAssets).toHaveBeenCalledWith(owner, { ids: [other] });
+      expect(outcomes.every(({ status }) => status === MediaOperationItemStatus.Ok)).toBe(true);
+    });
+
+    it('leaves a decision alone while another undo job is still working on it', async () => {
+      const runningUndo = newUuidV7();
+      repository.getById.mockResolvedValue(applied({ undoOperationId: runningUndo }));
+      repository.getOperation.mockResolvedValue({ id: runningUndo, status: 'rendering', retryOfId: null });
+
+      const outcomes = await sut.undoGroup(owner, undoOperationId, undoGroupOf(applied()));
+
+      expect(repository.beginUndo).not.toHaveBeenCalled();
+      expect(outcomes[0]).toEqual(expect.objectContaining({ reasonKey: DuplicateDecisionReason.Undone }));
     });
 
     it('cannot undo once a trashed copy has been deleted for good', async () => {
