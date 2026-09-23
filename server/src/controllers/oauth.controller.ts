@@ -81,6 +81,7 @@ export class OAuthController {
     res.clearCookie(ImmichCookie.OAuthCodeVerifier);
     return respondWithCookie(res, body, {
       isSecure: loginDetails.isSecure,
+      rememberMe: dto.rememberMe,
       values: [
         { key: ImmichCookie.AccessToken, value: body.accessToken },
         { key: ImmichCookie.AuthType, value: AuthType.OAuth },
