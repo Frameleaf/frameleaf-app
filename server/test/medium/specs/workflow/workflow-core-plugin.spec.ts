@@ -20,6 +20,7 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { DB } from 'src/schema/index.js';
 import { WorkflowExecutionService } from 'src/services/workflow-execution.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
+import { toDefinition } from 'src/utils/workflow-definition.js';
 import { resolveMethod } from 'src/utils/workflow.js';
 import { MediumTestContext } from 'test/medium.factory.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
@@ -97,6 +98,13 @@ const createWorkflow = async (template: WorkflowTemplate) => {
     return { ...step, pluginMethod };
   });
 
+  const definition = toDefinition({
+    trigger: template.trigger,
+    steps: template.steps.map((step) => ({
+      method: step.method,
+      config: (step.config ?? null) as Record<string, unknown> | null,
+    })),
+  });
   return workflowRepo.create(
     {
       enabled: true,
@@ -105,7 +113,10 @@ const createWorkflow = async (template: WorkflowTemplate) => {
       ownerId: template.ownerId,
       trigger: template.trigger,
     },
-    steps.map((step) => ({
+    definition,
+    steps.map((step, order) => ({
+      id: definition.steps[order]!.id,
+      order,
       enabled: true,
       pluginMethodId: step.pluginMethod.id,
       config: step.config,
