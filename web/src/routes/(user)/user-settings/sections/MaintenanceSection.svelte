@@ -110,7 +110,8 @@
     }
   };
 
-  onMount(() => {
+  // Only the integrity checks follow the running checks; the section can change without a remount.
+  $effect(() => {
     if (section !== 'integrity') {
       return;
     }
