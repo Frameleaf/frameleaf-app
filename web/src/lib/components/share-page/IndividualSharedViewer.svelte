@@ -63,7 +63,7 @@
   });
 
   const downloadAssets = async () => {
-    await downloadArchive(`immich-shared`, { assetIds: assets.map((asset) => asset.id) });
+    await downloadArchive(`frameleaf-shared`, { assetIds: assets.map((asset) => asset.id) });
   };
 
   const handleUploadAssets = async (files: File[] = []) => {

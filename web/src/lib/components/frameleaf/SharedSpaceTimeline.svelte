@@ -2,11 +2,11 @@
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
-  import { filterToNew, shouldPageForNew, SPACE_TIMELINE_PAGE } from '$lib/frameleaf/shared-space';
+  import { filterToNew, shouldPageForNew } from '$lib/frameleaf/shared-space';
+  import type { SpacePhotoSet } from '$lib/frameleaf/space-photos.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
-  import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { getAllTags, searchAssets, type AlbumResponseDto, type AssetResponseDto } from '@immich/sdk';
+  import { getAllTags, type AlbumResponseDto } from '@immich/sdk';
   import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -14,20 +14,23 @@
    * The photos in one shared space, on the space's own page (FL-55).
    *
    * This is the shared Frameleaf results grid (`ResultsView` over `AssetGrid`) — the one search,
-   * Best Photos and a collection already use — fed from the existing metadata search narrowed to the
-   * space. That search checks album access for the caller and applies their hidden-content rules, so
-   * the grid can only ever hold items every member is allowed to see here, with anything marked
-   * sensitive and anything Locked left out exactly as the rest of the library leaves them out.
+   * Best Photos and a collection already use — drawn from the space's photo set. The page owns that
+   * set and hands the same one to the space's viewer, so next and previous in the viewer walk
+   * exactly this grid's order. The set reads the existing metadata search narrowed to the space,
+   * which checks album access for the caller and applies their hidden-content rules, so the grid can
+   * only ever hold items every member is allowed to see here, with anything marked sensitive and
+   * anything Locked left out exactly as the rest of the library leaves them out.
    *
    * Linked albums do not add items to this grid. A link is a reference to somebody's album, not a
    * copy of it, so what is here is what members put in the space.
    *
    * The selection bar is FL-32's, bound to the space's scope, so a bulk action here behaves as it
-   * does in the album view. Opening an item hands over to the album view of the same space, which
-   * owns the viewer, per-item activity and the slideshow.
+   * does in the album view. Opening an item opens the space's own viewer.
    */
   interface Props {
     space: AlbumResponseDto;
+    /** The space's photos as far as they are loaded; shared with the viewer. */
+    photos: SpacePhotoSet;
     /** Only these ids, when a member asked to see what is new; `undefined` shows everything. */
     filter?: Set<string>;
     /** Albums and spaces a bulk "add to album" may target. */
@@ -37,46 +40,21 @@
     onChanged?: () => Promise<void> | void;
   }
 
-  let { space, filter, albumOptions = [], onOpen, onChanged }: Props = $props();
+  let { space, photos, filter, albumOptions = [], onOpen, onChanged }: Props = $props();
 
-  let assets = $state<AssetResponseDto[]>([]);
-  let page = $state(1);
-  let loading = $state(false);
-  let exhausted = $state(false);
-  let failed = $state(false);
   let tagOptions = $state<{ id: string; name: string }[]>([]);
 
-  const load = async (next: number) => {
-    loading = true;
-    failed = false;
-    try {
-      const { assets: results } = await searchAssets({
-        metadataSearchDto: { albumIds: [space.id], page: next, size: SPACE_TIMELINE_PAGE, order: space.order },
-      });
-      assets = next === 1 ? results.items : [...assets, ...results.items];
-      exhausted = results.nextPage === null;
-      page = next;
-    } catch (error) {
-      failed = true;
-      handleError(error, $t('frameleaf_spaces_error_timeline'));
-    } finally {
-      loading = false;
-    }
-  };
+  const loadMore = () => void photos.loadMore();
 
-  const loadMore = () => {
-    if (loading || exhausted || failed) {
-      return;
-    }
-    void load(page + 1);
-  };
-
-  const shown = $derived(filterToNew(assets, filter).map((asset) => toTimelineAsset(asset)));
+  const shown = $derived(filterToNew(photos.assets, filter).map((asset) => toTimelineAsset(asset)));
 
   // "New" is by when an item was added, the grid is by when it was taken, so a new item can be on
   // any page. While the filter is on, keep paging until every named item is here.
   $effect(() => {
-    if (shouldPageForNew({ filter, found: shown.length, exhausted, loading }) && !failed) {
+    if (
+      shouldPageForNew({ filter, found: shown.length, exhausted: photos.exhausted, loading: photos.loading }) &&
+      !photos.failed
+    ) {
       untrack(loadMore);
     }
   });
@@ -90,15 +68,21 @@
   });
 
   const handleRemoved = (ids: string[]) => {
-    const removed = new Set(ids);
-    assets = assets.filter(({ id }) => !removed.has(id));
+    photos.remove(ids);
     void onChanged?.();
   };
 
   const selectEverythingLoaded = () => librarySession.selectAll(shown.map(({ id }) => id));
 
+  // The set outlives this panel: coming back to it, or closing the viewer, keeps what is loaded. A
+  // new set (another space, or the owner changed the order) starts from its first page.
+  $effect(() => {
+    if (photos.page === 0 && !photos.loading && !photos.failed) {
+      untrack(() => void photos.load(1));
+    }
+  });
+
   onMount(() => {
-    void load(1);
     void getAllTags()
       .then((tags) => (tagOptions = tags.map(({ id, value }) => ({ id, name: value }))))
       .catch(() => {
@@ -119,7 +103,7 @@
     {onOpen}
   >
     {#snippet empty()}
-      {#if !loading && !failed}
+      {#if !photos.loading && !photos.failed}
         <p class="empty">
           {filter ? $t('frameleaf_spaces_new_only_empty') : $t('frameleaf_spaces_timeline_empty')}
         </p>
@@ -127,12 +111,12 @@
     {/snippet}
   </ResultsView>
 
-  {#if loading}
+  {#if photos.loading}
     <Status message={$t('loading')} busy={true} />
-  {:else if failed}
+  {:else if photos.failed}
     <p class="empty">
       {$t('frameleaf_spaces_error_timeline')}
-      <button type="button" onclick={() => void load(assets.length === 0 ? 1 : page + 1)}>{$t('retry')}</button>
+      <button type="button" onclick={() => void photos.retry()}>{$t('retry')}</button>
     </p>
   {/if}
 </section>
