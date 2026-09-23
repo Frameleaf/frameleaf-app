@@ -26,6 +26,7 @@
 import { createHash } from 'node:crypto';
 import { createInflateRaw, inflateRawSync } from 'node:zlib';
 import { MediaOperationDestination, MediaOperationKind } from 'src/enum.js';
+import { compareCodeUnits } from 'src/utils/compare.js';
 import {
   StudioProjectEnvelope,
   canonicalJson,
@@ -228,11 +229,11 @@ const checkSources = (value: unknown, files: Record<string, StudioBundleFileDige
       return `sources[${index}]: a reference carries no path`;
     }
 
-    const sha256 = raw.sha256 === null || raw.sha256 === undefined ? null : raw.sha256;
+    const sha256 = raw.sha256 ?? null;
     if (sha256 !== null && (typeof sha256 !== 'string' || !sha256Hex.test(sha256))) {
       return `sources[${index}]: sha256 must be 64 hex characters or null`;
     }
-    const bytes = raw.bytes === null || raw.bytes === undefined ? null : raw.bytes;
+    const bytes = raw.bytes ?? null;
     if (bytes !== null && (typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 0)) {
       return `sources[${index}]: bytes must be a non-negative integer or null`;
     }
@@ -408,7 +409,7 @@ export const zipEntryNameProblem = (name: string): string | null => {
     return `directory entry: ${name.slice(0, 80)}`;
   }
   const segments = name.split('/');
-  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+  if (segments.some((segment) => ['', '.', '..'].includes(segment))) {
     return `entry name traverses: ${name.slice(0, 80)}`;
   }
   return null;
@@ -583,11 +584,7 @@ export const readZipDirectory = async (source: ZipByteSource): Promise<ZipDirect
     if (flags & (FLAG_ENCRYPTED | FLAG_STRONG_ENCRYPTION)) {
       refuse('bundle_encrypted', `${name.slice(0, 80)} is encrypted`);
     }
-    if (
-      compressedSize === ZIP64_MARKER_32 ||
-      uncompressedSize === ZIP64_MARKER_32 ||
-      localHeaderOffset === ZIP64_MARKER_32
-    ) {
+    if ([compressedSize, uncompressedSize, localHeaderOffset].includes(ZIP64_MARKER_32)) {
       refuse('bundle_zip64', 'ZIP64 archives are not accepted as bundles');
     }
     if (method !== METHOD_STORE && method !== METHOD_DEFLATE) {
@@ -877,7 +874,11 @@ export const relinkStudioGraph = (graph: unknown, mapping: StudioRelinkMapping):
   };
 
   const result = walk(graph);
-  const unused = [...mapping.keys()].filter((key) => !used.has(key)).sort();
+  const unused = mapping
+    .keys()
+    .filter((key) => !used.has(key))
+    .toArray()
+    .sort();
   return { graph: result, replaced, unused };
 };
 
@@ -907,7 +908,10 @@ export const studioBundleSourceKeys = (graph: unknown): StudioBundleSourceKey[] 
       found.set(key, { key, kind, id: reference.id });
     }
   }
-  return [...found.values()].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  return found
+    .values()
+    .toArray()
+    .sort((a, b) => compareCodeUnits(a.key, b.key));
 };
 
 /**
