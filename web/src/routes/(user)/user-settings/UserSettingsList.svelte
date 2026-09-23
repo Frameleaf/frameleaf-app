@@ -15,7 +15,9 @@
   import SignInProviderSection from '$lib/components/frameleaf/access/SignInProviderSection.svelte';
   import SupporterSection from '$lib/components/frameleaf/access/SupporterSection.svelte';
   import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import TakeoutSettingsSection from '$lib/components/frameleaf/settings/TakeoutSettingsSection.svelte';
   import { OpenQueryParam, QueryParameter } from '$lib/constants';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { oauth } from '$lib/utils';
   import { getSessions, type ApiKeyResponseDto, type SessionResponseDto } from '@immich/sdk';
@@ -29,6 +31,7 @@
     mdiDownload,
     mdiFeatureSearchOutline,
     mdiFormTextboxPassword,
+    mdiImport,
     mdiKeyOutline,
     mdiLockSmart,
     mdiServerOutline,
@@ -115,6 +118,15 @@
   subtitle={$t('download_settings_description')}
 >
   <DownloadSettings />
+</SettingGroup>
+
+<SettingGroup
+  icon={mdiImport}
+  key="takeout"
+  title={$t('frameleaf_takeout_settings_title')}
+  subtitle={$t('frameleaf_takeout_settings_subtitle')}
+>
+  <TakeoutSettingsSection showRoots={authManager.user.isAdmin} />
 </SettingGroup>
 
 <SettingGroup

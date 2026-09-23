@@ -148,6 +148,10 @@ export const Route = {
   viewSharedLink: ({ slug, key }: { slug?: string | null; key: string }) =>
     slug ? `/s/${encodeURIComponent(slug)}` : `/share/${key}`,
 
+  // imports
+  /** The Google Photos import wizard (FL-65); `import` opens one import. */
+  takeout: (params?: { import?: string }) => '/takeout' + asQueryString(params),
+
   // settings
   userSettings: (params?: { isOpen?: OpenQueryParam }) => '/user-settings' + asQueryString(params),
 
