@@ -42,6 +42,7 @@ import {
   DatabaseExtension,
   ExifOrientation,
   ImageEnrichmentFilter,
+  PetObservationState,
   SearchOrderField,
 } from 'src/enum.js';
 import {
@@ -300,6 +301,34 @@ export function hasPeople<O>(qb: SelectQueryBuilder<DB, 'asset', O>, personGroup
   );
 }
 
+/**
+ * The pet twin of `hasPeople` (FL-58): assets in which `ownerId` confirmed every one of `petIds`.
+ *
+ * Only the owner's durable `pet_observation` rows count, and only `confirmed` ones: a `rejected`
+ * observation is the owner saying the pet is *not* there, and the replaceable model output
+ * (`pet_detection`, `pet_candidate`) is a proposal, never a fact about the library. Pets are private
+ * to their owner, so the pet itself must belong to `ownerId`; another account's pet id matches nothing
+ * rather than widening what the caller sees. Without an owner nothing matches.
+ */
+export function hasPets<O>(qb: SelectQueryBuilder<DB, 'asset', O>, petIds: string[], ownerId: string | undefined) {
+  const ids = uniqueIds(petIds);
+  return qb.innerJoin(
+    (eb) =>
+      eb
+        .selectFrom('pet_observation')
+        .innerJoin('pet', 'pet.id', 'pet_observation.petId')
+        .select('pet_observation.assetId')
+        .where('pet_observation.petId', '=', anyUuid(ids))
+        .where('pet_observation.state', '=', PetObservationState.Confirmed)
+        .$if(!!ownerId, (qb) => qb.where('pet.ownerId', '=', ownerId!))
+        .$if(!ownerId, (qb) => qb.where((eb) => eb.lit(false)))
+        .groupBy('pet_observation.assetId')
+        .having((eb) => eb.fn.count('pet_observation.petId').distinct(), '=', ids.length)
+        .as('has_pets'),
+    (join) => join.onRef('has_pets.assetId', '=', 'asset.id'),
+  );
+}
+
 export function inSharedAlbum(eb: ExpressionBuilder<DB, 'asset'>, userId: string) {
   return eb.exists(
     eb
@@ -453,6 +482,7 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
       qb.where((eb) => eb.not(eb.exists((eb) => eb.selectFrom('tag_asset').whereRef('assetId', '=', 'asset.id')))),
     )
     .$if(!!options.personIds && options.personIds.length > 0, (qb) => hasPeople(qb, options.personIds!))
+    .$if(!!options.petIds && options.petIds.length > 0, (qb) => hasPets(qb, options.petIds!, options.viewingUserId))
     .$if(!!options.createdBefore, (qb) => qb.where('asset.createdAt', '<=', options.createdBefore!))
     .$if(!!options.createdAfter, (qb) => qb.where('asset.createdAt', '>=', options.createdAfter!))
     .$if(!!options.updatedBefore, (qb) => qb.where('asset.updatedAt', '<=', options.updatedBefore!))
@@ -627,6 +657,34 @@ function personIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
   });
 }
 
+/**
+ * FL-58: `petIds` reads the owner's durable decisions only — `confirmed` observations of the viewer's
+ * own pets (see `hasPets`). Without a viewer the positive groups match nothing and `none` excludes
+ * nothing, so a missing owner can never widen a result.
+ */
+const confirmedPetObservations = (eb: AssetExpressionBuilder, ownerId: string | undefined) =>
+  eb
+    .selectFrom('pet_observation')
+    .innerJoin('pet', 'pet.id', 'pet_observation.petId')
+    .whereRef('pet_observation.assetId', '=', 'asset.id')
+    .where('pet_observation.state', '=', PetObservationState.Confirmed)
+    .where((eb) => (ownerId ? eb('pet.ownerId', '=', ownerId) : eb.lit(false)));
+
+function petIdsPredicates(eb: AssetExpressionBuilder, filter: IdsFilter | undefined, ownerId: string | undefined) {
+  const matching = (ids: string[]) =>
+    confirmedPetObservations(eb, ownerId).where('pet_observation.petId', '=', anyUuid(ids));
+  return idsPredicates(eb, filter, {
+    matchesAny: (ids) => eb.exists(matching(ids)),
+    matchesAll: (ids) =>
+      eb.exists(
+        matching(ids)
+          .select('pet_observation.assetId')
+          .groupBy('pet_observation.assetId')
+          .having((eb) => eb.fn.count('pet_observation.petId').distinct(), '=', ids.length),
+      ),
+  });
+}
+
 function tagIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
   const matching = (ids: string[]) =>
     tagAssets(eb)
@@ -748,7 +806,7 @@ function existsPredicates(
 
 // predicates are collected as expressions rather than chained `where` calls so the same
 // helpers can build each `or` branch, which must compose into eb.and/eb.or
-function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch) {
+function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch, viewerId: string | undefined) {
   const { encodedVideoPath } = branch;
   return [
     ...comparisonPredicates(eb, 'asset.id', branch.id),
@@ -791,6 +849,7 @@ function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch
     ...comparisonPredicates(eb, 'asset.deletedAt', branch.trashedAt),
     ...albumIdsPredicates(eb, branch.albumIds),
     ...personIdsPredicates(eb, branch.personIds),
+    ...petIdsPredicates(eb, branch.petIds, viewerId),
     ...tagIdsPredicates(eb, branch.tagIds),
     ...checksumPredicates(eb, branch.checksum),
     ...(encodedVideoPath
@@ -815,6 +874,8 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
   };
   const filter = options.filter ?? {};
   const branches = filter.or ?? [];
+  // FL-58: whose pets a `petIds` condition may name. The service scope always carries the caller.
+  const viewerId = scope.viewingUserId ?? (scope.lockedOwnerId || undefined);
   const ownershipPredicate = (eb: AssetExpressionBuilder) => eb('asset.ownerId', '=', anyUuid(scope.userIds));
   // search universe: own+partner assets unless album-confined, which searches the albums instead;
   // ownership lands nowhere (top level confined), per unconfined branch, or hoisted globally
@@ -841,13 +902,13 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       )
       .$if(options.withStacked === false, (qb) => qb.where('asset.stackId', 'is', null))
       .where((eb) => {
-        const predicates = branchPredicates(eb, filter);
+        const predicates = branchPredicates(eb, filter, viewerId);
         if (branches.length > 0) {
           predicates.push(
             eb.or(
               branches.map((branch) =>
                 eb.and([
-                  ...branchPredicates(eb, branch),
+                  ...branchPredicates(eb, branch, viewerId),
                   ...(scopePerBranch && !isAlbumConfined(branch) ? [ownershipPredicate(eb)] : []),
                 ]),
               ),
@@ -971,6 +1032,20 @@ export const searchMetadataV3Examples: GenerateSqlQueries[] = [
       { take: 100 },
       {
         filter: { tagIds: { all: [DummyValue.UUID, DummyValue.UUID_1] } },
+      },
+      scopeExample,
+    ],
+  },
+  {
+    name: 'ids-pets-any',
+    params: [{ take: 100 }, { filter: { petIds: { any: [DummyValue.UUID] } } }, scopeExample],
+  },
+  {
+    name: 'ids-pets-all',
+    params: [
+      { take: 100 },
+      {
+        filter: { petIds: { all: [DummyValue.UUID, DummyValue.UUID_1] } },
       },
       scopeExample,
     ],
