@@ -4,6 +4,7 @@
   import { clickOutside } from '$lib/actions/click-outside';
   import AccountMenu from '$lib/components/frameleaf/AccountMenu.svelte';
   import ActivityIndicator from '$lib/components/frameleaf/ActivityIndicator.svelte';
+  import UploadMenuButton from '$lib/components/frameleaf/UploadMenuButton.svelte';
   import NotificationPanel from '$lib/components/shared-components/navigation-bar/NotificationPanel.svelte';
   import SearchBar from '$lib/components/shared-components/search-bar/SearchBar.svelte';
   import ThemeButton from '$lib/components/shared-components/ThemeButton.svelte';
@@ -19,7 +20,7 @@
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { isAssetViewerRoute, navigate } from '$lib/utils/navigation';
+  import { isAlbumsRoute, isAssetViewerRoute, isLockedFolderRoute, navigate } from '$lib/utils/navigation';
   import { getAuthStatus, lockAuthSession } from '@immich/sdk';
   import { ActionButton, IconButton, Logo, modalManager, Theme as AppTheme, themeManager } from '@immich/ui';
   import {
@@ -29,7 +30,6 @@
     mdiLockOutline,
     mdiMagnify,
     mdiMenu,
-    mdiTrayArrowUp,
     mdiTune,
   } from '@mdi/js';
   import { onMount } from 'svelte';
@@ -61,6 +61,10 @@
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   const isAdminRoute = $derived(page.url.pathname.startsWith('/admin'));
   const lockedLabel = $derived(isElevated ? $t('lock_sensitive_content') : $t('unlock_sensitive_content'));
+  // Matches the drag-and-drop overlay's own defaults (FL-45): uploads made from an album
+  // page join that album, and uploads made from the Locked area stay locked.
+  const uploadAlbumId = $derived(isAlbumsRoute(page.route?.id) ? page.params.albumId : undefined);
+  const uploadIsLocked = $derived(isLockedFolderRoute(page.route?.id));
   // Casting is an existing production capability; the new bar keeps it rather than
   // dropping an action the legacy bar offered.
   const { Cast } = $derived(getGlobalActions($t));
@@ -232,16 +236,7 @@
         {/if}
 
         {#if onUploadClick && !isAdminRoute}
-          <IconButton
-            color="secondary"
-            shape="round"
-            variant="ghost"
-            size="medium"
-            onclick={onUploadClick}
-            title={$t('upload')}
-            aria-label={$t('upload')}
-            icon={mdiTrayArrowUp}
-          />
+          <UploadMenuButton defaultAlbumId={uploadAlbumId} isLockedAssets={uploadIsLocked} />
         {/if}
 
         <!-- The activity indicator is desktop only; phones keep the bar to its fixed grid. -->

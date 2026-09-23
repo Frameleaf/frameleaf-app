@@ -2,11 +2,12 @@
   import { afterNavigate, beforeNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import { getPagesProvider, getSettingsProvider } from '$lib/commands';
-  import DownloadPanel from './DownloadPanel.svelte';
+  import DownloadPanel from '$lib/components/frameleaf/DownloadPanel.svelte';
+  import PanelDock from '$lib/components/frameleaf/PanelDock.svelte';
+  import UploadPanel from '$lib/components/frameleaf/UploadPanel.svelte';
   import ErrorLayout from './ErrorLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import NavigationLoadingBar from './NavigationLoadingBar.svelte';
-  import UploadPanel from './UploadPanel.svelte';
   import VersionAnnouncement from './VersionAnnouncement.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -267,8 +268,10 @@
     <NavigationLoadingBar />
   {/if}
 
-  <DownloadPanel />
-  <UploadPanel />
+  <PanelDock>
+    <DownloadPanel />
+    <UploadPanel />
+  </PanelDock>
   <ScreencastOverlay />
 
   <CommandPaletteProvider
