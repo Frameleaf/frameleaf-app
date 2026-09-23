@@ -12,7 +12,13 @@ import {
   type StudioHostState,
 } from './host-state';
 
-const capable = { gpuWorker: true, renderWorker: true, restorationWorker: true, transcriptionWorker: true };
+const capable = {
+  ...emptyStudioCapabilities(),
+  gpuWorker: true,
+  renderWorker: true,
+  restorationWorker: true,
+  transcriptionWorker: true,
+};
 
 const run = (...events: StudioHostEvent[]): StudioHostState =>
   events.reduce((state, event) => reduceStudioHost(state, event), initialStudioHostState());
