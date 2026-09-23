@@ -122,6 +122,8 @@ export const Route = {
 
   // sharing
   sharing: () => '/sharing',
+  /** One shared space: its people, roles and invitations. Its photos are the album view. */
+  viewSharedSpace: ({ id }: { id: string }) => `/sharing/${id}`,
 
   // shared links
   sharedLinks: (params?: { filter?: SharedLinkTab }) => '/shared-links' + asQueryString(params),
