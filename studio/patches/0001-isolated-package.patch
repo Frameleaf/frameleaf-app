@@ -1,0 +1,30 @@
+--- a/package.json
++++ b/package.json
+@@ -1,5 +1,5 @@
+ {
+-  "name": "freecut",
++  "name": "@frameleaf/studio-engine",
+   "version": "0.0.0",
+   "private": true,
+   "type": "module",
+@@ -49,8 +49,7 @@
+     "headless:test:portable": "npm run headless:test:node && npm run headless:test:chrome && npm run headless:test:media",
+     "headless:gpu:probe": "node headless/probe.mjs",
+     "changelog:append": "node scripts/changelog-append.mjs",
+-    "changelog:rollup": "node scripts/changelog-rollup.mjs",
+-    "prepare": "vp config"
++    "changelog:rollup": "node scripts/changelog-rollup.mjs"
+   },
+   "dependencies": {
+     "@hookform/resolvers": "5.2.2",
+@@ -127,5 +126,9 @@
+     "esbuild": "0.28.1",
+     "typescript": "7.0.2"
+   },
+-  "packageManager": "npm@11.8.0"
++  "packageManager": "npm@11.8.0",
++  "engines": {
++    "node": "24.21.0",
++    "npm": "11.8.0"
++  }
+ }

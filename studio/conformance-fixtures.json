@@ -1,0 +1,1572 @@
+{
+  "schemaVersion": 1,
+  "scope": "Fixture identities and minimum action cases, not executable feature implementations. Source-family exposure review and measured runs remain required.",
+  "rows": [
+    {
+      "id": "readme.timeline-editing.1",
+      "actions": [
+        "video",
+        "audio",
+        "text",
+        "image",
+        "shape",
+        "mask",
+        "lottie",
+        "compound-clip"
+      ]
+    },
+    {
+      "id": "readme.timeline-editing.2",
+      "actions": [
+        "create-sequence",
+        "switch-tab",
+        "open-compound-sequence"
+      ]
+    },
+    {
+      "id": "readme.timeline-editing.3",
+      "actions": [
+        "linked-av",
+        "split",
+        "join",
+        "ripple",
+        "rolling",
+        "slip",
+        "slide",
+        "rate-stretch"
+      ]
+    },
+    {
+      "id": "readme.timeline-editing.4",
+      "actions": [
+        "resize-transition",
+        "align-transition",
+        "source-time-anchor",
+        "preview-overlay"
+      ]
+    },
+    {
+      "id": "readme.timeline-editing.5",
+      "actions": [
+        "mute",
+        "visibility",
+        "lock",
+        "sync-badge",
+        "push-track",
+        "pull-track",
+        "close-gap"
+      ]
+    },
+    {
+      "id": "readme.timeline-editing.6",
+      "actions": [
+        "filmstrip",
+        "stereo-waveform",
+        "snap",
+        "marker",
+        "timecode",
+        "undo",
+        "redo"
+      ]
+    },
+    {
+      "id": "readme.timeline-editing.7",
+      "actions": [
+        "source-monitor",
+        "mark-in",
+        "mark-out",
+        "patch-destination",
+        "insert",
+        "overwrite"
+      ]
+    },
+    {
+      "id": "readme.timeline-editing.8",
+      "actions": [
+        "template",
+        "match-canvas",
+        "match-fps",
+        "configure-shortcut"
+      ]
+    },
+    {
+      "id": "readme.preview-playback.1",
+      "actions": [
+        "transform",
+        "crop",
+        "corner-pin",
+        "mask",
+        "group-gizmo"
+      ]
+    },
+    {
+      "id": "readme.preview-playback.2",
+      "actions": [
+        "frame-accurate-clock",
+        "composition-runtime"
+      ]
+    },
+    {
+      "id": "readme.preview-playback.3",
+      "actions": [
+        "scrub-overlay",
+        "decoder-prewarm",
+        "adaptive-quality",
+        "source-warming"
+      ]
+    },
+    {
+      "id": "readme.preview-playback.4",
+      "actions": [
+        "two-up-ripple",
+        "two-up-rolling",
+        "two-up-slip",
+        "two-up-slide",
+        "four-up-ripple",
+        "four-up-rolling",
+        "four-up-slip",
+        "four-up-slide"
+      ]
+    },
+    {
+      "id": "readme.preview-playback.5",
+      "actions": [
+        "waveform",
+        "vectorscope",
+        "histogram"
+      ]
+    },
+    {
+      "id": "readme.preview-playback.6",
+      "actions": [
+        "master-bus",
+        "monitor-volume",
+        "device-volume"
+      ]
+    },
+    {
+      "id": "readme.audio.1",
+      "actions": [
+        "clip-volume",
+        "fade-in",
+        "fade-out",
+        "track-fader",
+        "master-fader",
+        "stereo-meter"
+      ]
+    },
+    {
+      "id": "readme.audio.2",
+      "actions": [
+        "pitch-semitones",
+        "pitch-cents",
+        "soundtouch-preview"
+      ]
+    },
+    {
+      "id": "readme.audio.3",
+      "actions": [
+        "clip-eq",
+        "track-eq",
+        "six-band-panel"
+      ]
+    },
+    {
+      "id": "readme.audio.4",
+      "actions": [
+        "pitch",
+        "eq",
+        "fade",
+        "volume",
+        "transition-audio"
+      ]
+    },
+    {
+      "id": "readme.effects-masks-compositing.1",
+      "actions": [
+        "gaussian",
+        "box",
+        "motion",
+        "radial",
+        "zoom"
+      ]
+    },
+    {
+      "id": "readme.effects-masks-compositing.2",
+      "actions": [
+        "brightness",
+        "contrast",
+        "exposure",
+        "hue",
+        "saturation",
+        "vibrance",
+        "temperature",
+        "tint",
+        "levels",
+        "curves",
+        "color-wheels",
+        "gradient-map",
+        "cube-lut",
+        "grayscale",
+        "sepia",
+        "invert"
+      ]
+    },
+    {
+      "id": "readme.effects-masks-compositing.3",
+      "actions": [
+        "pixelate",
+        "rgb-split",
+        "twirl",
+        "wave",
+        "bulge",
+        "pinch",
+        "kaleidoscope",
+        "mirror",
+        "fluted-glass",
+        "ripple-glass",
+        "glass-mosaic",
+        "droste"
+      ]
+    },
+    {
+      "id": "readme.effects-masks-compositing.4",
+      "actions": [
+        "vignette",
+        "film-grain",
+        "sharpen",
+        "posterize",
+        "glow",
+        "edge-detect",
+        "scanlines",
+        "halftone",
+        "ascii",
+        "color-glitch",
+        "block-glitch",
+        "vhs",
+        "crt",
+        "ink",
+        "pixel-sort"
+      ]
+    },
+    {
+      "id": "readme.effects-masks-compositing.5",
+      "actions": [
+        "chroma-key",
+        "tolerance",
+        "softness",
+        "spill-suppression"
+      ]
+    },
+    {
+      "id": "readme.effects-masks-compositing.6",
+      "actions": [
+        "normal",
+        "dissolve",
+        "darken",
+        "multiply",
+        "color-burn",
+        "linear-burn",
+        "lighten",
+        "screen",
+        "color-dodge",
+        "linear-dodge",
+        "overlay",
+        "soft-light",
+        "hard-light",
+        "vivid-light",
+        "linear-light",
+        "pin-light",
+        "hard-mix",
+        "difference",
+        "exclusion",
+        "subtract",
+        "divide",
+        "hue",
+        "saturation",
+        "color",
+        "luminosity"
+      ]
+    },
+    {
+      "id": "readme.effects-masks-compositing.7",
+      "actions": [
+        "clip-mask",
+        "pen-path",
+        "animated-geometry"
+      ]
+    },
+    {
+      "id": "readme.effects-masks-compositing.8",
+      "actions": [
+        "hex",
+        "alpha",
+        "eyedropper",
+        "loupe"
+      ]
+    },
+    {
+      "id": "readme.transitions.1",
+      "actions": [
+        "fade",
+        "wipe",
+        "slide",
+        "flip",
+        "clock-wipe",
+        "iris",
+        "directional-variants"
+      ]
+    },
+    {
+      "id": "readme.transitions.2",
+      "actions": [
+        "dissolve",
+        "sparkles",
+        "glitch",
+        "light-leak",
+        "pixelate",
+        "chromatic-aberration",
+        "radial-blur"
+      ]
+    },
+    {
+      "id": "readme.transitions.3",
+      "actions": [
+        "duration",
+        "alignment",
+        "source-anchor",
+        "canvas2d-fallback"
+      ]
+    },
+    {
+      "id": "readme.keyframe-animation.1",
+      "actions": [
+        "bezier-graph",
+        "dopesheet",
+        "split-view",
+        "multi-curve"
+      ]
+    },
+    {
+      "id": "readme.keyframe-animation.2",
+      "actions": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "cubic-bezier",
+        "spring",
+        "live-preview",
+        "save-preset"
+      ]
+    },
+    {
+      "id": "readme.keyframe-animation.3",
+      "actions": [
+        "drift",
+        "sway",
+        "breath",
+        "spin",
+        "shake",
+        "bake-keyframes"
+      ]
+    },
+    {
+      "id": "readme.keyframe-animation.4",
+      "actions": [
+        "character",
+        "word",
+        "line"
+      ]
+    },
+    {
+      "id": "readme.keyframe-animation.5",
+      "actions": [
+        "auto-keyframe",
+        "tangent-mirror",
+        "property-accordion",
+        "marquee"
+      ]
+    },
+    {
+      "id": "readme.keyframe-animation.6",
+      "actions": [
+        "transform",
+        "crop",
+        "mask",
+        "text",
+        "effect",
+        "color"
+      ]
+    },
+    {
+      "id": "readme.media-import.1",
+      "actions": [
+        "video",
+        "audio",
+        "image",
+        "gif",
+        "svg",
+        "lottie",
+        "generated",
+        "preserve-original"
+      ]
+    },
+    {
+      "id": "readme.media-import.2",
+      "actions": [
+        "json",
+        "lottie-archive",
+        "remap-color",
+        "theme",
+        "text",
+        "value-slot",
+        "live-preview"
+      ]
+    },
+    {
+      "id": "readme.media-import.3",
+      "actions": [
+        "prores-import",
+        "prores-preview",
+        "prores-thumbnail",
+        "non-native-prores"
+      ]
+    },
+    {
+      "id": "readme.media-import.4",
+      "actions": [
+        "proxy",
+        "thumbnail",
+        "waveform-cache",
+        "relink"
+      ]
+    },
+    {
+      "id": "readme.local-ai-analysis.1",
+      "actions": [
+        "parakeet",
+        "whisper-fallback",
+        "caption-item"
+      ]
+    },
+    {
+      "id": "readme.local-ai-analysis.2",
+      "actions": [
+        "vision-caption",
+        "sample-cadence"
+      ]
+    },
+    {
+      "id": "readme.local-ai-analysis.3",
+      "actions": [
+        "histogram",
+        "adaptive-content",
+        "model-verification"
+      ]
+    },
+    {
+      "id": "readme.local-ai-analysis.4",
+      "actions": [
+        "search-caption",
+        "reuse-moment"
+      ]
+    },
+    {
+      "id": "readme.local-ai-analysis.5",
+      "actions": [
+        "kokoro-voiceover"
+      ]
+    },
+    {
+      "id": "readme.local-ai-analysis.6",
+      "actions": [
+        "musicgen",
+        "preset",
+        "progress",
+        "cancel"
+      ]
+    },
+    {
+      "id": "readme.local-ai-analysis.7",
+      "actions": [
+        "model-cache",
+        "unload"
+      ]
+    },
+    {
+      "id": "readme.projects-storage.1",
+      "actions": [
+        "workspace-persistence",
+        "filesystem-access"
+      ]
+    },
+    {
+      "id": "readme.projects-storage.2",
+      "actions": [
+        "switch-workspace",
+        "manage-known-workspace"
+      ]
+    },
+    {
+      "id": "readme.projects-storage.3",
+      "actions": [
+        "project-file",
+        "legacy-migration"
+      ]
+    },
+    {
+      "id": "readme.projects-storage.4",
+      "actions": [
+        "soft-delete",
+        "restore",
+        "empty-trash",
+        "permanent-delete"
+      ]
+    },
+    {
+      "id": "readme.projects-storage.5",
+      "actions": [
+        "bundle-export",
+        "bundle-import",
+        "schema-rejection"
+      ]
+    },
+    {
+      "id": "readme.projects-storage.6",
+      "actions": [
+        "autosave",
+        "thumbnail",
+        "cache-mirror",
+        "orphan-cleanup"
+      ]
+    },
+    {
+      "id": "readme.export.1",
+      "actions": [
+        "webcodecs",
+        "worker-render"
+      ]
+    },
+    {
+      "id": "readme.export.2",
+      "actions": [
+        "main-sequence",
+        "alternate-sequence"
+      ]
+    },
+    {
+      "id": "readme.export.3",
+      "actions": [
+        "mp4",
+        "webm",
+        "mov",
+        "mkv"
+      ]
+    },
+    {
+      "id": "readme.export.4",
+      "actions": [
+        "h264",
+        "h265",
+        "vp8",
+        "vp9",
+        "av1"
+      ]
+    },
+    {
+      "id": "readme.export.5",
+      "actions": [
+        "mp3",
+        "aac",
+        "wav-pcm"
+      ]
+    },
+    {
+      "id": "readme.export.6",
+      "actions": [
+        "subtitle-off",
+        "burn-in",
+        "sidecar",
+        "soft-track"
+      ]
+    },
+    {
+      "id": "readme.export.7",
+      "actions": [
+        "low",
+        "medium",
+        "high",
+        "ultra",
+        "capability-check",
+        "fallback"
+      ]
+    },
+    {
+      "id": "effect.gpu-gaussian-blur",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-box-blur",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-motion-blur",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-radial-blur",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-zoom-blur",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-brightness",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-contrast",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-exposure",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-hue-shift",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-invert",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-levels",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-saturation",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-temperature",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-grayscale",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-sepia",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-curves",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-color-wheels",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-secondary-qualifier",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-power-window",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-vibrance",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-gradient-map",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-pixelate",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-rgb-split",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-twirl",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-wave",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-trigger-wave",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-bulge",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-kaleidoscope",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-mirror",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-fluted-glass",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-ripple-glass",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-glass-mosaic",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-blocks",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-droste",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-chroma-key",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-lut",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-vignette",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-grain",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-sharpen",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-posterize",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-glow",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-edge-detect",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-scanlines",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-color-glitch",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-block-glitch",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-crt",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-halftone",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-dither",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-ascii",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-threshold",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-vhs",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-ink",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-pixel-sort",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "effect.gpu-pixel-sort-hq",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.chromatic",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.clockWipe",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.additiveDissolve",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.blurDissolve",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.dipToColorDissolve",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.nonAdditiveDissolve",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.smoothCut",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.dissolve",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.fade",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.filmGateSlip",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.flip",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.glitch",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.iris",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.lensWarpZoom",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.lightLeakBurn",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.liquidDistort",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.pixelate",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.radialBlur",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.slide",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.sparkles",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "transition.wipe",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.normal",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.dissolve",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.darken",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.multiply",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.color-burn",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.linear-burn",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.lighten",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.screen",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.color-dodge",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.linear-dodge",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.overlay",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.soft-light",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.hard-light",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.vivid-light",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.linear-light",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.pin-light",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.hard-mix",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.difference",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.exclusion",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.subtract",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.divide",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.hue",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.saturation",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.color",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "blend.luminosity",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.addText",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.addItem",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.updateItem",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.moveItem",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.removeItems",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.split",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.trimStart",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.trimEnd",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.addTransition",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.updateTransition",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.removeTransition",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.addTrack",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.addClip",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.addKeyframe",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.removeKeyframes",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.setTransformParent",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.addEffect",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.removeEffect",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "command.setTransform",
+      "actions": [
+        "apply"
+      ]
+    },
+    {
+      "id": "extra.compose",
+      "actions": [
+        "workspace",
+        "layer",
+        "nested-composition",
+        "group",
+        "null-controller"
+      ]
+    },
+    {
+      "id": "extra.expressions",
+      "actions": [
+        "property-expression",
+        "expression-editor"
+      ]
+    },
+    {
+      "id": "extra.published-controls",
+      "actions": [
+        "publish-control",
+        "instance-override"
+      ]
+    },
+    {
+      "id": "extra.parenting",
+      "actions": [
+        "transform-parent",
+        "pick-whip"
+      ]
+    },
+    {
+      "id": "extra.color-workspace",
+      "actions": [
+        "grading-workspace"
+      ]
+    },
+    {
+      "id": "extra.bento",
+      "actions": [
+        "layout-preset"
+      ]
+    },
+    {
+      "id": "extra.silence-removal",
+      "actions": [
+        "detect",
+        "review",
+        "apply",
+        "cancel"
+      ]
+    },
+    {
+      "id": "extra.filler-removal",
+      "actions": [
+        "detect",
+        "review",
+        "apply",
+        "cancel"
+      ]
+    },
+    {
+      "id": "extra.microphone",
+      "actions": [
+        "permission",
+        "record",
+        "stop",
+        "insert"
+      ]
+    },
+    {
+      "id": "extra.reverse-conform",
+      "actions": [
+        "conform",
+        "cancel",
+        "reuse"
+      ]
+    },
+    {
+      "id": "extra.render-queue",
+      "actions": [
+        "queue",
+        "segment",
+        "resume",
+        "cancel"
+      ]
+    },
+    {
+      "id": "extra.upscale-anime4k",
+      "actions": [
+        "upscale-2x"
+      ]
+    },
+    {
+      "id": "extra.interpolation-rife",
+      "actions": [
+        "interpolate"
+      ]
+    },
+    {
+      "id": "extra.tts-moss",
+      "actions": [
+        "synthesize"
+      ]
+    },
+    {
+      "id": "extra.tts-supertonic",
+      "actions": [
+        "synthesize"
+      ]
+    },
+    {
+      "id": "extra.tts-kokoro",
+      "actions": [
+        "synthesize"
+      ]
+    },
+    {
+      "id": "extra.musicgen",
+      "actions": [
+        "generate",
+        "cancel"
+      ]
+    },
+    {
+      "id": "extra.portable-headless",
+      "actions": [
+        "workspace",
+        "project-create",
+        "project-open",
+        "project-save",
+        "project-delete",
+        "frame",
+        "layout",
+        "render"
+      ]
+    },
+    {
+      "id": "module.docs",
+      "actions": [
+        "open-help"
+      ]
+    },
+    {
+      "id": "module.editor",
+      "actions": [
+        "mount",
+        "edit",
+        "dispose"
+      ]
+    },
+    {
+      "id": "module.effects",
+      "actions": [
+        "add",
+        "edit",
+        "remove"
+      ]
+    },
+    {
+      "id": "module.export",
+      "actions": [
+        "configure",
+        "start",
+        "cancel"
+      ]
+    },
+    {
+      "id": "module.keyframes",
+      "actions": [
+        "add",
+        "edit",
+        "remove"
+      ]
+    },
+    {
+      "id": "module.lottie-browser",
+      "actions": [
+        "browse",
+        "import",
+        "edit"
+      ]
+    },
+    {
+      "id": "module.media-library",
+      "actions": [
+        "import",
+        "search",
+        "relink",
+        "remove"
+      ]
+    },
+    {
+      "id": "module.preview",
+      "actions": [
+        "play",
+        "pause",
+        "seek"
+      ]
+    },
+    {
+      "id": "module.project-bundle",
+      "actions": [
+        "export",
+        "import",
+        "reject-invalid"
+      ]
+    },
+    {
+      "id": "module.projects",
+      "actions": [
+        "create",
+        "open",
+        "save",
+        "trash",
+        "restore",
+        "delete"
+      ]
+    },
+    {
+      "id": "module.scene-browser",
+      "actions": [
+        "analyze",
+        "search",
+        "reuse"
+      ]
+    },
+    {
+      "id": "module.settings",
+      "actions": [
+        "read",
+        "change",
+        "reset"
+      ]
+    },
+    {
+      "id": "module.timeline",
+      "actions": [
+        "insert",
+        "edit",
+        "undo",
+        "redo"
+      ]
+    },
+    {
+      "id": "module.workspace-gate",
+      "actions": [
+        "open",
+        "authorize",
+        "switch",
+        "revoke"
+      ]
+    }
+  ]
+}

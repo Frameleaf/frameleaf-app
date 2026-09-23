@@ -1,0 +1,536 @@
+---
+license: cc-by-4.0
+language:
+  - en
+  - es
+  - fr
+  - de
+  - bg
+  - hr
+  - cs
+  - da
+  - nl
+  - et
+  - fi
+  - el
+  - hu
+  - it
+  - lv
+  - lt
+  - mt
+  - pl
+  - pt
+  - ro
+  - sk
+  - sl
+  - sv
+  - ru
+  - uk
+base_model:
+  - nvidia/parakeet-tdt-0.6b-v3
+library_name: onnx
+pipeline_tag: automatic-speech-recognition
+tags:
+  - automatic-speech-recognition
+  - asr
+  - onnx
+  - onnx-asr
+  - parakeet
+  - tdt
+  - matmulnbits
+  - quantization
+---
+
+# Parakeet TDT 0.6B v3 (Multilingual), ONNX exported for the browser
+
+Multilingual speech-to-text, 25 languages, exported to ONNX straight from NVIDIA's
+[`nvidia/parakeet-tdt-0.6b-v3`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) `.nemo`
+checkpoint, with the encoder graph specialized for browser and CPU inference and several
+precisions in one repository.
+
+**Try it without installing anything:** pick this model in
+[parakeetweb.olicorne.org](https://parakeetweb.olicorne.org/), a browser-based ASR app
+([source](https://github.com/thiswillbeyourgithub/parakeet_web)). It downloads the ONNX files below
+and transcribes entirely client-side, so nothing you dictate leaves your machine.
+
+The export targets [onnx-asr](https://github.com/istupakov/onnx-asr) and the Parakeet Web browser
+app. **Each precision lives in its own folder** (see [Layout](#layout)); the basenames are the
+canonical onnx-asr ones, and the fp32 encoder is split across `encoder-model.onnx.data.000` and
+`.data.001`, which ONNX resolves relative to the graph file, so the shards simply sit beside it in
+`fp32/`.
+
+> **These files are new and only lightly benchmarked.** They were built on 2026-09-08, have passed
+> every build-time correctness gate, and have a first, small WER pass behind them (80 FLEURS
+> validation clips, French and English only): see [Validation status](#validation-status). That is
+> enough to show nothing is structurally broken, and far too little to rank the precisions. The
+> previous generation in [`istupakov_smoothquant/`](istupakov_smoothquant/README.md) still holds the
+> only full 25-language accuracy record in this repo. Treat this root as the better-engineered build
+> whose accuracy is not yet established at scale, and pick accordingly.
+
+## Contents
+
+- [What changed, and why](#what-changed-and-why)
+- [Validation status](#validation-status)
+  - [First WER pass](#first-wer-pass)
+  - [Full FLEURS validation](#full-fleurs-validation)
+  - [Long audio](#long-audio)
+  - [Past 400 s: a 10 minute single pass (VoxPopuli, French)](#past-400-s-a-10-minute-single-pass-voxpopuli-french)
+- [Files](#files)
+  - [Layout](#layout)
+  - [The previous generation](#the-previous-generation)
+  - [Related repositories](#related-repositories)
+- [Usage](#usage)
+  - [Which encoder to use](#which-encoder-to-use)
+  - [Loading it with onnx-asr](#loading-it-with-onnx-asr)
+  - [The padded-batch restriction](#the-padded-batch-restriction)
+- [How it was built](#how-it-was-built)
+- [Licence and attribution](#licence-and-attribution)
+
+## What changed, and why
+
+Until 2026-09-07 this repository shipped a rebuild of
+[istupakov/parakeet-tdt-0.6b-v3-onnx](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx):
+his ONNX export, re-quantized here to cure the int8 encoder's long-audio accuracy collapse. That
+whole line still exists, unchanged, under
+[`istupakov_smoothquant/`](istupakov_smoothquant/README.md).
+
+The root now holds something different: an export taken **directly from the NeMo checkpoint**
+through NVIDIA's own exporter, rather than inherited from someone else's ONNX. Going back to the
+checkpoint buys three things that cannot be retrofitted onto an existing graph:
+
+- **A mask-free encoder graph.** The exporter's attention and padding masks (72 `Where` ops plus
+  the O(T^2) mask construction) are dropped at export time, which no amount of downstream graph
+  surgery can do safely.
+- **Positional encoding computed at run time.** This removes a 41 MB baked-in table from the graph
+  **and** the roughly 400 s cap on input length that the table imposed. The old line could not
+  transcribe a single pass longer than its positional-encoding reach; this one has no such cap.
+- **A padded-batch NaN tripwire**, so the mask-free graph fails loudly instead of silently
+  returning degraded output when it is misused. See
+  [The padded-batch restriction](#the-padded-batch-restriction).
+
+On top of the export, the encoder graph is constant-folded (**4682 -> 2110 nodes, -55%**, verified
+bit-exact), the fp32 weights are mantissa-rounded for compressibility, and both decoders carry
+extra in-graph outputs a beam search would otherwise recompute in JavaScript.
+
+## Validation status
+
+Honest accounting of what has and has not been checked, as of 2026-09-08.
+
+| gate | status |
+| --- | --- |
+| Encoder fold bit-exactness (`optimize-encoder-graph.py check`, tolerance **0**, mel lengths 201 / 1001 / 3001) | **passed**, worst `maxAbsDiff` 0.000e+00 |
+| Decoder surgery, fp32 (`optimize-decoder-graph.py check`) | **passed**, originals bit-exact, worst LSE diff 2.063e-05, top-K exact vs numpy |
+| Decoder surgery, int8 (same) | **passed**, originals bit-exact, worst LSE diff 1.709e-05, top-K exact vs numpy |
+| Exported `vocab.txt` vs the tokenizer shipped here | **byte-identical** |
+| Load-and-run smoke test, all 6 graphs, CPU EP | **passed**, every encoder returns finite output, both decoders expose all 9 outputs |
+| MatMulNBits five-gate check (`check-nbits.py`), int8 | **passed** all five, 217 `MatMulNBits` nodes at `bits=8`, `block_size=32`, `accuracy_level=4` |
+| MatMulNBits five-gate check, w4a8 | **passed** all five, same structure at `bits=4` |
+| WER, FLEURS validation, French and English, 40 clips each | **measured, small sample only**, see the table below |
+| WER + CER, full FLEURS validation, all 25 languages | **measured**, see [Full FLEURS validation](#full-fleurs-validation) |
+| WER, beam 5 (MAES) | **measured**, see [Full FLEURS validation](#full-fleurs-validation) |
+| Long-audio drift vs an fp32 oracle, 8 speeches | **measured**, see [Long audio](#long-audio) |
+| Single pass past 400 s, 607 s VoxPopuli clip, with RAM and VRAM | **measured**, see [Past 400 s](#past-400-s-a-10-minute-single-pass-voxpopuli-french) |
+| In-browser speed | **not measured** |
+
+Both MatMulNBits encoders now clear the structural gate. The check also compares each quantized
+encoder against fp32 on real audio: the int8 encoder correlates at 0.99878 / 0.99968 / 0.99947 on
+the three probe clips, the w4a8 encoder at 0.97844 / 0.92847 / 0.96293. Gate 2 confirms the padded
+batch tripwire fires as designed (a batch of two clips of different lengths returns all-NaN, exactly
+as the fp32 reference does).
+
+### First WER pass
+
+A deliberately small pass, run with `scripts/wer-fleurs-validation.sh` on 2026-09-08: 40 FLEURS
+validation clips per language, French and English only, greedy decoding, CUDA, and
+`--decoder-quant fp32` so the numbers isolate the **encoder**.
+
+| encoder | fr WER | fr CER | en WER | en CER |
+| --- | --- | --- | --- | --- |
+| `istupakov_smoothquant/` int8 (previous generation) | 3.6 % | 1.4 % | 3.8 % | 1.6 % |
+| this root, fp32 | 3.7 % | 1.5 % | 3.7 % | 1.6 % |
+| this root, int8 | 3.7 % | 1.5 % | 3.7 % | 1.6 % |
+| this root, w4a8 | 3.6 % | 1.6 % | 3.9 % | 1.7 % |
+
+**Read this as a sanity check, not a ranking.** 80 clips and roughly 1,800 reference words put the
+differences between these rows well inside sampling noise, and the clips are short, so the pass says
+nothing about the long-audio behaviour that motivated the previous generation's rebuild in the first
+place. What it does establish is that all four graphs load, decode, and land in the same accuracy
+neighbourhood, with no precision collapsing.
+
+The int8 row is byte-identical to fp32, not a copy-paste error and not a silent fallback: the
+harness resolves `int8` to `int8/encoder-model.int8.onnx` and treats a missing file as fatal, and
+w4a8 (same script, same code path) does differ. At 8 bits and a 0.9988 activation correlation, the
+greedy argmax simply never flipped on these 80 clips.
+
+### Full FLEURS validation
+
+The whole validation split of all 25 languages, 8,967 clips and 27.45 h of audio, normalised before
+scoring. Running as of 2026-09-08; the per-language tables land with the numbers.
+
+<!-- BENCH-START: fleurs-greedy -->
+| encoder | macro WER | macro CER | micro WER | micro CER | sets scored |
+| --- | --- | --- | --- | --- | --- |
+| fp32 (reference) | 13.1 % | 4.0 % | 12.7 % | 3.9 % | 25/25 |
+| int8 | 13.1 % | 4.0 % | 12.7 % | 3.9 % | 25/25 |
+| w4a8 | 14.0 % | 4.3 % | 13.6 % | 4.2 % | 25/25 |
+<!-- BENCH-END: fleurs-greedy -->
+
+Beam 5 (MAES), 60 clips per language, all 25 languages:
+
+<!-- BENCH-START: fleurs-beam5 -->
+| encoder | macro WER | macro CER | micro WER | micro CER | sets scored |
+| --- | --- | --- | --- | --- | --- |
+| fp32 (reference) | 12.8 % | 3.8 % | 12.4 % | 3.8 % | 25/25 |
+| int8 | 12.8 % | 3.8 % | 12.4 % | 3.8 % | 25/25 |
+<!-- BENCH-END: fleurs-beam5 -->
+
+The fp32 row is the reference in both tables: it is this same export with no
+quantisation, so the int8 and w4a8 rows are read as the cost of quantising, not as
+absolute quality. fp32 is scored at greedy and at beam 5 so each decoding mode has its
+own reference rather than borrowing the other's.
+
+No fp16 row is planned. The fp16 encoder runs about 12x slower than int8 on the CUDA execution
+provider here (15-22 s/clip against 1.34 s/clip), which makes a full sweep of it a ~40 h job for a
+precision whose accuracy tracks fp32; it is scored deliberately on small sets instead.
+
+### Long audio
+
+**Lengths, because they are the whole point of this test.** Six speeches of **390 s** each (6.5 min)
+plus two of 60 s, 41 minutes in total. The table below covers only the **six 390 s files**: a 60 s
+clip is a single section, so its first and last chunk are the same thing and it says nothing about
+length.
+
+**The reference is not a human transcript**: it is the same model at fp32 transcribing the same audio
+in independent 60 s sections, concatenated. These numbers therefore measure how far a single long
+pass drifts from short-section decoding, which is the failure a naive int8 cast is known to produce.
+They are not absolute accuracy, and they are not comparable to the retired generation's long-audio
+table, because each generation is scored against its own fp32 oracle.
+
+| encoder | mean overall WER | first chunk (0-60 s) | **last chunk (360-390 s)** |
+| --- | --- | --- | --- |
+| int8 | 10.9 % | 10.5 % | **10.9 %** |
+| w4a8 | 11.6 % | 11.8 % | **11.2 %** |
+| fp32 | 11.0 % | 10.5 % | **10.7 %** |
+
+**The last chunk is what this section exists to show.** If a single long pass degraded past some
+arbitrary point, the final window would be visibly worse than the first. It is not: every precision
+ends within 0.6 points of where it started, and w4a8 actually ends better than it began. Mean WER per
+window across the six files, with no trend down the table:
+
+| window | int8 | w4a8 | fp32 |
+| --- | --- | --- | --- |
+| 0-60 s | 10.5 % | 11.8 % | 10.5 % |
+| 60-120 s | 11.9 % | 12.3 % | 12.1 % |
+| 120-180 s | 6.9 % | 7.9 % | 7.1 % |
+| 180-240 s | 39.9 % | 40.5 % | 39.9 % |
+| 240-300 s | 10.4 % | 9.8 % | 10.4 % |
+| 300-360 s | 9.2 % | 10.1 % | 9.0 % |
+| 360-390 s | 10.9 % | 11.2 % | 10.7 % |
+
+The 180-240 s row is one file, not a length effect: the villepin clip scores 203 % in that window on
+all three precisions **identically**, so it is the fp32 long pass diverging from its own oracle
+there, not a quantisation artifact and not something that happens because the pass has been running
+for three minutes. Drop that file and the row falls in line with its neighbours.
+
+**Quantisation costs nothing measurable on long audio here**: the three precisions sit within 0.7
+points of each other at every window. fp32 is not at 0 % because it is scored the same way as the
+others, against sectioned decoding of itself, so its 11.0 % is the long-pass drift floor rather than
+an error rate.
+
+**These eight speeches are the SmoothQuant calibration set**, so the int8 encoder saw this exact
+audio during calibration and the other precisions did not. That is a bias in int8's favour. It also
+caps the test at 390 s per file, which is where these clips were trimmed for the retired generation's
+positional-encoding limit, so nothing here exercises this export's removal of that limit: the
+evidence above says the model holds steady to 390 s, not beyond it.
+
+CER is not reported for these windows because the per-section path in `wer-quants.py` computes WER
+only; the overall and per-section tables it prints have no character-rate column.
+
+### Past 400 s: a 10 minute single pass (VoxPopuli, French)
+
+The section above stops at 390 s, so it cannot speak to this export's removal of the retired
+generation's positional-encoding limit. This one does. **A single uninterrupted 600 s pass runs to
+completion**, which is the whole claim: the old graph aborted in the first attention layer past
+~400 s / 5000 frames, and this one does not.
+
+The clip is 607.2 s of French European Parliament speech from the
+[VoxPopuli](https://huggingface.co/datasets/facebook/voxpopuli) validation split (CC0), 16 kHz mono,
+built from consecutive segments of two plenary sessions with **the first 54 s dropped** so an
+introduction or applause cannot sit at the start. It starts and ends on segment boundaries, so no
+utterance is cut mid-word at either end. The reference is fp32 decoding the same file in independent
+sections, so these are long-pass drift figures, not absolute accuracy. Both the sectioned oracle and
+the single pass read a byte-identical file, so the segment joins cannot bias the comparison.
+
+<!-- BENCH-START: voxpopuli-overall -->
+| encoder | WER | CER | dur/proc | peak host RAM | peak VRAM |
+| --- | --- | --- | --- | --- | --- |
+| int8 | 11.7 % | 7.7 % | 61x | 2,776 MB | 16,812 MiB |
+| w4a8 | 11.7 % | 7.9 % | 65x | 2,405 MB | 16,824 MiB |
+| fp32 | 11.6 % | 7.7 % | 61x | 2,135 MB | 18,868 MiB |
+<!-- BENCH-END: voxpopuli-overall -->
+
+VRAM is the peak of the pass's own process, sampled once a second and attributed by session id, so
+other work on the same card is excluded. Each pass runs alone, and the fp32 oracle over the
+same sections peaks at only 3,892 MiB by comparison.
+
+**There is no cliff at 400 s.** Per-section WER for int8 across the pass:
+
+<!-- BENCH-START: voxpopuli-sections -->
+| window | int8 | w4a8 | fp32 |
+| --- | --- | --- | --- |
+| 0-61 s | 6.2 % | 6.2 % | 6.2 % |
+| 61-121 s | 4.2 % | 7.6 % | 4.2 % |
+| 121-182 s | 5.0 % | 4.0 % | 5.0 % |
+| 182-243 s | 2.4 % | 2.4 % | 2.4 % |
+| 243-304 s | 9.7 % | 7.1 % | 9.7 % |
+| 304-364 s | 6.0 % | 6.0 % | 6.0 % |
+| 364-425 s | 2.3 % | 3.1 % | 2.3 % |
+| 425-486 s | 10.2 % | 10.2 % | 10.2 % |
+| 486-546 s | 33.2 % | 26.8 % | 33.2 % |
+| 546-607 s | 21.8 % | 27.2 % | 20.8 % |
+<!-- BENCH-END: voxpopuli-sections -->
+
+The window straddling the old wall, 364-425 s, is the *best* of the whole pass at 2.3 % for int8,
+and the one after it sits at 10.2 %, inside the spread of the windows before the wall. Nothing
+changes at the boundary.
+
+**The two closing windows are worse, and that is content rather than length.** 486-546 s reaches
+33.2 % on int8, with 546-607 s at 21.8 %. Three things argue against reading this as length
+degradation. The same two windows are 33.2 % and 20.8 % on fp32, so it is not a quantisation
+effect. They carry 190 and 202 reference words against 100 to 134 for every earlier window, so the
+speech is much denser there. And the
+[UltiMed fine-tune](https://huggingface.co/Olicorne/parakeet-tdt-0.6b-v3-UltiMed-onnx), the same
+graph with different weights, scores 8.1 % and 5.4 % on those exact windows of the same file: a
+length limit in the architecture would hit both.
+
+**VRAM, not positional encoding, is now the binding constraint.** 18.4 GiB for 600 s on a 24 GB card
+means attention memory is what sets the practical ceiling from here, and roughly 900 s would exhaust
+this GPU. Removing the baked table lifted the length cap; it did not make length free.
+
+Beam 5 is not available for this test: the long-audio harness (`wer-quants.py --audio`) is
+greedy-only, and the MAES beam decoder is manifest-driven.
+
+## Files
+
+| File | Size | What it is |
+| --- | --- | --- |
+| `fp32/encoder-model.onnx` + `.data.000` + `.data.001` | 2,436 MB | fp32 encoder, sharded external data |
+| `fp16/encoder-model.fp16.onnx` | 1,218 MB | fp16 encoder, single file, for GPU back ends |
+| `int8/encoder-model.int8.onnx` | 905 MB | 8-bit weights, int8 activations at run time |
+| `w4a8/encoder-model.w4a8.onnx` | 638 MB | 4-bit weights, int8 activations at run time |
+| `fp32/decoder_joint-model.onnx` + `.data` | 73 MB | fp32 decoder and joint network |
+| `int8/decoder_joint-model.int8.onnx` | 18 MB | int8 decoder and joint network |
+| `nemo128.onnx` | 137 KB | 128-bin mel preprocessor |
+| `vocab.txt`, `config.json` | 92 KB | tokenizer vocabulary and onnx-asr config |
+
+The `.nemo` checkpoint is **not** redistributed here: this is a straight export of NVIDIA's
+published [`nvidia/parakeet-tdt-0.6b-v3`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3),
+so get the checkpoint from them rather than from a copy.
+
+Both decoder graphs carry in-graph top-K outputs (`topk_logits`, `topk_ids`, `duration_logits`,
+`lse_token`, `lse_duration`) alongside the full `outputs` tensor, so a greedy or beam decoder can
+fetch only the reduced set per step instead of reading back the whole 8198-wide logits row.
+
+### Layout
+
+A file's directory is a pure function of its basename, and the basenames never change:
+
+| basename | directory |
+| --- | --- |
+| `encoder-model.onnx`, `encoder-model.onnx.data.NNN`, `decoder_joint-model.onnx`, `decoder_joint-model.onnx.data` | `fp32/` |
+| `*.int8.onnx` | `int8/` |
+| `*.w4a8.onnx` | `w4a8/` |
+| `*.fp16.onnx` | `fp16/` |
+| `vocab.txt`, `config.json`, `nemo128.onnx`, `README.md` | repo root |
+
+`istupakov_smoothquant/` repeats this whole table one level deeper, including its own copies of
+`vocab.txt`, `config.json` and `nemo128.onnx`, so it is loadable as a model directory in its own
+right. See [The previous generation](#the-previous-generation).
+
+This is the same rule, folder for folder, as the sibling
+[Olicorne/parakeet-tdt-0.6b-v3-UltiMed-onnx](https://huggingface.co/Olicorne/parakeet-tdt-0.6b-v3-UltiMed-onnx)
+repository. A consumer written for one works on the other.
+
+Downloading a single precision is a one-liner, which matters when the full repository is several GB:
+
+```python
+from huggingface_hub import snapshot_download
+
+snapshot_download("Olicorne/parakeet-tdt-0.6b-v3-optimized-onnx",
+                  allow_patterns=["int8/*", "vocab.txt", "nemo128.onnx", "config.json"])
+```
+
+Swap `"int8/*"` for `"fp32/*"`, `"w4a8/*"` or `"fp16/*"`. The 4-bit and fp16 encoders ship no
+decoder of their own, so pair them with `"int8/decoder_joint-model.int8.onnx"` or
+`"fp32/decoder_joint-model.onnx*"`.
+
+Not shipped: `local/` is a gitignored scratch area for build artifacts, caches and logs. It is
+excluded from every upload and is not part of this repository.
+
+### The previous generation
+
+[`istupakov_smoothquant/`](istupakov_smoothquant/README.md) holds the entire earlier line, kept
+whole rather than deleted, because its benchmark record is real and expensive to reproduce:
+
+| | root (this build) | `istupakov_smoothquant/` |
+| --- | --- | --- |
+| source | `nvidia/parakeet-tdt-0.6b-v3` `.nemo`, exported here | istupakov's ONNX export |
+| encoder graph | mask-free, runtime positional encoding, no length cap | masked, 41 MB baked PE table, ~400 s cap |
+| encoder nodes after fold | 2110 | 2041 (fp32) / 2746 (SmoothQuant int8) |
+| int8 recipe | MatMulNBits 8-bit | MatMulNBits 8-bit, plus a SmoothQuant static-int8 `lite` build |
+| published WER | **none yet** | 25-language FLEURS + 8-speech long audio, see its README |
+
+It has its own `fp32/`, `int8/`, `int8-lite/` and `w4a8/` folders and follows the same basename
+rule internally, so pointing a loader at `<repo>/istupakov_smoothquant` loads that generation
+exactly as pointing it at `<repo>` loads this one.
+
+For that to be literally true it also carries its **own copies** of the three small non-weight
+files a loader needs beside the model: `vocab.txt` (92 KB), `config.json` (97 B) and
+`nemo128.onnx` (137 KB). They are byte-identical to the root's, and deliberately duplicated rather
+than shared, because a model root that cannot be loaded on its own is not a model root: without
+them `onnx_asr.load_model(..., path=<repo>/istupakov_smoothquant)` fails on a missing
+`config.json`. The tokenizer and mel preprocessor are the same across both generations, so there is
+no version of this file that is right for one and wrong for the other.
+
+### Related repositories
+
+| Repository | What it is |
+| --- | --- |
+| [Olicorne/UltiMed-ASR-FR-v1](https://huggingface.co/datasets/Olicorne/UltiMed-ASR-FR-v1) | The French medical dataset: 601,338 clips / 3,105 h of synthesized speech, plus an eval-only [PARROT](https://doi.org/10.1016/j.ejrai.2025.100066) subset. |
+| [Olicorne/parakeet-tdt-0.6b-v3-UltiMed-onnx](https://huggingface.co/Olicorne/parakeet-tdt-0.6b-v3-UltiMed-onnx) | The French medical fine-tune of this model, exported to ONNX the same way. Use it instead of this repo if your audio is French clinical dictation. |
+| **This repository** | The multilingual baseline: the stock checkpoint exported and quantized as documented above. |
+| [UltiMed-ASR-FR-v1-scripts](https://github.com/thiswillbeyourgithub/UltiMed-ASR-FR-v1-scripts) | The open recipe that built the dataset end to end. |
+| [UltiMed-ASR-FR-v1-NeMo_training_scripts](https://github.com/thiswillbeyourgithub/UltiMed-ASR-FR-v1-NeMo_training_scripts) | The NeMo fork whose exporter produced the ONNX in this repository. |
+| [UltiMed-ASR-FR-v1-Voxtral](https://github.com/thiswillbeyourgithub/UltiMed-ASR-FR-v1-Voxtral) | The Voxtral TTS container that spoke every clip of the dataset. |
+| [Parakeet Web](https://github.com/thiswillbeyourgithub/parakeet_web) | The in-browser ASR app that loads these files, live at [parakeetweb.olicorne.org](https://parakeetweb.olicorne.org/). |
+
+## Usage
+
+### Which encoder to use
+
+Both quantized encoders store narrow weights and let the kernel quantize activations to int8 at run
+time (`MatMulNBits`, block size 32, symmetric, `accuracy_level=4`), so neither needs calibration
+data. On WebGPU the kernel dequantizes to fp16.
+
+Read them as a download-size ladder. `fp32` when bandwidth is free, `w4a8` when it is not, `int8`
+in between. The fp16 encoder is the GPU option: half the fp32 download, but it needs a back end
+with fp16 kernels (WebGPU in the browser, CUDA with onnx-asr) and is very slow on the CPU
+execution provider, so it is not a candidate for the WASM path.
+
+Because **nothing here has been benchmarked yet**, that ordering is inherited from how these same
+recipes behaved on the previous generation and on the UltiMed export, not measured on these files.
+If accuracy matters more than novelty to you today, use
+[`istupakov_smoothquant/`](istupakov_smoothquant/README.md), which has numbers.
+
+### Loading it with onnx-asr
+
+onnx-asr's stock loader globs the repository root only, so `onnx_asr.load_model(..., path=<repo>)`
+does not find these files on its own: they are one folder deeper. Point each entry at its layout
+folder first, which takes about ten lines.
+
+```python
+from pathlib import Path
+import onnx_asr
+from onnx_asr.loader import create_asr_resolver
+
+MODEL_DIR = "path/to/this/repo"   # or ".../istupakov_smoothquant" for the previous generation
+QUANT = "int8"                    # None for fp32, or "int8" / "w4a8" / "fp16"
+
+def relocate(pattern):
+    # onnx-asr resolves each entry with path.glob(pattern) and hands out
+    # basename-shaped patterns ('encoder-model?int8.onnx'), so prepending the
+    # directory is enough; the pattern stays the last segment.
+    basename = pattern.replace("?", ".")
+    for folder in ("int8/", "w4a8/", "fp16/", "fp32/", ""):
+        if (Path(MODEL_DIR) / folder / basename).is_file():
+            return folder + pattern
+    return pattern
+
+model_type = create_asr_resolver("nemo-parakeet-tdt-0.6b-v3", MODEL_DIR).model_type
+original = model_type._get_model_files
+model_type._get_model_files = staticmethod(
+    lambda quantization=None: {k: relocate(v) for k, v in original(quantization).items()})
+try:
+    model = onnx_asr.load_model("nemo-parakeet-tdt-0.6b-v3", path=MODEL_DIR, quantization=QUANT)
+finally:
+    model_type._get_model_files = staticmethod(original)
+
+print(model.recognize("audio.wav"))
+```
+
+onnx-asr applies one suffix to both encoder and decoder, so `quantization="int8"` selects
+`int8/encoder-model.int8.onnx` together with `int8/decoder_joint-model.int8.onnx`. The w4a8 and
+fp16 encoders have no decoder at their own width, so loading one that way needs a mixed-precision
+override.
+
+### The padded-batch restriction
+
+**The encoders here are valid for batch size 1 or for batches whose clips are all the same length,
+and for nothing else.** The web export drops the attention and padding masks, which is what removes
+the 72 `Where` ops and the O(T^2) mask construction, and a padded batch has no masks left to tell
+it which frames are real.
+
+This is not a silent failure. The export carries a NaN tripwire: hand it a genuinely padded batch
+and the output is `NaN`, not a plausible-looking degraded transcript. If you run a benchmark
+harness that pads batches, bucket your clips by length or drop to batch 1. The previous generation
+in [`istupakov_smoothquant/`](istupakov_smoothquant/README.md) has no such restriction.
+
+## How it was built
+
+Every step ran on 2026-09-08 on one RTX 3090 Ti, with [Claude Code](https://claude.com/claude-code).
+The exporter is `perso/export_onnx.py` from the
+[NeMo fork](https://github.com/thiswillbeyourgithub/UltiMed-ASR-FR-v1-NeMo_training_scripts); the
+graph-surgery, sharding and rounding scripts are in this repository's `scripts/`; the two
+MatMulNBits scripts live in the [parakeet_web](https://github.com/thiswillbeyourgithub/parakeet_web)
+app repository and are referenced rather than duplicated here.
+
+1. **Export, twice.** `perso/export_onnx.py --model-file parakeet-tdt-0.6b-v3.nemo --output-dir <dir>`,
+   once plain and once with `--web-optimized`. The plain export (4955 nodes, 90 `Where`) is kept
+   locally as a padded-batch-safe reference and is **not** shipped; the web-optimized one
+   (4682 nodes, 18 `Where`) is what everything below is built from.
+
+   This must run against the **fork's** `nemo` package. Its `.venv` advertises an editable install
+   whose finder mapping is empty, so `import nemo` only resolves when the fork root is on
+   `sys.path`; run it with `PYTHONPATH=<fork root>`. If a stock `nemo_toolkit` is imported instead,
+   the three `--web-optimized` flags are silently ignored and you get a second plain export.
+
+2. **Consolidate.** NeMo writes one external-data file per initializer (297 of them). They are
+   rewritten into the canonical single `<graph>.onnx` + `<graph>.onnx.data` pair.
+
+3. **Fold.** `scripts/optimize-encoder-graph.py fold`, a symbolic-shape constant fold that leaves
+   batch and time dynamic: **4682 -> 2110 nodes**, `ConstantOfShape` 65 -> 0, `Shape` 225 -> 107.
+   Gated with the same script's `check` at `--tolerance 0.0` over mel lengths 201 / 1001 / 3001:
+   worst `maxAbsDiff` 0.000e+00.
+
+4. **Round and shard.** `scripts/zero-mantissa-bits.py --inplace` zeroes the 12 low mantissa bits
+   (round-to-nearest, still fp32, more precise than an fp16 cast) so the weights compress far
+   better, then `scripts/shard-fp32.py` repacks the monolith into <2 GB shards under `fp32/`. A
+   single >2 GB sidecar cannot be ingested by a browser at all, on WASM or WebGPU.
+
+5. **Decoders.** The exported decoder/joint graph is rounded, then dynamically quantized to int8
+   (`DynamicQuantizeLinear` + `MatMulInteger`, with `DynamicQuantizeLSTM` for the prediction
+   network), and both precisions then get `scripts/optimize-decoder-graph.py lse` followed by
+   `topk` (k=16). Both passed the script's `check`.
+
+6. **Quantize the encoder.** `scripts/quantize-fp16.py` for the fp16 cast, then
+   `scripts/quantize-nbits.py --bits 8` and `--bits 4` from parakeet_web, both reading the folded,
+   rounded, sharded fp32 encoder.
+
+## Licence and attribution
+
+Released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), matching the base model.
+
+- **Base model**: [`nvidia/parakeet-tdt-0.6b-v3`](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3)
+  by NVIDIA, CC BY 4.0. These files are a **modified** version: exported to ONNX, graph-optimized,
+  mantissa-rounded and quantized. The weights themselves are not fine-tuned or otherwise retrained.
+- **`istupakov_smoothquant/`**: derived from
+  [istupakov/parakeet-tdt-0.6b-v3-onnx](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx)
+  by istupakov, whose ONNX export and [onnx-asr](https://github.com/istupakov/onnx-asr) loader this
+  repository's file naming still follows. See that folder's README for its own attribution.
+- **[onnx/neural-compressor](https://github.com/onnx/neural-compressor)**: the SmoothQuant
+  implementation behind the previous generation's `int8-lite` build, used through
+  [a fork](https://github.com/thiswillbeyourgithub/neural-compressor-fork).
+
+Open a discussion on this repository for questions about the files. Issues in the browser app that
+loads them belong in the [Parakeet Web](https://github.com/thiswillbeyourgithub/parakeet_web)
+repository instead.
