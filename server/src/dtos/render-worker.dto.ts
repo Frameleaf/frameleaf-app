@@ -179,10 +179,10 @@ const RenderWorkerClaimRequestSchema = z
 
 const RenderWorkerInputGrantSchema = z
   .object({
-    inputId: z.string(),
-    assetId: z.uuidv4(),
-    role: z.enum(['source', 'audio', 'lut', 'font', 'overlay', 'subtitle', 'model', 'other']),
-    checksum: z.string().nullable().describe('Hex digest the manifest was resolved against'),
+    inputId: z.string().describe('FL-90 resource key, or `source` for a single-asset workload'),
+    kind: z.string().describe('Resource class: library-asset, edited-master, font, lut, …'),
+    resourceId: z.string().describe('Asset or resource id. Never a path'),
+    checksum: z.string().nullable().describe('Digest the manifest was resolved against, when known'),
     url: z.string().describe('Relative URL, valid for this claim only and only until expiresAt'),
     expiresAt: z.string().meta({ format: 'date-time' }),
   })

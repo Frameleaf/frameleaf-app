@@ -25,53 +25,34 @@ import { MediaOperationDestination, MediaOperationKind, RenderWorkerRefusalReaso
 /* Seams                                                                */
 /* ------------------------------------------------------------------ */
 
-/** NestJS injection tokens. FL-90 and FL-110 register providers under these; nothing else is needed. */
-export const AUTHORIZED_MANIFEST_RESOLVER = 'FRAMELEAF_AUTHORIZED_MANIFEST_RESOLVER';
+/** NestJS injection token. FL-110 registers a provider under it; nothing else is needed. */
 export const DESTINATION_HEALTH_PROVIDER = 'FRAMELEAF_DESTINATION_HEALTH_PROVIDER';
 
-/** One thing a render needs to read. `assetId` is the only handle a worker gets; never a path. */
+/**
+ * One thing a render needs to read, as the worker sees it. `resourceId` is a library asset id or
+ * an FL-90 resource id; never a path. `token` is FL-90's signed read grant for Studio resources,
+ * carried opaquely inside the operation-scoped grant and verified by FL-90 on redemption.
+ */
 export type AuthorizedInput = {
-  /** Stable within the manifest; the grant URL is minted per input id. */
+  /** FL-90's resource key (`kind:id`), or `source` for a single-asset workload. */
   inputId: string;
-  assetId: string;
-  /** What the input is for. Informational to the worker; the resolver decides admissibility. */
-  role: 'source' | 'audio' | 'lut' | 'font' | 'overlay' | 'subtitle' | 'model' | 'other';
-  /** The checksum the manifest was resolved against, hex, when known. The worker verifies it. */
+  kind: string;
+  resourceId: string;
+  /** The checksum the manifest was resolved against, when known. The worker verifies it. */
   checksum: string | null;
+  token: string | null;
 };
 
 /**
  * Everything an operation is allowed to read, resolved against the *current* access state of its
- * owner. FL-90 supplies the real resolver: it walks the project graph, including nested and
- * expression-addressed resources, and returns only inputs the owner may still read. The default
- * here is deliberately narrow: the operation's own source asset and the asset ids its immutable
- * snapshot lists, each re-checked for owner access at resolve time.
+ * owner. For Studio kinds this is FL-90's `StudioAuthorizedManifest` reduced to what a worker may
+ * see; for single-asset workloads it is the source asset, re-checked for owner access.
  */
 export type AuthorizedManifest = {
   operationId: string;
   revisionId: string | null;
   inputs: AuthorizedInput[];
 };
-
-/** The subset of an operation a resolver needs. Kept small so FL-90 can implement it without the row. */
-export type ManifestOperation = {
-  id: string;
-  ownerId: string;
-  kind: MediaOperationKind;
-  assetId: string | null;
-  projectId: string | null;
-  revisionId: string | null;
-  snapshot: Record<string, unknown>;
-};
-
-export interface AuthorizedManifestResolver {
-  /**
-   * Resolve the inputs this operation may read *now*. A resolver must re-check access on every
-   * call: a manifest is minted per claim and again per input read, and a source the owner lost
-   * access to in between must not be served.
-   */
-  resolve(operation: ManifestOperation): Promise<AuthorizedManifest>;
-}
 
 /**
  * Whether a destination can take work right now. `unknown` is the honest default when nothing
@@ -369,7 +350,9 @@ export const INPUT_GRANT_TTL_MS = 10 * 60 * 1000;
 export type InputGrantPayload = {
   operationId: string;
   inputId: string;
-  assetId: string;
+  resourceId: string;
+  /** FL-90's read grant for a Studio resource, verified again on redemption. Null for a plain asset. */
+  token: string | null;
   /** Milliseconds since the epoch. */
   expiresAt: number;
 };
@@ -433,7 +416,8 @@ export const verifyInputGrant = (
   if (
     typeof payload?.operationId !== 'string' ||
     typeof payload.inputId !== 'string' ||
-    typeof payload.assetId !== 'string' ||
+    typeof payload.resourceId !== 'string' ||
+    (payload.token !== null && typeof payload.token !== 'string') ||
     typeof payload.expiresAt !== 'number'
   ) {
     return { valid: false, reason: 'malformed' };
