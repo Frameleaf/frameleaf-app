@@ -451,6 +451,15 @@ export class MediaOperationService {
       throw new BadRequestException('Only a failed or cancelled job can be retried');
     }
 
+    // A Google Photos import step (FL-65) resumes from its import's rows, so asking twice must not
+    // queue two runs of the same step: the retry already waiting answers instead.
+    if (operation.kind === MediaOperationKind.TakeoutImport) {
+      const active = await this.repository.getActiveRetry(operation.id, auth.user.id);
+      if (active) {
+        return this.present(auth, active);
+      }
+    }
+
     const retried = await this.repository.create({
       ownerId: operation.ownerId,
       kind: operation.kind,

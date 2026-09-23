@@ -897,6 +897,12 @@ export enum MediaOperationKind {
   StudioBundleExport = 'studio_bundle_export',
   /** A portable Studio project bundle read back into a new project of the importer's (FL-91). */
   StudioBundleImport = 'studio_bundle_import',
+  /**
+   * A Google Photos import step (FL-65): scanning staged Takeout sources, or importing the reviewed
+   * items into the owner's library. The import it works on is named in the snapshot; every step
+   * records what it has done per file, so a resumed or retried run carries on without repeating it.
+   */
+  TakeoutImport = 'takeout_import',
 }
 
 export const MediaOperationKindSchema = z
