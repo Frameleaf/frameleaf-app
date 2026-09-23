@@ -11,6 +11,7 @@ import {
   MlAdmissionRefusal,
   MlDestinationHealth,
   MlDestinationKind,
+  MlWorkerRole,
   MlWorkload,
   type MlDestinationResponseDto,
 } from '@immich/sdk';
@@ -62,6 +63,9 @@ export const mlDestinationKindLabelKey = (kind: MlDestinationKind): string => {
     }
     case MlDestinationKind.RunPod: {
       return 'admin.frameleaf_ml_destination_kind_runpod';
+    }
+    case MlDestinationKind.RunPodVideo: {
+      return 'admin.frameleaf_ml_destination_kind_runpod_video';
     }
   }
 };
@@ -124,7 +128,59 @@ export const mlRefusalLabelKey = (refusal: MlAdmissionRefusal): string => {
     case MlAdmissionRefusal.DestinationUnhealthy: {
       return 'admin.frameleaf_ml_refusal_destination_unhealthy';
     }
+    case MlAdmissionRefusal.RoleConflict: {
+      return 'admin.frameleaf_ml_refusal_role_conflict';
+    }
   }
+};
+
+/* -------------------------------------------------------------------------- */
+/* Separate library-analysis and restoration workers (FL-72)                   */
+/* -------------------------------------------------------------------------- */
+
+export const LIBRARY_WORKLOADS: readonly MlWorkload[] = [MlWorkload.Face, MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Enrichment];
+export const RESTORATION_WORKLOADS: readonly MlWorkload[] = [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative];
+
+export const isLibraryWorkload = (workload: MlWorkload) => LIBRARY_WORKLOADS.includes(workload);
+export const isRestorationWorkload = (workload: MlWorkload) => RESTORATION_WORKLOADS.includes(workload);
+
+/**
+ * The workloads a destination of this kind may be allowed at all. The managed RunPod pod runs
+ * the ordinary image and never restoration; a RunPod video worker runs restoration only.
+ */
+export const workloadsForKind = (kind: MlDestinationKind): MlWorkload[] => {
+  switch (kind) {
+    case MlDestinationKind.RunPod: {
+      return ML_WORKLOAD_ORDER.filter((workload) => !isRestorationWorkload(workload));
+    }
+    case MlDestinationKind.RunPodVideo: {
+      return [...RESTORATION_WORKLOADS];
+    }
+    default: {
+      return [...ML_WORKLOAD_ORDER];
+    }
+  }
+};
+
+/**
+ * Whether a workload checkbox is unavailable in the destination form: library analysis and
+ * restoration never share a worker, so choosing one kind of work closes the other. Mirrors the
+ * server's refusal so the form never offers a combination it would reject.
+ */
+export const workloadBlockedInDraft = (kind: MlDestinationKind, selected: readonly MlWorkload[], workload: MlWorkload) => {
+  if (!workloadsForKind(kind).includes(workload)) {
+    return true;
+  }
+  if (selected.includes(workload)) {
+    return false;
+  }
+  if (isRestorationWorkload(workload)) {
+    return selected.some((entry) => isLibraryWorkload(entry));
+  }
+  if (isLibraryWorkload(workload)) {
+    return selected.some((entry) => isRestorationWorkload(entry));
+  }
+  return false;
 };
 
 /** A cloud destination whose consent has not been recorded cannot be routed to or admitted. */
@@ -137,9 +193,19 @@ export const isConsentBlocking = (destination: Pick<MlDestinationResponseDto, 'c
  * checks so the picker never offers a destination the server would refuse.
  */
 export const canRouteTo = (
-  destination: Pick<MlDestinationResponseDto, 'enabled' | 'workloads' | 'consent'>,
+  destination: Pick<MlDestinationResponseDto, 'enabled' | 'workloads' | 'consent'> &
+    Partial<Pick<MlDestinationResponseDto, 'kind' | 'role'>>,
   workload: MlWorkload,
-): boolean => destination.enabled && destination.workloads.includes(workload) && !isConsentBlocking(destination);
+): boolean =>
+  destination.enabled &&
+  destination.workloads.includes(workload) &&
+  !isConsentBlocking(destination) &&
+  // FL-72: restoration is never routed to the library-analysis pod or to a worker that also runs
+  // library analysis. (The server additionally refuses an endpoint a library route uses.)
+  !(
+    isRestorationWorkload(workload) &&
+    (destination.kind === MlDestinationKind.RunPod || destination.role === MlWorkerRole.Mixed)
+  );
 
 /** Destinations that may currently be routed to for `workload`, in the order the server listed them. */
 export const routableDestinations = (

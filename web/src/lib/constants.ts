@@ -78,6 +78,8 @@ export enum OpenQueryParam {
   SHARING = 'sharing',
   /** The trash retention settings, from the Trash page (FL-47). */
   TRASH = 'trash',
+  /** The machine-learning settings, where the RunPod library-analysis worker is managed (FL-72). */
+  MACHINE_LEARNING = 'machine-learning',
 }
 
 export const maximumLengthSearchPeople = 100;
