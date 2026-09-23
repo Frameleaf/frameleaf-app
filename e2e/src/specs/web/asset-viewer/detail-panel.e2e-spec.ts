@@ -30,7 +30,7 @@ test.describe('Detail Panel', () => {
     await page.goto(`/share/${sharedLink.key}/photos/${asset.id}`);
     await page.waitForSelector('#immich-asset-viewer');
 
-    await expect(page.getByRole('button', { name: 'Info' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Information (I)' })).toBeVisible();
     await page.keyboard.press('i');
     await expect(page.locator('#detail-panel')).toBeVisible();
     await page.keyboard.press('i');
@@ -46,7 +46,7 @@ test.describe('Detail Panel', () => {
     await page.goto(`/share/${sharedLink.key}/photos/${asset.id}`);
     await page.waitForSelector('#immich-asset-viewer');
 
-    await expect(page.getByRole('button', { name: 'Info' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Information (I)' })).toHaveCount(0);
     await page.keyboard.press('i');
     await expect(page.locator('#detail-panel')).toHaveCount(0);
     await page.keyboard.press('i');
@@ -62,7 +62,7 @@ test.describe('Detail Panel', () => {
     await page.goto(`/share/${sharedLink.key}/photos/${asset.id}`);
 
     const textarea = page.getByRole('textbox', { name: 'Add a description' });
-    await page.getByRole('button', { name: 'Info' }).click();
+    await page.getByRole('button', { name: 'Information (I)' }).click();
     await expect(textarea).toBeVisible();
     await expect(textarea).not.toBeDisabled();
   });
@@ -72,14 +72,14 @@ test.describe('Detail Panel', () => {
     await page.goto(`/photos/${asset.id}`);
     await page.waitForSelector('#immich-asset-viewer');
 
-    await page.getByRole('button', { name: 'Info' }).click();
+    await page.getByRole('button', { name: 'Information (I)' }).click();
     const textarea = page.getByRole('textbox', { name: 'Add a description' });
     await textarea.fill('new description');
     await expect(textarea).toHaveValue('new description');
 
-    await page.getByRole('button', { name: 'Info' }).click();
+    await page.getByRole('button', { name: 'Information (I)' }).click();
     await expect(textarea).not.toBeVisible();
-    await page.getByRole('button', { name: 'Info' }).click();
+    await page.getByRole('button', { name: 'Information (I)' }).click();
     await expect(textarea).toBeVisible();
 
     await utils.waitForWebsocketEvent({ event: 'assetUpdate', id: asset.id });
@@ -94,7 +94,7 @@ test.describe('Detail Panel', () => {
       await page.goto(`/photos/${asset.id}`);
       await page.waitForSelector('#immich-asset-viewer');
 
-      await page.getByRole('button', { name: 'Info' }).click();
+      await page.getByRole('button', { name: 'Information (I)' }).click();
       const details = page.getByTestId('frameleaf-info-details');
 
       await expect(details.getByText('Filename', { exact: true })).toBeVisible();
@@ -110,7 +110,7 @@ test.describe('Detail Panel', () => {
       await page.goto(`/share/${sharedLink.key}/photos/${asset.id}`);
       await page.waitForSelector('#immich-asset-viewer');
 
-      await page.getByRole('button', { name: 'Info' }).click();
+      await page.getByRole('button', { name: 'Information (I)' }).click();
       const details = page.getByTestId('frameleaf-info-details');
 
       await expect(details.getByText('Filename', { exact: true })).toBeVisible();
@@ -146,7 +146,7 @@ test.describe('Detail Panel', () => {
       await page.goto(`/photos/${asset.id}`);
       await page.waitForSelector('#immich-asset-viewer');
 
-      await page.getByRole('button', { name: 'Info' }).click();
+      await page.getByRole('button', { name: 'Information (I)' }).click();
       await page.getByTestId('detail-panel-edit-date-button').click();
       await page.waitForSelector('[role="dialog"]');
 

@@ -20,7 +20,9 @@ describe('Route', () => {
     });
 
     it('should support query parameters', () => {
-      expect(Route.systemSettings({ isOpen: OpenQueryParam.OAUTH })).toBe('/admin/system-settings?isOpen=oauth');
+      expect(Route.systemSettings({ isOpen: OpenQueryParam.OAUTH })).toBe(
+        '/user-settings?area=security&section=authentication&isOpen=oauth',
+      );
     });
   });
 
@@ -93,11 +95,13 @@ describe('Route', () => {
 
   describe(Route.systemSettings.name, () => {
     it('should work', () => {
-      expect(Route.systemSettings()).toBe('/admin/system-settings');
+      expect(Route.systemSettings()).toBe('/user-settings');
     });
 
     it('should support query parameters', () => {
-      expect(Route.systemSettings({ isOpen: OpenQueryParam.OAUTH })).toBe('/admin/system-settings?isOpen=oauth');
+      expect(Route.systemSettings({ isOpen: OpenQueryParam.OAUTH })).toBe(
+        '/user-settings?area=security&section=authentication&isOpen=oauth',
+      );
     });
   });
 
