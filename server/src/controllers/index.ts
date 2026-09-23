@@ -40,6 +40,7 @@ import { PersonController } from 'src/controllers/person.controller.js';
 import { PetController } from 'src/controllers/pet.controller.js';
 import { PhysicalDeduplicationController } from 'src/controllers/physical-deduplication.controller.js';
 import { PluginController } from 'src/controllers/plugin.controller.js';
+import { PreservationController } from 'src/controllers/preservation.controller.js';
 import { QueueController } from 'src/controllers/queue.controller.js';
 import { RenderWorkerAdminController, RenderWorkerController } from 'src/controllers/render-worker.controller.js';
 import { RunPodController } from 'src/controllers/runpod.controller.js';
@@ -112,6 +113,7 @@ export const controllers = [
   PetController,
   PhysicalDeduplicationController,
   PluginController,
+  PreservationController,
   QueueController,
   RunPodController,
   SearchController,

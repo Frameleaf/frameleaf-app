@@ -52,6 +52,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000460-AddTakeoutImport')).toBe('legacy-fork');
     expect(classifyMigration('2100000000490-SeparateRestorationWorkers')).toBe('legacy-fork');
     expect(classifyMigration('2100000000500-AddVideoMomentFrameVectorIndex')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000510-AddPreservationPackages')).toBe('legacy-fork');
     expect(classifyMigration('2100000000530-ReconcileFrameleafSchemaSnapshots')).toBe('legacy-fork');
   });
 
