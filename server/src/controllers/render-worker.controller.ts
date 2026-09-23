@@ -52,7 +52,7 @@ import { UUIDParamDto, UUIDv7ParamDto } from 'src/validation.js';
 
 const OperationInputParamSchema = z.object({
   id: z.uuidv7(),
-  grant: z.string().min(1).max(2048),
+  grant: z.string().min(1).max(8192),
 });
 class OperationInputParamDto extends createZodDto(OperationInputParamSchema) {}
 
