@@ -27,6 +27,8 @@ describe('Frameleaf settings areas', () => {
     expect(areaForSection('storage-template')).toBe('storage');
     expect(areaForSection('authentication')).toBe('security');
     expect(areaForSection('notifications')).toBe('notifications');
+    // Google Photos imports sit with the other imports (FL-65).
+    expect(areaForSection('takeout')).toBe('backup');
     expect(areaForSection('unknown')).toBeUndefined();
   });
 

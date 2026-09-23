@@ -79,6 +79,7 @@ export const envData: EnvData = {
 
   storage: {
     ignoreMountCheckErrors: false,
+    importRoots: [],
   },
 
   telemetry: {

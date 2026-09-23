@@ -91,6 +91,7 @@ describe('pause and resume (FL-104)', () => {
     expect(isPausableMediaOperationKind(MediaOperationKind.QuickEdit)).toBe(false);
     expect(isPausableMediaOperationKind(MediaOperationKind.StudioBundleExport)).toBe(false);
     expect(isPausableMediaOperationKind(MediaOperationKind.StudioBundleImport)).toBe(false);
+    expect(isPausableMediaOperationKind(MediaOperationKind.TakeoutImport)).toBe(true);
   });
 
   it('pauses a queued or running job, but not one validating, stopping or finished', () => {
