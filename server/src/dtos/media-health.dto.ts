@@ -141,8 +141,8 @@ const MediaHealthRecoverSchema = z
   .object({
     choices: z.array(MediaHealthCandidateChoiceSchema).min(1).max(1000),
     confirmed: z
-      .literal(true)
-      .describe('The reviewer checked the checksum and decode evidence and keeps the damaged source'),
+      .boolean()
+      .describe('Must be true: the reviewer checked the checksum and decode evidence and keeps the damaged source'),
   })
   .meta({ id: 'MediaHealthRecoverDto' });
 
@@ -190,7 +190,10 @@ const MediaHealthRootsResponseSchema = z
 const MediaHealthOperationSchema = z
   .object({
     id: z.uuidv7().describe('Media operation ID'),
-    mode: z.enum(['scan', 'locate']).describe('A library scan or a search for originals'),
+    mode: z
+      .enum(['scan', 'locate'])
+      .describe('A library scan or a search for originals')
+      .meta({ id: 'MediaHealthOperationMode' }),
     status: MediaOperationStatusSchema,
     progress: z.number().meta({ format: 'double' }),
     processedUnits: z.int(),
@@ -210,7 +213,8 @@ const MediaHealthActivitySchema = z
     id: z.uuidv7().describe('Media operation ID'),
     action: z
       .enum(['scan', 'locate', 'relink-missing-media', 'recover-damaged-media', 'trash-damaged-media'])
-      .describe('What the job did'),
+      .describe('What the job did')
+      .meta({ id: 'MediaHealthActivityAction' }),
     status: MediaOperationStatusSchema,
     items: z.int().describe('Items the job covered'),
     createdAt: z.string().meta({ format: 'date-time' }),
