@@ -23,7 +23,6 @@
   import AccountPasswordResetDialog from '$lib/components/frameleaf/AccountPasswordResetDialog.svelte';
   import AccountPinDialog from '$lib/components/frameleaf/AccountPinDialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import Pane from '$lib/components/frameleaf/Pane.svelte';
   import { canChangeSecrets } from '$lib/frameleaf/accounts';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
@@ -68,9 +67,7 @@
   };
 </script>
 
-<Pane label={$t('frameleaf_users_security_title')}>
-  <h2>{$t('frameleaf_users_security_title')}</h2>
-
+<div class="account-security" aria-label={$t('frameleaf_users_security_title')}>
   <div class="row">
     <div>
       <strong>{$t('frameleaf_users_password_title')}</strong>
@@ -119,13 +116,11 @@
       <li class="empty">{$t('frameleaf_users_devices_none')}</li>
     {/each}
   </ul>
-</Pane>
+</div>
 
 <style>
-  h2 {
-    margin: 0 0 0.75rem;
-    font-size: 1rem;
-    color: var(--fl-text);
+  .account-security {
+    min-width: 0;
   }
   h3 {
     margin: 1.25rem 0 0.375rem;
