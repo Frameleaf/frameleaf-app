@@ -2761,10 +2761,23 @@ export type MediaOperationEstimateDto = {
     /** Estimated output size */
     sizeBytes: string | null;
 };
+export type MediaOperationBulkSummaryDto = {
+    action: MediaOperationBulkAction;
+    /** Items the server attempted and could not apply; a retry covers these */
+    failed: number;
+    itemsTruncated: boolean;
+    /** Items in the frozen set */
+    requested: number;
+    /** Items refused before anything changed, e.g. no access */
+    skipped: number;
+    snapshotTruncated: boolean;
+    succeeded: number;
+};
 export type MediaOperationDto = {
     /** Source asset, when the workload has exactly one */
     assetId: string | null;
     attempt: number;
+    bulk: (MediaOperationBulkSummaryDto) | null;
     cancelAcknowledgedAt: string | null;
     cancelRequestedAt: string | null;
     createdAt: string;
@@ -2840,7 +2853,17 @@ export type MediaOperationCheckpointDto = {
     /** Rational timebase for the tick range, e.g. 30000/1001 */
     timebase: string;
 };
+export type MediaOperationBulkItemDto = {
+    /** Asset ID */
+    id: string;
+    /** Operator detail from the server */
+    message: string | null;
+    /** Stable key the client turns into a message */
+    reasonKey: string | null;
+    status: MediaOperationItemStatus;
+};
 export type MediaOperationDetailDto = (MediaOperationDto) & {
+    bulkItems: MediaOperationBulkItemDto[];
     checkpoints: MediaOperationCheckpointDto[];
     /** The immutable binding the render was bound to */
     snapshot: {
@@ -2900,6 +2923,36 @@ export type StudioPreviewRequestDto = {
     time: StudioPreviewTimeDto;
     viewportHeight: number;
     viewportWidth: number;
+};
+export type MediaOperationBulkPayloadDto = {
+    albumId?: string;
+    dateMode?: DateMode;
+    dateTimeOriginal?: string;
+    description?: string;
+    latitude?: number;
+    longitude?: number;
+    /** Relative shift in minutes, for `dateMode: shift` */
+    minutes?: number;
+    primaryId?: string;
+    stackIds?: string[];
+    tagIds?: string[];
+    timeZone?: string;
+};
+export type MediaOperationBulkCreateDto = {
+    action: MediaOperationBulkAction;
+    /** The frozen matching set, in order */
+    assetIds: string[];
+    payload?: MediaOperationBulkPayloadDto;
+    /** Client idempotency key; submitting the same key again returns the existing operation */
+    requestId?: string;
+    /** A record of the view the set came from; never re-resolved */
+    scope?: {
+        [key: string]: any;
+    };
+    /** The count shown to the person at submit */
+    submittedTotal?: number | null;
+    /** The client could not resolve the whole matching set */
+    truncated?: boolean;
 };
 export type OnThisDayDto = {
     /** Year for on this day memory */
@@ -7834,6 +7887,21 @@ export function searchMediaOperations({ includeDismissed, kind, skip, status, ta
     }));
 }
 /**
+ * Queue a bulk operation
+ */
+export function createBulkMediaOperation({ mediaOperationBulkCreateDto }: {
+    mediaOperationBulkCreateDto: MediaOperationBulkCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaOperationDto;
+    }>("/media-operations/bulk", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaOperationBulkCreateDto
+    })));
+}
+/**
  * Get media operation statistics
  */
 export function getMediaOperationStatistics(opts?: Oazapfts.RequestOpts) {
@@ -11574,7 +11642,32 @@ export enum MediaOperationKind {
     StudioPreview = "studio_preview",
     Restoration = "restoration",
     RestorationPreview = "restoration_preview",
-    QuickEdit = "quick_edit"
+    QuickEdit = "quick_edit",
+    Bulk = "bulk"
+}
+export enum MediaOperationBulkAction {
+    Favorite = "favorite",
+    Unfavorite = "unfavorite",
+    Archive = "archive",
+    Unarchive = "unarchive",
+    AddToAlbum = "add-to-album",
+    RemoveFromAlbum = "remove-from-album",
+    Tag = "tag",
+    Untag = "untag",
+    ChangeDate = "change-date",
+    ChangeDescription = "change-description",
+    ChangeLocation = "change-location",
+    MarkSensitive = "mark-sensitive",
+    UnmarkSensitive = "unmark-sensitive",
+    Delete = "delete",
+    DeletePermanently = "delete-permanently",
+    Restore = "restore",
+    Stack = "stack",
+    Unstack = "unstack",
+    RefreshThumbnails = "refresh-thumbnails",
+    RefreshMetadata = "refresh-metadata",
+    RefreshEncoded = "refresh-encoded",
+    RefreshFaces = "refresh-faces"
 }
 export enum MediaOperationStatus {
     Queued = "queued",
@@ -11638,6 +11731,15 @@ export enum MlAdmissionRefusal {
     BudgetExceeded = "budget-exceeded",
     EndpointUnresolved = "endpoint-unresolved",
     DestinationUnhealthy = "destination-unhealthy"
+}
+export enum MediaOperationItemStatus {
+    Ok = "ok",
+    Skipped = "skipped",
+    Failed = "failed"
+}
+export enum DateMode {
+    Set = "set",
+    Shift = "shift"
 }
 export enum MemorySearchOrder {
     Asc = "asc",

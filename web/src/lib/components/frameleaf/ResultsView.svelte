@@ -37,6 +37,12 @@
     onSelectAll?: () => void;
     /** Album, shared-link and trash context for the bulk actions. */
     bulkContext?: Omit<BulkActionContext, 'assets' | 'count' | 'currentUserId' | 'snapshot'>;
+    /**
+     * Base name for a selection download's archive, e.g. the collection name. Falls back to the
+     * generic default in `downloadArchive` when unset, matching the legacy per-route
+     * `DownloadAction` filename.
+     */
+    downloadFileName?: string;
     tagOptions?: { id: string; name: string }[];
     albumOptions?: { id: string; name: string; count?: number }[];
     selectionMode?: boolean;
@@ -56,6 +62,7 @@
     onRemoved,
     onSelectAll,
     bulkContext,
+    downloadFileName,
     tagOptions = [],
     albumOptions = [],
     selectionMode = false,
@@ -107,7 +114,13 @@
       .map((asset) => toBulk(asset)),
   );
 
-  const runBulk = (id: BulkActionId, payload?: BulkPayload) => void bulk.run(id, [...session.selection], payload);
+  const runBulk = (id: BulkActionId, payload?: BulkPayload) => {
+    const withFileName =
+      id === 'download' && downloadFileName && !payload?.fileName
+        ? { ...payload, fileName: downloadFileName }
+        : payload;
+    void bulk.run(id, [...session.selection], withFileName);
+  };
 
   /**
    * The session owns the selection; the multi-select manager is kept in step with it so anything
