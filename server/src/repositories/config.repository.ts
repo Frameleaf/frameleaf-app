@@ -21,6 +21,7 @@ import {
   LogLevel,
   QueueName,
 } from 'src/enum.js';
+import { RecoveryRootConfig, parseRecoveryRoots } from 'src/utils/media-health-roots.js';
 import { setDifference } from 'src/utils/set.js';
 
 export interface EnvData {
@@ -110,6 +111,8 @@ export interface EnvData {
   storage: {
     ignoreMountCheckErrors: boolean;
     mediaLocation?: string;
+    /** Library Care recovery locations (FL-69). Searched and read only; never linked in place. */
+    recoveryRoots?: RecoveryRootConfig[];
   };
 
   workers: ImmichWorker[];
@@ -330,6 +333,7 @@ const getEnv = (): EnvData => {
     storage: {
       ignoreMountCheckErrors: !!dto.IMMICH_IGNORE_MOUNT_CHECK_ERRORS,
       mediaLocation: dto.IMMICH_MEDIA_LOCATION,
+      recoveryRoots: parseRecoveryRoots(dto.FRAMELEAF_RECOVERY_ROOTS),
     },
 
     telemetry: {

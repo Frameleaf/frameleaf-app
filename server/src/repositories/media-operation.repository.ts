@@ -284,12 +284,6 @@ export class MediaOperationRepository {
   }
 
   /**
-   * How many of these assets are the owner's and locked (FL-32; FL-34: the lock record).
-   *
-   * The bulk worker acts on Locked items, so the Locked folder's PIN is enforced when the job is
-   * submitted: a session that has not been unlocked may not queue a job that reaches them.
-   */
-  /**
    * Which of these assets are locked right now (FL-34). The bulk worker skips them for a job that
    * was submitted without the PIN: something may have locked them after the job was queued.
    */
@@ -306,6 +300,12 @@ export class MediaOperationRepository {
     return new Set(rows.map(({ assetId }) => assetId));
   }
 
+  /**
+   * How many of these assets are the owner's and locked (FL-32; FL-34: the lock record).
+   *
+   * The bulk worker acts on Locked items, so the Locked folder's PIN is enforced when the job is
+   * submitted: a session that has not been unlocked may not queue a job that reaches them.
+   */
   async countLockedAssets(ownerId: string, assetIds: string[]): Promise<number> {
     if (assetIds.length === 0) {
       return 0;
@@ -697,8 +697,16 @@ export class MediaOperationRepository {
    * items runs on the next claim, after `delayMs`, from what the result says. It is not a retry of
    * the job itself and does not use `autoRetries`. Returns false when the claim is gone or a cancel
    * was requested; the caller then settles the cancel instead.
+   *
+   * `returnAttempt` gives the claim's attempt back, as `settlePause` does: an iCloud sync (FL-68)
+   * that hands itself back to wait for the provider or for a backed-off item did not fail, and must
+   * not use up the attempts lapse recovery counts.
    */
-  async requeue(id: string, claimToken: string, options: { delayMs: number }): Promise<boolean> {
+  async requeue(
+    id: string,
+    claimToken: string,
+    options: { delayMs: number; returnAttempt?: boolean },
+  ): Promise<boolean> {
     const result = await this.db
       .updateTable('media_operation')
       .set({
@@ -708,6 +716,7 @@ export class MediaOperationRepository {
         claimToken: null,
         claimedBy: null,
         claimExpiresAt: null,
+        ...(options.returnAttempt ? { attempt: sql<number>`greatest("attempt" - 1, 0)` } : {}),
       })
       .where('id', '=', id)
       .where('claimToken', '=', claimToken)
