@@ -23,6 +23,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000070-ReconcileMediaHealthSchema')).toBe('legacy-fork');
     expect(classifyMigration('2100000000080-AddAlbumKind')).toBe('legacy-fork');
     expect(classifyMigration('2100000000090-AddPartnerShareLocation')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000130-AddAssetAudioChannelLayout')).toBe('legacy-fork');
   });
 
   it('classifies migrations from a certified upstream tag', () => {

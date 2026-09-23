@@ -139,7 +139,16 @@ export function withAudioStream(eb: ExpressionBuilder<DB, 'asset_exif' | 'asset_
   return jsonObjectFrom(
     eb
       .selectFrom(dummy)
-      .select(['asset_audio.index', 'asset_audio.codecName', 'asset_audio.profile', 'asset_audio.bitrate'])
+      .select([
+        'asset_audio.index',
+        'asset_audio.codecName',
+        'asset_audio.profile',
+        'asset_audio.bitrate',
+        // FL-102: channel-aware audio. A render needs these to preserve the layout.
+        'asset_audio.channels',
+        'asset_audio.channelLayout',
+        'asset_audio.sampleRate',
+      ])
       .where('asset_audio.assetId', 'is not', sql.lit(null))
       .$castTo<AudioStreamInfo | null>(),
   );

@@ -141,6 +141,14 @@ const FFMPEG_COLOR_MATRIX: Partial<Record<ColorMatrix, string>> = {
   [ColorMatrix.Ictcp]: 'ictcp',
 };
 
+/**
+ * The name ffmpeg's `-colorspace` option and the `scale` filter's `out_color_matrix` option
+ * accept for a probed matrix code point, or null when the code point has no name and the
+ * render should leave the matrix alone rather than guess at one.
+ */
+export const getFfmpegColorMatrixName = (colorMatrix: ColorMatrix): string | null =>
+  FFMPEG_COLOR_MATRIX[colorMatrix] ?? null;
+
 /** Asset file types that are playback proxies or previews — derived, replaceable, never a master. */
 const PLAYBACK_PROXY_FILE_TYPES = new Set<AssetFileType>([
   AssetFileType.EncodedVideo,
@@ -166,6 +174,17 @@ export enum MediaPolicyViolation {
   DerivedSourceForNewMaster = 'derivedSourceForNewMaster',
   /** The source cannot be preserved by this renderer at all. */
   UnsupportedPreservation = 'unsupportedPreservation',
+  /**
+   * FL-101: the probed source is outside the qualified decoding matrix — an unqualified Dolby
+   * Vision profile, an undescribable pixel format or a bit depth this renderer cannot deliver.
+   * See `qualifySourceDecode` in `media-decode.ts`.
+   */
+  UnsupportedSource = 'unsupportedSource',
+  /**
+   * FL-102: the chosen encoder has no qualified path for the delivery the source requires, and
+   * flattening it silently is not an option. See `selectEncoderPixelFormat` in `media-encode.ts`.
+   */
+  UnsupportedDelivery = 'unsupportedDelivery',
 }
 
 /** How a render treats the source's colour volume. Recorded in lineage; never implicit. */
@@ -440,6 +459,50 @@ export type EditedMasterAudioPolicy = {
 };
 
 /**
+ * What a target asks of an audio track's channel layout. FL-102: a downmix happens because a
+ * target asked for one, never because nobody said anything.
+ */
+export enum AudioChannelPolicy {
+  /** Keep the source's channel count, layout and sample rate. */
+  Preserve = 'preserve',
+  /** Fold to stereo, because this target explicitly asks for a stereo deliverable. */
+  DownmixStereo = 'downmixStereo',
+}
+
+/**
+ * FL-102. The channel arguments for a delivery, from the persisted stream facts.
+ *
+ * Preserving emits `-ac`, `-channel_layout` and `-ar` from what was probed and stored, and
+ * emits *nothing at all* for a fact that is not known — an absent `-ac` leaves ffmpeg with the
+ * source layout, which is the honest outcome, whereas a guessed one is a silent remix. A
+ * stereo downmix is a single explicit `-ac 2`.
+ */
+export const getDeliveryAudioChannelArgs = (
+  audioStream: Pick<MasterAudioStreamInfo, 'channels' | 'channelLayout' | 'sampleRate'> | undefined,
+  policy: AudioChannelPolicy,
+): string[] => {
+  if (policy === AudioChannelPolicy.DownmixStereo) {
+    return ['-ac', '2'];
+  }
+
+  if (!audioStream) {
+    return [];
+  }
+
+  const args: string[] = [];
+  if (audioStream.channels && audioStream.channels > 0) {
+    args.push('-ac', String(audioStream.channels));
+  }
+  if (audioStream.channelLayout) {
+    args.push('-channel_layout', audioStream.channelLayout);
+  }
+  if (audioStream.sampleRate && audioStream.sampleRate > 0) {
+    args.push('-ar', String(audioStream.sampleRate));
+  }
+  return args;
+};
+
+/**
  * Rule 6. The audio channel layout survives the render.
  *
  * The shared playback output options force `-ac 2`, because a playback proxy is allowed to be
@@ -474,17 +537,7 @@ export const applyEditedMasterAudioPolicy = (
     return { streamCopy: true, args: [] };
   }
 
-  const args: string[] = [];
-  if (audioStream.channels && audioStream.channels > 0) {
-    args.push('-ac', String(audioStream.channels));
-  }
-  if (audioStream.channelLayout) {
-    args.push('-channel_layout', audioStream.channelLayout);
-  }
-  if (audioStream.sampleRate && audioStream.sampleRate > 0) {
-    args.push('-ar', String(audioStream.sampleRate));
-  }
-  return { streamCopy: false, args };
+  return { streamCopy: false, args: getDeliveryAudioChannelArgs(audioStream, AudioChannelPolicy.Preserve) };
 };
 
 /** Removes a `--flag value` pair from an ffmpeg argument array, in place. */
