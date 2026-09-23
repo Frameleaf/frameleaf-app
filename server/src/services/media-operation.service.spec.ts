@@ -493,6 +493,8 @@ describe(MediaOperationService.name, () => {
 
         expect(preservation.getPackage).toHaveBeenCalledWith(packageId, authStub.user1.user.id);
         expect(preservation.resetFailedItems).toHaveBeenCalledWith(packageId);
+        // Through the race-safe insert (FL-43), never a plain create that a second click could collide with.
+        expect(repository.createRetry).toHaveBeenCalledWith(expect.objectContaining({ retryOfId: expect.any(String) }));
         expect(repository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             kind: MediaOperationKind.PreservationExport,
@@ -500,6 +502,24 @@ describe(MediaOperationService.name, () => {
             snapshot: expect.objectContaining({ packageId, requestKey: null }),
           }),
         );
+      });
+
+      it('answers a second retry that lost the race with the winner, not a unique violation', async () => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({
+            kind: MediaOperationKind.PreservationVerify,
+            status: MediaOperationStatus.Failed,
+            snapshot: { kind: 'preservation-verify', packageId },
+          }),
+        );
+        preservation.getPackage.mockResolvedValue(packageRow());
+        const winner = operationStub({ id: 'winner', kind: MediaOperationKind.PreservationVerify });
+        vi.mocked(repository.createRetry).mockResolvedValue({ operation: winner, created: false });
+
+        const result = await sut.retry(authStub.user1, 'op');
+
+        expect(result.id).toBe('winner');
+        expect(repository.create).not.toHaveBeenCalled();
       });
 
       it('answers with the job already working on the same package', async () => {
