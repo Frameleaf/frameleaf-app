@@ -22,6 +22,7 @@
   import ServerSettings from './ServerSettings.svelte';
   import SmartAlbumsSettings from './SmartAlbumsSettings.svelte';
   import StorageTemplateSettings from '$lib/components/admin-settings/StorageTemplateSettings.svelte';
+  import TakeoutSettings from './TakeoutSettings.svelte';
   import ThemeSettings from './ThemeSettings.svelte';
   import TrashSettings from './TrashSettings.svelte';
   import UserSettings from './UserSettings.svelte';
@@ -45,6 +46,7 @@
     mdiFolderOutline,
     mdiImageMultipleOutline,
     mdiImageOutline,
+    mdiImport,
     mdiLockOutline,
     mdiMapMarkerOutline,
     mdiPaletteOutline,
@@ -170,6 +172,13 @@
       subtitle: $t('admin.storage_template_settings_description'),
       key: 'storage-template',
       icon: mdiFolderOutline,
+    },
+    {
+      component: TakeoutSettings,
+      title: $t('frameleaf_takeout_settings_title'),
+      subtitle: $t('frameleaf_takeout_settings_subtitle'),
+      key: 'takeout',
+      icon: mdiImport,
     },
     {
       component: ThemeSettings,

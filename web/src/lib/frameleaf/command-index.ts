@@ -30,6 +30,7 @@ import {
   mdiImageMultipleOutline,
   mdiImageOutline,
   mdiImageSizeSelectLarge,
+  mdiImport,
   mdiKeyOutline,
   mdiLockOutline,
   mdiLockSmart,
@@ -127,6 +128,7 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
       href: Route.livePhotosUtility(),
     },
     { id: 'geolocation', title: $t('manage_geolocation'), icon: mdiMapMarkerOutline, href: Route.geolocationUtility() },
+    { id: 'takeout', title: $t('frameleaf_takeout_title'), icon: mdiImport, href: Route.takeout() },
   ];
   for (const extra of extras) {
     pages.push({ ...extra, subtitle: $t('frameleaf_search_subtitle_page') });
