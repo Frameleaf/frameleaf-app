@@ -9,13 +9,32 @@
  * mutates the graph, whether it is undoable, whether it needs the project lease and which
  * later story owns its semantics.
  *
- * The list is modelled on the prototype's project model,
- * `design/frameleaf/template/src/studio-project.mjs`, which the September 22, 2026
- * revision names as the interaction contract for the host. Each registry row records the
- * prototype function it came from so the production implementation can be read against
- * its specification. The prototype is design evidence: the production graph stays
- * Freecut's, so `payload` shapes here describe *intent* (which clip, which track, which
- * time), never a serialized graph.
+ * FL-92 published the complete catalogue: the file is generated-adjacent, not free-form.
+ * `studio/frameleaf-studio-commands.json` is the single source, `scripts/frameleaf-studio-commands.mjs`
+ * writes it together with the server mirror (`server/src/utils/studio-commands.generated.ts`)
+ * and the native contract (`mobile/lib/frameleaf/studio_commands.g.dart`), and the same
+ * script fails CI when the ids, scopes, flags, capabilities, owners or prototype sources
+ * here drift from it. Add a command there first, then mirror the row and its payload type
+ * here; a row that exists in only one of the two is a build failure, not a surprise at
+ * runtime.
+ *
+ * The catalogue is complete in two directions:
+ *
+ * - every mutating function of the prototype's project model,
+ *   `design/frameleaf/template/src/studio-project.mjs`, which the September 22, 2026
+ *   revision names as the interaction contract, has an id here; and
+ * - every row of `studio/freecut-feature-manifest.json` is either reachable through a
+ *   command or listed in the catalogue's `nonCommandRows` with a reason and an owner.
+ *
+ * The prototype is design evidence: the production graph stays Freecut's, so `payload`
+ * shapes describe *intent* (which clip, which track, which time), never a serialized
+ * graph. Every instant, length and cadence is an exact rational from FL-93's
+ * `rational-time.ts` (`StudioTime`, `StudioDuration`, `StudioRate`), never a float: the
+ * catalogue types those fields `time`, `duration` and `rate`, and they travel as a reduced
+ * `{ num, den }` pair through the server mirror and the native contract. Where a payload
+ * carries graph-shaped data it is typed `StudioOpaqueValue` and travels unread, so an
+ * unknown Freecut field, a null, an array or a rational timing extension survives the
+ * round trip through web, server and native.
  *
  * FL-88 defines and validates the vocabulary and routes it; it does not implement the
  * editing semantics. Every row whose `owner` is not FL-88 is a typed extension point: the
@@ -23,44 +42,105 @@
  * until that story lands. Nothing here silently no-ops.
  */
 
+import type { Rational } from './rational-time';
+
 /* ------------------------------------------------------------------ */
 /* Identifiers                                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Sorted by id, in the same order as the published catalogue, so the two files can be read
+ * against each other line by line.
+ */
 export const studioCommandIds = [
-  // Clips
-  'clip.add',
-  'clip.move',
-  'clip.trimStart',
-  'clip.trimEnd',
-  'clip.split',
-  'clip.delete',
-  'clip.update',
-  'clip.reorder',
-  'clip.setSpeed',
-  'clip.setTransition',
-  'clip.setKenBurns',
-  'clip.setGrade',
-  // Tracks
-  'track.set',
-  // Authored clips
-  'title.add',
-  'music.add',
-  'voiceover.add',
-  // Sequence
   'captions.set',
-  'sequence.setFields',
-  'sequence.setActive',
-  // Review
-  'review.add',
-  'review.update',
-  'review.remove',
-  // Project
-  'project.rename',
-  'project.setSettings',
-  // Jobs
+  'clip.add',
+  'clip.delete',
+  'clip.group',
+  'clip.insert',
+  'clip.move',
+  'clip.overwrite',
+  'clip.reorder',
+  'clip.roll',
+  'clip.setAudio',
+  'clip.setBlendMode',
+  'clip.setCrop',
+  'clip.setGrade',
+  'clip.setKenBurns',
+  'clip.setLink',
+  'clip.setMask',
+  'clip.setSpeed',
+  'clip.setTransform',
+  'clip.setTransformParent',
+  'clip.setTransition',
+  'clip.slide',
+  'clip.slip',
+  'clip.split',
+  'clip.trimEnd',
+  'clip.trimStart',
+  'clip.ungroup',
+  'clip.update',
+  'composition.add',
+  'composition.setControlOverrides',
+  'composition.setPublishedControls',
+  'effect.add',
+  'effect.remove',
+  'effect.reorder',
+  'effect.update',
+  'history.redo',
+  'history.undo',
+  'job.cancel',
+  'job.enqueueCaptioning',
   'job.enqueueExport',
+  'job.enqueueFillerRemoval',
+  'job.enqueueInterpolation',
+  'job.enqueueMusicGeneration',
+  'job.enqueueProxy',
   'job.enqueueRestoration',
+  'job.enqueueReverseConform',
+  'job.enqueueSceneDetection',
+  'job.enqueueSilenceRemoval',
+  'job.enqueueTextToSpeech',
+  'job.enqueueTranscription',
+  'job.enqueueUpscale',
+  'keyframe.add',
+  'keyframe.remove',
+  'keyframe.setEasing',
+  'keyframe.update',
+  'lottie.update',
+  'marker.add',
+  'marker.remove',
+  'marker.update',
+  'media.import',
+  'media.relink',
+  'media.remove',
+  'music.add',
+  'project.applyTemplate',
+  'project.exportBundle',
+  'project.importBundle',
+  'project.rename',
+  'project.setMasterAudio',
+  'project.setSettings',
+  'property.bakeModifier',
+  'property.setExpression',
+  'property.setModifier',
+  'review.add',
+  'review.remove',
+  'review.update',
+  'sequence.add',
+  'sequence.duplicate',
+  'sequence.remove',
+  'sequence.setActive',
+  'sequence.setFields',
+  'sequence.setSettings',
+  'text.setMotion',
+  'title.add',
+  'track.add',
+  'track.remove',
+  'track.reorder',
+  'track.set',
+  'track.setAudio',
+  'voiceover.add',
 ] as const;
 
 export type StudioCommandId = (typeof studioCommandIds)[number];
@@ -74,8 +154,38 @@ export const isStudioCommandId = (value: unknown): value is StudioCommandId =>
 /* Payloads                                                             */
 /* ------------------------------------------------------------------ */
 
-/** Seconds on the sequence timeline. Rational timing extensions stay in the graph. */
-export type StudioTime = number;
+/**
+ * An instant on the sequence timeline, in seconds, as an exact rational (FL-93).
+ *
+ * It was a float. A float cannot hold 1001/30000, so an in point typed on an NTSC clip, a
+ * split, a transition boundary and the frame the encoder is asked for all drifted apart by a
+ * little, and the preview, the audio and the encoder each rounded that drift differently. A
+ * rational is the same number everywhere, so a boundary the person set is the boundary that
+ * gets rendered.
+ *
+ * Zero is the start of the sequence. A *source* in or out point is expressed the same way and
+ * is relative to the source's own origin, which the server's timing map resolves — a container
+ * whose first frame is not at timestamp zero is not the editor's problem.
+ */
+export type StudioTime = Rational;
+
+/** A length on the timeline, in seconds, as an exact rational. Same reasoning as StudioTime. */
+export type StudioDuration = Rational;
+
+/**
+ * A cadence or a speed multiplier, as an exact rational (FL-93): 30000/1001 for NTSC, 1/3 for
+ * a third-speed clip. The same reasoning as StudioTime — a frame rate that is not exactly the
+ * one the source has makes every later boundary wrong — and the published catalogue types
+ * these fields `rate`.
+ */
+export type StudioRate = Rational;
+
+/**
+ * Graph-shaped data the host and the server carry without reading it: effect parameters,
+ * masks, keyframe values, EQ stages, Lottie slots. Keeping it opaque is what makes the
+ * round trip lossless for fields no Frameleaf release knows about yet.
+ */
+export type StudioOpaqueValue = Readonly<Record<string, unknown>>;
 
 export interface StudioRippleOption {
   /** When true later clips on the track follow the edit. */
@@ -91,7 +201,7 @@ export interface StudioRect {
 
 export interface StudioTransitionIntent {
   type: string;
-  durationSeconds: number;
+  duration: StudioDuration;
 }
 
 export interface StudioColorWheel {
@@ -109,6 +219,14 @@ export interface StudioGradeIntent {
   wheels?: { lift?: StudioColorWheel; gamma?: StudioColorWheel; gain?: StudioColorWheel };
 }
 
+export interface StudioTransformIntent {
+  x?: number;
+  y?: number;
+  scale?: number;
+  rotation?: number;
+  opacity?: number;
+}
+
 export interface StudioCaptionLine {
   id?: string;
   start: StudioTime;
@@ -116,13 +234,51 @@ export interface StudioCaptionLine {
   text: string;
 }
 
+/** A marked source range placed by the source monitor. */
+export interface StudioSourceEdit {
+  trackId: string;
+  assetId: string;
+  at: StudioTime;
+  sourceIn: StudioTime;
+  sourceOut: StudioTime;
+}
+
 export interface StudioCommandPayloads {
-  'clip.add': { trackId: string; assetId: string; at: StudioTime; kind?: string; durationSeconds?: number };
+  'captions.set': { captions: StudioCaptionLine[] };
+  'clip.add': { trackId: string; assetId: string; at: StudioTime; kind?: string; duration?: StudioDuration };
+  'clip.delete': { clipId?: string; clipIds?: string[] } & StudioRippleOption;
+  'clip.group': { clipIds: string[]; name?: string };
+  'clip.insert': StudioSourceEdit;
   'clip.move': { clipId: string; start: StudioTime; trackId?: string };
-  'clip.trimStart': { clipId: string; start: StudioTime } & StudioRippleOption;
-  'clip.trimEnd': { clipId: string; end: StudioTime } & StudioRippleOption;
+  'clip.overwrite': StudioSourceEdit;
+  'clip.reorder': { trackId: string; clipId: string; index: number };
+  'clip.roll': { clipId: string; at: StudioTime };
+  'clip.setAudio': {
+    clipId: string;
+    volume?: number;
+    muted?: boolean;
+    fadeIn?: StudioDuration;
+    fadeOut?: StudioDuration;
+    pitchSemitones?: number;
+    pitchCents?: number;
+    eq?: StudioOpaqueValue | null;
+  };
+  'clip.setBlendMode': { clipId: string; blendMode: string; opacity?: number };
+  'clip.setCrop': { clipId: string; crop?: StudioOpaqueValue | null; cornerPin?: StudioOpaqueValue | null };
+  'clip.setGrade': { clipId: string; grade: StudioGradeIntent | null };
+  'clip.setKenBurns': { clipId: string; kenBurns: { from: StudioRect; to: StudioRect } | null };
+  'clip.setLink': { clipIds: string[]; linked: boolean };
+  'clip.setMask': { clipId: string; mask: StudioOpaqueValue | null };
+  'clip.setSpeed': { clipId: string; speed: StudioRate };
+  'clip.setTransform': { clipId: string; transform: StudioTransformIntent };
+  'clip.setTransformParent': { clipId: string; parentId: string | null };
+  'clip.setTransition': { clipId: string; transition: StudioTransitionIntent | null };
+  'clip.slide': { clipId: string; delta: StudioDuration };
+  'clip.slip': { clipId: string; delta: StudioDuration };
   'clip.split': { at: StudioTime; clipIds?: string[] };
-  'clip.delete': { clipId: string } & StudioRippleOption;
+  'clip.trimEnd': { clipId: string; end: StudioTime } & StudioRippleOption;
+  'clip.trimStart': { clipId: string; start: StudioTime } & StudioRippleOption;
+  'clip.ungroup': { groupId: string };
   'clip.update': {
     clipId: string;
     patch: {
@@ -133,39 +289,141 @@ export interface StudioCommandPayloads {
       animation?: string;
       volume?: number;
       muted?: boolean;
-      transform?: { x?: number; y?: number; scale?: number; rotation?: number; opacity?: number };
+      transform?: StudioTransformIntent;
     };
   };
-  'clip.reorder': { trackId: string; clipId: string; index: number };
-  'clip.setSpeed': { clipId: string; speed: number };
-  'clip.setTransition': { clipId: string; transition: StudioTransitionIntent | null };
-  'clip.setKenBurns': { clipId: string; kenBurns: { from: StudioRect; to: StudioRect } | null };
-  'clip.setGrade': { clipId: string; grade: StudioGradeIntent | null };
-  'track.set': { trackId: string; patch: { name?: string; muted?: boolean; locked?: boolean; solo?: boolean; gain?: number } };
-  'title.add': { at: StudioTime; text: string; durationSeconds?: number; style?: string; position?: string; animation?: string };
-  'music.add': { musicId: string; at: StudioTime; durationSeconds?: number; volume?: number };
-  'voiceover.add': { at: StudioTime; durationSeconds: number; uploadId: string };
-  'captions.set': { captions: StudioCaptionLine[] };
-  'sequence.setFields': { name?: string; captionLanguage?: string; captionsBurnIn?: boolean };
-  'sequence.setActive': { sequenceId: string };
-  'review.add': { time: StudioTime; text: string };
-  'review.update': { commentId: string; patch: { text?: string; resolved?: boolean } };
-  'review.remove': { commentId: string };
-  'project.rename': { name: string };
-  'project.setSettings': { patch: { mode?: 'basic' | 'advanced'; guides?: boolean; loop?: boolean; ducking?: boolean } };
+  'composition.add': { name: string; clipIds?: string[]; trackId?: string; at?: StudioTime };
+  'composition.setControlOverrides': { compositionClipId: string; overrides: StudioOpaqueValue };
+  'composition.setPublishedControls': { compositionId: string; controls: StudioOpaqueValue[] };
+  'effect.add': { clipId: string; effect: string; params?: StudioOpaqueValue; index?: number };
+  'effect.remove': { clipId: string; effectId: string };
+  'effect.reorder': { clipId: string; effectId: string; index: number };
+  'effect.update': { clipId: string; effectId: string; params: StudioOpaqueValue };
+  'history.redo': { toRevision?: number };
+  'history.undo': { toRevision?: number };
+  'job.cancel': { jobId: string };
+  'job.enqueueCaptioning': {
+    sequenceId: string;
+    clipIds?: string[];
+    sampleCadence?: StudioDuration;
+    destinationId: string;
+  };
   'job.enqueueExport': {
     sequenceId: string;
     format: string;
     colour: string;
     resolution: string;
     destinationId: string;
+    container?: string;
+    videoCodec?: string;
+    audioFormat?: string;
+    subtitles?: string;
+    quality?: string;
   };
+  'job.enqueueFillerRemoval': { sequenceId: string; clipIds?: string[]; destinationId: string };
+  'job.enqueueInterpolation': { clipId: string; targetFps: StudioRate; destinationId: string };
+  'job.enqueueMusicGeneration': {
+    prompt: string;
+    duration: StudioDuration;
+    preset?: string;
+    destinationId: string;
+  };
+  'job.enqueueProxy': { assetIds: string[]; destinationId: string };
   'job.enqueueRestoration': {
     mode: string;
     upscale: number;
     preview: boolean;
     destinationId: string;
   };
+  'job.enqueueReverseConform': { clipId: string; destinationId: string };
+  'job.enqueueSceneDetection': {
+    assetIds: string[];
+    mode: string;
+    verifyWithModel?: boolean;
+    destinationId: string;
+  };
+  'job.enqueueSilenceRemoval': {
+    sequenceId: string;
+    thresholdDb?: number;
+    minimumSilence?: StudioDuration;
+    destinationId: string;
+  };
+  'job.enqueueTextToSpeech': { text: string; voice: string; engine?: string; destinationId: string };
+  'job.enqueueTranscription': { sequenceId: string; language: string; destinationId: string };
+  'job.enqueueUpscale': { clipId: string; factor: number; destinationId: string };
+  'keyframe.add': {
+    clipId: string;
+    property: string;
+    at: StudioTime;
+    value: StudioOpaqueValue;
+    easing?: string;
+  };
+  'keyframe.remove': { clipId: string; property: string; keyframeIds: string[] };
+  'keyframe.setEasing': {
+    clipId: string;
+    property: string;
+    keyframeIds: string[];
+    easing: string;
+    bezier?: StudioOpaqueValue;
+  };
+  'keyframe.update': {
+    clipId: string;
+    property: string;
+    keyframeId: string;
+    at?: StudioTime;
+    value?: StudioOpaqueValue;
+  };
+  'lottie.update': {
+    clipId: string;
+    colors?: StudioOpaqueValue;
+    text?: StudioOpaqueValue;
+    slots?: StudioOpaqueValue;
+  };
+  'marker.add': { at: StudioTime; name?: string; colour?: string };
+  'marker.remove': { markerId: string };
+  'marker.update': { markerId: string; patch: { name?: string; colour?: string; at?: StudioTime } };
+  'media.import': { assetIds: string[] };
+  'media.relink': { mediaId: string; assetId: string };
+  'media.remove': { mediaIds: string[] };
+  'music.add': { musicId: string; at: StudioTime; duration?: StudioDuration; volume?: number };
+  'project.applyTemplate': { templateId: string };
+  'project.exportBundle': { sequenceIds?: string[] };
+  'project.importBundle': { bundleUploadId: string };
+  'project.rename': { name: string };
+  'project.setMasterAudio': { gainDb?: number; muted?: boolean; ducking?: boolean };
+  'project.setSettings': {
+    patch: { mode?: 'basic' | 'advanced'; guides?: boolean; loop?: boolean; ducking?: boolean };
+  };
+  'property.bakeModifier': { clipId: string; property: string; modifierId: string };
+  'property.setExpression': { clipId: string; property: string; expression: string | null };
+  'property.setModifier': { clipId: string; property: string; modifier: StudioOpaqueValue | null };
+  'review.add': { time: StudioTime; text: string };
+  'review.remove': { commentId: string };
+  'review.update': { commentId: string; patch: { text?: string; resolved?: boolean } };
+  'sequence.add': { name: string; fps?: StudioRate; width?: number; height?: number };
+  'sequence.duplicate': { sequenceId: string; name?: string };
+  'sequence.remove': { sequenceId: string };
+  'sequence.setActive': { sequenceId: string };
+  'sequence.setFields': { name?: string; captionLanguage?: string; captionsBurnIn?: boolean };
+  'sequence.setSettings': { sequenceId: string; fps?: StudioRate; width?: number; height?: number };
+  'text.setMotion': { clipId: string; motion: StudioOpaqueValue | null };
+  'title.add': {
+    at: StudioTime;
+    text: string;
+    duration?: StudioDuration;
+    style?: string;
+    position?: string;
+    animation?: string;
+  };
+  'track.add': { kind: string; name?: string; index?: number };
+  'track.remove': { trackId: string };
+  'track.reorder': { trackId: string; index: number };
+  'track.set': {
+    trackId: string;
+    patch: { name?: string; muted?: boolean; locked?: boolean; solo?: boolean; gain?: number };
+  };
+  'track.setAudio': { trackId: string; gainDb?: number; pan?: number; eq?: StudioOpaqueValue | null };
+  'voiceover.add': { at: StudioTime; duration: StudioDuration; uploadId: string };
 }
 
 export type StudioCommand = {
@@ -176,7 +434,18 @@ export type StudioCommand = {
 /* Registry                                                             */
 /* ------------------------------------------------------------------ */
 
-export type StudioCommandScope = 'clip' | 'track' | 'sequence' | 'project' | 'review' | 'job';
+export type StudioCommandScope =
+  | 'clip'
+  | 'composition'
+  | 'effect'
+  | 'history'
+  | 'job'
+  | 'keyframe'
+  | 'media'
+  | 'project'
+  | 'review'
+  | 'sequence'
+  | 'track';
 
 export interface StudioCommandDefinition {
   id: StudioCommandId;
@@ -192,11 +461,22 @@ export interface StudioCommandDefinition {
   requiresCapability?: StudioCapabilityId;
   /** The Jira story that owns the semantics. FL-88 owns routing only. */
   owner: string;
-  /** The function in `design/frameleaf/template/src/studio-project.mjs` that specifies it. */
+  /**
+   * How the command is specified: the function in
+   * `design/frameleaf/template/src/studio-project.mjs` it comes from, or, for a command
+   * the prototype has no counterpart for, the pinned Freecut feature it adapts.
+   */
   prototypeSource: string;
 }
 
-export const studioCapabilityIds = ['gpuWorker', 'renderWorker', 'restorationWorker', 'transcriptionWorker'] as const;
+export const studioCapabilityIds = [
+  'analysisWorker',
+  'generationWorker',
+  'gpuWorker',
+  'renderWorker',
+  'restorationWorker',
+  'transcriptionWorker',
+] as const;
 export type StudioCapabilityId = (typeof studioCapabilityIds)[number];
 
 const define = (definition: StudioCommandDefinition): [StudioCommandId, StudioCommandDefinition] => [
@@ -205,64 +485,6 @@ const define = (definition: StudioCommandDefinition): [StudioCommandId, StudioCo
 ];
 
 export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDefinition> = new Map([
-  define({ id: 'clip.add', scope: 'clip', mutatesGraph: true, undoable: true, owner: 'FL-94', prototypeSource: 'addClip' }),
-  define({ id: 'clip.move', scope: 'clip', mutatesGraph: true, undoable: true, owner: 'FL-94', prototypeSource: 'moveClip' }),
-  define({
-    id: 'clip.trimStart',
-    scope: 'clip',
-    mutatesGraph: true,
-    undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'trimClipStart',
-  }),
-  define({
-    id: 'clip.trimEnd',
-    scope: 'clip',
-    mutatesGraph: true,
-    undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'trimClipEnd',
-  }),
-  define({ id: 'clip.split', scope: 'clip', mutatesGraph: true, undoable: true, owner: 'FL-94', prototypeSource: 'splitClipAt' }),
-  define({ id: 'clip.delete', scope: 'clip', mutatesGraph: true, undoable: true, owner: 'FL-94', prototypeSource: 'deleteClip' }),
-  define({ id: 'clip.update', scope: 'clip', mutatesGraph: true, undoable: true, owner: 'FL-94', prototypeSource: 'updateClip' }),
-  define({ id: 'clip.reorder', scope: 'clip', mutatesGraph: true, undoable: true, owner: 'FL-94', prototypeSource: 'reorder' }),
-  define({ id: 'clip.setSpeed', scope: 'clip', mutatesGraph: true, undoable: true, owner: 'FL-94', prototypeSource: 'setSpeed' }),
-  define({
-    id: 'clip.setTransition',
-    scope: 'clip',
-    mutatesGraph: true,
-    undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'setTransition',
-  }),
-  define({
-    id: 'clip.setKenBurns',
-    scope: 'clip',
-    mutatesGraph: true,
-    undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'setKenBurns',
-  }),
-  define({
-    id: 'clip.setGrade',
-    scope: 'clip',
-    mutatesGraph: true,
-    undoable: true,
-    owner: 'FL-98',
-    prototypeSource: 'normalizeGrade via updateClip',
-  }),
-  define({ id: 'track.set', scope: 'track', mutatesGraph: true, undoable: true, owner: 'FL-94', prototypeSource: 'setTrack' }),
-  define({ id: 'title.add', scope: 'clip', mutatesGraph: true, undoable: true, owner: 'FL-94', prototypeSource: 'addTitle' }),
-  define({ id: 'music.add', scope: 'clip', mutatesGraph: true, undoable: true, owner: 'FL-94', prototypeSource: 'addMusic' }),
-  define({
-    id: 'voiceover.add',
-    scope: 'clip',
-    mutatesGraph: true,
-    undoable: true,
-    owner: 'FL-94',
-    prototypeSource: 'addVoiceover',
-  }),
   define({
     id: 'captions.set',
     scope: 'sequence',
@@ -273,12 +495,627 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     prototypeSource: 'setCaptions',
   }),
   define({
-    id: 'sequence.setFields',
+    id: 'clip.add',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'addClip',
+  }),
+  define({
+    id: 'clip.delete',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'deleteClip',
+  }),
+  define({
+    id: 'clip.group',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-100',
+    prototypeSource: 'beyond the prototype: Freecut groups and null controllers',
+  }),
+  define({
+    id: 'clip.insert',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'addClip (source monitor insert edit)',
+  }),
+  define({
+    id: 'clip.move',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'moveClip',
+  }),
+  define({
+    id: 'clip.overwrite',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'addClip (source monitor overwrite edit)',
+  }),
+  define({
+    id: 'clip.reorder',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'reorder',
+  }),
+  define({
+    id: 'clip.roll',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'trimClipEnd with trimClipStart (rolling edit)',
+  }),
+  define({
+    id: 'clip.setAudio',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-103',
+    prototypeSource: 'updateClip (volume and mute)',
+  }),
+  define({
+    id: 'clip.setBlendMode',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-99',
+    prototypeSource: 'beyond the prototype: Freecut BlendMode union',
+  }),
+  define({
+    id: 'clip.setCrop',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-98',
+    prototypeSource: 'beyond the prototype: Freecut crop and corner-pin gizmos',
+  }),
+  define({
+    id: 'clip.setGrade',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-98',
+    prototypeSource: 'normalizeGrade via updateClip',
+  }),
+  define({
+    id: 'clip.setKenBurns',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'setKenBurns',
+  }),
+  define({
+    id: 'clip.setLink',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'beyond the prototype: linkId groups in the prototype clip model',
+  }),
+  define({
+    id: 'clip.setMask',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-99',
+    prototypeSource: 'beyond the prototype: Freecut clip masks and pen paths',
+  }),
+  define({
+    id: 'clip.setSpeed',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'setSpeed',
+  }),
+  define({
+    id: 'clip.setTransform',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'updateClip (transform patch)',
+  }),
+  define({
+    id: 'clip.setTransformParent',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-100',
+    prototypeSource: 'beyond the prototype: Freecut transform parenting',
+  }),
+  define({
+    id: 'clip.setTransition',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'setTransition',
+  }),
+  define({
+    id: 'clip.slide',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'moveClip (slide edit)',
+  }),
+  define({
+    id: 'clip.slip',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'updateClip (slip edit on the source in and out points)',
+  }),
+  define({
+    id: 'clip.split',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'splitClipAt',
+  }),
+  define({
+    id: 'clip.trimEnd',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'trimClipEnd',
+  }),
+  define({
+    id: 'clip.trimStart',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'trimClipStart',
+  }),
+  define({
+    id: 'clip.ungroup',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-100',
+    prototypeSource: 'beyond the prototype: Freecut groups and null controllers',
+  }),
+  define({
+    id: 'clip.update',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'updateClip',
+  }),
+  define({
+    id: 'composition.add',
+    scope: 'composition',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-100',
+    prototypeSource: 'beyond the prototype: Freecut compound clips and nested compositions',
+  }),
+  define({
+    id: 'composition.setControlOverrides',
+    scope: 'composition',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-100',
+    prototypeSource: 'beyond the prototype: Freecut composition instance overrides',
+  }),
+  define({
+    id: 'composition.setPublishedControls',
+    scope: 'composition',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-100',
+    prototypeSource: 'beyond the prototype: Freecut published composition controls',
+  }),
+  define({
+    id: 'effect.add',
+    scope: 'effect',
+    mutatesGraph: true,
+    undoable: true,
+    requiresCapability: 'gpuWorker',
+    owner: 'FL-99',
+    prototypeSource: 'beyond the prototype: Freecut GPU effect catalogue',
+  }),
+  define({
+    id: 'effect.remove',
+    scope: 'effect',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-99',
+    prototypeSource: 'beyond the prototype: Freecut GPU effect catalogue',
+  }),
+  define({
+    id: 'effect.reorder',
+    scope: 'effect',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-99',
+    prototypeSource: 'beyond the prototype: Freecut effect stack order',
+  }),
+  define({
+    id: 'effect.update',
+    scope: 'effect',
+    mutatesGraph: true,
+    undoable: true,
+    requiresCapability: 'gpuWorker',
+    owner: 'FL-99',
+    prototypeSource: 'beyond the prototype: Freecut GPU effect parameters',
+  }),
+  define({
+    id: 'history.redo',
+    scope: 'history',
+    mutatesGraph: true,
+    undoable: false,
+    owner: 'FL-94',
+    prototypeSource: 'redo',
+  }),
+  define({
+    id: 'history.undo',
+    scope: 'history',
+    mutatesGraph: true,
+    undoable: false,
+    owner: 'FL-94',
+    prototypeSource: 'undo (over the commit history)',
+  }),
+  define({
+    id: 'job.cancel',
+    scope: 'job',
+    mutatesGraph: false,
+    undoable: false,
+    owner: 'FL-104',
+    prototypeSource: 'beyond the prototype: durable job cancellation',
+  }),
+  define({
+    id: 'job.enqueueCaptioning',
+    scope: 'job',
+    mutatesGraph: false,
+    undoable: false,
+    requiresCapability: 'analysisWorker',
+    owner: 'FL-111',
+    prototypeSource: 'beyond the prototype: local vision-language captioning',
+  }),
+  define({
+    id: 'job.enqueueExport',
+    scope: 'job',
+    mutatesGraph: false,
+    undoable: false,
+    requiresCapability: 'renderWorker',
+    owner: 'FL-104',
+    prototypeSource: 'estimateRender via ExportDialog',
+  }),
+  define({
+    id: 'job.enqueueFillerRemoval',
+    scope: 'job',
+    mutatesGraph: false,
+    undoable: false,
+    requiresCapability: 'analysisWorker',
+    owner: 'FL-103',
+    prototypeSource: 'beyond the prototype: filler-word removal with review',
+  }),
+  define({
+    id: 'job.enqueueInterpolation',
+    scope: 'job',
+    mutatesGraph: false,
+    undoable: false,
+    requiresCapability: 'restorationWorker',
+    owner: 'FL-111',
+    prototypeSource: 'beyond the prototype: RIFE frame interpolation',
+  }),
+  define({
+    id: 'job.enqueueMusicGeneration',
+    scope: 'job',
+    mutatesGraph: false,
+    undoable: false,
+    requiresCapability: 'generationWorker',
+    owner: 'FL-111',
+    prototypeSource: 'beyond the prototype: local MusicGen generation',
+  }),
+  define({
+    id: 'job.enqueueProxy',
+    scope: 'job',
+    mutatesGraph: false,
+    undoable: false,
+    requiresCapability: 'renderWorker',
+    owner: 'FL-105',
+    prototypeSource: 'beyond the prototype: proxy and waveform generation',
+  }),
+  define({
+    id: 'job.enqueueRestoration',
+    scope: 'job',
+    mutatesGraph: false,
+    undoable: false,
+    requiresCapability: 'restorationWorker',
+    owner: 'FL-110',
+    prototypeSource: 'estimateRender via RestorePanel',
+  }),
+  define({
+    id: 'job.enqueueReverseConform',
+    scope: 'job',
+    mutatesGraph: false,
+    undoable: false,
+    requiresCapability: 'renderWorker',
+    owner: 'FL-111',
+    prototypeSource: 'beyond the prototype: reversed media conforming',
+  }),
+  define({
+    id: 'job.enqueueSceneDetection',
+    scope: 'job',
+    mutatesGraph: false,
+    undoable: false,
+    requiresCapability: 'analysisWorker',
+    owner: 'FL-111',
+    prototypeSource: 'beyond the prototype: histogram and adaptive scene detection',
+  }),
+  define({
+    id: 'job.enqueueSilenceRemoval',
+    scope: 'job',
+    mutatesGraph: false,
+    undoable: false,
+    requiresCapability: 'analysisWorker',
+    owner: 'FL-103',
+    prototypeSource: 'beyond the prototype: silence removal with review',
+  }),
+  define({
+    id: 'job.enqueueTextToSpeech',
+    scope: 'job',
+    mutatesGraph: false,
+    undoable: false,
+    requiresCapability: 'generationWorker',
+    owner: 'FL-111',
+    prototypeSource: 'beyond the prototype: local text-to-speech voiceovers',
+  }),
+  define({
+    id: 'job.enqueueTranscription',
+    scope: 'job',
+    mutatesGraph: false,
+    undoable: false,
+    requiresCapability: 'transcriptionWorker',
+    owner: 'FL-111',
+    prototypeSource: 'sampleCaptions (simulated transcription in the prototype)',
+  }),
+  define({
+    id: 'job.enqueueUpscale',
+    scope: 'job',
+    mutatesGraph: false,
+    undoable: false,
+    requiresCapability: 'restorationWorker',
+    owner: 'FL-111',
+    prototypeSource: 'beyond the prototype: Anime4K upscaling',
+  }),
+  define({
+    id: 'keyframe.add',
+    scope: 'keyframe',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-100',
+    prototypeSource: 'beyond the prototype: Freecut keyframe model',
+  }),
+  define({
+    id: 'keyframe.remove',
+    scope: 'keyframe',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-100',
+    prototypeSource: 'beyond the prototype: Freecut keyframe model',
+  }),
+  define({
+    id: 'keyframe.setEasing',
+    scope: 'keyframe',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-100',
+    prototypeSource: 'beyond the prototype: Freecut easing presets and tangents',
+  }),
+  define({
+    id: 'keyframe.update',
+    scope: 'keyframe',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-100',
+    prototypeSource: 'beyond the prototype: Freecut graph editor and dopesheet',
+  }),
+  define({
+    id: 'lottie.update',
+    scope: 'media',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-105',
+    prototypeSource: 'beyond the prototype: Lottie colour, text and slot editing',
+  }),
+  define({
+    id: 'marker.add',
     scope: 'sequence',
     mutatesGraph: true,
     undoable: true,
     owner: 'FL-94',
-    prototypeSource: 'setSequenceFields',
+    prototypeSource: 'beyond the prototype: sequence markers',
+  }),
+  define({
+    id: 'marker.remove',
+    scope: 'sequence',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'beyond the prototype: sequence markers',
+  }),
+  define({
+    id: 'marker.update',
+    scope: 'sequence',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'beyond the prototype: sequence markers',
+  }),
+  define({
+    id: 'media.import',
+    scope: 'media',
+    mutatesGraph: true,
+    undoable: false,
+    owner: 'FL-105',
+    prototypeSource: 'beyond the prototype: project media bin',
+  }),
+  define({
+    id: 'media.relink',
+    scope: 'media',
+    mutatesGraph: true,
+    undoable: false,
+    owner: 'FL-105',
+    prototypeSource: 'beyond the prototype: media relinking',
+  }),
+  define({
+    id: 'media.remove',
+    scope: 'media',
+    mutatesGraph: true,
+    undoable: false,
+    owner: 'FL-105',
+    prototypeSource: 'beyond the prototype: project media bin',
+  }),
+  define({
+    id: 'music.add',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'addMusic',
+  }),
+  define({
+    id: 'project.applyTemplate',
+    scope: 'project',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'beyond the prototype: project templates',
+  }),
+  define({
+    id: 'project.exportBundle',
+    scope: 'project',
+    mutatesGraph: false,
+    undoable: false,
+    owner: 'FL-91',
+    prototypeSource: 'beyond the prototype: portable project bundles',
+  }),
+  define({
+    id: 'project.importBundle',
+    scope: 'project',
+    mutatesGraph: true,
+    undoable: false,
+    owner: 'FL-91',
+    prototypeSource: 'beyond the prototype: portable project bundles',
+  }),
+  define({
+    id: 'project.rename',
+    scope: 'project',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'renameProject',
+  }),
+  define({
+    id: 'project.setMasterAudio',
+    scope: 'project',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-103',
+    prototypeSource: 'beyond the prototype: project master bus',
+  }),
+  define({
+    id: 'project.setSettings',
+    scope: 'project',
+    mutatesGraph: true,
+    undoable: false,
+    owner: 'FL-94',
+    prototypeSource: 'setSettings',
+  }),
+  define({
+    id: 'property.bakeModifier',
+    scope: 'keyframe',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-100',
+    prototypeSource: 'beyond the prototype: procedural motion modifiers',
+  }),
+  define({
+    id: 'property.setExpression',
+    scope: 'keyframe',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-100',
+    prototypeSource: 'beyond the prototype: property expressions',
+  }),
+  define({
+    id: 'property.setModifier',
+    scope: 'keyframe',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-100',
+    prototypeSource: 'beyond the prototype: procedural motion modifiers',
+  }),
+  define({
+    id: 'review.add',
+    scope: 'review',
+    mutatesGraph: true,
+    undoable: false,
+    owner: 'FL-94',
+    prototypeSource: 'addReviewComment',
+  }),
+  define({
+    id: 'review.remove',
+    scope: 'review',
+    mutatesGraph: true,
+    undoable: false,
+    owner: 'FL-94',
+    prototypeSource: 'removeReviewComment',
+  }),
+  define({
+    id: 'review.update',
+    scope: 'review',
+    mutatesGraph: true,
+    undoable: false,
+    owner: 'FL-94',
+    prototypeSource: 'updateReviewComment',
+  }),
+  define({
+    id: 'sequence.add',
+    scope: 'sequence',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'beyond the prototype: the prototype ships two fixed sequences',
+  }),
+  define({
+    id: 'sequence.duplicate',
+    scope: 'sequence',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'beyond the prototype: the prototype ships two fixed sequences',
+  }),
+  define({
+    id: 'sequence.remove',
+    scope: 'sequence',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'beyond the prototype: the prototype ships two fixed sequences',
   }),
   define({
     // The active sequence is stored on the project, so switching it is a graph change even
@@ -291,62 +1128,84 @@ export const studioCommandRegistry: ReadonlyMap<StudioCommandId, StudioCommandDe
     prototypeSource: 'setActiveSequence',
   }),
   define({
-    id: 'review.add',
-    scope: 'review',
-    mutatesGraph: true,
-    undoable: false,
-    owner: 'FL-94',
-    prototypeSource: 'addReviewComment',
-  }),
-  define({
-    id: 'review.update',
-    scope: 'review',
-    mutatesGraph: true,
-    undoable: false,
-    owner: 'FL-94',
-    prototypeSource: 'updateReviewComment',
-  }),
-  define({
-    id: 'review.remove',
-    scope: 'review',
-    mutatesGraph: true,
-    undoable: false,
-    owner: 'FL-94',
-    prototypeSource: 'removeReviewComment',
-  }),
-  define({
-    id: 'project.rename',
-    scope: 'project',
+    id: 'sequence.setFields',
+    scope: 'sequence',
     mutatesGraph: true,
     undoable: true,
     owner: 'FL-94',
-    prototypeSource: 'renameProject',
+    prototypeSource: 'setSequenceFields',
   }),
   define({
-    id: 'project.setSettings',
-    scope: 'project',
+    id: 'sequence.setSettings',
+    scope: 'sequence',
     mutatesGraph: true,
-    undoable: false,
+    undoable: true,
     owner: 'FL-94',
-    prototypeSource: 'setSettings',
+    prototypeSource: 'beyond the prototype: canvas and frame rate are fixed there',
   }),
   define({
-    id: 'job.enqueueExport',
-    scope: 'job',
-    mutatesGraph: false,
-    undoable: false,
-    requiresCapability: 'renderWorker',
-    owner: 'FL-104',
-    prototypeSource: 'estimateRender via ExportDialog',
+    id: 'text.setMotion',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-100',
+    prototypeSource: 'beyond the prototype: per-character motion text',
   }),
   define({
-    id: 'job.enqueueRestoration',
-    scope: 'job',
-    mutatesGraph: false,
-    undoable: false,
-    requiresCapability: 'restorationWorker',
-    owner: 'FL-110',
-    prototypeSource: 'estimateRender via RestorePanel',
+    id: 'title.add',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'addTitle',
+  }),
+  define({
+    id: 'track.add',
+    scope: 'track',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'beyond the prototype: its six track kinds are fixed',
+  }),
+  define({
+    id: 'track.remove',
+    scope: 'track',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'beyond the prototype: its six track kinds are fixed',
+  }),
+  define({
+    id: 'track.reorder',
+    scope: 'track',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'beyond the prototype: its track order is fixed',
+  }),
+  define({
+    id: 'track.set',
+    scope: 'track',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'setTrack',
+  }),
+  define({
+    id: 'track.setAudio',
+    scope: 'track',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-103',
+    prototypeSource: 'setTrack (gain only in the prototype)',
+  }),
+  define({
+    id: 'voiceover.add',
+    scope: 'clip',
+    mutatesGraph: true,
+    undoable: true,
+    owner: 'FL-94',
+    prototypeSource: 'addVoiceover',
   }),
 ]);
 

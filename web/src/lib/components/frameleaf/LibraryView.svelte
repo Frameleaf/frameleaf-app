@@ -54,6 +54,14 @@
     onOpenFilterPanel?: (section: DiscoveryFilterSection) => void;
     /** Load the next page of results. */
     onShowMore?: (page: number) => void;
+    /**
+     * What the bar's "select all" offer means here. `matching` resolves the session's scope and
+     * query on the server, which is only meaningful where the session carries the query that
+     * produced the results. A destination whose contents come from timeline options instead —
+     * Favorites, Archive, a person, a partner — offers `loaded`, which loads the remaining months
+     * and selects everything in the view, exactly as the legacy select bar's Select All did.
+     */
+    selectAll?: 'matching' | 'loaded';
     /** Shortcuts this component does not act on itself (favorite, edit, tag, delete, ...). */
     onShortcut?: (shortcut: LibraryShortcut) => void;
     loading?: boolean;
@@ -72,10 +80,34 @@
     toolbar?: Snippet;
     /** Album, shared-link and trash context for the bulk actions (FL-32). */
     bulkContext?: Omit<BulkActionContext, 'assets' | 'count' | 'currentUserId' | 'snapshot'>;
+    /**
+     * A gate the page puts in front of an action. Returning `false` stops it. The suppressed
+     * destination uses it to require an elevated session before items leave it for an album.
+     */
+    beforeAction?: (id: BulkActionId) => boolean | Promise<boolean>;
+    /** Assets a bulk action removed from the page, for a host that keeps counts of its own. */
+    onMutated?: (removedIds: string[]) => void;
     tagOptions?: { id: string; name: string }[];
     albumOptions?: { id: string; name: string; count?: number }[];
     /** Replaces the Frameleaf selection bar, for a page that needs its own. */
     selectionBar?: Snippet;
+    /**
+     * Suppress the selection bar entirely. A picking step (album "add photos", the person feature
+     * photo, the geolocation utility) confirms in its own chrome, so the bulk bar has no place.
+     */
+    noSelectionBar?: boolean;
+    /** Picking mode: a plain click selects instead of opening the viewer. */
+    selectionMode?: boolean;
+    /** With `selectionMode`, a pick replaces the selection instead of adding to it. */
+    singleSelect?: boolean;
+    /** Called after a pick in `selectionMode`. */
+    onSelect?: (asset: TimelineAsset) => void;
+    /** Intercept a plain click on a tile; return `true` when the page handled it. */
+    onTileClick?: (asset: TimelineAsset) => boolean;
+    /** Extra chrome drawn over every tile. */
+    tileOverlay?: Snippet<[TimelineAsset]>;
+    /** Opened from the timeline instead of the session's asset; the page owns the route. */
+    onOpen?: (asset: TimelineAsset) => void;
     /** FL-35: the viewer, opened from the session's open asset. */
     viewer?: Snippet;
     /** FL-36: the information panel. Work opens it above tablet width only. */
@@ -94,16 +126,26 @@
     onOpenFilterPanel,
     onShowMore,
     onShortcut,
+    selectAll = 'matching',
     loading = false,
     enableRouting = false,
     multiSelect = assetMultiSelectManager,
     bulkContext,
+    beforeAction,
+    onMutated,
     tagOptions = [],
     albumOptions = [],
     shell,
     children,
     toolbar,
     selectionBar,
+    noSelectionBar = false,
+    selectionMode = false,
+    singleSelect = false,
+    onSelect,
+    onTileClick,
+    tileOverlay,
+    onOpen,
     viewer,
     infoPanel,
     empty,
@@ -169,6 +211,7 @@
   const dispatch = (action: LibrarySessionAction) => {
     if (action.type === 'mutated' && action.removedIds.length > 0) {
       manager.removeAssets(action.removedIds);
+      onMutated?.(action.removedIds);
     }
     session.dispatch(action);
   };
@@ -208,6 +251,14 @@
   );
 
   const runBulk = (id: BulkActionId, payload?: BulkPayload) => {
+    if (beforeAction) {
+      void Promise.resolve(beforeAction(id)).then((allowed) => (allowed ? dispatchBulk(id, payload) : undefined));
+      return;
+    }
+    dispatchBulk(id, payload);
+  };
+
+  const dispatchBulk = (id: BulkActionId, payload?: BulkPayload) => {
     if (snapshot) {
       // Frozen at submit: editing the filter afterwards cannot change what the operation touches.
       void bulk.runMatching(id, snapshot, { payload, submittedTotal: session.total });
@@ -215,6 +266,20 @@
       return;
     }
     void bulk.run(id, [...session.selection], payload);
+  };
+
+  /**
+   * Select everything in the view, loading the months that have not been loaded yet. The legacy
+   * Select All worked this way, and it is the honest offer where the session holds no query that
+   * the server could resolve.
+   */
+  const selectAllLoaded = async () => {
+    for (const month of manager.months) {
+      if (!month.isLoaded) {
+        await manager.loadTimelineMonth(month.yearMonth);
+      }
+    }
+    session.dispatch({ type: 'selection', ids: loadedIds() });
   };
 
   const selectAllMatching = async () => {
@@ -350,6 +415,12 @@
         captionFor={session.layout === 'work' ? captionFor : undefined}
         showDayHeaders={session.layout !== 'browse'}
         {enableRouting}
+        {selectionMode}
+        {singleSelect}
+        {onSelect}
+        {onTileClick}
+        {tileOverlay}
+        {onOpen}
         {empty}
       >
         {#snippet header()}
@@ -368,29 +439,32 @@
     {/if}
   </div>
 
-  {#if selectionBar}
-    {#if selecting}
-      {@render selectionBar()}
+  <!-- A picking step confirms in its own chrome, so it asks for no bar at all. -->
+  {#if !noSelectionBar}
+    {#if selectionBar}
+      {#if selecting}
+        {@render selectionBar()}
+      {/if}
+    {:else}
+      <!-- FL-32's bar, bound to this session: one selection, one place an action is run. -->
+      <SelectionBar
+        count={session.selection.length}
+        total={selectAll === 'loaded' ? (manager.assetCount ?? null) : session.total}
+        assets={selectedAssets}
+        context={{ ...bulkContext, currentUserId, snapshot: !!snapshot }}
+        {tagOptions}
+        {albumOptions}
+        operations={session.session.operations}
+        undoLabel={bulk.undo?.label}
+        onAction={runBulk}
+        onUndo={() => void bulk.undo?.run()}
+        onClear={() => session.clearSelection()}
+        onSelectAllMatching={() => void (selectAll === 'loaded' ? selectAllLoaded() : selectAllMatching())}
+        onCancelOperation={(requestId) => bulk.cancel(requestId)}
+        onRetryOperation={(operation) => void bulk.retry(operation)}
+        onDismissOperation={(requestId) => bulk.dismiss(requestId)}
+      />
     {/if}
-  {:else}
-    <!-- FL-32's bar, bound to this session: one selection, one place an action is run. -->
-    <SelectionBar
-      count={session.selection.length}
-      total={session.total}
-      assets={selectedAssets}
-      context={{ ...bulkContext, currentUserId, snapshot: !!snapshot }}
-      {tagOptions}
-      {albumOptions}
-      operations={session.session.operations}
-      undoLabel={bulk.undo?.label}
-      onAction={runBulk}
-      onUndo={() => void bulk.undo?.run()}
-      onClear={() => session.clearSelection()}
-      onSelectAllMatching={() => void selectAllMatching()}
-      onCancelOperation={(requestId) => bulk.cancel(requestId)}
-      onRetryOperation={(operation) => void bulk.retry(operation)}
-      onDismissOperation={(requestId) => bulk.dismiss(requestId)}
-    />
   {/if}
   <!-- The viewer decides for itself when it is open; it is the owner of that surface (FL-35). -->
   {@render viewer?.()}

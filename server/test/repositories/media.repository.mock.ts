@@ -23,5 +23,9 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
     getImageMetadata: vitest.fn(),
     scoreThumbnailCandidate: vitest.fn().mockResolvedValue(0),
     composeImageGrid: vitest.fn().mockImplementation(() => Promise.resolve()),
+    renderDevelopGeometry: vitest
+      .fn()
+      .mockImplementation((data: Buffer, info: unknown) => Promise.resolve({ data, info })),
+    encodeDevelopOutput: vitest.fn().mockResolvedValue(Buffer.from('')),
   };
 };

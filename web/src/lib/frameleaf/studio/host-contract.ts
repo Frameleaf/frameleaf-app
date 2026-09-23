@@ -23,7 +23,7 @@
  * provenance-checked snapshot that no story edits.
  */
 
-import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult } from './commands';
+import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, StudioDuration } from './commands';
 
 /* ------------------------------------------------------------------ */
 /* What the host tells the engine                                       */
@@ -53,8 +53,12 @@ export interface StudioAssetRef {
   id: string;
   kind: StudioAssetKind;
   name: string;
-  /** Source duration in seconds for video, null for stills. */
-  durationSeconds: number | null;
+  /**
+   * Source duration in seconds for video, null for stills — an exact rational (FL-93), not a
+   * float. The library stores whole milliseconds, so 12500 ms arrives as 25/2 and a clip placed
+   * at the end of this one starts at exactly 25/2, not at 12.499999999999998.
+   */
+  duration: StudioDuration | null;
   thumbnailUrl: string;
   previewUrl: string;
   /** Video playback source, null for stills. */
@@ -80,6 +84,10 @@ export interface StudioThemeTokens {
  * the person, so it must identify capabilities rather than say "unavailable".
  */
 export interface StudioCapabilities {
+  /** Local AI analysis: captioning, scene detection, silence and filler detection. */
+  analysisWorker: boolean;
+  /** Local generation: text to speech and music generation. */
+  generationWorker: boolean;
   gpuWorker: boolean;
   renderWorker: boolean;
   restorationWorker: boolean;
@@ -87,6 +95,8 @@ export interface StudioCapabilities {
 }
 
 export const emptyStudioCapabilities = (): StudioCapabilities => ({
+  analysisWorker: false,
+  generationWorker: false,
   gpuWorker: false,
   renderWorker: false,
   restorationWorker: false,
