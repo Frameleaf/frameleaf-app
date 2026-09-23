@@ -10,6 +10,7 @@ import {
   StudioBundleArchiveError,
   StudioBundleManifest,
   ZipByteSource,
+  buildStudioBundleManifest,
   bundleMediaEntryName,
   checkStudioBundleManifest,
   checkStudioBundleProject,
@@ -17,12 +18,15 @@ import {
   isBundleExportDownloadable,
   parseBundleExportSnapshot,
   parseBundleImportSnapshot,
+  planStudioBundleRelink,
   readZipDirectory,
   readZipEntry,
   relinkStudioGraph,
   serializeStudioBundleProject,
   sha256Of,
   studioBundleFileName,
+  studioBundleSourceKeys,
+  studioChecksumSha256,
   zipEntryNameProblem,
 } from 'src/utils/studio-bundle.js';
 import { STUDIO_ENGINE, STUDIO_ENVELOPE_SCHEMA_VERSION, studioEnvelopeDigest } from 'src/utils/studio-project.js';
@@ -214,6 +218,19 @@ describe('readZipDirectory', () => {
     await expectRefusal(readZipDirectory(sourceOf(zip)), 'bundle_ratio');
   });
 
+  it('refuses two entries that share the same compressed bytes', async () => {
+    const zip = buildZip([
+      { name: 'media/library-asset-a.bin', data: Buffer.from('one'), method: 0 },
+      { name: 'media/library-asset-b.bin', data: Buffer.from('two'), method: 0 },
+    ]);
+    // Point the second central record at the first entry's local header.
+    const directoryOffset = zip.readUInt32LE(zip.length - 22 + 16);
+    const firstCentralLength = 46 + 'media/library-asset-a.bin'.length;
+    zip.writeUInt32LE(0, directoryOffset + firstCentralLength + 42);
+
+    await expectRefusal(readZipDirectory(sourceOf(zip)), 'bundle_overlap');
+  });
+
   it('refuses a directory that declares more entries than it holds', async () => {
     const zip = buildZip([{ name: 'a.json', data: Buffer.from('{}') }], { eocdEntries: 2 });
     await expectRefusal(readZipDirectory(sourceOf(zip)), 'bundle_corrupt');
@@ -261,6 +278,21 @@ describe('readZipEntry and digestZipEntry', () => {
     expect(digest).toEqual({ sha256: createHash('sha256').update(media).digest('hex'), bytes: media.length });
     expect(seen.length).toBeGreaterThan(1);
     expect(seen.at(-1)).toBe(media.length);
+  });
+
+  it('stops a streamed entry the moment it inflates past its declared size', async () => {
+    const media = Buffer.from('frame '.repeat(40_000));
+    // Declares a quarter of its real size, still under the ratio limit, so only inflation can tell.
+    const zip = buildZip([
+      { name: 'media/library-asset-z.bin', data: media, declare: { uncompressedSize: media.length / 4 } },
+    ]);
+    const source = sourceOf(zip);
+    const directory = await readZipDirectory(source);
+
+    await expectRefusal(
+      digestZipEntry(source, directory.byName.get('media/library-asset-z.bin')!, { chunkSize: 512 }),
+      'bundle_corrupt',
+    );
   });
 
   it('digests a deflated entry through the streaming inflater', async () => {
@@ -333,6 +365,65 @@ describe('checkStudioBundleManifest', () => {
         sources: [...base.sources, embedded],
       }),
     ).toMatchObject({ ok: true });
+  });
+
+  it('refuses two sources that claim the same embedded copy', () => {
+    const base = manifestOf(project);
+    const embeddedOf = (id: string) => ({
+      key: `library-asset:${id}`,
+      kind: StudioResourceKind.LibraryAsset,
+      id,
+      mode: 'embedded' as const,
+      path: 'media/shared.mov',
+      sha256: 'b'.repeat(64),
+      bytes: 10,
+      fileName: null,
+      contentType: null,
+    });
+    expect(
+      checkStudioBundleManifest({
+        ...base,
+        files: { ...base.files, 'media/shared.mov': { sha256: 'b'.repeat(64), bytes: 10 } },
+        sources: [embeddedOf(assetA), embeddedOf(assetB)],
+      }),
+    ).toMatchObject({ ok: false, detail: expect.stringContaining('two sources') });
+  });
+
+  it('round-trips a manifest the export builds', () => {
+    const media = Buffer.from('a lake at dusk');
+    const path = bundleMediaEntryName({ kind: StudioResourceKind.LibraryAsset, id: assetB, fileName: 'dusk.jpg' });
+    const built = buildStudioBundleManifest({
+      createdAt: new Date('2026-09-22T10:00:00.000Z'),
+      producerVersion: '3.0.0',
+      name: 'Lake trip',
+      revision: 4,
+      digest: studioEnvelopeDigest(JSON.parse(project.toString('utf8'))),
+      sourceProjectId: '0195e2a0-0000-7000-8000-000000000001',
+      engine: STUDIO_ENGINE,
+      engineRevision: 'rev-1',
+      project,
+      sources: [
+        {
+          key: `library-asset:${assetB}`,
+          kind: StudioResourceKind.LibraryAsset,
+          id: assetB,
+          mode: 'embedded',
+          path,
+          sha256: sha256Of(media),
+          bytes: media.length,
+          fileName: 'dusk.jpg',
+          contentType: 'image/jpeg',
+        },
+      ],
+      media: { [path]: { sha256: sha256Of(media), bytes: media.length } },
+    });
+
+    const checked = checkStudioBundleManifest(JSON.parse(JSON.stringify(built)));
+    expect(checked).toMatchObject({ ok: true });
+    if (checked.ok) {
+      expect(checked.manifest).toEqual(built);
+      expect(checkStudioBundleProject(checked.manifest, project)).toMatchObject({ ok: true });
+    }
   });
 
   it('refuses a source whose key does not match its kind and id, and a traversing file name', () => {
@@ -408,10 +499,87 @@ describe('relinkStudioGraph', () => {
     expect(graph.sequences[0].tracks[0].clips[0].assetId).toBe(assetA);
   });
 
+  it('relinks an audio stream declared from a library video together with the video', () => {
+    const target = '44444444-4444-4444-8444-444444444444';
+    const result = relinkStudioGraph(
+      {
+        clips: [
+          { $resource: { kind: 'audio', source: 'asset', id: assetA } },
+          { $resource: { kind: 'audio', source: 'catalog', id: assetA } },
+        ],
+      },
+      new Map([[`library-asset:${assetA}`, target]]),
+    );
+    const clips = (result.graph as { clips: Array<{ $resource: { id: string } }> }).clips;
+    expect(clips[0].$resource.id).toBe(target);
+    expect(clips[1].$resource.id).toBe(assetA);
+  });
+
   it('reports mapping keys the graph never referenced', () => {
     const result = relinkStudioGraph(graph, new Map([['library-asset:nobody', assetB]]));
     expect(result.replaced).toBe(0);
     expect(result.unused).toEqual(['library-asset:nobody']);
+  });
+});
+
+describe('studioBundleSourceKeys', () => {
+  it('lists each library asset and edited master once, sorted, and nothing else', () => {
+    const keys = studioBundleSourceKeys({
+      sequences: [
+        {
+          id: 'seq-1',
+          tracks: [
+            {
+              clips: [
+                { assetId: assetB },
+                { assetId: assetA, editedMasterOf: assetA },
+                { mediaId: assetA },
+                { fontFamily: 'Inter', lutId: 'warm' },
+                { $resource: { kind: 'audio', source: 'asset', id: assetB } },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    expect(keys).toEqual([
+      { key: `edited-master:${assetA}`, kind: StudioResourceKind.EditedMaster, id: assetA },
+      { key: `library-asset:${assetA}`, kind: StudioResourceKind.LibraryAsset, id: assetA },
+      { key: `library-asset:${assetB}`, kind: StudioResourceKind.LibraryAsset, id: assetB },
+    ]);
+  });
+});
+
+describe('studioChecksumSha256', () => {
+  it('passes a SHA-256 through as hex and never a SHA-1', () => {
+    const sha256 = createHash('sha256').update('x').digest();
+    const sha1 = createHash('sha1').update('x').digest();
+    expect(studioChecksumSha256(sha256)).toBe(sha256.toString('hex'));
+    expect(studioChecksumSha256(sha256.toString('base64'))).toBe(sha256.toString('hex'));
+    expect(studioChecksumSha256(sha1)).toBeNull();
+    expect(studioChecksumSha256(null)).toBeNull();
+  });
+});
+
+describe('planStudioBundleRelink', () => {
+  it('prefers an explicit choice, then a resolvable original, and reports the rest as missing', () => {
+    const target = '55555555-5555-4555-8555-555555555555';
+    const plan = planStudioBundleRelink(
+      [
+        { key: `library-asset:${assetA}`, id: assetA },
+        { key: `library-asset:${assetB}`, id: assetB },
+        { key: `edited-master:${assetB}`, id: assetB },
+      ],
+      {
+        mapping: { [`library-asset:${assetA}`]: target, [`library-asset:${assetB}`]: assetB },
+        resolvable: new Set([`library-asset:${assetB}`]),
+      },
+    );
+    expect(plan).toEqual([
+      { key: `library-asset:${assetA}`, outcome: 'mapped', assetId: target },
+      { key: `library-asset:${assetB}`, outcome: 'kept' },
+      { key: `edited-master:${assetB}`, outcome: 'missing' },
+    ]);
   });
 });
 
@@ -443,8 +611,11 @@ describe('snapshots and results', () => {
       digest: 'd',
       includeMedia: true,
       embed: [{ key: 'k', kind: 'library-asset', id: assetA }, { key: 'bad', kind: 'nope', id: 'x' }, 'junk'],
+      requestKey: 'export-1',
     });
     expect(snapshot.embed).toEqual([{ key: 'k', kind: 'library-asset', id: assetA }]);
+    expect(snapshot.requestKey).toBe('export-1');
+    expect(snapshot.sequenceIds).toBeNull();
     expect(() => parseBundleExportSnapshot({ kind: 'other' })).toThrow(StudioBundleArchiveError);
   });
 
@@ -458,6 +629,7 @@ describe('snapshots and results', () => {
     });
     expect(snapshot.name).toBe('Imported');
     expect(snapshot.mapping).toEqual({ a: assetA });
+    expect(snapshot.requestKey).toBeNull();
   });
 
   it('treats an export as downloadable only before expiry and before the sweep removed it', () => {
