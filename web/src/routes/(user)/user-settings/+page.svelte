@@ -16,7 +16,7 @@
   import type { PageData } from './$types';
   import { personalSections } from './personal-sections';
   import SystemSettings from './SystemSettings.svelte';
-  import UserSettingsList from './UserSettingsList.svelte';
+  import SectionBody from './sections/SectionBody.svelte';
 
   type Props = {
     data: PageData;
@@ -29,7 +29,7 @@
 </script>
 
 {#snippet sectionBody(section: SettingsHostSection)}
-  <UserSettingsList section={section.key} />
+  <SectionBody {section} />
 {/snippet}
 
 {#if data.screen === 'care'}

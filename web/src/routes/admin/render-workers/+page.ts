@@ -1,26 +1,10 @@
-import { getRenderWorkerLimits, listRenderWorkers, searchRenderWorkerAudit, searchUsersAdmin } from '@immich/sdk';
+import { redirect } from '@sveltejs/kit';
+import { Route } from '$lib/route';
 import { authenticate } from '$lib/utils/auth';
-import { getFormatter } from '$lib/utils/i18n';
 import type { PageLoad } from './$types';
 
+/** FL-71: this page is a Command Center section now; its old address only redirects there. */
 export const load = (async ({ url }) => {
   await authenticate(url, { admin: true });
-
-  const [workers, limits, audit, users] = await Promise.all([
-    listRenderWorkers(),
-    getRenderWorkerLimits(),
-    searchRenderWorkerAudit({ take: 100 }),
-    searchUsersAdmin({ withDeleted: true }),
-  ]);
-  const $t = await getFormatter();
-
-  return {
-    workers,
-    limits,
-    audit,
-    users,
-    meta: {
-      title: $t('admin.render_workers'),
-    },
-  };
+  redirect(307, Route.renderWorkers());
 }) satisfies PageLoad;

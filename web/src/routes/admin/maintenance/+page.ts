@@ -1,23 +1,10 @@
-import { getIntegrityReportSummary, getServerVersion, listDatabaseBackups } from '@immich/sdk';
+import { redirect } from '@sveltejs/kit';
+import { Route } from '$lib/route';
 import { authenticate } from '$lib/utils/auth';
-import { getFormatter } from '$lib/utils/i18n';
 import type { PageLoad } from './$types';
 
+/** FL-71: Maintenance is a Command Center area; this address only redirects there. */
 export const load = (async ({ url }) => {
   await authenticate(url, { admin: true });
-
-  const integrityReport = await getIntegrityReportSummary();
-  const { major, minor, patch } = await getServerVersion();
-  const { backups } = await listDatabaseBackups();
-
-  const $t = await getFormatter();
-
-  return {
-    backups,
-    integrityReport,
-    expectedVersion: `${major}.${minor}.${patch}`,
-    meta: {
-      title: $t('admin.maintenance_settings'),
-    },
-  };
+  redirect(307, Route.systemMaintenance());
 }) satisfies PageLoad;

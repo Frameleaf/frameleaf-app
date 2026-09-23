@@ -1,25 +1,10 @@
-import { getMlWorkloadRoutes, getWorkerInventory, listMlDestinations } from '@immich/sdk';
+import { redirect } from '@sveltejs/kit';
+import { Route } from '$lib/route';
 import { authenticate } from '$lib/utils/auth';
-import { getFormatter } from '$lib/utils/i18n';
 import type { PageLoad } from './$types';
 
+/** FL-71: this page is a Command Center section now; its old address only redirects there. */
 export const load = (async ({ url }) => {
   await authenticate(url, { admin: true });
-
-  const [destinations, { routes }, inventory] = await Promise.all([
-    listMlDestinations(),
-    getMlWorkloadRoutes(),
-    // The inventory is a read-only view; if it cannot be read, the destinations still load.
-    getWorkerInventory().catch(() => null),
-  ]);
-  const $t = await getFormatter();
-
-  return {
-    destinations,
-    routes,
-    inventory,
-    meta: {
-      title: $t('admin.frameleaf_ml_destinations_title'),
-    },
-  };
+  redirect(307, Route.systemProcessingDestinations());
 }) satisfies PageLoad;

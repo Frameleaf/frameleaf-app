@@ -22,6 +22,7 @@ export type SettingsHostSection = {
 };
 
 export type SettingsAreaId =
+  | 'overview'
   | 'analytics'
   | 'storage'
   | 'backup'
@@ -32,9 +33,13 @@ export type SettingsAreaId =
   | 'security'
   | 'notifications'
   | 'server'
+  | 'sharing'
+  | 'maintenance'
   | 'preferences'
+  | 'users'
   | 'libraries'
   | 'utilities'
+  | 'trash'
   | 'history';
 
 export type SettingsAreaDefinition = {
@@ -50,18 +55,35 @@ export type SettingsAreaDefinition = {
 
 /** The template's area order (`settingsAreas` in settings-catalog.mjs); the rail groups them by `group`. */
 export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
-  // FL-79: the template's Command center group. Library analytics is a screen, not a set of
-  // config forms, so it owns no sections; the host renders it in place of the directory.
+  // The template's Command center group: the Overview (status, storage and what needs attention)
+  // and, FL-79, Library analytics. Both are screens of their own rather than section directories.
+  { id: 'overview', group: 'command', sections: [], adminOnly: true },
   { id: 'analytics', group: 'command', sections: [], adminOnly: true },
-  // FL-75: `migration` is the template's "Move or export your library", last in this area.
-  { id: 'storage', group: 'library', sections: ['storage-template', 'trash', 'user-settings', 'migration'] },
+  // FL-75: `migration` is the template's "Move or export your library", last in this area. FL-71:
+  // physical deduplication (the old /admin/physical-deduplication page) is the template's
+  // `deduplication` section, after the folder layout.
+  {
+    id: 'storage',
+    group: 'library',
+    sections: ['storage-template', 'deduplication', 'trash', 'user-settings', 'migration'],
+  },
   // FL-74 / FL-65: imports and "Originals & preservation" belong to every account; database backups
   // are the server's. One mount of each, in the template's order.
   { id: 'backup', group: 'library', sections: ['backup'], personal: ['takeout', 'preservation'] },
   { id: 'intelligence', group: 'library', sections: ['machine-learning', 'smart-albums', 'metadata'] },
   { id: 'editing', group: 'library', sections: ['image', 'video-transcoding'] },
-  { id: 'care', group: 'library', sections: ['integrity-checks'] },
-  { id: 'processing', group: 'server', sections: ['job', 'nightly-tasks'] },
+  // The template's People & sharing: partner sharing moved out of the personal settings list.
+  { id: 'sharing', group: 'library', sections: [], personal: ['sharing'] },
+  // The template's Library care (settings-catalog.mjs:905-977): media health & integrity with its
+  // integrity check settings, repair queues and enrichment completeness.
+  { id: 'care', group: 'library', sections: ['integrity-checks', 'enrichment-care'], personal: ['repair'] },
+  // FL-71: the old /admin/processing-destinations (workers, workload destinations), /admin/queues
+  // and /admin/render-workers pages are sections of Compute & jobs, with the job and nightly settings.
+  {
+    id: 'processing',
+    group: 'server',
+    sections: ['workers', 'routing', 'queues', 'job', 'render-workers', 'nightly-tasks'],
+  },
   // The template's Access & security holds each account's own sign-in (password, PIN, provider),
   // Locked tags & people, and devices & API keys next to the server's sign-in methods.
   {
@@ -77,28 +99,26 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     group: 'server',
     sections: ['server', 'version-check', 'logging', 'location', 'theme', 'configuration'],
   },
+  // FL-71: the old /admin/maintenance page (Maintenance.jsx): mode, database backups, integrity.
+  { id: 'maintenance', group: 'server', sections: ['mode', 'backups', 'integrity'] },
   // The signed-in account's own settings (the template's "Your preferences").
   {
     id: 'preferences',
     group: 'personal',
     sections: [],
-    // Profile, appearance, downloads and library features, as in the template. Usage, supporter
-    // status and partner sharing have no other home yet (sharing moves with People & sharing).
-    personal: [
-      'account',
-      'app-settings',
-      'download-settings',
-      'feature',
-      'sharing',
-      'user-usage-info',
-      'user-purchase-settings',
-    ],
+    // Profile, appearance, downloads and library features, as in the template. Usage and supporter
+    // status have no other home in the template yet.
+    personal: ['account', 'app-settings', 'download-settings', 'feature', 'user-usage-info', 'user-purchase-settings'],
   },
+  // FL-71: the old /admin/users pages; one account opens inside the section (`?user=<id>`).
+  { id: 'users', group: 'server', sections: ['accounts'] },
   // FL-78: the template moves external library settings out of "Import & protection" into their own
   // area, where the Libraries manager sits above them (`moveSection("backup", "libraries", "sources")`).
   { id: 'libraries', group: 'library', sections: ['external-library'], adminOnly: true },
   // FL-69: utilities belong to every account; the area draws its own tool directory.
   { id: 'utilities', group: 'library', sections: [] },
+  // FL-71: the account's Trash (the old /trash page); the rail's Trash opens it.
+  { id: 'trash', group: 'library', sections: [], personal: ['contents'] },
   // FL-66: the template's "Change history" area. It holds no settings form; the host shows the
   // saved settings changes there.
   { id: 'history', group: 'personal', sections: [], adminOnly: true },
@@ -112,13 +132,19 @@ export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = Object.freeze([
 ]);
 
 /** Where the Command Center opens without an area: the first area the account can use. */
-export const defaultSettingsArea = (isAdmin: boolean): SettingsAreaId => (isAdmin ? 'storage' : 'preferences');
+export const defaultSettingsArea = (isAdmin: boolean): SettingsAreaId => (isAdmin ? 'overview' : 'preferences');
 
 export const isSettingsAreaId = (value: string | null | undefined): value is SettingsAreaId =>
   SETTINGS_AREAS.some((area) => area.id === value);
 
 /** Areas that are screens of their own rather than directories of settings sections (FL-79). */
-export const SCREEN_AREAS: readonly SettingsAreaId[] = Object.freeze(['analytics', 'utilities', 'history']);
+export const SCREEN_AREAS: readonly SettingsAreaId[] = Object.freeze(['overview', 'analytics', 'utilities', 'history']);
+
+/** Areas whose one section opens directly, as the template's `navigate()` does for them. */
+export const DIRECT_SECTION: Partial<Record<SettingsAreaId, string>> = Object.freeze({
+  users: 'accounts',
+  trash: 'contents',
+});
 
 export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area);
 
@@ -218,7 +244,7 @@ export const resolveSettingsSection = (
       return key;
     }
   }
-  return undefined;
+  return DIRECT_SECTION[area];
 };
 
 export type SearchableSection = { key: string; title: string; subtitle?: string };

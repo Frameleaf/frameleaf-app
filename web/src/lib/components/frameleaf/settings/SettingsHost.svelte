@@ -20,6 +20,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
+  import CommandCenterOverview from '$lib/components/frameleaf/settings/CommandCenterOverview.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
   import SettingsDirectory from '$lib/components/frameleaf/settings/SettingsDirectory.svelte';
   import SettingsDraftNotices from '$lib/components/frameleaf/settings/SettingsDraftNotices.svelte';
@@ -55,7 +56,11 @@
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
+    mdiAccountMultipleOutline,
     mdiAccountOutline,
+    mdiDeleteOutline,
+    mdiViewDashboardOutline,
+    mdiWrenchOutline,
     mdiArrowLeft,
     mdiBackupRestore,
     mdiBellOutline,
@@ -96,6 +101,11 @@
   const settingsDraft = getSystemConfigDraft();
 
   const areaCopy: Record<SettingsAreaId, { title: string; description: string; icon: string }> = $derived({
+    overview: {
+      title: $t('frameleaf_settings_area_overview'),
+      description: $t('frameleaf_settings_area_overview_description'),
+      icon: mdiViewDashboardOutline,
+    },
     analytics: {
       title: $t('frameleaf_settings_area_analytics'),
       description: $t('frameleaf_settings_area_analytics_description'),
@@ -145,6 +155,26 @@
       title: $t('frameleaf_settings_area_server'),
       description: $t('frameleaf_settings_area_server_description'),
       icon: mdiServerOutline,
+    },
+    sharing: {
+      title: $t('frameleaf_settings_area_sharing'),
+      description: $t('frameleaf_settings_area_sharing_description'),
+      icon: mdiAccountMultipleOutline,
+    },
+    maintenance: {
+      title: $t('frameleaf_settings_area_maintenance'),
+      description: $t('frameleaf_settings_area_maintenance_description'),
+      icon: mdiWrenchOutline,
+    },
+    users: {
+      title: $t('frameleaf_settings_area_users'),
+      description: $t('frameleaf_settings_area_users_description'),
+      icon: mdiAccountMultipleOutline,
+    },
+    trash: {
+      title: $t('frameleaf_settings_area_trash'),
+      description: $t('frameleaf_settings_area_trash_description'),
+      icon: mdiDeleteOutline,
     },
     preferences: {
       title: $t('frameleaf_settings_area_preferences'),
@@ -210,13 +240,15 @@
     resolveSettingsSection(area, { section: page.url.searchParams.get('section'), isOpen: legacyOpen }),
   );
   const selected = $derived(areaSections.find((section) => section.key === selectedKey));
+  // As in the template, the Users manager and the Job manager carry their own headings.
+  const ownHeading = $derived(area === 'users' || (area === 'processing' && selected?.key === 'queues'));
 
   /** The navigation's pages under the current area: its sections, or the utility tools. */
   const utilityTools = $derived(utilityToolsFor(isAdmin));
   const children = $derived(
     area === 'utilities'
       ? utilityTools.map((tool) => ({ key: tool.id as string, title: $t(tool.titleKey) }))
-      : area === 'libraries'
+      : area === 'libraries' || area === 'trash'
         ? []
         : areaSections.map((section) => ({ key: section.key, title: section.title })),
   );
@@ -556,20 +588,24 @@
             </section>
           {/each}
         {:else}
-          <header class="cc-page-heading">
-            <p class="cc-overline">
-              {#if selected}
-                <button type="button" onclick={() => navigate(area)}>{areaCopy[area].title}</button>
-                <Icon icon={mdiChevronRight} size="0.875rem" aria-hidden />
-                {selected.title}
-              {:else}
-                {groupCopy[areaDefinition?.group ?? 'library']}
-              {/if}
-            </p>
-            <h1>{selected?.title ?? areaCopy[area].title}</h1>
-            <p>{selected?.subtitle ?? areaCopy[area].description}</p>
-          </header>
-          {#if area === 'history'}
+          {#if !ownHeading}
+            <header class="cc-page-heading">
+              <p class="cc-overline">
+                {#if selected}
+                  <button type="button" onclick={() => navigate(area)}>{areaCopy[area].title}</button>
+                  <Icon icon={mdiChevronRight} size="0.875rem" aria-hidden />
+                  {selected.title}
+                {:else}
+                  {groupCopy[areaDefinition?.group ?? 'library']}
+                {/if}
+              </p>
+              <h1>{selected?.title ?? areaCopy[area].title}</h1>
+              <p>{selected?.subtitle ?? areaCopy[area].description}</p>
+            </header>
+          {/if}
+          {#if area === 'overview'}
+            <CommandCenterOverview />
+          {:else if area === 'history'}
             <SettingsChangeHistory
               entries={history}
               error={historyError}
