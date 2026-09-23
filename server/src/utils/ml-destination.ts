@@ -1,10 +1,15 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import {
   CLOUD_ML_DESTINATION_KINDS,
+  LIBRARY_ML_WORKLOADS,
   MlAdmissionRefusal,
   MlDestinationHealth,
   MlDestinationKind,
+  MlWorkerAcceleration,
+  MlWorkerReadiness,
+  MlWorkerRole,
   MlWorkload,
+  RESTORATION_ML_WORKLOADS,
 } from 'src/enum.js';
 import {
   MachineLearningRepository,
@@ -15,6 +20,7 @@ import {
   MlUsage,
 } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
+import type { MlProbeHardware } from 'src/schema/tables/ml-destination.table.js';
 
 /**
  * Explicit destination selection (FL-110).
@@ -73,9 +79,10 @@ export const hasRequiredConsent = (destination: Pick<MlDestinationRow, 'kind' | 
   !isCloudDestination(destination.kind) || destination.consentAcknowledgedAt !== null;
 
 /**
- * Resolve where a destination row actually points. Local and LAN rows carry their URL;
- * RunPod rows resolve to whatever the RunPod state machine has published, and resolve to
- * nothing while no pod or serverless worker is ready.
+ * Resolve where a destination row actually points. Local, LAN and RunPod video rows carry
+ * their URL; RunPod rows resolve to whatever the RunPod state machine has published, and
+ * resolve to nothing while no pod or serverless worker is ready. A RunPod video row never
+ * resolves to the library-analysis pod (FL-72).
  */
 export const resolveEndpoint = (
   destination: Pick<MlDestinationRow, 'kind' | 'url' | 'authToken'>,
@@ -88,6 +95,185 @@ export const resolveEndpoint = (
     return null;
   }
   return destination.authToken ? { url: destination.url, authToken: destination.authToken } : { url: destination.url };
+};
+
+/* ------------------------------------------------------------------ */
+/* Worker roles (FL-72)                                                */
+/* ------------------------------------------------------------------ */
+
+export const isLibraryWorkload = (workload: MlWorkload): boolean => LIBRARY_ML_WORKLOADS.includes(workload);
+export const isRestorationWorkload = (workload: MlWorkload): boolean => RESTORATION_ML_WORKLOADS.includes(workload);
+
+/** What a worker is for, from the workloads it is allowed to run. */
+export const mlWorkerRoleOf = (workloads: readonly MlWorkload[]): MlWorkerRole => {
+  const library = workloads.some((workload) => isLibraryWorkload(workload));
+  const restoration = workloads.some((workload) => isRestorationWorkload(workload));
+  if (library && restoration) {
+    return MlWorkerRole.Mixed;
+  }
+  if (library) {
+    return MlWorkerRole.LibraryAnalysis;
+  }
+  if (restoration) {
+    return MlWorkerRole.Restoration;
+  }
+  return workloads.length > 0 ? MlWorkerRole.Studio : MlWorkerRole.Unassigned;
+};
+
+/**
+ * Why a destination may not be allowed these workloads, or null when it may.
+ *
+ * - Library analysis and restoration never share a worker, so a long restoration cannot hold
+ *   the hardware library analysis needs.
+ * - The managed RunPod pod runs the ordinary `/predict` image: it is a library-analysis worker
+ *   and is never offered for restoration.
+ * - A RunPod video worker exists only for restoration.
+ */
+export const workloadPolicyProblem = (kind: MlDestinationKind, workloads: readonly MlWorkload[]): string | null => {
+  const role = mlWorkerRoleOf(workloads);
+  if (role === MlWorkerRole.Mixed) {
+    return 'A worker runs library analysis or restoration, not both; add the restoration worker as its own destination';
+  }
+  if (kind === MlDestinationKind.RunPod && workloads.some((workload) => isRestorationWorkload(workload))) {
+    return 'The managed RunPod pod runs library analysis only; add a RunPod video worker for restoration';
+  }
+  if (kind === MlDestinationKind.RunPodVideo && workloads.some((workload) => !isRestorationWorkload(workload))) {
+    return 'A RunPod video worker runs restoration only';
+  }
+  return null;
+};
+
+/** Normalize an endpoint URL for comparison: trailing slashes and letter case of the host do not matter. */
+export const sameEndpointUrl = (a: string, b: string): boolean => {
+  try {
+    const left = new URL(a);
+    const right = new URL(b);
+    return left.origin === right.origin && left.pathname.replace(/\/+$/, '') === right.pathname.replace(/\/+$/, '');
+  } catch {
+    return a.replace(/\/+$/, '') === b.replace(/\/+$/, '');
+  }
+};
+
+/**
+ * Refuse a restoration on an endpoint library analysis uses (FL-72): the destination itself
+ * is routed for a library workload, or another destination routed for one points at the same
+ * URL. Only restoration is ever refused here; library analysis keeps its route.
+ */
+export const restorationRoleConflict = async (
+  { mlDestinationRepository, machineLearningRepository }: MlSelectionDeps,
+  destination: MlDestinationRow,
+  workload: MlWorkload,
+): Promise<string | null> => {
+  if (!isRestorationWorkload(workload)) {
+    return null;
+  }
+  if (destination.kind === MlDestinationKind.RunPod) {
+    return `${destination.name} is the library-analysis pod; restoration runs on a RunPod video worker`;
+  }
+  if (mlWorkerRoleOf(destination.workloads) === MlWorkerRole.Mixed) {
+    return `${destination.name} is also allowed library analysis; restoration runs only on a separate worker`;
+  }
+  const runPodEndpoint = machineLearningRepository.getRunPodEndpoint();
+  const endpoint = resolveEndpoint(destination, runPodEndpoint);
+  const routes = await mlDestinationRepository.getRoutes();
+  for (const route of routes) {
+    if (!isLibraryWorkload(route.workload)) {
+      continue;
+    }
+    if (route.destinationId === destination.id) {
+      return `${destination.name} is routed for ${route.workload}; restoration runs only on a separate worker`;
+    }
+    if (!endpoint) {
+      continue;
+    }
+    const routed = await mlDestinationRepository.getById(route.destinationId);
+    const routedEndpoint = routed ? resolveEndpoint(routed, runPodEndpoint) : null;
+    if (routedEndpoint && sameEndpointUrl(routedEndpoint.url, endpoint.url)) {
+      return `${destination.name} points at the endpoint ${routed?.name ?? route.destinationId} uses for ${route.workload}; restoration runs only on a separate worker`;
+    }
+  }
+  return null;
+};
+
+/* ------------------------------------------------------------------ */
+/* Hardware and readiness (FL-72)                                      */
+/* ------------------------------------------------------------------ */
+
+/** Execution providers that mean "no accelerator". */
+const CPU_PROVIDERS = new Set(['CPUExecutionProvider', 'AzureExecutionProvider']);
+
+/** The hardware facts worth keeping from one probe, or null when the worker did not report them. */
+export const hardwareFromProbe = (
+  probe: Pick<MlEndpointProbe, 'reachable' | 'hardware'>,
+  gpus: MlProbeHardware['gpus'] = [],
+): MlProbeHardware | null => {
+  if (!probe.reachable || (!probe.hardware && gpus.length === 0)) {
+    return null;
+  }
+  return {
+    preferredAcceleration: probe.hardware?.preferredAcceleration ?? null,
+    providers: [...(probe.hardware?.providers ?? [])],
+    cudaDeviceCount: Math.max(probe.hardware?.cudaDeviceCount ?? 0, gpus.length),
+    gpus,
+  };
+};
+
+/** CPU or accelerator, from stored hardware facts. Missing facts are `unknown`, never assumed. */
+export const accelerationOf = (hardware: MlProbeHardware | null): MlWorkerAcceleration => {
+  if (!hardware) {
+    return MlWorkerAcceleration.Unknown;
+  }
+  const accelerated =
+    hardware.gpus.length > 0 ||
+    hardware.cudaDeviceCount > 0 ||
+    (hardware.preferredAcceleration !== null && hardware.preferredAcceleration !== 'auto') ||
+    hardware.providers.some((provider) => !CPU_PROVIDERS.has(provider));
+  return accelerated ? MlWorkerAcceleration.Gpu : MlWorkerAcceleration.Cpu;
+};
+
+/**
+ * The inventory state of one destination from its stored check. `not-serving` means the worker
+ * answered but reports none of the work it is allowed; `cpu` means it serves that work on the
+ * CPU only. A worker that serves its work and did not report hardware is `model-ready`, with
+ * its acceleration shown separately as unknown.
+ */
+export const readinessOf = (
+  row: Pick<MlDestinationRow, 'enabled' | 'workloads' | 'lastProbeHealth' | 'lastProbeWorkloads' | 'lastProbeHardware'>,
+): MlWorkerReadiness => {
+  if (!row.enabled) {
+    return MlWorkerReadiness.Disabled;
+  }
+  if (row.lastProbeHealth === MlDestinationHealth.Unknown) {
+    return MlWorkerReadiness.Unknown;
+  }
+  if (row.lastProbeHealth === MlDestinationHealth.Unhealthy || row.lastProbeWorkloads === null) {
+    return MlWorkerReadiness.Unreachable;
+  }
+  const served = row.lastProbeWorkloads.filter((workload) => row.workloads.includes(workload));
+  if (served.length === 0) {
+    return MlWorkerReadiness.NotServing;
+  }
+  return accelerationOf(row.lastProbeHardware) === MlWorkerAcceleration.Cpu
+    ? MlWorkerReadiness.Cpu
+    : MlWorkerReadiness.ModelReady;
+};
+
+/** The persisted check as an admission input, so a read never contacts a worker. */
+export const storedProbe = (
+  row: Pick<MlDestinationRow, 'lastProbeAt' | 'lastProbeHealth' | 'lastProbeWorkloads' | 'lastProbeSummary'>,
+): MlEndpointProbe | null => {
+  if (!row.lastProbeAt) {
+    return null;
+  }
+  const healthy = row.lastProbeHealth === MlDestinationHealth.Healthy;
+  return {
+    reachable: healthy,
+    workloads: row.lastProbeWorkloads ?? [],
+    hardware: null,
+    latencyMs: 0,
+    probedAt: new Date(row.lastProbeAt),
+    error: healthy ? null : (row.lastProbeSummary ?? 'not probed'),
+  };
 };
 
 export type MlAdmissionInput = {
@@ -126,6 +312,20 @@ export const evaluateAdmission = ({
       admitted: false,
       refusal: MlAdmissionRefusal.WorkloadNotAllowed,
       detail: `${destination.name} is not allowed to run ${workload}`,
+    };
+  }
+  if (isRestorationWorkload(workload) && destination.kind === MlDestinationKind.RunPod) {
+    return {
+      admitted: false,
+      refusal: MlAdmissionRefusal.RoleConflict,
+      detail: `${destination.name} is the library-analysis pod; restoration runs on a RunPod video worker`,
+    };
+  }
+  if (isRestorationWorkload(workload) && mlWorkerRoleOf(destination.workloads) === MlWorkerRole.Mixed) {
+    return {
+      admitted: false,
+      refusal: MlAdmissionRefusal.RoleConflict,
+      detail: `${destination.name} is also allowed library analysis; restoration runs only on a separate worker`,
     };
   }
   if (!hasRequiredConsent(destination)) {
