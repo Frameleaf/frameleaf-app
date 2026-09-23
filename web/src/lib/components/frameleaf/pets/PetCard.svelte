@@ -142,6 +142,7 @@
 
   <div class="meta">
     {#if editing}
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Escape from the field inside cancels the edit) -->
       <form
         class="name-field"
         onsubmit={commit}

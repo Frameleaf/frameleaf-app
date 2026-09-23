@@ -36,7 +36,7 @@
     { value: `state:${PreservationItemState.Skipped}`, key: 'frameleaf_preservation_items_skipped' },
     { value: `verify:${PreservationVerifyState.Missing}`, key: 'frameleaf_preservation_items_missing' },
     { value: `verify:${PreservationVerifyState.Changed}`, key: 'frameleaf_preservation_items_changed' },
-  ];
+  ] as const;
 
   const load = async () => {
     if (!item) {

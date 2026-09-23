@@ -173,7 +173,7 @@
 
   const messageOf = (failure: unknown) => {
     if (failure instanceof TakeoutUploadError) {
-      return $t(failure.message);
+      return $t(failure.key);
     }
     return getServerErrorMessage(failure) ?? $t('frameleaf_takeout_error_generic');
   };
