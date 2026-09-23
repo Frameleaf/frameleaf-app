@@ -1,4 +1,9 @@
-import { BadRequestException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { UserAdmin } from 'src/database.js';
 import { AssetVisibility, CacheControl, JobName, UserMetadataKey } from 'src/enum.js';
 import { UserService } from 'src/services/user.service.js';
@@ -412,6 +417,58 @@ describe(UserService.name, () => {
       const options = { force: true, recursive: true };
 
       expect(mocks.storage.unlinkDir).toHaveBeenCalledWith(expect.stringContaining('data/library/admin'), options);
+    });
+  });
+
+  describe('updateMyPreferences (FL-77 admin casting permission)', () => {
+    const castTurnedOff = [
+      { key: UserMetadataKey.Preferences, value: { cast: { gCastEnabled: true, adminDisabled: true } } },
+    ];
+
+    beforeEach(() => {
+      mocks.user.upsertMetadata.mockResolvedValue();
+      mocks.session.requestSyncResetForUser.mockResolvedValue();
+    });
+
+    it('should refuse to turn casting on while an administrator has turned it off', async () => {
+      mocks.user.getMetadata.mockResolvedValue(castTurnedOff);
+
+      await expect(sut.updateMyPreferences(authStub.user1, { cast: { gCastEnabled: true } })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
+    });
+
+    it('should report casting off and keep the stored choice when other preferences are saved', async () => {
+      mocks.user.getMetadata.mockResolvedValue(castTurnedOff);
+
+      await expect(
+        sut.updateMyPreferences(authStub.user1, { cast: { gCastEnabled: false }, tags: { enabled: true } }),
+      ).resolves.toMatchObject({ cast: { gCastEnabled: false, adminDisabled: true }, tags: { enabled: true } });
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(authStub.user1.user.id, {
+        key: UserMetadataKey.Preferences,
+        value: expect.objectContaining({ cast: { gCastEnabled: true, adminDisabled: true } }),
+      });
+    });
+
+    it('should never let a user set the administrator flag', async () => {
+      mocks.user.getMetadata.mockResolvedValue([]);
+
+      await expect(
+        sut.updateMyPreferences(authStub.user1, { cast: { gCastEnabled: true, adminDisabled: true } }),
+      ).resolves.toMatchObject({ cast: { gCastEnabled: true, adminDisabled: false } });
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(authStub.user1.user.id, {
+        key: UserMetadataKey.Preferences,
+        value: { cast: { gCastEnabled: true } },
+      });
+    });
+
+    it('should report casting off from getMyPreferences while an administrator has turned it off', async () => {
+      mocks.user.getMetadata.mockResolvedValue(castTurnedOff);
+
+      await expect(sut.getMyPreferences(authStub.user1)).resolves.toMatchObject({
+        cast: { gCastEnabled: false, adminDisabled: true },
+      });
     });
   });
 
