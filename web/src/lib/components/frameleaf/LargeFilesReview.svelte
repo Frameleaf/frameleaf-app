@@ -25,7 +25,7 @@
   import { formatBytes } from '$lib/frameleaf/physical-dedup';
   import { isStaleReview } from '$lib/frameleaf/trash';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { eventManager } from '$lib/managers/event-manager.svelte';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { websocketEvents } from '$lib/stores/websocket';
   import { downloadJson, getAssetMediaUrl } from '$lib/utils';
   import {
@@ -41,7 +41,7 @@
   import { Icon } from '@immich/ui';
   import { mdiCheckCircleOutline, mdiClose, mdiDownload, mdiUndo } from '@mdi/js';
   import { onMount } from 'svelte';
-  import type { SvelteSet } from 'svelte/reactivity';
+  import { SvelteSet } from 'svelte/reactivity';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -71,8 +71,13 @@
   let inspect = $state<AssetResponseDto | null>(null);
   let inspectOpen = $state(false);
 
+  /** Items permanently deleted since the list loaded, here or anywhere else. */
+  const removed = new SvelteSet<string>();
+
   const userId = $derived(authManager.user.id);
   const context = $derived({ userId, trashed });
+  const trashEnabled = $derived(featureFlagsManager.value.trash);
+  const present = $derived(assets.filter((asset) => !removed.has(asset.id)));
 
   const ownerName = (id: string) =>
     id === userId ? authManager.user.name : (partnerNames[id] ?? $t('frameleaf_large_files_other_account'));
@@ -92,7 +97,7 @@
   };
 
   const rows = $derived(
-    filterLargeFiles(assets, context, {
+    filterLargeFiles(present, context, {
       owner,
       show,
       query,
@@ -102,7 +107,7 @@
   const editable = $derived(rows.filter((asset) => canTrashLargeFile(asset, context)));
   const chosen = $derived(editable.filter((asset) => selected.includes(asset.id)));
   const allChosen = $derived(editable.length > 0 && editable.every((asset) => selected.includes(asset.id)));
-  const owners = $derived(largeFileOwners(assets, userId));
+  const owners = $derived(largeFileOwners(present, userId));
   const viewBytes = $derived(rows.reduce((sum, asset) => sum + largeFileSize(asset), 0));
 
   const toggle = (id: string) => {
@@ -200,21 +205,27 @@
       });
 
     const unsubscribers = [
-      // the viewer's own trash, and trash from another tab or device
-      eventManager.on({
-        AssetsDelete: (ids) => {
-          const known = new Set(assets.map((asset) => asset.id));
-          for (const id of ids) {
-            if (known.has(id)) {
-              trashed.add(id);
-            }
+      // the server's word on trash, restore and permanent deletion: from the viewer, another tab or device
+      websocketEvents.on('on_asset_trash', (ids) => {
+        const known = new Set(assets.map((asset) => asset.id));
+        for (const id of ids) {
+          if (known.has(id)) {
+            trashed.add(id);
           }
-          selected = selected.filter((id) => !ids.includes(id));
-        },
+        }
+        selected = selected.filter((id) => !ids.includes(id));
       }),
       websocketEvents.on('on_asset_restore', (ids) => {
         for (const id of ids) {
           trashed.delete(id);
+        }
+      }),
+      websocketEvents.on('on_asset_delete', (id) => {
+        removed.add(id);
+        trashed.delete(id);
+        selected = selected.filter((value) => value !== id);
+        if (undoIds?.includes(id)) {
+          undoIds = null;
         }
       }),
     ];
@@ -285,13 +296,16 @@
   </div>
 
   <div class="lf-toolbar">
-    <Button disabled={chosen.length === 0 || busy} onclick={() => void ask()}>
+    <Button disabled={chosen.length === 0 || busy || !trashEnabled} onclick={() => void ask()}>
       {$t('frameleaf_large_files_move_selected')}
     </Button>
     <Button disabled={rows.length === 0} onclick={exportList}>
       <Icon icon={mdiDownload} size="1rem" aria-hidden={true} />
       {$t('frameleaf_large_files_export')}
     </Button>
+    {#if !trashEnabled}
+      <span class="lf-hint">{$t('frameleaf_large_files_trash_off')}</span>
+    {/if}
   </div>
 
   <div class="lf-table-scroll">
@@ -468,6 +482,11 @@
     background: var(--fl-panel);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
+  }
+  .lf-hint {
+    align-self: center;
+    font-size: var(--fl-font-micro);
+    color: var(--fl-muted);
   }
   .lf-stats {
     display: flex;
