@@ -104,6 +104,7 @@ const operationStub = (overrides: Partial<MediaOperation> = {}): MediaOperation 
     lastAdmissionRefusedAt: null,
     admissionRefusals: 0,
     outputBytes: '0',
+    attemptStartedAt: null,
     cancelRequestedAt: null,
     cancelAcknowledgedAt: null,
     remoteJobId: null,
@@ -790,6 +791,36 @@ describe(RenderWorkerService.name, () => {
         'claim-1',
         expect.objectContaining({ errorCode: RenderWorkerRefusalReason.WallClockExceeded }),
       );
+    });
+
+    it('measures the wall clock from the current attempt, so an automatic re-dispatch starts from zero', async () => {
+      // First attempt started long ago and failed; the retry was claimed just now. The account's
+      // one-second ceiling applies to this attempt alone.
+      vi.mocked(workers.getClaimed).mockResolvedValue(
+        operationStub({
+          ...claimedByA,
+          attempt: 2,
+          startedAt: new Date(Date.now() - 60_000),
+          attemptStartedAt: new Date(),
+        }) as never,
+      );
+      vi.mocked(workers.getLimit).mockImplementation((subject) =>
+        Promise.resolve(
+          subject === OWNER_A
+            ? ({ subject, maxConcurrentOperations: 2, maxWallClockMs: '1000', maxOutputBytes: null } as never)
+            : undefined,
+        ),
+      );
+
+      const result = await sut.progress(SESSION_A, claimedByA.id, {
+        claimToken: 'claim-1',
+        status: MediaOperationStatus.Rendering,
+        processedUnits: 5,
+        totalUnits: 10,
+      } as never);
+
+      expect(result).toEqual({ accepted: true, refusal: null });
+      expect(operations.fail).not.toHaveBeenCalled();
     });
 
     it('derives progress on the server from counted units', async () => {

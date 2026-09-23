@@ -6,8 +6,8 @@ import { Kysely, sql } from 'kysely';
  * Worker identities with a hashed enrolment secret, the scoped and expiring sessions admission
  * hands out, per-account limits with an `instance` default row, and an audit trail that carries no
  * foreign keys so it outlives the workers and operations it describes. `media_operation` gains the
- * columns a refusal is recorded on and the output byte counter the output ceiling is checked
- * against.
+ * columns a refusal is recorded on, the output byte counter the output ceiling is checked against
+ * and the start of the current attempt, so an automatic re-dispatch is charged from zero.
  */
 export async function up(db: Kysely<any>): Promise<void> {
   await sql`CREATE TABLE "render_worker" (
@@ -101,9 +101,11 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`ALTER TABLE "media_operation" ADD "lastAdmissionRefusedAt" timestamp with time zone;`.execute(db);
   await sql`ALTER TABLE "media_operation" ADD "admissionRefusals" integer NOT NULL DEFAULT 0;`.execute(db);
   await sql`ALTER TABLE "media_operation" ADD "outputBytes" bigint NOT NULL DEFAULT 0;`.execute(db);
+  await sql`ALTER TABLE "media_operation" ADD "attemptStartedAt" timestamp with time zone;`.execute(db);
 }
 
 export async function down(db: Kysely<any>): Promise<void> {
+  await sql`ALTER TABLE "media_operation" DROP COLUMN "attemptStartedAt";`.execute(db);
   await sql`ALTER TABLE "media_operation" DROP COLUMN "outputBytes";`.execute(db);
   await sql`ALTER TABLE "media_operation" DROP COLUMN "admissionRefusals";`.execute(db);
   await sql`ALTER TABLE "media_operation" DROP COLUMN "lastAdmissionRefusedAt";`.execute(db);
