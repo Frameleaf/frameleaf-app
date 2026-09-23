@@ -1743,7 +1743,7 @@ export type AnalyticsAlbumsDto = {
 };
 export type AnalyticsCameraDto = {
     count: number;
-    kind: Kind;
+    kind: AnalyticsCameraKind;
     /** Camera model; null for the other and unknown rows */
     name: string | null;
 };
@@ -1764,8 +1764,7 @@ export type AnalyticsSeriesDefinitionDto = {
     grain: AnalyticsGrain;
     id: AnalyticsSeriesId;
     measurementScope: AnalyticsMeasurementScope;
-    /** The part of the product that answers for it */
-    owner: Owner;
+    owner: AnalyticsSeriesOwner;
     /** Selections the series can be read for */
     scopes: AnalyticsScopeKind[];
     /** Where the number comes from */
@@ -1791,7 +1790,7 @@ export type AnalyticsHostDto = {
     volumeUsedBytes: number | null;
 };
 export type AnalyticsMetadataDto = {
-    field: Field;
+    field: AnalyticsMetadataField;
     missing: number;
     present: number;
     total: number;
@@ -1867,7 +1866,7 @@ export type AnalyticsViewDto = {
     photos: number;
     total: number;
     videos: number;
-    view: View;
+    view: AnalyticsView;
 };
 export type AnalyticsReportResponseDto = {
     albums: AnalyticsAlbumsDto;
@@ -4173,7 +4172,7 @@ export type EventStoryDto = {
     /** Last local day of the event, 'yyyy-MM-dd' */
     endDate: string;
     /** Discriminator for an event story */
-    kind: Kind2;
+    kind: Kind;
     place?: MemoryStoryPlaceDto;
     /** First local day of the event, 'yyyy-MM-dd' */
     startDate: string;
@@ -4186,7 +4185,7 @@ export type YearInReviewDto = {
     /** Number of assets captured that year */
     assetCount: number;
     /** Discriminator for a year in review recap */
-    kind: Kind3;
+    kind: Kind2;
     /** Number of distinct months represented */
     monthCount: number;
     /** Calendar year being recapped */
@@ -6691,7 +6690,7 @@ export type MachineLearningHardwareResponseDto = {
 };
 export type SmartAlbumReevaluateRequestDto = {
     /** Optional built-in kind to scope the re-evaluation to. Omit to re-evaluate every enabled kind. */
-    kind?: Kind4;
+    kind?: Kind3;
 };
 export type SmartAlbumReevaluateResponseDto = {
     /** Whether the re-evaluate job was newly enqueued (false = already in-flight) */
@@ -15449,7 +15448,7 @@ export enum AnalyticsRange {
     $90Days = "90days",
     Year = "year"
 }
-export enum Kind {
+export enum AnalyticsCameraKind {
     Model = "model",
     Other = "other",
     Unknown = "unknown"
@@ -15476,7 +15475,7 @@ export enum AnalyticsMeasurementScope {
     Selection = "selection",
     Host = "host"
 }
-export enum Owner {
+export enum AnalyticsSeriesOwner {
     Library = "library",
     Host = "host",
     Processing = "processing"
@@ -15497,14 +15496,14 @@ export enum AnalyticsState {
     Stale = "stale",
     Unknown = "unknown"
 }
-export enum Field {
+export enum AnalyticsMetadataField {
     CaptureDate = "captureDate",
     Location = "location",
     CameraModel = "cameraModel",
     AiDescription = "aiDescription",
     Checksum = "checksum"
 }
-export enum View {
+export enum AnalyticsView {
     Timeline = "timeline",
     Favorites = "favorites",
     Archive = "archive",
@@ -16044,10 +16043,10 @@ export enum MemoryType {
     EventStory = "event_story",
     YearInReview = "year_in_review"
 }
-export enum Kind2 {
+export enum Kind {
     EventStory = "event_story"
 }
-export enum Kind3 {
+export enum Kind2 {
     YearInReview = "year_in_review"
 }
 export enum RestorationDynamicRange {
@@ -16393,7 +16392,7 @@ export enum SyncRequestType {
     AssetFacesV3 = "AssetFacesV3",
     UserMetadataV1 = "UserMetadataV1"
 }
-export enum Kind4 {
+export enum Kind3 {
     Travel = "travel",
     Documents = "documents",
     Screenshots = "screenshots",
