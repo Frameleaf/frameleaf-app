@@ -1,6 +1,13 @@
 import type { TagResponseDto } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
-import { buildTagTree, flattenTagTree, tagAndDescendantIds, tagBreadcrumbs, visibleTagRows } from '$lib/frameleaf/tag-tree';
+import {
+  buildTagTree,
+  flattenTagTree,
+  tagAndDescendantIds,
+  tagBreadcrumbs,
+  tagPathExists,
+  visibleTagRows,
+} from '$lib/frameleaf/tag-tree';
 
 const tag = (partial: Partial<TagResponseDto> & { id: string; name: string }): TagResponseDto =>
   ({
@@ -85,5 +92,29 @@ describe('Frameleaf tag tree adapter', () => {
       'rockies',
       'lakes',
     ]);
+  });
+
+  describe('tagPathExists', () => {
+    const tags = [
+      tag({ id: 'trips', name: 'Trips' }),
+      tag({ id: 'rockies', name: 'Rockies 2026', parentId: 'trips', value: 'Trips/Rockies 2026' }),
+    ];
+
+    it('finds a tag by its full value, with or without stray slashes', () => {
+      expect(tagPathExists(tags, 'Trips')).toBe(true);
+      expect(tagPathExists(tags, 'Trips/Rockies 2026')).toBe(true);
+      expect(tagPathExists(tags, '/Trips/Rockies 2026/')).toBe(true);
+    });
+
+    it('treats the empty path as the page with nothing selected', () => {
+      expect(tagPathExists(tags, '')).toBe(true);
+      expect(tagPathExists([], '')).toBe(true);
+    });
+
+    it('does not find a tag the list leaves out, such as one suppressed while locked', () => {
+      expect(tagPathExists(tags, 'Private')).toBe(false);
+      expect(tagPathExists(tags, 'Trips/Private')).toBe(false);
+      expect(tagPathExists(tags, 'Trip')).toBe(false);
+    });
   });
 });

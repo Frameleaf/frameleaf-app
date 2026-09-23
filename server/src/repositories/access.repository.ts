@@ -6,10 +6,12 @@ import { ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserRole, AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import {
+  anyUuid,
   asUuid,
   getHiddenContentFilter,
   hiddenContentAssetIdExists,
   tagHasVisibleAssetOrNoAssets,
+  tagIsSuppressed,
   withDefaultVisibility,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
@@ -19,6 +21,13 @@ type AccessPrivacy = boolean | HiddenContentFilter | undefined;
 const privacyOptions = (privacy: AccessPrivacy): HiddenContentQueryOptions => {
   return typeof privacy === 'object' ? { hiddenContent: privacy } : privacy ? { excludeNsfw: true } : {};
 };
+
+/**
+ * FL-37 / FL-46: the people or tags a session that is not unlocked suppresses. Only a real
+ * hidden-content filter carries them; the NSFW-only form (`true`) suppresses no entity.
+ */
+const suppressedEntityIds = (privacy: AccessPrivacy, entity: 'personIds' | 'tagIds'): string[] =>
+  typeof privacy === 'object' ? privacy[entity] : [];
 
 class ActivityAccess {
   constructor(private db: Kysely<DB>) {}
@@ -632,11 +641,17 @@ class PersonAccess {
       return new Set<string>();
     }
 
+    const suppressedIds = suppressedEntityIds(hideNsfwAssets, 'personIds');
     return this.db
       .selectFrom('person')
       .select('person.personGroupId')
       .where('person.personGroupId', 'in', [...personGroupIds])
       .where('person.ownerId', '=', userId)
+      // FL-37: while the session is not unlocked a suppressed person is not there at all, even one
+      // with no photo yet; the service answers it exactly like a missing id
+      .$if(suppressedIds.length > 0, (qb) =>
+        qb.where((eb) => eb.not(eb('person.personGroupId', '=', anyUuid(suppressedIds)))),
+      )
       .$if(!!getHiddenContentFilter(privacyOptions(hideNsfwAssets)), (qb) =>
         qb.where((eb) =>
           eb.or([
@@ -725,11 +740,17 @@ class TagAccess {
       return new Set<string>();
     }
 
+    const suppressedIds = suppressedEntityIds(hideNsfwAssets, 'tagIds');
     return this.db
       .selectFrom('tag')
       .select('tag.id')
       .where('tag.id', 'in', [...tagIds])
       .where('tag.userId', '=', userId)
+      // FL-46: while the session is not unlocked a suppressed tag, and every tag nested under one,
+      // is not there at all, even an empty one; the service answers it exactly like a missing id
+      .$if(suppressedIds.length > 0, (qb) =>
+        qb.where(sql<boolean>`not ${tagIsSuppressed(sql.ref('tag.id'), suppressedIds)}`),
+      )
       .$if(!!getHiddenContentFilter(privacyOptions(hideNsfwAssets)), (qb) =>
         qb.where(
           tagHasVisibleAssetOrNoAssets(sql.ref('tag.id'), getHiddenContentFilter(privacyOptions(hideNsfwAssets))),

@@ -10,6 +10,7 @@ import {
   getSuppressedOnlyQueryOptions,
   hasHiddenContentFilter,
   hasSuppressionPreferences,
+  isSuppressedWhileLocked,
   requireSuppressedOnlyAccess,
 } from 'src/utils/hidden-content.js';
 
@@ -155,6 +156,25 @@ describe('hidden content utils', () => {
           true,
         ),
       ).toEqual({ onlyHiddenContent: hiddenContent });
+    });
+  });
+
+  describe('isSuppressedWhileLocked', () => {
+    const locked = { user, hiddenContent, suppressedContent: hiddenContent } as AuthDto;
+    const unlocked = { user, suppressedContent: hiddenContent } as AuthDto;
+
+    it('matches each suppressed id against its own kind only', () => {
+      expect(isSuppressedWhileLocked(locked, 'person', 'person-1')).toBe(true);
+      expect(isSuppressedWhileLocked(locked, 'pet', 'pet-1')).toBe(true);
+      expect(isSuppressedWhileLocked(locked, 'tag', 'tag-1')).toBe(true);
+      expect(isSuppressedWhileLocked(locked, 'pet', 'person-1')).toBe(false);
+      expect(isSuppressedWhileLocked(locked, 'person', 'person-2')).toBe(false);
+    });
+
+    it('never matches once the session is unlocked', () => {
+      expect(isSuppressedWhileLocked(unlocked, 'person', 'person-1')).toBe(false);
+      expect(isSuppressedWhileLocked(unlocked, 'pet', 'pet-1')).toBe(false);
+      expect(isSuppressedWhileLocked(unlocked, 'tag', 'tag-1')).toBe(false);
     });
   });
 });
