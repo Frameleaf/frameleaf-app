@@ -274,6 +274,11 @@ describe(TrashService.name, () => {
 
       await expect(statusOf(ctx.database, offline.id)).resolves.toBe(AssetStatus.Active);
       await expect(statusOf(ctx.database, trashed.id)).resolves.toBe(AssetStatus.Deleted);
+
+      // nor can it be moved to the trash as if it were in the library
+      await expect(sut.review(auth, { action: TrashReviewAction.Trash, ids: [offline.id] })).rejects.toThrow(
+        'A chosen item changed or is no longer available',
+      );
     });
   });
 
