@@ -644,6 +644,43 @@ export type ConfigCredentialUpdateDto = {
     /** The new secret. Stored as sent and never returned */
     value: string;
 };
+export type SystemConfigHistoryChangeDto = {
+    /** The value after the change, JSON encoded; null for a credential */
+    after: string | null;
+    /** The value before the change, JSON encoded; null for a credential */
+    before: string | null;
+    credential?: SystemConfigHistoryCredentialChange;
+    /** The changed setting, as a dotted path such as trash.days */
+    path: string;
+};
+export type SystemConfigHistoryEntryDto = {
+    /** The administrator who saved the change */
+    actorId: string | null;
+    /** The administrator's name when the change was saved */
+    actorName: string | null;
+    /** Every changed setting */
+    changes: SystemConfigHistoryChangeDto[];
+    /** When the change was saved (ISO 8601) */
+    createdAt: string;
+    /** Entry ID */
+    id: string;
+    /** Changed settings left out because the entry reached its limit */
+    omittedChanges: number;
+};
+export type SystemConfigHistoryResponseDto = {
+    /** The newest settings changes first */
+    entries: SystemConfigHistoryEntryDto[];
+};
+export type AdminConfigRevisionResponseDto = {
+    config: AdminConfigDto;
+    /** Changes whenever a saved setting changes; send it back as expectedRevision so a save made against older settings is refused */
+    revision: string;
+};
+export type AdminConfigRevisionUpdateDto = {
+    config: AdminConfigDto;
+    /** The revision the changes were made against. When the saved settings no longer match it the update is refused with 409 and nothing is changed */
+    expectedRevision: string;
+};
 export type DatabaseBackupDeleteDto = {
     /** Backup filenames to delete */
     backups: string[];
@@ -815,7 +852,7 @@ export type MediaOperationDto = {
     /** Media operation ID */
     id: string;
     kind: MediaOperationKind;
-    /** What the person sees in Activity */
+    /** What the person sees in Activity; empty when withheld */
     label: string;
     maxAttempts: number;
     /** Whether this kind of job can pause and carry on later; one-shot kinds cannot */
@@ -841,6 +878,8 @@ export type MediaOperationDto = {
     status: MediaOperationStatus;
     totalUnits: string | null;
     updatedAt: string;
+    /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */
+    withheld: boolean;
 };
 export type PhysicalDeduplicationReviewRequestDto = {
     /** Retained originals whose group the administrator decided to leave as they are */
@@ -3945,7 +3984,7 @@ export type MediaOperationDetailDto = {
     /** Media operation ID */
     id: string;
     kind: MediaOperationKind;
-    /** What the person sees in Activity */
+    /** What the person sees in Activity; empty when withheld */
     label: string;
     maxAttempts: number;
     /** Whether this kind of job can pause and carry on later; one-shot kinds cannot */
@@ -3974,6 +4013,8 @@ export type MediaOperationDetailDto = {
     status: MediaOperationStatus;
     totalUnits: string | null;
     updatedAt: string;
+    /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */
+    withheld: boolean;
 };
 export type MemoryStoryPlaceDto = {
     /** City */
@@ -7794,6 +7835,45 @@ export function getAdminConfigDefaults(opts?: Oazapfts.RequestOpts) {
     }>("/admin/config/defaults", {
         ...opts
     }));
+}
+/**
+ * Get the settings change history
+ */
+export function getAdminConfigHistory(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SystemConfigHistoryResponseDto;
+    }>("/admin/config/history", {
+        ...opts
+    }));
+}
+/**
+ * Get the admin configuration with its revision
+ */
+export function getAdminConfigWithRevision(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AdminConfigRevisionResponseDto;
+    }>("/admin/config/revision", {
+        ...opts
+    }));
+}
+/**
+ * Update the system configuration if it is unchanged
+ */
+export function updateAdminConfigWithRevision({ adminConfigRevisionUpdateDto }: {
+    adminConfigRevisionUpdateDto: AdminConfigRevisionUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AdminConfigRevisionResponseDto;
+    } | {
+        status: 409;
+    }>("/admin/config/revision", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: adminConfigRevisionUpdateDto
+    })));
 }
 /**
  * Delete database backup
@@ -15123,6 +15203,10 @@ export enum ConfigCredential {
     OauthClientSecret = "oauth-client-secret",
     RunpodApiKey = "runpod-api-key",
     HuggingfaceToken = "huggingface-token"
+}
+export enum SystemConfigHistoryCredentialChange {
+    Replaced = "replaced",
+    Cleared = "cleared"
 }
 export enum IntegrityReport {
     UntrackedFile = "untracked_file",

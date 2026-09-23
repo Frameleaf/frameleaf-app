@@ -49,6 +49,8 @@ interface AssetRow {
   error: string | null;
 }
 
+const TRANSFER_ROUTES = ['upload', 'duplicate', 'present'] as const;
+
 const rowToRecord = (r: AssetRow): AssetRecord => ({
   aId: r.a_id,
   checksum: r.checksum,
@@ -85,7 +87,15 @@ export class Ledger {
     return s;
   }
 
-  constructor(path: string) {
+  /**
+   * `readonly` opens an existing ledger for inspection (preflight) without creating the file
+   * or touching its schema; every mutating method then throws from SQLite.
+   */
+  constructor(path: string, options: { readonly?: boolean } = {}) {
+    if (options.readonly) {
+      this.db = new Database(path, { readonly: true, fileMustExist: true });
+      return;
+    }
     this.db = new Database(path);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('synchronous = NORMAL');
@@ -118,17 +128,69 @@ export class Ledger {
         user_email TEXT, dry_run INTEGER
       );
     `);
+    // Ledgers written before the source owner was recorded gain the column in place.
+    const runColumns = this.db.prepare('PRAGMA table_info(run)').all() as Array<{ name: string }>;
+    if (runColumns.every((column) => column.name !== 'source_email')) {
+      this.db.exec('ALTER TABLE run ADD COLUMN source_email TEXT');
+    }
   }
 
   // --- run metadata ---
-  initRun(meta: { fromUrl: string; toUrl: string; userEmail: string; startedAt: string; dryRun: boolean }) {
+  initRun(meta: {
+    fromUrl: string;
+    toUrl: string;
+    userEmail: string;
+    sourceEmail?: string;
+    startedAt: string;
+    dryRun: boolean;
+  }) {
     this.db
       .prepare(
-        `INSERT INTO run (id, started_at, from_url, to_url, user_email, dry_run) VALUES (1, ?, ?, ?, ?, ?)
+        `INSERT INTO run (id, started_at, from_url, to_url, user_email, source_email, dry_run)
+         VALUES (1, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET from_url = excluded.from_url, to_url = excluded.to_url,
-         user_email = excluded.user_email`,
+         user_email = excluded.user_email, source_email = COALESCE(excluded.source_email, run.source_email),
+         dry_run = MIN(run.dry_run, excluded.dry_run)`,
       )
-      .run(meta.startedAt, meta.fromUrl, meta.toUrl, meta.userEmail, meta.dryRun ? 1 : 0);
+      .run(meta.startedAt, meta.fromUrl, meta.toUrl, meta.userEmail, meta.sourceEmail ?? null, meta.dryRun ? 1 : 0);
+  }
+
+  /**
+   * The recorded run, if any. Tolerates ledgers created before `source_email` existed.
+   * `dryRun` stays true until a run without --dry-run has used this ledger: a dry run still
+   * marks originals the destination already holds, so a dry-run-only ledger must never
+   * verify as a pass.
+   */
+  runInfo():
+    | {
+        startedAt: string;
+        fromUrl: string;
+        toUrl: string;
+        userEmail: string;
+        sourceEmail: string | null;
+        dryRun: boolean;
+      }
+    | undefined {
+    const row = this.db.prepare('SELECT * FROM run WHERE id = 1').get() as
+      | {
+          started_at: string;
+          from_url: string;
+          to_url: string;
+          user_email: string;
+          source_email?: string | null;
+          dry_run: number | null;
+        }
+      | undefined;
+    return row
+      ? {
+          startedAt: row.started_at,
+          fromUrl: row.from_url,
+          toUrl: row.to_url,
+          userEmail: row.user_email,
+          sourceEmail: row.source_email ?? null,
+          dryRun: row.dry_run === 1,
+        }
+      : undefined;
   }
 
   // --- cursors ---
@@ -207,6 +269,11 @@ export class Ledger {
     this.stmt('UPDATE person SET done = 0').run();
   }
 
+  /** True when the source asset was enumerated into this ledger (whether or not it has moved yet). */
+  hasAsset(aId: string): boolean {
+    return !!this.stmt('SELECT 1 FROM asset WHERE a_id = ?').get(aId);
+  }
+
   bId(aId: string): string | undefined {
     return (
       (this.stmt('SELECT b_id FROM asset WHERE a_id = ?').get(aId) as { b_id: string | null } | undefined)?.b_id ??
@@ -237,14 +304,23 @@ export class Ledger {
   auditRows(
     after: string,
     limit: number,
-  ): Array<{ aId: string; checksum: string; bChecksum: string | null; filename: string; uploaded: boolean }> {
-    const sql = 'SELECT a_id, checksum, b_checksum, filename, uploaded FROM asset WHERE a_id > ? ORDER BY a_id LIMIT ?';
+  ): Array<{
+    aId: string;
+    checksum: string;
+    bChecksum: string | null;
+    filename: string;
+    uploaded: boolean;
+    error: string | null;
+  }> {
+    const sql =
+      'SELECT a_id, checksum, b_checksum, filename, uploaded, error FROM asset WHERE a_id > ? ORDER BY a_id LIMIT ?';
     const rows = this.stmt(sql).all(after, limit) as Array<{
       a_id: string;
       checksum: string;
       b_checksum: string | null;
       filename: string;
       uploaded: number;
+      error: string | null;
     }>;
     return rows.map((r) => ({
       aId: r.a_id,
@@ -252,7 +328,40 @@ export class Ledger {
       bChecksum: r.b_checksum,
       filename: r.filename,
       uploaded: !!r.uploaded,
+      error: r.error,
     }));
+  }
+  /** Assets that reached the destination but whose metadata step failed (e.g. an unpaired Live Photo). */
+  uploadedWithErrors(limit: number): Array<{ aId: string; filename: string; error: string }> {
+    const sql =
+      'SELECT a_id, filename, error FROM asset WHERE uploaded = 1 AND error IS NOT NULL ORDER BY a_id LIMIT ?';
+    const rows = this.stmt(sql).all(limit) as Array<{ a_id: string; filename: string; error: string }>;
+    return rows.map((r) => ({ aId: r.a_id, filename: r.filename, error: r.error }));
+  }
+  /** How each transferred asset reached the destination: a new upload, or a file it already held. */
+  transferRoutes(): { upload: number; duplicate: number; present: number } {
+    const rows = this.stmt('SELECT via, COUNT(*) n FROM asset WHERE uploaded = 1 GROUP BY via').all() as Array<{
+      via: string | null;
+      n: number;
+    }>;
+    const routes = { upload: 0, duplicate: 0, present: 0 };
+    for (const row of rows) {
+      const via = TRANSFER_ROUTES.find((route) => route === row.via);
+      if (via) {
+        routes[via] += row.n;
+      }
+    }
+    return routes;
+  }
+  /** Live Photo still/video pairs, and how many are linked on the destination. */
+  livePhotoPairs(): { total: number; linked: number } {
+    return {
+      total: this.count('SELECT COUNT(*) n FROM asset WHERE live_video_a_id IS NOT NULL'),
+      linked: this.count(
+        `SELECT COUNT(*) n FROM asset a WHERE a.live_video_a_id IS NOT NULL AND a.meta_applied = 1
+         AND EXISTS (SELECT 1 FROM asset v WHERE v.a_id = a.live_video_a_id AND v.b_id IS NOT NULL)`,
+      ),
+    };
   }
 
   // --- albums ---
@@ -348,6 +457,14 @@ export class Ledger {
   }
   setStackDone(primaryAId: string, bId: string) {
     this.stmt('UPDATE stack SET b_id = ?, done = 1 WHERE primary_a_id = ?').run(bId, primaryAId);
+  }
+  /** Unfinished stacks with the primary asset's file name, for the audit report. */
+  unfinishedStacks(): Array<{ primaryAId: string; filename: string | null }> {
+    const rows = this.stmt(
+      `SELECT s.primary_a_id, a.filename FROM stack s LEFT JOIN asset a ON a.a_id = s.primary_a_id
+       WHERE s.done = 0 ORDER BY s.primary_a_id`,
+    ).all() as Array<{ primary_a_id: string; filename: string | null }>;
+    return rows.map((r) => ({ primaryAId: r.primary_a_id, filename: r.filename }));
   }
   stacksToDo(): StackSnapshot[] {
     const rows = this.stmt('SELECT * FROM stack WHERE done = 0').all() as Array<{

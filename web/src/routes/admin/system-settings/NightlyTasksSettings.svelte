@@ -3,14 +3,15 @@
   import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
+  const config = $derived(settingsDraft.baseline);
 </script>
 
 <div class="mt-2">
@@ -58,7 +59,7 @@
         />
       </div>
 
-      <SettingActions bind:configToEdit keys={['nightlyTasks']} {disabled} />
+      <SettingActions keys={['nightlyTasks']} {disabled} />
     </form>
   </div>
 </div>

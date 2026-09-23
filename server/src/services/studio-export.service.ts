@@ -799,7 +799,7 @@ export class StudioExportService {
   private async finishJob(operation: MediaOperation, claimToken: string, resultAssetId: string | null): Promise<void> {
     await this.operations.beginValidation(operation.id, claimToken);
     if (!(await this.operations.complete(operation.id, claimToken, { resultAssetId }))) {
-      await this.operations.acknowledgeCancel(operation.id, { released: true });
+      await this.operations.acknowledgeCancel(operation.id, claimToken, { released: true });
     }
   }
 
@@ -807,7 +807,7 @@ export class StudioExportService {
   private async settleCancelled(operation: MediaOperation, claimToken: string): Promise<void> {
     const cancelling = await this.operations.requestCancel(operation.id, operation.ownerId);
     if (cancelling?.status === MediaOperationStatus.Cancelling) {
-      await this.operations.acknowledgeCancel(operation.id, { released: true });
+      await this.operations.acknowledgeCancel(operation.id, claimToken, { released: true });
     } else if (!cancelling) {
       // Already terminal, or the claim moved on: nothing to settle.
       this.logger.debug(`Studio export publication ${operation.id} had nothing left to settle (${claimToken})`);

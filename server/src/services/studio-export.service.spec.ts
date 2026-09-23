@@ -492,7 +492,7 @@ describe(StudioExportService.name, () => {
         expect.objectContaining({ errorCode: 'studio_export_project_unavailable' }),
       );
       expect(operations.fail).not.toHaveBeenCalled();
-      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(PUBLISH, { released: true });
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(PUBLISH, 'claim-p', { released: true });
     });
 
     it('cancels when the owner is being deleted', async () => {
@@ -582,7 +582,7 @@ describe(StudioExportService.name, () => {
 
       await sut.run(job());
 
-      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(PUBLISH, { released: true });
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith(PUBLISH, 'claim-p', { released: true });
     });
 
     it('finishes only the job when an earlier attempt already published', async () => {
