@@ -9,7 +9,7 @@ import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetType, AssetVisibility, UserStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
-import { asUuid } from 'src/utils/database.js';
+import { asUuid, isNotLockedAsset } from 'src/utils/database.js';
 
 export interface UserListFilter {
   id?: string;
@@ -242,6 +242,8 @@ export class UserRepository {
             eb.and([
               eb('asset.type', '=', sql.lit(AssetType.Image)),
               eb('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden)),
+              // an administrator's per-user counts never include Locked media (FL-34)
+              isNotLockedAsset(eb),
             ]),
           )
           .as('photos'),
@@ -251,6 +253,8 @@ export class UserRepository {
             eb.and([
               eb('asset.type', '=', sql.lit(AssetType.Video)),
               eb('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden)),
+              // an administrator's per-user counts never include Locked media (FL-34)
+              isNotLockedAsset(eb),
             ]),
           )
           .as('videos'),
