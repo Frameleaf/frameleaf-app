@@ -64,6 +64,7 @@ import {
   withHiddenContentFilter,
   withHiddenContentOnly,
   withLibrary,
+  withLockedOwnerScope,
   withNsfwAssets,
   withOwner,
   withSmartSearch,
@@ -1114,7 +1115,10 @@ export class AssetRepository {
   @GenerateSql({
     params: [DummyValue.UUID, { from: DummyValue.DATE, to: DummyValue.DATE, type: CalendarHeatmapType.Upload }],
   })
-  getCalendarHeatmap(ownerId: string, dto: { from: Date; to: Date; type: CalendarHeatmapType }) {
+  getCalendarHeatmap(
+    ownerId: string,
+    dto: { from: Date; to: Date; type: CalendarHeatmapType; lockedOwnerId?: string },
+  ) {
     const dateColumns: Record<CalendarHeatmapType, { order: AssetOrderBy; column: 'createdAt' | 'localDateTime' }> = {
       [CalendarHeatmapType.Upload]: { order: AssetOrderBy.CreatedAt, column: 'createdAt' },
       [CalendarHeatmapType.Taken]: { order: AssetOrderBy.TakenAt, column: 'localDateTime' },
@@ -1132,6 +1136,8 @@ export class AssetRepository {
       .where(column, '>=', dto.from)
       .where(column, '<', dto.to)
       .where('deletedAt', 'is', null)
+      // Locked media counts only for its owner's elevated session (`lockedOwnerId`, FL-34)
+      .$call((qb) => withLockedOwnerScope(qb, dto.lockedOwnerId))
       .groupBy(date)
       .orderBy('date', 'asc')
       .execute();
