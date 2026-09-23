@@ -428,7 +428,7 @@ export const buildCatalogueCommands = (
     title: album.name,
     subtitle: [albumKindLabel($t, album), countLabel($t, album.assetCount)].filter(Boolean).join(' · '),
     icon: album.kind === 'space' ? mdiAccountMultipleOutline : mdiImageAlbum,
-    href: Route.viewAlbum({ id: album.id }),
+    href: album.kind === 'space' ? Route.viewSharedSpace({ id: album.id }) : Route.viewAlbum({ id: album.id }),
   })),
   places: catalogue.places.map((place) => ({
     id: `${place.field}:${place.value}`,

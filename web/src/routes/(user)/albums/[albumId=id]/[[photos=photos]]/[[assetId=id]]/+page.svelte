@@ -86,6 +86,10 @@
   const currentUserId = $derived(authManager.user.id);
   const albumId = $derived(album.id);
   const isCollection = $derived(album.kind === AlbumKind.Collection);
+  // A shared space's photos are one of its panels, so leaving them goes back to the space's own page.
+  const backRoute = $derived(
+    album.kind === AlbumKind.Space ? Route.viewSharedSpace({ id: album.id }) : Route.albums(),
+  );
   const showAlbumUsers = $derived(timelineManager?.showAssetOwners ?? false);
   const containsEditors = $derived(album.shared && album.albumUsers.some(({ role }) => role === AlbumUserRole.Editor));
   const isShared = $derived(viewMode === AlbumPageViewMode.SELECT_ASSETS ? false : album.albumUsers.length > 1);
@@ -272,7 +276,7 @@
       librarySession.clearSelection();
       return;
     }
-    await goto(Route.albums());
+    await goto(backRoute);
   };
 
   const handleRemoveAssets = async (assetIds: string[]) => {
@@ -478,7 +482,7 @@
     </main>
 
     {#if viewMode === AlbumPageViewMode.VIEW}
-      <ControlAppBar backIcon={mdiArrowLeft} onClose={() => goto(Route.albums())}>
+      <ControlAppBar backIcon={mdiArrowLeft} onClose={() => goto(backRoute)}>
         {#snippet trailing()}
           <ActionButton action={Cast} />
         {/snippet}
