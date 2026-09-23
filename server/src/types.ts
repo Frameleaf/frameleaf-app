@@ -251,6 +251,11 @@ export interface IBaseJob {
   force?: boolean;
 }
 
+/** FL-79: `attempt` is 1 for the one automatic retry a failed collection gets. */
+export interface IAnalyticsCollectJob {
+  attempt?: number;
+}
+
 /** FL-71: a preview may retain originals in an account chosen on the page and review one account's copies. */
 export interface IPhysicalDeduplicationDryRunJob extends IBaseJob {
   masterUserId?: string;
@@ -441,6 +446,9 @@ export type JobItem =
   | { name: JobName.UserDeleteCheck; data?: IBaseJob }
   | { name: JobName.UserDelete; data: IEntityJob }
   | { name: JobName.UserSyncUsage; data?: IBaseJob }
+
+  // Analytics (FL-79)
+  | { name: JobName.AnalyticsCollect; data?: IAnalyticsCollectJob }
 
   // Storage Template
   | { name: JobName.StorageTemplateMigration; data?: IBaseJob }
