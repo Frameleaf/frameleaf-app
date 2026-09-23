@@ -55,6 +55,7 @@ import { PluginService } from 'src/services/plugin.service.js';
 import { QueueService } from 'src/services/queue.service.js';
 import { RunPodService } from 'src/services/runpod.service.js';
 import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
+import { RunningJobService } from 'src/services/running-job.service.js';
 import { SearchService } from 'src/services/search.service.js';
 import { ServerService } from 'src/services/server.service.js';
 import { SessionService } from 'src/services/session.service.js';
@@ -142,6 +143,7 @@ export const services = [
   QueueService,
   RunPodService,
   RestorationWorkerService,
+  RunningJobService,
   SearchService,
   ServerService,
   SessionService,
