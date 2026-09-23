@@ -6,7 +6,7 @@
   "sourceSnapshots": {
     "acceptedRoutes": {
       "path": "docs/docs/developer/frameleaf-route-inventory.json",
-      "sha256": "a2628a98b2f0d0f4a8716eee03ac1b7fe88bea4b4c5211bcadc616ed25d50bd2"
+      "sha256": "06f16bd025906f8590381e10e28859156593f0ec312430d3af54b60655c1873a"
     },
     "acceptedActionFamilies": {
       "path": "docs/docs/developer/frameleaf-library-action-parity.md",
@@ -14,7 +14,7 @@
     },
     "acceptedNative": {
       "path": "mobile/frameleaf-parity.json",
-      "sha256": "0e980c2fc45b41d6644491ed654dc9ced63a0bc0c19c2a90be451e726efa22ee"
+      "sha256": "7433d51fd0112b7e99e812647f0f7113b7a20b46e7ab0034e7085a179cc60bc6"
     },
     "acceptedFreecut": {
       "path": "studio/freecut-feature-manifest.json",
@@ -43,7 +43,7 @@
       "sha256": "e47a54cab6c3010d4727eb4ca0d6f06e3bb6b313657a82fa0c4300eb9ba246c7"
     }
   },
-  "sourceEvidenceSha256": "a68eb72eada02a598c384dfb4dc5769ffc3c3ec884a29dd96122d6e6b8d073a3",
+  "sourceEvidenceSha256": "ffa69e4ae6f5fdd1f79e1946314efcdb101211627ea5020c188f913ef8a2c118",
   "securityInvariants": [
     {
       "id": "public-loader-is-not-resource-authorization",
@@ -130,15 +130,15 @@
       ]
     }
   ],
-  "expectedInventory": { "webRoutes": 84, "settings": 535, "freecut": 210, "native": 227 },
+  "expectedInventory": { "webRoutes": 92, "settings": 535, "freecut": 210, "native": 227 },
   "counts": {
-    "webRoutes": 84,
+    "webRoutes": 92,
     "webActions": 153,
     "settings": 535,
     "freecut": 210,
     "native": 227,
-    "sourceRows": 1209,
-    "canonicalRequirements": 1189
+    "sourceRows": 1217,
+    "canonicalRequirements": 1197
   },
   "dispositionVocabulary": [
     "retained-production-route",
@@ -16043,6 +16043,36 @@
       }
     },
     {
+      "requirementId": "route:/activity",
+      "aliases": ["route:/activity"],
+      "kinds": ["web-route"],
+      "title": "activity route /activity",
+      "sourceRowIds": ["web-routes:/activity"],
+      "entrypoints": [
+        "web/src/routes/(user)/+layout.ts",
+        "web/src/routes/(user)/activity/+page.svelte",
+        "web/src/routes/(user)/activity/+page.ts",
+        "web/src/routes/+layout.ts"
+      ],
+      "owners": {
+        "primary": { "planId": "FN-303", "jiraKey": "FL-43", "url": "https://heroit.atlassian.net/browse/FL-43" },
+        "secondary": [
+          { "planId": "ADM-101", "jiraKey": "FL-72", "url": "https://heroit.atlassian.net/browse/FL-72" },
+          { "planId": "LIB-002", "jiraKey": "FL-34", "url": "https://heroit.atlassian.net/browse/FL-34" },
+          { "planId": "STU-403", "jiraKey": "FL-104", "url": "https://heroit.atlassian.net/browse/FL-104" }
+        ]
+      },
+      "disposition": { "kind": "retained-production-route", "legacyFallback": true },
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "newUi": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "api": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "native": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "tests": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] }
+      }
+    },
+    {
       "requirementId": "route:/admin",
       "aliases": ["route:/admin"],
       "kinds": ["web-route"],
@@ -16275,6 +16305,64 @@
       }
     },
     {
+      "requirementId": "route:/admin/physical-deduplication",
+      "aliases": ["route:/admin/physical-deduplication"],
+      "kinds": ["web-route"],
+      "title": "admin-physical-deduplication route /admin/physical-deduplication",
+      "sourceRowIds": ["web-routes:/admin/physical-deduplication"],
+      "entrypoints": [
+        "web/src/routes/+layout.ts",
+        "web/src/routes/admin/+layout.ts",
+        "web/src/routes/admin/physical-deduplication/+page.svelte",
+        "web/src/routes/admin/physical-deduplication/+page.ts"
+      ],
+      "owners": {
+        "primary": { "planId": "REC-103", "jiraKey": "FL-61", "url": "https://heroit.atlassian.net/browse/FL-61" },
+        "secondary": [
+          { "planId": "ADM-002", "jiraKey": "FL-71", "url": "https://heroit.atlassian.net/browse/FL-71" },
+          { "planId": "ADM-101", "jiraKey": "FL-72", "url": "https://heroit.atlassian.net/browse/FL-72" }
+        ]
+      },
+      "disposition": { "kind": "retained-production-route", "legacyFallback": true },
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "newUi": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "api": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "native": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "tests": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] }
+      }
+    },
+    {
+      "requirementId": "route:/admin/processing-destinations",
+      "aliases": ["route:/admin/processing-destinations"],
+      "kinds": ["web-route"],
+      "title": "admin-processing-destinations route /admin/processing-destinations",
+      "sourceRowIds": ["web-routes:/admin/processing-destinations"],
+      "entrypoints": [
+        "web/src/routes/+layout.ts",
+        "web/src/routes/admin/+layout.ts",
+        "web/src/routes/admin/processing-destinations/+page.svelte",
+        "web/src/routes/admin/processing-destinations/+page.ts"
+      ],
+      "owners": {
+        "primary": { "planId": "AI-101", "jiraKey": "FL-110", "url": "https://heroit.atlassian.net/browse/FL-110" },
+        "secondary": [
+          { "planId": "ADM-002", "jiraKey": "FL-71", "url": "https://heroit.atlassian.net/browse/FL-71" },
+          { "planId": "ADM-101", "jiraKey": "FL-72", "url": "https://heroit.atlassian.net/browse/FL-72" }
+        ]
+      },
+      "disposition": { "kind": "retained-production-route", "legacyFallback": true },
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "newUi": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "api": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "native": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "tests": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] }
+      }
+    },
+    {
       "requirementId": "route:/admin/queues",
       "aliases": ["route:/admin/queues"],
       "kinds": ["web-route"],
@@ -16320,6 +16408,35 @@
         "secondary": [
           { "planId": "ADM-002", "jiraKey": "FL-71", "url": "https://heroit.atlassian.net/browse/FL-71" },
           { "planId": "FN-303", "jiraKey": "FL-43", "url": "https://heroit.atlassian.net/browse/FL-43" }
+        ]
+      },
+      "disposition": { "kind": "retained-production-route", "legacyFallback": true },
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "newUi": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "api": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "native": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "tests": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] }
+      }
+    },
+    {
+      "requirementId": "route:/admin/render-workers",
+      "aliases": ["route:/admin/render-workers"],
+      "kinds": ["web-route"],
+      "title": "admin-render-workers route /admin/render-workers",
+      "sourceRowIds": ["web-routes:/admin/render-workers"],
+      "entrypoints": [
+        "web/src/routes/+layout.ts",
+        "web/src/routes/admin/+layout.ts",
+        "web/src/routes/admin/render-workers/+page.svelte",
+        "web/src/routes/admin/render-workers/+page.ts"
+      ],
+      "owners": {
+        "primary": { "planId": "STU-401", "jiraKey": "FL-95", "url": "https://heroit.atlassian.net/browse/FL-95" },
+        "secondary": [
+          { "planId": "ADM-101", "jiraKey": "FL-72", "url": "https://heroit.atlassian.net/browse/FL-72" },
+          { "planId": "STU-403", "jiraKey": "FL-104", "url": "https://heroit.atlassian.net/browse/FL-104" }
         ]
       },
       "disposition": { "kind": "retained-production-route", "legacyFallback": true },
@@ -16964,6 +17081,36 @@
       }
     },
     {
+      "requirementId": "route:/documents/[[photos=photos]]/[[assetId=id]]",
+      "aliases": ["route:/documents/[[photos=photos]]/[[assetId=id]]"],
+      "kinds": ["web-route"],
+      "title": "documents route /documents/[[photos=photos]]/[[assetId=id]]",
+      "sourceRowIds": ["web-routes:/documents/[[photos=photos]]/[[assetId=id]]"],
+      "entrypoints": [
+        "web/src/routes/(user)/+layout.ts",
+        "web/src/routes/(user)/documents/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/routes/(user)/documents/[[photos=photos]]/[[assetId=id]]/+page.ts",
+        "web/src/routes/+layout.ts"
+      ],
+      "owners": {
+        "primary": { "planId": "REC-105", "jiraKey": "FL-63", "url": "https://heroit.atlassian.net/browse/FL-63" },
+        "secondary": [
+          { "planId": "LIB-002", "jiraKey": "FL-34", "url": "https://heroit.atlassian.net/browse/FL-34" },
+          { "planId": "LIB-003", "jiraKey": "FL-35", "url": "https://heroit.atlassian.net/browse/FL-35" },
+          { "planId": "LIB-102", "jiraKey": "FL-49", "url": "https://heroit.atlassian.net/browse/FL-49" }
+        ]
+      },
+      "disposition": { "kind": "retained-production-route", "legacyFallback": true },
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "newUi": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "api": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "native": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "tests": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] }
+      }
+    },
+    {
       "requirementId": "route:/enrichment",
       "aliases": ["route:/enrichment"],
       "kinds": ["web-route"],
@@ -17488,6 +17635,35 @@
       }
     },
     {
+      "requirementId": "route:/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]",
+      "aliases": ["route:/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]"],
+      "kinds": ["web-route"],
+      "title": "pets route /pets/[petId=id]/[[photos=photos]]/[[assetId=id]]",
+      "sourceRowIds": ["web-routes:/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]"],
+      "entrypoints": [
+        "web/src/routes/(user)/+layout.ts",
+        "web/src/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.ts",
+        "web/src/routes/+layout.ts"
+      ],
+      "owners": {
+        "primary": { "planId": "REC-004", "jiraKey": "FL-58", "url": "https://heroit.atlassian.net/browse/FL-58" },
+        "secondary": [
+          { "planId": "LIB-002", "jiraKey": "FL-34", "url": "https://heroit.atlassian.net/browse/FL-34" },
+          { "planId": "LIB-003", "jiraKey": "FL-35", "url": "https://heroit.atlassian.net/browse/FL-35" }
+        ]
+      },
+      "disposition": { "kind": "retained-production-route", "legacyFallback": true },
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "newUi": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "api": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "native": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "tests": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] }
+      }
+    },
+    {
       "requirementId": "route:/photo-tools",
       "aliases": ["route:/photo-tools"],
       "kinds": ["web-route"],
@@ -17853,6 +18029,37 @@
       }
     },
     {
+      "requirementId": "route:/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]",
+      "aliases": ["route:/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]"],
+      "kinds": ["web-route"],
+      "title": "spaces route /sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]",
+      "sourceRowIds": ["web-routes:/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]"],
+      "entrypoints": [
+        "web/src/routes/(user)/+layout.ts",
+        "web/src/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.ts",
+        "web/src/routes/+layout.ts"
+      ],
+      "owners": {
+        "primary": { "planId": "LIB-204", "jiraKey": "FL-55", "url": "https://heroit.atlassian.net/browse/FL-55" },
+        "secondary": [
+          { "planId": "LIB-002", "jiraKey": "FL-34", "url": "https://heroit.atlassian.net/browse/FL-34" },
+          { "planId": "LIB-003", "jiraKey": "FL-35", "url": "https://heroit.atlassian.net/browse/FL-35" },
+          { "planId": "LIB-202", "jiraKey": "FL-53", "url": "https://heroit.atlassian.net/browse/FL-53" },
+          { "planId": "LIB-203", "jiraKey": "FL-54", "url": "https://heroit.atlassian.net/browse/FL-54" }
+        ]
+      },
+      "disposition": { "kind": "retained-production-route", "legacyFallback": true },
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "newUi": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "api": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "native": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "tests": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] }
+      }
+    },
+    {
       "requirementId": "route:/sharing/sharedlinks",
       "aliases": ["route:/sharing/sharedlinks"],
       "kinds": ["web-route"],
@@ -17976,6 +18183,35 @@
           "status": "explicit-per-source-row",
           "evidence": ["source-row-mappings", "scripts/frameleaf-high-risk-workflows.test.mjs"]
         }
+      }
+    },
+    {
+      "requirementId": "route:/studio/projects",
+      "aliases": ["route:/studio/projects"],
+      "kinds": ["web-route"],
+      "title": "studio route /studio/projects",
+      "sourceRowIds": ["web-routes:/studio/projects"],
+      "entrypoints": [
+        "web/src/routes/(user)/+layout.ts",
+        "web/src/routes/(user)/studio/projects/+page.svelte",
+        "web/src/routes/(user)/studio/projects/+page.ts",
+        "web/src/routes/+layout.ts"
+      ],
+      "owners": {
+        "primary": { "planId": "STU-204", "jiraKey": "FL-91", "url": "https://heroit.atlassian.net/browse/FL-91" },
+        "secondary": [
+          { "planId": "STU-201", "jiraKey": "FL-88", "url": "https://heroit.atlassian.net/browse/FL-88" },
+          { "planId": "STU-203", "jiraKey": "FL-90", "url": "https://heroit.atlassian.net/browse/FL-90" }
+        ]
+      },
+      "disposition": { "kind": "retained-production-route", "legacyFallback": true },
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "newUi": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "api": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "native": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] },
+        "tests": { "status": "explicit-per-source-row", "evidence": ["source-row-mappings"] }
       }
     },
     {
@@ -71743,6 +71979,36 @@
       "auditGap": null
     },
     {
+      "sourceRowId": "web-routes:/activity",
+      "canonicalRequirementId": "route:/activity",
+      "rawRequirementId": "route:/activity",
+      "aliases": [],
+      "inventory": "web-routes",
+      "inventoryId": "/activity",
+      "kind": "web-route",
+      "title": "activity route /activity",
+      "entrypoints": [
+        "web/src/routes/(user)/activity/+page.svelte",
+        "web/src/routes/(user)/activity/+page.ts",
+        "web/src/routes/(user)/+layout.ts",
+        "web/src/routes/+layout.ts"
+      ],
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": {
+          "status": "committed-source",
+          "paths": ["web/src/routes/(user)/activity/+page.svelte", "web/src/routes/(user)/activity/+page.ts"],
+          "access": "authenticated",
+          "evidence": ["web/src/routes/(user)/activity/+page.svelte", "web/src/routes/(user)/activity/+page.ts"]
+        },
+        "newUi": { "status": "not-qualified", "target": "/activity", "evidence": ["none-qualified"] },
+        "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
+        "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
+        "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
+      },
+      "auditGap": null
+    },
+    {
       "sourceRowId": "web-routes:/admin",
       "canonicalRequirementId": "route:/admin",
       "rawRequirementId": "route:/admin",
@@ -72025,6 +72291,86 @@
       "auditGap": null
     },
     {
+      "sourceRowId": "web-routes:/admin/physical-deduplication",
+      "canonicalRequirementId": "route:/admin/physical-deduplication",
+      "rawRequirementId": "route:/admin/physical-deduplication",
+      "aliases": [],
+      "inventory": "web-routes",
+      "inventoryId": "/admin/physical-deduplication",
+      "kind": "web-route",
+      "title": "admin-physical-deduplication route /admin/physical-deduplication",
+      "entrypoints": [
+        "web/src/routes/admin/physical-deduplication/+page.svelte",
+        "web/src/routes/admin/physical-deduplication/+page.ts",
+        "web/src/routes/+layout.ts",
+        "web/src/routes/admin/+layout.ts"
+      ],
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": {
+          "status": "committed-source",
+          "paths": [
+            "web/src/routes/admin/physical-deduplication/+page.svelte",
+            "web/src/routes/admin/physical-deduplication/+page.ts"
+          ],
+          "access": "admin",
+          "evidence": [
+            "web/src/routes/admin/physical-deduplication/+page.svelte",
+            "web/src/routes/admin/physical-deduplication/+page.ts"
+          ]
+        },
+        "newUi": {
+          "status": "not-qualified",
+          "target": "/admin/physical-deduplication",
+          "evidence": ["none-qualified"]
+        },
+        "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
+        "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
+        "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
+      },
+      "auditGap": null
+    },
+    {
+      "sourceRowId": "web-routes:/admin/processing-destinations",
+      "canonicalRequirementId": "route:/admin/processing-destinations",
+      "rawRequirementId": "route:/admin/processing-destinations",
+      "aliases": [],
+      "inventory": "web-routes",
+      "inventoryId": "/admin/processing-destinations",
+      "kind": "web-route",
+      "title": "admin-processing-destinations route /admin/processing-destinations",
+      "entrypoints": [
+        "web/src/routes/admin/processing-destinations/+page.svelte",
+        "web/src/routes/admin/processing-destinations/+page.ts",
+        "web/src/routes/+layout.ts",
+        "web/src/routes/admin/+layout.ts"
+      ],
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": {
+          "status": "committed-source",
+          "paths": [
+            "web/src/routes/admin/processing-destinations/+page.svelte",
+            "web/src/routes/admin/processing-destinations/+page.ts"
+          ],
+          "access": "admin",
+          "evidence": [
+            "web/src/routes/admin/processing-destinations/+page.svelte",
+            "web/src/routes/admin/processing-destinations/+page.ts"
+          ]
+        },
+        "newUi": {
+          "status": "not-qualified",
+          "target": "/admin/processing-destinations",
+          "evidence": ["none-qualified"]
+        },
+        "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
+        "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
+        "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
+      },
+      "auditGap": null
+    },
+    {
       "sourceRowId": "web-routes:/admin/queues",
       "canonicalRequirementId": "route:/admin/queues",
       "rawRequirementId": "route:/admin/queues",
@@ -72078,6 +72424,39 @@
           "evidence": ["web/src/routes/admin/queues/[name]/+page.svelte", "web/src/routes/admin/queues/[name]/+page.ts"]
         },
         "newUi": { "status": "not-qualified", "target": "/admin/queues/[name]", "evidence": ["none-qualified"] },
+        "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
+        "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
+        "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
+      },
+      "auditGap": null
+    },
+    {
+      "sourceRowId": "web-routes:/admin/render-workers",
+      "canonicalRequirementId": "route:/admin/render-workers",
+      "rawRequirementId": "route:/admin/render-workers",
+      "aliases": [],
+      "inventory": "web-routes",
+      "inventoryId": "/admin/render-workers",
+      "kind": "web-route",
+      "title": "admin-render-workers route /admin/render-workers",
+      "entrypoints": [
+        "web/src/routes/admin/render-workers/+page.svelte",
+        "web/src/routes/admin/render-workers/+page.ts",
+        "web/src/routes/+layout.ts",
+        "web/src/routes/admin/+layout.ts"
+      ],
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": {
+          "status": "committed-source",
+          "paths": ["web/src/routes/admin/render-workers/+page.svelte", "web/src/routes/admin/render-workers/+page.ts"],
+          "access": "admin",
+          "evidence": [
+            "web/src/routes/admin/render-workers/+page.svelte",
+            "web/src/routes/admin/render-workers/+page.ts"
+          ]
+        },
+        "newUi": { "status": "not-qualified", "target": "/admin/render-workers", "evidence": ["none-qualified"] },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -72794,6 +73173,46 @@
       "auditGap": null
     },
     {
+      "sourceRowId": "web-routes:/documents/[[photos=photos]]/[[assetId=id]]",
+      "canonicalRequirementId": "route:/documents/[[photos=photos]]/[[assetId=id]]",
+      "rawRequirementId": "route:/documents/[[photos=photos]]/[[assetId=id]]",
+      "aliases": [],
+      "inventory": "web-routes",
+      "inventoryId": "/documents/[[photos=photos]]/[[assetId=id]]",
+      "kind": "web-route",
+      "title": "documents route /documents/[[photos=photos]]/[[assetId=id]]",
+      "entrypoints": [
+        "web/src/routes/(user)/documents/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/routes/(user)/documents/[[photos=photos]]/[[assetId=id]]/+page.ts",
+        "web/src/routes/(user)/+layout.ts",
+        "web/src/routes/+layout.ts"
+      ],
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": {
+          "status": "committed-source",
+          "paths": [
+            "web/src/routes/(user)/documents/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+            "web/src/routes/(user)/documents/[[photos=photos]]/[[assetId=id]]/+page.ts"
+          ],
+          "access": "authenticated",
+          "evidence": [
+            "web/src/routes/(user)/documents/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+            "web/src/routes/(user)/documents/[[photos=photos]]/[[assetId=id]]/+page.ts"
+          ]
+        },
+        "newUi": {
+          "status": "not-qualified",
+          "target": "/documents/[[photos=photos]]/[[assetId=id]]",
+          "evidence": ["none-qualified"]
+        },
+        "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
+        "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
+        "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
+      },
+      "auditGap": null
+    },
+    {
       "sourceRowId": "web-routes:/enrichment",
       "canonicalRequirementId": "route:/enrichment",
       "rawRequirementId": "route:/enrichment",
@@ -73391,12 +73810,52 @@
       "qualification": "planned-not-qualified",
       "mappings": {
         "source": {
-          "status": "preserved-dirty-only",
+          "status": "committed-source",
           "paths": ["web/src/routes/(user)/pets/+page.svelte", "web/src/routes/(user)/pets/+page.ts"],
           "access": "authenticated",
           "evidence": ["web/src/routes/(user)/pets/+page.svelte", "web/src/routes/(user)/pets/+page.ts"]
         },
         "newUi": { "status": "not-qualified", "target": "/pets", "evidence": ["none-qualified"] },
+        "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
+        "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
+        "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
+      },
+      "auditGap": null
+    },
+    {
+      "sourceRowId": "web-routes:/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]",
+      "canonicalRequirementId": "route:/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]",
+      "rawRequirementId": "route:/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]",
+      "aliases": [],
+      "inventory": "web-routes",
+      "inventoryId": "/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]",
+      "kind": "web-route",
+      "title": "pets route /pets/[petId=id]/[[photos=photos]]/[[assetId=id]]",
+      "entrypoints": [
+        "web/src/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.ts",
+        "web/src/routes/(user)/+layout.ts",
+        "web/src/routes/+layout.ts"
+      ],
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": {
+          "status": "committed-source",
+          "paths": [
+            "web/src/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+            "web/src/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.ts"
+          ],
+          "access": "authenticated",
+          "evidence": [
+            "web/src/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+            "web/src/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.ts"
+          ]
+        },
+        "newUi": {
+          "status": "not-qualified",
+          "target": "/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]",
+          "evidence": ["none-qualified"]
+        },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -73835,6 +74294,46 @@
       "auditGap": null
     },
     {
+      "sourceRowId": "web-routes:/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]",
+      "canonicalRequirementId": "route:/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]",
+      "rawRequirementId": "route:/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]",
+      "aliases": [],
+      "inventory": "web-routes",
+      "inventoryId": "/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]",
+      "kind": "web-route",
+      "title": "spaces route /sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]",
+      "entrypoints": [
+        "web/src/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.ts",
+        "web/src/routes/(user)/+layout.ts",
+        "web/src/routes/+layout.ts"
+      ],
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": {
+          "status": "committed-source",
+          "paths": [
+            "web/src/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+            "web/src/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.ts"
+          ],
+          "access": "authenticated",
+          "evidence": [
+            "web/src/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+            "web/src/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.ts"
+          ]
+        },
+        "newUi": {
+          "status": "not-qualified",
+          "target": "/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]",
+          "evidence": ["none-qualified"]
+        },
+        "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
+        "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
+        "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
+      },
+      "auditGap": null
+    },
+    {
       "sourceRowId": "web-routes:/sharing/sharedlinks",
       "canonicalRequirementId": "route:/sharing/sharedlinks",
       "rawRequirementId": "route:/sharing/sharedlinks",
@@ -73947,12 +74446,48 @@
       "qualification": "planned-not-qualified",
       "mappings": {
         "source": {
-          "status": "preserved-dirty-only",
+          "status": "committed-source",
           "paths": ["web/src/routes/(user)/studio/+page.svelte", "web/src/routes/(user)/studio/+page.ts"],
           "access": "authenticated",
           "evidence": ["web/src/routes/(user)/studio/+page.svelte", "web/src/routes/(user)/studio/+page.ts"]
         },
         "newUi": { "status": "not-qualified", "target": "/studio", "evidence": ["none-qualified"] },
+        "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
+        "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
+        "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
+      },
+      "auditGap": null
+    },
+    {
+      "sourceRowId": "web-routes:/studio/projects",
+      "canonicalRequirementId": "route:/studio/projects",
+      "rawRequirementId": "route:/studio/projects",
+      "aliases": [],
+      "inventory": "web-routes",
+      "inventoryId": "/studio/projects",
+      "kind": "web-route",
+      "title": "studio route /studio/projects",
+      "entrypoints": [
+        "web/src/routes/(user)/studio/projects/+page.svelte",
+        "web/src/routes/(user)/studio/projects/+page.ts",
+        "web/src/routes/(user)/+layout.ts",
+        "web/src/routes/+layout.ts"
+      ],
+      "qualification": "planned-not-qualified",
+      "mappings": {
+        "source": {
+          "status": "committed-source",
+          "paths": [
+            "web/src/routes/(user)/studio/projects/+page.svelte",
+            "web/src/routes/(user)/studio/projects/+page.ts"
+          ],
+          "access": "authenticated",
+          "evidence": [
+            "web/src/routes/(user)/studio/projects/+page.svelte",
+            "web/src/routes/(user)/studio/projects/+page.ts"
+          ]
+        },
+        "newUi": { "status": "not-qualified", "target": "/studio/projects", "evidence": ["none-qualified"] },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
         "native": { "status": "not-qualified", "evidence": ["none-qualified"] },
         "tests": { "status": "missing-route-action-qualification", "evidence": ["none-qualified"] }
@@ -74574,6 +75109,7 @@
   ],
   "reverseIndex": {
     "web-routes:/": "route:/",
+    "web-routes:/activity": "route:/activity",
     "web-routes:/albums": "route:/albums",
     "web-routes:/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]": "route:/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]",
     "web-routes:/archive/[[photos=photos]]/[[assetId=id]]": "route:/archive/[[photos=photos]]/[[assetId=id]]",
@@ -74583,6 +75119,7 @@
     "web-routes:/culling": "route:/culling",
     "web-routes:/discover": "route:/discover",
     "web-routes:/documents": "route:/documents",
+    "web-routes:/documents/[[photos=photos]]/[[assetId=id]]": "route:/documents/[[photos=photos]]/[[assetId=id]]",
     "web-routes:/enrichment": "route:/enrichment",
     "web-routes:/explore": "route:/explore",
     "web-routes:/face-review": "route:/face-review",
@@ -74599,6 +75136,7 @@
     "web-routes:/people/[personId]/[[photos=photos]]/[[assetId=id]]": "route:/people/[personId]/[[photos=photos]]/[[assetId=id]]",
     "web-routes:/people/manage": "route:/people/manage",
     "web-routes:/pets": "route:/pets",
+    "web-routes:/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]": "route:/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]",
     "web-routes:/photo-tools": "route:/photo-tools",
     "web-routes:/photos/[[assetId=id]]": "route:/photos/[[assetId=id]]",
     "web-routes:/places": "route:/places",
@@ -74611,10 +75149,12 @@
     "web-routes:/shared-links": "route:/shared-links",
     "web-routes:/shared-links/[id]/edit": "route:/shared-links/[id]/edit",
     "web-routes:/sharing": "route:/sharing",
+    "web-routes:/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]": "route:/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]",
     "web-routes:/sharing/sharedlinks": "route:/sharing/sharedlinks",
     "web-routes:/spaces": "route:/spaces",
     "web-routes:/spaces/[spaceId]": "route:/spaces/[spaceId]",
     "web-routes:/studio": "route:/studio",
+    "web-routes:/studio/projects": "route:/studio/projects",
     "web-routes:/suppressed/[[photos=photos]]/[[assetId=id]]": "route:/suppressed/[[photos=photos]]/[[assetId=id]]",
     "web-routes:/suppressed/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]": "route:/suppressed/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]",
     "web-routes:/tags/[[photos=photos]]/[[assetId=id]]": "route:/tags/[[photos=photos]]/[[assetId=id]]",
@@ -74640,8 +75180,11 @@
     "web-routes:/admin/library-management/[id]/edit": "route:/admin/library-management/[id]/edit",
     "web-routes:/admin/maintenance": "route:/admin/maintenance",
     "web-routes:/admin/maintenance/integrity-report/[type]": "route:/admin/maintenance/integrity-report/[type]",
+    "web-routes:/admin/physical-deduplication": "route:/admin/physical-deduplication",
+    "web-routes:/admin/processing-destinations": "route:/admin/processing-destinations",
     "web-routes:/admin/queues": "route:/admin/queues",
     "web-routes:/admin/queues/[name]": "route:/admin/queues/[name]",
+    "web-routes:/admin/render-workers": "route:/admin/render-workers",
     "web-routes:/admin/server-status": "route:/admin/server-status",
     "web-routes:/admin/system-settings": "route:/admin/system-settings",
     "web-routes:/admin/user-management": "route:/admin/user-management",
@@ -75786,6 +76329,7 @@
   "entrypointIndex": {
     "web/src/routes/+layout.ts": [
       "route:/",
+      "route:/activity",
       "route:/admin",
       "route:/admin/jobs-status",
       "route:/admin/library-management",
@@ -75794,8 +76338,11 @@
       "route:/admin/library-management/new",
       "route:/admin/maintenance",
       "route:/admin/maintenance/integrity-report/[type]",
+      "route:/admin/physical-deduplication",
+      "route:/admin/processing-destinations",
       "route:/admin/queues",
       "route:/admin/queues/[name]",
+      "route:/admin/render-workers",
       "route:/admin/server-status",
       "route:/admin/system-settings",
       "route:/admin/user-management",
@@ -75818,6 +76365,7 @@
       "route:/culling",
       "route:/discover",
       "route:/documents",
+      "route:/documents/[[photos=photos]]/[[assetId=id]]",
       "route:/enrichment",
       "route:/explore",
       "route:/face-review",
@@ -75836,6 +76384,7 @@
       "route:/people/[personId]/[[photos=photos]]/[[assetId=id]]",
       "route:/people/manage",
       "route:/pets",
+      "route:/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]",
       "route:/photo-tools",
       "route:/photos/[[assetId=id]]",
       "route:/places",
@@ -75848,10 +76397,12 @@
       "route:/shared-links",
       "route:/shared-links/[id]/edit",
       "route:/sharing",
+      "route:/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]",
       "route:/sharing/sharedlinks",
       "route:/spaces",
       "route:/spaces/[spaceId]",
       "route:/studio",
+      "route:/studio/projects",
       "route:/suppressed/[[photos=photos]]/[[assetId=id]]",
       "route:/suppressed/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]",
       "route:/tags/[[photos=photos]]/[[assetId=id]]",
@@ -75873,6 +76424,7 @@
     "web/src/routes/+page.svelte": ["native:web/src/routes/+page.svelte", "route:/"],
     "web/src/routes/+page.ts": ["route:/"],
     "web/src/routes/(user)/+layout.ts": [
+      "route:/activity",
       "route:/albums",
       "route:/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]",
       "route:/archive/[[photos=photos]]/[[assetId=id]]",
@@ -75882,6 +76434,7 @@
       "route:/culling",
       "route:/discover",
       "route:/documents",
+      "route:/documents/[[photos=photos]]/[[assetId=id]]",
       "route:/enrichment",
       "route:/explore",
       "route:/face-review",
@@ -75898,6 +76451,7 @@
       "route:/people/[personId]/[[photos=photos]]/[[assetId=id]]",
       "route:/people/manage",
       "route:/pets",
+      "route:/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]",
       "route:/photo-tools",
       "route:/photos/[[assetId=id]]",
       "route:/places",
@@ -75910,10 +76464,12 @@
       "route:/shared-links",
       "route:/shared-links/[id]/edit",
       "route:/sharing",
+      "route:/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]",
       "route:/sharing/sharedlinks",
       "route:/spaces",
       "route:/spaces/[spaceId]",
       "route:/studio",
+      "route:/studio/projects",
       "route:/suppressed/[[photos=photos]]/[[assetId=id]]",
       "route:/suppressed/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]",
       "route:/tags/[[photos=photos]]/[[assetId=id]]",
@@ -75932,6 +76488,8 @@
       "route:/workflows",
       "route:/workflows/[workflowId]"
     ],
+    "web/src/routes/(user)/activity/+page.svelte": ["route:/activity"],
+    "web/src/routes/(user)/activity/+page.ts": ["route:/activity"],
     "web/src/routes/(user)/albums/+page.svelte": ["native:web/src/routes/(user)/albums/+page.svelte", "route:/albums"],
     "web/src/routes/(user)/albums/+page.ts": ["route:/albums"],
     "web/src/routes/(user)/albums/[albumId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte": [
@@ -75977,6 +76535,12 @@
       "route:/documents"
     ],
     "web/src/routes/(user)/documents/+page.ts": ["route:/documents"],
+    "web/src/routes/(user)/documents/[[photos=photos]]/[[assetId=id]]/+page.svelte": [
+      "route:/documents/[[photos=photos]]/[[assetId=id]]"
+    ],
+    "web/src/routes/(user)/documents/[[photos=photos]]/[[assetId=id]]/+page.ts": [
+      "route:/documents/[[photos=photos]]/[[assetId=id]]"
+    ],
     "web/src/routes/(user)/enrichment/+page.svelte": [
       "native:web/src/routes/(user)/enrichment/+page.svelte",
       "route:/enrichment"
@@ -76063,6 +76627,12 @@
     "web/src/routes/(user)/people/manage/+page.ts": ["route:/people/manage"],
     "web/src/routes/(user)/pets/+page.svelte": ["native:web/src/routes/(user)/pets/+page.svelte", "route:/pets"],
     "web/src/routes/(user)/pets/+page.ts": ["route:/pets"],
+    "web/src/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte": [
+      "route:/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]"
+    ],
+    "web/src/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.ts": [
+      "route:/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]"
+    ],
     "web/src/routes/(user)/photo-tools/+page.svelte": [
       "native:web/src/routes/(user)/photo-tools/+page.svelte",
       "route:/photo-tools"
@@ -76130,6 +76700,12 @@
       "route:/sharing"
     ],
     "web/src/routes/(user)/sharing/+page.ts": ["route:/sharing"],
+    "web/src/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte": [
+      "route:/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]"
+    ],
+    "web/src/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.ts": [
+      "route:/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]"
+    ],
     "web/src/routes/(user)/sharing/sharedlinks/+page.ts": ["route:/sharing/sharedlinks"],
     "web/src/routes/(user)/spaces/+page.svelte": ["native:web/src/routes/(user)/spaces/+page.svelte", "route:/spaces"],
     "web/src/routes/(user)/spaces/+page.ts": ["route:/spaces"],
@@ -76140,6 +76716,8 @@
     "web/src/routes/(user)/spaces/[spaceId]/+page.ts": ["route:/spaces/[spaceId]"],
     "web/src/routes/(user)/studio/+page.svelte": ["native:web/src/routes/(user)/studio/+page.svelte", "route:/studio"],
     "web/src/routes/(user)/studio/+page.ts": ["route:/studio"],
+    "web/src/routes/(user)/studio/projects/+page.svelte": ["route:/studio/projects"],
+    "web/src/routes/(user)/studio/projects/+page.ts": ["route:/studio/projects"],
     "web/src/routes/(user)/suppressed/[[photos=photos]]/[[assetId=id]]/+page.svelte": [
       "native:web/src/routes/(user)/suppressed/[[photos=photos]]/[[assetId=id]]/+page.svelte",
       "route:/suppressed/[[photos=photos]]/[[assetId=id]]"
@@ -76244,8 +76822,11 @@
       "route:/admin/library-management/new",
       "route:/admin/maintenance",
       "route:/admin/maintenance/integrity-report/[type]",
+      "route:/admin/physical-deduplication",
+      "route:/admin/processing-destinations",
       "route:/admin/queues",
       "route:/admin/queues/[name]",
+      "route:/admin/render-workers",
       "route:/admin/server-status",
       "route:/admin/system-settings",
       "route:/admin/user-management",
@@ -76296,6 +76877,10 @@
     "web/src/routes/admin/maintenance/integrity-report/[type]/+page.ts": [
       "route:/admin/maintenance/integrity-report/[type]"
     ],
+    "web/src/routes/admin/physical-deduplication/+page.svelte": ["route:/admin/physical-deduplication"],
+    "web/src/routes/admin/physical-deduplication/+page.ts": ["route:/admin/physical-deduplication"],
+    "web/src/routes/admin/processing-destinations/+page.svelte": ["route:/admin/processing-destinations"],
+    "web/src/routes/admin/processing-destinations/+page.ts": ["route:/admin/processing-destinations"],
     "web/src/routes/admin/queues/+page.svelte": [
       "native:web/src/routes/admin/queues/+page.svelte",
       "route:/admin/queues"
@@ -76306,6 +76891,8 @@
       "route:/admin/queues/[name]"
     ],
     "web/src/routes/admin/queues/[name]/+page.ts": ["route:/admin/queues/[name]"],
+    "web/src/routes/admin/render-workers/+page.svelte": ["route:/admin/render-workers"],
+    "web/src/routes/admin/render-workers/+page.ts": ["route:/admin/render-workers"],
     "web/src/routes/admin/server-status/+page.svelte": [
       "native:web/src/routes/admin/server-status/+page.svelte",
       "route:/admin/server-status"

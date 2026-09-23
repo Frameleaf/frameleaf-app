@@ -231,7 +231,7 @@ export async function validateContracts(repository = root) {
     20,
   );
   assert.equal(
-    (personalSettings.match(/<SettingAccordion\b/g) ?? []).length,
+    (personalSettings.match(/<SettingGroup\b/g) ?? []).length,
     14,
   );
 

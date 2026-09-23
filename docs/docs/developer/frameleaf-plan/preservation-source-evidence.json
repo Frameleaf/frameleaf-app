@@ -4,7 +4,7 @@
   "sourceSnapshots": {
     "acceptedRoutes": {
       "path": "docs/docs/developer/frameleaf-route-inventory.json",
-      "sha256": "a2628a98b2f0d0f4a8716eee03ac1b7fe88bea4b4c5211bcadc616ed25d50bd2"
+      "sha256": "06f16bd025906f8590381e10e28859156593f0ec312430d3af54b60655c1873a"
     },
     "acceptedActionFamilies": {
       "path": "docs/docs/developer/frameleaf-library-action-parity.md",
@@ -12,7 +12,7 @@
     },
     "acceptedNative": {
       "path": "mobile/frameleaf-parity.json",
-      "sha256": "0e980c2fc45b41d6644491ed654dc9ced63a0bc0c19c2a90be451e726efa22ee"
+      "sha256": "7433d51fd0112b7e99e812647f0f7113b7a20b46e7ab0034e7085a179cc60bc6"
     },
     "acceptedFreecut": {
       "path": "studio/freecut-feature-manifest.json",
@@ -53,6 +53,18 @@
       "rationale": "Preserve root welcome/setup/login/photo redirects based on actual initialization, session and maintenance state; this is a lifecycle entry, not a second library screen.",
       "loaderRationale": "Uses the root initialization/language/palette/maintenance loader only. Page-specific setup, authentication and redirect requirements remain authoritative; do not add private user data just because the shared shell is reused.",
       "status": "planned-not-qualified"
+    },
+    {
+      "id": "/activity",
+      "family": "activity",
+      "access": "authenticated",
+      "source": ["web/src/routes/(user)/activity/+page.svelte", "web/src/routes/(user)/activity/+page.ts"],
+      "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
+      "primaryIssueId": "FN-303",
+      "secondaryIssueIds": ["STU-403", "ADM-101", "LIB-002"],
+      "rationale": "Added by FL-104: the Activity page over the durable job feed and this browser's own transfers, filtered by all, running, done or failed. Own durable operation state and its presentation; it must not invent per-job retry or history the server does not record. Implemented in committed code, not qualified: route presence is not action, authorization or release evidence.",
+      "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/albums",
@@ -170,6 +182,21 @@
       "rationale": "Own evidence-backed document search and editable OCR fields; an ordinary tag filter is not the replacement.",
       "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
       "status": "planned-not-qualified"
+    },
+    {
+      "id": "/documents/[[photos=photos]]/[[assetId=id]]",
+      "family": "documents",
+      "access": "authenticated",
+      "source": [
+        "web/src/routes/(user)/documents/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/routes/(user)/documents/[[photos=photos]]/[[assetId=id]]/+page.ts"
+      ],
+      "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
+      "primaryIssueId": "REC-105",
+      "secondaryIssueIds": ["LIB-102", "LIB-003", "LIB-002"],
+      "rationale": "Added by FL-63: the Documents destination listing photos by their recognized text, with the search kept in the address and the viewer at /documents/photos/{assetId}. Own OCR-backed discovery and field corrections; an ordinary tag filter is not the replacement. Implemented in committed code, not qualified: route presence is not action, authorization or release evidence.",
+      "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/enrichment",
@@ -382,7 +409,22 @@
       "secondaryIssueIds": ["LIB-102", "REC-104", "LIB-002"],
       "rationale": "Own named pet identities, observations and recognition review; a pets tag query is not individual recognition.",
       "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
-      "status": "planned-not-qualified"
+      "status": "implemented-in-code-not-qualified"
+    },
+    {
+      "id": "/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]",
+      "family": "pets",
+      "access": "authenticated",
+      "source": [
+        "web/src/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/routes/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]/+page.ts"
+      ],
+      "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
+      "primaryIssueId": "REC-004",
+      "secondaryIssueIds": ["LIB-003", "LIB-002"],
+      "rationale": "Added by FL-58: one pet's photos on its own page, loaded owner-scoped so another account's pet reads as not found. Own named pet identities and their photo set; a pets tag query is not individual recognition. Implemented in committed code, not qualified: route presence is not action, authorization or release evidence.",
+      "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/photo-tools",
@@ -562,6 +604,21 @@
       "status": "planned-not-qualified"
     },
     {
+      "id": "/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]",
+      "family": "spaces",
+      "access": "authenticated",
+      "source": [
+        "web/src/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/routes/(user)/sharing/[spaceId=id]/[[photos=photos]]/[[assetId=id]]/+page.ts"
+      ],
+      "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
+      "primaryIssueId": "LIB-204",
+      "secondaryIssueIds": ["LIB-202", "LIB-203", "LIB-003", "LIB-002"],
+      "rationale": "Added by FL-55: one shared space and its viewer at /sharing/{spaceId}/photos/{assetId}, with members, linked albums, people, activity and what is new since the last visit, each read through membership-checked endpoints. An address that is not a space this person belongs to becomes a plain not-found page. Space roles and public-link grants remain distinct. Implemented in committed code, not qualified: route presence is not action, authorization or release evidence.",
+      "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
+      "status": "implemented-in-code-not-qualified"
+    },
+    {
       "id": "/sharing/sharedlinks",
       "family": "sharing",
       "access": "authenticated",
@@ -610,7 +667,22 @@
       "secondaryIssueIds": ["STU-202", "STU-203", "STU-204", "ADM-106", "LIB-002"],
       "rationale": "Own the React editor integration at the real Svelte /studio route; preserve authenticated project/revision/source review. Project lifecycle and resource authorization have Studio owners. Library parity review does not qualify preview/export, native editing or media rendering.",
       "loaderRationale": "Inherits the global and (user) initialization/authentication chain. Source manifests and project revisions additionally require current server resource authorization; mounting the editor must not reuse a stale reviewed graph after access loss.",
-      "status": "planned-not-qualified"
+      "status": "implemented-in-code-not-qualified"
+    },
+    {
+      "id": "/studio/projects",
+      "family": "studio",
+      "access": "authenticated",
+      "source": [
+        "web/src/routes/(user)/studio/projects/+page.svelte",
+        "web/src/routes/(user)/studio/projects/+page.ts"
+      ],
+      "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
+      "primaryIssueId": "STU-204",
+      "secondaryIssueIds": ["STU-201", "STU-203"],
+      "rationale": "Added by FL-91: the Studio project library with active and archived shelves, search, ordering and portable bundle import and export. Project lifecycle and resource authorization remain server-side; the library does not qualify preview, export or rendering. Implemented in committed code, not qualified: route presence is not action, authorization or release evidence.",
+      "loaderRationale": "Inherits root initialization and the (user) authentication/optional-asset loader. Preserve page-level stronger checks and per-resource APIs; a signed-in shared layout does not establish asset ownership, elevation or action permission.",
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/suppressed/[[photos=photos]]/[[assetId=id]]",
@@ -977,6 +1049,36 @@
       "status": "planned-not-qualified"
     },
     {
+      "id": "/admin/physical-deduplication",
+      "family": "admin-physical-deduplication",
+      "access": "admin",
+      "source": [
+        "web/src/routes/admin/physical-deduplication/+page.svelte",
+        "web/src/routes/admin/physical-deduplication/+page.ts"
+      ],
+      "loaders": ["web/src/routes/+layout.ts", "web/src/routes/admin/+layout.ts"],
+      "primaryIssueId": "REC-103",
+      "secondaryIssueIds": ["ADM-002", "ADM-101"],
+      "rationale": "Added by FL-71: the administrator physical deduplication page with a matching-media preview across accounts. Own the preview and apply contract; original files are never overwritten and per-owner references must survive. Implemented in committed code, not qualified: route presence is not action, authorization or release evidence.",
+      "loaderRationale": "Inherits the root loader plus an explicit admin-authenticated configuration loader. Any listed nested resource loaders must run with current access; the primary screen owner coordinates shared changes instead of weakening the inherited gate.",
+      "status": "implemented-in-code-not-qualified"
+    },
+    {
+      "id": "/admin/processing-destinations",
+      "family": "admin-processing-destinations",
+      "access": "admin",
+      "source": [
+        "web/src/routes/admin/processing-destinations/+page.svelte",
+        "web/src/routes/admin/processing-destinations/+page.ts"
+      ],
+      "loaders": ["web/src/routes/+layout.ts", "web/src/routes/admin/+layout.ts"],
+      "primaryIssueId": "AI-101",
+      "secondaryIssueIds": ["ADM-101", "ADM-002"],
+      "rationale": "Added by FL-110: the administrator processing destinations surface listing machine-learning destinations and workload routes. Cloud processing stays explicit and never becomes a silent fallback. Implemented in committed code, not qualified: route presence is not action, authorization or release evidence.",
+      "loaderRationale": "Inherits the root loader plus an explicit admin-authenticated configuration loader. Any listed nested resource loaders must run with current access; the primary screen owner coordinates shared changes instead of weakening the inherited gate.",
+      "status": "implemented-in-code-not-qualified"
+    },
+    {
       "id": "/admin/queues",
       "family": "admin-queues",
       "access": "admin",
@@ -999,6 +1101,18 @@
       "rationale": "Own real queue overview/detail/actions and source constraints; common Activity coordination cannot invent unsupported per-job retry or history.",
       "loaderRationale": "Inherits the root loader plus an explicit admin-authenticated configuration loader. Any listed nested resource loaders must run with current access; the primary screen owner coordinates shared changes instead of weakening the inherited gate.",
       "status": "planned-not-qualified"
+    },
+    {
+      "id": "/admin/render-workers",
+      "family": "admin-render-workers",
+      "access": "admin",
+      "source": ["web/src/routes/admin/render-workers/+page.svelte", "web/src/routes/admin/render-workers/+page.ts"],
+      "loaders": ["web/src/routes/+layout.ts", "web/src/routes/admin/+layout.ts"],
+      "primaryIssueId": "STU-401",
+      "secondaryIssueIds": ["ADM-101", "STU-403"],
+      "rationale": "Added by FL-95: the administrator render workers page with worker registrations, limits and the admission audit. Own authenticated renderer admission and resource limits; the page does not qualify rendered output. Implemented in committed code, not qualified: route presence is not action, authorization or release evidence.",
+      "loaderRationale": "Inherits the root loader plus an explicit admin-authenticated configuration loader. Any listed nested resource loaders must run with current access; the primary screen owner coordinates shared changes instead of weakening the inherited gate.",
+      "status": "implemented-in-code-not-qualified"
     },
     {
       "id": "/admin/server-status",
