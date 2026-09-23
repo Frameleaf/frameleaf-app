@@ -1,4 +1,8 @@
 import { Kysely, sql } from 'kysely';
+import {
+  type LockedCondition,
+  repairLockedCoverReferences,
+} from 'src/schema/migrations/2100000000300-ClearLockedCoverReferences.js';
 
 /**
  * One Locked state (owner decision, September 22, 2026, FL-34).
@@ -24,9 +28,12 @@ import { Kysely, sql } from 'kysely';
  *    otherwise `asset.is_nsfw` and the review in `asset_metadata`. Only positive evidence counts: an
  *    asset with no privacy row is not locked here.
  * 4. Stacks and live photos lock as a whole: every other member of a stack with a locked member, and
- *    the video part of a locked live photo, get a lock with the same reason.
+ *    the video part of a locked live photo, get a lock with the same reason. (Migration 2100000000310
+ *    no longer does this on the upstream Locked folder; it happens here, on the lock records.)
  * 5. A locked asset is never a cover, featured photo or face thumbnail (FL-53): the references the
- *    new locks hold are released exactly as migration 2100000000300 released them for the old folder.
+ *    new locks hold are repaired exactly as migration 2100000000300 repairs them for the old folder,
+ *    Best Photos first. Profile pictures copied from a now locked photo are replaced by the server's
+ *    nightly thumbnail sweep (`replaceLockedProfileImages`), which cannot run inside a migration.
  *
  * Idempotent: the table is created only when missing, every insert skips an asset that already has a
  * lock, and the visibility rewrite only touches rows still stored as `locked`. On a fresh upgrade from
@@ -129,58 +136,17 @@ export async function up(db: Kysely<any>): Promise<void> {
     ON CONFLICT ("assetId") DO NOTHING
   `.execute(db);
 
-  // 5. Covers, featured photos and face thumbnails (as in 2100000000300, keyed on the lock).
-  await sql`
-    UPDATE "album"
-    SET "albumThumbnailAssetId" = (
-      SELECT "album_asset"."assetId"
-      FROM "album_asset"
-      INNER JOIN "asset"
-        ON "album_asset"."assetId" = "asset"."id"
-        AND "asset"."deletedAt" IS NULL
-        AND NOT EXISTS (SELECT 1 FROM "asset_lock" WHERE "asset_lock"."assetId" = "asset"."id")
-      WHERE "album_asset"."albumId" = "album"."id"
-      ORDER BY "asset"."fileCreatedAt" DESC
-      LIMIT 1
-    )
-    WHERE "albumThumbnailAssetId" IN (SELECT "assetId" FROM "asset_lock")
-  `.execute(db);
-
-  await sql`
-    UPDATE "shared_space_person"
-    SET "coverAssetId" = NULL
-    WHERE "coverAssetId" IN (SELECT "assetId" FROM "asset_lock")
-  `.execute(db);
-
-  await sql`
-    UPDATE "person"
-    SET
-      "faceAssetId" = (
-        SELECT "asset_face"."id"
-        FROM "asset_face"
-        INNER JOIN "asset"
-          ON "asset"."id" = "asset_face"."assetId"
-          AND NOT EXISTS (SELECT 1 FROM "asset_lock" WHERE "asset_lock"."assetId" = "asset"."id")
-        WHERE "asset_face"."personGroupId" = "person"."personGroupId"
-          AND "asset_face"."deletedAt" IS NULL
-          AND "asset_face"."isVisible" IS TRUE
-        ORDER BY "asset"."deletedAt" IS NOT NULL, "asset"."fileCreatedAt" DESC
-        LIMIT 1
-      ),
-      "thumbnailPath" = ''
-    WHERE "faceAssetId" IN (
-      SELECT "asset_face"."id"
-      FROM "asset_face"
-      INNER JOIN "asset_lock" ON "asset_lock"."assetId" = "asset_face"."assetId"
-    )
-  `.execute(db);
-
-  await sql`
-    UPDATE "pet"
-    SET "featuredAssetId" = NULL, "updatedAt" = now()
-    WHERE "featuredAssetId" IN (SELECT "assetId" FROM "asset_lock")
-  `.execute(db);
+  // 5. Covers, featured photos and face thumbnails: the repair of 2100000000300 (Best Photos first,
+  // nothing a shared context's members may not see), keyed on the lock records.
+  await repairLockedCoverReferences(db, lockRecords);
 }
+
+/** Locked as a lock record, for the repair of 2100000000300. */
+const lockRecords: LockedCondition = {
+  lockedIds: sql`SELECT "assetId" FROM "asset_lock"`,
+  assetLocked: sql<boolean>`EXISTS (SELECT 1 FROM "asset_lock" WHERE "asset_lock"."assetId" = "asset"."id")`,
+  assetNotLocked: sql<boolean>`NOT EXISTS (SELECT 1 FROM "asset_lock" WHERE "asset_lock"."assetId" = "asset"."id")`,
+};
 
 export async function down(db: Kysely<any>): Promise<void> {
   // Back into the upstream Locked folder, so a release without lock records still hides them.

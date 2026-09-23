@@ -5800,6 +5800,8 @@ export type OnboardingDto = {
     isOnboarded: boolean;
 };
 export type CreateProfileImageDto = {
+    /** ID of the photo the image was copied from, if any. A Locked photo is refused. */
+    assetId?: string;
     /** Profile image file */
     file: Blob;
 };
