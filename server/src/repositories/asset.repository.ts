@@ -380,6 +380,24 @@ export class AssetRepository {
       .execute();
   }
 
+  /**
+   * Set one asset's capture date outright, locking it as `updateDateTimeOriginal` does (FL-32).
+   *
+   * The durable bulk shift uses this with `recorded start + minutes`, which lands where the relative
+   * update would and can be repeated without moving the date again. The time zone is not touched.
+   */
+  setDateTimeOriginal(assetId: string, dateTimeOriginal: Date) {
+    return this.db
+      .updateTable('asset_exif')
+      .set((eb) => ({
+        dateTimeOriginal,
+        lockedProperties: distinctLocked(eb, ['dateTimeOriginal', 'timeZone']),
+      }))
+      .where('assetId', '=', assetId)
+      .returning(['assetId', 'dateTimeOriginal'])
+      .executeTakeFirst();
+  }
+
   @GenerateSql({ params: [DummyValue.UUID, ['description']] })
   unlockProperties(assetId: string, properties: LockableProperty[]) {
     return this.db

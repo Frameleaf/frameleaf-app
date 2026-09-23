@@ -149,9 +149,11 @@ export class MediaOperationRepository {
       query
         .select(LIST_COLUMNS)
         // A bulk job's snapshot carries every asset id it was frozen with, and its result every
-        // recorded refusal. The list shows neither, and polling it must not drag them along.
+        // recorded refusal, the ids waiting for their automatic retry and the starting dates of a
+        // date shift. The list shows none of them, and polling it must not drag them along; the
+        // retry pass keeps its count.
         .select(sql<Record<string, unknown>>`"snapshot" - 'assetIds'`.as('snapshot'))
-        .select(sql<Record<string, unknown> | null>`"result" - 'items'`.as('result'))
+        .select(sql<Record<string, unknown> | null>`("result" - 'items' - 'shiftFrom') #- '{retry,ids}'`.as('result'))
         // Newest first; the id is a v7 uuid so it orders by creation without a second column.
         .orderBy('createdAt', 'desc')
         .orderBy('id', 'desc')
@@ -205,6 +207,32 @@ export class MediaOperationRepository {
       .executeTakeFirst();
 
     return Number(row?.count ?? 0);
+  }
+
+  /**
+   * The capture date of each of the owner's assets, for a relative date shift's starting points
+   * (FL-32). An asset without a metadata row answers null; one that is not the owner's, or is gone,
+   * is left out of the answer.
+   */
+  async getDateTimeOriginals(ownerId: string, assetIds: string[]): Promise<Map<string, Date | null>> {
+    if (assetIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await this.db
+      .selectFrom('asset')
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .select(['asset.id', 'asset_exif.dateTimeOriginal'])
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.id', '=', anyUuid(assetIds))
+      .execute();
+
+    return new Map(
+      rows.map((row): [string, Date | null] => {
+        const value = row.dateTimeOriginal as unknown as Date | string | null;
+        return [row.id, value ? new Date(value) : null];
+      }),
+    );
   }
 
   /**

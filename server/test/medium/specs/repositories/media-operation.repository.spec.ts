@@ -198,7 +198,7 @@ describe(MediaOperationRepository.name, () => {
       expect(second!.operation).toMatchObject({ id: operation.id, attempt: 2, autoRetries: 1, retryAt: null });
 
       await expect(
-        sut.fail(operation.id, second!.claimToken, { error: 'The encoder crashed again', errorCode: 'encoder_crashed' }),
+        sut.fail(operation.id, second!.claimToken, { error: 'The encoder crashed again', errorCode: 'encoder_again' }),
       ).resolves.toBe('failed');
       await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
         status: MediaOperationStatus.Failed,
@@ -572,6 +572,50 @@ describe(MediaOperationRepository.name, () => {
       const { items } = await sut.list({ ownerId: user.id, take: 10, skip: 0 });
 
       expect(items[0].snapshot).toEqual({ action: 'favorite', payload: {}, truncated: false, requestId: null });
+    });
+
+    it('keeps the retry ids and shift starting dates out of the list, and the retry count in', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newBulk(sut, user.id, ['a', 'b']);
+      await ctx.database
+        .updateTable('media_operation')
+        .set({
+          result: {
+            requested: 2,
+            succeeded: 1,
+            items: [],
+            retry: { ids: ['b'], total: 1, processed: 0, inFlight: null },
+            shiftFrom: { b: '2026-01-01T10:00:00.000Z' },
+          },
+        })
+        .where('id', '=', operation.id)
+        .execute();
+
+      const { items } = await sut.list({ ownerId: user.id, take: 10, skip: 0 });
+
+      expect(items[0].result).toEqual({
+        requested: 2,
+        succeeded: 1,
+        retry: { total: 1, processed: 0, inFlight: null },
+      });
+    });
+
+    it('reads the capture dates of the owner’s assets only', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { asset: dated } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: dated.id, dateTimeOriginal: new Date('2026-01-01T10:00:00.000Z') });
+      const { asset: undated } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: theirs } = await ctx.newAsset({ ownerId: other.id });
+
+      const dates = await sut.getDateTimeOriginals(user.id, [dated.id, undated.id, theirs.id]);
+
+      expect(dates.get(dated.id)?.toISOString()).toBe('2026-01-01T10:00:00.000Z');
+      expect(dates.has(undated.id)).toBe(true);
+      expect(dates.get(undated.id)).toBeNull();
+      expect(dates.has(theirs.id)).toBe(false);
     });
 
     it('counts only the owner’s Locked items', async () => {

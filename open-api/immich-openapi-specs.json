@@ -9351,6 +9351,12 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "retried": {
+            "description": "Items that failed and were given their one automatic retry",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
           "skipped": {
             "description": "Items refused before anything changed, e.g. no access",
             "maximum": 9007199254740991,
@@ -9371,6 +9377,7 @@
           "failed",
           "itemsTruncated",
           "requested",
+          "retried",
           "skipped",
           "snapshotTruncated",
           "succeeded"
@@ -9487,6 +9494,15 @@
           "bulkItems": {
             "items": {
               "$ref": "#/components/schemas/MediaOperationBulkItemDto"
+            },
+            "type": "array"
+          },
+          "bulkRetryPending": {
+            "description": "Asset IDs waiting for their automatic retry",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
             },
             "type": "array"
           },
@@ -9628,6 +9644,7 @@
           "autoRetries",
           "bulk",
           "bulkItems",
+          "bulkRetryPending",
           "cancelAcknowledgedAt",
           "cancelRequestedAt",
           "checkpoints",

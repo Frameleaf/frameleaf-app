@@ -36,11 +36,15 @@ import {
   bulkProgress,
   classifyBulkError,
   fromBulkIdResponse,
-  isReplaySafe,
+  isRelativeDateShift,
   mergeBulkOutcomes,
   parseBulkResult,
   parseBulkSnapshot,
+  planBulkRetryPass,
+  pruneShiftOrigins,
+  recordShiftOrigins,
 } from 'src/utils/bulk-operation.js';
+import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
 
 /** How often the worker looks for queued bulk jobs. */
 export const BULK_TICK_MS = 5000;
@@ -62,6 +66,23 @@ class BulkJobError extends Error {
 }
 
 type Outcome = BulkOperationItem;
+
+/** What one claimed run carries from batch to batch. */
+type BulkRun = {
+  id: string;
+  claimToken: string;
+  ownerId: string;
+  auth: AuthDto;
+  snapshot: BulkOperationSnapshot;
+  total: number;
+};
+
+/** The result with neither pass marked in flight. */
+const withoutInFlight = (result: BulkOperationResult): BulkOperationResult => ({
+  ...result,
+  inFlight: null,
+  retry: result.retry ? { ...result.retry, inFlight: null } : null,
+});
 
 const ok = (id: string): Outcome => ({ id, status: MediaOperationItemStatus.Ok });
 
@@ -111,8 +132,14 @@ const inBatchOrder = (batch: readonly string[], outcomes: readonly Outcome[]): O
  * - **Sensitive marking is metadata.** It goes through the enrichment review action, which writes
  *   the manual mark and its tags; no visibility change, no album write, no move to Locked.
  * - **Cancel is honoured between batches** and the items already changed are reported, not hidden.
- * - **A worker that dies** leaves an in-flight marker; the next claim replays that batch when the
- *   action is safe to repeat, and reports it instead when it is not.
+ * - **A worker that dies** leaves an in-flight marker, and the next claim applies that batch again.
+ *   Every action is safe to repeat. The relative date shift is made so: before a batch is marked in
+ *   flight, each item's capture date is recorded in the result, and the shift sets `recorded + n
+ *   minutes` instead of adding to the current date (owner decision, September 22, 2026).
+ * - **Every failure is retried once, automatically** (owner decision, September 22, 2026). A job
+ *   that fails as a whole goes back to the queue through `MediaOperationRepository.fail`; items that
+ *   failed inside a finished pass are given one more attempt in a retry pass, after a pause, before
+ *   they are reported. Manual retry from Activity stays available afterwards.
  *
  * Deliberately not a queue job: the row is already the durable queue, and claiming it with a lease
  * is what makes a second worker, a restart or a stale process safe.
@@ -224,7 +251,13 @@ export class BulkOperationService {
     }
   }
 
-  /** Apply one claimed operation from its cursor to the end, a batch at a time. */
+  /**
+   * Apply one claimed operation: the frozen set from its cursor to the end, a batch at a time, then
+   * the one automatic retry of the items that failed.
+   *
+   * A claim can find the job anywhere on that path — fresh, partway through the first pass, back in
+   * the queue for its retry pass, or partway through that — and carries on from what the row says.
+   */
   async run(operation: MediaOperation, claimToken: string): Promise<void> {
     const { id } = operation;
 
@@ -240,25 +273,11 @@ export class BulkOperationService {
     }
 
     const total = snapshot.assetIds.length;
-    let result = parseBulkResult(operation.result, total);
+    // A batch the previous worker had in hand is applied again from the same cursor. Every action
+    // is safe to repeat — the relative date shift too, because it shifts from the starting dates
+    // recorded before the batch was first sent — so nothing is reported as interrupted any more.
+    let result = withoutInFlight(parseBulkResult(operation.result, total));
     let processed = Math.min(Math.max(0, Number(operation.processedUnits ?? 0)), total);
-
-    // The previous worker died with a batch in hand. Replay it where that is harmless; otherwise
-    // say plainly that those items may or may not have been changed, and do not touch them again.
-    if (result.inFlight) {
-      const { start, size } = result.inFlight;
-      result = { ...result, inFlight: null };
-      if (start === processed && !isReplaySafe(snapshot)) {
-        const interrupted = snapshot.assetIds.slice(start, start + size).map((assetId) => ({
-          id: assetId,
-          status: MediaOperationItemStatus.Skipped,
-          reasonKey: 'frameleaf_bulk_reason_interrupted',
-          message: 'The server stopped while this item was being changed; check it before changing it again.',
-        }));
-        result = mergeBulkOutcomes(result, interrupted);
-        processed += interrupted.length;
-      }
-    }
 
     const started = await this.write(id, claimToken, result, processed, total);
     if (!(await this.proceed(id, started))) {
@@ -286,47 +305,77 @@ export class BulkOperationService {
       return;
     }
 
+    const job: BulkRun = { id, claimToken, ownerId: operation.ownerId, auth, snapshot, total };
     // A stack is one call over every member, and unstacking works on stack ids: neither is batched.
-    const width =
-      snapshot.action === MediaOperationBulkAction.Stack || snapshot.action === MediaOperationBulkAction.Unstack
-        ? total
-        : BULK_BATCH_SIZE;
+    const whole =
+      snapshot.action === MediaOperationBulkAction.Stack || snapshot.action === MediaOperationBulkAction.Unstack;
 
+    // The first pass: the frozen set, in order. The count of answered items is the cursor.
     while (processed < total) {
       if (this.stopping) {
         // Keep the claim; the lease expiring hands the job to the next worker at this cursor.
         return;
       }
 
-      const batch = snapshot.assetIds.slice(processed, processed + width);
-
-      const marked = await this.write(
-        id,
-        claimToken,
-        { ...result, inFlight: { start: processed, size: batch.length } },
-        processed,
-        total,
-      );
-      if (!(await this.proceed(id, marked))) {
+      const batch = snapshot.assetIds.slice(processed, processed + (whole ? total : BULK_BATCH_SIZE));
+      result = await this.withShiftOrigins(job, result, batch);
+      const marked = { ...result, inFlight: { start: processed, size: batch.length } };
+      const outcomes = await this.step(job, marked, processed, batch);
+      if (!outcomes) {
         return;
       }
 
-      let outcomes: Outcome[];
-      try {
-        await this.requireCredentials(operation.ownerId, snapshot);
-        outcomes = inBatchOrder(batch, await this.applyBatch(auth, snapshot, batch));
-      } catch (error) {
-        if (error instanceof BulkJobError) {
-          // Nothing in this batch was applied. Leave it unreached, so a retry covers it.
-          await this.write(id, claimToken, result, processed, total);
-          await this.operations.fail(id, claimToken, { error: error.message, errorCode: error.code });
-          return;
-        }
-        throw error;
+      result = pruneShiftOrigins(snapshot, mergeBulkOutcomes({ ...result, inFlight: null }, outcomes));
+      processed += batch.length;
+
+      const written = await this.write(id, claimToken, result, processed, total);
+      if (!(await this.proceed(id, written))) {
+        return;
+      }
+    }
+
+    // Every item that failed gets one more attempt before it is reported (owner decision,
+    // September 22, 2026). The pass is planned once, and the job goes back to the queue so the
+    // retry happens after a pause rather than straight into whatever just went wrong.
+    const planned = planBulkRetryPass(snapshot, result);
+    if (planned) {
+      result = planned;
+      const written = await this.write(id, claimToken, result, processed, total);
+      if (!(await this.proceed(id, written))) {
+        return;
       }
 
-      result = mergeBulkOutcomes({ ...result, inFlight: null }, outcomes);
-      processed += batch.length;
+      if (await this.operations.requeue(id, claimToken, { delayMs: MEDIA_OPERATION_AUTO_RETRY_DELAY_MS })) {
+        this.logger.log(`Bulk operation ${id}: retrying ${planned.retry?.total ?? 0} failed items once`);
+        return;
+      }
+
+      // Cancelled between the two writes, or the claim is gone.
+      await this.operations.acknowledgeCancel(id, { released: false });
+      return;
+    }
+
+    // The retry pass, with its own cursor. What happens here is what is reported.
+    while (result.retry && result.retry.processed < result.retry.ids.length) {
+      if (this.stopping) {
+        return;
+      }
+
+      const pass = result.retry;
+      const batch = pass.ids.slice(pass.processed, pass.processed + (whole ? pass.ids.length : BULK_BATCH_SIZE));
+      result = await this.withShiftOrigins(job, result, batch);
+      const outcomes = await this.step(
+        job,
+        { ...result, retry: { ...pass, inFlight: { start: pass.processed, size: batch.length } } },
+        processed,
+        batch,
+      );
+      if (!outcomes) {
+        return;
+      }
+
+      const advanced = { ...pass, processed: pass.processed + batch.length, inFlight: null };
+      result = pruneShiftOrigins(snapshot, mergeBulkOutcomes({ ...result, retry: advanced }, outcomes));
 
       const written = await this.write(id, claimToken, result, processed, total);
       if (!(await this.proceed(id, written))) {
@@ -343,6 +392,61 @@ export class BulkOperationService {
     }
 
     await this.operations.acknowledgeCancel(id, { released: false });
+  }
+
+  /**
+   * One batch, durably. `marked` is the result with this batch's in-flight marker (and, for a
+   * relative shift, its recorded starting dates); it is written before anything is sent, so a worker
+   * that dies mid-batch leaves a row that says exactly what to apply again.
+   *
+   * Returns the batch's outcomes in batch order, or null when the job must stop here: the claim was
+   * lost, the owner cancelled, or the job itself failed (a revoked key or an album that is gone), in
+   * which case nothing in the batch was applied and it is left unreached for the retry.
+   */
+  private async step(
+    job: BulkRun,
+    marked: BulkOperationResult,
+    processed: number,
+    batch: string[],
+  ): Promise<Outcome[] | null> {
+    const written = await this.write(job.id, job.claimToken, marked, processed, job.total);
+    if (!(await this.proceed(job.id, written))) {
+      return null;
+    }
+
+    try {
+      await this.requireCredentials(job.ownerId, job.snapshot);
+      return inBatchOrder(batch, await this.applyBatch(job.auth, job.snapshot, batch, marked.shiftFrom));
+    } catch (error) {
+      if (error instanceof BulkJobError) {
+        await this.write(job.id, job.claimToken, withoutInFlight(marked), processed, job.total);
+        await this.operations.fail(job.id, job.claimToken, { error: error.message, errorCode: error.code });
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * For a relative date shift, record the capture date of every item in the batch that has none
+   * recorded yet — before the batch is marked in flight and sent. An item that already has one keeps
+   * it: the shift may have reached it since, and reading its date again would shift it twice.
+   */
+  private async withShiftOrigins(
+    job: BulkRun,
+    result: BulkOperationResult,
+    batch: string[],
+  ): Promise<BulkOperationResult> {
+    if (!isRelativeDateShift(job.snapshot)) {
+      return result;
+    }
+
+    const missing = batch.filter((assetId) => !(assetId in result.shiftFrom));
+    if (missing.length === 0) {
+      return result;
+    }
+
+    return recordShiftOrigins(result, missing, await this.operations.getDateTimeOriginals(job.ownerId, missing));
   }
 
   private write(id: string, claimToken: string, result: BulkOperationResult, processed: number, total: number) {
@@ -470,8 +574,15 @@ export class BulkOperationService {
    * Access is checked per item first wherever the service underneath would otherwise reject the
    * whole batch or quietly skip an item; the refusals are reported against the items that caused
    * them and only the rest is sent.
+   *
+   * `shiftFrom` is the recorded starting date of each item, for a relative date shift only.
    */
-  async applyBatch(auth: AuthDto, snapshot: BulkOperationSnapshot, batch: string[]): Promise<Outcome[]> {
+  async applyBatch(
+    auth: AuthDto,
+    snapshot: BulkOperationSnapshot,
+    batch: string[],
+    shiftFrom: BulkOperationResult['shiftFrom'] = {},
+  ): Promise<Outcome[]> {
     await this.requireTarget(auth, snapshot);
 
     const { action, payload } = snapshot;
@@ -496,6 +607,11 @@ export class BulkOperationService {
     }
 
     if (allowed.length === 0) {
+      return outcomes;
+    }
+
+    if (isRelativeDateShift(snapshot)) {
+      outcomes.push(...(await this.shiftDates(auth, allowed, payload.minutes ?? 0, shiftFrom)));
       return outcomes;
     }
 
@@ -633,6 +749,59 @@ export class BulkOperationService {
         outcomes.push(refused(id, error));
       }
     }
+    return outcomes;
+  }
+
+  /**
+   * A relative date shift, from each item's recorded starting date.
+   *
+   * Idempotent by construction: every item is set to `from + minutes`, so sending the same item
+   * twice — a replayed batch, the per-item second pass of `inLists`, the automatic retry — leaves it
+   * where one send would. An item with no recorded start is refused rather than shifted from
+   * whatever its date is now, which might already be shifted. One with no capture date has nothing
+   * to shift, as with the relative update.
+   */
+  private async shiftDates(
+    auth: AuthDto,
+    ids: string[],
+    minutes: number,
+    shiftFrom: BulkOperationResult['shiftFrom'],
+  ): Promise<Outcome[]> {
+    const outcomes: Outcome[] = [];
+    const starts = new Map<string, Date>();
+
+    for (const id of ids) {
+      if (!(id in shiftFrom)) {
+        outcomes.push({
+          id,
+          status: MediaOperationItemStatus.Failed,
+          reasonKey: 'frameleaf_bulk_reason_failed',
+          message: 'The starting date was not recorded, so the item was not shifted',
+        });
+        continue;
+      }
+
+      const from = shiftFrom[id];
+      if (from === null) {
+        outcomes.push(ok(id));
+        continue;
+      }
+
+      starts.set(id, new Date(from));
+    }
+
+    if (starts.size > 0) {
+      outcomes.push(
+        ...(await this.inLists([...starts.keys()], (chunk) =>
+          this.assets.shiftDateTimeOriginalFrom(
+            auth,
+            chunk.map((id) => ({ id, from: starts.get(id) as Date })),
+            minutes,
+          ),
+        )),
+      );
+    }
+
     return outcomes;
   }
 
