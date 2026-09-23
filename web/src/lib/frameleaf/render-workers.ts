@@ -164,6 +164,7 @@ export const operationKindKey: Readonly<Record<MediaOperationKind, Translations>
   [MediaOperationKind.IcloudSync]: 'frameleaf_render_workers_kind_icloud_sync',
   [MediaOperationKind.TakeoutImport]: 'frameleaf_render_workers_kind_takeout_import',
   [MediaOperationKind.PhysicalDeduplication]: 'frameleaf_render_workers_kind_physical_deduplication',
+  [MediaOperationKind.StudioExportPublish]: 'frameleaf_render_workers_kind_studio_export_publish',
 };
 
 /**

@@ -407,8 +407,20 @@ describe(MediaOperationService.name, () => {
       await expect(sut.retry(authStub.user1, operationStub().id)).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it.each([MediaOperationKind.StudioExport, MediaOperationKind.StudioExportPublish])(
+      'refuses to copy a %s job: a Studio export is exported again as a new version (FL-106)',
+      async (kind) => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({ kind, status: MediaOperationStatus.Failed }),
+        );
+        await expect(sut.retry(authStub.user1, 'id')).rejects.toBeInstanceOf(BadRequestException);
+        expect(repository.create).not.toHaveBeenCalled();
+      },
+    );
+
     it('copies the snapshot and destination into a new row and records the lineage', async () => {
       const failed = operationStub({
+        kind: MediaOperationKind.Restoration,
         status: MediaOperationStatus.Failed,
         destination: MediaOperationDestination.RunPod,
       });

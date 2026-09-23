@@ -106,10 +106,11 @@ export const satisfiesDerivativePrivacy = (
   existing: { lockReason: AssetLockReason | null; sensitive: boolean },
   required: Pick<DerivativePrivacy, 'lockReason' | 'sensitive'>,
 ): boolean => {
-  if (required.lockReason) {
-    if (!existing.lockReason || LOCK_REASON_STRENGTH[existing.lockReason] < LOCK_REASON_STRENGTH[required.lockReason]) {
-      return false;
-    }
+  if (
+    required.lockReason &&
+    (!existing.lockReason || LOCK_REASON_STRENGTH[existing.lockReason] < LOCK_REASON_STRENGTH[required.lockReason])
+  ) {
+    return false;
   }
   return !required.sensitive || existing.sensitive;
 };

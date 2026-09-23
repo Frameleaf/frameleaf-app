@@ -200,13 +200,7 @@ export class StudioExportRepository {
       .where('projectId', '=', projectId)
       .where('ownerId', '=', ownerId);
     const [items, total] = await Promise.all([
-      query
-        .selectAll()
-        .orderBy('createdAt', 'desc')
-        .orderBy('id', 'desc')
-        .limit(page.take)
-        .offset(page.skip)
-        .execute(),
+      query.selectAll().orderBy('createdAt', 'desc').orderBy('id', 'desc').limit(page.take).offset(page.skip).execute(),
       query
         .select((eb) => eb.fn.countAll<string>().as('count'))
         .executeTakeFirst()
@@ -280,7 +274,7 @@ export class StudioExportRepository {
         .forUpdate()
         .executeTakeFirst()) as StudioExportVersion | undefined;
       if (!version) {
-        return undefined;
+        return;
       }
 
       const operation = await tx
@@ -310,7 +304,10 @@ export class StudioExportRepository {
   }
 
   /** End a pending version as failed. A published version is never touched. */
-  async markFailed(id: string, failure: { errorCode: string; error: string }): Promise<StudioExportVersion | undefined> {
+  async markFailed(
+    id: string,
+    failure: { errorCode: string; error: string },
+  ): Promise<StudioExportVersion | undefined> {
     return this.db
       .updateTable('studio_export_version')
       .set({
@@ -378,10 +375,7 @@ export class StudioExportRepository {
         .forUpdate()
         .executeTakeFirst()) as StudioExportVersion | undefined;
 
-      if (
-        version?.state === StudioExportVersionState.Published &&
-        version.publishOperationId === input.operationId
-      ) {
+      if (version?.state === StudioExportVersionState.Published && version.publishOperationId === input.operationId) {
         const privacy = (version.privacy ?? {}) as unknown as DerivativePrivacy;
         return { status: 'published', version, privacy, createdAssetId: null, reusedAssetId: null };
       }
@@ -430,7 +424,7 @@ export class StudioExportRepository {
         }
       }
 
-      const evidence: LockedSourceRow[] = [...rows.values()];
+      const evidence: LockedSourceRow[] = rows.values().toArray();
       const foreign = evidence.filter((row) => row.ownerId !== input.ownerId);
       if (foreign.length > 0) {
         const reachable = await this.privacy.lockSharedAccess(tx, input.ownerId, foreign);
@@ -441,14 +435,12 @@ export class StudioExportRepository {
 
       const privacy = unionDerivativePrivacy(
         input.ownerId,
-        evidence.map(
-          (row): DerivativeSourceEvidence => ({
-            assetId: row.assetId,
-            ownerId: row.ownerId,
-            lockReason: row.lockReason,
-            sensitive: row.sensitive,
-          }),
-        ),
+        evidence.map((row): DerivativeSourceEvidence => ({
+          assetId: row.assetId,
+          ownerId: row.ownerId,
+          lockReason: row.lockReason,
+          sensitive: row.sensitive,
+        })),
         { nsfwHiding: input.nsfwHiding },
       );
       if (privacy.scope !== input.expectedScope) {
@@ -566,7 +558,9 @@ export class StudioExportRepository {
       .updateTable('user')
       .set({ quotaUsageInBytes: sql`"quotaUsageInBytes" + ${input.sizeInBytes}` })
       .where('id', '=', input.ownerId)
-      .where(sql<boolean>`("quotaSizeInBytes" IS NULL OR "quotaUsageInBytes" + ${input.sizeInBytes} <= "quotaSizeInBytes")`)
+      .where(
+        sql<boolean>`("quotaSizeInBytes" IS NULL OR "quotaUsageInBytes" + ${input.sizeInBytes} <= "quotaSizeInBytes")`,
+      )
       .returning('id')
       .executeTakeFirst();
     if (!quota) {
@@ -641,6 +635,27 @@ export class StudioExportRepository {
       LIMIT ${limit}
     `.execute(this.db);
     return rows.rows;
+  }
+
+  /**
+   * Pending versions whose job already ended without them: a render or publication that failed or
+   * was cancelled by the recovery sweep, a cancel, or a job row that is gone. The version follows its
+   * job; an earlier published version is untouched.
+   */
+  async listSettledWork(limit = 200): Promise<Array<StudioExportVersion & { jobStatus: string | null }>> {
+    const { rows } = await sql<StudioExportVersion & { jobStatus: string | null }>`
+      SELECT version.*, job.status AS "jobStatus"
+      FROM studio_export_version version
+      LEFT JOIN media_operation job ON job.id = CASE
+        WHEN version.state = ${StudioExportVersionState.Rendering} THEN version."renderOperationId"
+        ELSE version."publishOperationId"
+      END
+      WHERE version.state = ANY(${[...PENDING_STUDIO_EXPORT_STATES]}::text[])
+        AND (job.id IS NULL OR job.status IN ('failed', 'cancelled'))
+      ORDER BY version."createdAt"
+      LIMIT ${limit}
+    `.execute(this.db);
+    return rows;
   }
 
   /**
