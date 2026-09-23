@@ -10,6 +10,7 @@
   import WorkerInventoryPanel from '$lib/components/frameleaf/WorkerInventoryPanel.svelte';
   import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
   import { Container } from '@immich/ui';
+  import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
   type Props = {
@@ -24,7 +25,11 @@
 <AdminPageLayout breadcrumbs={[{ title: data.meta.title }]}>
   <Container size="large" center class="my-4 flex flex-col gap-6">
     <div id="workers">
-      <WorkerInventoryPanel inventory={data.inventory} destinations={data.destinations} refreshKey={inventoryKey} />
+      {#if data.inventory}
+        <WorkerInventoryPanel inventory={data.inventory} destinations={data.destinations} refreshKey={inventoryKey} />
+      {:else}
+        <p role="alert">{$t('admin.frameleaf_workers_error_load')}</p>
+      {/if}
     </div>
     <div id="ml-destinations">
       <MlDestinationsPanel

@@ -17,10 +17,11 @@
 # model reports why it is unavailable until the manifest, weights and a qualification record
 # are mounted (see the README).
 #
-# GPUs: give each worker its own GPU where you can. Set FRAMELEAF_RESTORATION_GPU to a GPU the
-# machine-learning container does not use (pin that one with `device_ids` in hwaccel.ml.yml).
-# With a single GPU, tick "This worker shares a GPU with library analysis" on the destination:
-# full restorations then wait while library analysis has work, and previews still run.
+# GPUs: FRAMELEAF_RESTORATION_GPU has no default; Compose refuses to start until you choose.
+# Give each worker its own GPU where you can: set it to a GPU the machine-learning container does
+# not use (pin that one with `device_ids` in hwaccel.ml.yml). With a single GPU, set the same
+# index and tick "This worker shares a GPU with library analysis" on the destination: full
+# restorations then wait while library analysis has work, and previews still run.
 
 services:
   frameleaf-restoration:
@@ -31,7 +32,8 @@ services:
       dockerfile: Dockerfile.video-restoration
       target: worker
     environment:
-      # The same bearer the predict container uses; store it on the destination as its token.
+      # This worker's own bearer. The worker reads the variable name the predict image uses, but
+      # the value is separate; store the same value on the restoration destination as its token.
       IMMICH_ML_AUTH_TOKEN: ${FRAMELEAF_RESTORATION_TOKEN:-}
     volumes:
       - ${FRAMELEAF_RESTORATION_CONFIG:-./restoration/config}:/restoration/config:ro
@@ -42,7 +44,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ['${FRAMELEAF_RESTORATION_GPU:-0}']
+              device_ids: ['${FRAMELEAF_RESTORATION_GPU:?Set FRAMELEAF_RESTORATION_GPU to the GPU the restoration worker may use}']
               capabilities:
                 - gpu
     restart: always
