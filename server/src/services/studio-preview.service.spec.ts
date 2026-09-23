@@ -90,7 +90,10 @@ describe(StudioPreviewService.name, () => {
     mocks = getMocks();
 
     previews = {
-      upsert: vi.fn().mockResolvedValue(frameStub({ status: StudioPreviewStatus.Pending, operationId: null })),
+      upsert: vi.fn().mockResolvedValue({
+        frame: frameStub({ status: StudioPreviewStatus.Pending, operationId: null }),
+        created: true,
+      }),
       getForOwner: vi.fn(),
       getByCacheKey: vi.fn(),
       getLatestRevisionDigest: vi.fn().mockResolvedValue(undefined),
@@ -120,9 +123,9 @@ describe(StudioPreviewService.name, () => {
     sut = new StudioPreviewService(mocks.logger as never, previews, operations, resources);
   });
 
-  describe('request', () => {
+  describe('requestWithoutManifest (TODO(FL-89) seam)', () => {
     it('records the request against the exact revision and rational time', async () => {
-      await sut.request(authStub.user1, request());
+      await sut.requestWithoutManifest(authStub.user1, request());
 
       expect(previews.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -138,7 +141,7 @@ describe(StudioPreviewService.name, () => {
     });
 
     it('canonicalises the time so the same instant is one cache entry', async () => {
-      await sut.request(authStub.user1, request({ time: { numerator: '2002', denominator: '60000' } }));
+      await sut.requestWithoutManifest(authStub.user1, request({ time: { numerator: '2002', denominator: '60000' } }));
 
       expect(previews.upsert).toHaveBeenCalledWith(
         expect.objectContaining({ timeNumerator: '1001', timeDenominator: '30000' }),
@@ -146,7 +149,7 @@ describe(StudioPreviewService.name, () => {
     });
 
     it('creates a durable preview operation carrying the immutable binding', async () => {
-      await sut.request(authStub.user1, request());
+      await sut.requestWithoutManifest(authStub.user1, request());
 
       expect(operations.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -165,11 +168,61 @@ describe(StudioPreviewService.name, () => {
     });
 
     it('does not start a second render for a frame that already has one', async () => {
-      vi.mocked(previews.upsert).mockResolvedValue(frameStub({ status: StudioPreviewStatus.Rendering }));
+      vi.mocked(previews.upsert).mockResolvedValue({
+        frame: frameStub({ status: StudioPreviewStatus.Rendering }),
+        created: false,
+      });
 
-      await sut.request(authStub.user1, request());
+      await sut.requestWithoutManifest(authStub.user1, request());
 
       expect(operations.create).not.toHaveBeenCalled();
+    });
+
+    it('does not start a render for a pending row another request created', async () => {
+      // Two concurrent requests for the same frame: only the writer that created the row enqueues.
+      vi.mocked(previews.upsert).mockResolvedValue({
+        frame: frameStub({ status: StudioPreviewStatus.Pending, operationId: null }),
+        created: false,
+      });
+
+      await sut.requestWithoutManifest(authStub.user1, request());
+
+      expect(operations.create).not.toHaveBeenCalled();
+    });
+
+    it('renders a revived row again (evicted, superseded or failed before)', async () => {
+      vi.mocked(previews.upsert).mockResolvedValue({
+        frame: frameStub({ status: StudioPreviewStatus.Pending, operationId: null, framePath: null }),
+        created: true,
+      });
+
+      const { preview } = await sut.requestWithoutManifest(authStub.user1, request());
+
+      expect(operations.create).toHaveBeenCalledTimes(1);
+      expect(previews.markRendering).toHaveBeenCalledWith(frameStub().id, '0195e2a0-0000-7000-8000-0000000000ff');
+      expect(preview.status).toBe(StudioPreviewStatus.Rendering);
+    });
+
+    it('cancels the operation it just created when the row stopped waiting for it', async () => {
+      vi.mocked(previews.markRendering).mockResolvedValue(false);
+
+      const { preview } = await sut.requestWithoutManifest(authStub.user1, request());
+
+      expect(operations.requestCancel).toHaveBeenCalledWith(
+        '0195e2a0-0000-7000-8000-0000000000ff',
+        authStub.user1.user.id,
+      );
+      expect(preview.status).toBe(StudioPreviewStatus.Pending);
+    });
+
+    it('never shares a row between accounts naming the same project and revision', async () => {
+      await sut.requestWithoutManifest(authStub.user1, request());
+      await sut.requestWithoutManifest(authStub.admin, request());
+
+      const [first, second] = vi.mocked(previews.upsert).mock.calls.map(([row]) => row);
+      expect(first.ownerId).toBe(authStub.user1.user.id);
+      expect(second.ownerId).toBe(authStub.admin.user.id);
+      expect(first.cacheKey).not.toBe(second.cacheKey);
     });
 
     it('supersedes and cancels previews of the revision that was replaced', async () => {
@@ -178,7 +231,7 @@ describe(StudioPreviewService.name, () => {
         frameStub({ id: 'old-1', revisionDigest: 'rev-old', status: StudioPreviewStatus.Rendering, operationId: 'op-1' }),
       ]);
 
-      const result = await sut.request(authStub.user1, request({ revisionDigest: 'rev-b' }));
+      const result = await sut.requestWithoutManifest(authStub.user1, request({ revisionDigest: 'rev-b' }));
 
       expect(previews.supersede).toHaveBeenCalledWith('project-1', authStub.user1.user.id, 'rev-b');
       expect(operations.requestCancel).toHaveBeenCalledWith('op-1', authStub.user1.user.id);
@@ -192,7 +245,7 @@ describe(StudioPreviewService.name, () => {
         frameStub({ id: 'old-1', revisionDigest: 'rev-old', status: StudioPreviewStatus.Ready, operationId: 'op-1' }),
       ]);
 
-      await sut.request(authStub.user1, request({ revisionDigest: 'rev-b' }));
+      await sut.requestWithoutManifest(authStub.user1, request({ revisionDigest: 'rev-b' }));
 
       expect(operations.requestCancel).not.toHaveBeenCalled();
     });
@@ -200,7 +253,7 @@ describe(StudioPreviewService.name, () => {
     it('refuses a request naming a revision the project has moved past', async () => {
       sut.setRevisionAuthority({ getCurrentRevisionDigest: vi.fn().mockResolvedValue('rev-b') });
 
-      await expect(sut.request(authStub.user1, request({ revisionDigest: 'rev-a' }))).rejects.toBeInstanceOf(
+      await expect(sut.requestWithoutManifest(authStub.user1, request({ revisionDigest: 'rev-a' }))).rejects.toBeInstanceOf(
         ConflictException,
       );
       expect(previews.upsert).not.toHaveBeenCalled();
@@ -210,11 +263,11 @@ describe(StudioPreviewService.name, () => {
     it('answers "not found" when the revision authority says the project is not readable', async () => {
       sut.setRevisionAuthority({ getCurrentRevisionDigest: vi.fn().mockResolvedValue(null) });
 
-      await expect(sut.request(authStub.user1, request())).rejects.toBeInstanceOf(NotFoundException);
+      await expect(sut.requestWithoutManifest(authStub.user1, request())).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('refuses an out-of-range viewport before touching the store', async () => {
-      await expect(sut.request(authStub.user1, request({ viewportWidth: 99_999 }))).rejects.toBeInstanceOf(
+      await expect(sut.requestWithoutManifest(authStub.user1, request({ viewportWidth: 99_999 }))).rejects.toBeInstanceOf(
         ConflictException,
       );
       expect(previews.upsert).not.toHaveBeenCalled();
@@ -222,12 +275,12 @@ describe(StudioPreviewService.name, () => {
 
     it('refuses a zero denominator rather than rendering an undefined instant', async () => {
       await expect(
-        sut.request(authStub.user1, request({ time: { numerator: '1', denominator: '0' } })),
+        sut.requestWithoutManifest(authStub.user1, request({ time: { numerator: '1', denominator: '0' } })),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('never returns the frame path or the store key', async () => {
-      const { preview } = await sut.request(authStub.user1, request());
+      const { preview } = await sut.requestWithoutManifest(authStub.user1, request());
 
       expect(preview).not.toHaveProperty('framePath');
       expect(preview).not.toHaveProperty('cacheKey');
@@ -235,7 +288,7 @@ describe(StudioPreviewService.name, () => {
     });
 
     it('echoes the seek generation so a late frame can be discarded', async () => {
-      await sut.request(authStub.user1, request({ seekGeneration: 12 }));
+      await sut.requestWithoutManifest(authStub.user1, request({ seekGeneration: 12 }));
 
       expect(previews.upsert).toHaveBeenCalledWith(expect.objectContaining({ seekGeneration: '12' }));
     });
@@ -303,6 +356,34 @@ describe(StudioPreviewService.name, () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
+    it('does not consult the interim revision authority', async () => {
+      const getCurrentRevisionDigest = vi.fn().mockResolvedValue('something-else');
+      sut.setRevisionAuthority({ getCurrentRevisionDigest });
+
+      await sut.requestForManifest(authStub.user1, manifest(), {
+        time: { numerator: '0', denominator: '1' },
+        quality: StudioPreviewQuality.Draft,
+        viewportWidth: 960,
+        viewportHeight: 540,
+      } as never);
+
+      expect(getCurrentRevisionDigest).not.toHaveBeenCalled();
+      expect(previews.upsert).toHaveBeenCalled();
+    });
+
+    it('supersedes frames bound to an earlier manifest', async () => {
+      vi.mocked(previews.getLatestRevisionDigest).mockResolvedValue('older-manifest-digest');
+
+      await sut.requestForManifest(authStub.user1, manifest(), {
+        time: { numerator: '0', denominator: '1' },
+        quality: StudioPreviewQuality.Draft,
+        viewportWidth: 960,
+        viewportHeight: 540,
+      } as never);
+
+      expect(previews.supersede).toHaveBeenCalledWith('project-1', authStub.user1.user.id, 'manifest-digest');
+    });
+
     it('never leaks the grant to the browser', async () => {
       const { preview } = await sut.requestForManifest(authStub.user1, manifest(), {
         time: { numerator: '0', denominator: '1' },
@@ -336,9 +417,10 @@ describe(StudioPreviewService.name, () => {
   describe('getFrame', () => {
     const etag = () =>
       previewETag({
+        ownerId: authStub.user1.user.id,
         projectId: 'project-1',
         revisionDigest: 'rev-a',
-        time: { numerator: 1001n, denominator: 30_000n },
+        time: rational(1001, 30_000),
         quality: StudioPreviewQuality.Standard,
         viewportWidth: 1920,
         viewportHeight: 1080,

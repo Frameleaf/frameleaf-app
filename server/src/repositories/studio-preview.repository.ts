@@ -32,11 +32,20 @@ export class StudioPreviewRepository {
   /**
    * Record a request, or return the existing row for the same key.
    *
-   * `onConflict ... doNothing` on `cacheKey` is what makes two people scrubbing to the same
-   * frame of the same revision share one render. The follow-up read is deliberate: the winner
-   * of the race and the loser must both end up holding the same row.
+   * `created` is true only for the caller whose write produced a row that still needs a render:
+   * a fresh insert, or a revival of a row that had been superseded, evicted or had failed. The
+   * service creates the durable operation only when it is true, so two concurrent requests for
+   * the same frame share one render instead of racing to start two.
+   *
+   * Revival matters because the key is deterministic. Without it, a frame that was evicted for
+   * the cap, or a revision the person returned to by undoing, would keep answering "gone" or
+   * "superseded" for as long as the tombstone lived, and could never be rendered again.
+   *
+   * Every read is scoped to the owner as well as the key. The key already contains the owner;
+   * the second condition is so that a mistake in the key could never hand one account's row to
+   * another.
    */
-  async upsert(frame: StudioPreviewFrameCreate): Promise<StudioPreviewFrame> {
+  async upsert(frame: StudioPreviewFrameCreate): Promise<{ frame: StudioPreviewFrame; created: boolean }> {
     const inserted = await this.db
       .insertInto('studio_preview_frame')
       .values(frame)
@@ -45,14 +54,60 @@ export class StudioPreviewRepository {
       .executeTakeFirst();
 
     if (inserted) {
-      return inserted as unknown as StudioPreviewFrame;
+      return { frame: inserted as unknown as StudioPreviewFrame, created: true };
     }
 
-    return (await this.db
-      .selectFrom('studio_preview_frame')
-      .selectAll()
+    const revived = await this.db
+      .updateTable('studio_preview_frame')
+      .set({
+        status: StudioPreviewStatus.Pending,
+        projectRevision: frame.projectRevision ?? null,
+        grantToken: frame.grantToken ?? null,
+        grantSessionId: frame.grantSessionId ?? null,
+        seekGeneration: frame.seekGeneration,
+        operationId: null,
+        framePath: null,
+        contentType: null,
+        sizeInBytes: null,
+        frameChecksum: null,
+        framePts: null,
+        framePtsTimebase: null,
+        toneMapped: false,
+        errorCode: null,
+        readyAt: null,
+        requestedAt: new Date(),
+        lastAccessedAt: new Date(),
+        expiresAt: frame.expiresAt ?? null,
+      })
       .where('cacheKey', '=', frame.cacheKey)
-      .executeTakeFirstOrThrow()) as unknown as StudioPreviewFrame;
+      .where('ownerId', '=', frame.ownerId)
+      .where('status', 'in', [StudioPreviewStatus.Superseded, StudioPreviewStatus.Evicted, StudioPreviewStatus.Failed])
+      .returningAll()
+      .executeTakeFirst();
+
+    if (revived) {
+      return { frame: revived as unknown as StudioPreviewFrame, created: true };
+    }
+
+    /**
+     * The row is live (pending, rendering or ready). Refresh what belongs to *this* request: the
+     * seek it answers and, for a manifest-bound request, the viewer-session grant. A grant is
+     * shorter-lived than frame retention, so a frame re-requested after its first grant expired
+     * must carry the new one, or it would be refused as unauthorized while still current.
+     */
+    const refreshed = await this.db
+      .updateTable('studio_preview_frame')
+      .set({
+        seekGeneration: frame.seekGeneration,
+        requestedAt: new Date(),
+        ...(frame.grantToken ? { grantToken: frame.grantToken, grantSessionId: frame.grantSessionId ?? null } : {}),
+      })
+      .where('cacheKey', '=', frame.cacheKey)
+      .where('ownerId', '=', frame.ownerId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return { frame: refreshed as unknown as StudioPreviewFrame, created: false };
   }
 
   async getForOwner(id: string, ownerId: string): Promise<StudioPreviewFrame | undefined> {
@@ -76,11 +131,10 @@ export class StudioPreviewRepository {
   /**
    * The revision digest most recently requested for a project by this owner.
    *
-   * This is the *fallback* revision authority. Studio project storage is owned by a story still
-   * in flight; until it lands, the newest revision anybody has asked to preview is the newest
-   * revision we know of, and every older digest is superseded against it. The service takes an
-   * authority through {@link StudioProjectRevisionAuthority} and falls back to this, so the swap
-   * is one provider and no call site changes.
+   * For a manifest-bound frame this is the lasting answer: every newer manifest supersedes the
+   * older binding when it is requested. For a frame recorded without a manifest it stands in for
+   * Studio project storage until FL-89 lands (see `StudioProjectRevisionAuthority`, the
+   * TODO(FL-89) seam in the preview service).
    */
   async getLatestRevisionDigest(projectId: string, ownerId: string): Promise<string | undefined> {
     const row = await this.db
