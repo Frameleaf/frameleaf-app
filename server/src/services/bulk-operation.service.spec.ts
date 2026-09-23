@@ -1,5 +1,4 @@
 import { BadRequestException } from '@nestjs/common';
-import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto.js';
 import {
   AssetVisibility,
   MediaOperationBulkAction,
@@ -45,12 +44,12 @@ describe(BulkOperationService.name, () => {
   let sut: BulkOperationService;
   let mocks: ServiceMocks;
   let operations: MediaOperationRepository;
-  let assets: { updateAll: any; shiftDateTimeOriginalFrom: any; run: any; deleteAll: any };
+  let assets: { updateAll: any; shiftDateTimeOriginalFrom: any; run: any; deleteAll: any; lock: any };
   let albums: { addAssets: any; removeAssets: any };
   let tags: { bulkTagAssets: any; removeAssets: any };
   let trash: { restoreAssets: any };
   let stacks: { create: any; deleteAll: any };
-  let enrichment: { updateAssetEnrichment: any };
+  let enrichment: { updateAssetEnrichment: any; unlockAssets: any };
   let users: { get: any; getMetadata: any };
   let apiKeys: { getById: any };
 
@@ -75,12 +74,16 @@ describe(BulkOperationService.name, () => {
       shiftDateTimeOriginalFrom: vi.fn().mockResolvedValue(undefined),
       run: vi.fn().mockResolvedValue(undefined),
       deleteAll: vi.fn().mockResolvedValue(undefined),
+      lock: vi.fn().mockResolvedValue(undefined),
     };
     albums = { addAssets: vi.fn(), removeAssets: vi.fn() };
     tags = { bulkTagAssets: vi.fn().mockResolvedValue({ count: 0 }), removeAssets: vi.fn() };
     trash = { restoreAssets: vi.fn().mockResolvedValue({ count: 0 }) };
     stacks = { create: vi.fn(), deleteAll: vi.fn() };
-    enrichment = { updateAssetEnrichment: vi.fn().mockResolvedValue({}) };
+    enrichment = {
+      updateAssetEnrichment: vi.fn().mockResolvedValue({}),
+      unlockAssets: vi.fn().mockResolvedValue(undefined),
+    };
     users = { get: vi.fn().mockResolvedValue({ ...authStub.user1.user }), getMetadata: vi.fn().mockResolvedValue([]) };
     apiKeys = { getById: vi.fn() };
 
@@ -191,16 +194,14 @@ describe(BulkOperationService.name, () => {
       );
     });
 
-    it('marks sensitive as metadata only, never through visibility or albums', async () => {
+    it('marks sensitive as the lock record, never through visibility, albums or enrichment tags (FL-34)', async () => {
       const snapshot = snapshotOf({ action: MediaOperationBulkAction.MarkSensitive });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
 
       const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
 
-      for (const id of snapshot.assetIds) {
-        expect(enrichment.updateAssetEnrichment).toHaveBeenCalledWith(authStub.user1, id, {
-          action: AssetImageEnrichmentAction.MarkNsfw,
-        });
-      }
+      expect(assets.lock).toHaveBeenCalledWith(authStub.user1, { ids: snapshot.assetIds });
+      expect(enrichment.updateAssetEnrichment).not.toHaveBeenCalled();
       expect(assets.updateAll).not.toHaveBeenCalled();
       expect(albums.addAssets).not.toHaveBeenCalled();
       expect(albums.removeAssets).not.toHaveBeenCalled();
