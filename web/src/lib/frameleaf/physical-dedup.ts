@@ -1,17 +1,21 @@
 import {
+  MediaOperationStatus,
   PhysicalDeduplicationDecision,
   PhysicalDeduplicationPlanMode,
   PhysicalDeduplicationSkipReason,
+  type PhysicalDeduplicationApplyDto,
   type PhysicalDeduplicationCopyDto,
   type PhysicalDeduplicationPlanDto,
   type PhysicalDeduplicationRetainedDto,
+  type PhysicalDeduplicationReviewResponseDto,
 } from '@immich/sdk';
 
 /**
- * Pure helpers for the physical deduplication preview (FL-71), ported from the design
- * template's `physical-dedup-data.mjs`. The template kept a local sample model; here the plan
- * is the server's dry-run result and these functions only shape it for display and decide
- * when a plan may be applied.
+ * Pure helpers for physical deduplication (FL-71, FL-73), ported from the design template's
+ * `physical-dedup-data.mjs`. The template kept a local sample model; here the plan is the server's
+ * dry-run result, a review is the server's check of that plan against the library, and applying is
+ * a durable server job. These functions only shape what the server returns and mirror its rules so
+ * buttons are not offered pointlessly; the server decides.
  */
 
 export const DEDUP_SCOPE_ALL = 'all';
@@ -64,6 +68,9 @@ export const groupPlanCopies = (plan: PhysicalDeduplicationPlanDto): DedupGroup[
   );
 };
 
+/** A group the administrator may decide on: one retained original with copies the plan would share. */
+export const isDecidableGroup = (group: DedupGroup) => group.retained !== null && group.shares > 0;
+
 export type DedupMetrics = {
   copiesToShare: number;
   retainedOriginals: number;
@@ -86,16 +93,57 @@ export const planMetrics = (plan: PhysicalDeduplicationPlanDto): DedupMetrics =>
   };
 };
 
-/** A short, stable label for a plan, derived from when it ran, so the confirmation phrase names it. */
-export const planLabel = (plan: Pick<PhysicalDeduplicationPlanDto, 'ranAt'>) => {
-  const stamp = Date.parse(plan.ranAt);
-  const code = Number.isFinite(stamp) ? stamp.toString(36).toUpperCase().slice(-6) : 'UNKNOWN';
-  return `PD-${code}`;
+export type DedupSelection = {
+  /** Copies the plan applies with these decisions, listed and unlisted. */
+  copies: number;
+  /** Copies in the plan that are not listed because they are another account's Locked media. */
+  hiddenCopies: number;
+  /** Bytes of the listed copies the plan applies. Unlisted copies are measured by the review. */
+  listedBytes: number;
+  /** Groups left as they are. */
+  keptGroups: number;
 };
 
-export const confirmationPhrase = (plan: Pick<PhysicalDeduplicationPlanDto, 'ranAt'>) => `APPLY ${planLabel(plan)}`;
+/**
+ * What the plan applies with the administrator's per-group decisions. `excluded` holds retained
+ * asset ids. The server counts the same way when it reviews the plan and returns exact totals.
+ */
+export const planSelection = (plan: PhysicalDeduplicationPlanDto, excluded: ReadonlySet<string>): DedupSelection => {
+  const retainedIds = new Set(plan.retained.map((item) => item.assetId));
+  const listed = plan.copies.filter(
+    (copy) =>
+      copy.decision === PhysicalDeduplicationDecision.Share &&
+      !!copy.retainedAssetId &&
+      retainedIds.has(copy.retainedAssetId),
+  );
+  const included = listed.filter((copy) => !excluded.has(copy.retainedAssetId!));
+  const hiddenCopies = Math.max(0, plan.applicableCopies - listed.length);
 
-export const matchesConfirmation = (plan: Pick<PhysicalDeduplicationPlanDto, 'ranAt'>, typed: string) =>
+  return {
+    copies: included.length + hiddenCopies,
+    hiddenCopies,
+    listedBytes: included.reduce((total, copy) => total + copy.sizeInBytes, 0),
+    keptGroups: [...excluded].filter((id) => retainedIds.has(id)).length,
+  };
+};
+
+/** The left-out groups in the order the server compares them. */
+export const normalizeExcluded = (excluded: Iterable<string>) => [...new Set(excluded)].sort();
+
+/** Whether a review still describes the plan on screen with the decisions on screen. */
+export const reviewMatches = (
+  review: Pick<PhysicalDeduplicationReviewResponseDto, 'fingerprint' | 'excludedRetainedAssetIds'> | null,
+  plan: Pick<PhysicalDeduplicationPlanDto, 'fingerprint'> | null,
+  excluded: Iterable<string>,
+) =>
+  !!review &&
+  !!plan &&
+  review.fingerprint === plan.fingerprint &&
+  normalizeExcluded(review.excludedRetainedAssetIds).join('\n') === normalizeExcluded(excluded).join('\n');
+
+export const confirmationPhrase = (plan: Pick<PhysicalDeduplicationPlanDto, 'planId'>) => `APPLY ${plan.planId}`;
+
+export const matchesConfirmation = (plan: Pick<PhysicalDeduplicationPlanDto, 'planId'>, typed: string) =>
   typed.trim() === confirmationPhrase(plan);
 
 export type DedupStaleReason = 'scope' | 'master';
@@ -119,33 +167,103 @@ export const planStaleReason = (
   return null;
 };
 
+const ACTIVE_APPLY_STATUSES: readonly MediaOperationStatus[] = [
+  MediaOperationStatus.Queued,
+  MediaOperationStatus.Preparing,
+  MediaOperationStatus.Rendering,
+  MediaOperationStatus.Validating,
+  MediaOperationStatus.Cancelling,
+  MediaOperationStatus.Paused,
+];
+
+export const isApplyActive = (apply: Pick<PhysicalDeduplicationApplyDto, 'status'>) =>
+  ACTIVE_APPLY_STATUSES.includes(apply.status);
+
+/** The newest job applying this plan, if any. The server lists applies newest first. */
+export const applyForPlan = (
+  applies: readonly PhysicalDeduplicationApplyDto[],
+  plan: Pick<PhysicalDeduplicationPlanDto, 'fingerprint'> | null,
+) => (plan ? (applies.find((apply) => apply.fingerprint === plan.fingerprint) ?? null) : null);
+
+export type DedupApplyStatusKey =
+  | 'frameleaf_dedup_apply_status_queued'
+  | 'frameleaf_dedup_apply_status_running'
+  | 'frameleaf_dedup_apply_status_pausing'
+  | 'frameleaf_dedup_apply_status_paused'
+  | 'frameleaf_dedup_apply_status_retrying'
+  | 'frameleaf_dedup_apply_status_cancelling'
+  | 'frameleaf_dedup_apply_status_completed'
+  | 'frameleaf_dedup_apply_status_cancelled'
+  | 'frameleaf_dedup_apply_status_failed';
+
+export const applyStatusKey = (
+  apply: Pick<PhysicalDeduplicationApplyDto, 'status' | 'retrying' | 'pauseRequested'>,
+): DedupApplyStatusKey => {
+  switch (apply.status) {
+    case MediaOperationStatus.Queued: {
+      return apply.retrying ? 'frameleaf_dedup_apply_status_retrying' : 'frameleaf_dedup_apply_status_queued';
+    }
+    case MediaOperationStatus.Preparing:
+    case MediaOperationStatus.Rendering:
+    case MediaOperationStatus.Validating: {
+      return apply.pauseRequested ? 'frameleaf_dedup_apply_status_pausing' : 'frameleaf_dedup_apply_status_running';
+    }
+    case MediaOperationStatus.Paused: {
+      return 'frameleaf_dedup_apply_status_paused';
+    }
+    case MediaOperationStatus.Cancelling: {
+      return 'frameleaf_dedup_apply_status_cancelling';
+    }
+    case MediaOperationStatus.Completed: {
+      return 'frameleaf_dedup_apply_status_completed';
+    }
+    case MediaOperationStatus.Cancelled: {
+      return 'frameleaf_dedup_apply_status_cancelled';
+    }
+    default: {
+      return 'frameleaf_dedup_apply_status_failed';
+    }
+  }
+};
+
 export type DedupApplyBlockedReason =
   | 'disabled'
   | 'no-saved-master'
   | 'master-mismatch'
   | 'applied'
   | 'no-shares'
-  | 'running';
+  | 'running'
+  | 'applying';
 
 /**
- * Why a plan cannot be applied right now. Mirrors the server: applying requires the feature
- * to be enabled, a saved retained account, and a preview produced for exactly that account.
+ * Why a plan cannot be applied right now. Mirrors the server: applying requires the feature to be
+ * enabled, a saved retained account, a preview produced for exactly that account, at least one copy
+ * to share with these decisions, and no other plan being applied.
  */
 export const applyBlockedReason = ({
   plan,
   enabled,
   savedMasterUserId,
   running,
+  applying,
+  applied,
+  selectedCopies,
 }: {
-  plan: Pick<PhysicalDeduplicationPlanDto, 'mode' | 'masterUserId' | 'eligibleAssets'>;
+  plan: Pick<PhysicalDeduplicationPlanDto, 'mode' | 'masterUserId'>;
   enabled: boolean;
   savedMasterUserId: string | null;
   running: boolean;
+  applying: boolean;
+  applied: boolean;
+  selectedCopies: number;
 }): DedupApplyBlockedReason | null => {
   if (running) {
     return 'running';
   }
-  if (plan.mode === PhysicalDeduplicationPlanMode.Apply) {
+  if (applying) {
+    return 'applying';
+  }
+  if (applied || plan.mode === PhysicalDeduplicationPlanMode.Apply) {
     return 'applied';
   }
   if (!enabled) {
@@ -157,11 +275,18 @@ export const applyBlockedReason = ({
   if (plan.masterUserId !== savedMasterUserId) {
     return 'master-mismatch';
   }
-  if (plan.eligibleAssets === 0) {
+  if (selectedCopies === 0) {
     return 'no-shares';
   }
   return null;
 };
+
+/**
+ * Reasons that also stop a review. A review checks the plan against the library without the saved
+ * settings, so a preview prepared against an account chosen on the page can still be reviewed.
+ */
+export const blocksReview = (reason: DedupApplyBlockedReason | null) =>
+  reason === 'running' || reason === 'applying' || reason === 'applied' || reason === 'no-shares';
 
 export const formatBytes = (value: number, locale?: string) => {
   const format = (amount: number, digits: number) =>
@@ -177,6 +302,10 @@ export const formatBytes = (value: number, locale?: string) => {
   }
   return `${format(value, 0)} B`;
 };
+
+/** The checksum a row carries: SHA-1 for older uploads, SHA-256 for newer ones. */
+export const checksumAlgorithmKey = (checksum: string) =>
+  checksum.length === 64 ? ('frameleaf_dedup_evidence_sha256' as const) : ('frameleaf_dedup_evidence_sha1' as const);
 
 export const skipReasonKey = (reason: PhysicalDeduplicationSkipReason | null) => {
   switch (reason) {
@@ -201,6 +330,26 @@ export const skipReasonKey = (reason: PhysicalDeduplicationSkipReason | null) =>
   }
 };
 
-/** The exportable review record: the plan as the server returned it plus the label the admin saw. */
-export const reviewExport = (plan: PhysicalDeduplicationPlanDto, exportedAt = new Date().toISOString()) =>
-  JSON.stringify({ exportedAt, plan: { ...plan, label: planLabel(plan) } }, null, 2);
+/**
+ * The exportable review record: the plan as the server returned it, the per-group decisions and,
+ * once reviewed, the server's review of them. The review token is left out; it authorizes nothing
+ * on its own, but it is not something to pass around either.
+ */
+export const reviewExport = (
+  plan: PhysicalDeduplicationPlanDto,
+  excluded: Iterable<string> = [],
+  review: PhysicalDeduplicationReviewResponseDto | null = null,
+  exportedAt = new Date().toISOString(),
+) => {
+  const reviewed = review ? Object.fromEntries(Object.entries(review).filter(([key]) => key !== 'reviewToken')) : null;
+  return JSON.stringify(
+    {
+      exportedAt,
+      plan,
+      decisions: { excludedRetainedAssetIds: normalizeExcluded(excluded) },
+      review: reviewed,
+    },
+    null,
+    2,
+  );
+};
