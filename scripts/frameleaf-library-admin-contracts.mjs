@@ -215,7 +215,11 @@ export async function validateContracts(repository = root) {
   );
 
   const systemSettings = await readFile(
-    path.join(repository, "web/src/routes/admin/system-settings/+page.svelte"),
+    // FL-71: the server settings moved with the one Command Center; `/admin/system-settings` redirects.
+    path.join(
+      repository,
+      "web/src/routes/(user)/user-settings/SystemSettings.svelte",
+    ),
     "utf8",
   );
   const personalSettings = await readFile(
@@ -228,12 +232,20 @@ export async function validateContracts(repository = root) {
   // FL-74 adds "Originals & preservation" to Import & protection and to every account's own
   // settings (preservation is per account); FL-75 adds "Move or export your library" under
   // Storage & originals. Both are placed where the September 22 prototype places them.
+  // FL-71: 23 -> 22. The one Command Center mounts imports and preservation once, as account
+  // sections of Import & protection (they were a server copy and an account copy: -2), and adds the
+  // template's Server & updates "Configuration transfer" section (+1).
   assert.equal(
     (systemSettings.match(/^\s{6}component:\s*[A-Za-z][A-Za-z0-9]*/gm) ?? [])
       .length,
-    23,
+    22,
   );
-  assert.equal((personalSettings.match(/<SettingGroup\b/g) ?? []).length, 16);
+  // FL-71: the account settings are Command Center sections drawn one at a time, no longer
+  // accordion groups; the same 16 sections (now counted by their section branch).
+  assert.equal(
+    (personalSettings.match(/\{(?:#|:else )if section === '/g) ?? []).length,
+    16,
+  );
 
   await rejectSpecializedLibraryBacklog(repository);
   const citedSources = await validateCitedSourcePaths(repository);
@@ -248,7 +260,7 @@ export async function validateContracts(repository = root) {
     personalSettingsCount: 16,
     productionRouteCount: inventory.productionRoutes.length,
     sourceCitationCount: citedSources.length,
-    systemSettingsCount: 23,
+    systemSettingsCount: 22,
   };
 }
 

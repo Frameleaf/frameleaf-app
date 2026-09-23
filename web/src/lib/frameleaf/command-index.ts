@@ -50,6 +50,7 @@ import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { buildAlbumTree, type FrameleafAlbumNode } from '$lib/frameleaf/album-tree';
 import type { CommandIndexInput, CommandInput } from '$lib/frameleaf/command-palette';
 import { buildPrimaryDestinations, buildRailSections, type RailCapabilities } from '$lib/frameleaf/navigation';
+import { areaForSection, commandCenterUrl } from '$lib/frameleaf/settings-areas';
 import { Route } from '$lib/route';
 
 /**
@@ -61,9 +62,9 @@ import { Route } from '$lib/route';
  * - **Pages** come from `buildPrimaryDestinations` (the top bar's Library, Studio and Activity) and
  *   `buildRailSections`, the same tables the shell renders, plus the admin pages, so the palette can
  *   never offer a route that does not exist.
- * - **Settings areas** are the accordion keys that `UserSettingsList.svelte` and
- *   `admin/system-settings/+page.svelte` actually declare. Choosing one opens
- *   `?isOpen=<key>`, which `accordionManager` reads, so the deep link lands on the section.
+ * - **Settings areas** are the section keys that `UserSettingsList.svelte` and
+ *   `user-settings/SystemSettings.svelte` actually declare. Choosing one opens that section of
+ *   the Command Center (`?isOpen=<key>` for an account section, `?area=&section=` for a server one).
  * - **People**, **albums** and **places** come from `/search/person`, `/people`, `/albums`
  *   and `/search/suggestions`. Each one is access scoped by the server for the signed-in
  *   account, so the palette shows exactly what that account can reach; nothing is derived
@@ -228,7 +229,8 @@ export const USER_SETTINGS_AREAS: readonly {
     icon: mdiFeatureSearchOutline,
   },
   {
-    key: 'notifications',
+    // The older personal settings page called this group `notifications`; that link still works.
+    key: 'email-preferences',
     titleKey: 'notifications',
     descriptionKey: 'notifications_setting_description',
     icon: mdiBellOutline,
@@ -265,7 +267,7 @@ export const USER_SETTINGS_AREAS: readonly {
   },
 ] as const;
 
-/** Accordion keys declared by `admin/system-settings/+page.svelte`. */
+/** Server settings section keys declared by `user-settings/SystemSettings.svelte`. */
 export const ADMIN_SETTINGS_AREAS: readonly {
   key: string;
   titleKey: Translations;
@@ -390,6 +392,8 @@ export const ADMIN_SETTINGS_AREAS: readonly {
 ] as const;
 
 const settingsHref = (base: string, key: string) => `${base}?isOpen=${encodeURIComponent(key)}`;
+/** A server settings section opens in its Command Center area (FL-71). */
+const serverSettingsHref = (key: string) => commandCenterUrl(areaForSection(key), key);
 
 export const buildSettingsCommands = ($t: MessageFormatter, context: CommandIndexContext): CommandInput[] => {
   const areas: CommandInput[] = USER_SETTINGS_AREAS.map((area) => ({
@@ -413,7 +417,7 @@ export const buildSettingsCommands = ($t: MessageFormatter, context: CommandInde
       subtitle: $t('frameleaf_search_subtitle_admin_settings'),
       icon: area.icon,
       keywords: [$t(area.descriptionKey as Translations), $t('admin.system_settings')],
-      href: settingsHref(Route.systemSettings(), area.key),
+      href: serverSettingsHref(area.key),
     })),
   ];
 };
