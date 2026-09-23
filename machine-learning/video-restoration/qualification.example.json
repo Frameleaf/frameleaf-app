@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "records": [
+    {
+      "id": "realbasicvsr-x4-unqualified",
+      "modelId": "realbasicvsr-x4",
+      "revision": "REPLACE-with-the-exact-40-character-commit-that-was-qualified",
+      "weights": [
+        { "role": "generator", "sha256": "REPLACE-with-the-sha256-measured-during-qualification" },
+        { "role": "spynet", "sha256": "REPLACE-with-the-sha256-measured-during-qualification" }
+      ],
+      "containerRevisions": [],
+      "hardware": [],
+      "measurements": [],
+      "evidence": [
+        { "item": "weights-hashed", "result": "pending" },
+        { "item": "resource-profile", "result": "pending" },
+        { "item": "compare-faces", "result": "pending" },
+        { "item": "compare-text", "result": "pending" },
+        { "item": "compare-foliage", "result": "pending" },
+        { "item": "compare-motion", "result": "pending" },
+        { "item": "compare-cuts", "result": "pending" },
+        { "item": "chunk-seams", "result": "pending" },
+        { "item": "timing-preserved", "result": "pending" },
+        { "item": "audio-preserved", "result": "pending" },
+        { "item": "hallucination", "result": "pending" },
+        { "item": "temporal-stability", "result": "pending" },
+        { "item": "deterministic-repeat", "result": "pending" },
+        { "item": "fault-out-of-memory", "result": "pending" },
+        { "item": "fault-nan", "result": "pending" },
+        { "item": "fault-changed-weights", "result": "pending" },
+        { "item": "fault-dirty-checkout", "result": "pending" },
+        { "item": "fault-unsupported-input", "result": "pending" },
+        { "item": "x4-to-requested-2x", "result": "pending" }
+      ],
+      "license": {
+        "approved": false,
+        "code": null,
+        "weights": null,
+        "reviewedBy": null,
+        "reviewedAt": null
+      },
+      "hdrQualified": false,
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "notes": "Not qualified. No weights have been run for this record."
+    },
+    {
+      "id": "seedvr2-3b-unqualified",
+      "modelId": "seedvr2-3b",
+      "revision": "REPLACE-with-the-exact-40-character-commit-that-was-qualified",
+      "weights": [
+        { "role": "dit", "sha256": "REPLACE-with-the-sha256-measured-during-qualification" },
+        { "role": "vae", "sha256": "REPLACE-with-the-sha256-measured-during-qualification" },
+        { "role": "positive-embedding", "sha256": "REPLACE-with-the-sha256-measured-during-qualification" },
+        { "role": "negative-embedding", "sha256": "REPLACE-with-the-sha256-measured-during-qualification" }
+      ],
+      "containerRevisions": [],
+      "hardware": [],
+      "measurements": [],
+      "evidence": [
+        { "item": "weights-hashed", "result": "pending" },
+        { "item": "resource-profile", "result": "pending" },
+        { "item": "compare-faces", "result": "pending" },
+        { "item": "compare-text", "result": "pending" },
+        { "item": "compare-foliage", "result": "pending" },
+        { "item": "compare-motion", "result": "pending" },
+        { "item": "compare-cuts", "result": "pending" },
+        { "item": "chunk-seams", "result": "pending" },
+        { "item": "timing-preserved", "result": "pending" },
+        { "item": "audio-preserved", "result": "pending" },
+        { "item": "hallucination", "result": "pending" },
+        { "item": "temporal-stability", "result": "pending" },
+        { "item": "deterministic-repeat", "result": "pending" },
+        { "item": "fault-out-of-memory", "result": "pending" },
+        { "item": "fault-nan", "result": "pending" },
+        { "item": "fault-changed-weights", "result": "pending" },
+        { "item": "fault-dirty-checkout", "result": "pending" },
+        { "item": "fault-unsupported-input", "result": "pending" },
+        { "item": "intermediate-compression", "result": "pending" },
+        { "item": "frame-count", "result": "pending" }
+      ],
+      "license": {
+        "approved": false,
+        "code": null,
+        "weights": null,
+        "reviewedBy": null,
+        "reviewedAt": null
+      },
+      "hdrQualified": false,
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "notes": "Not qualified. No weights have been run for this record."
+    }
+  ]
+}
