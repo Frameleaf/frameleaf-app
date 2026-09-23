@@ -5468,6 +5468,8 @@ export type StudioBundleImportResultDto = {
 };
 export type StudioBundleOperationDto = {
     attempt: number;
+    /** Automatic retries this job has used; every job gets one before a failure is reported */
+    autoRetries: number;
     error: string | null;
     errorCode: string | null;
     "export": (StudioBundleExportResultDto) | null;
@@ -5478,6 +5480,8 @@ export type StudioBundleOperationDto = {
     progress: number;
     /** The exported project, or the project an import created */
     projectId: string | null;
+    /** When a job waiting for its automatic retry may run again */
+    retryAt: string | null;
     status: MediaOperationStatus;
 };
 export type StudioProjectLeaseRequestDto = {
