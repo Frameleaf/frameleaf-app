@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { describe } from 'vitest';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { mapUserAdmin } from 'src/dtos/user.dto.js';
@@ -7,6 +7,7 @@ import { UserAdminService } from 'src/services/user-admin.service.js';
 import { UserMetadataItem } from 'src/types.js';
 import { getPreferences, getPreferencesRevision } from 'src/utils/preferences.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
+import { SessionFactory } from 'test/factories/session.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { userStub } from 'test/fixtures/user.stub.js';
@@ -439,6 +440,49 @@ describe(UserAdminService.name, () => {
       expect(mocks.asset.getStatistics).toHaveBeenCalledWith(userStub.user1.id, {
         visibility: AssetVisibility.Timeline,
       });
+    });
+  });
+
+  describe('getSessions (FL-76)', () => {
+    it("marks the administrator's own session as current on their own account", async () => {
+      const auth = authStub.adminWithElevatedPermission;
+      const session = SessionFactory.create({ userId: userStub.admin.id, id: auth.session!.id });
+      mocks.session.getByUserId.mockResolvedValue([session]);
+
+      const [result] = await sut.getSessions(auth, userStub.admin.id);
+
+      expect(result.current).toBe(true);
+    });
+
+    it("never marks another account's session as current", async () => {
+      const auth = authStub.adminWithElevatedPermission;
+      const session = SessionFactory.create({ userId: userStub.user1.id });
+      mocks.session.getByUserId.mockResolvedValue([session]);
+
+      const [result] = await sut.getSessions(auth, userStub.user1.id);
+
+      expect(result.current).toBe(false);
+    });
+  });
+
+  describe('deleteSession (FL-76)', () => {
+    it('revokes a session that belongs to the account', async () => {
+      const session = SessionFactory.create({ userId: userStub.user1.id });
+      mocks.session.getByUserId.mockResolvedValue([session]);
+
+      await sut.deleteSession(authStub.admin, userStub.user1.id, session.id);
+
+      expect(mocks.session.delete).toHaveBeenCalledWith(session.id);
+    });
+
+    it('refuses a session id that belongs to a different account', async () => {
+      const foreignSession = SessionFactory.create({ userId: userStub.admin.id });
+      mocks.session.getByUserId.mockResolvedValue([]);
+
+      await expect(sut.deleteSession(authStub.admin, userStub.user1.id, foreignSession.id)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(mocks.session.delete).not.toHaveBeenCalled();
     });
   });
 });

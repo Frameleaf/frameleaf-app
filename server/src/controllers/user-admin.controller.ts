@@ -11,6 +11,7 @@ import {
   UserAdminDeleteDto,
   UserAdminResponseDto,
   UserAdminSearchDto,
+  UserAdminSessionParamDto,
   UserAdminUpdateDto,
 } from 'src/dtos/user.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
@@ -125,6 +126,26 @@ export class UserAdminController {
   })
   getUserSessionsAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<SessionResponseDto[]> {
     return this.service.getSessions(auth, id);
+  }
+
+  /**
+   * FL-76: `SessionService.delete` only checks `Permission.AuthDeviceDelete` over the caller's
+   * own sessions, so an administrator could never revoke a foreign session through it. This is
+   * the explicit, audited admin path the account detail's Security tab needs instead.
+   */
+  @Delete(':id/sessions/:sessionId')
+  @Authenticated({ permission: Permission.AdminSessionDelete, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Delete a user session',
+    description: 'Delete a specific session for a specific user, signing that device out.',
+    history: new HistoryBuilder().added('v3').stable('v3'),
+  })
+  deleteUserSessionAdmin(
+    @Auth() auth: AuthDto,
+    @Param() { id, sessionId }: UserAdminSessionParamDto,
+  ): Promise<void> {
+    return this.service.deleteSession(auth, id, sessionId);
   }
 
   @Get(':id/statistics')
