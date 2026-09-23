@@ -193,6 +193,32 @@
         },
         "type": "object"
       },
+      "AdminAuditAction": {
+        "description": "What an administrator did to an account or one of its libraries",
+        "enum": [
+          "account-created",
+          "account-updated",
+          "admin-granted",
+          "admin-revoked",
+          "quota-changed",
+          "storage-label-changed",
+          "password-reset",
+          "pin-set",
+          "pin-reset",
+          "session-revoked",
+          "preferences-updated",
+          "casting-disabled",
+          "casting-allowed",
+          "account-deleted",
+          "account-removal-scheduled",
+          "account-restored",
+          "library-created",
+          "library-updated",
+          "library-scan-queued",
+          "library-deleted"
+        ],
+        "type": "string"
+      },
       "AdminConfigAdvancedPromptDto": {
         "properties": {
           "enabled": {
@@ -24304,6 +24330,83 @@
         },
         "type": "object"
       },
+      "UserAdminHistoryEventResponseDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/AdminAuditAction"
+          },
+          "actorId": {
+            "description": "The administrator who did it; null once that account is gone",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "actorName": {
+            "description": "That administrator's name; null once that account is gone",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When it happened",
+            "format": "date-time",
+            "type": "string"
+          },
+          "detail": {
+            "description": "What the action carries: a quota in bytes, a storage label, a recovery period in days, a device name or the changed preference sections; null otherwise",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Event ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "libraryId": {
+            "description": "The library a library event is about; null for account events and once the library is gone",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "subject": {
+            "description": "The account's or library's name at the time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "actorId",
+          "actorName",
+          "createdAt",
+          "detail",
+          "id",
+          "libraryId",
+          "subject"
+        ],
+        "type": "object"
+      },
+      "UserAdminHistoryResponseDto": {
+        "properties": {
+          "events": {
+            "description": "Newest first",
+            "items": {
+              "$ref": "#/components/schemas/UserAdminHistoryEventResponseDto"
+            },
+            "type": "array"
+          },
+          "hasMore": {
+            "description": "True when older events exist beyond this page",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "events",
+          "hasMore"
+        ],
+        "type": "object"
+      },
       "UserAdminResponseDto": {
         "properties": {
           "avatarColor": {
@@ -29330,6 +29433,86 @@
           }
         ],
         "summary": "Retrieve calendar heatmap activity",
+        "tags": [
+          "Users (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Stable"
+          }
+        ],
+        "x-immich-permission": "adminUser.read",
+        "x-immich-state": "Stable"
+      }
+    },
+    "/admin/users/{id}/history": {
+      "get": {
+        "description": "What administrators did to a specific user and their libraries, newest first: account creation, profile, role, quota and storage label changes, password and PIN resets, signed-out devices, preference changes, deletion and restore, and library changes and scans. Page with `before` and `take`.",
+        "operationId": "getUserHistoryAdmin",
+        "parameters": [
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Only events older than this event, for paging",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Page size, 50 by default",
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAdminHistoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve user history",
         "tags": [
           "Users (admin)"
         ],
