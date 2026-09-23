@@ -479,6 +479,70 @@ describe(WorkflowExecutionService.name, () => {
       expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
+    it('continues after an earlier step saved its own config before the next step failed', async () => {
+      const workflow = setup();
+      const resolvedConfig = { albumId: newUuid(), allowedTypes: ['IMAGE'] };
+      mocks.workflow.updateStepConfig.mockImplementation((_workflowId, stepId, config) => {
+        expect(stepId).toBe(filterId);
+        // A jsonb read can return object keys in a different order than the plugin response.
+        const persisted = { allowedTypes: config.allowedTypes, albumId: config.albumId };
+        workflow.definition.steps[0]!.config = persisted;
+        workflow.steps[0]!.config = persisted;
+        return Promise.resolve();
+      });
+      mocks.plugin.callMethod
+        .mockResolvedValueOnce({ config: resolvedConfig })
+        .mockRejectedValueOnce(new Error('webhook failed'));
+
+      await expect(sut.handleAssetTrigger({ workflowId, assetId })).resolves.toBe(JobStatus.Failed);
+      const retryJob = mocks.job.queue.mock.calls[0]![0].data as Parameters<
+        WorkflowExecutionService['handleAssetTrigger']
+      >[0];
+      expect(retryJob.definitionSha256).toMatch(/^[\da-f]{64}$/);
+
+      mocks.plugin.callMethod.mockClear().mockResolvedValue({});
+      await expect(sut.handleAssetTrigger(retryJob)).resolves.toBeUndefined();
+      expect(mocks.plugin.callMethod).toHaveBeenCalledOnce();
+      expect(mocks.plugin.callMethod).toHaveBeenCalledWith(
+        expect.objectContaining({ methodName: 'webhook' }),
+        expect.any(Object),
+        expect.any(Object),
+      );
+    });
+
+    it('still refuses an owner edit after a step saved its own config', async () => {
+      const workflow = setup();
+      mocks.workflow.updateStepConfig.mockImplementation((_workflowId, _stepId, config) => {
+        workflow.definition.steps[0]!.config = config;
+        workflow.steps[0]!.config = config;
+        return Promise.resolve();
+      });
+      mocks.plugin.callMethod
+        .mockResolvedValueOnce({ config: { allowedTypes: ['IMAGE'] } })
+        .mockRejectedValueOnce(new Error('webhook failed'));
+
+      await sut.handleAssetTrigger({ workflowId, assetId });
+      const retryJob = mocks.job.queue.mock.calls[0]![0].data as Parameters<
+        WorkflowExecutionService['handleAssetTrigger']
+      >[0];
+      const insertedId = newUuid();
+      workflow.steps.unshift(runnableStep(insertedId, 'assetTypeFilter', 0, { allowedTypes: ['VIDEO'] }));
+      workflow.definition.steps.unshift({
+        id: insertedId,
+        method: 'immich-plugin-core#assetTypeFilter',
+        config: { allowedTypes: ['VIDEO'] },
+        enabled: true,
+        extra: {},
+      });
+      mocks.plugin.callMethod.mockClear();
+
+      await expect(sut.handleAssetTrigger(retryJob)).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
+      expect(mocks.workflow.log).toHaveBeenCalledWith(
+        expect.objectContaining({ attempt: 1, errorCode: WorkflowRunErrorCode.Unsupported }),
+      );
+    });
+
     it('refuses to continue after a new restrictive filter is inserted ahead of the failed step', async () => {
       const workflow = setup();
       mocks.plugin.callMethod.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('webhook failed'));
@@ -533,19 +597,15 @@ describe(WorkflowExecutionService.name, () => {
     });
 
     it('does not run a retry whose failed step was edited away', async () => {
-      const workflow = setup();
-      const definitionSha256 = createHash('sha256').update(JSON.stringify(workflow.definition)).digest('hex');
+      setup();
+      mocks.plugin.callMethod.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('webhook failed'));
+      await sut.handleAssetTrigger({ workflowId, assetId });
+      const retryJob = mocks.job.queue.mock.calls[0]![0].data as Parameters<
+        WorkflowExecutionService['handleAssetTrigger']
+      >[0];
+      mocks.plugin.callMethod.mockClear();
 
-      await expect(
-        sut.handleAssetTrigger({
-          workflowId,
-          assetId,
-          runId: newUuid(),
-          attempt: 1,
-          fromStepId: newUuid(),
-          definitionSha256,
-        }),
-      ).resolves.toBe(JobStatus.Skipped);
+      await expect(sut.handleAssetTrigger({ ...retryJob, fromStepId: newUuid() })).resolves.toBe(JobStatus.Skipped);
 
       expect(mocks.plugin.callMethod).not.toHaveBeenCalled();
     });

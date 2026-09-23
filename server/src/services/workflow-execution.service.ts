@@ -51,15 +51,22 @@ type AssetTrigger = { userId: string; assetId: string; trigger: WorkflowTrigger 
 
 type RunnableWorkflow = NonNullable<Awaited<ReturnType<WorkflowRepository['getForWorkflowRun']>>>;
 
-const definitionSha256 = (workflow: RunnableWorkflow) =>
+const definitionOf = (workflow: RunnableWorkflow) =>
+  workflow.definition ??
+  definitionFromSteps(
+    workflow.trigger,
+    workflow.steps.map((step) => ({ ...step, enabled: true })),
+  );
+
+const definitionSha256 = (definition: ReturnType<typeof definitionFromSteps>) =>
   createHash('sha256')
     .update(
-      JSON.stringify(
-        workflow.definition ??
-          definitionFromSteps(
-            workflow.trigger,
-            workflow.steps.map((step) => ({ ...step, enabled: true })),
-          ),
+      JSON.stringify(definition, (_key, value: unknown) =>
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? Object.fromEntries(
+              Object.entries(value).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
+            )
+          : value,
       ),
     )
     .digest('hex');
@@ -524,9 +531,12 @@ export class WorkflowExecutionService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    // Track only configuration this run successfully persisted. Reloading the latest definition here
+    // would also trust an owner's intervening edit and could skip a newly restrictive filter.
+    const expectedDefinition = structuredClone(definitionOf(workflow));
     let steps = workflow.steps;
     if (job.fromStepId) {
-      if (!job.definitionSha256 || job.definitionSha256 !== definitionSha256(workflow)) {
+      if (!job.definitionSha256 || job.definitionSha256 !== definitionSha256(expectedDefinition)) {
         await log({
           result: WorkflowResult.Error,
           errorCode: WorkflowRunErrorCode.Unsupported,
@@ -617,6 +627,10 @@ export class WorkflowExecutionService extends BaseService {
 
         if (result?.config) {
           await this.workflowRepository.updateStepConfig(workflowId, step.id, result.config);
+          const definitionStep = expectedDefinition.steps.find((item) => item.id === step.id);
+          if (definitionStep) {
+            definitionStep.config = structuredClone(result.config);
+          }
         }
 
         const shouldContinue = result?.workflow?.continue ?? true;
@@ -648,7 +662,7 @@ export class WorkflowExecutionService extends BaseService {
               runId,
               attempt: 1,
               fromStepId: step.id,
-              definitionSha256: definitionSha256(workflow),
+              definitionSha256: definitionSha256(expectedDefinition),
             },
           });
         }
