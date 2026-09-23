@@ -28,7 +28,7 @@
     mdiTwoFactorAuthentication,
   } from '@mdi/js';
   import { t } from 'svelte-i18n';
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
   import AppSettings from './AppSettings.svelte';
   import ChangePasswordSettings from './ChangePasswordSettings.svelte';
   import DeviceList from './DeviceList.svelte';
@@ -48,70 +48,70 @@
     oauth.isCallback(location) || $page.url.searchParams.get(QueryParameter.OPEN_SETTING) === OpenQueryParam.OAUTH;
 </script>
 
-<SettingAccordion
+<SettingGroup
   icon={mdiCogOutline}
   key="app-settings"
   title={$t('app_settings')}
   subtitle={$t('manage_the_app_settings')}
 >
   <AppSettings />
-</SettingAccordion>
+</SettingGroup>
 
-<SettingAccordion icon={mdiAccountOutline} key="account" title={$t('account')} subtitle={$t('manage_your_account')}>
+<SettingGroup icon={mdiAccountOutline} key="account" title={$t('account')} subtitle={$t('manage_your_account')}>
   <UserProfileSettings />
-</SettingAccordion>
+</SettingGroup>
 
-<SettingAccordion
+<SettingGroup
   icon={mdiServerOutline}
   key="user-usage-info"
   title={$t('user_usage_stats')}
   subtitle={$t('user_usage_stats_description')}
 >
   <UserUsageStatistic />
-</SettingAccordion>
+</SettingGroup>
 
-<SettingAccordion icon={mdiApi} key="api-keys" title={$t('api_keys')} subtitle={$t('manage_your_api_keys')}>
+<SettingGroup icon={mdiApi} key="api-keys" title={$t('api_keys')} subtitle={$t('manage_your_api_keys')}>
   <UserApiKeyList bind:keys />
-</SettingAccordion>
+</SettingGroup>
 
-<SettingAccordion
+<SettingGroup
   icon={mdiDevices}
   key="authorized-devices"
   title={$t('authorized_devices')}
   subtitle={$t('manage_your_devices')}
 >
   <DeviceList bind:devices={sessions} />
-</SettingAccordion>
+</SettingGroup>
 
-<SettingAccordion
+<SettingGroup
   icon={mdiDownload}
   key="download-settings"
   title={$t('download_settings')}
   subtitle={$t('download_settings_description')}
 >
   <DownloadSettings />
-</SettingAccordion>
+</SettingGroup>
 
-<SettingAccordion
+<SettingGroup
   icon={mdiFeatureSearchOutline}
   key="feature"
   title={$t('features')}
   subtitle={$t('features_setting_description')}
 >
   <FeatureSettings />
-</SettingAccordion>
+</SettingGroup>
 
-<SettingAccordion
+<SettingGroup
   icon={mdiBellOutline}
   key={OpenQueryParam.NOTIFICATIONS}
   title={$t('notifications')}
   subtitle={$t('notifications_setting_description')}
 >
   <NotificationsSettings />
-</SettingAccordion>
+</SettingGroup>
 
 {#if featureFlagsManager.value.oauth}
-  <SettingAccordion
+  <SettingGroup
     icon={mdiTwoFactorAuthentication}
     key={OpenQueryParam.OAUTH}
     title={$t('oauth')}
@@ -119,19 +119,19 @@
     isOpen={oauthOpen || undefined}
   >
     <OauthSettings />
-  </SettingAccordion>
+  </SettingGroup>
 {/if}
 
-<SettingAccordion
+<SettingGroup
   icon={mdiFormTextboxPassword}
   key="password"
   title={$t('password')}
   subtitle={$t('change_your_password')}
 >
   <ChangePasswordSettings />
-</SettingAccordion>
+</SettingGroup>
 
-<SettingAccordion
+<SettingGroup
   icon={mdiLockSmart}
   key="user-pin-code-settings"
   title={$t('user_pin_code_settings')}
@@ -139,9 +139,9 @@
   autoScrollTo={true}
 >
   <ChangePinCodeSettings />
-</SettingAccordion>
+</SettingGroup>
 
-<SettingAccordion
+<SettingGroup
   icon={mdiShieldLockOutline}
   key="suppressed-content"
   title={$t('suppressed_content')}
@@ -149,9 +149,9 @@
   autoScrollTo={true}
 >
   <SuppressedContentSettings />
-</SettingAccordion>
+</SettingGroup>
 
-<SettingAccordion
+<SettingGroup
   icon={mdiKeyOutline}
   key={OpenQueryParam.PURCHASE_SETTINGS}
   title={$t('user_purchase_settings')}
@@ -159,13 +159,13 @@
   autoScrollTo={true}
 >
   <UserPurchaseSettings />
-</SettingAccordion>
+</SettingGroup>
 
-<SettingAccordion
+<SettingGroup
   icon={mdiAccountGroupOutline}
   key={OpenQueryParam.SHARING}
   title={$t('sharing')}
   subtitle={$t('manage_sharing_with_other_users')}
 >
   <SharingSettings />
-</SettingAccordion>
+</SettingGroup>

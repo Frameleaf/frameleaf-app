@@ -5,9 +5,15 @@
    * Ported from the approved prototype (`design/frameleaf/template/src/Memories.jsx`), but
    * built entirely against the real memories API through `memoryManager`
    * (`$lib/managers/memory-manager.svelte`) rather than the prototype's client-derived
-   * "on this day / years ago / event / best-of" index, which has no server-side
-   * equivalent: production memories are a single `on_this_day` type, generated ahead of
-   * time and exposed as `isUpcoming` (via `showAt`) versus already current.
+   * "on this day / years ago / event / best-of" index, which was derived on the client.
+   * Memories are generated ahead of time and exposed as `isUpcoming` (via `showAt`) versus
+   * already current.
+   *
+   * The server slice of this story added two more generated kinds beside `on_this_day`:
+   * `event_story`, a multi-day trip or occasion grouped from the owner's local capture time
+   * and place, and `year_in_review`, a yearly recap. They arrive through the same memories
+   * endpoint, so the index reads the kind off each memory's own data (see
+   * `$lib/frameleaf/memory-stories`) and labels the card rather than guessing.
    *
    * The prototype's per-card menu offered Play, Favorite and Hide. There is no "hide"
    * concept in the real API (only permanent removal), so this ports it as "Remove memory"
@@ -19,6 +25,12 @@
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import Toggle from '$lib/components/frameleaf/Toggle.svelte';
+  import {
+    formatLocalDateRange,
+    isEventStory,
+    memoryStoryKind,
+    type MemoryStoryKind,
+  } from '$lib/frameleaf/memory-stories';
   import { memoryManager } from '$lib/managers/memory-manager.svelte';
   import { userPreferencesManager, type MemoriesPreferences } from '$lib/managers/user-preferences-manager.svelte';
   import { Route } from '$lib/route';
@@ -27,12 +39,16 @@
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import type { MemoryResponseDto } from '@immich/sdk';
   import { Icon, LoadingSpinner } from '@immich/ui';
+  import { locale } from '$lib/stores/preferences.store';
   import {
+    mdiCalendarHeart,
+    mdiCalendarStar,
     mdiDeleteOutline,
     mdiDotsVertical,
     mdiHeart,
     mdiHeartOutline,
     mdiImageMultipleOutline,
+    mdiMapMarkerPath,
     mdiPlay,
     mdiTune,
   } from '@mdi/js';
@@ -41,6 +57,32 @@
   const isUpcoming = (memory: MemoryResponseDto) => !!memory.showAt && new Date(memory.showAt).getTime() > Date.now();
   const upcoming = $derived(memoryManager.memories.filter((memory) => isUpcoming(memory)));
   const current = $derived(memoryManager.memories.filter((memory) => !isUpcoming(memory)));
+
+  /**
+   * FL-62: the server now generates three kinds of memory and serves them all through the
+   * same endpoint, so the index labels each card with the kind it is rather than presenting
+   * an undifferentiated grid. The kind comes from the memory's own data, never from a
+   * client-side guess.
+   */
+  const KIND_ICON: Record<MemoryStoryKind, string> = {
+    on_this_day: mdiCalendarHeart,
+    event_story: mdiMapMarkerPath,
+    year_in_review: mdiCalendarStar,
+  };
+
+  const KIND_LABEL = (kind: MemoryStoryKind) => {
+    switch (kind) {
+      case 'event_story': {
+        return $t('frameleaf_memories_kind_event_story');
+      }
+      case 'year_in_review': {
+        return $t('frameleaf_memories_kind_year_in_review');
+      }
+      default: {
+        return $t('frameleaf_memories_kind_on_this_day');
+      }
+    }
+  };
 
   let status = $state('');
   let settingsOpen = $state(false);
@@ -83,8 +125,18 @@
       {/if}
       <span class="fm-card-shade" aria-hidden="true"></span>
       <span class="fm-card-copy">
+        <span class="fm-card-kind">
+          <Icon icon={KIND_ICON[memoryStoryKind(memory)]} size={12} aria-hidden="true" />
+          {KIND_LABEL(memoryStoryKind(memory))}
+        </span>
         <strong>{$memoryLaneTitle(memory)}</strong>
         <small>
+          {#if isEventStory(memory)}
+            {formatLocalDateRange(memory.data.startDate, memory.data.endDate, $locale)}
+            {' · '}
+            {$t('frameleaf_memories_story_days', { values: { count: memory.data.dayCount } })}
+            {' · '}
+          {/if}
           {$t('frameleaf_memories_item_count', { values: { count: memory.assets.length } })}
           {#if memory.isSaved}
             {' · '}<Icon icon={mdiHeart} size={12} aria-hidden="true" /> {$t('favorite')}
@@ -327,6 +379,19 @@
     flex-direction: column;
     gap: 0.125rem;
     color: #fff;
+  }
+  .fm-card-kind {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 0.25rem;
+    padding: 0.0625rem 0.4375rem;
+    margin-block-end: 0.125rem;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 45%);
+    font-size: var(--fl-font-small);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
   }
   .fm-card-copy strong {
     font-size: 0.9375rem;

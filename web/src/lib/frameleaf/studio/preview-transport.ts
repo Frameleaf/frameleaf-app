@@ -20,6 +20,7 @@ import type {
   StudioPreviewTransport,
   StudioPreviewTransportFailure,
 } from './preview';
+import { toPreviewTimeWire } from './preview';
 
 /** Carries the classified reason so the client can tell "stale" from "broken". */
 export class StudioPreviewTransportError extends Error {
@@ -105,7 +106,7 @@ export const createStudioPreviewTransport = (): StudioPreviewTransport => ({
         studioPreviewRequestDto: {
           projectId: intent.projectId,
           revisionDigest: intent.revisionDigest,
-          time: intent.time,
+          time: toPreviewTimeWire(intent.time),
           quality: intent.quality as StudioPreviewQuality,
           viewportWidth: intent.viewportWidth,
           viewportHeight: intent.viewportHeight,
