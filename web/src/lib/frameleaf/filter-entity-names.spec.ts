@@ -1,8 +1,9 @@
-import { getPerson, getPet, getTagById } from '@immich/sdk';
+import { getAlbumInfo, getPerson, getPet, getTagById } from '@immich/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetFilterEntityNameCache, resolveEntityName, resolveEntityNames } from './filter-entity-names';
 
 vi.mock('@immich/sdk', () => ({
+  getAlbumInfo: vi.fn(),
   getPerson: vi.fn(),
   getPet: vi.fn(),
   getTagById: vi.fn(),
@@ -46,6 +47,15 @@ beforeEach(() => {
 });
 
 describe('resolveEntityName', () => {
+  it('resolves an album to its name and an unnamed or unreadable album to null (FL-49 chips)', async () => {
+    vi.mocked(getAlbumInfo).mockResolvedValueOnce({ id: 'album-1', albumName: 'Rockies 2024' } as never);
+    expect(await resolveEntityName('album', 'album-1')).toBe('Rockies 2024');
+    vi.mocked(getAlbumInfo).mockResolvedValueOnce({ id: 'album-2', albumName: '  ' } as never);
+    expect(await resolveEntityName('album', 'album-2')).toBeNull();
+    vi.mocked(getAlbumInfo).mockRejectedValueOnce(new Error('403'));
+    expect(await resolveEntityName('album', 'album-3')).toBeNull();
+  });
+
   it('resolves a visible, named person to their name', async () => {
     vi.mocked(getPerson).mockResolvedValue(person({ name: 'Ada' }) as never);
     expect(await resolveEntityName('person', 'person-1')).toBe('Ada');
