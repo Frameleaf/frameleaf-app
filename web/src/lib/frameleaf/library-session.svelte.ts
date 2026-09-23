@@ -17,13 +17,14 @@ import {
   createLibrarySession,
   fromStoredLibrarySession,
   libraryPreferenceKey,
-  readLibraryView,
+  parseLibraryView,
   reduceLibrarySession,
   toStoredLibrarySession,
   writeLibraryView,
   type LibraryLayout,
   type LibrarySession,
   type LibrarySessionAction,
+  type LibraryViewProblem,
   type LibraryViewState,
 } from '$lib/frameleaf/library-session';
 
@@ -71,6 +72,10 @@ export class LibrarySessionStore {
   /** Total matches for the current revision, or null while the server has not counted. */
   #total: number | null = $state(null);
   #totalRevision = -1;
+  /** FL-48: why the URL's view state was refused on restore, or null when it was not. */
+  #refusedView: LibraryViewProblem | null = $state(null);
+  /** The state the page fell back to after a refusal; the link is kept until it changes. */
+  #refusedAt: string | null = null;
 
   constructor(options: LibrarySessionStoreOptions = {}) {
     this.#pageSize = options.pageSize && options.pageSize > 0 ? options.pageSize : undefined;
@@ -130,7 +135,8 @@ export class LibrarySessionStore {
    */
   restore(url?: URL, userId = this.#userId) {
     this.#userId = userId;
-    const incoming = url ? readLibraryView(url) : null;
+    const parsed = url ? parseLibraryView(url) : null;
+    const incoming = parsed?.ok ? parsed.state : null;
     let stored: string | null = null;
     if (userId) {
       try {
@@ -142,7 +148,17 @@ export class LibrarySessionStore {
     this.#session = fromStoredLibrarySession(stored, incoming);
     this.#total = null;
     this.#totalRevision = -1;
+    this.#refusedView = parsed && !parsed.ok ? parsed.problem : null;
+    this.#refusedAt = this.#refusedView ? JSON.stringify(this.#session.state) : null;
     return this.#session;
+  }
+
+  /**
+   * Why the link's view state could not be opened (FL-48): a newer format, or a damaged value. The
+   * page opened on the stored view instead, and says so.
+   */
+  get refusedView(): LibraryViewProblem | null {
+    return this.#refusedView;
   }
 
   /** Write the device-local part of the session back to storage. Selection is deliberately absent. */
@@ -161,6 +177,14 @@ export class LibrarySessionStore {
 
   /** The URL carrying this session's portable view state. Layout and selection never travel. */
   viewUrl(url: URL): URL {
+    // FL-48: a refused link stays in the address bar until the person changes the view, so a reload
+    // or a copied link never silently turns into a narrower one this version could read.
+    if (this.#refusedAt !== null) {
+      if (JSON.stringify(this.#session.state) === this.#refusedAt) {
+        return new URL(url);
+      }
+      this.#refusedAt = null;
+    }
     return writeLibraryView(url, this.#session.state);
   }
 

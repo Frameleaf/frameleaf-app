@@ -304,4 +304,38 @@ describe('LibrarySessionStore', () => {
     expect(blocked.persist()).toBe(false);
     expect(new LibrarySessionStore({ storage: null }).persist('user-1')).toBe(false);
   });
+
+  it('refuses a newer link out loud and keeps it in the address bar until the view changes (FL-48)', () => {
+    const newer = new URL('https://example.test/photos');
+    newer.searchParams.set('fl', JSON.stringify({ ...viewState(), version: 2, somethingNew: true }));
+    store.restore(newer, 'user-1');
+    expect(store.refusedView).toBe('unsupported-version');
+    // The page falls back to the stored (here: default) view but does not overwrite the link.
+    expect(store.viewUrl(newer).href).toBe(newer.href);
+
+    store.patchView({ sort: 'filename' });
+    expect(store.viewUrl(newer).searchParams.get('fl')).toContain('filename');
+
+    store.restore(new URL('https://example.test/photos'), 'user-1');
+    expect(store.refusedView).toBeNull();
+  });
+
+  it('keeps every part of the query through the URL, including its search context (FL-48)', () => {
+    store.patchView(
+      viewPatch({
+        query: {
+          ...emptyDiscoveryQuery(),
+          text: 'receipt',
+          textField: 'ocr',
+          queryAssetId: 'asset-9',
+          spaceId: 'space-1',
+          filter: { takenAt: { gte: '2026-08-01' }, personIds: { none: ['p1'] } },
+        },
+      }),
+    );
+    const restored = new LibrarySessionStore({ storage: null });
+    restored.restore(store.viewUrl(new URL('https://example.test/photos')));
+    expect(restored.refusedView).toBeNull();
+    expect(restored.query).toEqual(store.query);
+  });
 });
