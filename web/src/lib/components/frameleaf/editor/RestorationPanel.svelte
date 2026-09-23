@@ -167,13 +167,17 @@
 
   const schedulePoll = () => {
     clearTimeout(pollTimer);
-    pollTimer = setTimeout(async () => {
-      try {
-        await loadList();
-      } catch (error) {
-        handleError(error, $t('frameleaf_restoration_load_error'));
-      }
-    }, RESTORATION_POLL_MS);
+    pollTimer = setTimeout(
+      () =>
+        void (async () => {
+          try {
+            await loadList();
+          } catch (error) {
+            handleError(error, $t('frameleaf_restoration_load_error'));
+          }
+        })(),
+      RESTORATION_POLL_MS,
+    );
   };
 
   onMount(async () => {
@@ -417,7 +421,7 @@
       },
     });
 
-  const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString($locale) : '');
+  const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString($locale ?? undefined) : '');
 </script>
 
 <div class="ed-panel-body" data-testid="restoration-panel">

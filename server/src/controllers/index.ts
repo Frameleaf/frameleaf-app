@@ -39,8 +39,10 @@ import { OAuthController } from 'src/controllers/oauth.controller.js';
 import { PartnerController } from 'src/controllers/partner.controller.js';
 import { PersonController } from 'src/controllers/person.controller.js';
 import { PetController } from 'src/controllers/pet.controller.js';
+import { PhotoToolsController } from 'src/controllers/photo-tools.controller.js';
 import { PhysicalDeduplicationController } from 'src/controllers/physical-deduplication.controller.js';
 import { PluginController } from 'src/controllers/plugin.controller.js';
+import { PreservationController } from 'src/controllers/preservation.controller.js';
 import { QueueController } from 'src/controllers/queue.controller.js';
 import { RenderWorkerAdminController, RenderWorkerController } from 'src/controllers/render-worker.controller.js';
 import { RunPodController } from 'src/controllers/runpod.controller.js';
@@ -51,6 +53,7 @@ import { SharedLinkController } from 'src/controllers/shared-link.controller.js'
 import { SharedSpaceController } from 'src/controllers/shared-space.controller.js';
 import { StackController } from 'src/controllers/stack.controller.js';
 import { StudioBundleController } from 'src/controllers/studio-bundle.controller.js';
+import { StudioExportController } from 'src/controllers/studio-export.controller.js';
 import { StudioPreviewController } from 'src/controllers/studio-preview.controller.js';
 import { StudioProjectController } from 'src/controllers/studio-project.controller.js';
 import { SyncController } from 'src/controllers/sync.controller.js';
@@ -101,6 +104,7 @@ export const controllers = [
   MapController,
   MediaHealthController,
   MediaOperationController,
+  PhotoToolsController,
   RenderWorkerAdminController,
   RenderWorkerController,
   MemoryController,
@@ -114,6 +118,7 @@ export const controllers = [
   PetController,
   PhysicalDeduplicationController,
   PluginController,
+  PreservationController,
   QueueController,
   RunPodController,
   SearchController,
@@ -123,6 +128,7 @@ export const controllers = [
   SharedSpaceController,
   StackController,
   StudioBundleController,
+  StudioExportController,
   StudioPreviewController,
   StudioProjectController,
   SyncController,

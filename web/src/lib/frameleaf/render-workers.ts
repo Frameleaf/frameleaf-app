@@ -164,14 +164,20 @@ export const operationKindKey: Readonly<Record<MediaOperationKind, Translations>
   [MediaOperationKind.IcloudSync]: 'frameleaf_render_workers_kind_icloud_sync',
   [MediaOperationKind.TakeoutImport]: 'frameleaf_render_workers_kind_takeout_import',
   [MediaOperationKind.PhysicalDeduplication]: 'frameleaf_render_workers_kind_physical_deduplication',
+  [MediaOperationKind.PreservationExport]: 'frameleaf_render_workers_kind_preservation_export',
+  [MediaOperationKind.PreservationVerify]: 'frameleaf_render_workers_kind_preservation_verify',
+  [MediaOperationKind.PreservationReview]: 'frameleaf_render_workers_kind_preservation_review',
+  [MediaOperationKind.PreservationRestore]: 'frameleaf_render_workers_kind_preservation_restore',
+  [MediaOperationKind.StudioExportPublish]: 'frameleaf_render_workers_kind_studio_export_publish',
 };
 
 /**
  * The kinds a render worker can be scoped to (FL-73): the renders. Bulk jobs (duplicate decisions
  * included), portable project bundles, enrichment plans, Library Care, iCloud and Google Photos
- * imports, physical deduplication and other server-side jobs run on this server's own workers and
- * are never offered to a remote renderer; the server refuses them too. {@link operationKindKey} still names every
- * kind, because a worker enrolled before this list existed may carry one in its saved scope.
+ * imports, physical deduplication, preservation packages (FL-74) and other server-side jobs run on
+ * this server's own workers and are never offered to a remote renderer; the server refuses them
+ * too. {@link operationKindKey} still names every kind, because a worker enrolled before this list
+ * existed may carry one in its saved scope.
  */
 export const RENDER_WORKER_KINDS: readonly MediaOperationKind[] = [
   MediaOperationKind.StudioExport,

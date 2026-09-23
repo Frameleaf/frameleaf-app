@@ -443,7 +443,7 @@ describe(PhysicalDeduplicationPlanService.name, () => {
       await sut.run(operationOf(), 'token');
 
       expect(deduplication.applyPlanItem).toHaveBeenCalledTimes(1);
-      expect(operations.acknowledgeCancel).toHaveBeenCalledWith('operation-1', { released: false });
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith('operation-1', 'token', { released: false });
       expect(operations.complete).not.toHaveBeenCalled();
     });
 

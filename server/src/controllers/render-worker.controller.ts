@@ -39,6 +39,7 @@ import {
   RenderWorkerLimitUpdateDto,
   RenderWorkerLimitsResponseDto,
   RenderWorkerProgressDto,
+  RenderWorkerRemoteReferenceDto,
   RenderWorkerSessionDto,
   RenderWorkerUpdateDto,
   RenderWorkerWriteResultDto,
@@ -389,6 +390,37 @@ export class RenderWorkerController {
     @Body() dto: RenderWorkerCancelAckDto,
   ): Promise<RenderWorkerWriteResultDto> {
     return this.service.acknowledgeCancel(session, id, dto);
+  }
+
+  @Get('remote-references')
+  @WorkerSessionHeader()
+  @Authenticated({ public: true })
+  @Endpoint({
+    summary: 'List what this worker must stop or delete',
+    description:
+      'Studio export renders that were cancelled or abandoned and copies of outputs this worker kept. Each stays listed until the worker acknowledges it.',
+    history: history(),
+  })
+  getRenderRemoteReferences(
+    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+  ): Promise<RenderWorkerRemoteReferenceDto[]> {
+    return this.service.listRemoteReferences(session);
+  }
+
+  @Post('remote-references/:id/acknowledge')
+  @HttpCode(HttpStatus.OK)
+  @WorkerSessionHeader()
+  @Authenticated({ public: true })
+  @Endpoint({
+    summary: 'Acknowledge a remote reference',
+    description: 'The worker confirms the render is stopped, or the copy deleted, and nothing of it remains.',
+    history: history(),
+  })
+  acknowledgeRenderRemoteReference(
+    @Headers(ImmichHeader.RenderWorkerSession) session: string | undefined,
+    @Param() { id }: UUIDv7ParamDto,
+  ): Promise<RenderWorkerWriteResultDto> {
+    return this.service.acknowledgeRemoteReference(session, id);
   }
 
   @Get('operations/:id/inputs/:grant')

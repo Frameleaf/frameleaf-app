@@ -474,7 +474,7 @@ describe(DuplicateDecisionService.name, () => {
 
       const outcomes = await sut.undoGroup(owner, undoOperationId, undoGroupOf(decision));
 
-      expect(repository.beginUndo).toHaveBeenCalledWith(decision.id, undoOperationId);
+      expect(repository.beginUndo).toHaveBeenCalledWith(decision.id, undoOperationId, undefined);
       expect(trash.restoreAssets).toHaveBeenCalledWith(owner, { ids: [copy, other] });
       expect(assets.updateAll).toHaveBeenCalledWith(owner, { ids: [keeper], description: 'mine' });
       expect(albums.removeAssets).toHaveBeenCalledWith(owner, 'album-1', { ids: [keeper] });

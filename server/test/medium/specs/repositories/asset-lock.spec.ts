@@ -66,7 +66,7 @@ const setDetectionHiding = async (db: Kysely<DB>, enabled: boolean | undefined) 
   if (enabled !== undefined) {
     await sql`INSERT INTO system_metadata (key, value) VALUES ('system-config', ${JSON.stringify({
       machineLearning: { nsfwDetection: { hideFromLibrary: enabled } },
-    })}::jsonb)`.execute(db);
+    })}::text::jsonb)`.execute(db);
   }
 };
 

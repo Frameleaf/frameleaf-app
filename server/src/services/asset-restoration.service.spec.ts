@@ -310,7 +310,7 @@ describe(AssetRestorationService.name, () => {
             restorationId: RESTORATION_ID,
             destinationId: mlDestinationStub.lan.id,
             sourceChecksumHex: asset.checksum.toString('hex'),
-            output: { width: 3240, height: 2160 },
+            output: { width: 3240, height: 2160, scale: 0.54, capped: true },
           }),
           settings: expect.objectContaining({ mode: 'Faithful', upscale: 2, preview: true }),
           // Nothing was measured, so no estimate is stored rather than an invented one.
@@ -357,7 +357,7 @@ describe(AssetRestorationService.name, () => {
             mode: AssetRestorationMode.Faithful,
             upscale: 2,
             sourceChecksumHex: asset.checksum.toString('hex'),
-            output: { width: 3240, height: 2160 },
+            output: { width: 3240, height: 2160, scale: 0.54, capped: true },
           }),
           settings: expect.objectContaining({ preview: false }),
         }),
