@@ -36,8 +36,10 @@
   let tagsEnabled = $state(authManager.preferences.tags?.enabled ?? false);
   let tagsSidebar = $state(authManager.preferences.tags?.sidebarWeb ?? false);
 
-  // Cast
+  // Cast. FL-77: an administrator can turn casting off for this account; the switch then stays
+  // off and unavailable, and saving leaves the account's own choice for when it is allowed again.
   let gCastEnabled = $state(authManager.preferences.cast?.gCastEnabled ?? false);
+  const castDisabledByAdmin = $derived(authManager.preferences.cast?.adminDisabled ?? false);
 
   // Recently added
   let recentlyAddedSidebar = $state(authManager.preferences.recentlyAdded?.sidebarWeb ?? false);
@@ -53,12 +55,13 @@
           ratings: { enabled: ratingsEnabled },
           sharedLinks: { enabled: sharedLinksEnabled, sidebarWeb: sharedLinkSidebar },
           tags: { enabled: tagsEnabled, sidebarWeb: tagsSidebar },
-          cast: { gCastEnabled },
+          cast: castDisabledByAdmin ? undefined : { gCastEnabled },
           recentlyAdded: { sidebarWeb: recentlyAddedSidebar },
         },
       });
 
       authManager.setPreferences(response);
+      gCastEnabled = response.cast.gCastEnabled;
       toastManager.primary($t('saved_settings'));
     } catch (error) {
       handleError(error, $t('errors.unable_to_update_settings'));
@@ -175,7 +178,13 @@
 
         <SettingGroup key="cast" title={$t('cast')} subtitle={$t('cast_description')}>
           <div class="flex flex-col gap-4">
-            <Field label={$t('gcast_enabled')} description={$t('gcast_enabled_description')}>
+            <Field
+              label={$t('gcast_enabled')}
+              description={castDisabledByAdmin
+                ? $t('frameleaf_cast_disabled_by_admin')
+                : $t('gcast_enabled_description')}
+              disabled={castDisabledByAdmin}
+            >
               <Switch bind:checked={gCastEnabled} />
             </Field>
           </div>
