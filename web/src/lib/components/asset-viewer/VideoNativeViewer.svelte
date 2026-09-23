@@ -3,6 +3,7 @@
   import VideoRemoteViewer from '$lib/components/asset-viewer/VideoRemoteViewer.svelte';
   import { assetViewerFadeDuration } from '$lib/constants';
   import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
+  import '$lib/frameleaf/tokens.css';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { castManager } from '$lib/managers/cast-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -29,7 +30,14 @@
   } from '@mdi/js';
   import 'hls-video-element';
   import type HlsVideoElement from 'hls-video-element';
-  import Hls, { AbrController, Events, type FragLoadedData, type FragLoadingData, type HlsConfig } from 'hls.js';
+  import Hls, {
+    AbrController,
+    Events,
+    type ErrorData,
+    type FragLoadedData,
+    type FragLoadingData,
+    type HlsConfig,
+  } from 'hls.js';
   import 'media-chrome/media-control-bar';
   import 'media-chrome/media-controller';
   import 'media-chrome/media-fullscreen-button';
@@ -80,8 +88,12 @@
   let videoPlayer: HTMLVideoElement | undefined = $state();
   let isLoading = $state(true);
   let hasLoadedMetadata = $state(false);
+  let playbackFailed = $state(false);
+  let retryCount = $state(0);
+  let playbackController: AbortController | undefined;
+  const useHls = $derived(featureFlagsManager.value.realtimeTranscoding && !playOriginalVideo);
   let assetFileUrl = $derived.by(() => {
-    if (featureFlagsManager.value.realtimeTranscoding) {
+    if (useHls) {
       return getAssetHlsUrl(assetId);
     }
 
@@ -183,9 +195,9 @@
     return el?.tagName === 'HLS-VIDEO';
   };
 
-  const wireHlsListeners = (el: HlsVideoElement, assetId: string, resumeTime?: number) => {
+  const wireHlsListeners = (el: HlsVideoElement, assetId: string, signal: AbortSignal, resumeTime?: number) => {
     const api = el.api;
-    if (!api) {
+    if (!api || signal.aborted) {
       return;
     }
 
@@ -200,8 +212,11 @@
       },
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-misused-promises
-    api.on(Hls.Events.MANIFEST_PARSED, async () => {
+    let disposed = false;
+    const onManifestParsed = async () => {
+      if (disposed) {
+        return;
+      }
       // Defer hls.js's first fragment load until we filter out suboptimal variants
       api.stopLoad();
       const id = api.levels[0]?.url[0]?.match(SESSION_ID_REGEX)?.[1];
@@ -210,6 +225,9 @@
       }
 
       const keep = await mediaCapabilitiesManager.efficientLevels(api.levels);
+      if (disposed) {
+        return;
+      }
       for (let i = api.levels.length - 1; i >= 0; i--) {
         if (!keep.has(i)) {
           api.removeLevel(i);
@@ -217,11 +235,13 @@
       }
 
       api.startLoad(resumeTime);
-    });
+    };
 
-    api.on(Hls.Events.FRAG_LOADED, () => (rebuildCount = 0));
-
-    api.on(Hls.Events.ERROR, (_, data) => {
+    const onFragmentLoaded = () => (rebuildCount = 0);
+    const onError = (_: Events.ERROR, data: ErrorData) => {
+      if (disposed) {
+        return;
+      }
       // 404 on a fragment can mean the server-side session has expired. Refetch
       // master for a new session, but give up if it still 404s.
       if (
@@ -231,15 +251,32 @@
         rebuildCount++ >= MAX_REBUILDS
       ) {
         console.error('HLS error', JSON.stringify(data));
+        if (data.fatal) {
+          handlePlaybackError();
+        }
         return;
       }
       console.warn('Error loading segment, starting new session');
-      activeSession = undefined;
+      dispose();
+      releaseSession();
       resumeTime = el.currentTime;
       el.load();
       // wireHlsListeners must run after el.api is repopulated.
-      queueMicrotask(() => wireHlsListeners(el, assetId, resumeTime));
-    });
+      queueMicrotask(() => wireHlsListeners(el, assetId, signal, resumeTime));
+    };
+    const dispose = () => {
+      disposed = true;
+      api.off(Hls.Events.MANIFEST_PARSED, onManifestParsed);
+      api.off(Hls.Events.FRAG_LOADED, onFragmentLoaded);
+      api.off(Hls.Events.ERROR, onError);
+      api.stopLoad();
+      signal.removeEventListener('abort', dispose);
+    };
+    signal.addEventListener('abort', dispose, { once: true });
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
+    api.on(Hls.Events.MANIFEST_PARSED, onManifestParsed);
+    api.on(Hls.Events.FRAG_LOADED, onFragmentLoaded);
+    api.on(Hls.Events.ERROR, onError);
   };
 
   onMount(() => {
@@ -260,23 +297,52 @@
   });
 
   $effect(() => {
-    // reactive on `assetFileUrl` changes
+    // Retry reloads the selected source without changing its mode or URL.
+    void retryCount;
+    const el = videoPlayer;
+    const url = assetFileUrl;
+    const id = assetId;
+    const controller = new AbortController();
+    playbackController = controller;
     hasLoadedMetadata = false;
-    if (videoPlayer && assetFileUrl) {
+    playbackFailed = false;
+    isLoading = true;
+    if (el && url) {
       hasFocused = false;
       rebuildCount = 0;
-      releaseSession();
-      if (isHlsElement(videoPlayer)) {
-        videoPlayer.config = hlsConfig;
-        videoPlayer.src = assetFileUrl;
-        const el = videoPlayer;
-        queueMicrotask(() => wireHlsListeners(el, assetId));
+      if (isHlsElement(el)) {
+        el.config = hlsConfig;
+        if (el.getAttribute('src') === url) {
+          el.load();
+        } else {
+          el.src = url;
+        }
+        queueMicrotask(() => wireHlsListeners(el, id, controller.signal));
       } else {
-        videoPlayer.load();
+        el.load();
       }
     }
-    return releaseSession;
+    return () => {
+      controller.abort();
+      el?.pause();
+      if (isHlsElement(el)) {
+        el.src = '';
+      }
+      releaseSession();
+    };
   });
+
+  const handlePlaybackError = (event?: Event) => {
+    if (event && event.currentTarget !== videoPlayer) {
+      return;
+    }
+    playbackFailed = true;
+    isLoading = false;
+    videoPlayer?.pause();
+    if (isHlsElement(videoPlayer)) {
+      videoPlayer.api?.stopLoad();
+    }
+  };
 
   const onPagehide = (event: PageTransitionEvent) => {
     if (!event.persisted) {
@@ -296,20 +362,28 @@
   });
 
   const handleCanPlay = async (video: HTMLVideoElement) => {
+    if (playbackFailed || video !== videoPlayer) {
+      return;
+    }
+    const signal = playbackController?.signal;
     try {
       if (!video.paused) {
         await video.play();
-        onVideoStarted();
+        if (!signal?.aborted && video === videoPlayer && !playbackFailed) {
+          onVideoStarted();
+        }
       }
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+      if (!signal?.aborted && error instanceof DOMException && error.name === 'NotAllowedError') {
         await tryForceMutedPlay(video);
         return;
       }
 
       // auto-play failed
     } finally {
-      isLoading = false;
+      if (!signal?.aborted && video === videoPlayer) {
+        isLoading = false;
+      }
     }
   };
 
@@ -400,7 +474,7 @@
         style:aspect-ratio={aspectRatio}
         defaultduration={asset.duration! / 1000}
       >
-        {#if featureFlagsManager.value.realtimeTranscoding}
+        {#if useHls}
           <hls-video
             bind:this={videoPlayer}
             slot="media"
@@ -411,6 +485,7 @@
             {...useSwipe(onSwipe)}
             class="h-full object-contain"
             oncanplay={(e: Event) => handleCanPlay(e.currentTarget as HTMLVideoElement)}
+            onerror={handlePlaybackError}
             onloadedmetadata={() => (hasLoadedMetadata = true)}
             onended={onVideoEnded}
             onseeking={onSeeking}
@@ -437,6 +512,7 @@
             {...useSwipe(onSwipe)}
             class="h-full object-contain"
             oncanplay={(e) => handleCanPlay(e.currentTarget)}
+            onerror={handlePlaybackError}
             onloadedmetadata={() => (hasLoadedMetadata = true)}
             onended={onVideoEnded}
             onseeking={onSeeking}
@@ -464,7 +540,7 @@
                 <span slot="title">{$t('media_chrome.playback_rate')}</span>
               </media-playback-rate-menu>
             </media-settings-menu-item>
-            {#if featureFlagsManager.value.realtimeTranscoding}
+            {#if useHls}
               <media-settings-menu-item class="mx-1 rounded-lg p-1 ps-2">
                 {$t('video_quality')}
                 <Icon slot="suffix" icon={mdiChevronRight} class="m-2" />
@@ -522,8 +598,15 @@
         </div>
       </media-controller>
 
-      {#if isLoading}
-        <div class="absolute flex place-content-center place-items-center">
+      {#if playbackFailed}
+        <div class="frameleaf playback-error" data-theme="dark" role="alert">
+          <span>{$t('errors.failed_to_load_asset')}</span>
+          <button type="button" class="playback-retry" onclick={() => retryCount++}>
+            {$t('retry')}
+          </button>
+        </div>
+      {:else if isLoading}
+        <div role="status" aria-label={$t('loading')} class="absolute flex place-content-center place-items-center">
           <LoadingSpinner />
         </div>
       {/if}
@@ -536,6 +619,48 @@
 {/if}
 
 <style>
+  /* MediaViewer.jsx / media-viewer.css: the prototype's viewer message bar. */
+  .playback-error {
+    position: absolute;
+    bottom: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 7;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: min(650px, calc(100% - 36px));
+    padding: 5px 8px 5px 14px;
+    background: color-mix(in srgb, var(--fl-warning) 18%, var(--fl-viewer-panel));
+    color: var(--fl-viewer-text);
+    border: 1px solid color-mix(in srgb, var(--fl-warning) 45%, transparent);
+    border-radius: var(--fl-radius-card);
+    font-size: var(--fl-font-small);
+    box-shadow: var(--fl-shadow-2);
+  }
+
+  .playback-retry {
+    flex-shrink: 0;
+    min-width: 38px;
+    height: 38px;
+    padding: 7px;
+    border: 1px solid transparent;
+    border-radius: var(--fl-radius-control);
+    background: transparent;
+    color: var(--fl-viewer-text);
+    cursor: pointer;
+    font: inherit;
+  }
+
+  .playback-retry:hover {
+    background: #ffffff12;
+  }
+
+  .playback-retry:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: 2px;
+  }
+
   media-controller {
     --media-control-background: none;
     --media-control-hover-background: var(--immich-ui-light-100);
