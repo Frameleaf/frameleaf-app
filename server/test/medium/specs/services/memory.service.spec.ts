@@ -1,7 +1,7 @@
 import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetFileType, MemoryType, PetObservationState } from 'src/enum.js';
+import { AssetFileType, AssetLockReason, MemoryType, PetObservationState } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -60,6 +60,27 @@ describe(MemoryService.name, () => {
       const otherAuth = factory.auth({ user: otherUser });
 
       await expect(sut.get(otherAuth, memory.id)).rejects.toThrow('Not found or no memory.read access');
+    });
+  });
+
+  describe('cleanup', () => {
+    it('keeps a locked asset in its memory, hidden while locked and back once unlocked (FL-34)', async () => {
+      const { sut, ctx } = setup();
+      const { memory, asset, user } = await create(ctx);
+      const auth = factory.auth({ user });
+      await ctx.newMemoryAsset({ memoryId: memory.id, assetId: asset.id });
+      const assetRepository = ctx.get(AssetRepository);
+      await assetRepository.lock([asset.id], AssetLockReason.Marked, user.id);
+
+      await ctx.get(MemoryRepository).cleanup();
+
+      await expect(sut.get(auth, memory.id)).resolves.toEqual(expect.objectContaining({ assets: [] }));
+
+      await assetRepository.unlock([asset.id]);
+
+      await expect(sut.get(auth, memory.id)).resolves.toEqual(
+        expect.objectContaining({ assets: [expect.objectContaining({ id: asset.id })] }),
+      );
     });
   });
 
