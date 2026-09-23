@@ -1,31 +1,55 @@
 <script lang="ts">
+  import { activityIndicatorState, buildActivityList } from '$lib/frameleaf/activity';
+  import { activitySession } from '$lib/frameleaf/activity-session.svelte';
   import { downloadManager } from '$lib/managers/download-manager.svelte';
+  import { Route } from '$lib/route';
   import { uploadAssetsStore } from '$lib/stores/upload';
+  import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
-   * Top bar activity indicator (FL-30).
+   * Top bar activity indicator (FL-30, completed by FL-104).
    *
-   * Reports the transfers the web client is actually running right now — uploads still
-   * in flight and archives still being prepared. It is a live status, not a link: the
-   * durable job feed and its Activity page arrive with FL-43/FL-104, and until then the
-   * shell must not offer a destination that does not exist. The upload and download
-   * panels already dock themselves while work is in progress.
+   * It now counts the durable jobs the server is running as well as the transfers this tab is
+   * running, and it is a link: the Activity page exists, so the shell offers the destination it
+   * was always meant to. It stays hidden while nothing is happening.
+   *
+   * The count comes from the server, not from a local timer, which is why closing this tab and
+   * opening another one shows the same number.
    */
 
-  const { remainingUploads } = uploadAssetsStore;
-
   const pendingDownloads = $derived(
-    [...downloadManager.assets.values()].filter((download) => !download.downloaded).length,
+    [...downloadManager.assets.entries()].filter(([, download]) => !download.downloaded),
   );
-  const running = $derived($remainingUploads + pendingDownloads);
+
+  const indicator = $derived(
+    activityIndicatorState(
+      buildActivityList({
+        operations: activitySession.operations,
+        uploads: $uploadAssetsStore,
+        downloads: pendingDownloads,
+      }),
+    ),
+  );
+
+  // Watching keeps the count current; it polls only while work is in flight and stops with the bar.
+  onMount(() => activitySession.watch());
 </script>
 
-{#if running > 0}
-  <div class="fl-activity" role="status" aria-live="polite" aria-atomic="true">
+{#if indicator.count > 0}
+  <a
+    class="fl-activity"
+    href={Route.activity()}
+    title={$t('frameleaf_activity_title')}
+    aria-label={indicator.progress === null
+      ? $t('frameleaf_activity_indicator', { values: { count: indicator.count } })
+      : $t('frameleaf_activity_indicator_progress', {
+          values: { count: indicator.count, progress: indicator.progress },
+        })}
+  >
     <span class="fl-spinner" aria-hidden="true"></span>
-    <span>{$t('frameleaf_activity_running', { values: { count: running } })}</span>
-  </div>
+    <span aria-hidden="true">{$t('frameleaf_activity_running', { values: { count: indicator.count } })}</span>
+  </a>
 {/if}
 
 <style>
@@ -40,6 +64,12 @@
     color: var(--fl-muted);
     font-size: 0.75rem;
     white-space: nowrap;
+    text-decoration: none;
+  }
+  .fl-activity:hover,
+  .fl-activity:focus-visible {
+    color: var(--fl-text);
+    background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
   }
   .fl-spinner {
     width: 0.75rem;
