@@ -72,13 +72,16 @@ export type QueueRun = {
  * Everything happens in one script, so two observers — the worker's idle check and an
  * administrator's poll — can never interleave half an update.
  *
- * KEYS[1] the run hash; ARGV[1] active + waiting now; ARGV[2] now in ms; ARGV[3] the grace period.
+ * The clock is Redis's own, so an API process and a worker on different hosts agree on it.
+ *
+ * KEYS[1] the run hash; ARGV[1] active + waiting now; ARGV[2] the grace period in ms.
  * Returns `{processed in this run, startedAt}`; startedAt is an empty string for a closed run.
  */
 const QUEUE_RUN_SCRIPT = `
 local key = KEYS[1]
 local pending = tonumber(ARGV[1])
-local now = tonumber(ARGV[2])
+local time = redis.call('TIME')
+local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
 local processed = tonumber(redis.call('HGET', key, 'processed') or '0')
 local base = tonumber(redis.call('HGET', key, 'base') or '0')
 if base > processed then
@@ -93,10 +96,10 @@ if pending == 0 then
   end
   local idleSince = tonumber(redis.call('HGET', key, 'idleSince') or '')
   if not idleSince then
-    redis.call('HSET', key, 'idleSince', ARGV[2])
+    redis.call('HSET', key, 'idleSince', now)
     return {processed - base, startedAt}
   end
-  if now - idleSince >= tonumber(ARGV[3]) then
+  if now - idleSince >= tonumber(ARGV[2]) then
     redis.call('HSET', key, 'base', processed)
     redis.call('HDEL', key, 'startedAt', 'idleSince')
     return {0, ''}
@@ -105,7 +108,7 @@ if pending == 0 then
 end
 redis.call('HDEL', key, 'idleSince')
 if not startedAt then
-  startedAt = ARGV[2]
+  startedAt = tostring(now)
   redis.call('HSET', key, 'startedAt', startedAt)
 end
 return {processed - base, startedAt}
@@ -351,7 +354,6 @@ export class JobRepository {
       1,
       this.queueRunKey(name),
       String(active + waiting),
-      String(Date.now()),
       String(QUEUE_RUN_IDLE_GRACE_MS),
     )) as [number, string];
 
