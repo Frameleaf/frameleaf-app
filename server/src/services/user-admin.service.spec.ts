@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { describe } from 'vitest';
+import { SALT_ROUNDS } from 'src/constants.js';
 import { mapUserAdmin } from 'src/dtos/user.dto.js';
 import { JobName, UserStatus } from 'src/enum.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
@@ -56,6 +57,85 @@ describe(UserAdminService.name, () => {
         clusterGroupId: expect.any(String),
       });
     });
+
+    // FL-76: the create path accepted `pinCode` and stored it verbatim while `update`
+    // hashed it, so a PIN set at creation could never verify and sat in the clear.
+    it('should hash a pin code supplied at creation', async () => {
+      mocks.user.getAdmin.mockResolvedValue(userStub.admin);
+      mocks.user.create.mockResolvedValue(userStub.user1);
+      mocks.crypto.hashBcrypt.mockImplementation((value: string) => Promise.resolve(`hashed:${value}`));
+
+      await sut.create({
+        email: userStub.user1.email,
+        name: userStub.user1.name,
+        password: 'password',
+        pinCode: '123456',
+      });
+
+      expect(mocks.crypto.hashBcrypt).toHaveBeenCalledWith('123456', SALT_ROUNDS);
+      expect(mocks.user.create).toBeCalledWith(
+        expect.objectContaining({
+          password: 'hashed:password',
+          pinCode: 'hashed:123456',
+        }),
+      );
+    });
+
+    it('should not store a pin code when none is supplied at creation', async () => {
+      mocks.user.getAdmin.mockResolvedValue(userStub.admin);
+      mocks.user.create.mockResolvedValue(userStub.user1);
+
+      await sut.create({
+        email: userStub.user1.email,
+        name: userStub.user1.name,
+        password: 'password',
+      });
+
+      expect(mocks.user.create.mock.calls[0][0]).not.toHaveProperty('pinCode');
+    });
+
+    it('should require a password when oauth is disabled', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ oauth: { enabled: false } });
+
+      await expect(
+        sut.create({
+          email: 'john_smith@email.com',
+          name: 'John Smith',
+          password: '',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.user.create).not.toHaveBeenCalled();
+    });
+
+    it('should create a user without a password when oauth is enabled', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ oauth: { enabled: true } });
+      mocks.user.getAdmin.mockResolvedValue(userStub.admin);
+      mocks.user.create.mockResolvedValue(userStub.user1);
+
+      await sut.create({
+        email: userStub.user1.email,
+        name: userStub.user1.name,
+        password: '',
+      });
+
+      expect(mocks.user.create).toHaveBeenCalled();
+      expect(mocks.crypto.hashBcrypt).not.toHaveBeenCalled();
+    });
+
+    it('should reject a duplicate email', async () => {
+      mocks.user.getByEmail.mockResolvedValue(userStub.user1);
+
+      await expect(
+        sut.create({
+          email: userStub.user1.email,
+          name: userStub.user1.name,
+          password: 'password',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.user.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('update', () => {
@@ -104,6 +184,52 @@ describe(UserAdminService.name, () => {
       await expect(sut.update(authStub.admin, userStub.user1.id, dto)).rejects.toBeInstanceOf(BadRequestException);
 
       expect(mocks.user.update).not.toHaveBeenCalled();
+    });
+
+    it('should not let an admin change their own admin status', async () => {
+      mocks.user.get.mockResolvedValue(userStub.admin);
+
+      await expect(sut.update(authStub.admin, userStub.admin.id, { isAdmin: false })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+
+      expect(mocks.user.update).not.toHaveBeenCalled();
+    });
+
+    // FL-76: an admin-set PIN is hashed on this path; the matching create path is covered above.
+    it('should hash a pin code and lock the account sessions', async () => {
+      mocks.user.update.mockResolvedValue(userStub.user1);
+      mocks.crypto.hashBcrypt.mockImplementation((value: string) => Promise.resolve(`hashed:${value}`));
+
+      await sut.update(authStub.admin, userStub.user1.id, { pinCode: '123456' });
+
+      expect(mocks.crypto.hashBcrypt).toHaveBeenCalledWith('123456', SALT_ROUNDS);
+      expect(mocks.user.update).toHaveBeenCalledWith(userStub.user1.id, {
+        pinCode: 'hashed:123456',
+        updatedAt: expect.any(Date),
+      });
+      expect(mocks.session.lockAll).toHaveBeenCalledWith(userStub.user1.id);
+    });
+
+    it('should clear a pin code and lock the account sessions', async () => {
+      mocks.user.update.mockResolvedValue(userStub.user1);
+
+      await sut.update(authStub.admin, userStub.user1.id, { pinCode: null });
+
+      expect(mocks.crypto.hashBcrypt).not.toHaveBeenCalled();
+      expect(mocks.user.update).toHaveBeenCalledWith(userStub.user1.id, {
+        pinCode: null,
+        updatedAt: expect.any(Date),
+      });
+      expect(mocks.session.lockAll).toHaveBeenCalledWith(userStub.user1.id);
+    });
+
+    it('should leave sessions alone when the update does not mention the pin code', async () => {
+      mocks.user.update.mockResolvedValue(userStub.user1);
+
+      await sut.update(authStub.admin, userStub.user1.id, { name: 'New name' });
+
+      expect(mocks.session.lockAll).not.toHaveBeenCalled();
     });
 
     it('update user information should throw error if user not found', async () => {
