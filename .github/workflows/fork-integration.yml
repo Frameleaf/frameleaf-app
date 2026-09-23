@@ -64,6 +64,7 @@ jobs:
           oazapfts --optimistic --argumentStyle=object --useEnumType --allSchemas open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
           git diff --exit-code -- packages/sdk/src/fetch-client.ts
           pnpm --filter @immich/sdk build
+          pnpm --filter @immich/sdk test
       - name: Check server types and lint
         run: |
           pnpm --filter immich check
