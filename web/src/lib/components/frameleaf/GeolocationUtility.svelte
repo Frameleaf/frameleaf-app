@@ -19,6 +19,8 @@
   let longitude = $state<number>();
   let selected = $state<string[]>([]);
   let query = $state('');
+  let account = $state('all');
+  let show = $state('open');
   let review = $state<{ ids: string[]; latitude: number; longitude: number } | null>(null);
   let reviewOpen = $state(false);
   let mapElement = $state<ReturnType<typeof MapComponent>>();
@@ -32,14 +34,24 @@
       Math.abs(longitude) <= 180,
   );
   const rows = $derived(
-    assets.filter((asset) => asset.originalFileName.toLowerCase().includes(query.trim().toLowerCase())),
+    assets.filter(
+      (asset) =>
+        (account === 'all' || asset.ownerId === account) &&
+        (show === 'all' || !asset.isTrashed) &&
+        `${asset.originalFileName} ${ownerName(asset)}`.toLowerCase().includes(query.trim().toLowerCase()),
+    ),
   );
+  const ownerName = (asset: AssetResponseDto) =>
+    asset.ownerId === authManager.user.id
+      ? authManager.user.name
+      : (asset.owner?.name ?? $t('frameleaf_large_files_other_account'));
+  const owners = $derived([...new Map(assets.map((asset) => [asset.ownerId, ownerName(asset)]))]);
   const hasLocation = (asset: AssetResponseDto) =>
-    asset.exifInfo?.latitude != null && asset.exifInfo?.longitude != null;
+    typeof asset.exifInfo?.latitude === 'number' && typeof asset.exifInfo?.longitude === 'number';
   const owned = (asset: AssetResponseDto) => asset.ownerId === authManager.user.id;
   const markers = $derived(
     assets
-      .filter(hasLocation)
+      .filter((asset) => hasLocation(asset))
       .map((asset) => ({
         id: asset.id,
         lat: asset.exifInfo!.latitude!,
@@ -51,7 +63,9 @@
   );
 
   const load = async () => {
-    if (nextPage === null || loading) return;
+    if (nextPage === null || loading) {
+      return;
+    }
     loading = true;
     error = false;
     try {
@@ -77,7 +91,9 @@
     void load();
   });
   $effect(() => {
-    if (valid) mapElement?.addClipMapMarker(longitude!, latitude!);
+    if (valid) {
+      mapElement?.addClipMapMarker(longitude!, latitude!);
+    }
   });
 
   const choose = (lat: number, lng: number) => {
@@ -85,18 +101,26 @@
     longitude = lng;
   };
   const toggle = (asset: AssetResponseDto) => {
-    if (!owned(asset) || durableBulkTracker.stateOf(asset.id)?.state === 'pending') return;
+    if (!owned(asset) || durableBulkTracker.stateOf(asset.id)?.state === 'pending') {
+      return;
+    }
     selected = selected.includes(asset.id) ? selected.filter((id) => id !== asset.id) : [...selected, asset.id];
   };
   const ask = () => {
-    if (!valid || bulk.busy) return;
+    if (!valid || bulk.busy) {
+      return;
+    }
     const ids = assets.filter((asset) => selected.includes(asset.id) && owned(asset)).map((asset) => asset.id);
-    if (!ids.length) return;
+    if (ids.length === 0) {
+      return;
+    }
     review = { ids, latitude: latitude!, longitude: longitude! };
     reviewOpen = true;
   };
   const apply = async () => {
-    if (!review || bulk.busy) return;
+    if (!review || bulk.busy) {
+      return;
+    }
     const frozen = review;
     error = false;
     try {
@@ -122,11 +146,23 @@
 <div class="location-tool">
   <div class="toolbar">
     <label
+      >{$t('account')}<select bind:value={account} onchange={() => (selected = [])}>
+        <option value="all">{$t('frameleaf_large_files_all_accounts')}</option>
+        {#each owners as [id, name] (id)}<option value={id}>{name}</option>{/each}
+      </select></label
+    >
+    <label
       >{$t('frameleaf_utilities_find_items')}<input
         type="search"
         bind:value={query}
         placeholder={$t('filename')}
       /></label
+    >
+    <label
+      >{$t('frameleaf_large_files_show')}<select bind:value={show} onchange={() => (selected = [])}>
+        <option value="open">{$t('frameleaf_large_files_show_open')}</option>
+        <option value="all">{$t('frameleaf_large_files_show_all')}</option>
+      </select></label
     >
   </div>
   {#if error}<p role="alert">
@@ -152,7 +188,7 @@
     <div class="coordinates">
       <label>{$t('latitude')}<input type="number" min="-90" max="90" step="any" bind:value={latitude} /></label>
       <label>{$t('longitude')}<input type="number" min="-180" max="180" step="any" bind:value={longitude} /></label>
-      <Button variant="primary" disabled={!valid || !selected.length || bulk.busy} onclick={ask}
+      <Button variant="primary" disabled={!valid || selected.length === 0 || bulk.busy} onclick={ask}
         >{$t('frameleaf_utilities_apply_location', { values: { count: selected.length } })}</Button
       >
     </div>
@@ -176,7 +212,7 @@
           />{asset.originalFileName}</label
         >
         <small
-          >{owned(asset) ? authManager.user.name : $t('frameleaf_large_files_other_account')} · {hasLocation(asset)
+          >{ownerName(asset)} · {hasLocation(asset)
             ? `${asset.exifInfo!.latitude!.toFixed(4)}, ${asset.exifInfo!.longitude!.toFixed(4)}`
             : $t('frameleaf_utilities_no_location')}</small
         >
@@ -193,7 +229,7 @@
   {#if loading}<p role="status">{$t('loading')}</p>{:else if nextPage !== null}<Button onclick={() => void load()}
       >{$t('load_more')}</Button
     >{/if}
-  {#if !loading && assets.length === 0 && !error}<p role="status">{$t('no_assets_message')}</p>{/if}
+  {#if !loading && assets.length === 0 && !error}<p role="status">{$t('no_assets_to_show')}</p>{/if}
 </div>
 
 {#if review}
@@ -222,7 +258,8 @@
     color: var(--fl-muted);
     font-size: 0.6875rem;
   }
-  input:not([type='checkbox']) {
+  input:not([type='checkbox']),
+  select {
     width: 100%;
     min-height: 2.125rem;
     padding: 0.5rem 0.625rem;
@@ -231,7 +268,8 @@
     background: var(--fl-canvas);
     color: var(--fl-text);
   }
-  input:focus-visible {
+  input:focus-visible,
+  select:focus-visible {
     outline: 2px solid var(--fl-accent);
   }
   .location {

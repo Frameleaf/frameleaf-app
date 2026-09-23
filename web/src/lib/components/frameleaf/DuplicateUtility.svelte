@@ -70,10 +70,14 @@
     let active = true;
     void getAssetInfo({ ...authManager.params, id })
       .then((asset) => {
-        if (active) assetViewerManager.setAsset(asset);
+        if (active) {
+          assetViewerManager.setAsset(asset);
+        }
       })
       .catch(() => {
-        if (active) assetViewerManager.showAssetViewer(false);
+        if (active) {
+          assetViewerManager.showAssetViewer(false);
+        }
       });
     return () => {
       active = false;

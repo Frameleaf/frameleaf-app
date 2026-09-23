@@ -7,7 +7,7 @@
   import { accordionManager } from '$lib/managers/accordion-manager.svelte';
   import { Icon } from '@immich/ui';
   import { mdiChevronDown } from '@mdi/js';
-  import { onDestroy, type Snippet } from 'svelte';
+  import type { Snippet } from 'svelte';
 
   interface Props {
     title: string;
@@ -49,9 +49,8 @@
     }
   };
 
-  onDestroy(() => {
-    accordionManager.close(key);
-  });
+  // Unmounting an area must not navigate: the router may still expose the source URL.
+  // Open groups stay in the URL so Back restores the requested state.
 </script>
 
 <div class="group" class:open={isOpen} bind:this={element} id="setting-group-{key}">

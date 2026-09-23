@@ -225,9 +225,13 @@
   const selectArea = async (next: SettingsAreaId, sectionKey?: string) => {
     query = '';
     const url = new URL(utilityOnly && next !== 'utilities' ? Route.systemSettings() : page.url, page.url);
-    for (const key of ['section', 'status', 'assetId', 'at', 'index']) url.searchParams.delete(key);
+    for (const key of ['section', 'status', 'assetId', 'at', 'index', 'workflowId', 'selected', 'new', 'edit']) {
+      url.searchParams.delete(key);
+    }
     url.searchParams.set(AREA_PARAM, next);
-    if (next === 'utilities' && sectionKey) url.searchParams.set('section', sectionKey);
+    if (next === 'utilities' && sectionKey) {
+      url.searchParams.set('section', sectionKey);
+    }
     await goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true, keepFocus: true });
     if (sectionKey && next !== 'utilities') {
       scrollTo(sectionKey);
