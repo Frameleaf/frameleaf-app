@@ -142,6 +142,12 @@ import { UserMetadataTable } from 'src/schema/tables/user-metadata.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { VersionHistoryTable } from 'src/schema/tables/version-history.table.js';
 import {
+  VideoMomentFrameEmbeddingTable,
+  VideoMomentFrameTable,
+  VideoMomentIndexTable,
+  VideoMomentTable,
+} from 'src/schema/tables/video-moment.table.js';
+import {
   VideoStreamSegmentTable,
   VideoStreamSessionTable,
   VideoStreamVariantTable,
@@ -253,6 +259,10 @@ export class ImmichDatabase {
     UserMetadataAuditTable,
     UserTable,
     VersionHistoryTable,
+    VideoMomentIndexTable,
+    VideoMomentFrameTable,
+    VideoMomentFrameEmbeddingTable,
+    VideoMomentTable,
     VideoStreamSessionTable,
     VideoStreamVariantTable,
     VideoStreamSegmentTable,
@@ -430,6 +440,11 @@ export interface DB {
   user_metadata_audit: UserMetadataAuditTable;
 
   version_history: VersionHistoryTable;
+
+  video_moment_index: VideoMomentIndexTable;
+  video_moment_frame: VideoMomentFrameTable;
+  video_moment_frame_embedding: VideoMomentFrameEmbeddingTable;
+  video_moment: VideoMomentTable;
 
   video_stream_session: VideoStreamSessionTable;
   video_stream_variant: VideoStreamVariantTable;

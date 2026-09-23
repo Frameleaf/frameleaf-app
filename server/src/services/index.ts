@@ -19,6 +19,7 @@ import { DocumentService } from 'src/services/document.service.js';
 import { DownloadService } from 'src/services/download.service.js';
 import { DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
 import { DuplicateService } from 'src/services/duplicate.service.js';
+import { EnrichmentPlanService } from 'src/services/enrichment-plan.service.js';
 import { ForkCutoverVerificationService } from 'src/services/fork-cutover-verification.service.js';
 import { ForkHandoffService } from 'src/services/fork-handoff.service.js';
 import { ForkSchemaCutoverService } from 'src/services/fork-schema-cutover.service.js';
@@ -82,6 +83,7 @@ import { TrashService } from 'src/services/trash.service.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
 import { UserService } from 'src/services/user.service.js';
 import { VersionService } from 'src/services/version.service.js';
+import { VideoMomentIndexService } from 'src/services/video-moment-index.service.js';
 import { ViewService } from 'src/services/view.service.js';
 import { WorkflowExecutionService } from 'src/services/workflow-execution.service.js';
 import { WorkflowService } from 'src/services/workflow.service.js';
@@ -115,6 +117,7 @@ export const services = [
   DownloadService,
   DuplicateDecisionService,
   DuplicateService,
+  EnrichmentPlanService,
   ForkCutoverVerificationService,
   ForkHandoffService,
   ForkSchemaCutoverService,
@@ -173,6 +176,7 @@ export const services = [
   UserAdminService,
   UserService,
   VersionService,
+  VideoMomentIndexService,
   ViewService,
   WorkflowExecutionService,
   WorkflowService,
