@@ -1,4 +1,4 @@
-import { AssetResponseDto } from '@immich/sdk';
+import { AssetResponseDto, AssetVisibility } from '@immich/sdk';
 import { BrowserContext, Page, Request, Route } from '@playwright/test';
 import { basename } from 'node:path';
 import {
@@ -77,6 +77,13 @@ export const setupTimelineMockApiRoutes = async (
           isTrashed: true,
         } as AssetResponseDto;
       }
+      // The asset endpoint reports the same changes the buckets do.
+      if (changes.assetFavorites.includes(asset!.id)) {
+        asset = { ...asset, isFavorite: true } as AssetResponseDto;
+      }
+      if (changes.assetArchivals.includes(asset!.id)) {
+        asset = { ...asset, visibility: AssetVisibility.Archive } as AssetResponseDto;
+      }
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -146,8 +153,15 @@ export const setupTimelineMockApiRoutes = async (
   });
 
   await context.route('**/api/albums/**', async (route, request) => {
-    const albumsMatch = request.url().match(/\/api\/albums\/(?<albumId>[^/?]+)/);
-    if (albumsMatch) {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === '/api/albums/tree') {
+      // The library rail reads the album tree; the mock album stands on its own.
+      const album = getAlbum(timelineRestData, testContext.adminId, timelineRestData.album.id, changes);
+      return route.fulfill({ json: { albums: [album], collections: [], spaces: [] } });
+    }
+    // Only the album itself: sub-resources (descendant counts, members, ...) are not mocked.
+    const albumsMatch = pathname.match(/^\/api\/albums\/(?<albumId>[0-9a-f-]{36})$/);
+    if (albumsMatch && request.method() === 'GET') {
       const album = getAlbum(timelineRestData, testContext.adminId, albumsMatch.groups?.albumId, changes);
       return route.fulfill({
         status: 200,
@@ -166,6 +180,63 @@ export const setupTimelineMockApiRoutes = async (
         contentType: 'application/json',
         json: [],
       });
+    }
+    return route.fallback();
+  });
+};
+
+/**
+ * The Frameleaf trash (FL-47) reads its own list and changes it through a review and an apply. Opt
+ * in per spec: a page that shows the trash under the viewer would otherwise gain its rows.
+ */
+export const setupTrashMockApiRoutes = async (
+  context: BrowserContext,
+  timelineRestData: TimelineData,
+  changes: Changes,
+) => {
+  const trashItems = () =>
+    changes.assetDeletions
+      .map((id) => getAsset(timelineRestData, id))
+      .filter((asset): asset is AssetResponseDto => !!asset)
+      .map((asset) => ({
+        id: asset.id,
+        originalFileName: asset.originalFileName,
+        fileSizeInByte: null,
+        isLocked: false,
+        isOffline: false,
+        trashedAt: new Date().toISOString(),
+        type: asset.type,
+      }));
+
+  await context.route('**/api/trash/**', async (route, request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === '/api/trash/summary') {
+      return route.fulfill({ json: { bytes: 0, count: trashItems().length, offline: 0, pendingDeletion: 0 } });
+    }
+    if (pathname === '/api/trash/items') {
+      const items = trashItems();
+      return route.fulfill({ json: { items, nextPage: null, total: items.length } });
+    }
+    if (pathname === '/api/trash/review') {
+      const { action, ids = [] } = request.postDataJSON();
+      return route.fulfill({
+        json: {
+          action,
+          bytes: 0,
+          count: ids.length,
+          names: [],
+          retainedBytes: 0,
+          retainedOriginals: 0,
+          token: 'review',
+        },
+      });
+    }
+    if (pathname === '/api/trash/apply') {
+      const { action, ids = [] } = request.postDataJSON();
+      if (action === 'restore') {
+        changes.assetDeletions = changes.assetDeletions.filter((id) => !ids.includes(id));
+      }
+      return route.fulfill({ json: { count: ids.length } });
     }
     return route.fallback();
   });
