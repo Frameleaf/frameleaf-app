@@ -1142,6 +1142,8 @@ export enum MediaOperationBulkAction {
   RecoverDamagedMedia = 'recover-damaged-media',
   /** Library Care (FL-69): move confirmed damage to the trash after revalidating it. */
   TrashDamagedMedia = 'trash-damaged-media',
+  /** Apply one classification rule to a frozen set of the owner's assets (FL-60). */
+  ApplyClassificationRule = 'apply-classification-rule',
 }
 
 export const MediaOperationBulkActionSchema = z
@@ -1156,6 +1158,57 @@ export const MediaOperationBulkActionSchema = z
  * - `keep-all`: every photo stays; the group is dismissed.
  * - `stack`: every photo stays, stacked together with the first keeper (or the first photo) on top.
  */
+/**
+ * What a classification rule does with a match (FL-60).
+ *
+ * - `review`: the match is suggested; nothing changes until the owner accepts it.
+ * - `tag`: the match joins the rule's smart album and receives the rule-owned tag.
+ *
+ * Archiving is not an action of its own: it is a separate opt-in (`archive`) that is only stored with
+ * the moment the owner consented to it.
+ */
+export enum ClassificationRuleAction {
+  Review = 'review',
+  Tag = 'tag',
+}
+
+export const ClassificationRuleActionSchema = z
+  .enum(ClassificationRuleAction)
+  .describe('What a classification rule does with a match')
+  .meta({ id: 'ClassificationRuleAction' });
+
+/** Which media a classification rule considers (FL-60). */
+export enum ClassificationMediaType {
+  Any = 'any',
+  Photo = 'photo',
+  Video = 'video',
+}
+
+export const ClassificationMediaTypeSchema = z
+  .enum(ClassificationMediaType)
+  .describe('Which media a classification rule considers')
+  .meta({ id: 'ClassificationMediaType' });
+
+/**
+ * What became of one asset a rule matched (FL-60).
+ *
+ * - `matched`: applied by the rule; reprocessing may undo it when the asset stops matching.
+ * - `suggested`: waiting for the owner's review; nothing has been applied.
+ * - `accepted`: the owner kept it. Reprocessing never removes it.
+ * - `rejected`: the owner turned it down or undid it by hand. Reprocessing never applies it again.
+ */
+export enum ClassificationMatchDecision {
+  Matched = 'matched',
+  Suggested = 'suggested',
+  Accepted = 'accepted',
+  Rejected = 'rejected',
+}
+
+export const ClassificationMatchDecisionSchema = z
+  .enum(ClassificationMatchDecision)
+  .describe('What became of an asset a classification rule matched')
+  .meta({ id: 'ClassificationMatchDecision' });
+
 export enum DuplicateDecisionKind {
   Keepers = 'keepers',
   KeepAll = 'keep-all',
