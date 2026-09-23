@@ -15,6 +15,7 @@ import {
   withAlbumVisibility,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
+import { onStacksJoined } from 'src/utils/locked-stacks.js';
 
 export interface StackSearch extends HiddenContentQueryOptions, LockedVisibilityOptions {
   ownerId: string;
@@ -138,12 +139,18 @@ export class StackRepository {
         .where('id', 'in', [...uniqueIds])
         .execute();
 
-      return tx
+      // a stack that holds a Locked photo is Locked as a whole (FL-53)
+      const lockedAssetIds = await onStacksJoined(tx, [newRecord.id]);
+
+      const stack = await tx
         .selectFrom('stack')
         .selectAll('stack')
         .select(withAssets)
         .where('id', '=', newRecord.id)
         .executeTakeFirstOrThrow();
+
+      // the photos that became Locked by joining it, for the caller's follow-up
+      return { ...stack, lockedAssetIds };
     });
   }
 
@@ -194,7 +201,11 @@ export class StackRepository {
   }
 
   @GenerateSql({ params: [{ sourceId: DummyValue.UUID, targetId: DummyValue.UUID }] })
-  merge({ sourceId, targetId }: { sourceId: string; targetId: string }) {
-    return this.db.updateTable('asset').set({ stackId: targetId }).where('asset.stackId', '=', sourceId).execute();
+  async merge({ sourceId, targetId }: { sourceId: string; targetId: string }): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      await tx.updateTable('asset').set({ stackId: targetId }).where('asset.stackId', '=', sourceId).execute();
+      // a stack that holds a Locked photo is Locked as a whole (FL-53)
+      await onStacksJoined(tx, [targetId]);
+    });
   }
 }

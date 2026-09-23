@@ -227,8 +227,9 @@ export class UserController {
   createProfileImage(
     @Auth() auth: AuthDto,
     @UploadedFile() fileInfo: Express.Multer.File,
+    @Body() dto: CreateProfileImageDto,
   ): Promise<CreateProfileImageResponseDto> {
-    return this.service.createProfileImage(auth, fileInfo);
+    return this.service.createProfileImage(auth, fileInfo, dto);
   }
 
   @Delete('profile-image')
