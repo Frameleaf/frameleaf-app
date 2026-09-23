@@ -1,19 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import { type Insertable, type Kysely, type Selectable, sql, type SqlBool, type Updateable } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { AssetStatus, AssetVisibility, DocumentEditAction } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AssetDocumentEditTable } from 'src/schema/tables/asset-document-edit.table.js';
 import { asUuid, tokenizeForSearch, withEdits, withHiddenContentFilter } from 'src/utils/database.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import { isLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
+import { isLocked, revealedLockScope } from 'src/utils/locked.js';
 import { paginationHelper } from 'src/utils/pagination.js';
 
 export type DocumentEdit = Selectable<AssetDocumentEditTable>;
 
 export type DocumentSearchOptions = HiddenContentQueryOptions & {
   ownerId: string;
-  /** The owner, only when their session is elevated: then their Locked photos are documents too. */
+  /**
+   * The owner, only when their session is elevated: then the Locked photos their timeline reveals
+   * (their own marks and detections) are documents too, exactly as the timeline shows them.
+   */
   lockedOwnerId?: string;
   query?: string;
   page: number;
@@ -41,7 +45,12 @@ export class DocumentRepository {
    * The owner's photos that currently show recognized text, newest first. A photo whose every line a
    * crop removed has an empty `ocr_search` row and is not a document. `query` matches the recognized
    * text the way "Text in photos" search does, or the owner's own corrections and confirmed values.
-   * Without a query the timeline is listed; with one, the archive too.
+   * Without a query the timeline is listed; with one, the archive too, as every library collection
+   * in the design does (`collection !== "Locked" ? filter.visibility || query.text ? true : asset.visibility
+   * !== "archive"` in design/frameleaf/template/src/App.jsx).
+   *
+   * A correction only matches while the crop cannot have removed its text: on a cropped photo only
+   * decisions without a region (a value the owner typed) are searched, besides the visible text.
    */
   async search(options: DocumentSearchOptions) {
     const text = options.query?.trim() ?? '';
@@ -56,7 +65,7 @@ export class DocumentRepository {
         sql.lit(AssetVisibility.Timeline),
         ...(text ? [sql.lit(AssetVisibility.Archive)] : []),
       ])
-      .where(notLockedOrOwnedBy(options.lockedOwnerId, 'asset'))
+      .where(revealedLockScope(options.lockedOwnerId, 'asset'))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where((eb) =>
         eb.exists(
@@ -90,6 +99,20 @@ export class DocumentRepository {
                 ])
                 .where(
                   sql<SqlBool>`f_unaccent(asset_document_edit.value) ilike '%' || f_unaccent(${escapeLike(text)}) || '%'`,
+                )
+                .where((edit) =>
+                  edit.or([
+                    edit('asset_document_edit.x1', 'is', null),
+                    edit.not(
+                      edit.exists(
+                        edit
+                          .selectFrom('asset_edit')
+                          .select(sql`1`.as('found'))
+                          .whereRef('asset_edit.assetId', '=', 'asset.id')
+                          .where('asset_edit.action', '=', sql.lit(AssetEditAction.Crop)),
+                      ),
+                    ),
+                  ]),
                 ),
             ),
           ]),
