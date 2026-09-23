@@ -16,3 +16,23 @@ node --test scripts/frameleaf-studio-contracts.test.mjs
 ```
 
 See [the Studio, rendering and restoration preservation plan](../docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md) for scope, ownership and remaining proof gates.
+
+## Web integration boundary (FL-88)
+
+The Svelte host for the editor is already in the production application, and it does not
+depend on this directory containing anything yet:
+
+- `web/src/lib/frameleaf/studio/host-contract.ts` is the typed `mount` / `update` /
+  `dispose` contract an adapter must satisfy, plus the data the host passes (project handle,
+  authorized media URLs, identity, theme tokens, capabilities, online state) and the services
+  it exposes back. The engine receives no token, no API base URL and no SDK.
+- `web/src/lib/frameleaf/studio/commands.ts` is the canonical command vocabulary and
+  registry; `bridge.ts` validates and routes it.
+- `web/src/lib/frameleaf/studio/engine-loader.ts` resolves the engine. The adapter package
+  (`studio/adapters/web`, not present) calls `registerStudioEngine` once from its entry
+  point. The loader refuses any module whose `engineRevision` is not the pinned commit in
+  `freecut-provenance.json`, and the route renders an honest unavailable state until an
+  engine registers.
+
+Adapters live outside `vendor/freecut`; nothing in the vendored snapshot is edited, and any
+unavoidable patch is recorded as a versioned patch with its licensing note.
