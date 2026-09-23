@@ -81,6 +81,12 @@
     /** Album, shared-link and trash context for the bulk actions (FL-32). */
     bulkContext?: Omit<BulkActionContext, 'assets' | 'count' | 'currentUserId' | 'snapshot'>;
     /**
+     * Base name for a selection download's archive, e.g. the album or collection name. Falls back
+     * to the generic default in `downloadArchive` when unset, matching the legacy per-route
+     * `DownloadAction` filename.
+     */
+    downloadFileName?: string;
+    /**
      * A gate the page puts in front of an action. Returning `false` stops it. The suppressed
      * destination uses it to require an elevated session before items leave it for an album.
      */
@@ -131,6 +137,7 @@
     enableRouting = false,
     multiSelect = assetMultiSelectManager,
     bulkContext,
+    downloadFileName,
     beforeAction,
     onMutated,
     tagOptions = [],
@@ -259,13 +266,17 @@
   };
 
   const dispatchBulk = (id: BulkActionId, payload?: BulkPayload) => {
+    const withFileName =
+      id === 'download' && downloadFileName && !payload?.fileName
+        ? { ...payload, fileName: downloadFileName }
+        : payload;
     if (snapshot) {
       // Frozen at submit: editing the filter afterwards cannot change what the operation touches.
-      void bulk.runMatching(id, snapshot, { payload, submittedTotal: session.total });
+      void bulk.runMatching(id, snapshot, { payload: withFileName, submittedTotal: session.total });
       session.clearSelection();
       return;
     }
-    void bulk.run(id, [...session.selection], payload);
+    void bulk.run(id, [...session.selection], withFileName);
   };
 
   /**

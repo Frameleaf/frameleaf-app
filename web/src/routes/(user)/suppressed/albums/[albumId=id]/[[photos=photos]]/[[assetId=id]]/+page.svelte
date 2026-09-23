@@ -70,6 +70,7 @@
     {options}
     destination={{ kind: 'album', id: album.id }}
     {bulkContext}
+    downloadFileName={album.albumName}
     onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >
     <section class="pt-8 md:pt-24">
