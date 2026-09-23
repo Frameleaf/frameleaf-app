@@ -12,11 +12,10 @@
    */
   import { careQueues, CARE_TOOL_GROUPS, type CareQueue, type CareToolGroup } from '$lib/frameleaf/library-care';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import AppDownloadModal from '$lib/modals/AppDownloadModal.svelte';
-  import ObtainiumConfigModal from '$lib/modals/ObtainiumConfigModal.svelte';
+  import ApplicationSetup from '$lib/components/frameleaf/ApplicationSetup.svelte';
   import { Route } from '$lib/route';
   import type { MediaHealthSummaryResponseDto } from '@immich/sdk';
-  import { Icon, modalManager } from '@immich/ui';
+  import { Icon } from '@immich/ui';
   import {
     mdiChevronRight,
     mdiCloudOutline,
@@ -35,6 +34,14 @@
   let { summary }: { summary: MediaHealthSummaryResponseDto | null } = $props();
 
   const isAdmin = $derived(authManager.user.isAdmin);
+
+  /** Mobile applications and Obtainium setup open as the design's application setup (FL-82). */
+  let setup = $state<'downloads' | 'obtainium' | null>(null);
+  let setupOpen = $state(false);
+  const showSetup = (tool: 'downloads' | 'obtainium') => {
+    setup = tool;
+    setupOpen = true;
+  };
 
   type Tool = {
     id: string;
@@ -120,7 +127,7 @@
       icon: mdiDevices,
       titleKey: 'library_care_tool_downloads',
       descriptionKey: 'library_care_tool_downloads_description',
-      onclick: () => void modalManager.show(AppDownloadModal, {}),
+      onclick: () => showSetup('downloads'),
     },
     {
       id: 'obtainium',
@@ -128,7 +135,7 @@
       icon: mdiDownload,
       titleKey: 'library_care_tool_obtainium',
       descriptionKey: 'library_care_tool_obtainium_description',
-      onclick: () => void modalManager.show(ObtainiumConfigModal, {}),
+      onclick: () => showSetup('obtainium'),
     },
   ];
 
@@ -205,6 +212,12 @@
     {/if}
   {/each}
 </div>
+
+{#if setup}
+  {#key setup}
+    <ApplicationSetup tool={setup} bind:open={setupOpen} />
+  {/key}
+{/if}
 
 <style>
   .directory {
