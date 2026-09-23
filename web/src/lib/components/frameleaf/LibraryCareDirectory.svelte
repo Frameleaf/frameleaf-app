@@ -12,7 +12,6 @@
    */
   import { careQueues, CARE_TOOL_GROUPS, type CareQueue, type CareToolGroup } from '$lib/frameleaf/library-care';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import ApplicationSetup from '$lib/components/frameleaf/ApplicationSetup.svelte';
   import { Route } from '$lib/route';
   import type { MediaHealthSummaryResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
@@ -35,22 +34,13 @@
 
   const isAdmin = $derived(authManager.user.isAdmin);
 
-  /** Mobile applications and Obtainium setup open as the design's application setup (FL-82). */
-  let setup = $state<'downloads' | 'obtainium' | null>(null);
-  let setupOpen = $state(false);
-  const showSetup = (tool: 'downloads' | 'obtainium') => {
-    setup = tool;
-    setupOpen = true;
-  };
-
   type Tool = {
     id: string;
     group: CareToolGroup;
     icon: string;
     titleKey: string;
     descriptionKey: string;
-    href?: string;
-    onclick?: () => void;
+    href: string;
     adminOnly?: boolean;
   };
 
@@ -127,7 +117,7 @@
       icon: mdiDevices,
       titleKey: 'library_care_tool_downloads',
       descriptionKey: 'library_care_tool_downloads_description',
-      onclick: () => showSetup('downloads'),
+      href: Route.downloadsUtility(),
     },
     {
       id: 'obtainium',
@@ -135,7 +125,7 @@
       icon: mdiDownload,
       titleKey: 'library_care_tool_obtainium',
       descriptionKey: 'library_care_tool_obtainium_description',
-      onclick: () => showSetup('obtainium'),
+      href: Route.obtainiumUtility(),
     },
   ];
 
@@ -186,25 +176,14 @@
         <ul class="tools">
           {#each groupTools as tool (tool.id)}
             <li>
-              {#if tool.href}
-                <a class="tool" href={tool.href}>
-                  <Icon icon={tool.icon} size="1.375rem" aria-hidden={true} />
-                  <span>
-                    <strong>{$t(tool.titleKey)}</strong>
-                    <small>{$t(tool.descriptionKey)}</small>
-                  </span>
-                  <Icon icon={mdiChevronRight} size="1.125rem" aria-hidden={true} />
-                </a>
-              {:else}
-                <button type="button" class="tool" onclick={tool.onclick}>
-                  <Icon icon={tool.icon} size="1.375rem" aria-hidden={true} />
-                  <span>
-                    <strong>{$t(tool.titleKey)}</strong>
-                    <small>{$t(tool.descriptionKey)}</small>
-                  </span>
-                  <Icon icon={mdiChevronRight} size="1.125rem" aria-hidden={true} />
-                </button>
-              {/if}
+              <a class="tool" href={tool.href}>
+                <Icon icon={tool.icon} size="1.375rem" aria-hidden={true} />
+                <span>
+                  <strong>{$t(tool.titleKey)}</strong>
+                  <small>{$t(tool.descriptionKey)}</small>
+                </span>
+                <Icon icon={mdiChevronRight} size="1.125rem" aria-hidden={true} />
+              </a>
             </li>
           {/each}
         </ul>
@@ -212,12 +191,6 @@
     {/if}
   {/each}
 </div>
-
-{#if setup}
-  {#key setup}
-    <ApplicationSetup tool={setup} bind:open={setupOpen} />
-  {/key}
-{/if}
 
 <style>
   .directory {
