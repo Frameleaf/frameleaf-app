@@ -2748,6 +2748,139 @@ export type PersonStatisticsResponseDto = {
     /** Number of assets */
     assets: number;
 };
+export type PetResponseDto = {
+    /** Number of assets with a confirmed observation of this pet */
+    assetCount: number;
+    /** Pet date of birth */
+    birthDate: string | null;
+    /** Creation date */
+    createdAt: string;
+    /** Asset used as the pet thumbnail */
+    featuredAssetId: string | null;
+    /** Pet ID */
+    id: string;
+    /** Is favorite */
+    isFavorite: boolean;
+    /** Is hidden */
+    isHidden: boolean;
+    /** Pet name */
+    name: string;
+    species: PetSpecies;
+    /** Last update date */
+    updatedAt: string;
+};
+export type PetCreateDto = {
+    /** Pet date of birth */
+    birthDate?: string | null;
+    /** Asset used as the pet thumbnail */
+    featuredAssetId?: string | null;
+    /** Mark as favorite */
+    isFavorite?: boolean;
+    /** Pet visibility (hidden) */
+    isHidden?: boolean;
+    /** Pet name */
+    name?: string;
+    species: PetSpecies;
+};
+export type PetUpdateDto = {
+    /** Pet date of birth */
+    birthDate?: string | null;
+    /** Asset used as the pet thumbnail */
+    featuredAssetId?: string | null;
+    /** Mark as favorite */
+    isFavorite?: boolean;
+    /** Pet visibility (hidden) */
+    isHidden?: boolean;
+    /** Pet name */
+    name?: string;
+    species?: PetSpecies;
+};
+export type PetMergeDto = {
+    /** Pet IDs to merge into this pet */
+    ids: string[];
+};
+export type PetObservationResponseDto = {
+    /** Asset ID */
+    assetId: string;
+    /** Region X1, in source pixels */
+    boundingBoxX1: number | null;
+    /** Region X2, in source pixels */
+    boundingBoxX2: number | null;
+    /** Region Y1, in source pixels */
+    boundingBoxY1: number | null;
+    /** Region Y2, in source pixels */
+    boundingBoxY2: number | null;
+    /** Creation date */
+    createdAt: string;
+    /** Observation ID */
+    id: string;
+    /** Height of the image the region was drawn on */
+    imageHeight: number | null;
+    /** Width of the image the region was drawn on */
+    imageWidth: number | null;
+    /** Pet ID */
+    petId: string;
+    source: PetObservationSource;
+    state: PetObservationState;
+    /** Last update date */
+    updatedAt: string;
+};
+export type PetObservationCreateDto = {
+    /** Asset the pet appears in */
+    assetId: string;
+    /** Region X1, in source pixels */
+    boundingBoxX1?: number;
+    /** Region X2, in source pixels */
+    boundingBoxX2?: number;
+    /** Region Y1, in source pixels */
+    boundingBoxY1?: number;
+    /** Region Y2, in source pixels */
+    boundingBoxY2?: number;
+    /** Height of the image the region was drawn on */
+    imageHeight?: number;
+    /** Width of the image the region was drawn on */
+    imageWidth?: number;
+};
+export type PetCandidateResponseDto = {
+    /** Asset the proposal is about */
+    assetId: string;
+    /** Region X1, in source pixels */
+    boundingBoxX1: number;
+    /** Region X2, in source pixels */
+    boundingBoxX2: number;
+    /** Region Y1, in source pixels */
+    boundingBoxY1: number;
+    /** Region Y2, in source pixels */
+    boundingBoxY2: number;
+    /** The detector’s species guess, which is never the pet’s species */
+    detectedSpecies: string | null;
+    /** Candidate ID */
+    id: string;
+    /** Height of the image the region was found on */
+    imageHeight: number;
+    /** Width of the image the region was found on */
+    imageWidth: number;
+    /** Model that produced the detection */
+    modelName: string;
+    /** Revision of the model that produced the detection */
+    modelRevision: string;
+    /** Proposed pet ID */
+    petId: string;
+    /** Model confidence, 0 to 1 */
+    score: number;
+};
+export type PetCandidateListResponseDto = {
+    /** Proposals awaiting review */
+    candidates: PetCandidateResponseDto[];
+    /** Whether a pet recognition model is configured and available */
+    recognitionAvailable: boolean;
+    /** Why recognition is unavailable, for display; null when it is available */
+    recognitionUnavailableReason: string | null;
+};
+export type PetCandidateReviewDto = {
+    /** Pet to assign instead of the proposed one */
+    petId?: string;
+};
 export type PluginMethodResponseDto = {
     /** Description */
     description: string;
@@ -7475,6 +7608,177 @@ export function getPersonThumbnail({ id }: {
     }));
 }
 /**
+ * Retrieve pets
+ */
+export function getAllPets({ withHidden }: {
+    withHidden?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PetResponseDto[];
+    }>(`/pets${QS.query(QS.explode({
+        withHidden
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Create a pet
+ */
+export function createPet({ petCreateDto }: {
+    petCreateDto: PetCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PetResponseDto;
+    }>("/pets", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: petCreateDto
+    })));
+}
+/**
+ * Retrieve pet recognition candidates
+ */
+export function getPetCandidates({ size }: {
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PetCandidateListResponseDto;
+    }>(`/pets/candidates${QS.query(QS.explode({
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Accept a pet recognition candidate
+ */
+export function acceptPetCandidate({ id, petCandidateReviewDto }: {
+    id: string;
+    petCandidateReviewDto: PetCandidateReviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PetObservationResponseDto;
+    }>(`/pets/candidates/${encodeURIComponent(id)}/accept`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: petCandidateReviewDto
+    })));
+}
+/**
+ * Reject a pet recognition candidate
+ */
+export function rejectPetCandidate({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PetObservationResponseDto;
+    }>(`/pets/candidates/${encodeURIComponent(id)}/reject`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Remove a pet observation
+ */
+export function deletePetObservation({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/pets/observations/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Retrieve a pet
+ */
+export function getPet({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PetResponseDto;
+    }>(`/pets/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Update a pet
+ */
+export function updatePet({ id, petUpdateDto }: {
+    id: string;
+    petUpdateDto: PetUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PetResponseDto;
+    }>(`/pets/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: petUpdateDto
+    })));
+}
+/**
+ * Delete a pet
+ */
+export function deletePet({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/pets/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Merge pets
+ */
+export function mergePets({ id, petMergeDto }: {
+    id: string;
+    petMergeDto: PetMergeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PetResponseDto;
+    }>(`/pets/${encodeURIComponent(id)}/merge`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: petMergeDto
+    })));
+}
+/**
+ * Retrieve pet observations
+ */
+export function getPetObservations({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PetObservationResponseDto[];
+    }>(`/pets/${encodeURIComponent(id)}/observations`, {
+        ...opts
+    }));
+}
+/**
+ * Add a pet observation
+ */
+export function createPetObservation({ id, petObservationCreateDto }: {
+    id: string;
+    petObservationCreateDto: PetObservationCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PetObservationResponseDto;
+    }>(`/pets/${encodeURIComponent(id)}/observations`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: petObservationCreateDto
+    })));
+}
+/**
  * List all plugins
  */
 export function searchPlugins({ description, enabled, id, name, title, version }: {
@@ -9822,6 +10126,25 @@ export enum QueueCommand {
 export enum LivePhotoMatchConfidence {
     High = "high",
     Low = "low"
+}
+export enum PetSpecies {
+    Cat = "cat",
+    Dog = "dog",
+    Bird = "bird",
+    Rabbit = "rabbit",
+    Horse = "horse",
+    Reptile = "reptile",
+    Fish = "fish",
+    SmallMammal = "small_mammal",
+    Other = "other"
+}
+export enum PetObservationSource {
+    Manual = "manual",
+    Review = "review"
+}
+export enum PetObservationState {
+    Confirmed = "confirmed",
+    Rejected = "rejected"
 }
 export enum MediaHealthCategory {
     Missing = "missing",
