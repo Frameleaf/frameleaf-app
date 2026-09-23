@@ -5,6 +5,8 @@
  * Pure module: every function takes state and returns a new state (or a value)
  * without touching the DOM. Persistence helpers live at the bottom.
  */
+import * as materialIcons from "@mdi/js";
+
 export const collectionsKey = "frameleaf:collections:v1";
 
 /** Curated, categorised icons offered first; any Material icon name is still valid. */
@@ -284,9 +286,11 @@ export const collectionIconGroups = [
 ];
 export const collectionIcons = collectionIconGroups.flatMap((group) => group.icons);
 export const collectionIconNames = collectionIcons.map((icon) => icon.name);
-/** Any Material icon name from the shared icon map is a valid collection icon. */
+/** Any name in the Material Design Icons catalogue is a valid collection icon; anything else is not. */
 export const isIconName = (value) =>
-  typeof value === "string" && /^mdi[A-Za-z0-9]{1,60}$/.test(value);
+  typeof value === "string" &&
+  /^mdi[A-Za-z0-9]{1,60}$/.test(value) &&
+  typeof materialIcons[value] === "string";
 export const memberRoles = ["owner", "editor", "viewer"];
 export const displayOrders = ["newest", "oldest"];
 export const collectionKinds = ["album", "collection", "space"];
