@@ -1,11 +1,17 @@
-import { Controller, Delete, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AlbumResponseDto } from 'src/dtos/album.dto.js';
 import {
+  SharedSpaceAlbumParamDto,
+  SharedSpaceAlbumsResponseDto,
   SharedSpaceInviteParamDto,
   SharedSpaceMembersResponseDto,
+  SharedSpaceNewResponseDto,
+  SharedSpacePeopleResponseDto,
+  SharedSpacePersonLinkDto,
+  SharedSpacePersonParamDto,
   SharedSpacePreviewResponseDto,
 } from 'src/dtos/shared-space.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
@@ -96,5 +102,112 @@ export class SharedSpaceController {
   })
   removeSharedSpaceInvitation(@Auth() auth: AuthDto, @Param() { id, userId }: SharedSpaceInviteParamDto): Promise<void> {
     return this.service.removeInvitation(auth, id, userId);
+  }
+
+  @Get(':id/albums')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'List albums linked into a shared space',
+    description:
+      'The albums members have linked into the shared space, one level: a space links albums, never another space and never a collection. A link is a reference, not a move and not a share — the album keeps its owner, its members, its access rules and its place in its owner’s tree, and this response grants no access to it. The count and the tile picture come only from items that are in both the album and the space, with media marked sensitive and Locked media excluded.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getSharedSpaceAlbums(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<SharedSpaceAlbumsResponseDto> {
+    return this.service.getLinkedAlbums(auth, id);
+  }
+
+  @Put(':id/albums/:albumId')
+  @Authenticated({ permission: Permission.AlbumUpdate })
+  @Endpoint({
+    summary: 'Link an album into a shared space',
+    description:
+      'Point the shared space at an album the caller can already read. Nothing else happens: no item moves or is copied, no album membership changes, and the album stays where its owner put it. Linking the same album twice is the same single link. An owner or editor of the space may link; a viewer may not.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  linkSharedSpaceAlbum(
+    @Auth() auth: AuthDto,
+    @Param() { id, albumId }: SharedSpaceAlbumParamDto,
+  ): Promise<SharedSpaceAlbumsResponseDto> {
+    return this.service.linkAlbum(auth, id, albumId);
+  }
+
+  @Delete(':id/albums/:albumId')
+  @Authenticated({ permission: Permission.AlbumUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Unlink an album from a shared space',
+    description:
+      'Remove the reference and only the reference. The album, its items, its members and the shared space’s own items are untouched. The member who made the link, and the shared space owner, may remove it.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  unlinkSharedSpaceAlbum(@Auth() auth: AuthDto, @Param() { id, albumId }: SharedSpaceAlbumParamDto): Promise<void> {
+    return this.service.unlinkAlbum(auth, id, albumId);
+  }
+
+  @Get(':id/new')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'What is new in a shared space since your last visit',
+    description:
+      'Items other members added since the caller last marked this shared space seen. The marker is per member. If the caller has never marked it seen, everything in the space counts as new to them. The caller’s own additions are left out, and media marked sensitive and Locked media are excluded.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getSharedSpaceNew(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<SharedSpaceNewResponseDto> {
+    return this.service.getNew(auth, id);
+  }
+
+  @Get(':id/people')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'People in a shared space',
+    description:
+      'Two lists. `linked` is who members have published into the space, carrying the space’s own name for each one and a picture that is already in the space — never the owner’s private name, thumbnail, birth date or person ID. `candidates` is the caller’s own people seen on the space’s items, so they can publish one; no other member’s people are ever listed. Counts exclude media marked sensitive and Locked media.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getSharedSpacePeople(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<SharedSpacePeopleResponseDto> {
+    return this.service.getPeople(auth, id);
+  }
+
+  @Post(':id/people')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Link a person into a shared space',
+    description:
+      'Publish one of the caller’s own people into the shared space under a name the space uses. The name is independent: it never renames the caller’s own person, and renaming that person does not rename it here. The caller’s person record is not disclosed to anybody. Linking the same person again rewrites the link rather than adding a second one.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  linkSharedSpacePerson(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: SharedSpacePersonLinkDto,
+  ): Promise<SharedSpacePeopleResponseDto> {
+    return this.service.linkPerson(auth, id, dto);
+  }
+
+  @Delete(':id/people/:linkId')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Unlink a person from a shared space',
+    description:
+      'Remove the link and only the link. The person, their name, their faces and every item that shows them are untouched, and so are the shared space’s items. The member who made the link, and the shared space owner, may remove it.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  unlinkSharedSpacePerson(@Auth() auth: AuthDto, @Param() { id, linkId }: SharedSpacePersonParamDto): Promise<void> {
+    return this.service.unlinkPerson(auth, id, linkId);
+  }
+
+  @Post(':id/visit')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Mark a shared space seen',
+    description:
+      'Move the caller’s own last-seen marker to now and return what is new after doing so. This is deliberately explicit rather than something opening the page does, so glancing at a space on a phone does not silently clear the list of what has not been looked at.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  markSharedSpaceVisited(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<SharedSpaceNewResponseDto> {
+    return this.service.markVisited(auth, id);
   }
 }

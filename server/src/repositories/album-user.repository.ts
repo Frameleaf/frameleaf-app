@@ -1,11 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { InjectKysely } from 'nestjs-kysely';
-import type { Insertable, Kysely, Updateable } from 'kysely';
+import { sql, type Insertable, type Kysely, type Updateable } from 'kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserRole } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
+import { SharedSpaceAlbumTable } from 'src/schema/tables/shared-space-album.table.js';
 import { SharedSpaceInviteTable } from 'src/schema/tables/shared-space-invite.table.js';
+import { SharedSpacePersonTable } from 'src/schema/tables/shared-space-person.table.js';
+import { withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 
 export type AlbumPermissionId = {
   albumId: string;
@@ -19,6 +23,58 @@ export type SharedSpaceInvite = {
   role: AlbumUserRole;
   invitedById: string | null;
   createdAt: Date;
+};
+
+/** One album a member pointed at from a shared space. The album itself is untouched. */
+export type SharedSpaceAlbumLink = {
+  albumId: string;
+  linkedAlbumId: string;
+  linkedAlbumName: string;
+  linkedAlbumIcon: string | null;
+  linkedById: string | null;
+  createdAt: Date;
+};
+
+/** How much of a linked album is actually in the space, for the viewer. */
+export type SharedSpaceLinkedAlbumCount = {
+  albumId: string;
+  assetCount: number;
+  thumbnailAssetId: string | null;
+};
+
+/**
+ * One person a member linked into a shared space. `personOwnerId` and
+ * `personGroupId` say whose person it is and are never sent to a client;
+ * `name` and `coverAssetId` are the space's own identity for them.
+ */
+export type SharedSpacePersonLink = {
+  id: string;
+  albumId: string;
+  personOwnerId: string;
+  personGroupId: string;
+  name: string;
+  coverAssetId: string | null;
+  createdAt: Date;
+};
+
+/** A person of the viewer's own, seen on assets that are in the space. */
+export type SharedSpacePersonCandidate = {
+  personGroupId: string;
+  name: string;
+  thumbnailPath: string;
+  isHidden: boolean;
+  isFavorite: boolean;
+  color: string | null;
+  birthDate: Date | null;
+  updatedAt: Date;
+  assetCount: number;
+};
+
+/** One member's last-seen marker for one shared space. */
+export type SharedSpaceVisit = {
+  albumId: string;
+  userId: string;
+  lastSeenAt: Date;
 };
 
 @Injectable()
@@ -108,5 +164,348 @@ export class AlbumUserRepository {
       .where('albumId', '=', albumId)
       .where('userId', '=', userId)
       .execute();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Shared space panels (FL-55)                                         */
+  /*                                                                     */
+  /* Albums and people linked into a space, and each member's last-seen  */
+  /* marker. All three hang off an album exactly as `album_user` does,   */
+  /* which is why they live here rather than in a repository of their    */
+  /* own. None of them is a grant: a link never widens what anybody may  */
+  /* read, and every read below is confined to assets that are already   */
+  /* in the space, with Locked media (`withDefaultVisibility`) and media */
+  /* marked sensitive (`excludeNsfw`) excluded before anything is        */
+  /* counted, named or shown.                                            */
+  /* ------------------------------------------------------------------ */
+
+  /** The albums linked into one space, with just enough of each album to name it. */
+  async getLinkedAlbums(spaceId: string): Promise<SharedSpaceAlbumLink[]> {
+    return this.db
+      .selectFrom('shared_space_album as link')
+      .innerJoin('album', 'album.id', 'link.linkedAlbumId')
+      .where('link.albumId', '=', spaceId)
+      .where('album.deletedAt', 'is', null)
+      .select([
+        'link.albumId as albumId',
+        'link.linkedAlbumId as linkedAlbumId',
+        'album.albumName as linkedAlbumName',
+        'album.icon as linkedAlbumIcon',
+        'link.linkedById as linkedById',
+        'link.createdAt as createdAt',
+      ])
+      .orderBy('album.albumName', 'asc')
+      .execute();
+  }
+
+  async getLinkedAlbum(albumId: string, linkedAlbumId: string): Promise<SharedSpaceAlbumLink | undefined> {
+    return this.db
+      .selectFrom('shared_space_album as link')
+      .innerJoin('album', 'album.id', 'link.linkedAlbumId')
+      .where('link.albumId', '=', albumId)
+      .where('link.linkedAlbumId', '=', linkedAlbumId)
+      .select([
+        'link.albumId as albumId',
+        'link.linkedAlbumId as linkedAlbumId',
+        'album.albumName as linkedAlbumName',
+        'album.icon as linkedAlbumIcon',
+        'link.linkedById as linkedById',
+        'link.createdAt as createdAt',
+      ])
+      .executeTakeFirst();
+  }
+
+  /** Link an album into a space. Re-linking is a no-op, never a second row. */
+  async createLinkedAlbum(link: Insertable<SharedSpaceAlbumTable>): Promise<void> {
+    await this.db
+      .insertInto('shared_space_album')
+      .values(link)
+      .onConflict((oc) => oc.columns(['albumId', 'linkedAlbumId']).doNothing())
+      .execute();
+  }
+
+  /** Remove the reference. No asset, album, member or grant changes. */
+  async deleteLinkedAlbum(albumId: string, linkedAlbumId: string): Promise<void> {
+    await this.db
+      .deleteFrom('shared_space_album')
+      .where('albumId', '=', albumId)
+      .where('linkedAlbumId', '=', linkedAlbumId)
+      .execute();
+  }
+
+  /**
+   * How many of the space's assets are also in each linked album, and which of
+   * them to show as the tile's picture.
+   *
+   * The intersection is the point: a linked album is a reference, so the only
+   * thing the space can honestly say about it is how much of it is here. Both
+   * the count and the thumbnail therefore come from assets that are already in
+   * the space, which every member can already see — linking never turns into a
+   * way to look at an album you were not given.
+   */
+  async getLinkedAlbumCounts(
+    spaceId: string,
+    linkedAlbumIds: string[],
+    options: HiddenContentQueryOptions = {},
+  ): Promise<SharedSpaceLinkedAlbumCount[]> {
+    if (linkedAlbumIds.length === 0) {
+      return [];
+    }
+
+    return this.db
+      .selectFrom('asset')
+      .$call(withDefaultVisibility)
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .innerJoin('album_asset as space_asset', 'space_asset.assetId', 'asset.id')
+      .innerJoin('album_asset as linked_asset', 'linked_asset.assetId', 'asset.id')
+      .where('space_asset.albumId', '=', spaceId)
+      .where('linked_asset.albumId', 'in', linkedAlbumIds)
+      .where('asset.deletedAt', 'is', null)
+      .select('linked_asset.albumId as albumId')
+      .select((eb) => sql<number>`${eb.fn.count('asset.id')}::int`.as('assetCount'))
+      .select(
+        sql<string | null>`(array_agg("asset"."id" order by "asset"."fileCreatedAt" desc))[1]`.as('thumbnailAssetId'),
+      )
+      .groupBy('linked_asset.albumId')
+      .execute();
+  }
+
+  /**
+   * The people linked into one space.
+   *
+   * `person` is inner-joined so a link whose person has been deleted stops
+   * appearing, but nothing of the person row is selected: the space's identity
+   * for somebody is the link's own `name` and `coverAssetId`, never the
+   * owner's private naming of their own faces.
+   */
+  async getLinkedPeople(spaceId: string): Promise<SharedSpacePersonLink[]> {
+    return this.db
+      .selectFrom('shared_space_person as link')
+      .innerJoin('person', (join) =>
+        join
+          .onRef('person.ownerId', '=', 'link.personOwnerId')
+          .onRef('person.personGroupId', '=', 'link.personGroupId'),
+      )
+      .where('link.albumId', '=', spaceId)
+      .select([
+        'link.id as id',
+        'link.albumId as albumId',
+        'link.personOwnerId as personOwnerId',
+        'link.personGroupId as personGroupId',
+        'link.name as name',
+        'link.coverAssetId as coverAssetId',
+        'link.createdAt as createdAt',
+      ])
+      .orderBy('link.name', 'asc')
+      .orderBy('link.createdAt', 'asc')
+      .execute();
+  }
+
+  async getLinkedPerson(id: string): Promise<SharedSpacePersonLink | undefined> {
+    return this.db
+      .selectFrom('shared_space_person')
+      .select(['id', 'albumId', 'personOwnerId', 'personGroupId', 'name', 'coverAssetId', 'createdAt'])
+      .where('id', '=', id)
+      .executeTakeFirst();
+  }
+
+  /** Link a person into a space, or rename the link this member already has. */
+  async createLinkedPerson(link: Insertable<SharedSpacePersonTable>): Promise<SharedSpacePersonLink> {
+    return this.db
+      .insertInto('shared_space_person')
+      .values(link)
+      .onConflict((oc) =>
+        oc.columns(['albumId', 'personOwnerId', 'personGroupId']).doUpdateSet({
+          name: link.name ?? '',
+          coverAssetId: link.coverAssetId ?? null,
+        }),
+      )
+      .returning(['id', 'albumId', 'personOwnerId', 'personGroupId', 'name', 'coverAssetId', 'createdAt'])
+      .executeTakeFirstOrThrow();
+  }
+
+  /** Remove the link and only the link: the person, their faces and the space stay as they are. */
+  async deleteLinkedPerson(id: string): Promise<void> {
+    await this.db.deleteFrom('shared_space_person').where('id', '=', id).execute();
+  }
+
+  /** How many of the space's visible assets show each linked person. */
+  async getLinkedPersonCounts(
+    spaceId: string,
+    personGroupIds: string[],
+    options: HiddenContentQueryOptions = {},
+  ): Promise<{ personGroupId: string; assetCount: number }[]> {
+    if (personGroupIds.length === 0) {
+      return [];
+    }
+
+    return this.db
+      .selectFrom('asset')
+      .$call(withDefaultVisibility)
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
+      .innerJoin('asset_face', 'asset_face.assetId', 'asset.id')
+      .where('album_asset.albumId', '=', spaceId)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset_face.deletedAt', 'is', null)
+      .where('asset_face.isVisible', 'is', true)
+      .where('asset_face.personGroupId', 'in', personGroupIds)
+      .select('asset_face.personGroupId as personGroupId')
+      .select((eb) => sql<number>`count(distinct ${eb.ref('asset.id')})::int`.as('assetCount'))
+      .groupBy('asset_face.personGroupId')
+      .execute();
+  }
+
+  /**
+   * The picture the space shows for a person it has just been given: the most
+   * recent asset that is already in the space and shows them. Never the
+   * person's own thumbnail, which belongs to their owner alone.
+   */
+  async getLinkedPersonCoverAssetId(
+    spaceId: string,
+    personGroupId: string,
+    options: HiddenContentQueryOptions = {},
+  ): Promise<string | null> {
+    const row = await this.db
+      .selectFrom('asset')
+      .$call(withDefaultVisibility)
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
+      .innerJoin('asset_face', 'asset_face.assetId', 'asset.id')
+      .where('album_asset.albumId', '=', spaceId)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset_face.deletedAt', 'is', null)
+      .where('asset_face.isVisible', 'is', true)
+      .where('asset_face.personGroupId', '=', personGroupId)
+      .select('asset.id as id')
+      .orderBy('asset.fileCreatedAt', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+
+    return row?.id ?? null;
+  }
+
+  /**
+   * The people the viewer could offer to link: their OWN people, seen on assets
+   * that are in the space.
+   *
+   * `person.ownerId = ownerId` is the whole privacy argument for the people
+   * panel. Every person row returned here belongs to the person asking, so
+   * nothing is disclosed about how anybody else has named their own faces.
+   * Publishing one into the space is the separate, deliberate act of making a
+   * link, which carries a name of its own.
+   */
+  async getSpacePersonCandidates(
+    spaceId: string,
+    ownerId: string,
+    options: HiddenContentQueryOptions = {},
+  ): Promise<SharedSpacePersonCandidate[]> {
+    return this.db
+      .selectFrom('asset')
+      .$call(withDefaultVisibility)
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
+      .innerJoin('asset_face', 'asset_face.assetId', 'asset.id')
+      .innerJoin('person', (join) =>
+        join.onRef('person.personGroupId', '=', 'asset_face.personGroupId').on('person.ownerId', '=', ownerId),
+      )
+      .where('album_asset.albumId', '=', spaceId)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset_face.deletedAt', 'is', null)
+      .where('asset_face.isVisible', 'is', true)
+      .where('person.isHidden', '=', false)
+      .select([
+        'person.personGroupId as personGroupId',
+        'person.name as name',
+        'person.thumbnailPath as thumbnailPath',
+        'person.isHidden as isHidden',
+        'person.isFavorite as isFavorite',
+        'person.color as color',
+        'person.birthDate as birthDate',
+        'person.updatedAt as updatedAt',
+      ])
+      .select((eb) => sql<number>`count(distinct ${eb.ref('asset.id')})::int`.as('assetCount'))
+      .groupBy([
+        'person.personGroupId',
+        'person.name',
+        'person.thumbnailPath',
+        'person.isHidden',
+        'person.isFavorite',
+        'person.color',
+        'person.birthDate',
+        'person.updatedAt',
+      ])
+      .orderBy('assetCount', 'desc')
+      .orderBy('person.name', 'asc')
+      .execute() as Promise<SharedSpacePersonCandidate[]>;
+  }
+
+  async getSpaceVisit({ albumId, userId }: AlbumPermissionId): Promise<SharedSpaceVisit | undefined> {
+    return this.db
+      .selectFrom('shared_space_visit')
+      .select(['albumId', 'userId', 'lastSeenAt'])
+      .where('albumId', '=', albumId)
+      .where('userId', '=', userId)
+      .executeTakeFirst();
+  }
+
+  /** Move this member's marker forward. Nobody else's marker changes. */
+  async setSpaceVisit({ albumId, userId }: AlbumPermissionId, lastSeenAt: Date): Promise<void> {
+    await this.db
+      .insertInto('shared_space_visit')
+      .values({ albumId, userId, lastSeenAt })
+      .onConflict((oc) => oc.columns(['albumId', 'userId']).doUpdateSet({ lastSeenAt }))
+      .execute();
+  }
+
+  /**
+   * What has arrived in the space since a moment, for one member.
+   *
+   * `since` of `undefined` means this member has never marked the space seen,
+   * so everything in it is new to them. Their own additions are left out —
+   * "new since your last visit" is about what other people brought — and the
+   * same exclusions as every other space read apply before anything is counted.
+   */
+  private spaceNewAssetsQuery(
+    spaceId: string,
+    { since, viewerId }: { since?: Date; viewerId: string },
+    options: HiddenContentQueryOptions = {},
+  ) {
+    return this.db
+      .selectFrom('asset')
+      .$call(withDefaultVisibility)
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
+      .where('album_asset.albumId', '=', spaceId)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.ownerId', '!=', viewerId)
+      .$if(since !== undefined, (qb) => qb.where('album_asset.createdAt', '>', since!));
+  }
+
+  async getSpaceNewAssetCount(
+    spaceId: string,
+    args: { since?: Date; viewerId: string },
+    options: HiddenContentQueryOptions = {},
+  ): Promise<number> {
+    const row = await this.spaceNewAssetsQuery(spaceId, args, options)
+      .select((eb) => sql<number>`count(distinct ${eb.ref('asset.id')})::int`.as('assetCount'))
+      .executeTakeFirst();
+
+    return row?.assetCount ?? 0;
+  }
+
+  async getSpaceNewAssetIds(
+    spaceId: string,
+    args: { since?: Date; viewerId: string; take: number },
+    options: HiddenContentQueryOptions = {},
+  ): Promise<string[]> {
+    const rows = await this.spaceNewAssetsQuery(spaceId, args, options)
+      .select('asset.id as id')
+      .distinct()
+      .orderBy('asset.id', 'asc')
+      .limit(args.take)
+      .execute();
+
+    return rows.map(({ id }) => id);
   }
 }
