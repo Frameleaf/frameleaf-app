@@ -466,6 +466,81 @@ describe(SearchService.name, () => {
     });
   });
 
+  describe('Locked media in the flat (legacy) searches', () => {
+    const partnerSetup = () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+      const partner = PartnerFactory.create({ sharedWithId: auth.user.id, inTimeline: true });
+      mocks.partner.getAll.mockResolvedValue([getForPartner(partner)]);
+      mocks.search.searchMetadata.mockResolvedValue({ hasNextPage: false, items: [] });
+      mocks.search.searchStatistics.mockResolvedValue({ total: 0 });
+      mocks.search.searchRandom.mockResolvedValue([]);
+      mocks.search.searchLargeAssets.mockResolvedValue([]);
+      mocks.search.searchSmart.mockResolvedValue({ hasNextPage: false, items: [] });
+      mocks.machineLearning.encodeText.mockResolvedValue('[1, 2, 3]');
+      return { auth, partnerId: partner.sharedById };
+    };
+
+    it("scopes an elevated session's Locked media to its own owner when partners are searched too", async () => {
+      const { auth, partnerId } = partnerSetup();
+      const scoped = expect.objectContaining({
+        userIds: [auth.user.id, partnerId],
+        lockedOwnerId: auth.user.id,
+      });
+
+      await sut.searchMetadata(auth, { size: 250 });
+      expect(mocks.search.searchMetadata).toHaveBeenCalledWith({ page: 1, size: 250 }, scoped);
+
+      await sut.searchStatistics(auth, {});
+      expect(mocks.search.searchStatistics).toHaveBeenCalledWith(scoped);
+
+      await sut.searchRandom(auth, { size: 10 });
+      expect(mocks.search.searchRandom).toHaveBeenCalledWith(10, scoped);
+
+      await sut.searchLargeAssets(auth, { size: 10 });
+      expect(mocks.search.searchLargeAssets).toHaveBeenCalledWith(10, scoped);
+
+      await sut.searchSmart(auth, { query: 'beach' });
+      expect(mocks.search.searchSmart).toHaveBeenCalledWith({ page: 1, size: 100 }, scoped);
+    });
+
+    it('never names a Locked owner for a session that is not elevated', async () => {
+      const auth = AuthFactory.create();
+      mocks.search.searchMetadata.mockResolvedValue({ hasNextPage: false, items: [] });
+
+      await sut.searchMetadata(auth, { size: 250 });
+
+      const options = mocks.search.searchMetadata.mock.calls[0][1];
+      expect(options.visibility).toBe('not-locked');
+      expect(options).not.toHaveProperty('lockedOwnerId');
+    });
+
+    it('never names a Locked owner for a shared link, even inside its album', async () => {
+      const auth = AuthFactory.from().sharedLink().build();
+      const albumId = newUuid();
+      mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set([albumId]));
+      mocks.search.searchMetadata.mockResolvedValue({ hasNextPage: false, items: [] });
+
+      await sut.searchMetadata(auth, { size: 250, albumIds: [albumId] });
+
+      expect(mocks.search.searchMetadata.mock.calls[0][1]).not.toHaveProperty('lockedOwnerId');
+    });
+
+    it('keeps an explicit Locked request to the caller alone', async () => {
+      const { auth } = partnerSetup();
+
+      await sut.searchMetadata(auth, { size: 250, visibility: AssetVisibility.Locked });
+
+      expect(mocks.search.searchMetadata).toHaveBeenCalledWith(
+        { page: 1, size: 250 },
+        expect.objectContaining({
+          userIds: [auth.user.id],
+          visibility: AssetVisibility.Locked,
+          lockedOwnerId: auth.user.id,
+        }),
+      );
+    });
+  });
+
   describe('askSearch', () => {
     beforeEach(() => {
       mocks.search.searchSmart.mockResolvedValue({ hasNextPage: false, items: [] });
