@@ -28,8 +28,10 @@ export class NotificationAdminService extends BaseService {
       throw new Error('User not found');
     }
 
+    const transport = await this.withStoredSmtpPassword(dto.transport);
+
     try {
-      await this.emailRepository.verifySmtp(dto.transport);
+      await this.emailRepository.verifySmtp(transport);
     } catch (error) {
       throw new BadRequestException('Failed to verify SMTP configuration', { cause: error });
     }
@@ -50,10 +52,32 @@ export class NotificationAdminService extends BaseService {
       text,
       from: dto.from,
       replyTo: dto.replyTo || dto.from,
-      smtp: dto.transport,
+      smtp: transport,
     });
 
     return { messageId };
+  }
+
+  /**
+   * FL-67: the SMTP password is write-only, so the settings page tests a draft with an empty
+   * password. The stored password is used then, but only when every other transport setting is the
+   * stored one, so a saved password is never sent to a different server, account or security mode.
+   */
+  private async withStoredSmtpPassword(transport: SystemConfigSmtpDto['transport']) {
+    if (transport.password !== '') {
+      return transport;
+    }
+
+    const { notifications } = await this.getConfig({ withCache: false });
+    const stored = notifications.smtp.transport;
+    const sameServer =
+      stored.host === transport.host &&
+      stored.port === transport.port &&
+      stored.username === transport.username &&
+      stored.secure === transport.secure &&
+      stored.ignoreCert === transport.ignoreCert;
+
+    return stored.password && sameServer ? { ...transport, password: stored.password } : transport;
   }
 
   async getTemplate(name: EmailTemplate, customTemplate: string) {

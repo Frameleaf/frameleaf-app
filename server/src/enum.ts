@@ -2376,3 +2376,24 @@ export enum SearchOrderField {
 }
 
 export const SearchOrderFieldSchema = z.enum(SearchOrderField).meta({ id: 'SearchOrderField' });
+
+/**
+ * FL-67: the server secrets an administrator can replace or clear but never read back. Each one
+ * lives in the system configuration and is always returned redacted (an empty string plus a
+ * `...Configured` flag); these names address them through `/admin/config/credentials`.
+ */
+export enum ConfigCredential {
+  /** `notifications.smtp.transport.password` */
+  SmtpPassword = 'smtp-password',
+  /** `oauth.clientSecret` */
+  OAuthClientSecret = 'oauth-client-secret',
+  /** `machineLearning.runpod.apiKey` */
+  RunPodApiKey = 'runpod-api-key',
+  /** `machineLearning.runpod.hfToken` */
+  HuggingFaceToken = 'huggingface-token',
+}
+
+export const ConfigCredentialSchema = z
+  .enum(ConfigCredential)
+  .describe('A server secret that can be replaced or cleared but never read back')
+  .meta({ id: 'ConfigCredential' });

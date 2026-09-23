@@ -448,10 +448,15 @@ describe(UserService.name, () => {
       await expect(
         sut.updateMyPreferences(authStub.user1, { cast: { gCastEnabled: false }, tags: { enabled: true } }),
       ).resolves.toMatchObject({ cast: { gCastEnabled: false, adminDisabled: true }, tags: { enabled: true } });
-      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(authStub.user1.user.id, {
-        key: UserMetadataKey.Preferences,
-        value: expect.objectContaining({ cast: { gCastEnabled: true, adminDisabled: true } }),
-      });
+      // the third argument is the preferences-lock transaction (FL-67); the unit mock passes undefined
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        {
+          key: UserMetadataKey.Preferences,
+          value: expect.objectContaining({ cast: { gCastEnabled: true, adminDisabled: true } }),
+        },
+        undefined,
+      );
     });
 
     it('should never let a user set the administrator flag', async () => {
@@ -460,10 +465,11 @@ describe(UserService.name, () => {
       await expect(
         sut.updateMyPreferences(authStub.user1, { cast: { gCastEnabled: true, adminDisabled: true } }),
       ).resolves.toMatchObject({ cast: { gCastEnabled: true, adminDisabled: false } });
-      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(authStub.user1.user.id, {
-        key: UserMetadataKey.Preferences,
-        value: { cast: { gCastEnabled: true } },
-      });
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        { key: UserMetadataKey.Preferences, value: { cast: { gCastEnabled: true } } },
+        undefined,
+      );
     });
 
     it('should report casting off from getMyPreferences while an administrator has turned it off', async () => {
@@ -491,10 +497,109 @@ describe(UserService.name, () => {
       await expect(
         sut.updateMyPreferences(authStub.user1, { expectedRevision: revision, tags: { enabled: true } }),
       ).resolves.toMatchObject({ tags: { enabled: true } });
-      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(authStub.user1.user.id, {
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        {
+          key: UserMetadataKey.Preferences,
+          value: { tags: { enabled: true }, cast: { gCastEnabled: true, adminDisabled: true } },
+        },
+        undefined,
+      );
+    });
+  });
+
+  describe('Locked rules (FL-67)', () => {
+    const personId = 'c5f9f5a1-3b8d-4f6e-9a2b-0d1e2f3a4b5c';
+    const tagId = '0b8f7e6d-5c4b-4a39-8281-7f6e5d4c3b2a';
+    const storedRules = [
+      {
         key: UserMetadataKey.Preferences,
-        value: { tags: { enabled: true }, cast: { gCastEnabled: true, adminDisabled: true } },
-      });
+        value: { privacy: { suppression: { personIds: [personId], tagIds: [tagId], scope: 'visible' } } },
+      },
+    ] as unknown as UserMetadataItem[];
+    const unlocked = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+
+    beforeEach(() => {
+      mocks.user.upsertMetadata.mockResolvedValue();
+      mocks.session.requestSyncResetForUser.mockResolvedValue();
+    });
+
+    it('should refuse to change Locked rules from a session that is not unlocked', async () => {
+      mocks.user.getMetadata.mockResolvedValue(storedRules);
+
+      await expect(
+        sut.updateMyPreferences(authStub.user1, { privacy: { suppression: { personIds: [] } } }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.database.withUserPreferencesLock).not.toHaveBeenCalled();
+      expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
+    });
+
+    it('should refuse a scope change from a session that is not unlocked', async () => {
+      await expect(
+        sut.updateMyPreferences(authStub.user1, { privacy: { suppression: { scope: 'owned' } } }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('should still save other preferences from a session that is not unlocked', async () => {
+      mocks.user.getMetadata.mockResolvedValue(storedRules);
+
+      await expect(
+        sut.updateMyPreferences(authStub.user1, { tags: { enabled: true }, privacy: { suppression: {} } }),
+      ).resolves.toMatchObject({ tags: { enabled: true } });
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        {
+          key: UserMetadataKey.Preferences,
+          value: expect.objectContaining({
+            privacy: { suppression: { personIds: [personId], tagIds: [tagId], scope: 'visible' } },
+          }),
+        },
+        undefined,
+      );
+    });
+
+    it('should change Locked rules from an unlocked session inside the preferences lock', async () => {
+      mocks.user.getMetadata.mockResolvedValue(storedRules);
+
+      await expect(
+        sut.updateMyPreferences(unlocked, { privacy: { suppression: { personIds: [], tagIds: [tagId] } } }),
+      ).resolves.toMatchObject({ privacy: { suppression: { personIds: [], tagIds: [tagId], scope: 'visible' } } });
+      expect(mocks.database.withUserPreferencesLock).toHaveBeenCalledWith(unlocked.user.id, expect.any(Function));
+      expect(mocks.user.getMetadata).toHaveBeenCalledWith(unlocked.user.id, undefined);
+    });
+
+    it('should refuse an unlocked save made against rules that changed in another tab', async () => {
+      const loaded = getPreferencesRevision(getPreferences([]));
+      mocks.user.getMetadata.mockResolvedValue(storedRules);
+
+      await expect(
+        sut.updateMyPreferences(unlocked, {
+          expectedRevision: loaded,
+          privacy: { suppression: { personIds: [personId] } },
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
+    });
+
+    it('should keep Locked people and tags out of reads from a session that is not unlocked', async () => {
+      mocks.user.getMetadata.mockResolvedValue(storedRules);
+
+      const locked = await sut.getMyPreferences(authStub.user1);
+      const revealed = await sut.getMyPreferences(unlocked);
+
+      expect(locked.privacy.suppression).toEqual({ tagIds: [], personIds: [], petIds: [], scope: 'visible' });
+      expect(revealed.privacy.suppression).toMatchObject({ tagIds: [tagId], personIds: [personId] });
+      // the revision covers the stored rules either way, so a stale save is still detected
+      expect(locked.revision).toBe(revealed.revision);
+    });
+
+    it('should keep Locked people and tags out of the response to a save from a session that is not unlocked', async () => {
+      mocks.user.getMetadata.mockResolvedValue(storedRules);
+
+      const response = await sut.updateMyPreferences(authStub.user1, { ratings: { enabled: true } });
+
+      expect(response.privacy.suppression.personIds).toEqual([]);
+      expect(response.privacy.suppression.tagIds).toEqual([]);
     });
   });
 

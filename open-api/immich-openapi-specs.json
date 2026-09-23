@@ -1651,8 +1651,12 @@
             "type": "string"
           },
           "clientSecret": {
-            "description": "Client secret",
+            "description": "Client secret (write-only; empty preserves the existing secret)",
             "type": "string"
+          },
+          "clientSecretConfigured": {
+            "description": "Read-only indicator that a client secret is stored. Set by the server; ignored on write.",
+            "type": "boolean"
           },
           "defaultStorageQuota": {
             "description": "Default storage quota",
@@ -2161,8 +2165,12 @@
             "type": "boolean"
           },
           "password": {
-            "description": "SMTP password",
+            "description": "SMTP password (write-only; empty preserves the existing password)",
             "type": "string"
+          },
+          "passwordConfigured": {
+            "description": "Read-only indicator that an SMTP password is stored. Set by the server; ignored on write.",
+            "type": "boolean"
           },
           "port": {
             "description": "SMTP server port",
@@ -7011,6 +7019,46 @@
           "p3"
         ],
         "type": "string"
+      },
+      "ConfigCredential": {
+        "description": "A server secret that can be replaced or cleared but never read back",
+        "enum": [
+          "smtp-password",
+          "oauth-client-secret",
+          "runpod-api-key",
+          "huggingface-token"
+        ],
+        "type": "string"
+      },
+      "ConfigCredentialResponseDto": {
+        "properties": {
+          "configured": {
+            "description": "Whether a value is stored. The value itself is never returned",
+            "type": "boolean"
+          },
+          "name": {
+            "$ref": "#/components/schemas/ConfigCredential"
+          }
+        },
+        "required": [
+          "configured",
+          "name"
+        ],
+        "type": "object"
+      },
+      "ConfigCredentialUpdateDto": {
+        "properties": {
+          "value": {
+            "description": "The new secret. Stored as sent and never returned",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
       },
       "ContributorCountResponseDto": {
         "properties": {
@@ -30602,6 +30650,176 @@
           },
           {
             "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/config/credentials": {
+      "get": {
+        "description": "Whether each write-only server credential is stored. Credential values are never returned.",
+        "operationId": "getConfigCredentials",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConfigCredentialResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the server credentials",
+        "tags": [
+          "Config (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminConfig.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/config/credentials/{name}": {
+      "delete": {
+        "description": "Remove the stored value of one write-only server credential.",
+        "operationId": "deleteConfigCredential",
+        "parameters": [
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/ConfigCredential"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigCredentialResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Clear a server credential",
+        "tags": [
+          "Config (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminConfig.update",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Store a new value for one write-only server credential. The value is validated like a configuration save and is never returned.",
+        "operationId": "updateConfigCredential",
+        "parameters": [
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/ConfigCredential"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigCredentialUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigCredentialResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Replace a server credential",
+        "tags": [
+          "Config (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
             "state": "Alpha"
           }
         ],

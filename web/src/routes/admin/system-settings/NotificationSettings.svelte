@@ -10,7 +10,8 @@
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { handleSystemConfigSave } from '$lib/services/system-config.service';
   import { handleError } from '$lib/utils/handle-error';
-  import { sendTestEmailAdmin } from '@immich/sdk';
+  import CredentialRow from '$lib/components/frameleaf/settings/CredentialRow.svelte';
+  import { ConfigCredential, sendTestEmailAdmin } from '@immich/sdk';
   import { Button, toastManager } from '@immich/ui';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
@@ -37,7 +38,9 @@
             port: configToEdit.notifications.smtp.transport.port,
             secure: configToEdit.notifications.smtp.transport.secure,
             username: configToEdit.notifications.smtp.transport.username,
-            password: configToEdit.notifications.smtp.transport.password,
+            // FL-67: never sent from the browser; the server uses the stored password for the
+            // stored server and account.
+            password: '',
             ignoreCert: configToEdit.notifications.smtp.transport.ignoreCert,
           },
           from: configToEdit.notifications.smtp.from,
@@ -104,14 +107,11 @@
                 config.notifications.smtp.transport.username}
             />
 
-            <SettingField
-              inputType={SettingInputFieldType.PASSWORD}
-              label={$t('password')}
-              description={$t('admin.notification_email_password_description')}
-              disabled={disabled || !configToEdit.notifications.smtp.enabled}
-              bind:value={configToEdit.notifications.smtp.transport.password}
-              isEdited={configToEdit.notifications.smtp.transport.password !==
-                config.notifications.smtp.transport.password}
+            <!-- FL-67: the SMTP password is write-only and never part of this form's draft. -->
+            <CredentialRow
+              name={ConfigCredential.SmtpPassword}
+              {disabled}
+              reason={disabled ? $t('frameleaf_credentials_config_file') : undefined}
             />
 
             <SettingToggle
