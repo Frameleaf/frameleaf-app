@@ -5,6 +5,7 @@
   let {
     title,
     closeLabel,
+    returnFocus,
     open = $bindable(false),
     onRequestClose,
     wide = false,
@@ -12,6 +13,7 @@
   }: {
     title: string;
     closeLabel: string;
+    returnFocus?: HTMLElement;
     open?: boolean;
     /** Lets a caller guard X and Escape before the dialog closes. */
     onRequestClose?: () => void;
@@ -35,7 +37,7 @@
       return;
     }
 
-    const previous = document.activeElement;
+    const previous = returnFocus ?? document.activeElement;
     dialog.showModal();
     return () => {
       dialog.close();

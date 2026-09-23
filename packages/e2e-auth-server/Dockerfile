@@ -4,6 +4,7 @@ WORKDIR /usr/src/app
 RUN corepack enable
 
 COPY package* pnpm* .pnpmfile.cjs ./
+COPY ./packages/patches ./packages/patches/
 COPY ./packages/e2e-auth-server/package.json ./packages/e2e-auth-server/
 
 WORKDIR /usr/src/app/packages/e2e-auth-server
