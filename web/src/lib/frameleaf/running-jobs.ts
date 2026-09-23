@@ -5,6 +5,7 @@ import {
   type QueueRunDto,
   type RunningJobsResponseDto,
 } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 import { fromMediaOperation, type ActivityTone } from '$lib/frameleaf/activity';
 import { Route } from '$lib/route';
 
@@ -35,7 +36,7 @@ export type RunningJobControl =
   | { kind: 'pause' }
   | { kind: 'resume' }
   /** Shown, disabled, with the reason as its tooltip and description. */
-  | { kind: 'unavailable'; reasonKey: string };
+  | { kind: 'unavailable'; reasonKey: Translations };
 
 export type RunningJobRow = {
   /** Unique across sources. */
@@ -44,13 +45,13 @@ export type RunningJobRow = {
   /** The viewer's own words (a job label, a memory title), when the row has them. */
   title?: string;
   /** i18n key for a translated title, e.g. a bulk action's name. */
-  titleKey?: string;
+  titleKey?: Translations;
   /** For a queue row: the queue, whose title and icon come from the admin Jobs page's catalogue. */
   queueName?: QueueName;
   /** i18n key for the kind of work, shown under the title. */
-  kindKey: string;
+  kindKey: Translations;
   /** i18n key for the state, shown as a chip as on the prototype's Activity rows. */
-  statusKey: string;
+  statusKey: Translations;
   /** The chip's and the bar's tone: info while working, warning while paused or pausing. */
   tone: ActivityTone;
   /** Work is moving right now: the chip carries the prototype's pulsing dot. */
@@ -121,7 +122,7 @@ export const operationRow = (operation: RunningJobsResponseDto['operations'][num
   };
 };
 
-const MEMORY_EXPORT_STATUS_KEY: Partial<Record<MemoryExportStatus, string>> = {
+const MEMORY_EXPORT_STATUS_KEY: Partial<Record<MemoryExportStatus, Translations>> = {
   [MemoryExportStatus.Pending]: 'frameleaf_activity_status_queued',
   [MemoryExportStatus.Running]: 'frameleaf_activity_bulk_running',
   [MemoryExportStatus.Cancelling]: 'frameleaf_activity_status_cancelling',

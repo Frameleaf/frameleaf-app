@@ -18,6 +18,7 @@ import {
   type AssetRestorationOptionsDto,
   type AssetRestorationResponseDto,
 } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 
 export const RESTORATION_UPSCALES = [1, 2, 4] as const;
@@ -127,9 +128,11 @@ export const restorationStatusTone = (status: AssetRestorationStatus): Restorati
   }
 };
 
-export const restorationStatusKey = (status: AssetRestorationStatus) => `frameleaf_restoration_status_${status}`;
-export const restorationModeKey = (mode: AssetRestorationMode) => `frameleaf_restoration_mode_${mode}`;
-export const restorationModeHelpKey = (mode: AssetRestorationMode) => `frameleaf_restoration_mode_${mode}_help`;
+export const restorationStatusKey = (status: AssetRestorationStatus): Translations =>
+  `frameleaf_restoration_status_${status}`;
+export const restorationModeKey = (mode: AssetRestorationMode): Translations => `frameleaf_restoration_mode_${mode}`;
+export const restorationModeHelpKey = (mode: AssetRestorationMode): Translations =>
+  `frameleaf_restoration_mode_${mode}_help`;
 
 export const destinationKindKey = (kind: MlDestinationKind) => {
   switch (kind) {
@@ -216,12 +219,17 @@ export const isFullCropRect = (crop: { x: number; y: number; w: number; h: numbe
   crop.x <= 0 && crop.y <= 0 && crop.w >= 0.999 && crop.h >= 0.999;
 
 /** "about 2 min" from measured seconds; null when nothing is measured, so the caller says so. */
-export const formatEstimateSeconds = (seconds: number | null, locale: string): string | null => {
+export const formatEstimateSeconds = (seconds: number | null, locale?: string | null): string | null => {
   if (seconds === null || !Number.isFinite(seconds) || seconds < 0) {
     return null;
   }
   const format = (value: number, unit: 'second' | 'minute' | 'hour') =>
-    new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'long', maximumFractionDigits: 0 }).format(value);
+    new Intl.NumberFormat(locale ?? undefined, {
+      style: 'unit',
+      unit,
+      unitDisplay: 'long',
+      maximumFractionDigits: 0,
+    }).format(value);
   if (seconds < 60) {
     return format(Math.max(1, Math.round(seconds)), 'second');
   }

@@ -65,6 +65,7 @@
       class:active={index === activeIndex && focused}
     ></span>
   {/each}
+  <!-- svelte-ignore a11y_autofocus (the caller opts in when the PIN is the only field on the dialog) -->
   <input
     class="pin-input"
     type="password"

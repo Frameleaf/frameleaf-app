@@ -82,7 +82,7 @@ export type BulkOutcome = {
   id: string;
   status: BulkOutcomeStatus;
   /** i18n key describing why an item was skipped or failed. */
-  reasonKey?: string;
+  reasonKey?: Translations;
   /** The server's message, kept for the details list. */
   message?: string;
 };
@@ -243,6 +243,10 @@ export const chunk = <T>(items: readonly T[], size = BULK_CHUNK_SIZE): T[][] => 
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown error';
 
+/** The reason key for a per-id error code the server returned (`not-found` → `..._not_found`). */
+const serverReasonKey = (code: string | null | undefined): Translations =>
+  `frameleaf_bulk_reason_${(code ?? 'failed').replaceAll('-', '_')}` as Translations;
+
 const ok = (id: string): BulkOutcome => ({ id, status: 'ok' });
 const failed = (id: string, error: unknown): BulkOutcome => ({
   id,
@@ -250,7 +254,7 @@ const failed = (id: string, error: unknown): BulkOutcome => ({
   reasonKey: 'frameleaf_bulk_reason_failed',
   message: errorMessage(error),
 });
-const skipped = (id: string, reasonKey: string): BulkOutcome => ({ id, status: 'skipped', reasonKey });
+const skipped = (id: string, reasonKey: Translations): BulkOutcome => ({ id, status: 'skipped', reasonKey });
 
 const isOutcomeList = (value: unknown): value is BulkOutcome[] =>
   Array.isArray(value) && value.every((item) => !!item && typeof item === 'object' && 'status' in item);
@@ -263,7 +267,7 @@ const fromBulkIdResponses = (responses: readonly BulkIdResponseDto[]): BulkOutco
       : {
           id: response.id,
           status: 'failed' as const,
-          reasonKey: `frameleaf_bulk_reason_${(response.error ?? 'failed').replaceAll('-', '_')}`,
+          reasonKey: serverReasonKey(response.error),
           message: response.errorMessage,
         },
   );
@@ -373,7 +377,7 @@ const runPerItem = async (
 export type SnapshotSearch =
   | { kind: 'metadata'; dto: MetadataSearchDto }
   | { kind: 'smart'; dto: SmartSearchDto }
-  | { kind: 'unsupported'; reasonKey: string };
+  | { kind: 'unsupported'; reasonKey: Translations };
 
 /**
  * Turn the frozen view state into a search the server can answer. The scope is applied on top of
@@ -768,7 +772,7 @@ export const runBulkAction = async (
           livePhotoRelinkDto: { pairs: pairs.map(({ photoId, videoId }) => ({ photoId, videoId })) },
         });
         report(results.length);
-        const mapped = results.map((result) =>
+        const mapped = results.map((result): BulkOutcome =>
           result.success
             ? ok(result.photoId)
             : {
@@ -867,7 +871,7 @@ export const runBulkAction = async (
               : {
                   id: response.assetId,
                   status: 'failed' as const,
-                  reasonKey: `frameleaf_bulk_reason_${(response.error ?? 'failed').replaceAll('-', '_')}`,
+                  reasonKey: serverReasonKey(response.error),
                 },
           );
         }),
@@ -1179,7 +1183,7 @@ export const removesFromView = (action: BulkActionId, view: BulkView = ORDINARY_
  *   the action would have put it, or the job cannot say for certain (see `itemsTruncated`).
  */
 export type DurableItemState =
-  { state: 'pending' } | { state: 'done' } | { state: 'failed'; reasonKey: string } | { state: 'unchanged' };
+  { state: 'pending' } | { state: 'done' } | { state: 'failed'; reasonKey: Translations } | { state: 'unchanged' };
 
 const FINISHED_JOB: ReadonlySet<MediaOperationStatus> = new Set([
   MediaOperationStatus.Completed,
@@ -1227,7 +1231,11 @@ export const durableItemStates = (
       } else if (refusal.reasonKey === 'frameleaf_bulk_reason_duplicate') {
         states.set(id, { state: 'unchanged' });
       } else {
-        states.set(id, { state: 'failed', reasonKey: refusal.reasonKey ?? 'frameleaf_bulk_reason_failed' });
+        // The server records the web's own reason keys against a refused item.
+        states.set(id, {
+          state: 'failed',
+          reasonKey: (refusal.reasonKey as Translations | null | undefined) ?? 'frameleaf_bulk_reason_failed',
+        });
       }
       continue;
     }
