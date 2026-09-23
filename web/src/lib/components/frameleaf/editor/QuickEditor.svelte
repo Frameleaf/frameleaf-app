@@ -945,17 +945,19 @@
               {/each}
             </div>
             <h3>{$t('frameleaf_editor_straighten')}</h3>
-            <div class="ed-dial" style="--dial-x: {recipe.straighten * 8}px" ondblclick={() => change({ straighten: 0 })} role="presentation">
+            <div class="ed-dial" style="--dial-x: {recipe.straighten * 8}px">
               <output aria-hidden="true">{recipe.straighten > 0 ? '+' : ''}{recipe.straighten.toFixed(1)}°</output>
               <input
                 type="range"
                 aria-label={$t('frameleaf_editor_straighten')}
+                title={$t('frameleaf_editor_double_click_reset')}
                 min="-45"
                 max="45"
                 step="0.5"
                 value={recipe.straighten}
                 aria-valuetext={$t('frameleaf_editor_degrees', { values: { degrees: recipe.straighten.toFixed(1) } })}
                 oninput={(event) => change({ straighten: Number(event.currentTarget.value) })}
+                ondblclick={() => change({ straighten: 0 })}
               />
             </div>
             <h3>{$t('editor_orientation')}</h3>
