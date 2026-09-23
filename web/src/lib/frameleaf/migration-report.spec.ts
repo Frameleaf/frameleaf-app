@@ -5,7 +5,10 @@ import {
   parseMigrationReport,
   type MigrationReport,
 } from '$lib/frameleaf/migration-report';
-import { cleanMigrationReport as cleanReport, failedMigrationReport as failedReport } from '@test-data/frameleaf/migration-report';
+import {
+  cleanMigrationReport as cleanReport,
+  failedMigrationReport as failedReport,
+} from '@test-data/frameleaf/migration-report';
 
 const parse = (value: unknown) => parseMigrationReport(JSON.stringify(value));
 const accepted = (value: unknown): MigrationReport => {
@@ -71,12 +74,21 @@ describe('parseMigrationReport', () => {
 
   it.each([
     ['an API key field', { apiKey: 'x' }],
-    ['a token field in an item', { unresolved: [{ kind: 'asset', id: 'a', name: 'n', reason: 'not-transferred', token: 'x' }] }],
+    [
+      'a token field in an item',
+      { unresolved: [{ kind: 'asset', id: 'a', name: 'n', reason: 'not-transferred', token: 'x' }] },
+    ],
     ['a raw key value', { user: 'k2xQ9vLm4RtZ8pWn3YbHc7JdFs6GaE1uTiOo' }],
-    ['a bearer header', { unresolved: [{ kind: 'asset', id: 'a', name: 'n', reason: 'transfer-failed', detail: 'Bearer abc.def' }] }],
+    [
+      'a bearer header',
+      { unresolved: [{ kind: 'asset', id: 'a', name: 'n', reason: 'transfer-failed', detail: 'Bearer abc.def' }] },
+    ],
     ['credentials in the server URL', { from: 'https://user:pw@old.example.com/api' }],
     ['a query token in the server URL', { to: 'https://new.example.com/api?apiKey=abc' }],
-    ['a private key', { unresolved: [{ kind: 'tag', id: 't', name: '-----BEGIN RSA PRIVATE KEY-----', reason: 'not-assigned' }] }],
+    [
+      'a private key',
+      { unresolved: [{ kind: 'tag', id: 't', name: '-----BEGIN RSA PRIVATE KEY-----', reason: 'not-assigned' }] },
+    ],
   ])('rejects %s as a secret payload', (_label, patch) => {
     expect(parse({ ...cleanReport(), ...patch })).toEqual({ ok: false, error: 'secret' });
   });
@@ -105,6 +117,32 @@ describe('parseMigrationReport', () => {
       { kind: 'tag', id: 't1', name: 'Travel/Canada/Alberta', reason: 'not-assigned' },
     ];
     expect(parse(report).ok).toBe(true);
+  });
+
+  it('accepts path-like and long names from the source library as display text', () => {
+    const report = failedReport();
+    report.unresolved = [
+      { kind: 'album', id: 'al1', name: '/Backup', reason: 'not-created' },
+      { kind: 'album', id: 'al2', name: 'Holiday /Beach', reason: 'not-linked' },
+      { kind: 'person', id: 'p1', name: String.raw`C:\Old`, reason: 'not-attached' },
+      { kind: 'tag', id: 't1', name: 'Grandma: /the best/', reason: 'not-assigned' },
+      { kind: 'album', id: 'al3', name: 'Summer-Trip-2024-Photos-Of-The-Family-x', reason: 'not-linked' },
+    ];
+    report.unresolvedCount = 5;
+    expect(accepted(report).unresolved.map((item) => item.name)).toEqual([
+      '/Backup',
+      'Holiday /Beach',
+      String.raw`C:\Old`,
+      'Grandma: /the best/',
+      'Summer-Trip-2024-Photos-Of-The-Family-x',
+    ]);
+  });
+
+  it('still rejects a credential used as a name', () => {
+    const report = failedReport();
+    report.unresolved = [{ kind: 'album', id: 'al1', name: 'Bearer abc.def', reason: 'not-created' }];
+    report.unresolvedCount = 1;
+    expect(parse(report)).toEqual({ ok: false, error: 'secret' });
   });
 
   it('rejects other files', () => {

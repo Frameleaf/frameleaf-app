@@ -169,6 +169,11 @@ const printSummary = (report: AuditReport | undefined, ledgerPath: string, audit
   }
   if (report.dryRun) {
     console.log('\nDRY RUN — nothing was written to SERVER B. This preview never clears SERVER A for decommissioning.');
+  } else if (report.ok && report.unresolvedCount > 0) {
+    console.log(
+      `\n✅ PASS — every asset is present on SERVER B, but ${report.unresolvedCount} album/tag/stack/person item(s) ` +
+        'are unresolved. Resolve or accept them (see the audit report) before decommissioning SERVER A.',
+    );
   } else if (report.ok) {
     console.log('\n✅ PASS — every asset is present on SERVER B. SERVER A is safe to decommission.');
   } else if (report.complete) {
@@ -197,6 +202,18 @@ async function runMigrate(raw: MigrateRawOptions) {
   const options = normalize(raw);
   if (options.preflight && options.verify) {
     die('Choose either --preflight or --verify, not both.');
+  }
+  if (options.verify) {
+    const ignored = [
+      options.dryRun && '--dry-run',
+      options.serve && '--serve',
+      options.retryFailed && '--retry-failed',
+      options.includeTrashed && '--include-trashed',
+      !options.faces && '--no-faces',
+    ].filter(Boolean);
+    if (ignored.length > 0) {
+      die(`--verify only re-checks the destination; remove ${ignored.join(', ')}.`);
+    }
   }
   if (options.verify) {
     await runVerify(options);
@@ -376,7 +393,8 @@ export async function verifyLedger(
       to: to.baseUrl,
       user: destinationUser,
       sourceUser: run.sourceEmail,
-      dryRun: false,
+      // A ledger only ever used for dry runs verifies as a dry run, never as a pass.
+      dryRun: run.dryRun,
       secrets,
     });
     return { report, auditPath };

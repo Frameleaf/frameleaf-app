@@ -72,13 +72,7 @@ export type MigrationReport = {
 };
 
 export type MigrationReportError =
-  | 'too-large'
-  | 'not-json'
-  | 'unsupported-format'
-  | 'invalid'
-  | 'secret'
-  | 'foreign-path'
-  | 'inconsistent';
+  'too-large' | 'not-json' | 'unsupported-format' | 'invalid' | 'secret' | 'foreign-path' | 'inconsistent';
 
 export type MigrationReportResult = { ok: true; report: MigrationReport } | { ok: false; error: MigrationReportError };
 
@@ -208,14 +202,38 @@ function parse(raw: string): MigrationReport {
     reject('unsupported-format');
   }
 
+  // Unresolved item names are the person's own album, tag, person and file names from the
+  // source library ("/Backup", a Windows-style drive name, a long hyphenated title). They are display text
+  // (rendered escaped), so they are exempt from the path and key-shape rules; any
+  // unambiguous credential pattern still rejects them. Everything else, including every
+  // `detail`, is checked in full.
+  const names: string[] = [];
+  const checked = {
+    ...root,
+    unresolved: Array.isArray(root.unresolved)
+      ? root.unresolved.map((item: unknown) => {
+          if (item && typeof item === 'object' && !Array.isArray(item)) {
+            const { name, ...rest } = item as Record<string, unknown>;
+            if (typeof name === 'string') {
+              names.push(name);
+            }
+            return { ...rest, name: '' };
+          }
+          return item;
+        })
+      : root.unresolved,
+  };
+  if (names.some((name) => SECRET_VALUE.some((pattern) => pattern.test(name)))) {
+    reject('secret');
+  }
   // Credentials first (anywhere, including the server URLs), then local paths anywhere but
   // the two server URLs, which are checked as URLs below.
-  scan(root, false, (value) => {
+  scan(checked, false, (value) => {
     if (looksSecret(value)) {
       reject('secret');
     }
   });
-  for (const [key, value] of Object.entries(root)) {
+  for (const [key, value] of Object.entries(checked)) {
     if (key === 'from' || key === 'to') {
       continue;
     }

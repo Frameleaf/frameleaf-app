@@ -149,16 +149,37 @@ export class Ledger {
         `INSERT INTO run (id, started_at, from_url, to_url, user_email, source_email, dry_run)
          VALUES (1, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET from_url = excluded.from_url, to_url = excluded.to_url,
-         user_email = excluded.user_email, source_email = COALESCE(excluded.source_email, run.source_email)`,
+         user_email = excluded.user_email, source_email = COALESCE(excluded.source_email, run.source_email),
+         dry_run = MIN(run.dry_run, excluded.dry_run)`,
       )
       .run(meta.startedAt, meta.fromUrl, meta.toUrl, meta.userEmail, meta.sourceEmail ?? null, meta.dryRun ? 1 : 0);
   }
 
-  /** The recorded run, if any. Tolerates ledgers created before `source_email` existed. */
+  /**
+   * The recorded run, if any. Tolerates ledgers created before `source_email` existed.
+   * `dryRun` stays true until a run without --dry-run has used this ledger: a dry run still
+   * marks originals the destination already holds, so a dry-run-only ledger must never
+   * verify as a pass.
+   */
   runInfo():
-    { startedAt: string; fromUrl: string; toUrl: string; userEmail: string; sourceEmail: string | null } | undefined {
+    | {
+        startedAt: string;
+        fromUrl: string;
+        toUrl: string;
+        userEmail: string;
+        sourceEmail: string | null;
+        dryRun: boolean;
+      }
+    | undefined {
     const row = this.db.prepare('SELECT * FROM run WHERE id = 1').get() as
-      | { started_at: string; from_url: string; to_url: string; user_email: string; source_email?: string | null }
+      | {
+          started_at: string;
+          from_url: string;
+          to_url: string;
+          user_email: string;
+          source_email?: string | null;
+          dry_run: number | null;
+        }
       | undefined;
     return row
       ? {
@@ -167,6 +188,7 @@ export class Ledger {
           toUrl: row.to_url,
           userEmail: row.user_email,
           sourceEmail: row.source_email ?? null,
+          dryRun: row.dry_run === 1,
         }
       : undefined;
   }
