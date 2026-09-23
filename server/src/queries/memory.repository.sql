@@ -25,7 +25,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -104,7 +114,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -164,7 +184,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -257,7 +287,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -320,7 +360,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -421,7 +471,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -484,7 +544,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -578,7 +648,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -641,7 +721,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -738,7 +828,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -802,7 +902,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -871,7 +981,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case
@@ -938,7 +1058,17 @@ select
           inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
         where
           "memory_asset"."memoriesId" = "memory"."id"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
           and not (
             case
@@ -1007,7 +1137,17 @@ where
         inner join "asset" on "asset"."id" = "memory_asset"."assetId"
       where
         "memory_asset"."memoriesId" = "memory"."id"
-        and "asset"."visibility" = 'timeline'
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
         and "asset"."deletedAt" is null
         and not (
           case

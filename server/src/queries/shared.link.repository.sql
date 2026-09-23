@@ -281,6 +281,14 @@ select
         where
           "shared_link"."id" = "shared_link_asset"."sharedLinkId"
           and "asset"."deletedAt" is null
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
         order by
           "asset"."fileCreatedAt" asc
         limit

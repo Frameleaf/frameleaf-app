@@ -7,7 +7,20 @@ select
   "ownerId",
   "duplicateId",
   "stackId",
-  "visibility",
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility",
   "smart_search"."embedding"
 from
   "asset"
@@ -333,6 +346,14 @@ select
   "asset"."width",
   "asset"."height",
   "asset"."isEdited",
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked",
   (
     select
       coalesce(json_agg(agg), '[]')
@@ -403,7 +424,17 @@ from
   inner join "asset_job_status" as "job_status" on "job_status"."assetId" = "asset"."id"
 where
   "asset"."deletedAt" is null
-  and "asset"."visibility" in ('archive', 'timeline')
+  and (
+    "asset"."visibility" in ('archive', 'timeline')
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
   and "job_status"."duplicatesDetectedAt" is null
 
 -- AssetJobRepository.streamForVideoDuplicateFrames
@@ -434,7 +465,20 @@ select
   "asset"."id",
   "asset"."ownerId",
   "asset"."originalPath",
-  "asset"."visibility",
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility",
   (
     select
       to_json(obj)

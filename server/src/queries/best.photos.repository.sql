@@ -77,6 +77,14 @@ where
   and "asset"."deletedAt" is null
   and "asset"."status" = 'active'
   and "asset"."visibility" in ('timeline')
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and "asset"."type" in ('IMAGE', 'VIDEO')
   and "asset_best_photo_score"."score" >= $3
 select
@@ -101,6 +109,14 @@ where
   and "asset"."deletedAt" is null
   and "asset"."status" = 'active'
   and "asset"."visibility" in ('timeline')
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and "asset"."type" in ('IMAGE', 'VIDEO')
   and "asset_best_photo_score"."score" >= $3
 order by

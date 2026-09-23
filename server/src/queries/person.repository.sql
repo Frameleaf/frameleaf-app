@@ -95,7 +95,17 @@ from
   inner join "asset_face" on "asset_face"."personGroupId" = "person"."personGroupId"
   inner join "asset" on "asset_face"."assetId" = "asset"."id"
   and "asset"."ownerId" = "person"."ownerId"
-  and "asset"."visibility" = 'timeline'
+  and (
+    "asset"."visibility" = 'timeline'
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
   and "asset"."deletedAt" is null
 where
   "person"."ownerId" = $1
@@ -212,7 +222,20 @@ select
       (
         select
           "asset"."ownerId",
-          "asset"."visibility",
+          (
+            case
+              when "asset"."visibility" = 'hidden' then "asset"."visibility"
+              when exists (
+                select
+                  1
+                from
+                  asset_lock
+                where
+                  asset_lock."assetId" = "asset"."id"
+              ) then 'locked'::asset_visibility_enum
+              else "asset"."visibility"
+            end
+          ) as "visibility",
           "asset"."fileCreatedAt",
           "user"."clusterGroupId"
         from
@@ -276,7 +299,8 @@ where
 -- PersonRepository.reassignFace
 update "asset_face"
 set
-  "personGroupId" = $1
+  "personGroupId" = $1,
+  "correctedAt" = clock_timestamp()
 where
   "asset_face"."id" = $2
 
@@ -308,7 +332,17 @@ where
     from
       "asset_face"
       inner join "asset" on "asset"."id" = "asset_face"."assetId"
-      and "asset"."visibility" = 'timeline'
+      and (
+        "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
       and "asset"."deletedAt" is null
     where
       "asset_face"."personGroupId" = "person"."personGroupId"
@@ -338,7 +372,17 @@ select
 from
   "asset_face"
   left join "asset" on "asset"."id" = "asset_face"."assetId"
-  and "asset"."visibility" = 'timeline'
+  and (
+    "asset"."visibility" = 'timeline'
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
   and "asset"."deletedAt" is null
   and (
     "asset"."ownerId" = $1::uuid
@@ -387,7 +431,17 @@ where
           "asset"
         where
           "asset"."id" = "asset_face"."assetId"
-          and "asset"."visibility" = 'timeline'
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
           and "asset"."deletedAt" is null
       )
   )
@@ -700,7 +754,20 @@ where
 select
   "asset_face"."id",
   "asset"."ownerId",
-  "asset"."visibility"
+  (
+    case
+      when "asset"."visibility" = 'hidden' then "asset"."visibility"
+      when exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) then 'locked'::asset_visibility_enum
+      else "asset"."visibility"
+    end
+  ) as "visibility"
 from
   "asset_face"
   inner join "asset" on "asset"."id" = "asset_face"."assetId"
@@ -720,6 +787,35 @@ where
 order by
   "person"."ownerId"
 
+-- PersonRepository.getMergeSuggestions
+with
+  "candidates" as (
+    select
+      "p1"."personGroupId" as "personId",
+      "p2"."personGroupId" as "suggestionId",
+      fs1.embedding <=> fs2.embedding as "distance"
+    from
+      "person" as "p1"
+      inner join "face_search" as "fs1" on "fs1"."faceId" = "p1"."faceAssetId"
+      inner join "person" as "p2" on "p2"."ownerId" = "p1"."ownerId"
+      and "p2"."personGroupId" > "p1"."personGroupId"
+      inner join "face_search" as "fs2" on "fs2"."faceId" = "p2"."faceAssetId"
+    where
+      "p1"."ownerId" = $1
+      and "p1"."isHidden" = $2
+      and "p2"."isHidden" = $3
+  )
+select
+  *
+from
+  "candidates"
+where
+  "candidates"."distance" < $4
+order by
+  "candidates"."distance" asc
+limit
+  $5
+
 -- PersonRepository.getCorrections
 select
   "asset_face"."id",
@@ -738,7 +834,7 @@ where
       where
         asset_lock."assetId" = "asset"."id"
     )
-    or "asset"."ownerId" = $1
+    or "asset"."ownerId" = $1::uuid
   )
   and "asset_face"."personGroupId" = $2
   and "asset_face"."deletedAt" is null
