@@ -108,6 +108,10 @@
     /* Used by layouts to ensure proper spacing between navbar and content */
     --navbar-height: calc(4.5rem + 4px);
     --navbar-height-md: calc(4.5rem + 4px - 14px);
+
+    /* The Frameleaf top bar (FL-30): the prototype's 56px bar, and its two-row phone grid. */
+    --fl-topbar-height: 3.5rem;
+    --fl-topbar-height-phone: 6rem;
   }
 
   :root.dark {
