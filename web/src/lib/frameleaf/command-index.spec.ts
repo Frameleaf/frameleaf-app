@@ -104,6 +104,14 @@ describe('buildCatalogueCommands', () => {
     expect(decodeURIComponent(commands.places[0].href as string)).toContain('"city":"Banff"');
   });
 
+  it('opens a shared space on its own page', () => {
+    const commands = buildCatalogueCommands($t, {
+      ...emptyCommandCatalogue(),
+      albums: [{ id: 's1', name: 'Family', icon: null, kind: 'space', assetCount: 3, shared: true, children: [] }],
+    });
+    expect(commands.collections[0].href).toBe('/sharing/s1');
+  });
+
   it('names an unnamed person rather than offering a blank row', () => {
     const commands = buildCatalogueCommands($t, {
       ...emptyCommandCatalogue(),
