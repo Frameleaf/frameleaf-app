@@ -49,12 +49,9 @@ export type MediaOperationAggregateRow = {
 export class MediaOperationRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
-  create(operation: MediaOperationCreate): Promise<MediaOperation> {
-    return this.db
-      .insertInto('media_operation')
-      .values(operation)
-      .returningAll()
-      .executeTakeFirstOrThrow() as Promise<MediaOperation>;
+  async create(operation: MediaOperationCreate): Promise<MediaOperation> {
+    const row = await this.db.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
+    return row as unknown as MediaOperation;
   }
 
   /** Owner-scoped read. Anything that answers a request goes through this or `list`. */
@@ -64,7 +61,7 @@ export class MediaOperationRepository {
       .selectAll()
       .where('id', '=', id)
       .where('ownerId', '=', ownerId)
-      .executeTakeFirst()) as MediaOperation | undefined;
+      .executeTakeFirst()) as unknown as MediaOperation | undefined;
   }
 
   async list(options: MediaOperationListOptions): Promise<{ items: MediaOperation[]; total: number }> {
@@ -97,7 +94,7 @@ export class MediaOperationRepository {
         .then((row) => Number(row?.count ?? 0)),
     ]);
 
-    return { items: items as MediaOperation[], total };
+    return { items: items as unknown as MediaOperation[], total };
   }
 
   getCheckpoints(operationId: string): Promise<MediaOperationCheckpoint[]> {
@@ -106,7 +103,7 @@ export class MediaOperationRepository {
       .selectAll()
       .where('operationId', '=', operationId)
       .orderBy('sequence', 'asc')
-      .execute() as Promise<MediaOperationCheckpoint[]>;
+      .execute() as unknown as Promise<MediaOperationCheckpoint[]>;
   }
 
   /**
@@ -174,7 +171,7 @@ export class MediaOperationRepository {
       .returningAll()
       .executeTakeFirst();
 
-    return row ? { operation: row as MediaOperation, claimToken } : undefined;
+    return row ? { operation: row as unknown as MediaOperation, claimToken } : undefined;
   }
 
   /** Extend the lease. Returns false when the claim has already been taken away. */
@@ -301,6 +298,10 @@ export class MediaOperationRepository {
    * A queued job has no worker to tell, so it is cancelled outright. Anything already claimed
    * goes to `cancelling` and stays there until the remote acknowledges: an unacknowledged cancel
    * is an open obligation, not a finished one.
+   *
+   * A claimed job keeps its lease on purpose. The worker needs it to answer — and if the worker
+   * has died instead, the lease expiring is how recovery finds out. Revoking the token here would
+   * leave the job stuck at `cancelling` with nobody able to settle it.
    */
   async requestCancel(id: string, ownerId: string): Promise<MediaOperation | undefined> {
     return (await this.db
@@ -325,14 +326,20 @@ export class MediaOperationRepository {
           .then(sql<Date>`now()`)
           .else(eb.ref('finishedAt'))
           .end(),
-        claimToken: null,
-        claimExpiresAt: null,
+        // Only a queued job had no worker to revoke.
+        claimToken: eb.case().when('status', '=', MediaOperationStatus.Queued).then(null).else(eb.ref('claimToken')).end(),
+        claimExpiresAt: eb
+          .case()
+          .when('status', '=', MediaOperationStatus.Queued)
+          .then(null)
+          .else(eb.ref('claimExpiresAt'))
+          .end(),
       }))
       .where('id', '=', id)
       .where('ownerId', '=', ownerId)
       .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
       .returningAll()
-      .executeTakeFirst()) as MediaOperation | undefined;
+      .executeTakeFirst()) as unknown as MediaOperation | undefined;
   }
 
   /**
@@ -380,7 +387,7 @@ export class MediaOperationRepository {
       )
       .orderBy('createdAt', 'asc')
       .limit(limit)
-      .execute() as Promise<MediaOperation[]>;
+      .execute() as unknown as Promise<MediaOperation[]>;
   }
 
   async markRemoteReleased(id: string): Promise<void> {
@@ -398,11 +405,21 @@ export class MediaOperationRepository {
   /**
    * Reclaim jobs whose lease expired: the worker died, the server restarted, the network went.
    *
-   * A job with attempts left returns to the queue and resumes from its checkpoints. One that has
-   * exhausted them fails with a stable code rather than looping forever. Clearing the claim token
-   * is the important part: if the old worker comes back, none of its writes match any more.
+   * Three outcomes, in order of how the row should honestly read afterwards:
+   *
+   * - A job with attempts left returns to the queue and resumes from its checkpoints.
+   * - One that has exhausted them fails with a stable code rather than looping forever.
+   * - One the owner had already asked to cancel becomes `cancelled`, because it plainly stopped —
+   *   but `cancelAcknowledgedAt` stays null, so a remote job whose cleanup nobody confirmed is
+   *   still an open obligation for the cleanup pass.
+   *
+   * Clearing the claim token is what makes all three safe: if the old worker comes back, none of
+   * its writes match any more.
    */
-  async recoverExpiredClaims(options: { errorCode: string; error: string }): Promise<{ requeued: number; failed: number }> {
+  async recoverExpiredClaims(options: {
+    errorCode: string;
+    error: string;
+  }): Promise<{ requeued: number; failed: number; abandonedCancels: number }> {
     const requeued = await this.db
       .updateTable('media_operation')
       .set({ status: MediaOperationStatus.Queued, claimToken: null, claimedBy: null, claimExpiresAt: null })
@@ -429,9 +446,29 @@ export class MediaOperationRepository {
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)
       .where(sql<boolean>`"attempt" >= "maxAttempts"`)
+      .where('cancelRequestedAt', 'is', null)
       .executeTakeFirst();
 
-    return { requeued: Number(requeued.numUpdatedRows), failed: Number(failed.numUpdatedRows) };
+    const abandonedCancels = await this.db
+      .updateTable('media_operation')
+      .set({
+        status: MediaOperationStatus.Cancelled,
+        finishedAt: sql<Date>`coalesce("finishedAt", now())`,
+        claimToken: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+      })
+      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+      .where('claimExpiresAt', 'is not', null)
+      .where('claimExpiresAt', '<', sql<Date>`now()`)
+      .where('cancelRequestedAt', 'is not', null)
+      .executeTakeFirst();
+
+    return {
+      requeued: Number(requeued.numUpdatedRows),
+      failed: Number(failed.numUpdatedRows),
+      abandonedCancels: Number(abandonedCancels.numUpdatedRows),
+    };
   }
 
   /* ------------------------------------------------------------------ */
@@ -554,7 +591,7 @@ export class MediaOperationRepository {
         'status',
         'destination',
         eb.fn.countAll<string>().as('count'),
-        eb.fn.min<Date | null>('createdAt').as('oldestQueuedAt'),
+        eb.fn.min('createdAt').as('oldestQueuedAt'),
       ])
       .groupBy(['kind', 'status', 'destination'])
       .execute();
@@ -564,7 +601,7 @@ export class MediaOperationRepository {
       status: row.status as MediaOperationStatus,
       destination: row.destination as string,
       count: Number(row.count),
-      oldestQueuedAt: row.oldestQueuedAt ?? null,
+      oldestQueuedAt: (row.oldestQueuedAt as Date | null) ?? null,
     }));
   }
 }
