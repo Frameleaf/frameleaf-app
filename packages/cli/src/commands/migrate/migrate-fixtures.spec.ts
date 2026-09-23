@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { AuditReport } from 'src/commands/migrate/audit';
 import { ServerClient } from 'src/commands/migrate/client';
 import { Controller } from 'src/commands/migrate/controller';
@@ -496,6 +497,55 @@ describe('migrate against disposable source/destination fixtures', () => {
     expect(report.assets).toEqual({ total: 5, transferred: 5, checked: 5, verified: 4, missing: 1, failed: 0 });
     expect(report.unresolved.filter((item) => item.reason === 'absent-on-destination')).toHaveLength(1);
     expect(report.owners).toEqual([{ source: 'owner@source.test', destination: 'owner@destination.test' }]);
+  });
+
+  it('a dry-run-only ledger never verifies as a pass, even when the destination has everything', async () => {
+    for (const item of source.assets) {
+      destination.assets.set(sha256(item.bytes), { id: `b-${item.id}`, checksum: sha256(item.bytes) });
+    }
+    await run(options({ dryRun: true }));
+
+    const { client: to } = await ServerClient.connect(destination.url, DEST_KEY);
+    const { report } = await verifyLedger(to, 'owner@destination.test', options().ledger, new Controller(), [DEST_KEY]);
+    expect(report.dryRun).toBe(true);
+    expect(report.ok).toBe(false);
+    expect(destination.albums).toHaveLength(0);
+
+    // A real run afterwards clears the dry-run mark for good.
+    await run(options());
+    await run(options({ dryRun: true }));
+    const after = await verifyLedger(to, 'owner@destination.test', options().ledger, new Controller(), [DEST_KEY]);
+    expect(after.report.dryRun).toBe(false);
+    expect(after.report.ok).toBe(true);
+  });
+
+  it('writes user names that look like paths verbatim, and the web parser accepts the file', async () => {
+    source.albums.push({
+      id: 'al-backup',
+      albumName: '/Backup',
+      description: '',
+      parentId: null,
+      order: 'desc',
+      sortOrder: null,
+    });
+    source.albumMembers.set('al-backup', ['a3']);
+    source.people = [{ id: 'p1', name: String.raw`C:\Old`, birthDate: null, isHidden: false, isFavorite: false }];
+    source.failing.add('a3');
+    const { auditPath } = await run(options());
+    const text = readFileSync(auditPath, 'utf8');
+    const written = JSON.parse(text) as AuditReport;
+    expect(written.unresolved).toContainEqual({
+      kind: 'album',
+      id: 'al-backup',
+      name: '/Backup',
+      reason: 'not-linked',
+    });
+
+    // The web Maintenance parser is the consumer of this file; load it from the web package.
+    const parser = (await import(
+      pathToFileURL(join(import.meta.dirname, '../../../../../web/src/lib/frameleaf/migration-report.ts')).href
+    )) as { parseMigrationReport: (raw: string) => { ok: boolean; error?: string } };
+    expect(parser.parseMigrationReport(text)).toMatchObject({ ok: true });
   });
 
   it('verify refuses a destination the ledger was not written for, and a missing ledger', async () => {
