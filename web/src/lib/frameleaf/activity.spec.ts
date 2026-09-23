@@ -78,7 +78,7 @@ const bulk = (overrides: Partial<BulkOperationRecord> = {}): BulkOperationRecord
 describe('fromMediaOperation', () => {
   it('reports the destination explicitly', () => {
     expect(fromMediaOperation(operation()).destinationKey).toBe('frameleaf_activity_destination_local');
-    expect(fromMediaOperation(operation({ destination: MediaOperationDestination.RunPod })).destinationKey).toBe(
+    expect(fromMediaOperation(operation({ destination: MediaOperationDestination.Runpod })).destinationKey).toBe(
       'frameleaf_activity_destination_runpod',
     );
     expect(fromMediaOperation(operation({ destination: MediaOperationDestination.Lan })).destinationKey).toBe(

@@ -27,7 +27,7 @@ import {
 
 export const RECIPE_VERSION = 1 as const;
 
-export type EditorRecipe = Required<Omit<AssetDevelopRecipeDto, 'crop'>> &
+export type EditorRecipe = Required<Omit<AssetDevelopRecipeDto, 'crop' | 'version'>> &
   DevelopValues & {
     version: typeof RECIPE_VERSION;
     crop: { x: number; y: number; w: number; h: number };

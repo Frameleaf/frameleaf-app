@@ -201,4 +201,11 @@ export default typescriptEslint.config(
       },
     },
   },
+  {
+    files: ['**/*.spec.ts'],
+    rules: {
+      '@typescript-eslint/require-await': 'off',
+      'unicorn/no-await-expression-member': 'off',
+    },
+  },
 );

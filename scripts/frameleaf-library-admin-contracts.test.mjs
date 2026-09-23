@@ -72,24 +72,24 @@ test("normalizes route groups while preserving typed and optional parameters", (
 
 test("committed production routes exclude the remaining dirty-only additions", async () => {
   const routes = await collectRoutes();
-  assert.equal(routes.length, 80);
+  assert.equal(routes.length, 81);
   assert.ok(routes.includes("/admin/users/[id]/edit"));
   assert.ok(routes.includes("/share/[key]/[[photos=photos]]/[[assetId=id]]"));
   assert.ok(routes.includes("/studio"));
   assert.ok(!routes.includes("/spaces"));
-  assert.ok(!routes.includes("/takeout"));
+  assert.ok(routes.includes("/takeout"));
 });
 
 test("library and administration preservation contracts match source and canonical plans", async () => {
   assert.deepEqual(await validateContracts(), {
     adminRouteCount: 20,
-    dirtyOnlyRouteCount: 12,
+    dirtyOnlyRouteCount: 11,
     libraryEpicCount: 8,
     libraryStoryCount: 45,
-    personalSettingsCount: 14,
-    productionRouteCount: 80,
+    personalSettingsCount: 15,
+    productionRouteCount: 81,
     sourceCitationCount: 42,
-    systemSettingsCount: 20,
+    systemSettingsCount: 21,
   });
 });
 
