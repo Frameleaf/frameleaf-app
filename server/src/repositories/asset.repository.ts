@@ -46,6 +46,7 @@ import {
   asUuid,
   getHiddenContentFilter,
   hasPeople,
+  hasPets,
   hiddenContentAssetIdExists,
   inSharedAlbum,
   removeUndefinedKeys,
@@ -109,6 +110,8 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
   albumId?: string;
   tagId?: string;
   personId?: string;
+  /** FL-58: one of the viewer's own pets; matched against confirmed pet observations only */
+  petId?: string;
   userIds?: string[];
   withStacked?: boolean;
   exifInfo?: boolean;
@@ -1141,6 +1144,7 @@ export class AssetRepository {
               .where('album_asset.albumId', '=', asUuid(options.albumId!)),
           )
           .$if(!!options.personId, (qb) => hasPeople(qb, [options.personId!]))
+          .$if(!!options.petId, (qb) => hasPets(qb, [options.petId!], auth?.user.id))
           .$if(!!options.withStacked, (qb) =>
             qb
               .leftJoin('stack', (join) =>
@@ -1275,6 +1279,7 @@ export class AssetRepository {
             ),
           )
           .$if(!!options.personId, (qb) => hasPeople(qb, [options.personId!]))
+          .$if(!!options.petId, (qb) => hasPets(qb, [options.petId!], auth.user.id))
           .$if(!!options.userIds, (qb) =>
             qb.where((eb) => {
               const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));

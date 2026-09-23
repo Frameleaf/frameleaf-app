@@ -99,3 +99,20 @@ describe('filterFieldEntityIds', () => {
     expect(filterFieldEntityIds(withFilter({ or: [{ city: { eq: 'a' } }] }), 'or')).toBeNull();
   });
 });
+
+describe('pet filters (FL-58)', () => {
+  it('labels a pet chip as Pets and counts its pets', () => {
+    expect(filterFieldLabelKey('petIds')).toBe('frameleaf_pets_title');
+    expect(describeFilterField(withFilter({ petIds: { all: ['a', 'b'] } }), 'petIds')).toMatchObject({
+      labelKey: 'frameleaf_pets_title',
+      count: 2,
+      negated: false,
+    });
+    expect(describeFilterField(withFilter({ petIds: { none: ['a'] } }), 'petIds')?.negated).toBe(true);
+  });
+
+  it('offers the pets a download may be named after, never the excluded ones', () => {
+    expect(filterFieldEntityIds(withFilter({ petIds: { any: ['a', 'b'] } }), 'petIds')).toEqual(['a', 'b']);
+    expect(filterFieldEntityIds(withFilter({ petIds: { none: ['a'] } }), 'petIds')).toBeNull();
+  });
+});

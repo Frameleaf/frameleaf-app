@@ -1,14 +1,17 @@
 import {
   getAllAlbums,
   getAllPeople,
+  getAllPets,
   getAllTags,
   getSearchSuggestions,
   searchAssetStatistics,
   SearchSuggestionType,
   type PersonResponseDto,
+  type PetResponseDto,
 } from '@immich/sdk';
 import { toSearchDto, type DiscoveryQuery, type DiscoverySearchDto } from '$lib/components/discovery/query';
 import type { FilterPanelOptions } from '$lib/components/frameleaf/FilterPanel.svelte';
+import { sortPets } from '$lib/frameleaf/pets';
 
 /**
  * Option lists and the live matching count for the Frameleaf filter panel (FL-49).
@@ -18,7 +21,8 @@ import type { FilterPanelOptions } from '$lib/components/frameleaf/FilterPanel.s
  * an empty `facets` array — so the panel offers the vocabularies the server really does
  * publish and shows no fabricated counts:
  *
- * - people from `/people`, tags from `/tags`, albums from `/albums`
+ * - people from `/people`, pets from `/pets` (FL-58, the account's own), tags from `/tags`,
+ *   albums from `/albums`
  * - cities, states, countries, camera makes, models and lenses from `/search/suggestions`,
  *   which returns the distinct values in the signed-in account's own library
  *
@@ -30,6 +34,7 @@ import type { FilterPanelOptions } from '$lib/components/frameleaf/FilterPanel.s
 
 export const emptyFilterPanelOptions = (): FilterPanelOptions => ({
   people: [],
+  pets: [],
   tags: [],
   albums: [],
   cities: [],
@@ -70,8 +75,10 @@ const settle = async <T>(work: Promise<T>, fallback: T, signal?: AbortSignal): P
 };
 
 export const loadFilterPanelOptions = async (signal?: AbortSignal): Promise<FilterPanelOptions> => {
-  const [people, tags, albums, cities, states, countries, makes, models, lenses] = await Promise.all([
+  const [people, pets, tags, albums, cities, states, countries, makes, models, lenses] = await Promise.all([
     settle<PersonResponseDto[]>(loadAllPeople(signal), [], signal),
+    // Hidden pets are left out for the same reason hidden people are: hiding is a display choice
+    settle<PetResponseDto[]>(getAllPets({ withHidden: false }, { signal }), [], signal),
     settle(getAllTags({ signal }), [], signal),
     settle(getAllAlbums({}, { signal }), [], signal),
     settle(getSearchSuggestions({ $type: SearchSuggestionType.City }, { signal }), [], signal),
@@ -84,6 +91,8 @@ export const loadFilterPanelOptions = async (signal?: AbortSignal): Promise<Filt
 
   return {
     people,
+    // Favorites first, then by name, as the Pets page lists them
+    pets: sortPets(pets),
     tags: tags.map((tag) => ({ value: tag.id, label: tag.value })),
     albums: albums.map((album) => ({ value: album.id, label: album.albumName })),
     cities: cities.filter(Boolean),

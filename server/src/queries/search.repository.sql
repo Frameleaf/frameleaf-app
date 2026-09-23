@@ -1096,6 +1096,127 @@ limit
 offset
   $7
 
+-- SearchRepository.searchMetadataV3 (ids-pets-any)
+select
+  "asset"."id",
+  "asset"."updateId",
+  "asset"."createdAt",
+  "asset"."updatedAt",
+  "asset"."deletedAt",
+  "asset"."status",
+  "asset"."checksum",
+  "asset"."checksumAlgorithm",
+  "asset"."duplicateId",
+  "asset"."duration",
+  "asset"."fileCreatedAt",
+  "asset"."fileModifiedAt",
+  "asset"."isExternal",
+  "asset"."isFavorite",
+  "asset"."isOffline",
+  "asset"."isEdited",
+  "asset"."visibility",
+  "asset"."libraryId",
+  "asset"."livePhotoVideoId",
+  "asset"."localDateTime",
+  "asset"."originalFileName",
+  "asset"."originalPath",
+  "asset"."ownerId",
+  "asset"."stackId",
+  "asset"."thumbhash",
+  "asset"."type",
+  "asset"."width",
+  "asset"."height"
+from
+  "asset"
+  left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+where
+  "asset"."ownerId" = any ($1::uuid[])
+  and (
+    "asset"."visibility" != $2
+    or "asset"."ownerId" = $3
+  )
+  and exists (
+    select
+    from
+      "pet_observation"
+      inner join "pet" on "pet"."id" = "pet_observation"."petId"
+    where
+      "pet_observation"."assetId" = "asset"."id"
+      and "pet_observation"."state" = $4
+      and "pet"."ownerId" = $5
+      and "pet_observation"."petId" = any ($6::uuid[])
+  )
+order by
+  "asset"."fileCreatedAt" desc,
+  "asset"."id" desc
+limit
+  $7
+offset
+  $8
+
+-- SearchRepository.searchMetadataV3 (ids-pets-all)
+select
+  "asset"."id",
+  "asset"."updateId",
+  "asset"."createdAt",
+  "asset"."updatedAt",
+  "asset"."deletedAt",
+  "asset"."status",
+  "asset"."checksum",
+  "asset"."checksumAlgorithm",
+  "asset"."duplicateId",
+  "asset"."duration",
+  "asset"."fileCreatedAt",
+  "asset"."fileModifiedAt",
+  "asset"."isExternal",
+  "asset"."isFavorite",
+  "asset"."isOffline",
+  "asset"."isEdited",
+  "asset"."visibility",
+  "asset"."libraryId",
+  "asset"."livePhotoVideoId",
+  "asset"."localDateTime",
+  "asset"."originalFileName",
+  "asset"."originalPath",
+  "asset"."ownerId",
+  "asset"."stackId",
+  "asset"."thumbhash",
+  "asset"."type",
+  "asset"."width",
+  "asset"."height"
+from
+  "asset"
+  left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+where
+  "asset"."ownerId" = any ($1::uuid[])
+  and (
+    "asset"."visibility" != $2
+    or "asset"."ownerId" = $3
+  )
+  and exists (
+    select
+      "pet_observation"."assetId"
+    from
+      "pet_observation"
+      inner join "pet" on "pet"."id" = "pet_observation"."petId"
+    where
+      "pet_observation"."assetId" = "asset"."id"
+      and "pet_observation"."state" = $4
+      and "pet"."ownerId" = $5
+      and "pet_observation"."petId" = any ($6::uuid[])
+    group by
+      "pet_observation"."assetId"
+    having
+      count(distinct "pet_observation"."petId") = $7
+  )
+order by
+  "asset"."fileCreatedAt" desc,
+  "asset"."id" desc
+limit
+  $8
+offset
+  $9
+
 -- SearchRepository.searchMetadataV3 (has-albums-false)
 select
   "asset"."id",

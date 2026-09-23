@@ -49,6 +49,7 @@
   import Chip from '$lib/components/frameleaf/Chip.svelte';
   import FilterPanel from '$lib/components/frameleaf/FilterPanel.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
+  import PetThumbnail from '$lib/components/frameleaf/pets/PetThumbnail.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import {
     activeFilterCount,
@@ -149,6 +150,10 @@
       nameFor: (field, id) => {
         if (field === 'personIds') {
           return options.people.find((person) => person.id === id)?.name || undefined;
+        }
+        if (field === 'petIds') {
+          const pet = options.pets.find((item) => item.id === id);
+          return pet ? pet.name || $t('frameleaf_pets_unnamed') : undefined;
         }
         const list = field === 'tagIds' ? options.tags : field === 'albumIds' ? options.albums : [];
         return list.find((item) => item.value === id)?.label;
@@ -404,6 +409,21 @@
             <button type="button" onclick={() => (query = withDiscoveryFacet(query, 'personIds', person.id))}>
               <PersonAvatar {person} size={30} />
               <span>{person.name || $t('no_name')}</span>
+            </button>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    {#if options.pets.length > 0}
+      <!-- FL-58: the account's own pets, narrowing by their confirmed photos -->
+      <section aria-label={$t('frameleaf_pets_title')}>
+        <h3>{$t('frameleaf_pets_title')}</h3>
+        <div class="people">
+          {#each options.pets.slice(0, 12) as pet (pet.id)}
+            <button type="button" onclick={() => (query = withDiscoveryFacet(query, 'petIds', pet.id))}>
+              <PetThumbnail assetId={pet.featuredAssetId} cacheKey={pet.updatedAt} size={30} />
+              <span>{pet.name || $t('frameleaf_pets_unnamed')}</span>
             </button>
           {/each}
         </div>

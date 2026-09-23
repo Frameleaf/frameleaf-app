@@ -6,6 +6,7 @@
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
+  import { structuredSearchRequest } from '$lib/components/discovery/query';
   import { QueryParameter } from '$lib/constants';
   import { brandedArchiveName, namedEntitySegments } from '$lib/frameleaf/archive-name';
   import { resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
@@ -26,6 +27,7 @@
     type AskSearchResponseDto,
     AssetVisibility,
     getPerson,
+    getPet,
     getTagById,
     ImageEnrichmentFilter,
     type MetadataSearchDto,
@@ -54,6 +56,7 @@
   let previousRoute = $state<string>(Route.explore());
 
   let nextPage = $state(1);
+  let nextCursor = $state<string | null>(null);
   let searchResultAlbums: AlbumResponseDto[] = $state([]);
   let searchResultAssets: AssetResponseDto[] = $state([]);
   let isLoading = $state(true);
@@ -167,7 +170,7 @@
   });
 
   /**
-   * FL-45 owner decision (September 22, 2026): a search filtered by person or tag ids names the
+   * FL-45 owner decision (September 22, 2026): a search filtered by person, pet or tag ids names the
    * download after their actual names wherever they can be resolved, instead of leaving the
    * download generic. Kept separate from `searchDownloadText` above (which is synchronous) because
    * resolving a name needs a lookup (`getPerson`/`getTagById`, the same calls `getPersonName`/
@@ -176,10 +179,24 @@
    */
   let resolvedFilterNameSegments = $state<string[]>([]);
 
+  /**
+   * FL-58: the pets a search is narrowed *to* — the flat `petIds` list, or the positive (`any`/`all`)
+   * groups of a structured `filter.petIds` from the search dialog. An excluded pet (`none`) is not a
+   * description of the download, so it is never a naming source.
+   */
+  const searchedPetIds = (searchTerms: SearchTerms): string[] => {
+    if (Array.isArray(searchTerms.petIds)) {
+      return searchTerms.petIds;
+    }
+    const condition = searchTerms.filter?.petIds;
+    return [...new Set([...(condition?.any ?? []), ...(condition?.all ?? [])])];
+  };
+
   $effect(() => {
     const personIds = Array.isArray(terms.personIds) ? terms.personIds : [];
+    const petIds = searchedPetIds(terms);
     const tagIds = Array.isArray(terms.tagIds) ? terms.tagIds : [];
-    if (personIds.length === 0 && tagIds.length === 0) {
+    if (personIds.length === 0 && petIds.length === 0 && tagIds.length === 0) {
       resolvedFilterNameSegments = [];
       return;
     }
@@ -191,12 +208,17 @@
           personIds.length > 0
             ? namedEntitySegments(await resolveEntityNames('person', personIds), personIds.length, andMoreLabel)
             : [];
+        // A hidden or unnamed pet resolves to null and is never written into the filename
+        const petSegments =
+          petIds.length > 0
+            ? namedEntitySegments(await resolveEntityNames('pet', petIds), petIds.length, andMoreLabel)
+            : [];
         const tagSegments =
           tagIds.length > 0
             ? namedEntitySegments(await resolveEntityNames('tag', tagIds), tagIds.length, andMoreLabel)
             : [];
         if (!cancelled) {
-          resolvedFilterNameSegments = [...personSegments, ...tagSegments];
+          resolvedFilterNameSegments = [...personSegments, ...petSegments, ...tagSegments];
         }
       })(),
     );
@@ -220,6 +242,7 @@
 
   async function onSearchQueryUpdate() {
     nextPage = 1;
+    nextCursor = null;
     searchResultAssets = [];
     searchResultAlbums = [];
     resetAskSearch(false);
@@ -237,24 +260,38 @@
     }
     isLoading = true;
 
-    const searchDto: SearchTerms = {
-      page: nextPage,
-      withExif: true,
-      ...terms,
-    };
+    // A search from the search dialog carries a structured filter (a pet, a person, a place, ...). The
+    // server refuses flat fields such as `page` and `visibility` beside it, so that request is built
+    // by `structuredSearchRequest` and pages by cursor; a flat (legacy) search is sent as before.
+    const structured = terms.filter !== undefined;
+    const searchDto: SearchTerms = structured
+      ? {
+          ...structuredSearchRequest(terms, nextCursor),
+          ...(terms.queryAssetId ? { queryAssetId: terms.queryAssetId } : {}),
+        }
+      : { page: nextPage, withExif: true, ...terms };
 
     try {
       const { albums, assets } =
         ('query' in searchDto || 'queryAssetId' in searchDto) && smartSearchEnabled
           ? await searchSmart({
-              smartSearchDto: { visibility: AssetVisibility.Timeline, ...searchDto, language: $lang },
+              smartSearchDto: structured
+                ? { ...searchDto, language: $lang }
+                : { visibility: AssetVisibility.Timeline, ...searchDto, language: $lang },
             })
-          : await searchAssets({ metadataSearchDto: { visibility: AssetVisibility.Timeline, ...searchDto } });
+          : await searchAssets({
+              metadataSearchDto: structured ? searchDto : { visibility: AssetVisibility.Timeline, ...searchDto },
+            });
 
       searchResultAlbums.push(...albums.items);
       searchResultAssets.push(...assets.items);
 
-      nextPage = Number(assets.nextPage) || 0;
+      if (structured) {
+        nextCursor = assets.nextCursor;
+        nextPage = assets.nextCursor ? nextPage + 1 : 0;
+      } else {
+        nextPage = Number(assets.nextPage) || 0;
+      }
     } catch (error) {
       handleError(error, $t('loading_search_results_failed'));
     } finally {
@@ -290,6 +327,7 @@
       model: $t('camera_model'),
       lensModel: $t('lens_model'),
       personIds: $t('people'),
+      petIds: $t('frameleaf_pets_title'),
       tagIds: $t('tags'),
       originalFileName: $t('file_name_text'),
       originalPath: $t('full_path_or_folder'),
@@ -347,6 +385,17 @@
     );
 
     return personNames.join(', ');
+  }
+
+  async function getPetNames(petIds: string[]) {
+    const petNames = await Promise.all(
+      petIds.map(async (petId) => {
+        const pet = await getPet({ id: petId });
+        return pet.name || $t('frameleaf_pets_unnamed');
+      }),
+    );
+
+    return petNames.join(', ');
   }
 
   async function getTagNames(tagIds: string[] | null) {
@@ -506,6 +555,10 @@
             {:else if searchKey === 'personIds' && Array.isArray(value)}
               {#await getPersonName(value) then personName}
                 {personName}
+              {/await}
+            {:else if searchKey === 'petIds' && Array.isArray(value)}
+              {#await getPetNames(value) then petNames}
+                {petNames}
               {/await}
             {:else if searchKey === 'tagIds' && (Array.isArray(value) || value === null)}
               {#await getTagNames(value) then tagNames}

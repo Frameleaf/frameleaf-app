@@ -203,6 +203,15 @@ describe('describeFilterChips', () => {
     expect(chip.label).toContain('p2');
   });
 
+  it('names pets through the caller and draws no person avatars for them (FL-58)', () => {
+    const [chip] = describeFilterChips($t, query({ petIds: { none: ['pet-1'] } }), {
+      nameFor: (field, id) => (field === 'petIds' && id === 'pet-1' ? 'Biscuit' : undefined),
+    });
+    expect(chip.field).toBe('petIds');
+    expect(chip.personIds).toEqual([]);
+    expect(chip.label).toBe('frameleaf_pets_title: frameleaf_search_op_without(Biscuit)');
+  });
+
   it('describes the enrichment facet even though it lives outside the filter', () => {
     const withEnrichment: DiscoveryQuery = {
       ...emptyDiscoveryQuery(),

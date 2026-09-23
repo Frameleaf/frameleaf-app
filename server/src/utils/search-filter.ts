@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { SearchFilter, SearchFilterBranch } from 'src/dtos/search.dto.js';
 import { AssetVisibility } from 'src/enum.js';
@@ -7,7 +8,7 @@ type EnumField = 'type' | 'visibility';
 type EnumOperator = keyof NonNullable<SearchFilterBranch[EnumField]>;
 type EnumOperandMap<T> = { eq: T; ne: T; in: T[]; notIn: T[] };
 type EnumCondition<T> = { [K in EnumOperator]?: EnumOperandMap<T>[K] };
-type IdsFilterField = 'albumIds' | 'personIds' | 'tagIds';
+type IdsFilterField = 'albumIds' | 'personIds' | 'petIds' | 'tagIds';
 
 const filterBranches = (filter: SearchFilter): SearchFilterBranch[] => [filter, ...(filter.or ?? [])];
 
@@ -83,4 +84,16 @@ export const collectFilterIds = (filter: SearchFilter, field: IdsFilterField): s
   }
 
   return [...ids];
+};
+
+/**
+ * Pets belong to their owner alone (FL-58): no pet endpoint accepts a shared link, so a shared-link
+ * visitor has no pet to filter by. This check is load-bearing rather than cosmetic: a shared-link
+ * request authenticates as the link's owner, so the SQL's "the viewer's own pets" scoping alone would
+ * let a visitor who learnt a pet id narrow the shared album by the owner's pet.
+ */
+export const requirePetFilterAllowed = (auth: AuthDto, petIds: readonly string[] | undefined): void => {
+  if (auth.sharedLink && petIds && petIds.length > 0) {
+    throw new BadRequestException('Pet filters are not available through a shared link');
+  }
 };
