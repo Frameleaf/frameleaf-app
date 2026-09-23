@@ -12864,7 +12864,7 @@ export function deleteTakeoutArchive({ archiveId, id }: {
 export function uploadTakeoutArchiveChunk({ archiveId, id, offset, body }: {
     archiveId: string;
     id: string;
-    offset?: number;
+    offset: number;
     body: Blob;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{

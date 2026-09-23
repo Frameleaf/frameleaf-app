@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
+import { constants, createReadStream, createWriteStream } from 'node:fs';
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, statfs } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable, Transform } from 'node:stream';
@@ -141,6 +141,17 @@ export class TakeoutStagingRepository {
     return resolved;
   }
 
+  /** The folder still lies inside one of the permitted roots (they may have changed since it was chosen). */
+  async isInsideRoots(directory: string, roots: readonly string[]): Promise<boolean> {
+    for (const root of roots) {
+      const realRoot = await realpath(root).catch(() => undefined);
+      if (realRoot && (directory === realRoot || directory.startsWith(realRoot + path.sep))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /**
    * Every regular file below a selected directory, depth first, as `(entry name, absolute path,
    * size, modified time)`. Links are refused, not followed; a directory that changed into a link
@@ -197,7 +208,27 @@ export class TakeoutStagingRepository {
     if (actual !== filePath || !actual.startsWith(directory + path.sep)) {
       throw new TakeoutStagingError('A file changed into a link while it was being read');
     }
-    return this.writeStaged(() => Promise.resolve(createReadStream(actual)), declared, destination, signal);
+    // Opened without following a link, and checked on the open handle, so the file cannot be
+    // swapped for a link between the check above and the read.
+    const handle = await open(actual, constants.O_RDONLY | constants.O_NOFOLLOW).catch(() => {
+      throw new TakeoutStagingError('A file changed into a link while it was being read');
+    });
+    try {
+      const info = await handle.stat();
+      if (!info.isFile()) {
+        throw new TakeoutStagingError('Only plain files can be imported from a server folder');
+      }
+    } catch (error) {
+      await handle.close();
+      throw error;
+    }
+    const stream = handle.createReadStream({ autoClose: true });
+    try {
+      return await this.writeStaged(() => Promise.resolve(stream), declared, destination, signal);
+    } finally {
+      // Closes the handle whether or not the copy got as far as reading it.
+      stream.destroy();
+    }
   }
 
   /* ------------------------------------------------------------------ */

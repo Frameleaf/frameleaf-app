@@ -69,6 +69,7 @@ const itemOf = (overrides: Partial<TakeoutItem> = {}): TakeoutItem => ({
   locked: false,
   assetId: null,
   resultKind: null,
+  createPath: null,
   error: null,
   relativePath: 'Trip/IMG_1.jpg',
   folder: 'Trip',
@@ -106,7 +107,6 @@ describe(TakeoutService.name, () => {
   let sources: TakeoutSource[];
   let repository: Record<string, any>;
   let staging: Record<string, any>;
-  let mediaOperationRepository: Record<string, any>;
   let mediaOperations: Record<string, any>;
   let access: ReturnType<typeof newAccessRepositoryMock>;
   let importRoots: string[];
@@ -142,7 +142,7 @@ describe(TakeoutService.name, () => {
       removeSource: vi.fn(),
       setPhase: vi.fn(),
       setOptions: vi.fn(),
-      countReview: vi.fn().mockResolvedValue(0),
+      countReview: vi.fn().mockResolvedValue({ total: 0, locked: 0 }),
       releaseReview: vi.fn(),
       counts: vi.fn().mockResolvedValue({ ...emptyCounts }),
       albums: vi.fn().mockResolvedValue([]),
@@ -154,6 +154,11 @@ describe(TakeoutService.name, () => {
       decidePair: vi.fn(),
       delete: vi.fn(),
       writeChunk: vi.fn(),
+      insertOperation: vi.fn((_tx: unknown, values: Record<string, unknown>) =>
+        Promise.resolve({ id: '0195e2a0-0000-7000-8000-0000000000bb', ...values }),
+      ),
+      stagedArchiveBytes: vi.fn(() => Promise.resolve(sources.reduce((total, item) => total + item.size, 0))),
+      sourceFilePaths: vi.fn().mockResolvedValue([]),
     };
     staging = {
       prepare: vi.fn().mockResolvedValue('/data/takeout/user/import'),
@@ -165,11 +170,6 @@ describe(TakeoutService.name, () => {
       writeChunk: vi.fn(),
       verifyChunk: vi.fn(),
     };
-    mediaOperationRepository = {
-      create: vi.fn((values: Record<string, unknown>) =>
-        Promise.resolve({ id: '0195e2a0-0000-7000-8000-0000000000bb', ...values }),
-      ),
-    };
     mediaOperations = { pause: vi.fn(), resume: vi.fn(), cancel: vi.fn() };
     access = newAccessRepositoryMock();
     const config = { getEnv: () => ({ storage: { importRoots } }) };
@@ -179,7 +179,6 @@ describe(TakeoutService.name, () => {
       logger as never,
       repository as never,
       staging as never,
-      mediaOperationRepository as never,
       mediaOperations as never,
       access as never,
       config as never,
@@ -238,14 +237,20 @@ describe(TakeoutService.name, () => {
       );
     });
 
-    it('resolves the folder inside the root and records it as a source', async () => {
+    it('resolves the folder inside the root and records it with the import', async () => {
       await sut.create(authStub.admin, { name: 'Import', rootId: '0', directory: 'Takeout' });
 
       expect(staging.resolveDirectory).toHaveBeenCalledWith('/imports', 'Takeout');
-      expect(repository.addSource).toHaveBeenCalledWith(
-        tx,
-        expect.objectContaining({ kind: 'directory', path: '/imports/Takeout' }),
-      );
+      expect(repository.create).toHaveBeenCalledWith(authStub.admin.user.id, 'Import', expect.anything(), {
+        name: 'Takeout',
+        path: '/imports/Takeout',
+      });
+    });
+
+    it('never lets an API key point the server at a folder, even an administrator’s', async () => {
+      const auth = { ...authStub.admin, apiKey: { id: 'key', permissions: [] } } as unknown as AuthDto;
+      await expect(sut.create(auth, { name: 'Import', rootId: '0' })).rejects.toBeInstanceOf(ForbiddenException);
+      expect(staging.resolveDirectory).not.toHaveBeenCalled();
     });
 
     it('reports a folder outside the root as a bad request', async () => {
@@ -307,6 +312,18 @@ describe(TakeoutService.name, () => {
     });
   });
 
+  describe('removeArchive', () => {
+    it('removes what an earlier scan extracted from the archive along with it', async () => {
+      repository.sourceFilePaths.mockResolvedValue(['/data/takeout/user/import/file-1']);
+
+      await sut.removeArchive(authStub.user1, importId, sources[0].id);
+
+      expect(repository.removeSource).toHaveBeenCalledWith(tx, sources[0].id);
+      expect(staging.remove).toHaveBeenCalledWith('/data/takeout/user/import/file-1');
+      expect(staging.remove).toHaveBeenCalledWith(sources[0].path);
+    });
+  });
+
   describe('uploadChunk', () => {
     it('reports an archive that differs from the staged one as a bad request', async () => {
       repository.writeChunk.mockRejectedValue(
@@ -322,13 +339,14 @@ describe(TakeoutService.name, () => {
     it('refuses while an archive is still uploading', async () => {
       sources = [archive({ received: 50 })];
       await expect(sut.scan(authStub.user1, importId)).rejects.toBeInstanceOf(BadRequestException);
-      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+      expect(repository.insertOperation).not.toHaveBeenCalled();
     });
 
     it('queues the scan as a durable, pausable job and moves the import on', async () => {
       await sut.scan(authStub.user1, importId);
 
-      expect(mediaOperationRepository.create).toHaveBeenCalledWith(
+      expect(repository.insertOperation).toHaveBeenCalledWith(
+        tx,
         expect.objectContaining({
           ownerId: authStub.user1.user.id,
           kind: MediaOperationKind.TakeoutImport,
@@ -347,7 +365,8 @@ describe(TakeoutService.name, () => {
 
       await sut.scan(authStub.user1, importId);
 
-      expect(mediaOperationRepository.create).toHaveBeenCalledWith(
+      expect(repository.insertOperation).toHaveBeenCalledWith(
+        tx,
         expect.objectContaining({ retryOfId: operations[0].id }),
       );
     });
@@ -366,19 +385,27 @@ describe(TakeoutService.name, () => {
     });
 
     it('holds the import while flagged items are unresolved', async () => {
-      repository.countReview.mockResolvedValue(3);
+      repository.countReview.mockResolvedValue({ total: 3, locked: 0 });
       await expect(sut.startImport(authStub.user1, importId, { ...TAKEOUT_DEFAULT_OPTIONS })).rejects.toThrow(
         'Resolve the flagged items before importing',
       );
-      expect(mediaOperationRepository.create).not.toHaveBeenCalled();
+      expect(repository.insertOperation).not.toHaveBeenCalled();
+    });
+
+    it('asks a locked session to unlock Locked when only Locked items are flagged', async () => {
+      repository.countReview.mockResolvedValue({ total: 2, locked: 2 });
+      await expect(sut.startImport(authStub.user1, importId, { ...TAKEOUT_DEFAULT_OPTIONS })).rejects.toThrow(
+        'Unlock Locked',
+      );
     });
 
     it('imports disputed items without a sidecar when sidecar review is switched off', async () => {
-      repository.countReview.mockResolvedValue(3);
+      repository.countReview.mockResolvedValue({ total: 3, locked: 0 });
       await sut.startImport(authStub.user1, importId, { ...TAKEOUT_DEFAULT_OPTIONS, sidecarReview: false });
 
       expect(repository.releaseReview).toHaveBeenCalledWith(tx, importId);
-      expect(mediaOperationRepository.create).toHaveBeenCalledWith(
+      expect(repository.insertOperation).toHaveBeenCalledWith(
+        tx,
         expect.objectContaining({ snapshot: { importId, action: 'import' } }),
       );
       expect(repository.setPhase).toHaveBeenCalledWith(tx, importId, 'importing');
