@@ -7,6 +7,7 @@
   import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import Portal from '$lib/elements/Portal.svelte';
+  import { brandedArchiveName } from '$lib/frameleaf/archive-name';
   import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -101,6 +102,7 @@
       {options}
       destination={{ kind: 'library' }}
       {beforeAction}
+      downloadFileName={brandedArchiveName($t('frameleaf_archive_name_suppressed'))}
       enableRouting
       syncUrl={false}
       selectAll="loaded"

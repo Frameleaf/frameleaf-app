@@ -103,7 +103,7 @@
 </script>
 
 <section class="my-4">
-  <div class="sm:ms-8" in:fade={{ duration: 500 }}>
+  <div in:fade={{ duration: 500 }}>
     {#if authManager.isPurchased}
       <!-- BADGE TOGGLE -->
       <div class="mb-4">

@@ -845,7 +845,10 @@ class SeedVr2Adapter(RestorationAdapter):
             )
         intermediate = videos[0]
         try:
-            media.decode_video_frames(intermediate, frames_dir, yuv_matrix=job.yuv_matrix, timeout=timeout)
+            # The runtime chose its own encoder settings, so its file is read with the matrix it
+            # is tagged with (or the size convention when untagged), not the source's.
+            intermediate_matrix = media.probe(intermediate, still=job.frame_count == 1).yuv_matrix
+            media.decode_video_frames(intermediate, frames_dir, yuv_matrix=intermediate_matrix, timeout=timeout)
         except media.MediaError as error:
             raise RestorationFailure(RestorationErrorCode.INVALID_OUTPUT, str(error), model_id=self.spec.id)
         return AdapterRun(

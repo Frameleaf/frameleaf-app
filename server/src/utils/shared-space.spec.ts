@@ -1,10 +1,17 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import { AlbumKind, AlbumUserRole } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
 import {
   INVITABLE_SPACE_ROLES,
+  canDeleteSpaceComment,
+  canEditSpaceComment,
+  isNewSpaceEvent,
   isSharedSpace,
   isSpaceMember,
+  mentionToken,
+  narrowSpaceEvent,
+  parseMentions,
   requireInvitableRole,
+  requireMentionableMembers,
   requireSharedSpace,
   requireSpaceOwner,
   spaceOwnerId,
@@ -81,6 +88,109 @@ describe('shared space rules', () => {
       expect(() => requireInvitableRole(AlbumUserRole.Editor)).not.toThrow();
       expect(() => requireInvitableRole(AlbumUserRole.Viewer)).not.toThrow();
       expect(() => requireInvitableRole(AlbumUserRole.Owner)).toThrow(BadRequestException);
+    });
+  });
+
+  describe('mentions', () => {
+    const a = '11111111-1111-4111-8111-111111111111';
+    const b = '22222222-2222-4222-8222-222222222222';
+
+    it('parses distinct ids from @{id} tokens, in order of first appearance, whatever the case', () => {
+      const comment = `hi ${mentionToken(a)} and ${mentionToken(b.toUpperCase())}, again ${mentionToken(a)}`;
+      expect(parseMentions(comment)).toEqual([a, b]);
+    });
+
+    it('never turns a typed name or a malformed token into a mention', () => {
+      expect(parseMentions('@Taylor look at @{not-an-id} and @{}')).toEqual([]);
+    });
+
+    it('refuses a mention of anyone who is not a current member', () => {
+      const album = space([member('owner-1', AlbumUserRole.Owner), member('editor-1', AlbumUserRole.Editor)]);
+
+      expect(() => requireMentionableMembers(album, ['editor-1', 'owner-1'])).not.toThrow();
+      expect(() => requireMentionableMembers(album, ['editor-1', 'stranger'])).toThrow(BadRequestException);
+    });
+  });
+
+  describe('comment moderation', () => {
+    const album = space([
+      member('owner-1', AlbumUserRole.Owner),
+      member('editor-1', AlbumUserRole.Editor),
+      member('viewer-1', AlbumUserRole.Viewer),
+    ]);
+    const viewersComment = { userId: 'viewer-1' };
+    const ownersComment = { userId: 'owner-1' };
+
+    it('lets only the author edit', () => {
+      expect(canEditSpaceComment(viewersComment, 'viewer-1')).toBe(true);
+      expect(canEditSpaceComment(viewersComment, 'owner-1')).toBe(false);
+      expect(canEditSpaceComment(viewersComment, 'editor-1')).toBe(false);
+    });
+
+    it('lets the author, an editor and the owner remove; a viewer removes only their own', () => {
+      expect(canDeleteSpaceComment(album, viewersComment, 'viewer-1')).toBe(true);
+      expect(canDeleteSpaceComment(album, viewersComment, 'editor-1')).toBe(true);
+      expect(canDeleteSpaceComment(album, viewersComment, 'owner-1')).toBe(true);
+      expect(canDeleteSpaceComment(album, ownersComment, 'viewer-1')).toBe(false);
+      expect(canDeleteSpaceComment(album, ownersComment, 'stranger')).toBe(false);
+    });
+  });
+
+  describe('narrowSpaceEvent', () => {
+    const visible = new Set(['seen-1', 'seen-2']);
+
+    it('keeps only the ids the viewer may see of an addition, and drops it when none are left', () => {
+      const added = { type: SharedSpaceEventType.AssetsAdded, assetIds: ['seen-1', 'locked-1'], activityAssetId: null };
+      expect(narrowSpaceEvent(added, visible)).toEqual({ ...added, assetIds: ['seen-1'], assetCount: 1 });
+
+      const hidden = { type: SharedSpaceEventType.AssetsAdded, assetIds: ['locked-1'], activityAssetId: null };
+      expect(narrowSpaceEvent(hidden, visible)).toBeNull();
+    });
+
+    it('reports a removal as a count and never as ids', () => {
+      const removed = {
+        type: SharedSpaceEventType.AssetsRemoved,
+        assetIds: ['seen-1', 'seen-2', 'locked-1'],
+        activityAssetId: null,
+      };
+      expect(narrowSpaceEvent(removed, visible)).toEqual({ ...removed, assetIds: [], assetCount: 2 });
+    });
+
+    it('drops a comment on an item the viewer cannot see, and keeps one on an item they can', () => {
+      const onLocked = { type: SharedSpaceEventType.Comment, assetIds: [], activityAssetId: 'locked-1' };
+      expect(narrowSpaceEvent(onLocked, visible)).toBeNull();
+
+      const onSeen = { type: SharedSpaceEventType.Like, assetIds: [], activityAssetId: 'seen-2' };
+      expect(narrowSpaceEvent(onSeen, visible)).toEqual({ ...onSeen, assetIds: ['seen-2'], assetCount: 1 });
+    });
+
+    it('passes a member event and a space-level comment through, carrying no items', () => {
+      const joined = { type: SharedSpaceEventType.MemberJoined, assetIds: [], activityAssetId: null };
+      expect(narrowSpaceEvent(joined, new Set())).toEqual({ ...joined, assetIds: [], assetCount: 0 });
+
+      const onSpace = { type: SharedSpaceEventType.Comment, assetIds: [], activityAssetId: null };
+      expect(narrowSpaceEvent(onSpace, new Set())).toEqual({ ...onSpace, assetIds: [], assetCount: 0 });
+    });
+  });
+
+  describe('isNewSpaceEvent', () => {
+    const marker = new Date('2026-09-20T12:00:00Z');
+    const later = new Date('2026-09-21T12:00:00Z');
+    const earlier = new Date('2026-09-19T12:00:00Z');
+
+    it('is news when somebody else did it after the marker', () => {
+      expect(isNewSpaceEvent({ actorId: 'other', createdAt: later }, 'me', marker)).toBe(true);
+      expect(isNewSpaceEvent({ actorId: null, createdAt: later }, 'me', marker)).toBe(true);
+    });
+
+    it('is not news when it is older than the marker or the member did it themselves', () => {
+      expect(isNewSpaceEvent({ actorId: 'other', createdAt: earlier }, 'me', marker)).toBe(false);
+      expect(isNewSpaceEvent({ actorId: 'me', createdAt: later }, 'me', marker)).toBe(false);
+    });
+
+    it('treats everything by others as news for a member with no marker', () => {
+      expect(isNewSpaceEvent({ actorId: 'other', createdAt: earlier }, 'me')).toBe(true);
+      expect(isNewSpaceEvent({ actorId: 'other', createdAt: earlier }, 'me', null)).toBe(true);
     });
   });
 });

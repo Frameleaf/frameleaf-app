@@ -8,16 +8,17 @@ import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { MachineLearningConfig } from 'src/dtos/config.dto.js';
 import {
+  RESTORATION_MAX_OUTPUT_EDGE,
+  RESTORATION_PROTOCOL,
   RESTORATION_RESULT_HEADER,
-  RESTORATION_WORKLOAD_BY_MODE,
   RestorationCapabilityReport,
   RestorationCapabilityReportSchema,
-  RestorationErrorCode,
-  RestorationInferenceRequest,
-  RestorationInferenceRequestSchema,
-  RestorationInferenceResult,
-  RestorationInferenceResultSchema,
+  RestorationWorkerErrorCode,
   RestorationWorkerErrorSchema,
+  RestorationWorkerRequest,
+  RestorationWorkerRequestSchema,
+  RestorationWorkerResult,
+  RestorationWorkerResultSchema,
 } from 'src/dtos/restoration-inference.dto.js';
 import {
   CLOUD_ML_DESTINATION_KINDS,
@@ -27,6 +28,17 @@ import {
   MlWorkload,
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+// Restoration's selection registry and inference types live with the rest of restoration's
+// rules; that module only needs this one's types, so the import cycle is inert at load time.
+import {
+  RestorationInference,
+  RestorationInferenceInput,
+  RestorationInferenceOptions,
+  RestorationInferenceResult,
+  RestorationSelection,
+  restorationAdmissionOf,
+  workloadForMode,
+} from 'src/utils/restoration.js';
 
 export interface BoundingBox {
   x1: number;
@@ -272,27 +284,8 @@ const isMlWorkload = (value: unknown): value is MlWorkload =>
 /** How long an admission probe stays fresh before the next request re-probes the endpoint. */
 export const ML_PROBE_FRESHNESS_MS = 10_000;
 
-/**
- * A selection admitted for a restoration by `selectRestorationDestination`
- * (`src/utils/restoration.ts`). `cloudUploadAcknowledged` records that the person confirmed,
- * for this request, that media may leave the network; `restore` refuses a cloud destination
- * without it, so a caller cannot reach RunPod with a plain library selection.
- */
-export type RestorationSelection = MlSelection & { cloudUploadAcknowledged: boolean };
-
-/** Longest a single restoration request may take when the caller passes no signal of its own. */
+/** Longest a single restoration request may take, whatever signal the caller passes. */
 export const RESTORATION_REQUEST_TIMEOUT_MS = 6 * 60 * 60 * 1000;
-
-/** One restoration inference (FL-114): read `sourcePath`, write a new file at `outputPath`. */
-export type RestorationInferenceInput = {
-  /** The source file, only ever read. Background jobs may read Locked and hidden assets. */
-  sourcePath: string;
-  /** Where the restored derivative is written. Must not exist yet and is never the source. */
-  outputPath: string;
-  request: RestorationInferenceRequest;
-  /** Cancels the upload or the download; a partial derivative is removed. */
-  signal?: AbortSignal;
-};
 
 /**
  * A restoration worker refused or failed an inference. `code` is the worker's own code,
@@ -301,7 +294,7 @@ export type RestorationInferenceInput = {
  */
 export class RestorationWorkerError extends Error {
   constructor(
-    readonly code: RestorationErrorCode | 'unreachable' | 'protocol-error',
+    readonly code: RestorationWorkerErrorCode | 'unreachable' | 'protocol-error',
     readonly status: number | null,
     message: string,
     readonly modelId: string | null = null,
@@ -312,7 +305,7 @@ export class RestorationWorkerError extends Error {
 }
 
 @Injectable()
-export class MachineLearningRepository {
+export class MachineLearningRepository implements RestorationInference {
   private _config?: MachineLearningConfig;
   /**
    * The endpoint the RunPod state machine currently advertises. It is published here so a
@@ -667,40 +660,63 @@ export class MachineLearningRepository {
   }
 
   /**
-   * Run one restoration inference on the selected destination (FL-114).
+   * Run one restoration inference on the selected destination (FL-114). This is the
+   * `RestorationInference` FL-115's restoration worker calls for every still, preview clip and
+   * video chunk.
    *
-   * The selection must already be admitted for the request's mode (`selectRestorationDestination`
-   * in `src/utils/restoration.ts`), so a cloud destination already carries both the recorded
-   * consent and the person's explicit choice. The source is only read. The restored file is a
-   * new derivative: `outputPath` is created exclusively, so an existing file (the original
-   * included) can never be replaced, and it is kept only when its size and sha256 match the
-   * worker's result. A failure names the destination and is never retried anywhere else.
+   * The selection must come from `selectRestorationDestination` (`src/utils/restoration.ts`):
+   * anything else is refused, and a cloud destination is refused unless the person confirmed
+   * it for this request. The source is only read, and FL-115 uploads only the crop, clip or
+   * chunk the job needs. The restored file is a new file: `outputPath` is created exclusively,
+   * so an existing file (the original included) can never be replaced, and it is kept only
+   * when its size and sha256 match the worker's result. A failure names the destination and is
+   * never retried anywhere else.
    */
   async restore(
     selection: RestorationSelection,
-    { sourcePath, outputPath, request, signal }: RestorationInferenceInput,
+    input: RestorationInferenceInput,
+    options: RestorationInferenceOptions,
   ): Promise<RestorationInferenceResult> {
-    const payload = RestorationInferenceRequestSchema.parse(request);
-    const expected = RESTORATION_WORKLOAD_BY_MODE[payload.mode];
-    if (selection.workload !== expected) {
-      throw new Error(`A ${payload.mode} restoration needs a ${expected} selection, not ${selection.workload}`);
+    const admission = restorationAdmissionOf(selection);
+    if (!admission) {
+      throw new Error('A restoration runs only on a destination admitted by selectRestorationDestination');
     }
-    const cloud = CLOUD_ML_DESTINATION_KINDS.has(selection.kind);
-    if (cloud && !selection.cloudUploadAcknowledged) {
+    const expected = workloadForMode(options.mode);
+    if (selection.workload !== expected) {
+      throw new Error(`A ${options.mode} restoration needs a ${expected} selection, not ${selection.workload}`);
+    }
+    if (CLOUD_ML_DESTINATION_KINDS.has(selection.kind) && !admission.cloudUploadConfirmed) {
       throw new Error(`Restoration on ${selection.kind} needs the person's confirmation that media leaves the network`);
     }
-    if (cloud && payload.segment) {
-      // A remote worker gets only what the job needs: cut the segment before uploading.
-      throw new Error('Cut the segment before sending a restoration to a cloud destination');
-    }
+
+    const sourcePath = input.path;
+    const outputPath = options.outputPath;
     if (resolve(sourcePath) === resolve(outputPath)) {
       throw new Error('A restoration never writes over its source');
     }
+
+    const payload = RestorationWorkerRequestSchema.parse({
+      protocol: RESTORATION_PROTOCOL,
+      requestId: `${options.jobId}:${basename(outputPath)}`.slice(0, 200),
+      mode: options.mode,
+      kind: input.kind,
+      scale: options.upscale,
+      maxWidth: Math.min(options.maxWidth, RESTORATION_MAX_OUTPUT_EDGE),
+      maxHeight: Math.min(options.maxHeight, RESTORATION_MAX_OUTPUT_EDGE),
+      keepGrain: options.keepGrain,
+      seed: 0,
+      source: {
+        width: input.width,
+        height: input.height,
+        durationMs: input.kind === 'video' ? Math.max(1, Math.round(input.durationSeconds * 1000)) : null,
+      },
+    });
 
     // Exclusive create: fails when anything already exists at the path.
     const output = await open(outputPath, 'wx');
     const target = `${selection.kind} destination ${selection.destinationId}`;
     const body = JSON.stringify(payload);
+    const signal = AbortSignal.any([options.signal, AbortSignal.timeout(RESTORATION_REQUEST_TIMEOUT_MS)]);
     const started = Date.now();
     let attempted = false;
     let keep = false;
@@ -723,7 +739,7 @@ export class MachineLearningRepository {
           method: 'POST',
           headers: this.authHeaders(selection.endpoint),
           body: form,
-          signal: signal ?? AbortSignal.timeout(RESTORATION_REQUEST_TIMEOUT_MS),
+          signal,
         });
       } catch (error) {
         this.probeCache.delete(selection.endpoint.url);
@@ -784,7 +800,14 @@ export class MachineLearningRepository {
 
       keep = true;
       selection.record({ bytesSent, bytesReceived, durationMs: Date.now() - started, outcome: 'success' });
-      return result;
+      return {
+        outputPath,
+        width: result.output.width,
+        height: result.output.height,
+        modelName: result.model.id,
+        // The pinned revision plus the start of the fingerprint over it and every weight hash.
+        modelVersion: `${result.model.revision.slice(0, 12)}+${result.model.fingerprint.slice(0, 12)}`,
+      };
     } catch (error) {
       if (response?.body && !response.bodyUsed) {
         await response.body.cancel().catch(() => {});
@@ -814,9 +837,9 @@ export class MachineLearningRepository {
 
   private parseRestorationResult(
     response: Response,
-    payload: RestorationInferenceRequest,
+    payload: RestorationWorkerRequest,
     target: string,
-  ): RestorationInferenceResult {
+  ): RestorationWorkerResult {
     const header = response.headers.get(RESTORATION_RESULT_HEADER);
     if (!header) {
       throw new RestorationWorkerError(
@@ -826,7 +849,7 @@ export class MachineLearningRepository {
       );
     }
 
-    const parsed = RestorationInferenceResultSchema.safeParse(
+    const parsed = RestorationWorkerResultSchema.safeParse(
       this.parseJson(Buffer.from(header, 'base64url').toString('utf8')),
     );
     if (!parsed.success) {

@@ -5,7 +5,7 @@ import {
   restorationModelStateLabelKey,
   restorationModelStateTone,
 } from '$lib/frameleaf/restoration-models';
-import { MlWorkload, RestorationMode, RestorationModelState } from '@immich/sdk';
+import { AssetRestorationMode, MlWorkload, RestorationModelState } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 
 describe('restoration models presentation', () => {
@@ -28,8 +28,11 @@ describe('restoration models presentation', () => {
   });
 
   it('labels both modes', () => {
-    expect(restorationModeLabelKey(RestorationMode.Faithful)).toBe('admin.frameleaf_restoration_models_mode_faithful');
-    expect(restorationModeLabelKey(RestorationMode.Creative)).toBe('admin.frameleaf_restoration_models_mode_creative');
+    const faithful = restorationModeLabelKey(AssetRestorationMode.Faithful);
+    const creative = restorationModeLabelKey(AssetRestorationMode.Creative);
+
+    expect(faithful).toBe('admin.frameleaf_restoration_models_mode_faithful');
+    expect(creative).toBe('admin.frameleaf_restoration_models_mode_creative');
   });
 
   it('rounds measured throughput for display', () => {

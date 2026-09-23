@@ -22,7 +22,7 @@ import {
 } from 'src/dtos/album.dto.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { MapMarkerResponseDto } from 'src/dtos/map.dto.js';
-import { AlbumKind, AlbumUserRole, Permission } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, Permission, SharedSpaceEventType } from 'src/enum.js';
 import { AlbumAssetCount, AlbumInfoOptions } from 'src/repositories/album.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { buildAlbumTree } from 'src/utils/album-tree.js';
@@ -374,6 +374,12 @@ export class AlbumService extends BaseService {
       const userIds = album.albumUsers.map(({ user }) => user.id);
       const recipientIds = userIds.filter((userId) => userId !== auth.user.id);
       await this.eventRepository.emit('AlbumUpdate', { id, userIds, recipientIds });
+      await this.recordSpaceAssets(
+        album,
+        auth,
+        SharedSpaceEventType.AssetsAdded,
+        results.filter(({ success }) => success).map(({ id }) => id),
+      );
     }
 
     return results;
@@ -403,6 +409,7 @@ export class AlbumService extends BaseService {
 
     const albumAssetValues: { albumId: string; assetId: string }[] = [];
     const events: { id: string; userIds: string[]; recipientIds: string[] }[] = [];
+    const spaceEvents: { album: MapAlbumDto; assetIds: string[] }[] = [];
     for (const albumId of allowedAlbumIds) {
       const existingAssetIds = await this.albumRepository.getAssetIds(albumId, [...allowedAssetIds]);
       const notPresentAssetIds = [...allowedAssetIds.difference(existingAssetIds)];
@@ -428,11 +435,15 @@ export class AlbumService extends BaseService {
       const userIds = album.albumUsers.map(({ user }) => user.id);
       const recipientIds = userIds.filter((userId) => userId !== auth.user.id);
       events.push({ id: albumId, userIds, recipientIds });
+      spaceEvents.push({ album, assetIds: notPresentAssetIds });
     }
 
     await this.albumRepository.addAssetIdsToAlbums(albumAssetValues);
     for (const event of events) {
       await this.eventRepository.emit('AlbumUpdate', event);
+    }
+    for (const { album, assetIds } of spaceEvents) {
+      await this.recordSpaceAssets(album, auth, SharedSpaceEventType.AssetsAdded, assetIds);
     }
 
     return results;
@@ -459,6 +470,7 @@ export class AlbumService extends BaseService {
         userIds: album.albumUsers.map(({ user }) => user.id),
         recipientIds: [],
       });
+      await this.recordSpaceAssets(album, auth, SharedSpaceEventType.AssetsRemoved, removedIds);
     }
 
     return results;
@@ -547,6 +559,16 @@ export class AlbumService extends BaseService {
     }
 
     await this.albumUserRepository.delete({ albumId: id, userId });
+
+    if (space) {
+      // The feed says who left on their own and who was taken out (FL-55).
+      await this.albumUserRepository.createSpaceEvent({
+        albumId: id,
+        actorId: auth.user.id,
+        type: auth.user.id === userId ? SharedSpaceEventType.MemberLeft : SharedSpaceEventType.MemberRemoved,
+        targetUserId: userId,
+      });
+    }
   }
 
   async updateUser(auth: AuthDto, id: string, userId: string, dto: UpdateAlbumUserDto): Promise<void> {
@@ -559,7 +581,8 @@ export class AlbumService extends BaseService {
       throw new BadRequestException('User is owner');
     }
 
-    if (isSharedSpace(album)) {
+    const space = isSharedSpace(album);
+    if (space) {
       // Roles in a shared space are the owner's to set, and `owner` is not one
       // of them: a space has exactly one owner, the person who made it.
       requireSpaceOwner(album, auth.user.id);
@@ -579,6 +602,38 @@ export class AlbumService extends BaseService {
     }
 
     await this.albumUserRepository.update({ albumId: id, userId }, { role: dto.role });
+
+    if (space) {
+      // Only a member's actual role change is news; a changed offer to somebody
+      // who has not joined stays between the owner and the invitee.
+      await this.albumUserRepository.createSpaceEvent({
+        albumId: id,
+        actorId: auth.user.id,
+        type: SharedSpaceEventType.MemberRoleChanged,
+        targetUserId: userId,
+        subject: dto.role,
+      });
+    }
+  }
+
+  /**
+   * Photos added to or removed from a shared space are entries in its activity
+   * feed (FL-55). Ids only, recorded for every item whatever its visibility —
+   * this is the backend's record of what happened, never a read of the asset,
+   * so it needs no elevated session. Each member's view of it is filtered when
+   * the feed is read.
+   */
+  private async recordSpaceAssets(
+    album: MapAlbumDto,
+    auth: AuthDto,
+    type: SharedSpaceEventType.AssetsAdded | SharedSpaceEventType.AssetsRemoved,
+    assetIds: string[],
+  ) {
+    if (!isSharedSpace(album) || assetIds.length === 0) {
+      return;
+    }
+
+    await this.albumUserRepository.createSpaceEvent({ albumId: album.id, actorId: auth.user.id, type, assetIds });
   }
 
   private nsfwOptions(auth: AuthDto, suppressedOnly?: boolean) {

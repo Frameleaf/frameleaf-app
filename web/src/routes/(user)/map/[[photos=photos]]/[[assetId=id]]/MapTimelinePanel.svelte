@@ -3,6 +3,7 @@
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import Portal from '$lib/elements/Portal.svelte';
   import type { SelectionBBox } from '$lib/components/shared-components/map/types';
+  import { brandedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { mapSettings } from '$lib/stores/preferences.store';
@@ -71,6 +72,7 @@
       bind:timelineManager
       options={timelineOptions}
       destination={{ kind: 'place' }}
+      downloadFileName={brandedArchiveName($t('frameleaf_archive_name_map'))}
       syncUrl={false}
       selectAll="loaded"
       onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}

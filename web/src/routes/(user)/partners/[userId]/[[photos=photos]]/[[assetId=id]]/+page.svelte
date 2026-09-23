@@ -5,6 +5,7 @@
   import ControlAppBar from '$lib/components/shared-components/ControlAppBar.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import Portal from '$lib/elements/Portal.svelte';
+  import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
@@ -49,6 +50,7 @@
     {options}
     bind:timelineManager
     destination={{ kind: 'library' }}
+    downloadFileName={namedArchiveName(partner.name, $t('frameleaf_archive_name_partner'))}
     enableRouting
     syncUrl={false}
     selectAll="loaded"

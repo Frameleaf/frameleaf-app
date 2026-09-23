@@ -5,6 +5,7 @@
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import { AssetAction } from '$lib/constants';
   import Portal from '$lib/elements/Portal.svelte';
+  import { brandedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -50,6 +51,7 @@
     bind:timelineManager
     {options}
     destination={{ kind: 'library' }}
+    downloadFileName={brandedArchiveName($t('frameleaf_archive_name_photos'))}
     enableRouting
     onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >

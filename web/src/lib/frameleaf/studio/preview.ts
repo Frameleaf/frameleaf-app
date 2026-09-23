@@ -9,9 +9,11 @@
  *
  * What it guarantees:
  *
- * - **Every frame is bound to a revision.** The cache is keyed by revision digest first. When
- *   the revision advances the whole bucket is dropped in one step, so there is no path by which
- *   a frame rendered for the previous graph is painted for the current one.
+ * - **Every frame is bound to a stored revision.** The revision is the FL-89 project session's
+ *   stored revision number; the client never invents one and never sends a graph. The cache is
+ *   keyed by revision first. When the revision advances the whole bucket is dropped in one step,
+ *   so there is no path by which a frame rendered for the previous graph is painted for the
+ *   current one.
  * - **Stale answers are discarded, not painted.** Each request carries a monotonic seek
  *   generation. A response whose generation is behind the newest one, or whose revision is no
  *   longer current, is dropped — including one that is already in flight when the person scrubs
@@ -77,7 +79,8 @@ export type StudioPreviewQuality = 'draft' | 'standard' | 'full';
 /** Everything that identifies one frame. The viewport is identity, not a rendering hint. */
 export interface StudioPreviewIntent {
   projectId: string;
-  revisionDigest: string;
+  /** The stored project revision (FL-89) the person is looking at. Always 1 or more. */
+  revision: number;
   time: StudioPreviewTime;
   quality: StudioPreviewQuality;
   viewportWidth: number;
@@ -88,13 +91,13 @@ export interface StudioPreviewIntent {
  * The client-side cache key.
  *
  * A plain join rather than a digest: this key never leaves the browser and never becomes a
- * database column, and the `\u0000` separator cannot appear in a revision digest or a quality
- * tier. The server computes its own key from the same components.
+ * database column, and the `\u0000` separator cannot appear in a project id, a revision number
+ * or a quality tier. The server binds its own key to the authorized resolution of the revision.
  */
 export const studioPreviewKey = (intent: StudioPreviewIntent): string =>
   [
     intent.projectId,
-    intent.revisionDigest,
+    String(intent.revision),
     studioPreviewTimeKey(intent.time),
     intent.quality,
     String(intent.viewportWidth),
@@ -113,7 +116,8 @@ export type StudioPreviewStatus = 'pending' | 'rendering' | 'ready' | 'supersede
 /** What the server says about a requested frame. The shape the SDK call is mapped into. */
 export interface StudioPreviewRecord {
   id: string;
-  revisionDigest: string;
+  /** The stored project revision the frame was rendered for. */
+  revision: number;
   status: StudioPreviewStatus;
   etag: string;
   /** Frame identity: the delivered picture's own PTS in its timebase. */
@@ -126,12 +130,12 @@ export interface StudioPreviewRecord {
 
 export interface StudioPreviewRequestResult {
   preview: StudioPreviewRecord;
-  currentRevisionDigest: string;
+  currentRevision: number;
   supersededPreviewIds: string[];
 }
 
 export type StudioPreviewTransportFailure =
-  | { kind: 'stale-revision'; currentRevisionDigest: string | null }
+  | { kind: 'stale-revision'; currentRevision: number | null }
   | { kind: 'gone' }
   | { kind: 'not-ready' }
   | { kind: 'forbidden' }
@@ -171,7 +175,7 @@ export type StudioPreviewPhase = 'idle' | 'rendering' | 'ready' | 'stale' | 'una
 
 export interface StudioPreviewFrameView {
   previewId: string;
-  revisionDigest: string;
+  revision: number;
   time: StudioPreviewTime;
   quality: StudioPreviewQuality;
   objectUrl: string;
@@ -194,7 +198,7 @@ export interface StudioPreviewView {
   /** Stable code behind `unavailable`, for diagnostics. Never the primary message. */
   errorCode: string | null;
   /** The revision the server last reported, so the host can reconcile the project. */
-  currentRevisionDigest: string | null;
+  currentRevision: number | null;
   /** Monotonic; the newest seek the client has issued. */
   seekGeneration: number;
 }
@@ -205,8 +209,19 @@ export const idleStudioPreviewView = (): StudioPreviewView => ({
   staleFrame: null,
   messageKey: null,
   errorCode: null,
-  currentRevisionDigest: null,
+  currentRevision: null,
   seekGeneration: 0,
+});
+
+/**
+ * Preview renders stored revisions only (FL-89): a draft that has never been saved has nothing
+ * the server could resolve. Said as itself rather than as a failed render.
+ */
+export const unsavedStudioPreviewView = (): StudioPreviewView => ({
+  ...idleStudioPreviewView(),
+  phase: 'unavailable',
+  messageKey: 'frameleaf_studio_preview_unsaved',
+  errorCode: 'unsaved',
 });
 
 const messageKeys: Record<Exclude<StudioPreviewPhase, 'idle' | 'ready'>, string> = {
@@ -226,9 +241,9 @@ export const studioPreviewMessageKey = (phase: StudioPreviewPhase): string | nul
  * can carry the current revision while its generation is behind (the person scrubbed on).
  */
 export const isStudioPreviewAnswerCurrent = (
-  answer: { revisionDigest: string; seekGeneration: number },
-  now: { revisionDigest: string; seekGeneration: number },
-): boolean => answer.revisionDigest === now.revisionDigest && answer.seekGeneration >= now.seekGeneration;
+  answer: { revision: number; seekGeneration: number },
+  now: { revision: number; seekGeneration: number },
+): boolean => answer.revision === now.revision && answer.seekGeneration >= now.seekGeneration;
 
 /* ------------------------------------------------------------------ */
 /* The revision-keyed frame cache                                       */
@@ -250,7 +265,7 @@ export interface StudioPreviewCacheOptions {
  * second should keep those frames and lose the ones passed through once.
  */
 export class StudioPreviewCache {
-  private readonly buckets = new Map<string, Map<string, StudioPreviewFrameView>>();
+  private readonly buckets = new Map<number, Map<string, StudioPreviewFrameView>>();
   private readonly maxFramesPerRevision: number;
   private readonly release: (objectUrl: string) => void;
 
@@ -268,13 +283,13 @@ export class StudioPreviewCache {
     return total;
   }
 
-  revisions(): string[] {
+  revisions(): number[] {
     return [...this.buckets.keys()];
   }
 
   /** Reading a frame also marks it most recently used, which is why it re-inserts. */
   get(intent: StudioPreviewIntent): StudioPreviewFrameView | undefined {
-    const bucket = this.buckets.get(intent.revisionDigest);
+    const bucket = this.buckets.get(intent.revision);
     if (!bucket) {
       return undefined;
     }
@@ -289,10 +304,10 @@ export class StudioPreviewCache {
   }
 
   set(intent: StudioPreviewIntent, frame: StudioPreviewFrameView): void {
-    let bucket = this.buckets.get(intent.revisionDigest);
+    let bucket = this.buckets.get(intent.revision);
     if (!bucket) {
       bucket = new Map();
-      this.buckets.set(intent.revisionDigest, bucket);
+      this.buckets.set(intent.revision, bucket);
     }
 
     const key = studioPreviewKey(intent);
@@ -326,8 +341,8 @@ export class StudioPreviewCache {
    * Its entry leaves the cache with everything else; the caller becomes responsible for
    * revoking that one URL when it stops showing it.
    */
-  dropRevision(revisionDigest: string, protectedUrls: ReadonlySet<string> = new Set()): void {
-    const bucket = this.buckets.get(revisionDigest);
+  dropRevision(revision: number, protectedUrls: ReadonlySet<string> = new Set()): void {
+    const bucket = this.buckets.get(revision);
     if (!bucket) {
       return;
     }
@@ -336,21 +351,21 @@ export class StudioPreviewCache {
         this.release(frame.objectUrl);
       }
     }
-    this.buckets.delete(revisionDigest);
+    this.buckets.delete(revision);
   }
 
   /** Keep only the given revision. Everything else goes, including a stray future one. */
-  keepOnly(revisionDigest: string, protectedUrls: ReadonlySet<string> = new Set()): void {
-    for (const digest of [...this.buckets.keys()]) {
-      if (digest !== revisionDigest) {
-        this.dropRevision(digest, protectedUrls);
+  keepOnly(revision: number, protectedUrls: ReadonlySet<string> = new Set()): void {
+    for (const held of [...this.buckets.keys()]) {
+      if (held !== revision) {
+        this.dropRevision(held, protectedUrls);
       }
     }
   }
 
   clear(): void {
-    for (const digest of [...this.buckets.keys()]) {
-      this.dropRevision(digest);
+    for (const held of [...this.buckets.keys()]) {
+      this.dropRevision(held);
     }
   }
 }
@@ -378,7 +393,7 @@ export interface StudioPreviewClient {
   /** The current view. Safe to read at any time. */
   view(): StudioPreviewView;
   /** Tell the client the project moved to a new revision, outside of a preview request. */
-  revisionAdvanced(revisionDigest: string): void;
+  revisionAdvanced(revision: number): void;
   /** Release everything: cached object URLs, the pending intent and any in-flight request. */
   dispose(): Promise<void>;
   /** Settles once no request is in flight. Test affordance; the host never needs it. */
@@ -395,8 +410,11 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
 
   let view = idleStudioPreviewView();
   let seekGeneration = 0;
-  /** The intent the person is currently looking at; what "current" means for a late answer. */
-  let currentIntent: StudioPreviewIntent | null = null;
+  /**
+   * The newest stored revision this client knows of: from the host's session (a request, or
+   * `revisionAdvanced`) or from the server. What "current" means for a late answer.
+   */
+  let knownRevision: number | null = null;
   /** The intent to run next. Replaced, never queued: that is the backpressure. */
   let pending: StudioPreviewIntent | null = null;
   let running: Promise<void> | null = null;
@@ -433,12 +451,12 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
    * time: a second supersession releases the first, so scrubbing through several edits does not
    * accumulate object URLs.
    */
-  const pruneTo = (currentRevisionDigest: string): StudioPreviewFrameView | null => {
+  const pruneTo = (currentRevision: number): StudioPreviewFrameView | null => {
     const outgoing = view.frame ?? view.staleFrame;
-    const keep = outgoing && outgoing.revisionDigest !== currentRevisionDigest ? outgoing : null;
+    const keep = outgoing && outgoing.revision !== currentRevision ? outgoing : null;
 
     const previouslyRetained = retainedStaleUrl;
-    cache.keepOnly(currentRevisionDigest, new Set(keep ? [keep.objectUrl] : []));
+    cache.keepOnly(currentRevision, new Set(keep ? [keep.objectUrl] : []));
 
     retainedStaleUrl = keep?.objectUrl ?? null;
     if (previouslyRetained && previouslyRetained !== retainedStaleUrl) {
@@ -456,9 +474,10 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
    * the phase says `stale`, so it is presented as out of date rather than as the current
    * picture. `frame` is null, because nothing current exists to paint.
    */
-  const supersede = (currentRevisionDigest: string) => {
-    const staleFrame = pruneTo(currentRevisionDigest);
-    setPhase('stale', { frame: null, staleFrame, currentRevisionDigest, errorCode: null });
+  const supersede = (currentRevision: number) => {
+    knownRevision = currentRevision;
+    const staleFrame = pruneTo(currentRevision);
+    setPhase('stale', { frame: null, staleFrame, currentRevision, errorCode: null });
   };
 
   const failure = (code: string) => {
@@ -480,9 +499,9 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
   const failureOf = (error: unknown): StudioPreviewTransportFailure['kind'] =>
     (error as { failure?: StudioPreviewTransportFailure })?.failure?.kind ?? 'failed';
 
-  const staleDigestOf = (error: unknown, fallback: string): string => {
+  const staleRevisionOf = (error: unknown, fallback: number): number => {
     const reason = (error as { failure?: StudioPreviewTransportFailure })?.failure;
-    return reason?.kind === 'stale-revision' ? (reason.currentRevisionDigest ?? fallback) : fallback;
+    return reason?.kind === 'stale-revision' ? (reason.currentRevision ?? fallback) : fallback;
   };
 
   const run = async (intent: StudioPreviewIntent, generation: number): Promise<void> => {
@@ -491,7 +510,7 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
       result = await options.transport.request(intent, generation);
     } catch (error) {
       if (failureOf(error) === 'stale-revision') {
-        supersede(staleDigestOf(error, intent.revisionDigest));
+        supersede(staleRevisionOf(error, intent.revision));
       } else {
         failure(failureOf(error));
       }
@@ -502,23 +521,30 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
       return;
     }
 
+    if (knownRevision !== null && intent.revision !== knownRevision) {
+      // The host moved to another stored revision while this request was in flight. Nothing it
+      // renders can be shown, and pruning to its revision would drop the current one's frames.
+      void options.transport.cancel(result.preview.id).catch(() => {});
+      return;
+    }
+
     // The server is the authority on which revision is current. If it disagrees with the one
     // we asked about, nothing rendered for ours can be painted.
-    if (result.currentRevisionDigest !== intent.revisionDigest) {
-      supersede(result.currentRevisionDigest);
+    if (result.currentRevision !== intent.revision) {
+      supersede(result.currentRevision);
       return;
     }
 
     // Frames the request superseded are unreachable now; release them before anything else so a
     // later paint cannot find one.
-    pruneTo(result.currentRevisionDigest);
+    pruneTo(result.currentRevision);
 
     let record = result.preview;
     openPreviewIds.add(record.id);
 
     for (let attempt = 0; record.status !== 'ready' && attempt < maxPolls; attempt++) {
       if (record.status === 'superseded') {
-        supersede(result.currentRevisionDigest);
+        supersede(result.currentRevision);
         return;
       }
       if (record.status === 'failed' || record.status === 'evicted') {
@@ -526,9 +552,9 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
         return;
       }
 
-      // A newer seek arrived while this one was rendering: stop paying for a frame nobody will
-      // look at rather than finishing it first.
-      if (generation < seekGeneration) {
+      // A newer seek, or a newer stored revision, arrived while this one was rendering: stop
+      // paying for a frame nobody will look at rather than finishing it first.
+      if (generation < seekGeneration || intent.revision !== knownRevision) {
         void options.transport.cancel(record.id).catch(() => {});
         openPreviewIds.delete(record.id);
         return;
@@ -543,7 +569,7 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
         record = await options.transport.poll(record.id);
       } catch (error) {
         if (failureOf(error) === 'stale-revision') {
-          supersede(staleDigestOf(error, result.currentRevisionDigest));
+          supersede(staleRevisionOf(error, result.currentRevision));
         } else {
           failure(failureOf(error));
         }
@@ -562,7 +588,7 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
       frameBytes = await options.transport.fetchFrame(record.id, record.etag);
     } catch (error) {
       if (failureOf(error) === 'stale-revision') {
-        supersede(staleDigestOf(error, result.currentRevisionDigest));
+        supersede(staleRevisionOf(error, result.currentRevision));
       } else {
         failure(failureOf(error));
       }
@@ -571,7 +597,7 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
 
     const frame: StudioPreviewFrameView = {
       previewId: record.id,
-      revisionDigest: record.revisionDigest,
+      revision: record.revision,
       time: intent.time,
       quality: intent.quality,
       objectUrl: frameBytes.objectUrl,
@@ -580,7 +606,9 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
       toneMapped: record.toneMapped,
     };
 
-    if (disposed) {
+    if (disposed || (knownRevision !== null && record.revision !== knownRevision)) {
+      // Disposed, or the project moved to another stored revision while this one rendered: the
+      // frame belongs to a graph nobody is looking at, so it is neither painted nor cached.
       release(frame.objectUrl);
       return;
     }
@@ -590,10 +618,10 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
     cache.set(intent, frame);
 
     const now = {
-      revisionDigest: currentIntent?.revisionDigest ?? intent.revisionDigest,
+      revision: knownRevision ?? intent.revision,
       seekGeneration,
     };
-    if (!isStudioPreviewAnswerCurrent({ revisionDigest: record.revisionDigest, seekGeneration: generation }, now)) {
+    if (!isStudioPreviewAnswerCurrent({ revision: record.revision, seekGeneration: generation }, now)) {
       // Arrived too late to paint. It is in the cache, so scrubbing back to it is free.
       return;
     }
@@ -603,7 +631,7 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
       frame,
       staleFrame: null,
       errorCode: null,
-      currentRevisionDigest: result.currentRevisionDigest,
+      currentRevision: result.currentRevision,
     });
   };
 
@@ -631,13 +659,13 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
       }
 
       seekGeneration += 1;
-      currentIntent = intent;
 
-      if (view.currentRevisionDigest && view.currentRevisionDigest !== intent.revisionDigest) {
+      if (knownRevision !== null && knownRevision !== intent.revision) {
         // The host advanced the project between seeks; the old bucket goes before a new frame
         // arrives, so nothing from the previous graph can be painted for this one.
-        pruneTo(intent.revisionDigest);
+        pruneTo(intent.revision);
       }
+      knownRevision = intent.revision;
 
       const cached = cache.get(intent);
       if (cached) {
@@ -646,12 +674,12 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
           frame: cached,
           staleFrame: null,
           errorCode: null,
-          currentRevisionDigest: intent.revisionDigest,
+          currentRevision: intent.revision,
         });
         return seekGeneration;
       }
 
-      setPhase('rendering', { frame: null, errorCode: null, currentRevisionDigest: intent.revisionDigest });
+      setPhase('rendering', { frame: null, errorCode: null, currentRevision: intent.revision });
       pending = intent;
       pump();
       return seekGeneration;
@@ -659,11 +687,27 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
 
     view: () => view,
 
-    revisionAdvanced(revisionDigest) {
-      if (revisionDigest === view.currentRevisionDigest) {
+    revisionAdvanced(revision) {
+      if (disposed || revision === knownRevision) {
         return;
       }
-      supersede(revisionDigest);
+
+      // A seek queued for the old revision would only be refused as stale; drop it now.
+      if (pending && pending.revision !== revision) {
+        pending = null;
+      }
+
+      if (!view.frame && !view.staleFrame && view.phase !== 'rendering') {
+        // Nothing on screen belongs to the old revision (the person has not previewed yet, or
+        // the preview is unavailable): release its cached frames quietly rather than announce a
+        // stale picture that is not there.
+        knownRevision = revision;
+        pruneTo(revision);
+        publish({ currentRevision: revision });
+        return;
+      }
+
+      supersede(revision);
     },
 
     async dispose() {

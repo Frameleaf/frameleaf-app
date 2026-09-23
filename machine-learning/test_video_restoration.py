@@ -446,20 +446,29 @@ def write_frames(directory: Path, count: int, size: tuple[int, int], *, blank_at
 
 class TestMedia:
     @pytest.mark.parametrize(
-        ("source", "scale", "expected"),
+        ("source", "scale", "box", "expected"),
         [
-            ((1920, 1080), 2, (3840, 2160)),
-            ((1280, 720), 2, (2560, 1440)),
-            ((3000, 2000), 2, (3840, 2560)),
-            ((1080, 1920), 2, (2160, 3840)),
-            ((721, 405), 1, (720, 404)),
-            ((640, 480), 2, (1280, 960)),
+            ((1920, 1080), 2, (3840, 2160), (3840, 2160)),
+            ((1280, 720), 2, (3840, 2160), (2560, 1440)),
+            ((3000, 2000), 2, (3840, 2160), (3240, 2160)),
+            ((1080, 1920), 2, (2160, 3840), (2160, 3840)),
+            ((1080, 1920), 2, (3840, 2160), (1214, 2160)),
+            ((721, 405), 1, (3840, 2160), (720, 404)),
+            ((640, 480), 4, (3840, 2160), (2560, 1920)),
         ],
     )
-    def test_target_geometry_doubles_and_caps_the_long_edge(
-        self, source: tuple[int, int], scale: int, expected: tuple[int, int]
+    def test_target_geometry_scales_and_fits_the_box(
+        self, source: tuple[int, int], scale: int, box: tuple[int, int], expected: tuple[int, int]
     ) -> None:
-        assert media.target_geometry(source[0], source[1], scale, 3840) == expected
+        assert media.target_geometry(source[0], source[1], scale, box[0], box[1]) == expected
+
+    def test_parse_probe_reads_a_still_without_rate_or_duration(self) -> None:
+        probe = media.parse_probe(
+            {"streams": [{"codec_type": "video", "width": 800, "height": 600, "pix_fmt": "rgb48be"}]}, still=True
+        )
+
+        assert (probe.width, probe.height, probe.duration_ms, probe.frame_rate) == (800, 600, 0, Fraction(1, 1))
+        assert probe.bit_depth == 16
 
     def test_parse_probe_reads_a_constant_rate_sdr_source(self) -> None:
         probe = media.parse_probe(
@@ -656,8 +665,6 @@ def request_payload(**overrides: Any) -> dict[str, Any]:
             "height": 360,
             "frameRate": "30/1",
             "durationMs": 5000,
-            "dynamicRange": "sdr",
-            "bitDepth": 8,
         },
     }
     payload.update(overrides)
@@ -728,13 +735,31 @@ class TestSourceChecks:
 
         assert error.value.code == RestorationErrorCode.UNSUPPORTED_INPUT
 
-    def test_request_contract_caps_scale_and_long_edge(self) -> None:
+    def test_checks_a_still_by_size_only(self, tmp_path: Path) -> None:
+        still = {"width": 640, "height": 360}
+        request = RestorationRequest.model_validate(request_payload(kind="image", source=still))
+
+        probe = source_probe(frame_rate=Fraction(1, 1), duration_ms=0)
+
+        assert check_source(request, probe, self.selected(tmp_path)) == (None, None, 1)
+        with pytest.raises(RestorationFailure) as error:
+            check_source(request, source_probe(width=641), self.selected(tmp_path))
+        assert error.value.code == RestorationErrorCode.SOURCE_MISMATCH
+
+    def test_request_contract_limits_scale_box_and_kind(self) -> None:
+        assert RestorationRequest.model_validate(request_payload(scale=4)).scale == 4
         with pytest.raises(ValidationError):
-            RestorationRequest.model_validate(request_payload(scale=4))
+            RestorationRequest.model_validate(request_payload(scale=3))
         with pytest.raises(ValidationError):
-            RestorationRequest.model_validate(request_payload(maxLongEdge=7680))
+            RestorationRequest.model_validate(request_payload(maxWidth=7680))
         with pytest.raises(ValidationError):
             RestorationRequest.model_validate(request_payload(segment={"startMs": 5000, "endMs": 1000}))
+        with pytest.raises(ValidationError):
+            RestorationRequest.model_validate(request_payload(source={"width": 640, "height": 360}))
+        with pytest.raises(ValidationError):
+            RestorationRequest.model_validate(
+                request_payload(kind="image", source={"width": 640, "height": 360}, segment={"startMs": 0, "endMs": 1})
+            )
 
 
 def fake_result(output: Path) -> RestorationResult:
@@ -759,7 +784,7 @@ def fake_result(output: Path) -> RestorationResult:
             frameCount=150,
             durationMs=5000,
             container="mp4",
-            videoCodec="h264",
+            codec="h264",
             dynamicRange=DynamicRange.SDR,
             bitDepth=8,
             audio="copied",

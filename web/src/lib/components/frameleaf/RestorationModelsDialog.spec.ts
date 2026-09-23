@@ -1,11 +1,11 @@
 import { render, screen, within } from '@testing-library/svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import {
+  AssetRestorationMode,
   MlDestinationHealth,
   MlDestinationKind,
   MlWorkload,
   RestorationDynamicRange,
-  RestorationMode,
   RestorationModelState,
   type MlDestinationResponseDto,
   type RestorationModelCapabilityDto,
@@ -40,7 +40,7 @@ const lan: MlDestinationResponseDto = {
 const model = (overrides: Partial<RestorationModelCapabilityDto> = {}): RestorationModelCapabilityDto => ({
   id: 'realbasicvsr-x4',
   family: 'realbasicvsr',
-  mode: RestorationMode.Faithful,
+  mode: AssetRestorationMode.Faithful,
   displayName: 'RealBasicVSR x4',
   revision: 'REPLACE-with-the-exact-40-character-commit-that-was-qualified',
   fingerprint: null,

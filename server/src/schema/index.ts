@@ -55,6 +55,7 @@ import { AssetMetadataAuditTable } from 'src/schema/tables/asset-metadata-audit.
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetOcrAuditTable } from 'src/schema/tables/asset-ocr-audit.table.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
+import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
 import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
@@ -67,6 +68,12 @@ import {
   MediaOperationCheckpointTable,
   MediaOperationTable,
 } from 'src/schema/tables/media-operation.table.js';
+import {
+  RenderWorkerAuditTable,
+  RenderWorkerLimitTable,
+  RenderWorkerSessionTable,
+  RenderWorkerTable,
+} from 'src/schema/tables/render-worker.table.js';
 import { MemoryAssetAuditTable } from 'src/schema/tables/memory-asset-audit.table.js';
 import { MemoryAssetTable } from 'src/schema/tables/memory-asset.table.js';
 import { MemoryAuditTable } from 'src/schema/tables/memory-audit.table.js';
@@ -100,7 +107,9 @@ import { SessionTable } from 'src/schema/tables/session.table.js';
 import { SharedLinkAssetTable } from 'src/schema/tables/shared-link-asset.table.js';
 import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
 import { SharedSpaceAlbumTable } from 'src/schema/tables/shared-space-album.table.js';
+import { SharedSpaceEventTable } from 'src/schema/tables/shared-space-event.table.js';
 import { SharedSpaceInviteTable } from 'src/schema/tables/shared-space-invite.table.js';
+import { SharedSpaceMentionTable } from 'src/schema/tables/shared-space-mention.table.js';
 import { SharedSpacePersonTable } from 'src/schema/tables/shared-space-person.table.js';
 import { SharedSpaceVisitTable } from 'src/schema/tables/shared-space-visit.table.js';
 import { SmartAlbumAssetTable } from 'src/schema/tables/smart-album-asset.table.js';
@@ -111,6 +120,11 @@ import { SmartSearchTable } from 'src/schema/tables/smart-search.table.js';
 import { StackAuditTable } from 'src/schema/tables/stack-audit.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
 import { StudioPreviewFrameTable } from 'src/schema/tables/studio-preview.table.js';
+import {
+  StudioProjectCommentTable,
+  StudioProjectRevisionTable,
+  StudioProjectTable,
+} from 'src/schema/tables/studio-project.table.js';
 import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table.js';
 import { SystemMetadataTable } from 'src/schema/tables/system-metadata.table.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
@@ -154,6 +168,7 @@ export class ImmichDatabase {
     AssetJobStatusTable,
     AssetOcrTable,
     AssetOcrAuditTable,
+    AssetRestorationTable,
     AssetTable,
     AssetFileTable,
     AssetHealthRunTable,
@@ -169,6 +184,10 @@ export class ImmichDatabase {
     LibraryTable,
     MediaOperationTable,
     MediaOperationCheckpointTable,
+    RenderWorkerTable,
+    RenderWorkerSessionTable,
+    RenderWorkerLimitTable,
+    RenderWorkerAuditTable,
     MemoryTable,
     MemoryAuditTable,
     MemoryExportTable,
@@ -196,7 +215,9 @@ export class ImmichDatabase {
     SharedLinkAssetTable,
     SharedLinkTable,
     SharedSpaceAlbumTable,
+    SharedSpaceEventTable,
     SharedSpaceInviteTable,
+    SharedSpaceMentionTable,
     SharedSpacePersonTable,
     SharedSpaceVisitTable,
     SmartAlbumTable,
@@ -207,6 +228,9 @@ export class ImmichDatabase {
     StackTable,
     StackAuditTable,
     StudioPreviewFrameTable,
+    StudioProjectTable,
+    StudioProjectRevisionTable,
+    StudioProjectCommentTable,
     SessionSyncCheckpointTable,
     SystemMetadataTable,
     TagTable,
@@ -290,6 +314,7 @@ export interface DB {
   asset_job_status: AssetJobStatusTable;
   asset_ocr: AssetOcrTable;
   asset_ocr_audit: AssetOcrAuditTable;
+  asset_restoration: AssetRestorationTable;
   asset_audio: AssetAudioTable;
   asset_video: AssetVideoTable;
   asset_keyframe: AssetKeyframeTable;
@@ -342,13 +367,20 @@ export interface DB {
 
   physical_file: PhysicalFileTable;
 
+  render_worker: RenderWorkerTable;
+  render_worker_session: RenderWorkerSessionTable;
+  render_worker_limit: RenderWorkerLimitTable;
+  render_worker_audit: RenderWorkerAuditTable;
+
   session: SessionTable;
   session_sync_checkpoint: SessionSyncCheckpointTable;
 
   shared_link: SharedLinkTable;
   shared_link_asset: SharedLinkAssetTable;
   shared_space_album: SharedSpaceAlbumTable;
+  shared_space_event: SharedSpaceEventTable;
   shared_space_invite: SharedSpaceInviteTable;
+  shared_space_mention: SharedSpaceMentionTable;
   shared_space_person: SharedSpacePersonTable;
   shared_space_visit: SharedSpaceVisitTable;
 
@@ -363,6 +395,9 @@ export interface DB {
   stack_audit: StackAuditTable;
 
   studio_preview_frame: StudioPreviewFrameTable;
+  studio_project: StudioProjectTable;
+  studio_project_revision: StudioProjectRevisionTable;
+  studio_project_comment: StudioProjectCommentTable;
 
   system_metadata: SystemMetadataTable;
 

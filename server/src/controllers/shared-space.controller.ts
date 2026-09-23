@@ -1,11 +1,19 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AlbumResponseDto } from 'src/dtos/album.dto.js';
 import {
+  SharedSpaceActivityResponseDto,
+  SharedSpaceActivitySearchDto,
   SharedSpaceAlbumParamDto,
   SharedSpaceAlbumsResponseDto,
+  SharedSpaceCommentCreateDto,
+  SharedSpaceCommentParamDto,
+  SharedSpaceCommentResponseDto,
+  SharedSpaceCommentSearchDto,
+  SharedSpaceCommentsResponseDto,
+  SharedSpaceCommentUpdateDto,
   SharedSpaceInviteParamDto,
   SharedSpaceMembersResponseDto,
   SharedSpaceNewResponseDto,
@@ -209,5 +217,82 @@ export class SharedSpaceController {
   })
   markSharedSpaceVisited(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<SharedSpaceNewResponseDto> {
     return this.service.markVisited(auth, id);
+  }
+
+  @Get(':id/activity')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'What happened in a shared space',
+    description:
+      'The shared space’s activity feed, newest first: items added and removed, albums and people linked and unlinked, members joining, leaving, being removed or changing role, comments and likes — by every member. Only current members may read it. Every event is narrowed to the caller before it is sent: an item the caller cannot see (Locked, marked sensitive, hidden by their own settings, or no longer in the space) is never named, and an event with nothing visible left is not sent at all, so nothing can be inferred from a count. `unreadCount` is the events by other members since the caller last marked the space seen, computed the same way. Page with `before` and `take`.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getSharedSpaceActivity(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() dto: SharedSpaceActivitySearchDto,
+  ): Promise<SharedSpaceActivityResponseDto> {
+    return this.service.getActivity(auth, id, dto);
+  }
+
+  @Get(':id/comments')
+  @Authenticated({ permission: Permission.ActivityRead })
+  @Endpoint({
+    summary: 'List comments in a shared space',
+    description:
+      'The comments on one item in the shared space (`assetId`), or on the space itself when `assetId` is left out. Oldest first. Only current members may read them, and an item the caller cannot see is not in the space as far as they are concerned (404). Mentions stay as `@{userId}` tokens in the text and are resolved in `mentions`.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getSharedSpaceComments(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() dto: SharedSpaceCommentSearchDto,
+  ): Promise<SharedSpaceCommentsResponseDto> {
+    return this.service.getComments(auth, id, dto);
+  }
+
+  @Post(':id/comments')
+  @Authenticated({ permission: Permission.ActivityCreate })
+  @Endpoint({
+    summary: 'Comment in a shared space',
+    description:
+      'Write a comment on one item in the shared space, or on the space itself when `assetId` is left out. Commenting must be enabled on the space, and the item must be one the caller can see. Mention a member with `@{userId}`: mentions are by id, never by name, every mention must name a current member (400 otherwise), and each mentioned member other than the author is notified.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  createSharedSpaceComment(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: SharedSpaceCommentCreateDto,
+  ): Promise<SharedSpaceCommentResponseDto> {
+    return this.service.createComment(auth, id, dto);
+  }
+
+  @Put(':id/comments/:commentId')
+  @Authenticated({ permission: Permission.ActivityUpdate })
+  @Endpoint({
+    summary: 'Edit a shared space comment',
+    description:
+      'Change what a comment says. Only its author may. Mentions are re-read from the new text under the same rules, and members newly mentioned are notified.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  updateSharedSpaceComment(
+    @Auth() auth: AuthDto,
+    @Param() { id, commentId }: SharedSpaceCommentParamDto,
+    @Body() dto: SharedSpaceCommentUpdateDto,
+  ): Promise<SharedSpaceCommentResponseDto> {
+    return this.service.updateComment(auth, id, commentId, dto);
+  }
+
+  @Delete(':id/comments/:commentId')
+  @Authenticated({ permission: Permission.ActivityDelete })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Remove a shared space comment',
+    description:
+      'Remove a comment. Its author may, and so may a shared space owner or editor — that is how a space is moderated. A viewer removes only their own. The comment’s mentions and its entry in the activity feed go with it.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  deleteSharedSpaceComment(@Auth() auth: AuthDto, @Param() { id, commentId }: SharedSpaceCommentParamDto): Promise<void> {
+    return this.service.deleteComment(auth, id, commentId);
   }
 }

@@ -1,47 +1,33 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { AssetRestorationModeSchema } from 'src/dtos/asset-restoration.dto.js';
 import { MlWorkload, MlWorkloadSchema } from 'src/enum.js';
 
 /**
- * Restoration inference contract (FL-114).
+ * Restoration worker contract (FL-114).
  *
  * One restoration inference is one request and one result between the server and a
  * restoration worker (`machine-learning/immich_ml/video_restoration`). The request travels as
  * the `request` form field of `POST /restoration/restore` beside the `media` file; the result
  * comes back base64url-encoded in the `x-restoration-result` header while the body streams the
- * restored file. A failure answers with a {@link RestorationWorkerErrorSchema} body.
+ * restored file (MP4 for a video, PNG for a still). A failure answers with a
+ * {@link RestorationWorkerErrorSchema} body.
  *
- * This is a worker wire contract, not a public API body: only the capability report is
- * exposed, read-only, to administrators. The lifecycle around an inference (previews, full
- * renders, retention, Activity) belongs to FL-115 and builds on this contract unchanged.
+ * This is a worker wire contract, not a public API body: only the capability report is exposed,
+ * read-only, to administrators. FL-115's lifecycle reaches it through
+ * `MachineLearningRepository.restore`, which implements `RestorationInference` from
+ * `src/utils/restoration.ts`. The mode is FL-115's `AssetRestorationMode`.
  *
  * Public contract — KEEP IN SYNC WITH `machine-learning/immich_ml/video_restoration/schemas.py`.
  */
 
 export const RESTORATION_PROTOCOL = 'restoration-v1';
 export const RESTORATION_RESULT_HEADER = 'x-restoration-result';
-/** 2x enlargement is capped at a 3840-pixel long edge. */
-export const RESTORATION_MAX_LONG_EDGE = 3840;
+/** No output edge exceeds this; the caller passes the exact 4K box for the orientation. */
+export const RESTORATION_MAX_OUTPUT_EDGE = 3840;
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const RATIONAL = /^[1-9]\d{0,8}\/[1-9]\d{0,8}$/;
-
-/** What the person asked for. The names express intention, not a fidelity guarantee. */
-export enum RestorationMode {
-  Faithful = 'faithful',
-  Creative = 'creative',
-}
-
-export const RestorationModeSchema = z
-  .enum(RestorationMode)
-  .describe('Restoration mode')
-  .meta({ id: 'RestorationMode' });
-
-/** The workload a destination must serve for each mode. */
-export const RESTORATION_WORKLOAD_BY_MODE: Readonly<Record<RestorationMode, MlWorkload>> = {
-  [RestorationMode.Faithful]: MlWorkload.RestorationFaithful,
-  [RestorationMode.Creative]: MlWorkload.RestorationCreative,
-};
 
 export enum RestorationDynamicRange {
   Sdr = 'sdr',
@@ -54,7 +40,7 @@ export const RestorationDynamicRangeSchema = z
   .meta({ id: 'RestorationDynamicRange' });
 
 /** Why a restoration inference was refused or failed on the worker. */
-export enum RestorationErrorCode {
+export enum RestorationWorkerErrorCode {
   InvalidRequest = 'invalid-request',
   ModelUnavailable = 'model-unavailable',
   /** A full render pinned its preview's model fingerprint and the model has changed since. */
@@ -95,57 +81,56 @@ export const RestorationModelStateSchema = z
 // Request and result.
 // ---------------------------------------------------------------------------------------
 
-const RestorationSegmentSchema = z
-  .object({
-    startMs: z.int().min(0),
-    endMs: z.int().positive(),
-  })
-  .refine((segment) => segment.endMs > segment.startMs, { message: 'endMs must be after startMs' });
-
-const RestorationSourceSchema = z.object({
+const RestorationWorkerSourceSchema = z.object({
   width: z.int().positive().max(16_384),
   height: z.int().positive().max(16_384),
-  frameRate: z.string().regex(RATIONAL),
-  durationMs: z.int().positive(),
-  dynamicRange: RestorationDynamicRangeSchema,
-  bitDepth: z.int().min(8).max(16),
+  /** Required for a video, absent for a still. */
+  durationMs: z.int().positive().nullable().optional(),
+  frameRate: z.string().regex(RATIONAL).nullable().optional(),
+  dynamicRange: RestorationDynamicRangeSchema.nullable().optional(),
+  bitDepth: z.int().min(8).max(16).nullable().optional(),
 });
 
-export const RestorationInferenceRequestSchema = z.object({
-  protocol: z.literal(RESTORATION_PROTOCOL),
-  /** The durable job this inference belongs to; echoed in the result. */
-  requestId: z.string().min(1).max(200),
-  mode: RestorationModeSchema,
-  /** Null: the worker's available model for the mode. A value names one model exactly. */
-  modelId: z.string().min(1).max(64).nullable().optional(),
-  /** A full render passes its preview's fingerprint; a changed model is refused. */
-  modelFingerprint: z.string().regex(SHA256).nullable().optional(),
-  scale: z.union([z.literal(1), z.literal(2)]),
-  maxLongEdge: z.int().min(16).max(RESTORATION_MAX_LONG_EDGE),
-  /** Prefer cutting the segment before upload so a remote worker never gets more than needed. */
-  segment: RestorationSegmentSchema.nullable().optional(),
-  seed: z.int().min(0).max(2_147_483_647),
-  /** What the server measured about the upload; the worker re-probes and refuses a mismatch. */
-  source: RestorationSourceSchema,
-});
+export const RestorationWorkerRequestSchema = z
+  .object({
+    protocol: z.literal(RESTORATION_PROTOCOL),
+    /** Echoed in the result; an answer for another request is discarded. */
+    requestId: z.string().min(1).max(200),
+    mode: AssetRestorationModeSchema,
+    kind: z.enum(['image', 'video']),
+    /** Null: the worker's available model for the mode. A value names one model exactly. */
+    modelId: z.string().min(1).max(64).nullable().optional(),
+    /** A full render may pass its preview's fingerprint; a changed model is then refused. */
+    modelFingerprint: z.string().regex(SHA256).nullable().optional(),
+    scale: z.union([z.literal(1), z.literal(2), z.literal(4)]),
+    maxWidth: z.int().min(16).max(RESTORATION_MAX_OUTPUT_EDGE),
+    maxHeight: z.int().min(16).max(RESTORATION_MAX_OUTPUT_EDGE),
+    keepGrain: z.boolean(),
+    seed: z.int().min(0).max(2_147_483_647),
+    /** What the server measured about the upload; the worker re-probes and refuses a mismatch. */
+    source: RestorationWorkerSourceSchema,
+  })
+  .refine((request) => request.kind === 'image' || (request.source.durationMs ?? null) !== null, {
+    message: 'A video request needs source.durationMs',
+  });
 
-export type RestorationInferenceRequest = z.infer<typeof RestorationInferenceRequestSchema>;
+export type RestorationWorkerRequest = z.infer<typeof RestorationWorkerRequestSchema>;
 
 const RestorationWeightIdentitySchema = z.object({
   role: z.string(),
   sha256: z.string().regex(SHA256),
 });
 
-export const RestorationInferenceResultSchema = z.object({
+export const RestorationWorkerResultSchema = z.object({
   protocol: z.literal(RESTORATION_PROTOCOL),
   requestId: z.string(),
-  mode: RestorationModeSchema,
+  mode: AssetRestorationModeSchema,
   model: z.object({
     id: z.string(),
     family: z.string(),
-    mode: RestorationModeSchema,
+    mode: AssetRestorationModeSchema,
     revision: z.string(),
-    /** Pass this to a full render so it can only run on the same model and weights. */
+    /** Identity of exactly this model and its weights. */
     fingerprint: z.string().regex(SHA256),
     weights: z.array(RestorationWeightIdentitySchema),
     qualificationId: z.string(),
@@ -153,11 +138,11 @@ export const RestorationInferenceResultSchema = z.object({
   output: z.object({
     width: z.int().positive(),
     height: z.int().positive(),
-    frameRate: z.string(),
+    frameRate: z.string().nullable(),
     frameCount: z.int().positive(),
-    durationMs: z.int().nonnegative(),
-    container: z.literal('mp4'),
-    videoCodec: z.string(),
+    durationMs: z.int().nonnegative().nullable(),
+    container: z.enum(['mp4', 'png']),
+    codec: z.string(),
     dynamicRange: RestorationDynamicRangeSchema,
     bitDepth: z.int(),
     /** `transcoded` when a source codec cannot live in MP4 (PCM, for example) and became AAC. */
@@ -170,7 +155,7 @@ export const RestorationInferenceResultSchema = z.object({
     runtimeMs: z.int().nonnegative(),
     encodeMs: z.int().nonnegative(),
     totalMs: z.int().nonnegative(),
-    /** Measured frames restored per second of runtime; estimates build on this. */
+    /** Measured frames restored per second of runtime. */
     framesPerSecond: z.number().nonnegative(),
   }),
   /** Device-wide peak GPU memory while the runtime ran, or null when it was not sampled. */
@@ -179,10 +164,10 @@ export const RestorationInferenceResultSchema = z.object({
   warnings: z.array(z.string()),
 });
 
-export type RestorationInferenceResult = z.infer<typeof RestorationInferenceResultSchema>;
+export type RestorationWorkerResult = z.infer<typeof RestorationWorkerResultSchema>;
 
 export const RestorationWorkerErrorSchema = z.object({
-  code: z.enum(RestorationErrorCode),
+  code: z.enum(RestorationWorkerErrorCode),
   message: z.string(),
   modelId: z.string().nullable().optional(),
 });
@@ -208,7 +193,7 @@ const RestorationModelCapabilitySchema = z
   .object({
     id: z.string(),
     family: z.string().describe('Model family, for example realbasicvsr or seedvr2'),
-    mode: RestorationModeSchema,
+    mode: AssetRestorationModeSchema,
     displayName: z.string(),
     revision: z.string().describe('Pinned upstream commit'),
     fingerprint: z

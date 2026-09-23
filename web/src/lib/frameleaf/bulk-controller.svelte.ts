@@ -1,11 +1,16 @@
 import { toastManager } from '@immich/ui';
+import { activitySession } from '$lib/frameleaf/activity-session.svelte';
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
 import {
   bulkResultSummary,
   countMatching,
   createBulkGateway,
+  durableBulkAction,
+  resolveMatchingIds,
   runBulkAction,
   runBulkOperation,
+  shouldRunDurably,
+  submitDurableBulk,
   type BulkGateway,
   type BulkPayload,
   type BulkResult,
@@ -24,9 +29,11 @@ import { getFormatter } from '$lib/utils/i18n';
  * `operation-start`, `operation-progress` and `operation-finish`, and it holds the `AbortController`
  * that the cancel control uses.
  *
- * A selected-id action runs immediately against those ids. A "select everything matching" action
- * runs as a background operation over the scope frozen at submit, so a filter edit while it runs
- * cannot change what it touches.
+ * A small selected-id action runs immediately against those ids and offers undo. A selection above
+ * `DURABLE_BULK_THRESHOLD`, and every "select everything matching" action the server can run, is
+ * resolved here once and handed to the server as a durable job over that frozen id list: it keeps
+ * going when this tab closes, and Activity is where it is followed, cancelled and retried. A filter
+ * edit afterwards cannot change what it touches, because nothing is ever resolved again.
  */
 export type BulkUndoEntry = {
   /** The past-tense summary of what will be reversed. */
@@ -42,6 +49,7 @@ export class BulkController {
   #gateway: BulkGateway;
   #context: () => BulkRunContext;
   #running = new Map<string, AbortController>();
+  #queued: () => void;
 
   /** The undo offered after the last reversible action, or null. */
   undo = $state<BulkUndoEntry | null>(null);
@@ -52,14 +60,28 @@ export class BulkController {
     dispatch,
     gateway = createBulkGateway((fileName, options) => downloadArchive(fileName, options)),
     context = () => ({}),
+    queued = () => void activitySession.refresh(),
   }: {
     dispatch: (action: LibrarySessionAction) => void;
     gateway?: BulkGateway;
     context?: () => BulkRunContext;
+    /** Called once a durable job has been accepted, so Activity shows it without waiting a poll. */
+    queued?: () => void;
   }) {
     this.#dispatch = dispatch;
     this.#gateway = gateway;
     this.#context = context;
+    this.#queued = queued;
+  }
+
+  /** Tell the person the job is the server's now, and where to follow it. */
+  async #announceQueued(action: BulkActionId, count: number) {
+    const $t = await getFormatter();
+    toastManager.primary(
+      $t('frameleaf_bulk_queued', { values: { action: $t(`frameleaf_bulk_${action.replaceAll('-', '_')}`), count } }),
+    );
+    this.undo = null;
+    this.#queued();
   }
 
   /** Assets that left the page, so the session can drop its references to them. */
@@ -105,9 +127,18 @@ export class BulkController {
       : null;
   }
 
-  /** Run an action over an explicit selection. */
+  /**
+   * Run an action over an explicit selection.
+   *
+   * Returns the result for an action run here, and null for one handed to the server: its outcome
+   * arrives in Activity, not in this call.
+   */
   async run(action: BulkActionId, ids: string[], payload?: BulkPayload): Promise<BulkResult | null> {
     if (ids.length === 0) {
+      return null;
+    }
+    if (shouldRunDurably(action, ids.length)) {
+      await this.#queue(action, ids, payload);
       return null;
     }
     this.busy = true;
@@ -123,6 +154,20 @@ export class BulkController {
       const $t = await getFormatter();
       handleError(error, $t('frameleaf_bulk_reason_failed'));
       return null;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** Hand a large explicit selection to the server. There is no undo; Activity reports the outcome. */
+  async #queue(action: BulkActionId, ids: string[], payload?: BulkPayload) {
+    this.busy = true;
+    try {
+      await submitDurableBulk(action, ids, { payload, submittedTotal: ids.length }, this.#gateway);
+      await this.#announceQueued(action, ids.length);
+    } catch (error) {
+      const $t = await getFormatter();
+      handleError(error, $t('frameleaf_bulk_reason_failed'));
     } finally {
       this.busy = false;
     }
@@ -157,6 +202,14 @@ export class BulkController {
     const controller = new AbortController();
     this.#running.set(requestId, controller);
     this.#dispatch({ type: 'operation-start', requestId, action, scope, submittedTotal });
+    if (durableBulkAction(action)) {
+      try {
+        await this.#handOff(requestId, action, scope, controller.signal, { payload, submittedTotal });
+      } finally {
+        this.#running.delete(requestId);
+      }
+      return;
+    }
     try {
       const outcome = await runBulkOperation(
         { requestId, action, scope, payload, submittedTotal },
@@ -201,6 +254,68 @@ export class BulkController {
       });
     } finally {
       this.#running.delete(requestId);
+    }
+  }
+
+  /**
+   * Resolve the frozen scope in this tab, then give the server the exact ids.
+   *
+   * The session record covers only the part this tab does — finding the matching set. Once the
+   * server has accepted the job the record is dropped and Activity takes over, so the same work is
+   * never shown twice. A refused scope, a cancel while resolving or a rejected submit leave the
+   * record in place, failed or cancelled, where Retry can run it again under the same key.
+   */
+  async #handOff(
+    requestId: string,
+    action: BulkActionId,
+    scope: LibraryViewState,
+    signal: AbortSignal,
+    { payload, submittedTotal }: { payload?: BulkPayload; submittedTotal: number | null },
+  ) {
+    const finishWith = (patch: { cancelled?: boolean; errorKey?: string; truncated?: boolean }) =>
+      this.#dispatch({ type: 'operation-finish', requestId, succeeded: 0, failed: 0, skipped: 0, ...patch });
+
+    try {
+      const resolved = await resolveMatchingIds(scope, {
+        gateway: this.#gateway,
+        signal,
+        onProgress: (found, total) =>
+          this.#dispatch({
+            type: 'operation-progress',
+            requestId,
+            processed: found,
+            total: total ?? submittedTotal,
+            status: 'resolving',
+          }),
+      });
+      if (resolved.cancelled || signal.aborted) {
+        finishWith({ cancelled: true });
+        return;
+      }
+      if (resolved.ids.length === 0) {
+        finishWith({ truncated: resolved.truncated });
+        return;
+      }
+
+      await submitDurableBulk(
+        action,
+        resolved.ids,
+        {
+          payload,
+          submittedTotal: submittedTotal ?? resolved.total,
+          truncated: resolved.truncated,
+          scope,
+          requestId,
+        },
+        this.#gateway,
+      );
+      this.#dispatch({ type: 'operation-dismiss', requestId });
+      await this.#announceQueued(action, resolved.ids.length);
+    } catch (error) {
+      const reasonKey = error instanceof Error ? error.message : '';
+      finishWith({
+        errorKey: reasonKey.startsWith('frameleaf_bulk_reason_') ? reasonKey : 'frameleaf_bulk_reason_failed',
+      });
     }
   }
 
