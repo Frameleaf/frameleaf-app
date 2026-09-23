@@ -869,14 +869,25 @@ export class AssetRepository {
 
   /**
    * Assets that sensitive-content detection flagged, that no owner has reviewed and that are not locked
-   * (FL-34): what "hide sensitive detections" locks when it is switched on. Only positive evidence
-   * counts (`asset.is_nsfw`); a manual review, either way, is the owner's and is left alone.
+   * (FL-34): what "hide sensitive detections" locks when it is switched on. The source follows the
+   * fork schema phase like `nsfwAssetIdExists` (`asset.is_nsfw` until the cutover, the privacy sidecar
+   * once it is `active`), but only positive evidence counts: an asset with no privacy row, which the
+   * fail-closed read predicate treats as sensitive, is never locked by this. A manual review, either
+   * way, is the owner's and is left alone.
    */
   async getUnlockedDetectionIds(): Promise<string[]> {
     const rows = await this.db
       .selectFrom('asset')
       .select('asset.id')
-      .where('asset.is_nsfw', '=', true)
+      .where(sql<boolean>`case
+        when coalesce((select phase from immich_fork.state where id = 1), 'inactive') = 'active' then exists (
+          select 1
+          from immich_fork.asset_privacy as privacy_asset
+          where privacy_asset."assetId" = asset.id
+            and privacy_asset."isNsfw" = true
+        )
+        else asset.is_nsfw = true
+      end`)
       .where('asset.deletedAt', 'is', null)
       .where(isNotLocked('asset'))
       .where((eb) =>
