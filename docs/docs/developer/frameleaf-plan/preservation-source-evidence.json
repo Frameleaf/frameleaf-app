@@ -772,7 +772,10 @@
       "id": "/utilities",
       "family": "utilities",
       "access": "authenticated",
-      "source": ["web/src/lib/components/frameleaf/settings/UtilitiesArea.svelte", "web/src/routes/(user)/utilities/+page.ts"],
+      "source": [
+        "web/src/lib/components/frameleaf/settings/UtilitiesArea.svelte",
+        "web/src/routes/(user)/utilities/+page.ts"
+      ],
       "loaders": ["web/src/routes/(user)/+layout.ts", "web/src/routes/+layout.ts"],
       "primaryIssueId": "ADM-002",
       "secondaryIssueIds": ["REC-103", "LIB-007", "LIB-104", "IMP-002", "IMP-003", "IMP-004", "ADM-105"],

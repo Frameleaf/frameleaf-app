@@ -211,7 +211,7 @@ describe('ICloudSyncPanel', () => {
     expect(await screen.findByText('IMG_1104.MOV')).toBeInTheDocument();
     expect(screen.getByText(en.frameleaf_icloud_reason_live_photo)).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_review }));
-    expect(mocks.goto).toHaveBeenCalledWith('/utilities/live-photos');
+    expect(mocks.goto).toHaveBeenCalledWith('/user-settings?area=utilities&section=live-photos');
   });
 
   it('removes a disconnected connection and says its photos stay', async () => {
