@@ -165,7 +165,7 @@
   onMount(() => {
     const element = document.querySelector('#stencil');
     element?.remove();
-    // if the browser theme changes, changes the Frameleaf theme too
+    // Ctrl/Cmd+K and "/" open Frameleaf search, never the upstream command palette.
     return installSearchShortcuts();
   });
 

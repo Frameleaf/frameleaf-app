@@ -98,6 +98,8 @@ const LIBRARY_ROOTS = [
   Route.bestPhotos(),
   Route.archive(),
   Route.locked(),
+  // Unlinked (FL-83): the rule-suppressed listing stays reachable by URL, PIN-guarded, until the
+  // Locked view becomes the prototype's union of lock records and rule matches (FL-34).
   Route.suppressed(),
   Route.pets(),
   Route.documents(),
