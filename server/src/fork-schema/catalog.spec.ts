@@ -89,10 +89,12 @@ describe('catalog manifests', () => {
     expect(getCatalogTableLocks(originalOfficial)).toEqual(
       [...official.tables, ...forkTables].map(({ identity }) => identity).toSorted(),
     );
-    // 97 public (v3.1.0 + cluster_group, cluster_group_request, person_group,
-    // person_group_audit, workflow_log from the post-certified residue) + fork tables, including seven iCloud tables
-    expect(getCatalogTableLocks(fork)).toHaveLength(114);
-    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(98);
+    // 123 public (v3.1.0, the post-certified residue cluster_group, cluster_group_request, person_group,
+    // person_group_audit, workflow_log, and the legacy fork tables of the 2100000000NNN migrations) + 33 fork
+    // tables, including seven iCloud tables and asset_develop_revision
+    expect(getCatalogTableLocks(fork)).toHaveLength(156);
+    // 66 v3.1.0 public + the 33 fork tables
+    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(99);
   });
 
   it('records the steady-state geodata primary index rebuilt by the runtime importer', () => {

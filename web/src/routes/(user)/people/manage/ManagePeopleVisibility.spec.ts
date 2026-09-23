@@ -32,6 +32,9 @@ const getData = (
   },
 });
 
+// Cards follow the prototype's `pm-card` (ManagePeople.jsx): `aria-pressed` means the person is
+// shown, so a hidden person's card is not pressed. People are sorted by name, so the fixtures are
+// named in the order the assertions read them.
 describe('People manage page', () => {
   beforeEach(() => {
     vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
@@ -39,9 +42,9 @@ describe('People manage page', () => {
 
   it('keeps toggled hidden state when loading more people', async () => {
     const [personA, personB, personC] = [
-      personFactory.build({ id: 'a', isHidden: false }),
-      personFactory.build({ id: 'b', isHidden: false }),
-      personFactory.build({ id: 'c', isHidden: true }),
+      personFactory.build({ id: 'a', name: 'Alice', isHidden: false }),
+      personFactory.build({ id: 'b', name: 'Bruno', isHidden: false }),
+      personFactory.build({ id: 'c', name: 'Carmen', isHidden: true }),
     ];
 
     const { container, rerender } = render(ManagePeoplePageTestWrapper, { data: getData([personA, personB], true) });
@@ -50,22 +53,24 @@ describe('People manage page', () => {
     let personButtons = container.querySelectorAll('button[aria-pressed]');
     expect(personButtons).toHaveLength(2);
 
-    await user.click(personButtons[0]);
     expect(personButtons[0].getAttribute('aria-pressed')).toBe('true');
+    await user.click(personButtons[0]);
+    expect(personButtons[0].getAttribute('aria-pressed')).toBe('false');
 
     await rerender({ data: getData([personA, personB, personC], false) });
 
     personButtons = container.querySelectorAll('button[aria-pressed]');
     expect(personButtons).toHaveLength(3);
-    expect(personButtons[0].getAttribute('aria-pressed')).toBe('true');
-    expect(personButtons[2].getAttribute('aria-pressed')).toBe('true');
+    expect(personButtons[0].getAttribute('aria-pressed')).toBe('false');
+    expect(personButtons[1].getAttribute('aria-pressed')).toBe('true');
+    expect(personButtons[2].getAttribute('aria-pressed')).toBe('false');
   });
 
   it('shows newly loaded hidden people as hidden', async () => {
     const [personA, personB, personC] = [
-      personFactory.build({ id: 'a', isHidden: false }),
-      personFactory.build({ id: 'b', isHidden: false }),
-      personFactory.build({ id: 'c', isHidden: true }),
+      personFactory.build({ id: 'a', name: 'Alice', isHidden: false }),
+      personFactory.build({ id: 'b', name: 'Bruno', isHidden: false }),
+      personFactory.build({ id: 'c', name: 'Carmen', isHidden: true }),
     ];
 
     const { container, rerender } = render(ManagePeoplePageTestWrapper, { data: getData([personA, personB], true) });
@@ -74,6 +79,6 @@ describe('People manage page', () => {
 
     const personButtons = container.querySelectorAll('button[aria-pressed]');
     expect(personButtons).toHaveLength(3);
-    expect(personButtons[2].getAttribute('aria-pressed')).toBe('true');
+    expect(personButtons[2].getAttribute('aria-pressed')).toBe('false');
   });
 });

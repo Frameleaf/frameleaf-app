@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -37,7 +37,10 @@ describe('IconChooser', () => {
 
     await waitFor(() => expect(screen.getByRole('listbox', { name: 'Albums and photos' })).toBeInTheDocument());
     expect(sdkMock.getAlbumIconCatalogue).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('option', { name: 'Album' })).toHaveAttribute('aria-selected', 'true');
+    // The suggested set comes first; the same icon appears again under every icon.
+    const suggested = screen.getByRole('listbox', { name: 'Albums and photos' });
+    expect(within(suggested).getByRole('option', { name: 'Album' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getAllByRole('option', { name: 'Album' })).toHaveLength(2);
     expect(screen.getByText('All icons · 5')).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'zodiac virgo' })).toBeInTheDocument();
   });

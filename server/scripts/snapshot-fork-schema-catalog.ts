@@ -1,4 +1,5 @@
-import { Kysely, Migrator } from 'kysely';
+import { Kysely } from 'kysely';
+import { Migrator } from 'kysely/migration';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { getCatalogEvidence, serializeCatalogManifest } from 'src/fork-schema/catalog.js';
