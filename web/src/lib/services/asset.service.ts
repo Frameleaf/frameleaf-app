@@ -124,7 +124,7 @@ export const getAssetActions = (
   };
 
   const PlaySlideshow: ActionItem = {
-    title: $t('slideshow'),
+    title: $t('frameleaf_viewer_play_slideshow'),
     icon: mdiPresentationPlay,
     $if: () => asset.visibility !== AssetVisibility.Locked,
     onAction: () => slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow),

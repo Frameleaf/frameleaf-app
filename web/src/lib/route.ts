@@ -92,6 +92,8 @@ export const Route = {
   // map
   map: (point?: { zoom: number; lat: number; lng: number }) =>
     '/map' + (point ? `#${point.zoom}/${point.lat}/${point.lng}` : ''),
+  /** The Map screen scoped to one album's located items (prototype `setMapScope("collection")`). */
+  mapAlbum: ({ id }: { id: string }) => '/map' + asQueryString({ albumId: id }),
 
   // memories
   memories: (params?: { isSaved?: boolean }) => '/memories' + asQueryString(params),

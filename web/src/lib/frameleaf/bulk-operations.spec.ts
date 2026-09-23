@@ -629,6 +629,7 @@ describe('durable jobs on the page', () => {
     expect(removesFromView('delete-permanently')).toBe(true);
     expect(removesFromView('restore')).toBe(true);
     expect(removesFromView('remove-from-album')).toBe(true);
+    expect(removesFromView('remove-from-shared-link')).toBe(true);
     expect(removesFromView('favorite')).toBe(false);
   });
 

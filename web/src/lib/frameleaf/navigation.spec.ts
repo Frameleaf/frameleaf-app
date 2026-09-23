@@ -53,11 +53,11 @@ describe('Frameleaf rail destinations', () => {
     ]);
   });
 
-  it('points Locked at the sensitive timeline, not the upstream locked folder', () => {
+  it('points Locked at the one Locked view, not the legacy suppressed-content page', () => {
     const locked = find(allCapabilities(), 'locked');
 
-    expect(locked?.href).toBe(Route.suppressed());
-    expect(locked?.href).not.toBe(Route.locked());
+    expect(locked?.href).toBe(Route.locked());
+    expect(locked?.href).not.toBe(Route.suppressed());
   });
 
   it('hides destinations the account has turned off, without touching the rest', () => {
@@ -192,6 +192,7 @@ describe('Frameleaf primary destinations', () => {
       Route.recentlyAdded(),
       Route.bestPhotos(),
       Route.archive(),
+      Route.locked(),
       Route.suppressed(),
       Route.pets(),
       Route.documents(),
