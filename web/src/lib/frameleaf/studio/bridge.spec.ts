@@ -33,6 +33,22 @@ describe('studio command bridge', () => {
     expect(request).toHaveBeenCalledTimes(1);
   });
 
+  it('lets a reviewer comment without the lease or the head revision, because comments sit beside the graph (FL-89)', async () => {
+    const add = vi.fn().mockResolvedValue(4);
+    const bridge = createStudioBridge({
+      context: () => context({ hasLease: false, revision: 4 }),
+      handlers: { 'review.add': add },
+    });
+
+    // The reviewer is looking at revision 3 while the owner has saved revision 4.
+    const [result] = await bridge.submit([
+      createStudioCommandEnvelope('review.add', { time: rational(2), text: 'Hold this shot longer' }, 3),
+    ]);
+
+    expect(result.status).toBe('accepted');
+    expect(add).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses a preview on a deployment with no GPU worker rather than showing nothing', async () => {
     const bridge = createStudioBridge({
       context: () => context({ capabilities: { ...emptyStudioCapabilities(), renderWorker: true } }),
