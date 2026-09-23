@@ -54,6 +54,8 @@ export type BulkOperationPayload = {
   longitude?: number;
   primaryId?: string;
   stackIds?: string[];
+  /** Still + motion video pairs to relink (FL-70). Every id in this list is also in `assetIds`. */
+  pairs?: { photoId: string; videoId: string }[];
   /** Duplicate review decisions (FL-61): one complete group each, members in job order. */
   duplicateGroups?: DuplicateGroupDecision[];
 };
@@ -540,6 +542,7 @@ export const BULK_ACTION_PERMISSIONS: Readonly<Record<MediaOperationBulkAction, 
   [MediaOperationBulkAction.RefreshMetadata]: [Permission.AssetUpdate],
   [MediaOperationBulkAction.RefreshEncoded]: [Permission.AssetUpdate],
   [MediaOperationBulkAction.RefreshFaces]: [Permission.AssetUpdate],
+  [MediaOperationBulkAction.RelinkLivePhoto]: [Permission.AssetUpdate],
   // A decision can trash, stack or merge metadata into the keeper; its undo restores and unstacks.
   [MediaOperationBulkAction.ResolveDuplicates]: [
     Permission.DuplicateDelete,
@@ -588,6 +591,8 @@ export const BULK_ITEM_PERMISSION: Readonly<Record<MediaOperationBulkAction, Per
   [MediaOperationBulkAction.RefreshMetadata]: Permission.AssetUpdate,
   [MediaOperationBulkAction.RefreshEncoded]: Permission.AssetUpdate,
   [MediaOperationBulkAction.RefreshFaces]: Permission.AssetUpdate,
+  // The relink service re-validates ownership of both the still and the video itself (FL-70).
+  [MediaOperationBulkAction.RelinkLivePhoto]: null,
   // Duplicate decisions are checked a whole group at a time, as the owner of every photo in it.
   [MediaOperationBulkAction.ResolveDuplicates]: null,
   [MediaOperationBulkAction.UndoDuplicates]: null,
@@ -727,6 +732,26 @@ export const bulkPayloadProblem = (
     }
     case MediaOperationBulkAction.Unstack: {
       return payload.stackIds && payload.stackIds.length > 0 ? null : 'At least one stack is required for this action';
+    }
+    case MediaOperationBulkAction.RelinkLivePhoto: {
+      const pairs = payload.pairs ?? [];
+      if (pairs.length === 0) {
+        return 'At least one still + video pair is required for this action';
+      }
+      const photoIds = new Set(pairs.map((pair) => pair.photoId));
+      const videoIds = new Set(pairs.map((pair) => pair.videoId));
+      if (photoIds.size !== pairs.length || videoIds.size !== pairs.length) {
+        return 'Each still and each video may appear in only one pair';
+      }
+      if (pairs.some((pair) => pair.photoId === pair.videoId)) {
+        return 'A still cannot be paired with itself';
+      }
+      // The frozen set the job iterates over is the still ids; every pair must name one of them and
+      // every still must have exactly one pair, so the job's cursor and its payload agree.
+      const assetIdSet = new Set(assetIds);
+      return photoIds.size === assetIdSet.size && [...photoIds].every((id) => assetIdSet.has(id))
+        ? null
+        : 'Every pair must name one of the selected still images';
     }
     case MediaOperationBulkAction.ResolveDuplicates:
     case MediaOperationBulkAction.UndoDuplicates: {

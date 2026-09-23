@@ -63,7 +63,15 @@ describe('discovery query', () => {
       albumIds: { any: [albumId] },
     });
     expect(contextDiscoveryQuery(new URL(`http://localhost/spaces/${spaceId}`)).spaceId).toBe(spaceId);
-    expect(contextDiscoveryQuery(new URL('http://localhost/map')).view).toBe('map');
+    // FL-48: shared spaces live under /sharing/{id}
+    expect(contextDiscoveryQuery(new URL(`http://localhost/sharing/${spaceId}`)).spaceId).toBe(spaceId);
+    expect(contextDiscoveryQuery(new URL(`http://localhost/sharing/${spaceId}/photos/${albumId}`)).spaceId).toBe(
+      spaceId,
+    );
+    // FL-48 map/space follow-ups: the map page contributes no scope. The prototype always lands a
+    // submitted search on the plain grid results (App.jsx `exploreQuery`/`MapView`'s "Search this
+    // area"), so a search opened from /map is unscoped, exactly like /photos.
+    expect(contextDiscoveryQuery(new URL('http://localhost/map'))).toEqual(emptyDiscoveryQuery());
     expect(contextDiscoveryQuery(new URL('http://localhost/photos'))).toEqual(emptyDiscoveryQuery());
   });
 
@@ -133,16 +141,18 @@ describe('legacy search migration', () => {
   });
 
   it('maps the pattern and similarity fields the fork already searches', () => {
+    // FL-48: the first text field becomes the query's own text, so the search dialog shows it where
+    // it was typed; the rest keep the flat fields' "contains" meaning as conditions.
     const result = fromLegacySearch({
       originalFileName: 'IMG',
       description: 'lake',
       originalPath: '/mnt/library',
       ocr: 'menu',
     });
+    expect(result).toMatchObject({ text: 'IMG', mode: 'text', textField: 'originalFileName' });
     expect(result.filter).toEqual({
-      originalFileName: { like: '%IMG%' },
-      description: { like: '%lake%' },
-      originalPath: { startsWith: '/mnt/library' },
+      description: { like: 'lake' },
+      originalPath: { like: '/mnt/library' },
       ocr: { matches: 'menu' },
     });
   });
@@ -330,13 +340,14 @@ describe('structured search results request (FL-58)', () => {
 
   it('folds the text modes into the filter the way a legacy search is migrated', () => {
     const filter = { petIds: { any: ['a'] } };
+    // The server's `like` already matches text anywhere, exactly as the flat fields do (FL-48).
     expect(structuredSearchRequest({ filter, originalFileName: 'IMG' }).filter?.originalFileName).toEqual({
-      like: '%IMG%',
+      like: 'IMG',
     });
-    expect(structuredSearchRequest({ filter, description: 'lake' }).filter?.description).toEqual({ like: '%lake%' });
+    expect(structuredSearchRequest({ filter, description: 'lake' }).filter?.description).toEqual({ like: 'lake' });
     expect(structuredSearchRequest({ filter, ocr: 'exit' }).filter?.ocr).toEqual({ matches: 'exit' });
     expect(structuredSearchRequest({ filter, originalPath: '/2026' }).filter?.originalPath).toEqual({
-      startsWith: '/2026',
+      like: '/2026',
     });
     expect(structuredSearchRequest({ filter, originalFileName: 'IMG' })).not.toHaveProperty('originalFileName');
   });
@@ -350,7 +361,8 @@ describe('structured search results request (FL-58)', () => {
       'cursor-2',
     );
     expect(request).toEqual({
-      filter: { visibility: { eq: AssetVisibility.Archive }, trashedAt: { gte: '2026-01-01' } },
+      // FL-48: a calendar day reaches the server as the datetime the DTO accepts
+      filter: { visibility: { eq: AssetVisibility.Archive }, trashedAt: { gte: '2026-01-01T00:00:00.000Z' } },
       withExif: true,
       query: 'dog on the beach',
       cursor: 'cursor-2',

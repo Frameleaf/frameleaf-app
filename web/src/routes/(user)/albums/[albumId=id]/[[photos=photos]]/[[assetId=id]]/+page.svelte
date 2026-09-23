@@ -198,11 +198,24 @@
   });
 
   /**
+   * A viewer of a shared space contributes nothing to it, so their "select everything matching" set
+   * offers only the two actions their role always permits — download and add to an album of their
+   * own — instead of the album-level actions an editor or owner has (FL-48 map/space follow-ups).
+   * `canEdit` is the same owner-or-editor check `shared-space.ts`'s `canContribute` makes; this page
+   * already imports it for the collection tree above, so the space case reuses it rather than adding
+   * a second role check.
+   */
+  const isSpaceViewer = $derived(isSpace && !canEdit(album, currentUserId));
+
+  /**
    * A collection holds albums, not items: "remove from album" and "set as cover" belong to the
    * album an item actually lives in, so the album-scoped bulk actions are offered on an album
    * or a shared space only. A collection's cover is set from the header instead.
    */
-  const bulkContext = $derived({ albumId: isCollection ? null : albumId });
+  const bulkContext = $derived({
+    albumId: isCollection ? null : albumId,
+    ...(isSpaceViewer ? { spaceViewerMatching: true } : {}),
+  });
 
   const collectionTimelineAssets = $derived(collectionAssets.map((asset) => toTimelineAsset(asset)));
 
@@ -462,7 +475,7 @@
         <LibraryView
           enableRouting
           syncUrl={false}
-          selectAll="loaded"
+          selectAll={isSpace ? 'matching' : 'loaded'}
           bind:timelineManager
           {options}
           destination={{ kind: 'album', id: albumId }}

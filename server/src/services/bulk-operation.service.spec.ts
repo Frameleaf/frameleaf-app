@@ -53,6 +53,7 @@ describe(BulkOperationService.name, () => {
   let enrichment: { updateAssetEnrichment: any; unlockAssets: any };
   let users: { get: any; getMetadata: any };
   let apiKeys: { getById: any };
+  let livePhoto: { relinkOne: any };
   let duplicateDecisions: { applyGroup: any; undoGroup: any; getLockedIds: any };
 
   const running = { status: MediaOperationStatus.Rendering, cancelRequestedAt: null, pauseRequestedAt: null };
@@ -73,7 +74,7 @@ describe(BulkOperationService.name, () => {
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
       settlePause: vi.fn().mockResolvedValue(true),
       getDateTimeOriginals: vi.fn().mockResolvedValue(new Map()),
-      getLockedAssetIds: vi.fn().mockResolvedValue(new Set()),
+      getLockedIds: vi.fn().mockResolvedValue(new Set()),
     } as unknown as MediaOperationRepository;
     assets = {
       updateAll: vi.fn().mockResolvedValue(undefined),
@@ -92,6 +93,7 @@ describe(BulkOperationService.name, () => {
     };
     users = { get: vi.fn().mockResolvedValue({ ...authStub.user1.user }), getMetadata: vi.fn().mockResolvedValue([]) };
     apiKeys = { getById: vi.fn() };
+    livePhoto = { relinkOne: vi.fn().mockResolvedValue({ success: true }) };
     duplicateDecisions = {
       applyGroup: vi.fn(),
       undoGroup: vi.fn(),
@@ -110,6 +112,7 @@ describe(BulkOperationService.name, () => {
       trash as never,
       stacks as never,
       enrichment as never,
+      livePhoto as never,
       duplicateDecisions as never,
     );
   });
@@ -176,7 +179,7 @@ describe(BulkOperationService.name, () => {
       const snapshot = snapshotOf({ action: MediaOperationBulkAction.Archive });
       const [lockedSince, ...rest] = snapshot.assetIds;
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
-      vi.mocked(operations.getLockedAssetIds).mockResolvedValue(new Set([lockedSince]));
+      vi.mocked(operations.getLockedIds).mockResolvedValue(new Set([lockedSince]));
 
       const outcomes = await sut.applyBatch(auth, snapshot, snapshot.assetIds);
 
@@ -195,7 +198,7 @@ describe(BulkOperationService.name, () => {
 
       await sut.applyBatch(auth, snapshot, snapshot.assetIds);
 
-      expect(operations.getLockedAssetIds).not.toHaveBeenCalled();
+      expect(operations.getLockedIds).not.toHaveBeenCalled();
       expect(enrichment.unlockAssets).toHaveBeenCalledWith(auth, { ids: snapshot.assetIds });
     });
 
@@ -246,6 +249,73 @@ describe(BulkOperationService.name, () => {
       expect(albums.addAssets).not.toHaveBeenCalled();
       expect(albums.removeAssets).not.toHaveBeenCalled();
       expect(outcomes.every((outcome) => outcome.status === MediaOperationItemStatus.Ok)).toBe(true);
+    });
+
+    it('relinks each still with its paired video, one pair at a time (FL-70)', async () => {
+      const [photoA, photoB] = [newUuid(), newUuid()];
+      const [videoA, videoB] = [newUuid(), newUuid()];
+      const snapshot = snapshotOf({
+        action: MediaOperationBulkAction.RelinkLivePhoto,
+        assetIds: [photoA, photoB],
+        payload: {
+          pairs: [
+            { photoId: photoA, videoId: videoA },
+            { photoId: photoB, videoId: videoB },
+          ],
+        },
+      });
+      livePhoto.relinkOne.mockResolvedValueOnce({ success: true }).mockResolvedValueOnce({
+        success: false,
+        error: 'Image is already linked to a motion video',
+      });
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
+
+      expect(livePhoto.relinkOne).toHaveBeenNthCalledWith(1, authStub.user1, photoA, videoA);
+      expect(livePhoto.relinkOne).toHaveBeenNthCalledWith(2, authStub.user1, photoB, videoB);
+      expect(mocks.access.asset.checkOwnerAccess).not.toHaveBeenCalled();
+      expect(outcomes).toEqual([
+        { id: photoA, status: MediaOperationItemStatus.Ok },
+        expect.objectContaining({
+          id: photoB,
+          status: MediaOperationItemStatus.Skipped,
+          reasonKey: 'frameleaf_bulk_reason_live_photo_relink_rejected',
+          message: 'Image is already linked to a motion video',
+        }),
+      ]);
+    });
+
+    it('retries a relink pair whose service call throws, rather than treating it as a permanent refusal', async () => {
+      const photoId = newUuid();
+      const videoId = newUuid();
+      const snapshot = snapshotOf({
+        action: MediaOperationBulkAction.RelinkLivePhoto,
+        assetIds: [photoId],
+        payload: { pairs: [{ photoId, videoId }] },
+      });
+      livePhoto.relinkOne.mockRejectedValue(new Error('database said no'));
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
+
+      expect(outcomes).toEqual([
+        expect.objectContaining({ id: photoId, status: MediaOperationItemStatus.Failed, message: 'database said no' }),
+      ]);
+    });
+
+    it('skips a still the payload has no pair for, without calling the relink service', async () => {
+      const photoId = newUuid();
+      const snapshot = snapshotOf({
+        action: MediaOperationBulkAction.RelinkLivePhoto,
+        assetIds: [photoId],
+        payload: { pairs: [] },
+      });
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
+
+      expect(livePhoto.relinkOne).not.toHaveBeenCalled();
+      expect(outcomes).toEqual([
+        { id: photoId, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_not_found' },
+      ]);
     });
 
     it('reports an item already in the album as skipped', async () => {
