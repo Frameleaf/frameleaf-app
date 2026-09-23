@@ -1,6 +1,6 @@
 <script lang="ts">
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
-  import { insertMention, mentionCandidates, mentionQueryAt } from '$lib/frameleaf/shared-space';
+  import { insertMention, mentionCandidates, mentionQueryAt, splitMentions } from '$lib/frameleaf/shared-space';
   import type { SharedSpaceMemberResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiSend } from '@mdi/js';
@@ -117,11 +117,20 @@
     }
   };
 
+  // Focusing puts the caret after what is already there, so a reply that starts with an @mention
+  // carries straight on after it.
   $effect(() => {
-    if (autofocus) {
-      textarea?.focus();
+    if (autofocus && textarea) {
+      textarea.focus();
+      const end = textarea.value.length;
+      textarea.setSelectionRange(end, end);
+      caret = end;
     }
   });
+
+  // The box holds `@{id}` tokens; underneath, the text reads as it will be shown, with names.
+  const segments = $derived(splitMentions(value, members.map(({ user }) => user)));
+  const hasMentions = $derived(segments.some(({ kind }) => kind === 'mention'));
 </script>
 
 <div class="composer">
@@ -156,6 +165,18 @@
         </li>
       {/each}
     </ul>
+  {/if}
+  {#if hasMentions}
+    <p class="preview">
+      <span class="preview-label">{$t('frameleaf_spaces_comments_preview')}</span>
+      {#each segments as segment, index (index)}
+        {#if segment.kind === 'mention'}
+          <span class="mention">@{segment.user?.name ?? $t('frameleaf_spaces_comments_unknown_member')}</span>
+        {:else}
+          {segment.text}
+        {/if}
+      {/each}
+    </p>
   {/if}
   <div class="row">
     <small class="hint">{$t('frameleaf_spaces_comments_mention_hint')}</small>
@@ -227,6 +248,22 @@
   .mentions small {
     color: var(--fl-muted);
     font-size: 0.75rem;
+  }
+  .preview {
+    margin: 0;
+    color: var(--fl-text);
+    font-size: 0.8125rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .preview-label {
+    margin-inline-end: 0.375rem;
+    color: var(--fl-muted);
+    font-size: 0.75rem;
+  }
+  .mention {
+    color: var(--fl-accent);
+    font-weight: 600;
   }
   .row {
     display: flex;

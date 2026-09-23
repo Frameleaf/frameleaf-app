@@ -146,6 +146,25 @@ describe('fromMediaOperation', () => {
     expect(item.error).toBe('The worker stopped responding');
   });
 
+  it.each(Object.values(MediaOperationKind))(
+    'reads a %s job waiting for its automatic retry as retrying, like every other kind (FL-104)',
+    (kind) => {
+      const item = fromMediaOperation(
+        operation({
+          kind,
+          status: MediaOperationStatus.Queued,
+          autoRetries: 1,
+          retryAt: '2026-09-22T10:00:30.000Z',
+          error: 'Could not finish',
+          errorCode: 'failed_once',
+        }),
+      );
+
+      expect(item.statusKey).toBe('frameleaf_activity_status_retrying');
+      expect(item.tone).toBe('warning');
+    },
+  );
+
   it('reads a fresh queued job as queued', () => {
     expect(fromMediaOperation(operation({ status: MediaOperationStatus.Queued })).statusKey).toBe(
       'frameleaf_activity_status_queued',
@@ -353,5 +372,27 @@ describe('counts and the indicator', () => {
 
   it('is silent when nothing is running', () => {
     expect(activityIndicatorState([])).toEqual({ count: 0, progress: null });
+  });
+});
+
+describe('fromMediaOperation, Studio bundles (FL-91)', () => {
+  it('offers a finished export its file and a finished import its project, and nothing before', () => {
+    const exported = fromMediaOperation(
+      operation({ kind: MediaOperationKind.StudioBundleExport, status: MediaOperationStatus.Completed }),
+    );
+    expect(exported.studioBundle).toBe('export');
+    expect(exported.kindKey).toBe('frameleaf_activity_kind_studio_bundle_export');
+
+    const imported = fromMediaOperation(
+      operation({ kind: MediaOperationKind.StudioBundleImport, status: MediaOperationStatus.Completed }),
+    );
+    expect(imported.studioBundle).toBe('import');
+
+    for (const status of [MediaOperationStatus.Rendering, MediaOperationStatus.Cancelled, MediaOperationStatus.Failed]) {
+      expect(fromMediaOperation(operation({ kind: MediaOperationKind.StudioBundleExport, status })).studioBundle).toBe(
+        undefined,
+      );
+    }
+    expect(fromMediaOperation(operation({ status: MediaOperationStatus.Completed })).studioBundle).toBeUndefined();
   });
 });

@@ -10482,7 +10482,9 @@
           "restoration",
           "restoration_preview",
           "quick_edit",
-          "bulk"
+          "bulk",
+          "studio_bundle_export",
+          "studio_bundle_import"
         ],
         "type": "string"
       },
@@ -12727,6 +12729,7 @@
           "AlbumUpdate",
           "ClusterGroupRequest",
           "SharedSpaceMention",
+          "SharedSpaceReply",
           "Custom"
         ],
         "type": "string"
@@ -18807,6 +18810,12 @@
             "maxLength": 4000,
             "minLength": 1,
             "type": "string"
+          },
+          "parentId": {
+            "description": "Reply to this comment. Replying to a reply joins the same thread, under its top-level comment. A reply is on the same item as the comment it answers.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
           }
         },
         "required": [
@@ -18853,6 +18862,18 @@
             },
             "type": "array"
           },
+          "parentId": {
+            "description": "The top-level comment this reply answers; null for a top-level comment",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "replyCount": {
+            "description": "How many replies this comment has that the caller can see; always 0 for a reply",
+            "minimum": 0,
+            "type": "integer"
+          },
           "updatedAt": {
             "description": "When it was last edited",
             "format": "date-time",
@@ -18875,6 +18896,8 @@
           "createdAt",
           "id",
           "mentions",
+          "parentId",
+          "replyCount",
           "updatedAt",
           "user"
         ],
@@ -18942,7 +18965,7 @@
             "type": "array"
           },
           "comment": {
-            "description": "The comment text, for a comment event. Mentions are @{userId} tokens.",
+            "description": "The comment text, for a comment or reply event. Mentions are @{userId} tokens.",
             "nullable": true,
             "type": "string"
           },
@@ -18975,7 +18998,7 @@
                 "$ref": "#/components/schemas/UserResponseDto"
               }
             ],
-            "description": "The member a member event is about; null otherwise",
+            "description": "The member a member event is about, or the author of the comment a reply answers; null otherwise",
             "nullable": true
           },
           "type": {
@@ -19015,6 +19038,7 @@
           "MemberRemoved",
           "MemberRoleChanged",
           "Comment",
+          "Reply",
           "Like"
         ],
         "type": "string"
@@ -21218,6 +21242,13 @@
             },
             "type": "array"
           },
+          "petIds": {
+            "description": "Pet IDs to suppress from locked browsing sessions",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "scope": {
             "$ref": "#/components/schemas/SuppressionScope",
             "description": "Whether suppression applies only to owned assets or all visible assets"
@@ -21232,6 +21263,7 @@
         },
         "required": [
           "personIds",
+          "petIds",
           "scope",
           "tagIds"
         ],
@@ -21248,6 +21280,15 @@
         "properties": {
           "personIds": {
             "description": "Person IDs to suppress from locked browsing sessions",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "petIds": {
+            "description": "Pet IDs to suppress from locked browsing sessions",
             "items": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -25498,14 +25539,33 @@
           "access": {
             "$ref": "#/components/schemas/StudioProjectAccess"
           },
+          "archivedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "When the owner archived it"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "deletedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "When it was moved to the trash"
           },
           "digest": {
             "description": "Key-sorted SHA-256 of the head envelope; null when withheld",
             "nullable": true,
             "type": "string"
+          },
+          "duplicatedFromId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "nullable": true,
+            "description": "The project this one was duplicated from; null for a reviewer"
           },
           "envelope": {
             "allOf": [
@@ -25521,6 +25581,16 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "importedFromBundle": {
+            "description": "The project was read in from a portable bundle; always false for a reviewer",
+            "type": "boolean"
+          },
+          "lastOpenedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "When an editor last opened it; null for a reviewer"
+          },
           "lease": {
             "$ref": "#/components/schemas/StudioProjectLeaseDto"
           },
@@ -25532,6 +25602,12 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "purgeAfter": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "When a trashed project is deleted for good; its library media is never touched"
           },
           "resources": {
             "allOf": [
@@ -25547,12 +25623,22 @@
             "minimum": 0,
             "type": "integer"
           },
+          "shelf": {
+            "$ref": "#/components/schemas/StudioProjectShelf"
+          },
           "spaceId": {
             "description": "Shared space whose members may review the project",
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "thumbnailAssetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "nullable": true,
+            "description": "Library asset the owner chose as the poster; null for a reviewer"
           },
           "updatedAt": {
             "format": "date-time",
@@ -25565,16 +25651,24 @@
         },
         "required": [
           "access",
+          "archivedAt",
           "createdAt",
+          "deletedAt",
           "digest",
+          "duplicatedFromId",
           "envelope",
           "id",
+          "importedFromBundle",
+          "lastOpenedAt",
           "lease",
           "name",
           "ownerId",
+          "purgeAfter",
           "resources",
           "revision",
+          "shelf",
           "spaceId",
+          "thumbnailAssetId",
           "updatedAt",
           "withheld"
         ],
@@ -25656,15 +25750,44 @@
           "access": {
             "$ref": "#/components/schemas/StudioProjectAccess"
           },
+          "archivedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "When the owner archived it"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "deletedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "When it was moved to the trash"
+          },
+          "duplicatedFromId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "nullable": true,
+            "description": "The project this one was duplicated from; null for a reviewer"
           },
           "id": {
             "description": "Studio project ID",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "importedFromBundle": {
+            "description": "The project was read in from a portable bundle; always false for a reviewer",
+            "type": "boolean"
+          },
+          "lastOpenedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "When an editor last opened it; null for a reviewer"
           },
           "lease": {
             "$ref": "#/components/schemas/StudioProjectLeaseDto"
@@ -25678,11 +25801,20 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "purgeAfter": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "When a trashed project is deleted for good; its library media is never touched"
+          },
           "revision": {
             "description": "Head revision number; 0 until the first save",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
+          },
+          "shelf": {
+            "$ref": "#/components/schemas/StudioProjectShelf"
           },
           "spaceId": {
             "description": "Shared space whose members may review the project",
@@ -25691,6 +25823,13 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "thumbnailAssetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "nullable": true,
+            "description": "Library asset the owner chose as the poster; null for a reviewer"
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string"
@@ -25698,13 +25837,21 @@
         },
         "required": [
           "access",
+          "archivedAt",
           "createdAt",
+          "deletedAt",
+          "duplicatedFromId",
           "id",
+          "importedFromBundle",
+          "lastOpenedAt",
           "lease",
           "name",
           "ownerId",
+          "purgeAfter",
           "revision",
+          "shelf",
           "spaceId",
+          "thumbnailAssetId",
           "updatedAt"
         ],
         "type": "object"
@@ -26111,6 +26258,10 @@
       },
       "StudioProjectUpdateDto": {
         "properties": {
+          "archived": {
+            "description": "Archive (read-only, off the active shelf) or bring back",
+            "type": "boolean"
+          },
           "name": {
             "maxLength": 200,
             "minLength": 1,
@@ -26122,8 +26273,446 @@
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "thumbnailAssetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "nullable": true,
+            "description": "A library asset you can read, shown as the poster; null clears it"
           }
         },
+        "type": "object"
+      },
+      "StudioProjectShelf": {
+        "description": "`active`, `archived` (put away, read-only) or `trashed` (restorable until `purgeAfter`)",
+        "enum": [
+          "active",
+          "archived",
+          "trashed"
+        ],
+        "type": "string"
+      },
+      "StudioProjectSort": {
+        "description": "`updated` newest change first, `recent` last opened first, `name` alphabetical",
+        "enum": [
+          "updated",
+          "recent",
+          "name"
+        ],
+        "type": "string"
+      },
+      "StudioProjectDuplicateDto": {
+        "properties": {
+          "name": {
+            "description": "Name of the copy; the client supplies the translated default",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StudioProjectTrashEmptyResponseDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer",
+            "description": "Projects deleted for good"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "type": "object"
+      },
+      "StudioBundleExportCreateDto": {
+        "properties": {
+          "includeMedia": {
+            "description": "Copy the media you own into the bundle. Shared media always travels as a reference, and nothing Locked is ever copied.",
+            "type": "boolean"
+          },
+          "requestKey": {
+            "description": "Idempotency key; a repeated submit answers with the first job",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StudioBundleUploadCreateDto": {
+        "properties": {
+          "file": {
+            "description": "A `.frameleaf-studio.zip` bundle",
+            "format": "binary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
+      "StudioBundleSourceMode": {
+        "description": "`embedded` carries a verified copy; `reference` names media on the exporting server",
+        "enum": [
+          "embedded",
+          "reference"
+        ],
+        "type": "string"
+      },
+      "StudioBundleSourceResolution": {
+        "description": "`kept`: the original is already available to you; `suggested`: an item of yours has the same content; `missing`: choose one or import without it",
+        "enum": [
+          "kept",
+          "suggested",
+          "missing"
+        ],
+        "type": "string"
+      },
+      "StudioBundleSourceDto": {
+        "properties": {
+          "contentType": {
+            "nullable": true,
+            "type": "string"
+          },
+          "fileName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Identifier on the exporting server",
+            "type": "string"
+          },
+          "key": {
+            "description": "Mapping key for the import request",
+            "type": "string"
+          },
+          "kind": {
+            "description": "`library-asset` or `edited-master`",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/StudioBundleSourceMode"
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/StudioBundleSourceResolution"
+          },
+          "sizeBytes": {
+            "description": "Size of the source file, when the exporting server knew it",
+            "nullable": true,
+            "type": "string"
+          },
+          "suggestedAssetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "nullable": true,
+            "description": "An asset of yours with the same content"
+          }
+        },
+        "required": [
+          "contentType",
+          "fileName",
+          "id",
+          "key",
+          "kind",
+          "mode",
+          "resolution",
+          "sizeBytes",
+          "suggestedAssetId"
+        ],
+        "type": "object"
+      },
+      "StudioBundleUploadDto": {
+        "properties": {
+          "consumedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "When an import first read it"
+          },
+          "digest": {
+            "description": "SHA-256 of the whole file",
+            "type": "string"
+          },
+          "engineRevision": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the upload is discarded"
+          },
+          "exportedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fileName": {
+            "description": "The file name as uploaded",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "Upload ID, used to start an import"
+          },
+          "producerVersion": {
+            "type": "string"
+          },
+          "projectName": {
+            "type": "string"
+          },
+          "revision": {
+            "description": "The revision the bundle was made from",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "sizeBytes": {
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/StudioBundleSourceDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "consumedAt",
+          "digest",
+          "engineRevision",
+          "expiresAt",
+          "exportedAt",
+          "fileName",
+          "id",
+          "producerVersion",
+          "projectName",
+          "revision",
+          "sizeBytes",
+          "sources"
+        ],
+        "type": "object"
+      },
+      "StudioBundleImportCreateDto": {
+        "properties": {
+          "mapping": {
+            "additionalProperties": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "description": "Source key to an asset of yours to use in its place; every choice is checked for access",
+            "type": "object"
+          },
+          "name": {
+            "description": "Name of the new project; the bundle name when omitted",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestKey": {
+            "description": "Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "uploadId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uploadId"
+        ],
+        "type": "object"
+      },
+      "StudioBundleExportResultDto": {
+        "properties": {
+          "digest": {
+            "description": "SHA-256 of the finished file",
+            "type": "string"
+          },
+          "downloadable": {
+            "description": "The file can still be downloaded",
+            "type": "boolean"
+          },
+          "embedded": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer",
+            "description": "Sources copied into the bundle"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "referenced": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer",
+            "description": "Sources that travel as references"
+          },
+          "sizeBytes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "digest",
+          "downloadable",
+          "embedded",
+          "expiresAt",
+          "fileName",
+          "referenced",
+          "sizeBytes"
+        ],
+        "type": "object"
+      },
+      "StudioBundleMissingSourceDto": {
+        "properties": {
+          "embedded": {
+            "description": "The bundle carries a verified copy that can be added to the library later",
+            "type": "boolean"
+          },
+          "fileName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "embedded",
+          "fileName",
+          "id",
+          "key",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "StudioBundleImportResultDto": {
+        "properties": {
+          "embeddedVerified": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kept": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "missing": {
+            "items": {
+              "$ref": "#/components/schemas/StudioBundleMissingSourceDto"
+            },
+            "type": "array"
+          },
+          "projectId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "nullable": true,
+            "description": "The project the import created"
+          },
+          "relinked": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "embeddedVerified",
+          "kept",
+          "missing",
+          "projectId",
+          "relinked"
+        ],
+        "type": "object"
+      },
+      "StudioBundleOperationDto": {
+        "properties": {
+          "attempt": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "errorCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "export": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioBundleExportResultDto"
+              }
+            ],
+            "nullable": true
+          },
+          "import": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioBundleImportResultDto"
+              }
+            ],
+            "nullable": true
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MediaOperationKind"
+          },
+          "maxAttempts": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "operationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "progress": {
+            "format": "double",
+            "type": "number"
+          },
+          "projectId": {
+            "description": "The exported project, or the project an import created",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "attempt",
+          "error",
+          "errorCode",
+          "export",
+          "import",
+          "kind",
+          "maxAttempts",
+          "operationId",
+          "progress",
+          "projectId",
+          "status"
+        ],
         "type": "object"
       },
       "StudioTimeDto": {
@@ -47129,7 +47718,7 @@
     },
     "/shared-spaces/{id}/comments": {
       "get": {
-        "description": "The comments on one item in the shared space (`assetId`), or on the space itself when `assetId` is left out. Oldest first. Only current members may read them, and an item the caller cannot see is not in the space as far as they are concerned (404). Mentions stay as `@{userId}` tokens in the text and are resolved in `mentions`.",
+        "description": "The comments on one item in the shared space (`assetId`), or on the space itself when `assetId` is left out. Oldest first. Only current members may read them, and an item the caller cannot see is not in the space as far as they are concerned (404). Mentions stay as `@{userId}` tokens in the text and are resolved in `mentions`. Threads are one level deep: a reply names its top-level comment in `parentId`, and a top-level comment carries its `replyCount`.",
         "operationId": "getSharedSpaceComments",
         "parameters": [
           {
@@ -47191,7 +47780,7 @@
         "x-immich-permission": "activity.read"
       },
       "post": {
-        "description": "Write a comment on one item in the shared space, or on the space itself when `assetId` is left out. Commenting must be enabled on the space, and the item must be one the caller can see. Mention a member with `@{userId}`: mentions are by id, never by name, every mention must name a current member (400 otherwise), and each mentioned member other than the author is notified.",
+        "description": "Write a comment on one item in the shared space, or on the space itself when `assetId` is left out. Commenting must be enabled on the space, and the item must be one the caller can see. Mention a member with `@{userId}`: mentions are by id, never by name, every mention must name a current member (400 otherwise), and each mentioned member other than the author is notified. Reply with `parentId`: a reply to a reply joins the same thread under its top-level comment, is on the same item, and notifies the top-level comment’s author in the app.",
         "operationId": "createSharedSpaceComment",
         "parameters": [
           {
@@ -47254,7 +47843,7 @@
     },
     "/shared-spaces/{id}/comments/{commentId}": {
       "delete": {
-        "description": "Remove a comment. Its author may, and so may a shared space owner or editor — that is how a space is moderated. A viewer removes only their own. The comment’s mentions and its entry in the activity feed go with it.",
+        "description": "Remove a comment. Its author may, and so may a shared space owner or editor — that is how a space is moderated. A viewer removes only their own. The comment’s mentions and its entry in the activity feed go with it, and removing a top-level comment removes its replies.",
         "operationId": "deleteSharedSpaceComment",
         "parameters": [
           {
@@ -48292,6 +48881,333 @@
         ],
         "x-immich-permission": "stack.update",
         "x-immich-state": "Stable"
+      }
+    },
+    "/studio/bundles/exports/{id}/download": {
+      "get": {
+        "description": "The finished file of one of your own exports. It is reachable by no other route and is deleted when it expires.",
+        "operationId": "downloadStudioBundle",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download a Studio bundle",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/bundles/imports": {
+      "post": {
+        "description": "Queues an import of an uploaded bundle into a new project of yours. Every item you chose in place of a missing source is checked for access now and again when the import runs. Nothing in your library is changed.",
+        "operationId": "importStudioBundle",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioBundleImportCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaOperationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Import a Studio bundle",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/bundles/operations/{id}": {
+      "get": {
+        "description": "The state of an export or import job, with the file or project it produced.",
+        "operationId": "getStudioBundleOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioBundleOperationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Studio bundle job",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/bundles/uploads": {
+      "post": {
+        "description": "Checks the archive against every bundle limit and verifies its manifest and project document before anything is kept. Returns what the import will relink, keep and report missing.",
+        "operationId": "uploadStudioBundle",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioBundleUploadCreateDto"
+              }
+            }
+          },
+          "description": "A Studio bundle to import",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioBundleUploadDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Upload a Studio bundle",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/bundles/uploads/{id}": {
+      "get": {
+        "description": "The review of an uploaded bundle, recomputed for your library as it is now.",
+        "operationId": "getStudioBundleUpload",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioBundleUploadDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get an uploaded Studio bundle",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "delete": {
+        "description": "Deletes the uploaded file now rather than when it expires.",
+        "operationId": "deleteStudioBundleUpload",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Discard an uploaded Studio bundle",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
       }
     },
     "/studio/previews": {
@@ -52148,9 +53064,28 @@
     },
     "/studio/projects": {
       "get": {
-        "description": "Projects you own and projects shared with a space you belong to, most recently changed first.",
+        "description": "One shelf of the project library. The active shelf holds projects you own and projects shared with a space you belong to; the archive and the trash hold your own only.",
         "operationId": "searchStudioProjects",
         "parameters": [
+          {
+            "name": "query",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive part of the name",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "shelf",
+            "required": false,
+            "in": "query",
+            "description": "Which shelf to list; `active` when omitted",
+            "schema": {
+              "$ref": "#/components/schemas/StudioProjectShelf"
+            }
+          },
           {
             "name": "skip",
             "required": false,
@@ -52160,6 +53095,14 @@
               "maximum": 9007199254740991,
               "minimum": 0,
               "type": "integer"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/StudioProjectSort"
             }
           },
           {
@@ -52267,6 +53210,51 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/trash/empty": {
+      "post": {
+        "description": "Deletes every project in your Studio trash for good, with its history and comments. Media in your library is never touched.",
+        "operationId": "emptyStudioProjectTrash",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectTrashEmptyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Empty the Studio trash",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/projects/{id}": {
       "get": {
         "description": "The project with its head document. A reviewer receives the document only when every source it references is available to them; otherwise it is withheld.",
@@ -52323,7 +53311,7 @@
         "x-immich-state": "Alpha"
       },
       "put": {
-        "description": "Rename the project or set the shared space whose members may review it. Owner only.",
+        "description": "Rename the project, set the shared space whose members may review it, archive it or bring it back, or choose a library item as its poster. Owner only.",
         "operationId": "updateStudioProject",
         "parameters": [
           {
@@ -52387,7 +53375,7 @@
         "x-immich-state": "Alpha"
       },
       "delete": {
-        "description": "Removes the project, its history and its comments. Owner only. Finished jobs keep their lineage.",
+        "description": "Moves the project to the trash, where it can be restored until its retention runs out; with `permanent`, deletes it, its history and its comments now. Owner only. Media in your library is never touched, and finished jobs keep their lineage.",
         "operationId": "deleteStudioProject",
         "parameters": [
           {
@@ -52398,6 +53386,15 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
+            }
+          },
+          {
+            "name": "permanent",
+            "required": false,
+            "in": "query",
+            "description": "Delete for good instead of moving to the trash. Library media is never touched either way.",
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -52418,6 +53415,72 @@
           }
         ],
         "summary": "Delete a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/bundle": {
+      "post": {
+        "description": "Queues a portable bundle of the current version: the project document, a manifest with digests, and references to its media or, when asked, copies of the media you own. Follow it in Activity. Owner only.",
+        "operationId": "exportStudioProjectBundle",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioBundleExportCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaOperationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Export a Studio project as a bundle",
         "tags": [
           "Studio projects"
         ],
@@ -52693,6 +53756,72 @@
           }
         ],
         "summary": "Remove a Studio review comment",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/duplicate": {
+      "post": {
+        "description": "Creates a new project of yours whose first version is this project as it is now. The copy is not shared for review. Owner only.",
+        "operationId": "duplicateStudioProject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioProjectDuplicateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Duplicate a Studio project",
         "tags": [
           "Studio projects"
         ],
@@ -53169,6 +54298,62 @@
           }
         ],
         "summary": "Compare two Studio project revisions",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/trash/restore": {
+      "post": {
+        "description": "Brings a trashed project back to the shelf it was on. Owner only.",
+        "operationId": "restoreStudioProjectFromTrash",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Restore a Studio project from the trash",
         "tags": [
           "Studio projects"
         ],

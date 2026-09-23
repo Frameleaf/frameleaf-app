@@ -189,6 +189,95 @@ export const requireCommentDeleteRights = (album: SpaceLike, comment: { userId: 
   }
 };
 
+/* -------------------------------------------------------------------------- */
+/* Threaded replies (FL-55)                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** The feed events that carry a comment's text: a comment, and a reply to one. */
+export const COMMENT_EVENT_TYPES: readonly SharedSpaceEventType[] = [
+  SharedSpaceEventType.Comment,
+  SharedSpaceEventType.Reply,
+];
+
+export const isCommentEventType = (type: SharedSpaceEventType): boolean => COMMENT_EVENT_TYPES.includes(type);
+
+/**
+ * A reply is on the same thing as the comment it answers: the same item, or
+ * the space itself. The client may leave the item out and inherit it; naming
+ * a different one is refused rather than silently moved.
+ */
+export const requireReplyOnSameItem = (root: { assetId: string | null }, assetId: string | undefined): void => {
+  if (assetId !== undefined && assetId !== root.assetId) {
+    throw new BadRequestException('A reply is on the same item as the comment it answers');
+  }
+};
+
+export type CommentThreadInfo = { parentId: string | null; replyCount: number };
+
+/**
+ * Arrange a list of comments into one-level threads.
+ *
+ * `commentIds` are the comments the caller may see; `threads` says which of
+ * them are replies and to what. A reply keeps its parent only when that parent
+ * is itself in the list — the two are always on the same item, so this only
+ * matters if a parent has gone and its reply somehow has not, in which case the
+ * reply is shown on its own rather than lost. A parent's `replyCount` counts
+ * only replies in the list, so it never counts what the caller would not be
+ * shown.
+ */
+export const threadComments = (
+  commentIds: readonly string[],
+  threads: readonly { activityId: string; parentActivityId: string }[],
+): Map<string, CommentThreadInfo> => {
+  const present = new Set(commentIds);
+  const parentOf = new Map<string, string>();
+  for (const { activityId, parentActivityId } of threads) {
+    if (present.has(activityId) && present.has(parentActivityId) && activityId !== parentActivityId) {
+      parentOf.set(activityId, parentActivityId);
+    }
+  }
+
+  // One level deep, whatever is stored: a reply's parent is always a top-level comment.
+  const rootOf = (id: string): string | null => {
+    let parent = parentOf.get(id) ?? null;
+    const seen = new Set([id]);
+    while (parent && parentOf.has(parent) && !seen.has(parent)) {
+      seen.add(parent);
+      parent = parentOf.get(parent)!;
+    }
+    return parent && !parentOf.has(parent) ? parent : null;
+  };
+
+  const info = new Map<string, CommentThreadInfo>();
+  for (const id of commentIds) {
+    info.set(id, { parentId: rootOf(id), replyCount: 0 });
+  }
+  for (const { parentId } of info.values()) {
+    const parent = parentId ? info.get(parentId) : undefined;
+    if (parent) {
+      parent.replyCount += 1;
+    }
+  }
+  return info;
+};
+
+/**
+ * Who a reply notifies as "somebody answered you": the author of the comment
+ * it answers, when that is somebody else, they are still in the space, and
+ * they are not already being told through a mention in the same reply.
+ */
+export const replyRecipient = (
+  album: SpaceLike,
+  root: { userId: string },
+  actorId: string,
+  mentioned: readonly string[],
+): string | null => {
+  if (root.userId === actorId || !isSpaceMember(album, root.userId) || mentioned.includes(root.userId)) {
+    return null;
+  }
+  return root.userId;
+};
+
 /** The two events that are about a set of items rather than one activity. */
 export const ASSET_EVENT_TYPES: readonly SharedSpaceEventType[] = [
   SharedSpaceEventType.AssetsAdded,

@@ -973,6 +973,8 @@ export type PeopleResponse = {
 export type SuppressionResponse = {
     /** Person IDs to suppress from locked browsing sessions */
     personIds: string[];
+    /** Pet IDs to suppress from locked browsing sessions */
+    petIds: string[];
     /** Whether suppression applies only to owned assets or all visible assets */
     scope: SuppressionScope;
     /** Tag IDs to suppress from locked browsing sessions */
@@ -1071,6 +1073,8 @@ export type PeopleUpdate = {
 export type SuppressionUpdate = {
     /** Person IDs to suppress from locked browsing sessions */
     personIds?: string[];
+    /** Pet IDs to suppress from locked browsing sessions */
+    petIds?: string[];
     /** Whether suppression applies only to owned assets or all visible assets */
     scope?: SuppressionScope;
     /** Tag IDs to suppress from locked browsing sessions */
@@ -5027,7 +5031,7 @@ export type SharedSpaceEventResponseDto = {
     assetCount: number;
     /** The items this event is about that the reader may see and that are still in the shared space. Empty for a removal. */
     assetIds: string[];
-    /** The comment text, for a comment event. Mentions are @{userId} tokens. */
+    /** The comment text, for a comment or reply event. Mentions are @{userId} tokens. */
     comment: string | null;
     /** When it happened */
     createdAt: string;
@@ -5037,7 +5041,7 @@ export type SharedSpaceEventResponseDto = {
     mentions: UserResponseDto[];
     /** A linked album's or person's name as the space knew it, or the new role; null otherwise */
     subject: string | null;
-    /** The member a member event is about; null otherwise */
+    /** The member a member event is about, or the author of the comment a reply answers; null otherwise */
     targetUser: UserResponseDto | null;
     "type": SharedSpaceEventType;
 };
@@ -5088,6 +5092,10 @@ export type SharedSpaceCommentResponseDto = {
     id: string;
     /** Members named in the comment */
     mentions: UserResponseDto[];
+    /** The top-level comment this reply answers; null for a top-level comment */
+    parentId: string | null;
+    /** How many replies this comment has that the caller can see; always 0 for a reply */
+    replyCount: number;
     /** When it was last edited */
     updatedAt: string;
     /** The author */
@@ -5102,6 +5110,8 @@ export type SharedSpaceCommentCreateDto = {
     assetId?: string;
     /** The text. Mention a member with @{userId}; every mention must name a current member. */
     comment: string;
+    /** Reply to this comment. Replying to a reply joins the same thread, under its top-level comment. A reply is on the same item as the comment it answers. */
+    parentId?: string;
 };
 export type SharedSpaceCommentUpdateDto = {
     /** The text. Mention a member with @{userId}; every mention must name a current member. */
@@ -5253,17 +5263,32 @@ export type StudioProjectLeaseDto = {
 };
 export type StudioProjectDto = {
     access: StudioProjectAccess;
+    /** When the owner archived it */
+    archivedAt: string | null;
     createdAt: string;
+    /** When it was moved to the trash */
+    deletedAt: string | null;
+    /** The project this one was duplicated from; null for a reviewer */
+    duplicatedFromId: string | null;
     /** Studio project ID */
     id: string;
+    /** The project was read in from a portable bundle; always false for a reviewer */
+    importedFromBundle: boolean;
+    /** When an editor last opened it; null for a reviewer */
+    lastOpenedAt: string | null;
     lease: StudioProjectLeaseDto;
     name: string;
     /** The only account that may write */
     ownerId: string;
+    /** When a trashed project is deleted for good; its library media is never touched */
+    purgeAfter: string | null;
     /** Head revision number; 0 until the first save */
     revision: number;
+    shelf: StudioProjectShelf;
     /** Shared space whose members may review the project */
     spaceId: string | null;
+    /** Library asset the owner chose as the poster; null for a reviewer */
+    thumbnailAssetId: string | null;
     updatedAt: string;
 };
 export type StudioProjectListResponseDto = {
@@ -5293,21 +5318,36 @@ export type StudioProjectResourcesDto = {
 };
 export type StudioProjectDetailDto = {
     access: StudioProjectAccess;
+    /** When the owner archived it */
+    archivedAt: string | null;
     createdAt: string;
+    /** When it was moved to the trash */
+    deletedAt: string | null;
     /** Key-sorted SHA-256 of the head envelope; null when withheld */
     digest: string | null;
+    /** The project this one was duplicated from; null for a reviewer */
+    duplicatedFromId: string | null;
     envelope: (StudioProjectEnvelopeDto) | null;
     /** Studio project ID */
     id: string;
+    /** The project was read in from a portable bundle; always false for a reviewer */
+    importedFromBundle: boolean;
+    /** When an editor last opened it; null for a reviewer */
+    lastOpenedAt: string | null;
     lease: StudioProjectLeaseDto;
     name: string;
     /** The only account that may write */
     ownerId: string;
+    /** When a trashed project is deleted for good; its library media is never touched */
+    purgeAfter: string | null;
     resources: (StudioProjectResourcesDto) | null;
     /** Head revision number; 0 until the first save */
     revision: number;
+    shelf: StudioProjectShelf;
     /** Shared space whose members may review the project */
     spaceId: string | null;
+    /** Library asset the owner chose as the poster; null for a reviewer */
+    thumbnailAssetId: string | null;
     updatedAt: string;
     /** The graph was withheld because a source is unavailable to you */
     withheld: boolean;
@@ -5324,9 +5364,121 @@ export type StudioProjectCreateDto = {
     spaceId?: string | null;
 };
 export type StudioProjectUpdateDto = {
+    /** Archive (read-only, off the active shelf) or bring back */
+    archived?: boolean;
     name?: string;
     /** Set or clear the reviewing shared space */
     spaceId?: string | null;
+    /** A library asset you can read, shown as the poster; null clears it */
+    thumbnailAssetId?: string | null;
+};
+export type StudioProjectDuplicateDto = {
+    /** Name of the copy; the client supplies the translated default */
+    name?: string;
+};
+export type StudioProjectTrashEmptyResponseDto = {
+    /** Projects deleted for good */
+    count: number;
+};
+export type StudioBundleExportCreateDto = {
+    /** Copy the media you own into the bundle. Shared media always travels as a reference, and nothing Locked is ever copied. */
+    includeMedia?: boolean;
+    /** Idempotency key; a repeated submit answers with the first job */
+    requestKey?: string;
+};
+export type StudioBundleUploadCreateDto = {
+    /** A `.frameleaf-studio.zip` bundle */
+    file: Blob;
+};
+export type StudioBundleSourceDto = {
+    contentType: string | null;
+    fileName: string | null;
+    /** Identifier on the exporting server */
+    id: string;
+    /** Mapping key for the import request */
+    key: string;
+    /** `library-asset` or `edited-master` */
+    kind: string;
+    mode: StudioBundleSourceMode;
+    resolution: StudioBundleSourceResolution;
+    /** Size of the source file, when the exporting server knew it */
+    sizeBytes: string | null;
+    /** An asset of yours with the same content */
+    suggestedAssetId: string | null;
+};
+export type StudioBundleUploadDto = {
+    /** When an import first read it */
+    consumedAt: string | null;
+    /** SHA-256 of the whole file */
+    digest: string;
+    engineRevision: string;
+    /** When the upload is discarded */
+    expiresAt: string;
+    exportedAt: string;
+    /** The file name as uploaded */
+    fileName: string;
+    /** Upload ID, used to start an import */
+    id: string;
+    producerVersion: string;
+    projectName: string;
+    /** The revision the bundle was made from */
+    revision: number;
+    sizeBytes: string;
+    sources: StudioBundleSourceDto[];
+};
+export type StudioBundleImportCreateDto = {
+    /** Source key to an asset of yours to use in its place; every choice is checked for access */
+    mapping?: {
+        [key: string]: string;
+    };
+    /** Name of the new project; the bundle name when omitted */
+    name?: string;
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    requestKey?: string;
+    uploadId: string;
+};
+export type StudioBundleExportResultDto = {
+    /** SHA-256 of the finished file */
+    digest: string;
+    /** The file can still be downloaded */
+    downloadable: boolean;
+    /** Sources copied into the bundle */
+    embedded: number;
+    expiresAt: string;
+    fileName: string;
+    /** Sources that travel as references */
+    referenced: number;
+    sizeBytes: string;
+};
+export type StudioBundleMissingSourceDto = {
+    /** The bundle carries a verified copy that can be added to the library later */
+    embedded: boolean;
+    fileName: string | null;
+    id: string;
+    key: string;
+    kind: string;
+};
+export type StudioBundleImportResultDto = {
+    embeddedVerified: number;
+    kept: number;
+    missing: StudioBundleMissingSourceDto[];
+    /** The project the import created */
+    projectId: string | null;
+    relinked: number;
+};
+export type StudioBundleOperationDto = {
+    attempt: number;
+    error: string | null;
+    errorCode: string | null;
+    "export": (StudioBundleExportResultDto) | null;
+    "import": (StudioBundleImportResultDto) | null;
+    kind: MediaOperationKind;
+    maxAttempts: number;
+    operationId: string;
+    progress: number;
+    /** The exported project, or the project an import created */
+    projectId: string | null;
+    status: MediaOperationStatus;
 };
 export type StudioProjectLeaseRequestDto = {
     /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
@@ -11478,17 +11630,103 @@ export function removeAssetFromStack({ assetId, id }: {
     }));
 }
 /**
+ * Download a Studio bundle
+ */
+export function downloadStudioBundle({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/studio/bundles/exports/${encodeURIComponent(id)}/download`, {
+        ...opts
+    }));
+}
+/**
+ * Import a Studio bundle
+ */
+export function importStudioBundle({ studioBundleImportCreateDto }: {
+    studioBundleImportCreateDto: StudioBundleImportCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaOperationDto;
+    }>("/studio/bundles/imports", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioBundleImportCreateDto
+    })));
+}
+/**
+ * Get a Studio bundle job
+ */
+export function getStudioBundleOperation({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioBundleOperationDto;
+    }>(`/studio/bundles/operations/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Upload a Studio bundle
+ */
+export function uploadStudioBundle({ studioBundleUploadCreateDto }: {
+    studioBundleUploadCreateDto: StudioBundleUploadCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioBundleUploadDto;
+    }>("/studio/bundles/uploads", oazapfts.multipart({
+        ...opts,
+        method: "POST",
+        body: studioBundleUploadCreateDto
+    })));
+}
+/**
+ * Discard an uploaded Studio bundle
+ */
+export function deleteStudioBundleUpload({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/studio/bundles/uploads/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get an uploaded Studio bundle
+ */
+export function getStudioBundleUpload({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioBundleUploadDto;
+    }>(`/studio/bundles/uploads/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
  * List Studio projects
  */
-export function searchStudioProjects({ skip, take }: {
+export function searchStudioProjects({ query, shelf, skip, sort, take }: {
+    query?: string;
+    shelf?: StudioProjectShelf;
     skip?: number;
+    sort?: StudioProjectSort;
     take?: number;
 } = {}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: StudioProjectListResponseDto;
     }>(`/studio/projects${QS.query(QS.explode({
+        query,
+        shelf,
         skip,
+        sort,
         take
     }))}`, {
         ...opts
@@ -11508,6 +11746,18 @@ export function createStudioProject({ studioProjectCreateDto }: {
         method: "POST",
         body: studioProjectCreateDto
     })));
+}
+/**
+ * Empty the Studio trash
+ */
+export function emptyStudioProjectTrash(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectTrashEmptyResponseDto;
+    }>("/studio/projects/trash/empty", {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * Get a Studio project
@@ -11541,13 +11791,32 @@ export function updateStudioProject({ id, studioProjectUpdateDto }: {
 /**
  * Delete a Studio project
  */
-export function deleteStudioProject({ id }: {
+export function deleteStudioProject({ id, permanent }: {
     id: string;
+    permanent?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText(`/studio/projects/${encodeURIComponent(id)}`, {
+    return oazapfts.ok(oazapfts.fetchText(`/studio/projects/${encodeURIComponent(id)}${QS.query(QS.explode({
+        permanent
+    }))}`, {
         ...opts,
         method: "DELETE"
     }));
+}
+/**
+ * Export a Studio project as a bundle
+ */
+export function exportStudioProjectBundle({ id, studioBundleExportCreateDto }: {
+    id: string;
+    studioBundleExportCreateDto: StudioBundleExportCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaOperationDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/bundle`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioBundleExportCreateDto
+    })));
 }
 /**
  * List Studio review comments
@@ -11611,6 +11880,22 @@ export function removeStudioProjectComment({ commentId, id }: {
         ...opts,
         method: "DELETE"
     }));
+}
+/**
+ * Duplicate a Studio project
+ */
+export function duplicateStudioProject({ id, studioProjectDuplicateDto }: {
+    id: string;
+    studioProjectDuplicateDto: StudioProjectDuplicateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioProjectDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/duplicate`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioProjectDuplicateDto
+    })));
 }
 /**
  * Acquire or renew the write lease
@@ -11720,6 +12005,20 @@ export function diffStudioProjectRevision({ against, id, revision }: {
         against
     }))}`, {
         ...opts
+    }));
+}
+/**
+ * Restore a Studio project from the trash
+ */
+export function restoreStudioProjectFromTrash({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/trash/restore`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -12578,6 +12877,7 @@ export enum SharedSpaceEventType {
     MemberRemoved = "MemberRemoved",
     MemberRoleChanged = "MemberRoleChanged",
     Comment = "Comment",
+    Reply = "Reply",
     Like = "Like"
 }
 export enum UserAvatarColor {
@@ -12724,6 +13024,7 @@ export enum NotificationType {
     AlbumUpdate = "AlbumUpdate",
     ClusterGroupRequest = "ClusterGroupRequest",
     SharedSpaceMention = "SharedSpaceMention",
+    SharedSpaceReply = "SharedSpaceReply",
     Custom = "Custom"
 }
 export enum UserStatus {
@@ -13209,7 +13510,9 @@ export enum MediaOperationKind {
     Restoration = "restoration",
     RestorationPreview = "restoration_preview",
     QuickEdit = "quick_edit",
-    Bulk = "bulk"
+    Bulk = "bulk",
+    StudioBundleExport = "studio_bundle_export",
+    StudioBundleImport = "studio_bundle_import"
 }
 export enum MediaOperationBulkAction {
     Favorite = "favorite",
@@ -13535,6 +13838,25 @@ export enum AssetIdErrorReason {
 export enum StudioProjectAccess {
     Owner = "owner",
     Reviewer = "reviewer"
+}
+export enum StudioProjectShelf {
+    Active = "active",
+    Archived = "archived",
+    Trashed = "trashed"
+}
+export enum StudioProjectSort {
+    Updated = "updated",
+    Recent = "recent",
+    Name = "name"
+}
+export enum StudioBundleSourceMode {
+    Embedded = "embedded",
+    Reference = "reference"
+}
+export enum StudioBundleSourceResolution {
+    Kept = "kept",
+    Suggested = "suggested",
+    Missing = "missing"
 }
 export enum SyncEntityType {
     AuthUserV1 = "AuthUserV1",

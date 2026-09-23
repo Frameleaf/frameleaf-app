@@ -1,4 +1,5 @@
 import { createZodDto } from 'nestjs-zod';
+import { stringToBool } from 'src/validation.js';
 import z from 'zod';
 
 const JsonObjectSchema = z.record(z.string(), z.unknown());
@@ -70,6 +71,20 @@ const StudioProjectAccessSchema = z
   .describe('`owner` may write; `reviewer` reaches the project through a shared space, read-only')
   .meta({ id: 'StudioProjectAccess' });
 
+/**
+ * Where a project sits in its owner's library (FL-91). The archive and the trash are the owner's
+ * shelves; a reviewer only ever sees active projects.
+ */
+const StudioProjectShelfSchema = z
+  .enum(['active', 'archived', 'trashed'])
+  .describe('`active`, `archived` (put away, read-only) or `trashed` (restorable until `purgeAfter`)')
+  .meta({ id: 'StudioProjectShelf' });
+
+const StudioProjectSortSchema = z
+  .enum(['updated', 'recent', 'name'])
+  .describe('`updated` newest change first, `recent` last opened first, `name` alphabetical')
+  .meta({ id: 'StudioProjectSort' });
+
 const StudioProjectSchema = z
   .object({
     id: z.uuidv7().describe('Studio project ID'),
@@ -79,6 +94,27 @@ const StudioProjectSchema = z
     revision: z.int().min(0).describe('Head revision number; 0 until the first save'),
     access: StudioProjectAccessSchema,
     lease: StudioProjectLeaseSchema,
+    shelf: StudioProjectShelfSchema,
+    archivedAt: z.string().meta({ format: 'date-time' }).nullable().describe('When the owner archived it'),
+    deletedAt: z.string().meta({ format: 'date-time' }).nullable().describe('When it was moved to the trash'),
+    purgeAfter: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('When a trashed project is deleted for good; its library media is never touched'),
+    lastOpenedAt: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('When an editor last opened it; null for a reviewer'),
+    thumbnailAssetId: z
+      .uuidv4()
+      .nullable()
+      .describe('Library asset the owner chose as the poster; null for a reviewer'),
+    duplicatedFromId: z.uuidv7().nullable().describe('The project this one was duplicated from; null for a reviewer'),
+    importedFromBundle: z
+      .boolean()
+      .describe('The project was read in from a portable bundle; always false for a reviewer'),
     createdAt: z.string().meta({ format: 'date-time' }),
     updatedAt: z.string().meta({ format: 'date-time' }),
   })
@@ -107,6 +143,39 @@ const StudioProjectSearchSchema = z
   })
   .meta({ id: 'StudioProjectSearchDto' });
 
+/** The project library's query (FL-91): one shelf, optionally filtered by name, in one order. */
+const StudioProjectLibrarySearchSchema = StudioProjectSearchSchema.extend({
+  shelf: StudioProjectShelfSchema.optional().describe('Which shelf to list; `active` when omitted'),
+  query: z.string().trim().max(200).optional().describe('Case-insensitive part of the name'),
+  sort: StudioProjectSortSchema.optional(),
+}).meta({ id: 'StudioProjectLibrarySearchDto' });
+
+const StudioProjectDeleteQuerySchema = z
+  .object({
+    permanent: stringToBool
+      .optional()
+      .describe('Delete for good instead of moving to the trash. Library media is never touched either way.'),
+  })
+  .meta({ id: 'StudioProjectDeleteQueryDto' });
+
+const StudioProjectDuplicateSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe('Name of the copy; the client supplies the translated default'),
+  })
+  .meta({ id: 'StudioProjectDuplicateDto' });
+
+const StudioProjectTrashEmptyResponseSchema = z
+  .object({
+    count: z.int().min(0).describe('Projects deleted for good'),
+  })
+  .meta({ id: 'StudioProjectTrashEmptyResponseDto' });
+
 const StudioProjectCreateSchema = z
   .object({
     name: z.string().trim().min(1).max(200),
@@ -121,6 +190,12 @@ const StudioProjectUpdateSchema = z
   .object({
     name: z.string().trim().min(1).max(200).optional(),
     spaceId: z.uuidv4().nullable().optional().describe('Set or clear the reviewing shared space'),
+    archived: z.boolean().optional().describe('Archive (read-only, off the active shelf) or bring back'),
+    thumbnailAssetId: z
+      .uuidv4()
+      .nullable()
+      .optional()
+      .describe('A library asset you can read, shown as the poster; null clears it'),
   })
   .meta({ id: 'StudioProjectUpdateDto' });
 
@@ -275,6 +350,10 @@ export class StudioProjectDto extends createZodDto(StudioProjectSchema) {}
 export class StudioProjectDetailDto extends createZodDto(StudioProjectDetailSchema) {}
 export class StudioProjectListResponseDto extends createZodDto(StudioProjectListResponseSchema) {}
 export class StudioProjectSearchDto extends createZodDto(StudioProjectSearchSchema) {}
+export class StudioProjectLibrarySearchDto extends createZodDto(StudioProjectLibrarySearchSchema) {}
+export class StudioProjectDeleteQueryDto extends createZodDto(StudioProjectDeleteQuerySchema) {}
+export class StudioProjectDuplicateDto extends createZodDto(StudioProjectDuplicateSchema) {}
+export class StudioProjectTrashEmptyResponseDto extends createZodDto(StudioProjectTrashEmptyResponseSchema) {}
 export class StudioProjectCreateDto extends createZodDto(StudioProjectCreateSchema) {}
 export class StudioProjectUpdateDto extends createZodDto(StudioProjectUpdateSchema) {}
 export class StudioProjectLeaseRequestDto extends createZodDto(StudioProjectLeaseRequestSchema) {}

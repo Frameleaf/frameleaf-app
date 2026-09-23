@@ -33,6 +33,9 @@ export type MediaOperationCreate = Omit<
  */
 export type MediaOperationFailOutcome = 'retrying' | 'failed' | false;
 
+/** What one recovery pass over lapsed claims did, by outcome (see `recoverExpiredClaims`). */
+export type MediaOperationRecovery = { requeued: number; retried: number; failed: number; abandonedCancels: number };
+
 /** The statuses a live claim may report from. `cancelling` is left out: a cancel is never retried. */
 const WORKING_STATUSES = [
   MediaOperationStatus.Preparing,
@@ -185,6 +188,59 @@ export class MediaOperationRepository {
       .orderBy('createdAt', 'asc')
       .limit(1)
       .executeTakeFirst()) as unknown as MediaOperation | undefined;
+  }
+
+  /**
+   * The owner's job of one kind submitted under a client idempotency key, if any (FL-91).
+   *
+   * The same rule as bulk submission, for kinds whose snapshot records `requestKey`: a repeated
+   * submit answers with the first job instead of queuing the same work twice.
+   */
+  async getByRequestKey(
+    ownerId: string,
+    kind: MediaOperationKind,
+    requestKey: string,
+  ): Promise<MediaOperation | undefined> {
+    return (await this.db
+      .selectFrom('media_operation')
+      .selectAll()
+      .where('ownerId', '=', ownerId)
+      .where('kind', '=', kind)
+      .where(sql<string>`"snapshot"->>'requestKey'`, '=', requestKey)
+      .orderBy('createdAt', 'asc')
+      .limit(1)
+      .executeTakeFirst()) as unknown as MediaOperation | undefined;
+  }
+
+  /**
+   * Finished bundle exports whose file is past its expiry and has not been swept yet (FL-91).
+   * The row stays for lineage; the sweep removes the file and records `expiredAt` in the result.
+   */
+  async listExpiredBundleExports(
+    now: Date,
+    limit = 200,
+  ): Promise<Array<Pick<MediaOperation, 'id' | 'ownerId' | 'result'>>> {
+    return (await this.db
+      .selectFrom('media_operation')
+      .select(['id', 'ownerId', 'result'])
+      .where('kind', '=', MediaOperationKind.StudioBundleExport)
+      .where('status', '=', MediaOperationStatus.Completed)
+      .where(sql<boolean>`"result"->>'expiredAt' is null`)
+      .where(sql<boolean>`("result"->>'expiresAt')::timestamptz < ${now}`)
+      .orderBy('finishedAt', 'asc')
+      .limit(limit)
+      .execute()) as unknown as Array<Pick<MediaOperation, 'id' | 'ownerId' | 'result'>>;
+  }
+
+  /** Replace the result of a job no worker holds. Used by sweeps on finished jobs only. */
+  async setFinishedResult(id: string, result: Record<string, unknown>): Promise<boolean> {
+    const updated = await this.db
+      .updateTable('media_operation')
+      .set({ result })
+      .where('id', '=', id)
+      .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .executeTakeFirst();
+    return Number(updated.numUpdatedRows) === 1;
   }
 
   /**
@@ -503,6 +559,10 @@ export class MediaOperationRepository {
    * Both writes are guarded by the claim token, so a stale worker changes nothing, and a job that
    * has already finished is not reopened by a late report. The retry resumes from whatever the job
    * recorded, which is why every runner must make a repeated step harmless.
+   *
+   * This is the one automatic retry for every kind: bulk, render workers (Studio exports and
+   * previews, quick edits), restorations and Studio bundles all report failure here and nowhere
+   * else, so no runner can add a second retry of its own on top (FL-104).
    */
   async fail(
     id: string,
@@ -705,21 +765,16 @@ export class MediaOperationRepository {
    *   but `cancelAcknowledgedAt` stays null, so a remote job whose cleanup nobody confirmed is
    *   still an open obligation for the cleanup pass.
    *
-   * Clearing the claim token is what makes all three safe: if the old worker comes back, none of
+   * Clearing the claim token is what makes all of them safe: if the old worker comes back, none of
    * its writes match any more.
+   *
+   * Every kind is recovered in one pass, and only `MediaOperationSweepService` calls this, so a
+   * lapsed claim is judged once, by one set of rules, whichever worker held it (FL-104).
    */
-  async recoverExpiredClaims(options: {
-    errorCode: string;
-    error: string;
-    /** Limit recovery to the kinds the caller runs. Omitted, every kind is recovered. */
-    kinds?: readonly MediaOperationKind[];
-  }): Promise<{ requeued: number; retried: number; failed: number; abandonedCancels: number }> {
-    const kinds = options.kinds?.length ? [...options.kinds] : undefined;
-
+  async recoverExpiredClaims(options: { errorCode: string; error: string }): Promise<MediaOperationRecovery> {
     const requeued = await this.db
       .updateTable('media_operation')
       .set({ status: MediaOperationStatus.Queued, claimToken: null, claimedBy: null, claimExpiresAt: null })
-      .$if(!!kinds, (qb) => qb.where('kind', 'in', kinds!))
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)
@@ -741,7 +796,6 @@ export class MediaOperationRepository {
         claimedBy: null,
         claimExpiresAt: null,
       })
-      .$if(!!kinds, (qb) => qb.where('kind', 'in', kinds!))
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)
@@ -761,7 +815,6 @@ export class MediaOperationRepository {
         claimedBy: null,
         claimExpiresAt: null,
       })
-      .$if(!!kinds, (qb) => qb.where('kind', 'in', kinds!))
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)
@@ -779,7 +832,6 @@ export class MediaOperationRepository {
         claimedBy: null,
         claimExpiresAt: null,
       })
-      .$if(!!kinds, (qb) => qb.where('kind', 'in', kinds!))
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)

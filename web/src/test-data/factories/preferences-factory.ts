@@ -33,6 +33,7 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
   privacy: {
     suppression: {
       personIds: [],
+      petIds: [],
       scope: SuppressionScope.Owned,
       tagIds: [],
     },

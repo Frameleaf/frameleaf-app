@@ -105,6 +105,7 @@ const SuppressionUpdateSchema = z
   .object({
     tagIds: z.array(z.uuidv4()).optional().describe('Tag IDs to suppress from locked browsing sessions'),
     personIds: z.array(z.uuidv4()).optional().describe('Person IDs to suppress from locked browsing sessions'),
+    petIds: z.array(z.uuidv4()).optional().describe('Pet IDs to suppress from locked browsing sessions'),
     scope: SuppressionScopeSchema.optional().describe(
       'Whether suppression applies only to owned assets or all visible assets',
     ),
@@ -226,6 +227,7 @@ const SuppressionResponseSchema = z
   .object({
     tagIds: z.array(z.string()).describe('Tag IDs to suppress from locked browsing sessions'),
     personIds: z.array(z.string()).describe('Person IDs to suppress from locked browsing sessions'),
+    petIds: z.array(z.string()).describe('Pet IDs to suppress from locked browsing sessions'),
     scope: SuppressionScopeSchema.describe('Whether suppression applies only to owned assets or all visible assets'),
   })
   .meta({ id: 'SuppressionResponse' });
