@@ -4,6 +4,7 @@ import {
   formatMomentTime,
   initialStages,
   neededBy,
+  newRequestKey,
   parseMomentTime,
   planPollDelay,
   reasonKey,
@@ -113,5 +114,11 @@ describe('moment times', () => {
     expect(parseMomentTime('12.5')).toBe(12_500);
     expect(parseMomentTime('abc')).toBeNull();
     expect(parseMomentTime('')).toBeNull();
+  });
+});
+
+describe('newRequestKey', () => {
+  it('always makes a version 4 UUID the server accepts', () => {
+    expect(newRequestKey()).toMatch(/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);
   });
 });

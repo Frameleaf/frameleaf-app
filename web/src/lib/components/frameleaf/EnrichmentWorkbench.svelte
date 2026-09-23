@@ -32,6 +32,7 @@
     itemStateTone,
     lastPlan,
     neededBy,
+    newRequestKey,
     planPollDelay,
     planStatusKey,
     reasonKey,
@@ -282,7 +283,7 @@
           enrichmentPlanCreateDto: {
             assetIds: selected,
             stages,
-            requestKey: crypto.randomUUID(),
+            requestKey: newRequestKey(),
             ...(destinationId && destinationId !== options?.routes.enrichment ? { destinationId } : {}),
             ...(searchDestinationId && searchDestinationId !== options?.routes.search ? { searchDestinationId } : {}),
           },
