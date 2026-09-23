@@ -127,6 +127,21 @@ describe('WorkflowsPanel', () => {
     expect(screen.getByLabelText(t.name)).toHaveValue('Receipts');
   });
 
+  it('opens a deep-linked workflow after loading it', async () => {
+    sdkMock.searchWorkflows.mockResolvedValue([workflow()]);
+    render(WorkflowsPanel, { openId: workflow().id });
+
+    expect(await screen.findByLabelText(t.name)).toHaveValue('Receipts');
+  });
+
+  it('shows a loading failure without claiming the library is empty', async () => {
+    sdkMock.searchWorkflows.mockRejectedValue(new Error('offline'));
+    render(WorkflowsPanel, {});
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByText(t.empty)).toBeNull();
+  });
+
   it('refuses to enable a paused workflow the server cannot run', () => {
     render(WorkflowsPanel, {
       initial: [
