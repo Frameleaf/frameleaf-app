@@ -176,6 +176,12 @@ describe('viewerMenuGroups', () => {
       expect(idsOf(baseContext({ hasAlbumContext: true, canEditAlbum: false }))).not.toContain('set-album-cover');
     });
 
+    it('never offers a locked asset as the album cover (FL-53)', () => {
+      expect(idsOf(baseContext({ hasAlbumContext: true, canEditAlbum: true, isLocked: true }))).not.toContain(
+        'set-album-cover',
+      );
+    });
+
     it('offers the featured photo only from a person page', () => {
       expect(idsOf(baseContext({ hasPersonContext: true }))).toContain('set-person-featured');
       expect(idsOf(baseContext({ hasPersonContext: false }))).not.toContain('set-person-featured');

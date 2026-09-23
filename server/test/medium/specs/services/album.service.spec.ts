@@ -409,5 +409,36 @@ describe(AlbumService.name, () => {
       await expect(sut.getMapMarkers(ordinary(owner.id), album.id).then(ids)).resolves.toEqual([plain.id]);
       await expect(sut.getMapMarkers(elevated(member.id), album.id).then(ids)).resolves.toEqual([plain.id]);
     });
+
+    it('counts hidden items for their contributor and Locked items only for the elevated owner', async () => {
+      const { sut, ctx } = setup(await getKyselyDB());
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const { asset: plain } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: hidden } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Hidden });
+      const { asset: locked } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Locked });
+      const { asset: memberAsset } = await ctx.newAsset({ ownerId: member.id });
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [plain.id, hidden.id, locked.id, memberAsset.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Editor });
+
+      const counts = (response: { contributorCounts?: { userId: string; assetCount: number }[] }) =>
+        Object.fromEntries(
+          (response.contributorCounts ?? []).map(({ userId, assetCount }) => [userId, Number(assetCount)]),
+        );
+
+      await expect(sut.get(elevated(owner.id), album.id).then(counts)).resolves.toEqual({
+        [owner.id]: 3,
+        [member.id]: 1,
+      });
+      await expect(sut.get(ordinary(owner.id), album.id).then(counts)).resolves.toEqual({
+        [owner.id]: 2,
+        [member.id]: 1,
+      });
+      // another member never counts the owner's Locked item, whatever their own session
+      await expect(sut.get(elevated(member.id), album.id).then(counts)).resolves.toEqual({
+        [owner.id]: 2,
+        [member.id]: 1,
+      });
+    });
   });
 });
