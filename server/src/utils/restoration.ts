@@ -14,6 +14,7 @@ import {
 import {
   MediaOperationDestination,
   MediaOperationKind,
+  MlAdmissionRefusal,
   MlDestinationKind,
   MlDestinationKindSchema,
   MlWorkload,
@@ -21,11 +22,19 @@ import {
 } from 'src/enum.js';
 import type { MlSelection } from 'src/repositories/machine-learning.repository.js';
 import type { MlThroughputSample } from 'src/repositories/ml-destination.repository.js';
+import {
+  MlDestinationRefusedError,
+  MlSelectionDeps,
+  isCloudDestination,
+  routedMlDestinationId,
+  selectMlDestination,
+} from 'src/utils/ml-destination.js';
 
 /**
- * The rules of preview-first restoration (FL-115), kept free of the database and the network.
+ * The rules of preview-first restoration (FL-115, FL-114). Apart from destination selection,
+ * which admits through `selectMlDestination`, this is free of the database and the network.
  *
- * Four things live here:
+ * Five things live here:
  *
  * 1. Sizing. The preview crop in pixels, the 4K cap on the full output, and the byte figures the
  *    measured estimate is derived from.
@@ -33,9 +42,9 @@ import type { MlThroughputSample } from 'src/repositories/ml-destination.reposit
  *    work may (re)start from — the latter is what makes an automatic retry safe.
  * 3. The immutable snapshot a durable job carries, and its parser, so a worker never trusts a
  *    row it cannot read back exactly.
- * 4. The inference seam: the one method the ML repository is expected to grow (FL-114). Nothing
- *    here calls it; the worker asks `restorationInferenceOf` whether it exists and fails honestly
- *    when it does not.
+ * 4. Destination selection (FL-114): the only way to obtain a `RestorationSelection`, which is
+ *    what `MachineLearningRepository.restore` requires, including the per-request cloud check.
+ * 5. The inference seam `MachineLearningRepository.restore` implements (FL-114).
  */
 
 /** 4K: the longest edge of a full result never exceeds this, whatever the upscale asked for. */
@@ -64,6 +73,7 @@ export const RESTORATION_OPERATION_KINDS: readonly MediaOperationKind[] = [
 
 /** Stable failure codes Activity turns into a message. */
 export const RestorationErrorCode = {
+  /** Recorded by jobs that ran before the adapter shipped (FL-114); no longer raised. */
   AdapterMissing: 'restoration_adapter_missing',
   SnapshotInvalid: 'restoration_snapshot_invalid',
   RestorationMissing: 'restoration_missing',
@@ -398,6 +408,85 @@ export const restorationChunkIdentity = (snapshot: RestorationSnapshot, chunk: R
 };
 
 /* ------------------------------------------------------------------ */
+/* Destination selection (FL-114)                                      */
+/* ------------------------------------------------------------------ */
+
+declare const restorationSelectionBrand: unique symbol;
+
+/**
+ * A selection admitted by {@link selectRestorationDestination}. Only this module can make one:
+ * the brand exists only in the type system, and at run time `MachineLearningRepository.restore`
+ * accepts only selection objects recorded in the module-private registry below, so a plain
+ * `selectMlDestination` result (or a copy of an admitted one) is refused.
+ */
+export type RestorationSelection = MlSelection & { readonly [restorationSelectionBrand]: true };
+
+export type RestorationAdmission = {
+  /** The person chose this destination for this request, confirming media may leave the network. */
+  cloudUploadConfirmed: boolean;
+};
+
+const admissions = new WeakMap<MlSelection, RestorationAdmission>();
+
+/** How a selection was admitted for restoration, or null when it was not admitted here. */
+export const restorationAdmissionOf = (selection: MlSelection): RestorationAdmission | null =>
+  admissions.get(selection) ?? null;
+
+export type RestorationSelectionRequest = {
+  mode: AssetRestorationMode;
+  /** The destination the person chose, or null to use the administrator's route. */
+  destinationId: string | null;
+  /**
+   * The person confirmed, for this request, that media may leave the network. FL-115 passes
+   * true for the destination the owner named on their own request (required, never inferred;
+   * the restoration panel says when it leaves the network). A routed cloud destination nobody
+   * chose for this request is refused.
+   */
+  acknowledgeCloudUpload: boolean;
+  jobId?: string | null;
+  jobName?: string | null;
+};
+
+/**
+ * Admit a restoration against the destination the person chose, or else the administrator's
+ * route for the mode's workload, with the same rule as every other workload
+ * (`selectMlDestination`): refused, never moved, when the destination is missing, disabled,
+ * unhealthy, over budget, without recorded consent or not serving the workload (a worker only
+ * serves it while a qualified model is available). A cloud destination additionally needs the
+ * per-request confirmation, checked before the destination is contacted at all.
+ *
+ * Source access: restoration runs as a background job. Jobs read Locked, hidden and sensitive
+ * assets' files without an elevated session (owner decision, September 22, 2026); nothing here
+ * applies a visibility filter. What the person can see is unchanged.
+ */
+export const selectRestorationDestination = async (
+  deps: MlSelectionDeps,
+  request: RestorationSelectionRequest,
+): Promise<RestorationSelection> => {
+  const workload = workloadForMode(request.mode);
+  const destinationId = request.destinationId ?? (await routedMlDestinationId(deps.mlDestinationRepository, workload));
+
+  const destination = await deps.mlDestinationRepository.getById(destinationId);
+  if (destination && isCloudDestination(destination.kind) && !request.acknowledgeCloudUpload) {
+    throw new MlDestinationRefusedError(
+      MlAdmissionRefusal.ConsentMissing,
+      workload,
+      destination.id,
+      `${destination.name} sends the media off this network; confirm the upload for this restoration first`,
+    );
+  }
+
+  const selection = await selectMlDestination(deps, {
+    workload,
+    destinationId,
+    jobId: request.jobId ?? null,
+    jobName: request.jobName ?? null,
+  });
+  admissions.set(selection, { cloudUploadConfirmed: request.acknowledgeCloudUpload });
+  return selection as RestorationSelection;
+};
+
+/* ------------------------------------------------------------------ */
 /* Inference seam                                                      */
 /* ------------------------------------------------------------------ */
 
@@ -412,7 +501,7 @@ export type RestorationInferenceOptions = {
   /** The adapter must not produce an output larger than this on either edge. */
   maxWidth: number;
   maxHeight: number;
-  /** Where the adapter writes the restored file. The worker validates it before publishing. */
+  /** Where the adapter writes the restored file. It must not exist yet; the worker validates it. */
   outputPath: string;
   /** The durable job id, for the destination's accounting row. */
   jobId: string;
@@ -428,24 +517,16 @@ export type RestorationInferenceResult = {
 };
 
 /**
- * The single method restoration needs from the machine-learning repository. FL-114 provides the
- * model adapters and the request/response contract; this is the signature FL-115 assumes:
- *
- * `restore(selection, input, options)` sends one file to the admitted destination named by
- * `selection` (FL-110's `MlSelection`, whose `record` hook lands the accounting row), writes the
- * restored file to `options.outputPath`, and resolves with what it produced. It rejects on any
- * failure and never retries against another destination.
+ * What restoration needs from the machine-learning repository, implemented by
+ * `MachineLearningRepository.restore` (FL-114): send one file to the destination admitted by
+ * {@link selectRestorationDestination}, write the restored file to `options.outputPath` as a new
+ * file, and resolve with what was produced. It rejects on any failure and never retries against
+ * another destination.
  */
 export interface RestorationInference {
   restore(
-    selection: MlSelection,
+    selection: RestorationSelection,
     input: RestorationInferenceInput,
     options: RestorationInferenceOptions,
   ): Promise<RestorationInferenceResult>;
 }
-
-/** The repository as an inference provider, or null while no adapter is installed. */
-export const restorationInferenceOf = (repository: unknown): RestorationInference | null =>
-  repository && typeof (repository as { restore?: unknown }).restore === 'function'
-    ? (repository as RestorationInference)
-    : null;

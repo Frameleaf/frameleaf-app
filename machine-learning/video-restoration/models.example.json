@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "weightsRoot": "/restoration/weights",
+  "models": [
+    {
+      "id": "realbasicvsr-x4",
+      "family": "realbasicvsr",
+      "mode": "faithful",
+      "displayName": "RealBasicVSR x4",
+      "repository": "https://github.com/ckkelvinchan/RealBasicVSR",
+      "revision": "REPLACE-with-the-exact-40-character-commit-that-was-qualified",
+      "license": {
+        "code": null,
+        "weights": null,
+        "url": "https://github.com/ckkelvinchan/RealBasicVSR"
+      },
+      "nativeScale": 4,
+      "runtime": {
+        "root": "/opt/restoration/realbasicvsr",
+        "python": "/opt/restoration/realbasicvsr/.venv/bin/python",
+        "argv": [
+          "{python}",
+          "inference_realbasicvsr.py",
+          "configs/realbasicvsr_x4.py",
+          "{weight:generator}",
+          "{input_dir}",
+          "{output_dir}",
+          "--max_seq_len={max_seq_len}",
+          "--is_save_as_png=True"
+        ],
+        "env": {
+          "TORCH_HOME": "/restoration/weights/realbasicvsr/torch-home"
+        },
+        "timeoutSeconds": 3600
+      },
+      "weights": [
+        {
+          "role": "generator",
+          "path": "realbasicvsr/RealBasicVSR_x4.pth",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification"
+        },
+        {
+          "role": "spynet",
+          "path": "realbasicvsr/torch-home/hub/checkpoints/spynet_20210409-c6c1bd09.pth",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification"
+        }
+      ],
+      "limits": {
+        "maxInputLongEdge": 1280,
+        "maxFrames": 300,
+        "maxFramesPerChunk": 30,
+        "minVramBytes": 0
+      },
+      "dynamicRanges": ["sdr"],
+      "notes": "Every value marked REPLACE and every limit must come from the qualification run. minVramBytes 0 is a placeholder, not a measurement."
+    },
+    {
+      "id": "seedvr2-3b",
+      "family": "seedvr2",
+      "mode": "creative",
+      "displayName": "SeedVR2 3B",
+      "repository": "https://github.com/ByteDance-Seed/SeedVR",
+      "revision": "REPLACE-with-the-exact-40-character-commit-that-was-qualified",
+      "license": {
+        "code": null,
+        "weights": null,
+        "url": "https://github.com/ByteDance-Seed/SeedVR"
+      },
+      "nativeScale": null,
+      "runtime": {
+        "root": "/opt/restoration/seedvr",
+        "python": "/opt/restoration/seedvr/.venv/bin/python",
+        "argv": [
+          "/opt/restoration/seedvr/.venv/bin/torchrun",
+          "--nproc-per-node=1",
+          "projects/inference_seedvr2_3b.py",
+          "--video_path",
+          "{input_dir}",
+          "--output_dir",
+          "{output_dir}",
+          "--seed",
+          "{seed}",
+          "--res_h",
+          "{target_height}",
+          "--res_w",
+          "{target_width}",
+          "--sp_size",
+          "1"
+        ],
+        "env": {},
+        "timeoutSeconds": 7200
+      },
+      "weights": [
+        {
+          "role": "dit",
+          "path": "/opt/restoration/seedvr/ckpts/seedvr2_ema_3b.pth",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification"
+        },
+        {
+          "role": "vae",
+          "path": "/opt/restoration/seedvr/ckpts/ema_vae.pth",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification"
+        },
+        {
+          "role": "positive-embedding",
+          "path": "/opt/restoration/seedvr/pos_emb.pt",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification"
+        },
+        {
+          "role": "negative-embedding",
+          "path": "/opt/restoration/seedvr/neg_emb.pt",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification"
+        }
+      ],
+      "limits": {
+        "maxInputLongEdge": 1280,
+        "maxFrames": 150,
+        "maxFramesPerChunk": 150,
+        "minVramBytes": 0
+      },
+      "dynamicRanges": ["sdr"],
+      "notes": "Upstream reads its checkpoints from fixed paths under the checkout, so the weight paths point there (mount the weights volume at ckpts/). The file names follow the upstream README and must be confirmed against the pinned commit. minVramBytes 0 is a placeholder, not a measurement."
+    }
+  ]
+}
