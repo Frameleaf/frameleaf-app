@@ -5493,6 +5493,38 @@
       "identity": "public.video_stream_variant.sessionId"
     },
     {
+      "definition": "jsonb|not null|||",
+      "identity": "public.workflow_definition.definition"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.workflow_definition.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.workflow_definition.workflowId"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "public.workflow_log_detail.attempt"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.workflow_log_detail.error"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.workflow_log_detail.errorCode"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.workflow_log_detail.logId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.workflow_log_detail.workflowId"
+    },
+    {
       "definition": "timestamp with time zone|not null|now()||",
       "identity": "public.workflow_log.createdAt"
     },
@@ -7289,6 +7321,22 @@
     {
       "definition": "FOREIGN KEY (\"sessionId\") REFERENCES video_stream_session(id) ON DELETE CASCADE",
       "identity": "public.video_stream_variant.video_stream_variant_sessionId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"workflowId\")",
+      "identity": "public.workflow_definition.workflow_definition_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"workflowId\") REFERENCES workflow(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.workflow_definition.workflow_definition_workflowId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"logId\")",
+      "identity": "public.workflow_log_detail.workflow_log_detail_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"workflowId\") REFERENCES workflow(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.workflow_log_detail.workflow_log_detail_workflowId_fkey"
     },
     {
       "definition": "PRIMARY KEY (id)",
@@ -10679,6 +10727,18 @@
       "identity": "public.video_stream_variant.video_stream_variant_sessionId_bitrate_resolution_codec_idx"
     },
     {
+      "definition": "CREATE UNIQUE INDEX workflow_definition_pkey ON public.workflow_definition USING btree (\"workflowId\")",
+      "identity": "public.workflow_definition.workflow_definition_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX workflow_log_detail_pkey ON public.workflow_log_detail USING btree (\"logId\")",
+      "identity": "public.workflow_log_detail.workflow_log_detail_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"workflow_log_detail_workflowId_idx\" ON public.workflow_log_detail USING btree (\"workflowId\")",
+      "identity": "public.workflow_log_detail.workflow_log_detail_workflowId_idx"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX workflow_log_pkey ON public.workflow_log USING btree (id)",
       "identity": "public.workflow_log.workflow_log_pkey"
     },
@@ -11455,7 +11515,15 @@
     },
     {
       "definition": "table",
+      "identity": "public.workflow_definition"
+    },
+    {
+      "definition": "table",
       "identity": "public.workflow_log"
+    },
+    {
+      "definition": "table",
+      "identity": "public.workflow_log_detail"
     },
     {
       "definition": "table",

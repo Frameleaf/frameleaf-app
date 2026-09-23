@@ -63,6 +63,17 @@ These environment variables are used by the `docker-compose.yml` file and do **N
 
 \*1: Each entry is an absolute path inside the container, optionally labelled. A copy found there is copied into library storage before an item is relinked to it; see [Library Care](/features/library-care).
 
+## App releases
+
+| Variable                           | Description                                                                                                                  | Default | Containers | Workers |
+| :--------------------------------- | :--------------------------------------------------------------------------------------------------------------------------- | :-----: | :--------- | :------ |
+| `FRAMELEAF_ANDROID_RELEASE_URL`    | https folder holding this installation's signed Android APKs; `{version}` is replaced with the server version.<sup>\*1</sup> |         | server     | api     |
+| `FRAMELEAF_ANDROID_APP_ID`         | Android package id the APKs are signed as.                                                                                   |         | server     | api     |
+| `FRAMELEAF_ANDROID_SIGNING_SHA256` | SHA-256 fingerprint of the APK signing certificate, shown to people before they install.                                     |         | server     | api     |
+| `FRAMELEAF_IOS_APP_URL`            | https App Store or TestFlight page of the iOS app.                                                                           |         | server     | api     |
+
+\*1: The folder must contain `app-arm64-v8a-release.apk`, `app-armeabi-v7a-release.apk`, `app-x86_64-release.apk` and `app-release.apk` (universal). Android downloads and Obtainium setup are offered only when all three Android variables are set; a value that is set but invalid stops the server at startup. Without them the Mobile applications and Obtainium setup pages say that no signed release is available. Include `{version}` in the folder so Obtainium recognises each new release.
+
 ## Workers
 
 | Variable                 | Description                                                                                          | Default | Containers |
