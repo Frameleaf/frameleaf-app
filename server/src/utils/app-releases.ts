@@ -77,11 +77,13 @@ export const parseAppReleases = (env: AppReleaseEnv): AppReleaseConfig => {
     if (!/^[A-Za-z]\w*(\.[A-Za-z]\w*)+$/.test(appId!)) {
       throw new Error(`FRAMELEAF_ANDROID_APP_ID: "${appId}" is not an Android package id`);
     }
-    if (!releaseUrl!.includes('{version}')) {
-      throw new Error('FRAMELEAF_ANDROID_RELEASE_URL: include {version} so links match this server version');
+    const validatedReleaseUrl = httpsUrl('FRAMELEAF_ANDROID_RELEASE_URL', releaseUrl!);
+    const releaseLocation = new URL(releaseUrl!.replace('{version}', '__frameleaf_version__'));
+    if (!releaseLocation.pathname.includes('__frameleaf_version__') || releaseLocation.search || releaseLocation.hash) {
+      throw new Error('FRAMELEAF_ANDROID_RELEASE_URL: include {version} in the path with no query or fragment');
     }
     config.android = {
-      releaseUrl: httpsUrl('FRAMELEAF_ANDROID_RELEASE_URL', releaseUrl!),
+      releaseUrl: validatedReleaseUrl,
       appId: appId!,
       signingSha256: normalizeFingerprint(fingerprint!),
     };

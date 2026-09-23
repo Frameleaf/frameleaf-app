@@ -46,6 +46,9 @@ describe('parseAppReleases', () => {
     ['http://releases.example.test/{version}', /https/],
     ['https://user:pass@releases.example.test/{version}', /credentials/],
     ['not a url/{version}', /not a URL/],
+    ['https://releases.example.test/android?version={version}', /path/],
+    ['https://releases.example.test/{version}?channel=beta', /query or fragment/],
+    ['https://releases.example.test/{version}#release', /query or fragment/],
   ])('refuses the release URL %s', (url, error) => {
     expect(() =>
       parseAppReleases({

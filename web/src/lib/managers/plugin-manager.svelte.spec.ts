@@ -35,3 +35,13 @@ it('does not publish discovery data that arrives after logout', async () => {
   expect(pluginManager.methods).toEqual([]);
   expect(pluginManager.getMethod('sample#method')).toBeUndefined();
 });
+
+it('retries discovery after a background sign-in load fails', async () => {
+  sdkMock.searchPluginMethods.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce([]);
+
+  eventManager.emit('AuthUserLoaded', {} as never);
+  await vi.waitFor(() => expect(sdkMock.searchPluginMethods).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(pluginManager.ready()).resolves.toBeUndefined());
+
+  expect(sdkMock.searchPluginMethods).toHaveBeenCalledTimes(2);
+});
