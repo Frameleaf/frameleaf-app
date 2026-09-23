@@ -203,8 +203,8 @@ export const USER_SETTINGS_AREAS: readonly { key: string; titleKey: string; desc
   },
   {
     key: 'suppressed-content',
-    titleKey: 'suppressed_content',
-    descriptionKey: 'suppressed_content_settings_description',
+    titleKey: 'frameleaf_locked_rules_section_title',
+    descriptionKey: 'frameleaf_locked_rules_section_description',
     icon: mdiShieldLockOutline,
   },
   {
