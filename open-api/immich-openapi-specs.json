@@ -8754,6 +8754,10 @@
       },
       "ICloudConnectionResponseDto": {
         "properties": {
+          "authenticated": {
+            "description": "Whether an encrypted Apple session is stored; the session is never returned",
+            "type": "boolean"
+          },
           "config": {
             "additionalProperties": false,
             "properties": {
@@ -8834,17 +8838,28 @@
             "nullable": true,
             "type": "string"
           },
+          "run": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ICloudSyncRunDto"
+              }
+            ],
+            "description": "The current or most recent sync run",
+            "nullable": true
+          },
           "state": {
             "type": "string"
           }
         },
         "required": [
+          "authenticated",
           "config",
           "counts",
           "id",
           "label",
           "lastError",
           "nextRunAt",
+          "run",
           "state"
         ],
         "type": "object"
@@ -8984,6 +8999,9 @@
           "libraries": {
             "items": {
               "properties": {
+                "area": {
+                  "$ref": "#/components/schemas/ICloudLibraryArea"
+                },
                 "id": {
                   "type": "string"
                 },
@@ -8997,6 +9015,7 @@
               "required": [
                 "id",
                 "name",
+                "area",
                 "supported"
               ],
               "type": "object"
@@ -9011,6 +9030,9 @@
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                   "type": "string"
                 },
+                "fileName": {
+                  "type": "string"
+                },
                 "outcome": {
                   "type": "string"
                 },
@@ -9023,7 +9045,50 @@
               "required": [
                 "assetId",
                 "resourceId",
-                "outcome"
+                "outcome",
+                "fileName"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "review": {
+            "description": "Reconciliation findings; private items only for an unlocked session",
+            "items": {
+              "properties": {
+                "assetId": {
+                  "format": "uuid",
+                  "nullable": true,
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "fileName": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "kind": {
+                  "$ref": "#/components/schemas/ICloudReviewKind"
+                },
+                "reason": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "resourceId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "resourceId",
+                "kind",
+                "reason",
+                "fileName",
+                "role",
+                "assetId"
               ],
               "type": "object"
             },
@@ -9033,7 +9098,94 @@
         "required": [
           "albums",
           "complete",
-          "libraries"
+          "libraries",
+          "review"
+        ],
+        "type": "object"
+      },
+      "ICloudLibraryArea": {
+        "enum": [
+          "private",
+          "shared"
+        ],
+        "type": "string"
+      },
+      "ICloudReviewKind": {
+        "enum": [
+          "review",
+          "failed",
+          "unsupported",
+          "kept-trashed",
+          "source-removed"
+        ],
+        "type": "string"
+      },
+      "ICloudSyncRunDto": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "errorCode": {
+            "description": "Stable failure code, translated by the client",
+            "nullable": true,
+            "type": "string"
+          },
+          "finishedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Media operation ID of the run",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "pauseRequested": {
+            "description": "A pause was asked for and the worker has not reached it yet",
+            "type": "boolean"
+          },
+          "processedUnits": {
+            "description": "Resources settled so far",
+            "type": "integer"
+          },
+          "progress": {
+            "description": "0 to 100, from resources settled out of those known so far",
+            "type": "number"
+          },
+          "retrying": {
+            "description": "Back in the queue for its automatic retry after a failure",
+            "type": "boolean"
+          },
+          "startedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "totalUnits": {
+            "description": "Resources known so far; null until the inventory is counted",
+            "nullable": true,
+            "type": "integer"
+          },
+          "waiting": {
+            "description": "Handed back to wait for the provider or a backed-off item",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "createdAt",
+          "errorCode",
+          "finishedAt",
+          "id",
+          "pauseRequested",
+          "processedUnits",
+          "progress",
+          "retrying",
+          "startedAt",
+          "status",
+          "totalUnits",
+          "waiting"
         ],
         "type": "object"
       },
@@ -11340,7 +11492,8 @@
           "quick_edit",
           "bulk",
           "studio_bundle_export",
-          "studio_bundle_import"
+          "studio_bundle_import",
+          "icloud_sync"
         ],
         "type": "string"
       },
@@ -38269,6 +38422,53 @@
                 }
               }
             },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/icloud-sync/connections/{id}/remove": {
+      "post": {
+        "operationId": "removeICloudConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
             "description": ""
           }
         },
