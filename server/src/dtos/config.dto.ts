@@ -633,7 +633,14 @@ const AdminConfigSmtpSchema = z
         port: z.int().min(0).max(65_535).describe('SMTP server port'),
         secure: configBool.describe('Whether to use secure connection (TLS/SSL)'),
         username: z.string().describe('SMTP username'),
-        password: z.string().describe('SMTP password'),
+        // FL-67: write-only, like runpod.apiKey below. mapAdminConfig() returns '' and
+        // updateAdminConfig() keeps the stored password when '' comes back. Replace or clear it
+        // through /admin/config/credentials/smtp-password.
+        password: z.string().describe('SMTP password (write-only; empty preserves the existing password)'),
+        passwordConfigured: z
+          .boolean()
+          .optional()
+          .describe('Read-only indicator that an SMTP password is stored. Set by the server; ignored on write.'),
       })
       .meta({ id: 'AdminConfigSmtpTransportDto' }),
   })
@@ -774,7 +781,14 @@ const AdminConfigSchemaWithVisibility = z
         autoRegister: configBool.describe('Auto register'),
         buttonText: z.string().describe('Button text').meta({ visibility: Public }),
         clientId: z.string().describe('Client ID'),
-        clientSecret: z.string().describe('Client secret'),
+        // FL-67: write-only. mapAdminConfig() returns '' and updateAdminConfig() keeps the stored
+        // secret when '' comes back. Replace or clear it through
+        // /admin/config/credentials/oauth-client-secret.
+        clientSecret: z.string().describe('Client secret (write-only; empty preserves the existing secret)'),
+        clientSecretConfigured: z
+          .boolean()
+          .optional()
+          .describe('Read-only indicator that a client secret is stored. Set by the server; ignored on write.'),
         tokenEndpointAuthMethod: OAuthTokenEndpointAuthMethodSchema,
         timeout: z.int().min(1).describe('Timeout'),
         allowInsecureRequests: configBool.describe('Allow insecure requests'),
@@ -1056,8 +1070,26 @@ export function mapAdminConfig(config: SystemConfig): AdminConfigDto {
   // preserve the stored value (see system-config.service.ts:updateAdminConfig).
   // The `apiKeyConfigured` flag exists so the admin UI can render a "Key
   // Saved" indicator without exposing the actual key.
+  // FL-67: the SMTP password and the OAuth client secret follow the same rule, so no secret ever
+  // reaches a settings draft, a copied or exported configuration, or a log of the response.
   return {
     ...config,
+    notifications: {
+      ...config.notifications,
+      smtp: {
+        ...config.notifications.smtp,
+        transport: {
+          ...config.notifications.smtp.transport,
+          password: '',
+          passwordConfigured: config.notifications.smtp.transport.password.length > 0,
+        },
+      },
+    },
+    oauth: {
+      ...config.oauth,
+      clientSecret: '',
+      clientSecretConfigured: config.oauth.clientSecret.length > 0,
+    },
     machineLearning: {
       ...config.machineLearning,
       runpod: {

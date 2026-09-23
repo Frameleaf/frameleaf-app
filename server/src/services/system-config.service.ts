@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { isEqual, omit } from 'lodash-es';
+import { cloneDeep, get, isEqual, omit, set } from 'lodash-es';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent } from 'src/decorators.js';
+import { ConfigCredentialResponseDto, ConfigCredentialUpdateDto } from 'src/dtos/config-credential.dto.js';
 import {
   AdminConfigDto,
   PublicConfigDto,
@@ -19,7 +21,14 @@ import {
   SmartAlbumReevaluateRequestDto,
   SmartAlbumReevaluateResponseDto,
 } from 'src/dtos/system-config.dto.js';
-import { BootstrapEventPriority, JobName, MlDestinationKind, QueueName, SystemMetadataKey } from 'src/enum.js';
+import {
+  BootstrapEventPriority,
+  ConfigCredential,
+  JobName,
+  MlDestinationKind,
+  QueueName,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import {
   MachineLearningHardwareResponse,
   defaultMachineLearningHardware,
@@ -42,6 +51,25 @@ const DEFAULT_SECONDS_PER_ASSET = 1.5;
  */
 const effectiveRunPodMode = (rp: { mode?: string; enabled: boolean }): 'disabled' | 'pod' | 'serverless' =>
   rp.mode && rp.mode !== 'disabled' ? (rp.mode as 'pod' | 'serverless') : rp.enabled ? 'pod' : 'disabled';
+
+/** FL-67: where each write-only credential lives in the system configuration. */
+const CREDENTIAL_PATHS: Record<ConfigCredential, string> = {
+  [ConfigCredential.SmtpPassword]: 'notifications.smtp.transport.password',
+  [ConfigCredential.OAuthClientSecret]: 'oauth.clientSecret',
+  [ConfigCredential.RunPodApiKey]: 'machineLearning.runpod.apiKey',
+  [ConfigCredential.HuggingFaceToken]: 'machineLearning.runpod.hfToken',
+};
+
+const CONFIG_FILE_IN_USE_MESSAGE = 'Cannot update configuration while IMMICH_CONFIG_FILE is in use';
+
+const readCredential = (config: SystemConfig, name: ConfigCredential): string => {
+  const value: unknown = get(config, CREDENTIAL_PATHS[name]);
+  return typeof value === 'string' ? value : '';
+};
+
+/** The credentials whose stored value differs between two configurations. Only names leave this function. */
+const changedCredentials = (oldConfig: SystemConfig, newConfig: SystemConfig) =>
+  Object.values(ConfigCredential).filter((name) => readCredential(oldConfig, name) !== readCredential(newConfig, name));
 
 @Injectable()
 export class SystemConfigService extends BaseService {
@@ -170,13 +198,23 @@ export class SystemConfigService extends BaseService {
     }
   }
 
-  async updateAdminConfig(dto: AdminConfigDto): Promise<AdminConfigDto> {
+  async updateAdminConfig(dto: AdminConfigDto, auth?: AuthDto): Promise<AdminConfigDto> {
     const { configFile } = this.configRepository.getEnv();
     if (configFile) {
-      throw new BadRequestException('Cannot update configuration while IMMICH_CONFIG_FILE is in use');
+      throw new BadRequestException(CONFIG_FILE_IN_USE_MESSAGE);
     }
 
     const oldConfig = await this.getConfig({ withCache: false });
+
+    // FL-67: the SMTP password and the OAuth client secret are redacted on read like the RunPod
+    // key below, so an empty value coming back means "keep the stored secret". Clearing one is an
+    // explicit action: DELETE /admin/config/credentials/:name.
+    if (dto.notifications?.smtp?.transport?.password === '') {
+      dto.notifications.smtp.transport.password = oldConfig.notifications.smtp.transport.password;
+    }
+    if (dto.oauth?.clientSecret === '') {
+      dto.oauth.clientSecret = oldConfig.oauth.clientSecret;
+    }
 
     // mapConfig redacts machineLearning.runpod.apiKey to '' on read. Mirror
     // the convention on write: an empty incoming apiKey means "preserve the
@@ -237,7 +275,86 @@ export class SystemConfigService extends BaseService {
 
     await this.eventRepository.emit('ConfigUpdate', { newConfig, oldConfig });
 
+    // A client that still sends a secret through the whole configuration (an older script or a
+    // configuration import) is accepted for compatibility, and recorded like the explicit action.
+    for (const name of changedCredentials(oldConfig, newConfig)) {
+      this.recordCredentialChange(auth, name, readCredential(newConfig, name) ? 'replaced' : 'cleared');
+    }
+
     return mapAdminConfig(newConfig);
+  }
+
+  /** FL-67: whether each write-only credential is stored. Values are never returned. */
+  async getCredentials(): Promise<ConfigCredentialResponseDto[]> {
+    const config = await this.getConfig({ withCache: false });
+    return Object.values(ConfigCredential).map((name) => ({ name, configured: readCredential(config, name) !== '' }));
+  }
+
+  /** FL-67: replace one credential. The value is stored as sent and never returned or logged. */
+  setCredential(auth: AuthDto, name: ConfigCredential, dto: ConfigCredentialUpdateDto) {
+    return this.writeCredential(auth, name, dto.value);
+  }
+
+  /** FL-67: clear one credential, so the feature that used it stops authenticating. */
+  clearCredential(auth: AuthDto, name: ConfigCredential) {
+    return this.writeCredential(auth, name, '');
+  }
+
+  /**
+   * Changes exactly one credential through the same validation and update events as a whole
+   * configuration save (so SMTP is verified with the new password and a RunPod transition in
+   * flight still blocks a key change), without the value ever passing through a client draft.
+   */
+  private async writeCredential(
+    auth: AuthDto,
+    name: ConfigCredential,
+    value: string,
+  ): Promise<ConfigCredentialResponseDto> {
+    const { configFile } = this.configRepository.getEnv();
+    if (configFile) {
+      throw new BadRequestException(CONFIG_FILE_IN_USE_MESSAGE);
+    }
+
+    const oldConfig = await this.getConfig({ withCache: false });
+    if (readCredential(oldConfig, name) === value) {
+      return { name, configured: value !== '' };
+    }
+
+    // Without its key a running pod or serverless endpoint could no longer be stopped or torn
+    // down, and it would keep costing money. RunPod is turned off first.
+    if (
+      name === ConfigCredential.RunPodApiKey &&
+      value === '' &&
+      effectiveRunPodMode(oldConfig.machineLearning.runpod) !== 'disabled'
+    ) {
+      throw new BadRequestException('Turn RunPod off before clearing its API key.');
+    }
+
+    const newConfig = cloneDeep(oldConfig);
+    set(newConfig, CREDENTIAL_PATHS[name], value);
+
+    try {
+      await this.eventRepository.emit('ConfigValidate', { newConfig, oldConfig });
+    } catch (error) {
+      this.logger.warn(`Unable to change the ${name} credential due to a validation error: ${error}`);
+      throw new BadRequestException(error instanceof Error ? error.message : error);
+    }
+
+    const updated: SystemConfig = await this.updateConfig(newConfig);
+    await this.eventRepository.emit('ConfigUpdate', { newConfig: updated, oldConfig });
+    this.recordCredentialChange(auth, name, value ? 'replaced' : 'cleared');
+
+    return { name, configured: readCredential(updated, name) !== '' };
+  }
+
+  /**
+   * FL-67 audit hook for credential changes: names the credential, the change and the actor, and
+   * never the value. FL-76's `admin_audit_event` (branch codex/FL-76-account-history, not on this
+   * base) records changes against one account; when it can hold server-scoped events, send these
+   * through `BaseService.recordAdminEvents` as well. Until then the server log is the record.
+   */
+  private recordCredentialChange(auth: AuthDto | undefined, name: ConfigCredential, change: 'replaced' | 'cleared') {
+    this.logger.log(`Server credential ${name} ${change}${auth ? ` by ${auth.user.id}` : ''}`);
   }
 
   async getCustomCss(): Promise<string> {
