@@ -129,12 +129,11 @@ export class StudioPreviewRepository {
   }
 
   /**
-   * The revision digest most recently requested for a project by this owner.
+   * The binding (manifest) digest most recently requested for a project by this owner.
    *
-   * For a manifest-bound frame this is the lasting answer: every newer manifest supersedes the
-   * older binding when it is requested. For a frame recorded without a manifest it stands in for
-   * Studio project storage until FL-89 lands (see `StudioProjectRevisionAuthority`, the
-   * TODO(FL-89) seam in the preview service).
+   * Within one stored revision, every newer authorized resolution supersedes the older binding
+   * when it is requested; which stored revision is current is decided by project storage (FL-89),
+   * not here.
    */
   async getLatestRevisionDigest(projectId: string, ownerId: string): Promise<string | undefined> {
     const row = await this.db
@@ -239,7 +238,7 @@ export class StudioPreviewRepository {
   }
 
   /**
-   * Mark every frame of a project that is not on the current revision as superseded.
+   * Mark every frame of one account's project that is not on the current binding as superseded.
    *
    * The rows are kept rather than deleted: a client that still holds the id must be told the
    * revision moved on, and "not found" would read as a bug. Returns the ids that were still in
@@ -252,6 +251,30 @@ export class StudioPreviewRepository {
       .where('projectId', '=', projectId)
       .where('ownerId', '=', ownerId)
       .where('revisionDigest', '!=', currentRevisionDigest)
+      .where('status', 'in', [
+        StudioPreviewStatus.Pending,
+        StudioPreviewStatus.Rendering,
+        StudioPreviewStatus.Ready,
+      ])
+      .returningAll()
+      .execute()) as unknown as StudioPreviewFrame[];
+  }
+
+  /**
+   * A stored revision was committed (FL-89): supersede every live frame of the project rendered
+   * for an earlier revision, for every account that previewed it — the owner and each reviewer.
+   *
+   * Keyed on the stored revision number rather than a digest, because each account's frames are
+   * bound to its own resolution digest and no single digest names them all. Revision numbers only
+   * grow (a restore appends), so "earlier" is exact. A row with no recorded revision predates
+   * project storage and can never be current.
+   */
+  async supersedeBeforeRevision(projectId: string, revision: number): Promise<StudioPreviewFrame[]> {
+    return (await this.db
+      .updateTable('studio_preview_frame')
+      .set({ status: StudioPreviewStatus.Superseded })
+      .where('projectId', '=', projectId)
+      .where((eb) => eb.or([eb('projectRevision', 'is', null), eb('projectRevision', '<', revision)]))
       .where('status', 'in', [
         StudioPreviewStatus.Pending,
         StudioPreviewStatus.Rendering,
