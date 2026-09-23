@@ -47,7 +47,7 @@ import {
 } from '@mdi/js';
 import type { MessageFormatter } from 'svelte-i18n';
 import { buildAlbumTree, type FrameleafAlbumNode } from '$lib/frameleaf/album-tree';
-import { buildRailSections, type RailCapabilities } from '$lib/frameleaf/navigation';
+import { buildPrimaryDestinations, buildRailSections, type RailCapabilities } from '$lib/frameleaf/navigation';
 import { Route } from '$lib/route';
 import type { CommandIndexInput, CommandInput } from '$lib/frameleaf/command-palette';
 
@@ -57,8 +57,9 @@ import type { CommandIndexInput, CommandInput } from '$lib/frameleaf/command-pal
  * The prototype's `command-palette.mjs` is fed sample arrays. Production feeds it real
  * destinations only:
  *
- * - **Pages** come from `buildRailSections`, the same table the rail renders, plus the admin
- *   pages, so the palette can never offer a route that does not exist.
+ * - **Pages** come from `buildPrimaryDestinations` (the top bar's Library, Studio and Activity) and
+ *   `buildRailSections`, the same tables the shell renders, plus the admin pages, so the palette can
+ *   never offer a route that does not exist.
  * - **Settings areas** are the accordion keys that `UserSettingsList.svelte` and
  *   `admin/system-settings/+page.svelte` actually declare. Choosing one opens
  *   `?isOpen=<key>`, which `accordionManager` reads, so the deep link lands on the section.
@@ -80,12 +81,30 @@ export interface CommandIndexContext {
   isAdmin: boolean;
 }
 
-/** Rail destinations first, in rail order, then the admin pages for an administrator. */
+/**
+ * The top bar's primary destinations first (Library, Studio, Activity), then the rail in rail order,
+ * then the admin pages for an administrator. Library is both a primary destination and the rail's
+ * first entry; it is offered once, as the primary one.
+ */
 export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexContext): CommandInput[] => {
   const pages: CommandInput[] = [];
 
+  for (const item of buildPrimaryDestinations()) {
+    pages.push({
+      id: `primary:${item.id}`,
+      title: $t(item.labelKey),
+      subtitle: $t('frameleaf_search_subtitle_page'),
+      icon: item.icon,
+      href: item.href,
+    });
+  }
+  const primaryHrefs = new Set(pages.map((page) => page.href));
+
   for (const section of buildRailSections(context.capabilities)) {
     for (const item of section.destinations) {
+      if (primaryHrefs.has(item.href)) {
+        continue;
+      }
       pages.push({
         id: `rail:${item.id}`,
         title: $t(item.labelKey),
