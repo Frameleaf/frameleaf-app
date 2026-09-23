@@ -173,9 +173,10 @@ describe(StudioResourceService.name, () => {
       expect(manifest.privacy.includesSharedSources).toBe(true);
     });
 
-    it('refuses Locked media even for an elevated session, before the access query', async () => {
+    it('refuses Locked media even for an elevated session, and says so only to that owner', async () => {
       const locked = ownedVideo({ visibility: AssetVisibility.Locked });
       mocks.asset.getByIds.mockResolvedValue([locked]);
+      allowOwned(locked.id);
       const elevated: AuthDto = { ...auth, session: { id: 'sid', hasElevatedPermission: true } as AuthSession };
 
       const { manifest, refused } = await sut.resolveProjectResources(
@@ -191,7 +192,41 @@ describe(StudioResourceService.name, () => {
           reason: StudioRefusalReason.Locked,
         }),
       ]);
-      expect(mocks.access.asset.checkOwnerAccess).not.toHaveBeenCalled();
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(auth.user.id, new Set([locked.id]), true);
+    });
+
+    it("reports the owner's own Locked media as missing in an ordinary session", async () => {
+      const locked = ownedVideo({ visibility: AssetVisibility.Locked });
+      const missing = newUuid();
+      mocks.asset.getByIds.mockResolvedValue([locked]);
+
+      const { refused } = await sut.resolveProjectResources(
+        auth,
+        context(sequenceWith({ assetId: locked.id }, { assetId: missing })),
+      );
+
+      expect(refused.map(({ id, reason, detail }) => [id, reason, detail])).toEqual([
+        [locked.id, StudioRefusalReason.NotFound, 'No such asset.'],
+        [missing, StudioRefusalReason.NotFound, 'No such asset.'],
+      ]);
+    });
+
+    it("never reports someone else's Locked media as Locked, even to an elevated session", async () => {
+      const theirs = AssetFactory.create({
+        ownerId: newUuid(),
+        type: AssetType.Video,
+        visibility: AssetVisibility.Locked,
+      });
+      mocks.asset.getByIds.mockResolvedValue([theirs]);
+      // even if an access path wrongly admitted it, the refusal must not name its Locked state
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([theirs.id]));
+      const elevated: AuthDto = { ...auth, session: { id: 'sid', hasElevatedPermission: true } as AuthSession };
+
+      const { refused } = await sut.resolveProjectResources(elevated, context(sequenceWith({ assetId: theirs.id })));
+
+      expect(refused).toEqual([
+        expect.objectContaining({ id: theirs.id, reason: StudioRefusalReason.NotFound, detail: 'No such asset.' }),
+      ]);
     });
 
     it('resolves Locked media for a background runner acting as the owner, and only then', async () => {
@@ -224,6 +259,7 @@ describe(StudioResourceService.name, () => {
       const audioFile = ownedVideo({ type: AssetType.Audio });
       const missing = newUuid();
       mocks.asset.getByIds.mockResolvedValue([trashed, offline, audioFile]);
+      allowOwned(trashed.id, offline.id, audioFile.id);
 
       const { refused } = await sut.resolveProjectResources(
         auth,
@@ -245,20 +281,45 @@ describe(StudioResourceService.name, () => {
       ]);
     });
 
-    it('tells hidden content apart from no access', async () => {
+    it("tells the owner's hidden content apart and refuses someone else's unreadable asset like a missing one", async () => {
       const mine = ownedVideo();
       const theirs = AssetFactory.create({ ownerId: newUuid(), type: AssetType.Video });
+      const missing = newUuid();
       mocks.asset.getByIds.mockResolvedValue([mine, theirs]);
 
       const { refused } = await sut.resolveProjectResources(
         auth,
-        context(sequenceWith({ assetId: mine.id }, { assetId: theirs.id })),
+        context(sequenceWith({ assetId: mine.id }, { assetId: theirs.id }, { assetId: missing })),
       );
 
-      expect(refused.map((item) => [item.id, item.reason])).toEqual([
-        [mine.id, StudioRefusalReason.HiddenContent],
-        [theirs.id, StudioRefusalReason.NoAccess],
+      expect(refused.map(({ id, reason, detail }) => [id, reason, detail])).toEqual([
+        [mine.id, StudioRefusalReason.HiddenContent, 'Your sensitive or suppressed content settings exclude this asset.'],
+        [theirs.id, StudioRefusalReason.NotFound, 'No such asset.'],
+        [missing, StudioRefusalReason.NotFound, 'No such asset.'],
       ]);
+    });
+
+    it("never reveals that someone else's unreadable asset is trashed, offline or not media", async () => {
+      const owner = newUuid();
+      const trashed = AssetFactory.create({ ownerId: owner, type: AssetType.Video, deletedAt: new Date() });
+      const offline = AssetFactory.create({ ownerId: owner, type: AssetType.Video, isOffline: true });
+      const audioFile = AssetFactory.create({ ownerId: owner, type: AssetType.Audio });
+      mocks.asset.getByIds.mockResolvedValue([trashed, offline, audioFile]);
+
+      const { refused } = await sut.resolveProjectResources(
+        auth,
+        context(sequenceWith({ assetId: trashed.id }, { assetId: offline.id }, { assetId: audioFile.id })),
+      );
+
+      expect(refused.map(({ reason, detail }) => [reason, detail])).toEqual([
+        [StudioRefusalReason.NotFound, 'No such asset.'],
+        [StudioRefusalReason.NotFound, 'No such asset.'],
+        [StudioRefusalReason.NotFound, 'No such asset.'],
+      ]);
+      expect(mocks.access.asset.checkAlbumAccess).toHaveBeenCalledWith(
+        auth.user.id,
+        new Set([trashed.id, offline.id, audioFile.id]),
+      );
     });
 
     it('refuses an id that is not a UUID without querying', async () => {
@@ -812,12 +873,17 @@ describe(StudioResourceService.name, () => {
           ownedVideo({ id: assetId, checksum: Buffer.from(checksum, 'base64'), visibility: AssetVisibility.Locked }),
         ]);
         mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+        const elevated: AuthDto = { ...auth, session: { id: 'sid', hasElevatedPermission: true } as AuthSession };
 
+        // an ordinary session does not even learn that the source is Locked
         await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth })).resolves.toEqual(
+          expect.objectContaining({ valid: false, reason: StudioRefusalReason.NotFound }),
+        );
+        await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth: elevated })).resolves.toEqual(
           expect.objectContaining({ valid: false, reason: StudioRefusalReason.Locked }),
         );
         await expect(
-          sut.verifyReadGrant('token', { workerId: 'worker-1', auth, backgroundRunner: true }),
+          sut.verifyReadGrant('token', { workerId: 'worker-1', auth: elevated, backgroundRunner: true }),
         ).resolves.toEqual(expect.objectContaining({ valid: true }));
       });
 
