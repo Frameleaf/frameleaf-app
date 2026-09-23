@@ -8,8 +8,7 @@ import {
   MediaOperationCheckpointTable,
   MediaOperationTable,
 } from 'src/schema/tables/media-operation.table.js';
-import { anyUuid } from 'src/utils/database.js';
-import { isLocked } from 'src/utils/locked.js';
+import { anyUuid, isLockedAsset } from 'src/utils/database.js';
 import {
   CLAIMED_MEDIA_OPERATION_STATUSES,
   MEDIA_OPERATION_AUTO_RETRIES,
@@ -33,6 +32,9 @@ export type MediaOperationCreate = Omit<
  * - `false`: the claim was not ours any more, or the job had already finished; nothing changed.
  */
 export type MediaOperationFailOutcome = 'retrying' | 'failed' | false;
+
+/** What one recovery pass over lapsed claims did, by outcome (see `recoverExpiredClaims`). */
+export type MediaOperationRecovery = { requeued: number; retried: number; failed: number; abandonedCancels: number };
 
 /** The statuses a live claim may report from. `cancelling` is left out: a cancel is never retried. */
 const WORKING_STATUSES = [
@@ -257,10 +259,29 @@ export class MediaOperationRepository {
       .select((eb) => eb.fn.countAll<string>().as('count'))
       .where('ownerId', '=', ownerId)
       .where('id', '=', anyUuid(assetIds))
-      .where(isLocked('asset'))
+      .where((eb) => isLockedAsset(eb))
       .executeTakeFirst();
 
     return Number(row?.count ?? 0);
+  }
+
+  /**
+   * Which of these ids are the owner's Locked media (FL-34). An operation keeps the ids it was given;
+   * a read from a session that has not been unlocked must not name the ones that are Locked now.
+   */
+  async getLockedAssetIds(ownerId: string, assetIds: string[]): Promise<Set<string>> {
+    if (assetIds.length === 0) {
+      return new Set();
+    }
+
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.id', '=', anyUuid(assetIds))
+      .where((eb) => isLockedAsset(eb))
+      .execute();
+    return new Set(rows.map(({ id }) => id));
   }
 
   /**
@@ -538,6 +559,10 @@ export class MediaOperationRepository {
    * Both writes are guarded by the claim token, so a stale worker changes nothing, and a job that
    * has already finished is not reopened by a late report. The retry resumes from whatever the job
    * recorded, which is why every runner must make a repeated step harmless.
+   *
+   * This is the one automatic retry for every kind: bulk, render workers (Studio exports and
+   * previews, quick edits), restorations and Studio bundles all report failure here and nowhere
+   * else, so no runner can add a second retry of its own on top (FL-104).
    */
   async fail(
     id: string,
@@ -607,40 +632,6 @@ export class MediaOperationRepository {
       .where('id', '=', id)
       .where('claimToken', '=', claimToken)
       .where('status', 'in', WORKING_STATUSES)
-      .where('cancelRequestedAt', 'is', null)
-      .executeTakeFirst();
-
-    return Number(result.numUpdatedRows) === 1;
-  }
-
-  /**
-   * Put a failed attempt back in the queue for its automatic retry (owner decision, September 22,
-   * 2026: every operation retries exactly once before it is reported failed).
-   *
-   * Guarded like `fail`, and additionally by `attempt < maxAttempts` and by the absence of a cancel,
-   * so the retry happens at most as often as the row allows and never resurrects a job the owner
-   * stopped. The error stays on the row so Activity can say the first attempt failed. Returns false
-   * when the job has no attempt left, in which case the caller fails it instead.
-   */
-  async requeueAfterFailure(
-    id: string,
-    claimToken: string,
-    failure: { error: string; errorCode: string },
-  ): Promise<boolean> {
-    const result = await this.db
-      .updateTable('media_operation')
-      .set({
-        status: MediaOperationStatus.Queued,
-        error: failure.error,
-        errorCode: failure.errorCode,
-        claimToken: null,
-        claimedBy: null,
-        claimExpiresAt: null,
-      })
-      .where('id', '=', id)
-      .where('claimToken', '=', claimToken)
-      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
-      .where(sql<boolean>`"attempt" < "maxAttempts"`)
       .where('cancelRequestedAt', 'is', null)
       .executeTakeFirst();
 
@@ -774,21 +765,16 @@ export class MediaOperationRepository {
    *   but `cancelAcknowledgedAt` stays null, so a remote job whose cleanup nobody confirmed is
    *   still an open obligation for the cleanup pass.
    *
-   * Clearing the claim token is what makes all three safe: if the old worker comes back, none of
+   * Clearing the claim token is what makes all of them safe: if the old worker comes back, none of
    * its writes match any more.
+   *
+   * Every kind is recovered in one pass, and only `MediaOperationSweepService` calls this, so a
+   * lapsed claim is judged once, by one set of rules, whichever worker held it (FL-104).
    */
-  async recoverExpiredClaims(options: {
-    errorCode: string;
-    error: string;
-    /** Limit recovery to the kinds the caller runs. Omitted, every kind is recovered. */
-    kinds?: readonly MediaOperationKind[];
-  }): Promise<{ requeued: number; retried: number; failed: number; abandonedCancels: number }> {
-    const kinds = options.kinds?.length ? [...options.kinds] : undefined;
-
+  async recoverExpiredClaims(options: { errorCode: string; error: string }): Promise<MediaOperationRecovery> {
     const requeued = await this.db
       .updateTable('media_operation')
       .set({ status: MediaOperationStatus.Queued, claimToken: null, claimedBy: null, claimExpiresAt: null })
-      .$if(!!kinds, (qb) => qb.where('kind', 'in', kinds!))
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)
@@ -810,7 +796,6 @@ export class MediaOperationRepository {
         claimedBy: null,
         claimExpiresAt: null,
       })
-      .$if(!!kinds, (qb) => qb.where('kind', 'in', kinds!))
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)
@@ -830,7 +815,6 @@ export class MediaOperationRepository {
         claimedBy: null,
         claimExpiresAt: null,
       })
-      .$if(!!kinds, (qb) => qb.where('kind', 'in', kinds!))
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)
@@ -848,7 +832,6 @@ export class MediaOperationRepository {
         claimedBy: null,
         claimExpiresAt: null,
       })
-      .$if(!!kinds, (qb) => qb.where('kind', 'in', kinds!))
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)

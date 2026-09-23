@@ -16,6 +16,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { LockableProperty, Stack } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import {
@@ -47,10 +48,12 @@ import {
   anyUuid,
   asUuid,
   getHiddenContentFilter,
+  hasHiddenLockedPrimary,
   hasPeople,
   hasPets,
   hiddenContentAssetIdExists,
   inSharedAlbum,
+  isMotionOfLockedStill,
   removeUndefinedKeys,
   truncatedDate,
   unnest,
@@ -65,6 +68,7 @@ import {
   withHiddenContentFilter,
   withHiddenContentOnly,
   withLibrary,
+  withLockedOwnerScope,
   withNsfwAssets,
   withOwner,
   withSmartSearch,
@@ -103,7 +107,11 @@ interface AssetStatsOptions extends HiddenContentQueryOptions {
   visibility?: AssetVisibility;
 }
 
-type AssetChecksumOptions = HiddenContentQueryOptions;
+/**
+ * `lockedOwnerId`: the owner, when their session is elevated. Only then may a duplicate lookup name
+ * their Locked media; otherwise a Locked match stays unnamed (FL-34).
+ */
+type AssetChecksumOptions = HiddenContentQueryOptions & LockedVisibilityOptions;
 
 interface LivePhotoSearchOptions {
   ownerId: string;
@@ -179,7 +187,11 @@ interface GetByIdsRelations {
   library?: boolean;
   owner?: boolean;
   smartSearch?: boolean;
-  stack?: { assets?: boolean };
+  /**
+   * `lockedOwnerId`: the viewer, when their session is elevated. A stack whose primary is Locked media
+   * someone else owns, or that the viewer has not unlocked, is left off the asset (FL-34).
+   */
+  stack?: { assets?: boolean; lockedOwnerId?: string };
   tags?: boolean;
   edits?: boolean;
 }
@@ -1019,7 +1031,11 @@ export class AssetRepository {
       .$if(!!smartSearch, withSmartSearch)
       .$if(!!stack, (qb) =>
         qb
-          .leftJoin('stack', 'stack.id', 'asset.stackId')
+          .leftJoin('stack', (join) =>
+            join
+              .onRef('stack.id', '=', 'asset.stackId')
+              .on((eb) => eb.not(hasHiddenLockedPrimary(eb, stack!.lockedOwnerId))),
+          )
           .$if(!stack!.assets, (qb) =>
             qb.select((eb) => eb.fn.toJson(eb.table('stack')).$castTo<Stack | null>().as('stack')),
           )
@@ -1183,6 +1199,7 @@ export class AssetRepository {
       .select(['id', 'checksum', 'deletedAt'])
       .where('ownerId', '=', asUuid(userId))
       .where('checksum', 'in', checksums)
+      .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .execute();
   }
@@ -1199,6 +1216,7 @@ export class AssetRepository {
       .where('ownerId', '=', asUuid(ownerId))
       .where('checksum', '=', checksum)
       .where('libraryId', 'is', null)
+      .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .limit(1)
       .executeTakeFirst();
@@ -1241,7 +1259,10 @@ export class AssetRepository {
   @GenerateSql({
     params: [DummyValue.UUID, { from: DummyValue.DATE, to: DummyValue.DATE, type: CalendarHeatmapType.Upload }],
   })
-  getCalendarHeatmap(ownerId: string, dto: { from: Date; to: Date; type: CalendarHeatmapType }) {
+  getCalendarHeatmap(
+    ownerId: string,
+    dto: { from: Date; to: Date; type: CalendarHeatmapType; lockedOwnerId?: string },
+  ) {
     const dateColumns: Record<CalendarHeatmapType, { order: AssetOrderBy; column: 'createdAt' | 'localDateTime' }> = {
       [CalendarHeatmapType.Upload]: { order: AssetOrderBy.CreatedAt, column: 'createdAt' },
       [CalendarHeatmapType.Taken]: { order: AssetOrderBy.TakenAt, column: 'localDateTime' },
@@ -1259,6 +1280,8 @@ export class AssetRepository {
       .where(column, '>=', dto.from)
       .where(column, '<', dto.to)
       .where('deletedAt', 'is', null)
+      // Locked media counts only for its owner's elevated session (`lockedOwnerId`, FL-34)
+      .$call((qb) => withLockedOwnerScope(qb, dto.lockedOwnerId))
       .groupBy(date)
       .orderBy('date', 'asc')
       .execute();
@@ -1296,6 +1319,10 @@ export class AssetRepository {
           .$if(!!options.visibility, (qb) => qb.where(visibilityIs(options.visibility!, 'asset')))
           .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
             qb.where(lockedForReason(options.lockReasons!, 'asset')),
+          )
+          // hidden assets include live-photo motion parts; those of Locked stills stay private (FL-34)
+          .$if(options.visibility === AssetVisibility.Hidden, (qb) =>
+            qb.where((eb) => eb.not(isMotionOfLockedStill(eb))),
           )
           .$call((qb) => withHiddenContentFilter(qb, options))
           .$if(!!options.albumId, (qb) =>
@@ -1419,6 +1446,10 @@ export class AssetRepository {
           .$if(!!options.visibility, (qb) => qb.where(visibilityIs(options.visibility!, 'asset')))
           .$if(options.visibility === AssetVisibility.Locked && !!options.lockReasons, (qb) =>
             qb.where(lockedForReason(options.lockReasons!, 'asset')),
+          )
+          // hidden assets include live-photo motion parts; those of Locked stills stay private (FL-34)
+          .$if(options.visibility === AssetVisibility.Hidden, (qb) =>
+            qb.where((eb) => eb.not(isMotionOfLockedStill(eb))),
           )
           .$call((qb) => withHiddenContentFilter(qb, options))
           .$if(!!options.bbox, (qb) => {

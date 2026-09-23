@@ -31,7 +31,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { mapOperation } from 'src/services/media-operation.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
-import { isLockedAsset } from 'src/utils/locked.js';
+import { isLockedRow } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   STUDIO_BUNDLE_DESTINATION,
@@ -90,8 +90,6 @@ import {
 export const STUDIO_BUNDLE_TICK_MS = 5000;
 /** The claim lease. Extended with every progress write; a worker that stops writing loses the job. */
 export const STUDIO_BUNDLE_LEASE_MS = 2 * 60_000;
-/** How often expired claims are returned to the queue. */
-export const STUDIO_BUNDLE_RECOVERY_MS = 60_000;
 
 /** The folder, under the owner's private exports, that holds bundle files and staging. */
 const BUNDLE_FOLDER = 'studio-bundles';
@@ -168,7 +166,6 @@ export class StudioBundleService {
   private tickHandle?: ReturnType<typeof setInterval>;
   private active?: Promise<void>;
   private stopping = false;
-  private lastRecoveryAt = 0;
   private lastSweepAt = 0;
   private readonly workerId = `studio-bundle-${randomUUID()}`;
   /** Stands in for a session on the worker's auth; nothing on these paths reads it back. */
@@ -515,9 +512,14 @@ export class StudioBundleService {
       });
   }
 
+  /**
+   * Work through the queue until it is empty or we are stopping.
+   *
+   * Lapsed claims are not recovered here: `MediaOperationSweepService` recovers every kind of media
+   * operation in one pass, bundle jobs with the rest, so a lapsed claim is judged once (FL-104).
+   */
   async drain(): Promise<void> {
     await this.sweep();
-    await this.recover();
 
     while (!this.stopping) {
       const claim = await this.operations.claimNext({
@@ -533,8 +535,11 @@ export class StudioBundleService {
   }
 
   /**
-   * Run one claimed job. A failure is retried once, automatically and from the start; the second
-   * failure is the job's answer. Both halves are idempotent, so a retry never applies anything twice.
+   * Run one claimed job. A failure goes through the one automatic retry every media operation gets
+   * (`MediaOperationRepository.fail`, FL-104): the first puts the job back in the queue to run again
+   * from the start after the retry delay, the second is the job's answer. Both halves are
+   * idempotent, so a retry never applies anything twice: a partial export is discarded before the
+   * retry, and an import finds the project its first attempt created by the job id.
    */
   async run(job: RunningJob): Promise<void> {
     const { operation, claimToken } = job;
@@ -542,33 +547,19 @@ export class StudioBundleService {
       await (operation.kind === MediaOperationKind.StudioBundleExport ? this.runExport(job) : this.runImport(job));
     } catch (error) {
       const failure = { error: errorMessage(error), errorCode: errorCode(error) };
-      if (operation.kind === MediaOperationKind.StudioBundleExport) {
+      const outcome = await this.operations.fail(operation.id, claimToken, failure);
+      // Only while the failure was still ours to report: a lost claim means another worker may be
+      // writing the same file now. The retry is held back by its delay, so this lands first.
+      if (outcome !== false && operation.kind === MediaOperationKind.StudioBundleExport) {
         await this.discardPartial(operation);
       }
-      if (await this.operations.requeueAfterFailure(operation.id, claimToken, failure)) {
+      if (outcome === 'retrying') {
         this.logger.warn(`Studio bundle job ${operation.id} failed and will be retried once: ${failure.error}`);
-        return;
+      } else if (outcome === 'failed') {
+        this.logger.error(`Studio bundle job ${operation.id} failed: ${failure.error}`);
+      } else {
+        this.logger.warn(`Studio bundle job ${operation.id} failed after its claim was lost: ${failure.error}`);
       }
-      this.logger.error(`Studio bundle job ${operation.id} failed: ${failure.error}`);
-      await this.operations.fail(operation.id, claimToken, failure);
-    }
-  }
-
-  private async recover() {
-    const now = Date.now();
-    if (now - this.lastRecoveryAt < STUDIO_BUNDLE_RECOVERY_MS) {
-      return;
-    }
-    this.lastRecoveryAt = now;
-
-    const recovered = await this.operations.recoverExpiredClaims({
-      kinds: STUDIO_BUNDLE_KINDS,
-      errorCode: 'bundle_worker_lost',
-      error: 'The server stopped while this bundle was being prepared, twice',
-    });
-    if (recovered.requeued + recovered.failed + recovered.abandonedCancels > 0) {
-      const { requeued, failed, abandonedCancels } = recovered;
-      this.logger.log(`Recovered bundle jobs: ${requeued} requeued, ${failed} failed, ${abandonedCancels} cancelled`);
     }
   }
 
@@ -658,7 +649,7 @@ export class StudioBundleService {
       const entry = entries.get(key.key);
       const asset = assets.get(key.id);
       // Locked media never leaves in a download, not even by name: it travels as a bare reference.
-      const known = entry && asset && !isLockedAsset(asset) ? { entry, asset } : null;
+      const known = entry && asset && !isLockedRow(asset) ? { entry, asset } : null;
       const fileName = known ? known.asset.originalFileName : null;
       const contentType = fileName ? mimeTypes.lookup(fileName) || null : null;
       const embedPath =

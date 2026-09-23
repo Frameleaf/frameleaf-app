@@ -29,7 +29,7 @@ import { buildAlbumTree } from 'src/utils/album-tree.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
-import { isLockedAsset } from 'src/utils/locked.js';
+import { isLockedRow } from 'src/utils/locked.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { isSharedSpace, requireInvitableRole, requireSpaceOwner } from 'src/utils/shared-space.js';
@@ -661,7 +661,7 @@ export class AlbumService extends BaseService {
    */
   private async requireNotOwnLockedCover(auth: AuthDto, assetId: string): Promise<void> {
     const asset = await this.assetRepository.getById(assetId);
-    if (asset && asset.ownerId === auth.user.id && isLockedAsset(asset)) {
+    if (asset && asset.ownerId === auth.user.id && isLockedRow(asset)) {
       throw new BadRequestException('A Locked photo cannot be an album cover');
     }
   }

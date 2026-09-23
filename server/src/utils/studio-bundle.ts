@@ -83,8 +83,15 @@ export const STUDIO_BUNDLE_KINDS: readonly MediaOperationKind[] = [
 /** Bundles are written and read on this server; there is no remote to choose. */
 export const STUDIO_BUNDLE_DESTINATION = MediaOperationDestination.Local;
 
-/** Owner decision, September 22, 2026: every operation retries exactly once before it is failed. */
-export const STUDIO_BUNDLE_MAX_ATTEMPTS = 2;
+/**
+ * Claims a bundle job may lose to a vanished worker before recovery counts it as a failure.
+ *
+ * One, because a bundle always restarts from the beginning: there is no cursor to resume from, so a
+ * lost claim is simply a failed run. It then gets the one automatic retry every media operation has
+ * (owner decision, September 22, 2026; FL-104), exactly like a run that threw, and a bundle job runs
+ * at most twice whichever way its first run ended.
+ */
+export const STUDIO_BUNDLE_MAX_ATTEMPTS = 1;
 
 /** Sources the export may copy into the bundle. Everything else travels as a reference. */
 export const STUDIO_BUNDLE_EMBEDDABLE_KINDS: readonly StudioResourceKind[] = [

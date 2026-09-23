@@ -1,5 +1,6 @@
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import { getLockedOwnerId } from 'src/utils/locked.js';
+import { AssetVisibility } from 'src/enum.js';
+import { getLockedOwnerId, isLockedRow } from 'src/utils/locked.js';
 
 export { getLockedOwnerId } from 'src/utils/locked.js';
 
@@ -10,6 +11,17 @@ export { getLockedOwnerId } from 'src/utils/locked.js';
 export type LockedVisibilityOptions = {
   lockedOwnerId?: string;
 };
+
+/**
+ * FL-34: the single in-memory test for "this asset row is Locked", the counterpart of `isLockedAsset`
+ * in `src/utils/database.ts`. Locked is the lock record, so the row must come from a read that selects
+ * it: `isLocked()` as `isLocked`, or `effectiveVisibility()` as `visibility` (`src/utils/locked.ts`). A
+ * row that carries neither reads as not locked.
+ */
+export const isLockedAssetRow = (asset: {
+  visibility?: AssetVisibility | string | null;
+  isLocked?: boolean | null;
+}): boolean => isLockedRow(asset);
 
 /**
  * Owner decision, September 22, 2026: locked media may be a member of any album and stays locked

@@ -476,5 +476,35 @@ describe(PhysicalDeduplicationService.name, () => {
         undefined,
       );
     });
+
+    it("never names another user's Locked asset in the plan rows (FL-34)", async () => {
+      const { sut, mocks } = newTestService(PhysicalDeduplicationService);
+      const copy = {
+        assetId: 'locked-copy',
+        ownerId: 'jamie',
+        originalFileName: 'private.jpg',
+        originalPath: '/private.jpg',
+        type: 'IMAGE',
+        sizeInBytes: 1,
+        checksum: 'aa',
+        retainedAssetId: 'master-1',
+        checksumMatch: true,
+        decision: PhysicalDeduplicationDecision.Share,
+        reason: null,
+      };
+      mockConfig(
+        mocks,
+        { enabled: true, masterUserId: 'master-user' },
+        { ...lastDryRun, retained: [], copies: [copy], copiesTruncated: false },
+      );
+      mocks.job.getJobCounts.mockResolvedValue(counts);
+      mocks.user.getList.mockResolvedValue([] as never);
+      mocks.asset.getLockedAssetIds.mockResolvedValue(new Set(['locked-copy']));
+
+      const { plan } = await sut.getPreview(authStub.adminWithElevatedPermission);
+
+      expect(plan?.copies).toEqual([]);
+      expect(mocks.asset.getLockedAssetIds).toHaveBeenCalledWith(['locked-copy']);
+    });
   });
 });

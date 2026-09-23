@@ -16,6 +16,7 @@ import {
 import { Permission } from 'src/enum.js';
 import { PluginMethodSearchResponse } from 'src/repositories/plugin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import { findOrFail } from 'src/utils/misc.js';
 import { getWorkflowTriggers, isMethodCompatible, resolveMethod } from 'src/utils/workflow.js';
 
@@ -88,11 +89,20 @@ export class WorkflowService extends BaseService {
   async getLogs(auth: AuthDto, id: string, dto: WorkflowGetLogsDto): Promise<WorkflowLogEntryDto[]> {
     await this.requireAccess({ auth, permission: Permission.WorkflowLogs, ids: [id] });
     const logs = await this.workflowRepository.getLogs(id, dto);
+    // a log keeps the id that triggered it; one that is Locked media now is named only to an elevated
+    // session (FL-34)
+    const triggerIds = logs
+      .map(({ triggerDataId }) => triggerDataId)
+      .filter((triggerId): triggerId is string => !!triggerId);
+    const lockedIds =
+      getLockedOwnerId(auth) || triggerIds.length === 0
+        ? new Set<string>()
+        : await this.assetRepository.getLockedAssetIds(triggerIds);
     return logs.map((entry) => ({
       id: entry.id,
       at: entry.createdAt,
       result: entry.result,
-      triggerDataId: entry.triggerDataId ?? undefined,
+      triggerDataId: entry.triggerDataId && !lockedIds.has(entry.triggerDataId) ? entry.triggerDataId : undefined,
       lastStep: entry.step
         ? {
             index: entry.step.order,
