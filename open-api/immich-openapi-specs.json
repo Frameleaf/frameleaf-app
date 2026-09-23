@@ -13473,6 +13473,7 @@
           "adminUser.update",
           "adminUser.delete",
           "adminSession.read",
+          "adminSession.delete",
           "adminAuth.unlinkAll"
         ],
         "type": "string"
@@ -29581,6 +29582,67 @@
           }
         ],
         "x-immich-permission": "adminSession.read",
+        "x-immich-state": "Stable"
+      }
+    },
+    "/admin/users/{id}/sessions/{sessionId}": {
+      "delete": {
+        "description": "Delete a specific session for a specific user, signing that device out.",
+        "operationId": "deleteUserSessionAdmin",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a user session",
+        "tags": [
+          "Users (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Stable"
+          }
+        ],
+        "x-immich-permission": "adminSession.delete",
         "x-immich-state": "Stable"
       }
     },
