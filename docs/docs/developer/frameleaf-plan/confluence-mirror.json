@@ -638,17 +638,17 @@
       "version": 6
     },
     {
-      "bytes": 34319,
+      "bytes": 34396,
       "category": "plan",
       "id": "62717954",
       "source": "docs/docs/developer/frameleaf-plan/09-prototype-to-production.md",
-      "sourceSha256": "bfac5fc75521b08cd1ca43119e8a697cee51d65e1d65432b830732e76ad9fe8f",
+      "sourceSha256": "fabf185047bc6a866a64f5fdce7883c9c2461e08a6e6de780467bcba24d7c4cd",
       "title": "Prototype to production: implementing the September 22 design revision",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/62717954/Prototype+to+production+implementing+the+September+22+design+revision",
-      "verification": "Version 3 mirrors the Prettier-formatted source committed as b6c7c633c86e475a98065244da2c6b416f3fa651 on branch claude/frameleaf-ui-review-157143 (fork/main 0116d4778), a table-padding-only change from caefcdd0cf4267347f769f77e96a483a615adc2f; banner carries the new SHA-256 and byte count and states open as PR #135, not merged; body otherwise unchanged from version 2; seven workstream tables (11, 8, 6, 7, 4, 5 and 9 rows), sequencing, decisions-after-first-draft section and open items read back in full after update.",
+      "verification": "Version 4 banner records commit 1519fbb65235e38587ce28134901a339bd5a6fbc on branch claude/frameleaf-ui-review-157143 (pull request #135, not merged), source SHA-256 and bytes after the interaction requirements link became a commit permalink; the page was read back after publishing and the body is unchanged apart from the banner.",
       "verified": true,
-      "verifiedAt": "2026-09-23T06:49:23.000Z",
-      "version": 3
+      "verifiedAt": "2026-09-23T07:13:40.000Z",
+      "version": 4
     },
     {
       "bytes": 15705,
