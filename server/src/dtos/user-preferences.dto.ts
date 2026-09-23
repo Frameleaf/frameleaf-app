@@ -276,7 +276,9 @@ const UserPreferencesResponseSchema = z
     recentlyAdded: RecentlyAddedResponseSchema,
     revision: z
       .string()
-      .describe('Changes whenever the stored preferences change; send it back as expectedRevision to reject stale saves'),
+      .describe(
+        'Changes whenever the stored preferences change; send it back as expectedRevision to reject stale saves',
+      ),
   })
   .meta({ id: 'UserPreferencesResponseDto' });
 

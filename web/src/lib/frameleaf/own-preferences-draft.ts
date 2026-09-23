@@ -1,7 +1,7 @@
+import { getMyPreferences, updateMyPreferences } from '@immich/sdk';
 import type { AccountPreferenceKey } from '$lib/frameleaf/account-preferences';
 import { AccountPreferencesDraftStore } from '$lib/frameleaf/account-preferences-draft.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
-import { getMyPreferences, updateMyPreferences } from '@immich/sdk';
 
 /**
  * A draft for one group of the signed-in account's own settings. It saves through the account's
