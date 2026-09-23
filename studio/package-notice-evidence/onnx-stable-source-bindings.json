@@ -1,0 +1,377 @@
+{
+  "schemaVersion": 1,
+  "qualification": "Exact-version common JavaScript source/license binding only; no native/WASM constituent or distribution approval.",
+  "sourceBindings": [
+    {
+      "version": "1.21.0",
+      "sourceRevision": "e0b66cad282043d4377cea5269083f17771b6dfc",
+      "location": "node_modules/kokoro-js/node_modules/onnxruntime-common",
+      "archiveSha256": "9c6126102b312514e64703c0922772974ee5c83e89eb345161226bcfeb67a22c",
+      "integrity": "sha512-Q632iLLrtCAVOTO65dh2+mNbQir/QNTVBG3h/QdZBpns7mZ0RYbLRBgGABPbpU9351AgYy7SJf1WaeVwMrBFPQ==",
+      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.21.0.tgz",
+      "files": [
+        {
+          "path": "lib/backend-impl.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/backend-impl.ts",
+          "sha256": "e900cac764674849736df0c96e31ea7a8e1a7bb0dadcfd3089f5e4dded01a4ec",
+          "packageSha256": "e900cac764674849736df0c96e31ea7a8e1a7bb0dadcfd3089f5e4dded01a4ec",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/backend.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/backend.ts",
+          "sha256": "ad3bbf3d323df49b52e695ae048165b96d89b0092d950b337a3a871e9fdc0aa4",
+          "packageSha256": "ad3bbf3d323df49b52e695ae048165b96d89b0092d950b337a3a871e9fdc0aa4",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/env-impl.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/env-impl.ts",
+          "sha256": "27d58a6314b22bbe9c959b183fd711f13db477d511d9a7ee4e96c95a7963ba0b",
+          "packageSha256": "27d58a6314b22bbe9c959b183fd711f13db477d511d9a7ee4e96c95a7963ba0b",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/env.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/env.ts",
+          "sha256": "65b756e66d9b16b4e7bc7ca267aa0740880195651f19a92e694ca8d121ad43e4",
+          "packageSha256": "65b756e66d9b16b4e7bc7ca267aa0740880195651f19a92e694ca8d121ad43e4",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/index.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/index.ts",
+          "sha256": "fd6f0206ca6e6d5068547925c889b955fd4a6beaf83675da74c22b96fd631354",
+          "packageSha256": "fd6f0206ca6e6d5068547925c889b955fd4a6beaf83675da74c22b96fd631354",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/inference-session-impl.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/inference-session-impl.ts",
+          "sha256": "79db36e5b66c6ff3554e63d0707ef65e7e9fccab2cfe701194bc675d2f0b7ed9",
+          "packageSha256": "79db36e5b66c6ff3554e63d0707ef65e7e9fccab2cfe701194bc675d2f0b7ed9",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/inference-session.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/inference-session.ts",
+          "sha256": "0a48d6937d8e4b191642f4074ca9722fa9c9ac4c56f018676a96bed47469b628",
+          "packageSha256": "0a48d6937d8e4b191642f4074ca9722fa9c9ac4c56f018676a96bed47469b628",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/onnx-model.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/onnx-model.ts",
+          "sha256": "9ae0f1df5dba5c1874495e6bcc5f3fcd8b1ba6dc9ed18c913d966c690353bd18",
+          "packageSha256": "9ae0f1df5dba5c1874495e6bcc5f3fcd8b1ba6dc9ed18c913d966c690353bd18",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/onnx-value.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/onnx-value.ts",
+          "sha256": "bf35f62d7c9aff3315e57bfb8d678da35abf259cb5af61b213be2beffd25e911",
+          "packageSha256": "bf35f62d7c9aff3315e57bfb8d678da35abf259cb5af61b213be2beffd25e911",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor-conversion-impl.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/tensor-conversion-impl.ts",
+          "sha256": "26dcaf221c75bc76672598647c101c34e9fe98f11c309c582d47c37361091fbc",
+          "packageSha256": "26dcaf221c75bc76672598647c101c34e9fe98f11c309c582d47c37361091fbc",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor-conversion.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/tensor-conversion.ts",
+          "sha256": "df570474ae9c8d2f8949b1613b0559c65b86cb0e7759cd492d60e124616a769c",
+          "packageSha256": "df570474ae9c8d2f8949b1613b0559c65b86cb0e7759cd492d60e124616a769c",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor-factory-impl.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/tensor-factory-impl.ts",
+          "sha256": "33de4a42b2beae761db1d87e34e5ee44e901a51b68fdde3738b90474cfc15edc",
+          "packageSha256": "33de4a42b2beae761db1d87e34e5ee44e901a51b68fdde3738b90474cfc15edc",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor-factory.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/tensor-factory.ts",
+          "sha256": "d086b296cd581cfb5e43ea694ac61bb3b34288a9866b5c5f4d2bf7d2fd3608c4",
+          "packageSha256": "d086b296cd581cfb5e43ea694ac61bb3b34288a9866b5c5f4d2bf7d2fd3608c4",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor-impl-type-mapping.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/tensor-impl-type-mapping.ts",
+          "sha256": "67e2963ceb779ea56a9ce3a2cb6931347fdbaab129eab8bcf83327e4d7f92129",
+          "packageSha256": "67e2963ceb779ea56a9ce3a2cb6931347fdbaab129eab8bcf83327e4d7f92129",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor-impl.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/tensor-impl.ts",
+          "sha256": "5e143580f35989cf58b4bb50812bf606f0510d010350314e7a446aba6150848a",
+          "packageSha256": "5e143580f35989cf58b4bb50812bf606f0510d010350314e7a446aba6150848a",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor-utils-impl.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/tensor-utils-impl.ts",
+          "sha256": "e69637a9265af26b30a08b3576d860c6adcb792594bdf1ce1fc5b33d5d8c6132",
+          "packageSha256": "e69637a9265af26b30a08b3576d860c6adcb792594bdf1ce1fc5b33d5d8c6132",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor-utils.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/tensor-utils.ts",
+          "sha256": "72cd92f3a240d664ceec21a8f6eb34ee488f70cbb4e193ebdd6dee6780e6c0bd",
+          "packageSha256": "72cd92f3a240d664ceec21a8f6eb34ee488f70cbb4e193ebdd6dee6780e6c0bd",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/tensor.ts",
+          "sha256": "0d6df6db3264622732592cf580f8b4f5284573b4bb6b511fdd5f0ddd93186a67",
+          "packageSha256": "0d6df6db3264622732592cf580f8b4f5284573b4bb6b511fdd5f0ddd93186a67",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/trace.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/trace.ts",
+          "sha256": "423a7d450d108c44fedae37ce13760a0b589da0d51021048a403b0377abdce92",
+          "packageSha256": "423a7d450d108c44fedae37ce13760a0b589da0d51021048a403b0377abdce92",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/type-helper.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/type-helper.ts",
+          "sha256": "b5554b99ed285174bc655a6da44131bff7cb9eac2cb39d4766c34569bc41c91b",
+          "packageSha256": "b5554b99ed285174bc655a6da44131bff7cb9eac2cb39d4766c34569bc41c91b",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/version.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/lib/version.ts",
+          "sha256": "d8598167a7de124d0208c8d309f82e742af8c7d45ecc3e99c7e3e6808990dc8c",
+          "packageSha256": "d8598167a7de124d0208c8d309f82e742af8c7d45ecc3e99c7e3e6808990dc8c",
+          "exactMatch": true
+        },
+        {
+          "path": "package.json",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/js/common/package.json",
+          "sha256": "5b762baf33234e76ea922ee7a13e80780035f2799b7608c4f3a58b41dbd69d48",
+          "packageSha256": "5b762baf33234e76ea922ee7a13e80780035f2799b7608c4f3a58b41dbd69d48",
+          "exactMatch": true
+        },
+        {
+          "path": "LICENSE",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/e0b66cad282043d4377cea5269083f17771b6dfc/LICENSE",
+          "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+          "packageSha256": null,
+          "exactMatch": null
+        }
+      ]
+    },
+    {
+      "version": "1.24.3",
+      "sourceRevision": "3a728b75062256951b6e19ce718907cf1a1d4cf0",
+      "location": "node_modules/onnxruntime-common",
+      "archiveSha256": "e9575aff207975a78d8b4c0ceff2a2d0767468b9d2a20d33fe6d74e43f67e193",
+      "integrity": "sha512-GeuPZO6U/LBJXvwdaqHbuUmoXiEdeCjWi/EG7Y1HNnDwJYuk6WUbNXpF6luSUY8yASul3cmUlLGrCCL1ZgVXqA==",
+      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.3.tgz",
+      "files": [
+        {
+          "path": "lib/backend-impl.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/backend-impl.ts",
+          "sha256": "e900cac764674849736df0c96e31ea7a8e1a7bb0dadcfd3089f5e4dded01a4ec",
+          "packageSha256": "e900cac764674849736df0c96e31ea7a8e1a7bb0dadcfd3089f5e4dded01a4ec",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/backend.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/backend.ts",
+          "sha256": "7c2f2ac6c51dfba4422024c0f3cbdad4cd6925eb6f15f9bd9084d9ea99a992a1",
+          "packageSha256": "7c2f2ac6c51dfba4422024c0f3cbdad4cd6925eb6f15f9bd9084d9ea99a992a1",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/env-impl.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/env-impl.ts",
+          "sha256": "27d58a6314b22bbe9c959b183fd711f13db477d511d9a7ee4e96c95a7963ba0b",
+          "packageSha256": "27d58a6314b22bbe9c959b183fd711f13db477d511d9a7ee4e96c95a7963ba0b",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/env.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/env.ts",
+          "sha256": "9630c7adbb557a78b3b0d598e0ac93ba228fe9df9ee9df03532fa8a4a0c0a99e",
+          "packageSha256": "9630c7adbb557a78b3b0d598e0ac93ba228fe9df9ee9df03532fa8a4a0c0a99e",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/index.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/index.ts",
+          "sha256": "fd6f0206ca6e6d5068547925c889b955fd4a6beaf83675da74c22b96fd631354",
+          "packageSha256": "fd6f0206ca6e6d5068547925c889b955fd4a6beaf83675da74c22b96fd631354",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/inference-session-impl.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/inference-session-impl.ts",
+          "sha256": "465b05b94b27369c3ddc2ee864d01f6844d9cc7053c9e85fb5f12b806ffc7671",
+          "packageSha256": "465b05b94b27369c3ddc2ee864d01f6844d9cc7053c9e85fb5f12b806ffc7671",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/inference-session.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/inference-session.ts",
+          "sha256": "1a9a41279254d096e972cf92f600e5ffda1fda54968ee372b082a598ed2dbb0f",
+          "packageSha256": "1a9a41279254d096e972cf92f600e5ffda1fda54968ee372b082a598ed2dbb0f",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/onnx-model.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/onnx-model.ts",
+          "sha256": "9ae0f1df5dba5c1874495e6bcc5f3fcd8b1ba6dc9ed18c913d966c690353bd18",
+          "packageSha256": "9ae0f1df5dba5c1874495e6bcc5f3fcd8b1ba6dc9ed18c913d966c690353bd18",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/onnx-value.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/onnx-value.ts",
+          "sha256": "bf35f62d7c9aff3315e57bfb8d678da35abf259cb5af61b213be2beffd25e911",
+          "packageSha256": "bf35f62d7c9aff3315e57bfb8d678da35abf259cb5af61b213be2beffd25e911",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor-conversion-impl.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/tensor-conversion-impl.ts",
+          "sha256": "37782760cd4ac4025621da92769e03615731e826e78b75ca2c89ff8058a43609",
+          "packageSha256": "37782760cd4ac4025621da92769e03615731e826e78b75ca2c89ff8058a43609",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor-conversion.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/tensor-conversion.ts",
+          "sha256": "df570474ae9c8d2f8949b1613b0559c65b86cb0e7759cd492d60e124616a769c",
+          "packageSha256": "df570474ae9c8d2f8949b1613b0559c65b86cb0e7759cd492d60e124616a769c",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor-factory-impl.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/tensor-factory-impl.ts",
+          "sha256": "33de4a42b2beae761db1d87e34e5ee44e901a51b68fdde3738b90474cfc15edc",
+          "packageSha256": "33de4a42b2beae761db1d87e34e5ee44e901a51b68fdde3738b90474cfc15edc",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor-factory.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/tensor-factory.ts",
+          "sha256": "d086b296cd581cfb5e43ea694ac61bb3b34288a9866b5c5f4d2bf7d2fd3608c4",
+          "packageSha256": "d086b296cd581cfb5e43ea694ac61bb3b34288a9866b5c5f4d2bf7d2fd3608c4",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor-impl-type-mapping.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/tensor-impl-type-mapping.ts",
+          "sha256": "67e2963ceb779ea56a9ce3a2cb6931347fdbaab129eab8bcf83327e4d7f92129",
+          "packageSha256": "67e2963ceb779ea56a9ce3a2cb6931347fdbaab129eab8bcf83327e4d7f92129",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor-impl.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/tensor-impl.ts",
+          "sha256": "5e143580f35989cf58b4bb50812bf606f0510d010350314e7a446aba6150848a",
+          "packageSha256": "5e143580f35989cf58b4bb50812bf606f0510d010350314e7a446aba6150848a",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor-utils-impl.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/tensor-utils-impl.ts",
+          "sha256": "e69637a9265af26b30a08b3576d860c6adcb792594bdf1ce1fc5b33d5d8c6132",
+          "packageSha256": "e69637a9265af26b30a08b3576d860c6adcb792594bdf1ce1fc5b33d5d8c6132",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor-utils.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/tensor-utils.ts",
+          "sha256": "72cd92f3a240d664ceec21a8f6eb34ee488f70cbb4e193ebdd6dee6780e6c0bd",
+          "packageSha256": "72cd92f3a240d664ceec21a8f6eb34ee488f70cbb4e193ebdd6dee6780e6c0bd",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/tensor.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/tensor.ts",
+          "sha256": "0d6df6db3264622732592cf580f8b4f5284573b4bb6b511fdd5f0ddd93186a67",
+          "packageSha256": "0d6df6db3264622732592cf580f8b4f5284573b4bb6b511fdd5f0ddd93186a67",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/trace.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/trace.ts",
+          "sha256": "f2955ef79ba24c48b75d5f8d5ee82e3995ab0cb37340286f20772cdab55437e4",
+          "packageSha256": "f2955ef79ba24c48b75d5f8d5ee82e3995ab0cb37340286f20772cdab55437e4",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/type-helper.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/type-helper.ts",
+          "sha256": "b5554b99ed285174bc655a6da44131bff7cb9eac2cb39d4766c34569bc41c91b",
+          "packageSha256": "b5554b99ed285174bc655a6da44131bff7cb9eac2cb39d4766c34569bc41c91b",
+          "exactMatch": true
+        },
+        {
+          "path": "lib/version.ts",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/lib/version.ts",
+          "sha256": "df3e0842273775e3322cb31c097223c68bd32d14a2b92f62245813002be59406",
+          "packageSha256": "df3e0842273775e3322cb31c097223c68bd32d14a2b92f62245813002be59406",
+          "exactMatch": true
+        },
+        {
+          "path": "package.json",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/js/common/package.json",
+          "sha256": "03cd7020d914b59c0a4fef7e9d566565cca8f77f80392418aa08b02903151745",
+          "packageSha256": "03cd7020d914b59c0a4fef7e9d566565cca8f77f80392418aa08b02903151745",
+          "exactMatch": true
+        },
+        {
+          "path": "LICENSE",
+          "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/3a728b75062256951b6e19ce718907cf1a1d4cf0/LICENSE",
+          "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+          "packageSha256": null,
+          "exactMatch": null
+        }
+      ]
+    }
+  ],
+  "unresolvedResearch": [
+    {
+      "package": "guid-typescript",
+      "version": "1.0.9",
+      "repositoryUrl": "https://api.github.com/repos/NicolasDeveloper/guid-typescript",
+      "resolvedRepository": "https://github.com/snico-dev/guid-typescript",
+      "commitUrl": "https://api.github.com/repos/snico-dev/guid-typescript/git/commits/1870de806c3db7ba46c5b8a1387c60fc9dda9284",
+      "commitStatus": 404,
+      "licenseUrl": "https://raw.githubusercontent.com/snico-dev/guid-typescript/1870de806c3db7ba46c5b8a1387c60fc9dda9284/LICENSE",
+      "licenseStatus": 404,
+      "archiveFullTextInspection": "No full license text or copyright header; ISC declaration only."
+    },
+    {
+      "package": "react-remove-scroll-bar",
+      "version": "2.3.8",
+      "commitUrl": "https://api.github.com/repos/theKashey/react-remove-scroll-bar/git/commits/b3b1287aad81def2e2ae707274b74531b61ddbaf",
+      "commitStatus": 404,
+      "tagsUrl": "https://api.github.com/repos/theKashey/react-remove-scroll-bar/git/matching-refs/tags/",
+      "matchingVersionTag": false,
+      "latestListedVersionTag": "v2.3.7",
+      "archiveFullTextInspection": "No full license text or copyright header; MIT declaration only. Other-version notices not substituted."
+    },
+    {
+      "package": "html-parse-stringify",
+      "version": "3.0.1",
+      "sourceRevision": "ce46022f537ef9b050fac592f9fcc30bf838e5ba",
+      "archiveFullTextInspection": "No full license text or copyright header; MIT declaration only. Exact source archive was also inspected in source-receipt.json."
+    }
+  ]
+}
