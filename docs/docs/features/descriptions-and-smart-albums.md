@@ -5,7 +5,7 @@ This page documents the connected features that build on top of [Image Enrichmen
 1. **Configurable description prompt** — admin controls for the vocabulary, length, tone, and free-form guidance of generated descriptions.
 2. **Identity injection** — pulls named faces from facial recognition into the description prompt so descriptions say _"Kelly and Connor playing baseball"_ instead of _"a family playing baseball"_.
 3. **Custom instructions** — a free-form text field for natural-language guidance like _"if you see a car, identify the make and model"_ — without rewriting the whole prompt.
-4. **Video descriptions** — generate descriptions and tags for videos by stitching multiple sampled frames into a composite grid the vision-language model can see all at once.
+4. **Video descriptions** — generate descriptions and tags for videos by stitching the video's six reusable moment frames into a composite grid the vision-language model can see all at once.
 5. **Smart auto-albums** — six built-in albums (Travel, Documents & Receipts, Screenshots, Food, Pets, Nature) that automatically gather assets based on the tags generated for each description.
 
 All features are admin-only and run locally. They are disabled by default and need explicit enablement.
@@ -23,7 +23,7 @@ Before you start:
 - Machine-learning hardware is configured — see [ML Hardware Acceleration](./ml-hardware-acceleration.md).
 - The selected description model is a Qwen2.5-VL or Phi-3.5-vision build (not Florence).
 - For identity injection: [Facial Recognition](./facial-recognition.md) is enabled and you have named at least some recognized faces.
-- For video descriptions: **Enhanced video duplicate detection** is enabled and has already run on your videos (see [Recommended setup order](#recommended-setup-order) — videos without frames are skipped).
+- For video descriptions: nothing extra. Each video's reusable moment frames are cut the first time it is described; duplicate detection is not required.
 
 ---
 
@@ -35,7 +35,7 @@ The features interact. Doing them in the order below gets the best output the fi
 | --- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | **Pick the right model** (Qwen2.5-VL or Phi-3.5-vision).                                      | Florence-2 ignores _every other_ control on this page. Get the model right before you tune anything.                                                                                        |
 | 2   | **Run [Facial Recognition](./facial-recognition.md) and name your most-photographed people.** | Identity injection only mentions names you've curated. Doing this first means your very first description run already says "Kelly" instead of "Someone".                                    |
-| 3   | **Enable Enhanced Video Duplicate Detection** and let it process your videos.                 | Video descriptions reuse the frames it extracts — there's no point asking for video descriptions before frames exist. Frame extraction can take hours on large libraries; start it earlier. |
+| 3   | **Preview a description** on a few photos and videos.                                         | "Try an enrichment change" runs the draft model and prompt on samples and writes nothing, so you see the result before paying for a library-wide run.                                      |
 | 4   | **Tune the description prompt** (style, look-for, custom vocabulary, custom instructions).    | Tuning before the first big re-queue means you don't pay to re-describe everything twice.                                                                                                   |
 | 5   | **Enable identity injection.**                                                                | Cheap to toggle and tune; combine with the prompt tuning in step 4 before the big run.                                                                                                      |
 | 6   | **Re-queue all descriptions.**                                                                | One library-wide pass with everything configured the way you want it.                                                                                                                       |
@@ -73,17 +73,11 @@ Click **Save**. Re-queue any individual asset (from the asset detail panel) or r
 > [!NOTE]
 > The prompt explicitly requires the model to name every recognized person and forbids generic group nouns like _"a family"_, _"a group"_, or _"everyone"_ when names are known. If you've previously seen multi-person photos drop names, re-queue them — newer descriptions enforce naming.
 
-### Step 3 — Enable video descriptions (optional)
+### Step 3 — Preview a description, then videos
 
-Video descriptions reuse the frames already extracted for enhanced video duplicate detection. **This step requires that feature to be enabled and to have run on your videos.** See [Video descriptions — full setup](#video-descriptions--full-setup) for the dependency chain.
+Under **Image Description**, **Preview a description** opens **Try an enrichment change**: choose up to six of your own photos or videos, the processing destination to run on, and compare the current description with what the model and prompt you are editing would write. Nothing is saved. See [Sample-first enrichment](#sample-first-enrichment-and-plans).
 
-The short version:
-
-1. Navigate to **Administration → System Settings → Machine Learning → Duplicate Detection → Enhanced Video Detection**.
-2. Enable it. Set **Frame count** to `4` (default) or higher — more frames yield richer video descriptions but increase processing time per video.
-3. Save. Frames will be extracted by the `videoDuplicateDetection` job. **Wait for it to finish** before continuing (check **Administration → Jobs**) — videos without persisted frames are skipped by the description pipeline.
-
-Once frames exist, the Image Description pipeline will automatically process those videos when you re-queue or as new videos are uploaded.
+Videos need no separate setup. The first time a video is described, six evenly spaced frames are cut, ranked and kept as its reusable moment frames; the description is made from a grid of them. Duplicate detection plays no part.
 
 ### Step 4 — Add custom instructions for your library (optional)
 
@@ -105,7 +99,7 @@ The six built-in albums (Travel, Documents & Receipts, Screenshots, Food, Pets, 
 
 Inside **Image Description → Status & Re-generation**, you'll see:
 
-- **Total eligible assets** — every image and (now) video the description pipeline can process. Videos only count when they have persisted duplicate-detection frames.
+- **Total eligible assets** — every image the description pipeline can process. Videos are described too; they are cut into reusable frames when their turn comes.
 - **Already described** — assets with a stored description.
 - **Pending re-description** — assets without one.
 - **Estimated re-queue time** — a real wall-clock estimate computed from the most recent 100 completed description jobs.
@@ -394,41 +388,34 @@ Image descriptions and tags for **videos** work by sampling several frames from 
 
 ### How it works
 
-1. **Frame extraction** (already a feature): when Enhanced Video Duplicate Detection runs, it samples N evenly-spaced frames per video and writes them to disk along with their timestamps. These frames are stored per-asset and are reused for any future processing.
-2. **Grid composition** (description time): the description pipeline picks 2–9 of those frames, letterboxes each to a fixed cell size, and composites them into a single JPEG arranged left-to-right, top-to-bottom. Grid layout is automatic:
+1. **Reusable moment frames**: the first time a video is described (or an enrichment plan runs its frames stage), six evenly spaced frames are cut at the preview size, scored for exposure, contrast and detail, ranked best first, and kept with their timestamps. They are reused by descriptions, the moment search index and moment captions, and are cut again only when the original is replaced. Duplicate detection is not involved. Videos longer than three hours are not cut.
+2. **Grid composition** (description time): the description pipeline lays those frames out in time order as a single JPEG arranged left-to-right, top-to-bottom. Six frames make a 2×3 grid; a very short video with fewer frames gets a smaller grid.
 
    | Frame count | Grid layout |
    | ----------- | ----------- |
    | 2           | 1×2         |
    | 3–4         | 2×2         |
    | 5–6         | 2×3         |
-   | 7+          | 3×3         |
-
-   When more than 9 frames exist, the grid evenly subsamples them.
 
 3. **Time-aware prompt** is prepended to the description prompt:
 
    ```
-   This image is a composite 2x2 grid of 4 frames sampled from a video of length 00:15.0.
+   This image is a composite 3x2 grid of 6 frames sampled from a video of length 00:35.0.
    The grid is read left-to-right, top-to-bottom; cell timestamps in order are:
-   00:01.0, 00:05.0, 00:09.0, 00:13.0.
+   00:05.0, 00:10.0, 00:15.0, 00:20.0, 00:25.0, 00:30.0.
    Treat each cell as a frame from the same video, not as separate scenes. Describe the
    overall video — its subject, activity over time, and continuity between frames — not
    each frame in isolation. When motion or change is visible across cells, mention it.
    ```
 
-4. **Result** is stored as a normal description on the asset, with the same shape as any image description (tags, environment, etc.).
-5. **Grid cleanup**: the composite JPEG is deleted after every run. The persisted duplicate-detection frames are untouched.
+4. **Result** is stored as a normal description on the asset, with the same shape as any image description (tags, environment, etc.), plus the destination, prompt digest, confirmed-name digest and source fingerprint it was made from.
+5. **Grid cleanup**: the composite JPEG is deleted after every run. The reusable frames are untouched.
 
-### Step-by-step: enable video descriptions on an existing library
+### Step-by-step: describe the videos in an existing library
 
-1. **Confirm Enhanced Video Duplicate Detection is enabled.** Navigate to **Administration → System Settings → Machine Learning → Duplicate Detection → Enhanced Video Detection**. Toggle on if needed.
-2. **Set Frame count.** Default is 4. For richer descriptions, raise to 6 or 9. Higher values mean more disk usage and slower frame extraction per video but better description quality. The grid layout adapts automatically.
-3. **Save.** New video uploads will start getting frames extracted automatically.
-4. **Backfill existing videos.** Navigate to **Administration → Jobs**, find the **Video Duplicate Detection** job, and click **All** to run extraction across the whole library. This can take hours on large libraries — the job streams videos and processes them in batches. Monitor progress from the Jobs page.
-5. **Wait for frame extraction to complete.** You can check via SQL or via the Jobs queue depth. Videos without persisted frames are skipped by the description pipeline (see [Skipped status](#skipped-status-video-frames-unavailable)).
-6. **Re-queue descriptions.** Navigate to **Administration → System Settings → Machine Learning → Image Description → Status & Re-generation**. The eligible-asset count now includes videos that have persisted frames. Click **Re-queue all descriptions**.
-7. **Verify.** Open a video in the asset viewer and check the Description panel. The description should reference the video as a whole, not a single moment — e.g. _"A short clip of Connor swinging a bat in a backyard; he begins facing the camera, swings the bat to his right, and walks off-frame at the end."_
+1. **Preview first.** In **Image Description**, use **Preview a description** with a video or two as samples.
+2. **Re-queue descriptions.** In **Image Description → Status & Re-generation**, click **Re-queue all descriptions**. Each video's frames are cut when its turn comes, one video at a time per job.
+3. **Verify.** Open a video and check the Description panel. The description should reference the video as a whole — e.g. _"A short clip of Connor swinging a bat in a backyard; he begins facing the camera, swings the bat to his right, and walks off-frame at the end."_ The **Moments** section below it shows the frames it was made from.
 
 ### Faces on videos
 
@@ -436,32 +423,13 @@ Faces detected on a video's preview thumbnail are used for identity injection on
 
 ### Skipped status: `video-frames-unavailable`
 
-When a video is sent through the description pipeline but has no persisted frames, the pipeline does **not** fall back to the single preview thumbnail. (Single video previews are often a black, title, or generic frame that produces worse descriptions than no description at all.) Instead, the description status is set to `skipped` with reason `video-frames-unavailable`, surfaced in the asset's description panel.
-
-To fix:
-
-1. Make sure Enhanced Video Duplicate Detection is enabled.
-2. Run the **Video Duplicate Detection** job for that asset (or for the whole library).
-3. Re-queue the description — either from the asset detail panel or via the bulk re-queue.
-
-### Tuning frame count for description quality
-
-The default of **4** frames is a good balance for short clips (under ~30 seconds). For different content:
-
-| Video type                         | Suggested frame count | Why                                                                         |
-| ---------------------------------- | --------------------- | --------------------------------------------------------------------------- |
-| Short clips, single subject        | 4                     | Default; 2×2 grid gives the model start/middle/end without overwhelming it. |
-| Medium videos with multiple scenes | 6                     | 2×3 grid captures more scene changes.                                       |
-| Long videos, lots of motion        | 9                     | 3×3 grid; finer-grained timeline.                                           |
-| Mostly-static videos               | 2                     | 1×2 is enough; saves disk and processing time.                              |
-
-You change this in **Duplicate Detection → Enhanced Video Detection → Frame count**. Changing the frame count does **not** retroactively re-extract frames; existing videos keep their old frame counts until you re-run the Video Duplicate Detection job.
+When no frames can be cut from a video (it is too short, too long, or unreadable), the pipeline does **not** fall back to the single preview thumbnail. (Single video previews are often a black, title, or generic frame that produces worse descriptions than no description at all.) Instead, the description status is set to `skipped` with reason `video-frames-unavailable`, surfaced in the asset's description panel.
 
 ### Performance notes
 
 - The composite grid is **512×512 per cell** (so a 2×2 is 1024×1024, a 3×3 is 1536×1536). This is a deliberate trade-off — larger cells preserve detail at the cost of model context length.
 - The grid is **JPEG quality 85** with 4:2:0 chroma subsampling. Big enough to retain faces and identifying details, small enough to fit comfortably in VLM context.
-- Description time for video assets is roughly the same as for a high-resolution image. The frame extraction (Step 4 above) is the slow part and only runs once per video.
+- Description time for video assets is roughly the same as for a high-resolution image. Cutting the six frames is the slow part and only happens once per video, or again when its original is replaced.
 
 ### Why not just send N separate images?
 
@@ -541,6 +509,44 @@ From the album view, open an asset and choose **Exclude from smart album** in th
 
 ---
 
+## Sample-first enrichment and plans
+
+**Preview a description** (Image Description settings) opens **Try an enrichment change** in three steps:
+
+1. **Choose sample** — up to six of your own photos or videos, and the processing destination to run on. The destination is always named: the default is the one routed under Processing destinations, a cloud destination is marked and still needs its recorded consent, and nothing ever falls back to another destination.
+2. **Compare** — the model and prompt you are editing, saved or not, run on each sample one at a time. The current description and the candidate appear side by side, with the tags, any names the check removed and, for a video, how many frames it saw. **Nothing is written**: descriptions, tags, the Locked state, search embeddings and frames are unchanged. A video without frames is cut into a temporary folder for the preview and the folder is removed afterwards.
+3. **Scope** — choose the stages a plan runs on the samples:
+   - **Descriptions and tags**, and the **Locked-content check** for photos;
+   - **Reusable video frames**, the **moment search index** and **moment captions** for videos. The moment stages need the frames, so ticking one ticks the frames too. **Moment captions are never ticked for you**: they add one model request per frame, and the page says how many.
+
+   A plan uses the **saved** model and prompt, pins them together with the destinations when it is queued, and records all of it on every result it writes.
+
+A queued plan is a durable job. It runs in the background one item and one model request at a time, shows up in **Activity**, and survives closing the browser or restarting the server. The dialog follows it item by item — queued, running, skipped, failed, completed or cancelled, with the reason for each stage — and returns to it when reopened. **Pause** and **Cancel** take effect between items. Every failure is retried once automatically, and **Retry** starts a new plan over exactly the items that did not finish, rerunning only the stages that failed.
+
+Locked items are processed like any other; only their owner's unlocked session is ever shown them, in the plan as everywhere else.
+
+### Video moments
+
+A video's **Moments** section in the information panel shows its reusable frames ranked best first, the cover frame, and its timestamped moments. Choosing a frame or a moment plays the video from there.
+
+- **Cover** — choose any frame as the cover; the choice is kept as a time in the video, so it survives the frames being cut again. **Use the best frame** returns to the best-ranked one.
+- **Your moments** — add a moment at any time with a title and an optional typed transcript. There is no automatic speech recognition. Your moments are never removed by a refresh, a replaced original or a face correction.
+- **Find moments / Refresh moments** — queues a plan that cuts the frames and builds the moment search index. **Add captions** queues the optional captions stage.
+- **Search** — a search shows *Moments in your videos* above the results: frames that match by meaning, and moments whose caption or transcript contains the words. Only your own videos are searched.
+
+### What makes a result out of date
+
+Each generated result records what it was made from. When one of these changes, only the generated results that depend on it are affected:
+
+| Change                                   | Effect                                                                                                             |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| The original is replaced                 | Frames, their search embeddings and generated moments are removed; the description is marked out of date and is never published over the new file. |
+| A face correction changes confirmed names | Generated descriptions and captions made with the old names are marked out of date and are redone by the next plan. |
+| The saved prompt changes                 | Generated descriptions are marked out of date.                                                                     |
+| The search model changes                 | Only frame embeddings are cleared; frames and moments stay.                                                        |
+
+Manual descriptions, your own moments, typed transcripts and the cover choice are never touched.
+
 ## Troubleshooting
 
 ### Descriptions are still generic after enabling identity injection
@@ -573,19 +579,11 @@ Check, in order:
 
 ### A video has no description and shows "video-frames-unavailable"
 
-This means the video doesn't have persisted duplicate-detection frames yet. To fix:
-
-1. Confirm **Enhanced Video Duplicate Detection** is enabled.
-2. Navigate to **Administration → Jobs** and run the **Video Duplicate Detection** job (or just the single asset's video-duplicate-frame job if you only want one fixed). Wait for it to finish.
-3. Re-queue the description for the asset — either from the asset detail panel or as part of a bulk re-queue.
-
-If frame extraction fails consistently, check that ffmpeg is working (other transcoding jobs should also be failing) and that the asset isn't corrupted.
+No frames could be cut from the video: it is shorter than a fraction of a second, longer than three hours, or ffmpeg could not read it. Open the video's **Moments** section and choose **Find moments** to try again; if it fails, check that ffmpeg is working (other transcoding jobs should also be failing) and that the file isn't corrupted.
 
 ### Video descriptions are too generic or miss key moments
 
-Increase **Frame count** in Enhanced Video Duplicate Detection (try 6 or 9). Then re-run the Video Duplicate Detection job to re-extract frames at the new count, and re-queue the descriptions. More frames = the model sees more of the timeline.
-
-If the description still misses what matters, consider whether the action you care about happens between the sampled timestamps. Frames are sampled evenly across the video duration; a 30-second video with frame count 4 samples at roughly 0%, 25%, 50%, 75% of the way through (with small offsets to avoid the very first and last frame).
+Every video gets six evenly spaced frames, which gives each one the same overview. If the action you care about happens between them, add your own moment at that time in the video's **Moments** section; your moments are searchable and are never replaced by a refresh. Optional moment captions describe each frame on its own, at the cost of one model request per frame.
 
 ### Advanced template box was empty / I want my default back
 
@@ -648,18 +646,14 @@ Florence-2 still produces a usable caption, so you can use it as a CPU-friendly 
 
 Suppose you have ~80,000 photos and ~3,000 videos accumulated over a decade, on a single-NVIDIA-GPU server with 8 GB of VRAM. You want descriptions that name your family members, identify cars and sports, and feed smart albums for travel, food, and pets. Here's the order to set this up:
 
-### Day 1 — Identities and frame extraction (overnight)
+### Day 1 — Identities (overnight)
 
 1. **Facial Recognition.** Enable. Run the bulk face-detection job. Wait for it to finish (typically a few hours on this library size).
 2. **Name your top ~20 most-photographed people.** Don't try to name everyone — diminishing returns. The People page surfaces the most-photographed clusters first.
-3. **Enhanced Video Duplicate Detection.** Enable. Frame count 6 (your videos are mostly under a minute and you want a 2×3 grid for good detail).
-4. **Run the Video Duplicate Detection job** from Administration → Jobs. Leave it running overnight.
 
 ### Day 2 — Description prompt tuning
 
-The frame extraction should be done. Verify by spot-checking a few videos in the asset viewer for a "frame thumbnail" indicator, or by checking the Jobs page is idle.
-
-Now tune the description prompt:
+Tune the description prompt, then use **Preview a description** on a handful of photos and videos before anything reaches the library:
 
 1. **Administration → Machine Learning → Image Description.**
 2. **Model name:** `Qwen/Qwen2.5-VL-3B-Instruct` (the 3B fits comfortably in 8 GB).
@@ -704,7 +698,7 @@ Iterate the custom instructions in 30-minute cycles: edit, save, re-queue a hand
 ### Day 5+ — Maintenance
 
 - **New uploads** automatically get described with your current config.
-- **New videos** automatically get frames extracted, then descriptions, with no manual intervention.
+- **New videos** get their reusable frames cut when they are described, with no manual intervention.
 - **New named faces** start appearing in identity injection on _new_ descriptions immediately. To apply to older descriptions of that person, re-queue the affected assets.
 - **Tuning prompt** later? Each save updates the config hash. The status panel will show the count of assets with the new vs. old config so you know how much would be re-queued.
 
