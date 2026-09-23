@@ -24,13 +24,16 @@ import {
   type AspectId,
   type DevelopValues,
 } from '$lib/frameleaf/develop';
+import { normalizeMasks, type EditorMask } from '$lib/frameleaf/photo-tools';
 
 export const RECIPE_VERSION = 1 as const;
 
-export type EditorRecipe = Required<Omit<AssetDevelopRecipeDto, 'crop' | 'version'>> &
+export type EditorRecipe = Required<Omit<AssetDevelopRecipeDto, 'crop' | 'version' | 'masks'>> &
   DevelopValues & {
     version: typeof RECIPE_VERSION;
     crop: { x: number; y: number; w: number; h: number };
+    /** Selective adjustments (FL-64), in the oriented frame like the crop. */
+    masks: EditorMask[];
     /** Client-only: which aspect chip framed the crop. Not sent to the server. */
     aspect: AspectId;
   };
@@ -59,6 +62,7 @@ export const initialRecipe = (): EditorRecipe => ({
   flipVertical: false,
   preset: AssetDevelopPreset.Original,
   presetStrength: 100,
+  masks: [],
 });
 
 /** Every field clamped into the contract, defaults filled; safe for storage and for the wire. */
@@ -77,6 +81,7 @@ export function normalizeRecipe(candidate: unknown): EditorRecipe {
     flipVertical: value.flipVertical === true,
     preset: choice(value.preset, PRESET_IDS, AssetDevelopPreset.Original),
     presetStrength: Math.round(number(value.presetStrength, 100, 0, 100)),
+    masks: normalizeMasks(value.masks),
   };
 }
 
@@ -142,8 +147,8 @@ const travel = (draft: EditorDraft, source: 'undo' | 'redo'): EditorDraft => {
 export const undoDraft = (draft: EditorDraft) => travel(draft, 'undo');
 export const redoDraft = (draft: EditorDraft) => travel(draft, 'redo');
 
-/** Keys copied by Copy settings / Paste settings. Geometry stays put. */
-export const SETTINGS_KEYS = [...DEVELOP_KEYS, 'preset', 'presetStrength'] as const;
+/** Keys copied by Copy settings / Paste settings, and kept by a saved preset. Geometry stays put. */
+export const SETTINGS_KEYS = [...DEVELOP_KEYS, 'preset', 'presetStrength', 'masks'] as const;
 export type EditorSettings = Partial<Pick<EditorRecipe, (typeof SETTINGS_KEYS)[number]>>;
 
 export const pickSettings = (recipe: EditorRecipe): EditorSettings =>

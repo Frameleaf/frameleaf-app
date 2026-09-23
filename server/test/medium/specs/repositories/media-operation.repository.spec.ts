@@ -11,6 +11,7 @@ import { MediaOperationRepository } from 'src/repositories/media-operation.repos
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
+import { newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
@@ -379,7 +380,7 @@ describe(MediaOperationRepository.name, () => {
 
       // The worker keeps its lease and learns of the pause from its next write.
       await expect(sut.heartbeat(operation.id, claim!.claimToken, LEASE_MS)).resolves.toBe(true);
-      await expect(sut.settlePause(operation.id, '0195e2a0-0000-7000-8000-0000000000ff')).resolves.toBe(false);
+      await expect(sut.settlePause(operation.id, newUuid())).resolves.toBe(false);
       await expect(sut.settlePause(operation.id, claim!.claimToken)).resolves.toBe(true);
 
       await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
