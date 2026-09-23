@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Translations } from 'svelte-i18n';
   import { goto } from '$app/navigation';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -82,7 +83,7 @@
     });
   };
 
-  const run = async (item: ActivityItem, action: () => Promise<unknown>, announceKey: string) => {
+  const run = async (item: ActivityItem, action: () => Promise<unknown>, announceKey: Translations) => {
     busyId = item.id;
     try {
       await action();

@@ -80,8 +80,8 @@
     heading?.focus({ preventScroll: true });
   });
 
-  const setCondition = (field: string, condition: Record<string, unknown> | SetCondition | null) =>
-    onChange(withFilterCondition(query, field, condition as Record<string, unknown> | null));
+  const setCondition = (field: string, condition: Record<string, unknown> | SetCondition | null | undefined) =>
+    onChange(withFilterCondition(query, field, condition as Record<string, unknown> | null | undefined));
 
   const asOption = (value: string, label: string): ComboBoxOption => ({ value, label });
 
