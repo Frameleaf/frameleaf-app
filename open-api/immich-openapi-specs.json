@@ -652,6 +652,111 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/config/revision": {
+      "get": {
+        "description": "Retrieve the admin configuration together with a revision that changes whenever a saved setting changes. Send the revision back when saving so a save made against older settings is refused.",
+        "operationId": "getAdminConfigWithRevision",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminConfigRevisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the admin configuration with its revision",
+        "tags": [
+          "Config (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminConfig.read",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Save a complete system configuration only when the saved settings still match the revision it was made against. Returns the saved configuration and its new revision.",
+        "operationId": "updateAdminConfigWithRevision",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminConfigRevisionUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminConfigRevisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "description": "The saved settings changed since the given revision; nothing was saved."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update the system configuration if it is unchanged",
+        "tags": [
+          "Config (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/database-backups": {
       "delete": {
         "description": "Delete a backup by its filename",
@@ -33228,6 +33333,39 @@
         },
         "required": [
           "enabled"
+        ],
+        "type": "object"
+      },
+      "AdminConfigRevisionResponseDto": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/AdminConfigDto"
+          },
+          "revision": {
+            "description": "Changes whenever a saved setting changes; send it back as expectedRevision so a save made against older settings is refused",
+            "type": "string"
+          }
+        },
+        "required": [
+          "config",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "AdminConfigRevisionUpdateDto": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/AdminConfigDto"
+          },
+          "expectedRevision": {
+            "description": "The revision the changes were made against. When the saved settings no longer match it the update is refused with 409 and nothing is changed",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "config",
+          "expectedRevision"
         ],
         "type": "object"
       },
