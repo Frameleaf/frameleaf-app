@@ -279,7 +279,11 @@ export class AssetDevelopService {
       return JobStatus.Failed;
     }
 
-    const revision = await this.assetDevelopRepository.beginAttempt(id, DEVELOP_RENDERER_VERSION);
+    const revision = await this.assetDevelopRepository.beginAttempt(
+      id,
+      DEVELOP_RENDERER_VERSION,
+      DEVELOP_RENDER_LEASE_MS / 1000,
+    );
     if (!revision) {
       return JobStatus.Skipped;
     }
@@ -321,6 +325,11 @@ export class AssetDevelopService {
       }
       this.logger.error(`Develop render failed for revision ${id}: ${message}`);
       await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Failed, error: message });
+      if (external && permanent && revision.masterPath) {
+        // A file that no longer answers the original (or is gone) can never become a version.
+        await this.assetDevelopRepository.update(id, { masterPath: null });
+        await this.discard([revision.masterPath]);
+      }
       return JobStatus.Failed;
     }
   }
@@ -424,6 +433,12 @@ export class AssetDevelopService {
         throw new ConflictException(
           'This file was developed from a different original than the photo has now; nothing was changed',
         );
+      }
+
+      // A file that only looks like an image by its name is refused before it is kept.
+      const probe = await this.mediaRepository.getImageMetadata(file.path).catch(() => null);
+      if (!probe || !(probe.width > 0 && probe.height > 0)) {
+        throw new BadRequestException('The file is not a readable image');
       }
 
       const received = await this.cryptoRepository.hashFile(file.path, 'sha256');
