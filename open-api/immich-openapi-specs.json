@@ -9159,6 +9159,224 @@
         ],
         "type": "object"
       },
+      "MediaOperationBulkAction": {
+        "description": "Bulk action a durable media operation applies",
+        "enum": [
+          "favorite",
+          "unfavorite",
+          "archive",
+          "unarchive",
+          "add-to-album",
+          "remove-from-album",
+          "tag",
+          "untag",
+          "change-date",
+          "change-description",
+          "change-location",
+          "mark-sensitive",
+          "unmark-sensitive",
+          "delete",
+          "delete-permanently",
+          "restore",
+          "stack",
+          "unstack",
+          "refresh-thumbnails",
+          "refresh-metadata",
+          "refresh-encoded",
+          "refresh-faces"
+        ],
+        "type": "string"
+      },
+      "MediaOperationBulkCreateDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/MediaOperationBulkAction"
+          },
+          "assetIds": {
+            "description": "The frozen matching set, in order",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 50000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/MediaOperationBulkPayloadDto"
+          },
+          "requestId": {
+            "description": "Client idempotency key; submitting the same key again returns the existing operation",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "scope": {
+            "additionalProperties": {},
+            "description": "A record of the view the set came from; never re-resolved",
+            "type": "object"
+          },
+          "submittedTotal": {
+            "description": "The count shown to the person at submit",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "truncated": {
+            "description": "The client could not resolve the whole matching set",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "action",
+          "assetIds"
+        ],
+        "type": "object"
+      },
+      "MediaOperationBulkItemDto": {
+        "properties": {
+          "id": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "message": {
+            "description": "Operator detail from the server",
+            "nullable": true,
+            "type": "string"
+          },
+          "reasonKey": {
+            "description": "Stable key the client turns into a message",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationItemStatus"
+          }
+        },
+        "required": [
+          "id",
+          "message",
+          "reasonKey",
+          "status"
+        ],
+        "type": "object"
+      },
+      "MediaOperationBulkPayloadDto": {
+        "properties": {
+          "albumId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "dateMode": {
+            "enum": [
+              "set",
+              "shift"
+            ],
+            "type": "string"
+          },
+          "dateTimeOriginal": {
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 10000,
+            "type": "string"
+          },
+          "latitude": {
+            "maximum": 90,
+            "minimum": -90,
+            "type": "number"
+          },
+          "longitude": {
+            "maximum": 180,
+            "minimum": -180,
+            "type": "number"
+          },
+          "minutes": {
+            "description": "Relative shift in minutes, for `dateMode: shift`",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "primaryId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "stackIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "tagIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "timeZone": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MediaOperationBulkSummaryDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/MediaOperationBulkAction"
+          },
+          "failed": {
+            "description": "Items the server attempted and could not apply; a retry covers these",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "itemsTruncated": {
+            "type": "boolean"
+          },
+          "requested": {
+            "description": "Items in the frozen set",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "skipped": {
+            "description": "Items refused before anything changed, e.g. no access",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "snapshotTruncated": {
+            "type": "boolean"
+          },
+          "succeeded": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "failed",
+          "itemsTruncated",
+          "requested",
+          "skipped",
+          "snapshotTruncated",
+          "succeeded"
+        ],
+        "type": "object"
+      },
       "MediaOperationCheckpointDto": {
         "properties": {
           "chunkKey": {
@@ -9251,6 +9469,20 @@
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
             "type": "integer"
+          },
+          "bulk": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaOperationBulkSummaryDto"
+              }
+            ],
+            "nullable": true
+          },
+          "bulkItems": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationBulkItemDto"
+            },
+            "type": "array"
           },
           "cancelAcknowledgedAt": {
             "format": "date-time",
@@ -9381,6 +9613,8 @@
         "required": [
           "assetId",
           "attempt",
+          "bulk",
+          "bulkItems",
           "cancelAcknowledgedAt",
           "cancelRequestedAt",
           "checkpoints",
@@ -9423,6 +9657,14 @@
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
             "type": "integer"
+          },
+          "bulk": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MediaOperationBulkSummaryDto"
+              }
+            ],
+            "nullable": true
           },
           "cancelAcknowledgedAt": {
             "format": "date-time",
@@ -9542,6 +9784,7 @@
         "required": [
           "assetId",
           "attempt",
+          "bulk",
           "cancelAcknowledgedAt",
           "cancelRequestedAt",
           "createdAt",
@@ -9595,6 +9838,15 @@
         ],
         "type": "object"
       },
+      "MediaOperationItemStatus": {
+        "description": "Per-item outcome of a bulk media operation",
+        "enum": [
+          "ok",
+          "skipped",
+          "failed"
+        ],
+        "type": "string"
+      },
       "MediaOperationKind": {
         "description": "Media operation kind",
         "enum": [
@@ -9602,7 +9854,8 @@
           "studio_preview",
           "restoration",
           "restoration_preview",
-          "quick_edit"
+          "quick_edit",
+          "bulk"
         ],
         "type": "string"
       },
@@ -32944,6 +33197,61 @@
           }
         ],
         "summary": "List your media operations",
+        "tags": [
+          "Media operations"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/media-operations/bulk": {
+      "post": {
+        "description": "Applies one action to a frozen list of assets in the background. The list is never re-resolved; access is checked for every item as it is changed, and items the account cannot change are reported as skipped. Submitting the same requestId again returns the existing operation.",
+        "operationId": "createBulkMediaOperation",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaOperationBulkCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaOperationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Queue a bulk operation",
         "tags": [
           "Media operations"
         ],

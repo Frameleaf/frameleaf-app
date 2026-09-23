@@ -1,7 +1,12 @@
 import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
 import type { DownloadState } from '$lib/managers/download-manager.svelte';
 import { UploadState, type UploadAsset } from '$lib/types';
-import { MediaOperationDestination, MediaOperationStatus, type MediaOperationDto } from '@immich/sdk';
+import {
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+  type MediaOperationDto,
+} from '@immich/sdk';
 
 /**
  * The Activity page's view model (FL-104), ported from the prototype's `Activity.jsx` and the job
@@ -17,8 +22,9 @@ import { MediaOperationDestination, MediaOperationStatus, type MediaOperationDto
  *   cancel and retry that reach the server.
  * - **Uploads** and **downloads.** Genuinely browser-local: they belong to this tab and disappear
  *   with it, which the page says rather than implying they will carry on.
- * - **Bulk operations.** FL-32's session records, so a "select everything matching" job shows up
- *   next to everything else instead of only in the library's own strip.
+ * - **Bulk operations.** FL-32's durable `bulk` jobs are server jobs like any other and arrive with
+ *   the first source, carrying their counts. The library session's own records only cover the part
+ *   a tab does before handing a job over — finding the matching set — and show up here meanwhile.
  */
 
 /** Where an item came from. Decides which actions it can offer. */
@@ -90,6 +96,11 @@ export type ActivityItem = {
   canDismiss: boolean;
   /** True when the work only exists in this browser tab and will not survive leaving it. */
   browserLocal: boolean;
+  /**
+   * A bulk job's running totals. Counts only: which items were refused, and what they are, is not
+   * shown here, so a Locked or sensitive item never appears on this page by name or thumbnail.
+   */
+  bulk?: { requested: number; succeeded: number; failed: number; skipped: number };
 };
 
 const DESTINATION_KEY: Record<MediaOperationDestination, string> = {
@@ -143,6 +154,10 @@ const clampPercent = (value: number) => Math.min(100, Math.max(0, Math.round(val
  * where a bar sitting at zero looks stalled.
  */
 export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem => {
+  if (operation.kind === MediaOperationKind.Bulk) {
+    return fromBulkMediaOperation(operation);
+  }
+
   const status = operation.status;
   const running = RUNNING_STATUSES.includes(status);
   const finished = !running;
@@ -172,6 +187,63 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     canRetry: status === MediaOperationStatus.Failed || status === MediaOperationStatus.Cancelled,
     canDismiss: finished,
     browserLocal: false,
+  };
+};
+
+/** Server statuses a bulk job passes through while the worker has it. */
+const BULK_WORKING: readonly MediaOperationStatus[] = [
+  MediaOperationStatus.Preparing,
+  MediaOperationStatus.Rendering,
+  MediaOperationStatus.Validating,
+];
+
+/**
+ * One durable bulk job (FL-32) as a row.
+ *
+ * Titled by its action, which is what the person chose, and described by its counts. "Rendering"
+ * means nothing for a favourite, so a working job reads as running. A job that finished with
+ * failures inside it needs attention and offers Retry, which the server turns into a new job over
+ * exactly the items that did not go through; so does one that stopped before reaching the end.
+ */
+export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityItem => {
+  const status = operation.status;
+  const running = RUNNING_STATUSES.includes(status);
+  const bulk = operation.bulk;
+  const requested = bulk?.requested ?? Number(operation.totalUnits ?? 0);
+  const answered = bulk ? bulk.succeeded + bulk.failed + bulk.skipped : Number(operation.processedUnits ?? 0);
+  const unfinished = !running && answered < requested;
+  const failed = status === MediaOperationStatus.Failed || (!running && (bulk?.failed ?? 0) > 0);
+
+  return {
+    id: `job:${operation.id}`,
+    source: 'job',
+    operationId: operation.id,
+    kindKey: 'frameleaf_activity_kind_bulk',
+    statusKey: BULK_WORKING.includes(status)
+      ? 'frameleaf_activity_bulk_running'
+      : `frameleaf_activity_status_${status}`,
+    tone: failed ? 'danger' : STATUS_TONE[status],
+    title: operation.label,
+    ...(bulk ? { titleKey: `frameleaf_bulk_${bulk.action.replaceAll('-', '_')}` } : {}),
+    progress:
+      status === MediaOperationStatus.Completed
+        ? 100
+        : requested > 0 && (running || answered > 0)
+          ? clampPercent((answered / requested) * 100)
+          : null,
+    running,
+    finished: !running,
+    failed,
+    // Bulk work runs on this server; the destination adds nothing a person needs to read.
+    details: [],
+    error: operation.error ?? undefined,
+    errorCode: operation.errorCode ?? undefined,
+    startedAt: Date.parse(operation.startedAt ?? operation.createdAt),
+    canCancel: running && status !== MediaOperationStatus.Cancelling,
+    canRetry: !running && (failed || unfinished || status === MediaOperationStatus.Cancelled),
+    canDismiss: !running,
+    browserLocal: false,
+    ...(bulk ? { bulk: { requested, succeeded: bulk.succeeded, failed: bulk.failed, skipped: bulk.skipped } } : {}),
   };
 };
 
