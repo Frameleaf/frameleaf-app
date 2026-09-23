@@ -59,7 +59,7 @@ describe(BulkOperationService.name, () => {
     mocks = getMocks();
     operations = {
       claimNext: vi.fn().mockResolvedValue(undefined),
-      recoverExpiredClaims: vi.fn().mockResolvedValue({ requeued: 0, failed: 0, abandonedCancels: 0 }),
+      recoverExpiredClaims: vi.fn().mockResolvedValue({ requeued: 0, retried: 0, failed: 0, abandonedCancels: 0 }),
       setBulkResult: vi.fn().mockResolvedValue(running),
       reportProgress: vi.fn().mockResolvedValue(true),
       beginValidation: vi.fn().mockResolvedValue(true),
