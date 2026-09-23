@@ -20,8 +20,9 @@
  * mapping instead of each deriving their own.
  */
 import type { VideoPacketInfo, VideoStreamInfo } from 'src/types.js';
-import type { Rational, TimeBase } from 'src/utils/rational-time.js';
 import {
+  type Rational,
+  type TimeBase,
   coerceRational,
   equals,
   formatRational,
@@ -49,10 +50,11 @@ export interface VideoTimingMap {
   /** The earliest presentation timestamp in the stream, in ticks. Often, but not always, 0. */
   originTicks: number;
   /**
-   * The source's own average cadence, when the container declares one exactly. `null` for a
-   * variable-rate source and for a stream whose cadence only reached us as a float — a float
-   * cannot be turned back into `30000/1001` without guessing, and guessing is the failure this
-   * story exists to prevent.
+   * The source's own average cadence, when the container declares one exactly, and `null` when
+   * it does not — including when it only reached us as a float, because a float cannot be turned
+   * back into `30000/1001` without guessing and guessing is the failure this story exists to
+   * prevent. For a variable-rate source this is an *average* and describes no individual frame,
+   * so every decision below consults `variableFrameRate` before it consults this.
    */
   cadence: Rational | null;
   /** True when the scanned packets do not all share one duration. */
@@ -125,7 +127,8 @@ export const resolveOriginTicks = (packets: Pick<VideoPacketInfo, 'keyframePts' 
     return packets.startPts;
   }
 
-  return packets.keyframePts?.length > 0 ? Math.min(...packets.keyframePts) : 0;
+  const keyframePts = packets.keyframePts ?? [];
+  return keyframePts.length > 0 ? Math.min(...keyframePts) : 0;
 };
 
 /**
