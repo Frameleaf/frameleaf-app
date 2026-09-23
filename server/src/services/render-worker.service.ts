@@ -53,17 +53,16 @@ import {
   RenderWorkerLimit,
   RenderWorkerRepository,
 } from 'src/repositories/render-worker.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { RENDER_WORKER_LIMIT_INSTANCE_SUBJECT } from 'src/schema/tables/render-worker.table.js';
+import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
-  AUTHORIZED_MANIFEST_RESOLVER,
   AuthorizedManifest,
-  AuthorizedManifestResolver,
   DESTINATION_HEALTH_PROVIDER,
   DestinationHealthProvider,
   INPUT_GRANT_TTL_MS,
-  ManifestOperation,
   RenderLimits,
   UnknownDestinationHealthProvider,
   evaluateClaimAdmission,
@@ -74,6 +73,7 @@ import {
   tightestLimits,
   verifyInputGrant,
 } from 'src/utils/render-admission.js';
+import { StudioDestination, isStudioDestination } from 'src/utils/studio-resources.js';
 
 /** A session lives half a day; a worker that is still there re-admits with fresh evidence. */
 export const RENDER_WORKER_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -155,15 +155,33 @@ const mapAudit = (row: RenderWorkerAudit): RenderWorkerAuditDto => ({
   createdAt: asRequiredIso(row.createdAt),
 });
 
-const toManifestOperation = (operation: MediaOperation): ManifestOperation => ({
-  id: operation.id,
-  ownerId: operation.ownerId,
-  kind: operation.kind as MediaOperationKind,
-  assetId: operation.assetId,
-  projectId: operation.projectId,
-  revisionId: operation.revisionId,
-  snapshot: asObject(operation.snapshot),
-});
+/**
+ * What a Studio operation's immutable snapshot carries for FL-90 to re-resolve at claim time: the
+ * graph, the declared imports and generated files and the recorded cloud consent. A manifest is
+ * never stored on the row — it is signed with a per-process secret and expires in minutes — so it
+ * is resolved again, against the owner's current access, every time it is needed.
+ */
+type StudioSnapshotContext = {
+  graph: unknown;
+  revision: number;
+  imports?: unknown;
+  generated?: unknown;
+  catalog?: unknown;
+  cloudConsent?: unknown;
+};
+
+const studioContextOf = (operation: MediaOperation): StudioSnapshotContext | null => {
+  const snapshot = asObject(operation.snapshot);
+  const studio = asObject(snapshot.studio);
+  if (!operation.projectId || studio.graph === undefined || typeof studio.revision !== 'number') {
+    return null;
+  }
+  return studio as StudioSnapshotContext;
+};
+
+type ResolvedManifest =
+  | { complete: true; manifest: AuthorizedManifest; studio: StudioAuthorizedManifest | null }
+  | { complete: false; refused: Array<{ key: string; reason: string }> };
 
 /**
  * Authenticated renderer admission and resource limits (FL-95 `STU-401`).
@@ -183,7 +201,6 @@ const toManifestOperation = (operation: MediaOperation): ManifestOperation => ({
  */
 @Injectable()
 export class RenderWorkerService {
-  private manifestResolver: AuthorizedManifestResolver;
   private destinationHealth: DestinationHealthProvider;
 
   constructor(
@@ -193,13 +210,12 @@ export class RenderWorkerService {
     private cryptoRepository: CryptoRepository,
     private accessRepository: AccessRepository,
     private assetRepository: AssetRepository,
-    @Optional() @Inject(AUTHORIZED_MANIFEST_RESOLVER) manifestResolver?: AuthorizedManifestResolver,
+    private userRepository: UserRepository,
+    private studioResources: StudioResourceService,
     @Optional() @Inject(DESTINATION_HEALTH_PROVIDER) destinationHealth?: DestinationHealthProvider,
   ) {
     this.logger.setContext(RenderWorkerService.name);
-    // Until FL-90 registers the graph resolver, an operation may read its own source asset and the
-    // asset ids its immutable snapshot lists — each re-checked for owner access on every resolve.
-    this.manifestResolver = manifestResolver ?? new SnapshotManifestResolver(accessRepository);
+    // FL-110 registers the real provider; until then nothing is probed and nothing is claimed.
     this.destinationHealth = destinationHealth ?? new UnknownDestinationHealthProvider();
   }
 
@@ -585,6 +601,23 @@ export class RenderWorkerService {
           continue;
         }
 
+        // Resolve what the job may read *before* taking it. FL-90 walks the graph against the
+        // owner's current access; a source that went missing, was trashed, relocked or unshared
+        // since submit makes the manifest incomplete, and an incomplete manifest is not rendered.
+        const resolved = await this.resolveManifest(candidate as unknown as MediaOperation);
+        if (!resolved.complete) {
+          await this.repository.recordAudit({
+            workerId: worker.id,
+            event: RenderWorkerAuditEvent.ClaimRefused,
+            reason: RenderWorkerRefusalReason.ManifestIncomplete,
+            operationId: candidate.id,
+            detail: { refused: resolved.refused },
+          });
+          await this.repository.recordRefusal(candidate.id, RenderWorkerRefusalReason.ManifestIncomplete);
+          skipped.push(candidate.id);
+          continue;
+        }
+
         const claimed = await this.repository.claimQueued({
           id: candidate.id,
           workerId: worker.id,
@@ -597,10 +630,10 @@ export class RenderWorkerService {
         }
 
         const operation = claimed.operation as unknown as MediaOperation;
-        const [checkpoints, manifest] = await Promise.all([
-          this.operations.getCheckpoints(operation.id),
-          this.manifestResolver.resolve(toManifestOperation(operation)),
-        ]);
+        const checkpoints = await this.operations.getCheckpoints(operation.id);
+        const manifest = resolved.studio
+          ? this.studioInputs(operation, resolved.studio, worker.id, now)
+          : resolved.manifest;
         const effective = tightestLimits(workerLimits, ownerLimits.get(candidate.ownerId));
 
         this.logger.log(`Render worker ${worker.id} claimed media operation ${operation.id} (${operation.kind})`);
@@ -832,16 +865,20 @@ export class RenderWorkerService {
   /**
    * Serve one input under a grant.
    *
-   * Four checks, all of which must hold: the session is live; the operation is claimed by *this*
-   * worker; the grant verifies against this operation, this claim and this session; and the owner
-   * still has access to the asset right now. The manifest is resolved again rather than trusted
-   * from the grant, so an input the owner lost access to since the claim is refused even though
-   * the grant has not expired.
+   * Every check must hold: the session is live; the operation is claimed by *this* worker; the
+   * operation-scoped grant verifies against this operation, this claim and this session; and the
+   * resource is still readable by the owner right now. For a Studio resource that last check is
+   * FL-90's `verifyReadGrant`, run as the operation owner, which re-checks live access and the
+   * checksum on every open. For a single-asset workload it is the owner access check. The manifest
+   * is resolved again rather than trusted from the grant, so nothing the owner lost access to since
+   * the claim is served even while the grant is unexpired.
    */
   async readInput(sessionToken: string | undefined, operationId: string, grant: string): Promise<ImmichFileResponse> {
     const { worker, session } = await this.authenticate(sessionToken);
 
-    const operation = await this.repository.getClaimedByWorker(operationId, worker.id);
+    const operation = (await this.repository.getClaimedByWorker(operationId, worker.id)) as unknown as
+      | MediaOperation
+      | undefined;
     if (!operation?.claimToken) {
       throw new NotFoundException('Media operation not found');
     }
@@ -855,22 +892,13 @@ export class RenderWorkerService {
       throw new ForbiddenException('Input grant invalid');
     }
 
-    const manifest = await this.manifestResolver.resolve(toManifestOperation(operation as unknown as MediaOperation));
-    const input = manifest.inputs.find(
-      (candidate) => candidate.inputId === decision.payload.inputId && candidate.assetId === decision.payload.assetId,
-    );
-    if (!input) {
-      throw new ForbiddenException('Input grant invalid');
-    }
-
-    const asset = await this.assetRepository.getById(input.assetId);
-    if (!asset || asset.deletedAt || asset.ownerId !== operation.ownerId) {
-      throw new NotFoundException('Input not available');
-    }
+    const path = decision.payload.token
+      ? await this.studioInputPath(operation, worker.id, decision.payload)
+      : await this.assetInputPath(operation, decision.payload);
 
     return new ImmichFileResponse({
-      path: asset.originalPath,
-      contentType: mimeTypes.lookup(asset.originalPath),
+      path,
+      contentType: mimeTypes.lookup(path),
       cacheControl: CacheControl.PrivateWithoutCache,
     });
   }
@@ -878,6 +906,218 @@ export class RenderWorkerService {
   /* ------------------------------------------------------------------ */
   /* Internals                                                           */
   /* ------------------------------------------------------------------ */
+
+  /**
+   * Resolve what an operation may read, as its owner, right now.
+   *
+   * Studio kinds go through FL-90: the graph in the immutable snapshot is re-resolved against the
+   * owner's current access and the result must be complete. Single-asset workloads (restoration,
+   * quick edit) have one source: the operation's asset, re-checked for owner access with Locked
+   * media excluded, because the render runs without the owner's elevated session.
+   */
+  private async resolveManifest(operation: MediaOperation): Promise<ResolvedManifest> {
+    const studio = studioContextOf(operation);
+
+    if (studio) {
+      const destination = operation.destination;
+      if (!isStudioDestination(destination)) {
+        return { complete: false, refused: [{ key: 'destination', reason: 'unknown-destination' }] };
+      }
+
+      const auth = await this.ownerAuth(operation.ownerId);
+      if (!auth) {
+        return { complete: false, refused: [{ key: 'owner', reason: 'owner-unavailable' }] };
+      }
+
+      let resolution;
+      try {
+        resolution = await this.studioResources.resolveProjectResources(auth, {
+          projectId: operation.projectId!,
+          ownerId: operation.ownerId,
+          revision: studio.revision,
+          graph: studio.graph,
+          imports: Array.isArray(studio.imports) ? (studio.imports as never) : undefined,
+          generated: Array.isArray(studio.generated) ? (studio.generated as never) : undefined,
+          catalog: studio.catalog ? (studio.catalog as never) : undefined,
+          destination: destination as StudioDestination,
+          cloudConsent: studio.cloudConsent === true,
+        });
+      } catch (error: Error | any) {
+        // Consent missing, graph oversized, destination unknown: FL-90 refuses to enumerate at all.
+        return { complete: false, refused: [{ key: 'graph', reason: `${error?.message ?? error}` }] };
+      }
+
+      if (!resolution.manifest.complete) {
+        return {
+          complete: false,
+          refused: resolution.refused.map((item) => ({ key: item.key, reason: item.reason })),
+        };
+      }
+
+      return {
+        complete: true,
+        studio: resolution.manifest,
+        manifest: {
+          operationId: operation.id,
+          revisionId: operation.revisionId,
+          inputs: resolution.manifest.entries
+            .filter((entry) => entry.grant === 'render' && entry.path)
+            .map((entry) => ({
+              inputId: entry.key,
+              kind: entry.kind,
+              resourceId: entry.id,
+              checksum: entry.checksum,
+              token: null,
+            })),
+        },
+      };
+    }
+
+    const inputs: AuthorizedManifest['inputs'] = [];
+    if (operation.assetId) {
+      const allowed = await this.accessRepository.asset.checkOwnerAccess(
+        operation.ownerId,
+        new Set([operation.assetId]),
+        false,
+      );
+      if (allowed.has(operation.assetId)) {
+        inputs.push({
+          inputId: 'source',
+          kind: 'library-asset',
+          resourceId: operation.assetId,
+          checksum: null,
+          token: null,
+        });
+      }
+    }
+
+    return {
+      complete: true,
+      studio: null,
+      manifest: { operationId: operation.id, revisionId: operation.revisionId, inputs },
+    };
+  }
+
+  /** Turn FL-90's worker-bound read grants into the inputs a claim hands out. */
+  private studioInputs(
+    operation: MediaOperation,
+    manifest: StudioAuthorizedManifest,
+    workerId: string,
+    now: Date,
+  ): AuthorizedManifest {
+    const grants = this.studioResources.issueReadGrants(manifest, {
+      workerId,
+      ttlSeconds: Math.floor(INPUT_GRANT_TTL_MS / 1000),
+      now,
+    });
+    const checksums = new Map(manifest.entries.map((entry) => [entry.key, entry.checksum]));
+
+    return {
+      operationId: operation.id,
+      revisionId: operation.revisionId,
+      inputs: grants.map((grant) => ({
+        inputId: grant.key,
+        kind: grant.kind,
+        resourceId: grant.id,
+        checksum: checksums.get(grant.key) ?? null,
+        token: grant.token,
+      })),
+    };
+  }
+
+  /**
+   * Redeem a Studio input: FL-90 verifies its own grant as the operation owner — signature, expiry,
+   * worker binding, live access and checksum — and the manifest is resolved again to find the path
+   * for resources FL-90 reports by reference only.
+   */
+  private async studioInputPath(
+    operation: MediaOperation,
+    workerId: string,
+    payload: { inputId: string; resourceId: string; token: string | null },
+  ): Promise<string> {
+    const auth = await this.ownerAuth(operation.ownerId);
+    if (!auth) {
+      throw new NotFoundException('Input not available');
+    }
+
+    const verification = await this.studioResources.verifyReadGrant(payload.token!, { workerId, auth });
+    if (!verification.valid) {
+      this.logger.warn(`Input grant refused on media operation ${operation.id}: ${verification.reason}`);
+      throw new ForbiddenException('Input grant invalid');
+    }
+
+    const { grant } = verification;
+    if (
+      grant.scope !== 'render' ||
+      grant.projectId !== operation.projectId ||
+      grant.key !== payload.inputId ||
+      grant.id !== payload.resourceId
+    ) {
+      throw new ForbiddenException('Input grant invalid');
+    }
+
+    if (verification.path) {
+      return verification.path;
+    }
+
+    // Project-owned and deployment-owned files: FL-90 bound their access at resolve time; the path
+    // comes from a fresh resolution so a re-declared or removed resource is not served from memory.
+    const resolved = await this.resolveManifest(operation);
+    const entry = resolved.complete
+      ? resolved.studio?.entries.find((candidate) => candidate.key === payload.inputId && candidate.grant === 'render')
+      : undefined;
+    if (!entry?.path) {
+      throw new NotFoundException('Input not available');
+    }
+
+    return entry.path;
+  }
+
+  /** Redeem a single-asset input: the owner must still be able to read the asset, and own it. */
+  private async assetInputPath(
+    operation: MediaOperation,
+    payload: { inputId: string; resourceId: string },
+  ): Promise<string> {
+    const resolved = await this.resolveManifest(operation);
+    const input = resolved.complete
+      ? resolved.manifest.inputs.find(
+          (candidate) => candidate.inputId === payload.inputId && candidate.resourceId === payload.resourceId,
+        )
+      : undefined;
+    if (!input) {
+      throw new ForbiddenException('Input grant invalid');
+    }
+
+    const asset = await this.assetRepository.getById(input.resourceId);
+    if (!asset || asset.deletedAt || asset.ownerId !== operation.ownerId) {
+      throw new NotFoundException('Input not available');
+    }
+
+    return asset.originalPath;
+  }
+
+  /**
+   * The operation owner as an `AuthDto`, for FL-90's resolver and verifier. Plain session, no
+   * elevated permission and no shared link: a render reads what the owner could read signed in
+   * normally, and a deleted owner resolves to nothing.
+   */
+  private async ownerAuth(ownerId: string): Promise<AuthDto | null> {
+    const user = await this.userRepository.get(ownerId, {});
+    if (!user) {
+      return null;
+    }
+
+    return {
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        isAdmin: user.isAdmin,
+        quotaSizeInBytes: user.quotaSizeInBytes,
+        quotaUsageInBytes: user.quotaUsageInBytes,
+      },
+    };
+  }
 
   private grantInputs(
     manifest: AuthorizedManifest,
@@ -887,14 +1127,20 @@ export class RenderWorkerService {
 
     return manifest.inputs.map((input) => {
       const grant = signInputGrant(
-        { operationId: manifest.operationId, inputId: input.inputId, assetId: input.assetId, expiresAt },
+        {
+          operationId: manifest.operationId,
+          inputId: input.inputId,
+          resourceId: input.resourceId,
+          token: input.token,
+          expiresAt,
+        },
         { claimToken: binding.claimToken, sessionTokenHash: binding.sessionTokenHash },
       );
 
       return {
         inputId: input.inputId,
-        assetId: input.assetId,
-        role: input.role,
+        kind: input.kind,
+        resourceId: input.resourceId,
         checksum: input.checksum,
         url: `/api/render-workers/operations/${manifest.operationId}/inputs/${grant}`,
         expiresAt: new Date(expiresAt).toISOString(),
@@ -971,47 +1217,5 @@ export class RenderWorkerService {
     }
 
     return worker;
-  }
-}
-
-/**
- * The default manifest until FL-90 registers the graph-walking resolver.
- *
- * An operation may read its own source asset and the asset ids its immutable snapshot lists under
- * `inputAssetIds`, and only those that its owner can still read *now*. Locked assets are excluded:
- * the render runs without the owner's elevated session, so it reads as a plain session would.
- */
-export class SnapshotManifestResolver implements AuthorizedManifestResolver {
-  constructor(private accessRepository: AccessRepository) {}
-
-  async resolve(operation: ManifestOperation): Promise<AuthorizedManifest> {
-    const requested = new Set<string>();
-    if (operation.assetId) {
-      requested.add(operation.assetId);
-    }
-
-    const listed = operation.snapshot.inputAssetIds;
-    if (Array.isArray(listed)) {
-      for (const id of listed) {
-        if (typeof id === 'string') {
-          requested.add(id);
-        }
-      }
-    }
-
-    const allowed = await this.accessRepository.asset.checkOwnerAccess(operation.ownerId, requested, false);
-
-    return {
-      operationId: operation.id,
-      revisionId: operation.revisionId,
-      inputs: [...requested]
-        .filter((assetId) => allowed.has(assetId))
-        .map((assetId) => ({
-          inputId: assetId === operation.assetId ? 'source' : `asset:${assetId}`,
-          assetId,
-          role: assetId === operation.assetId ? 'source' : 'other',
-          checksum: null,
-        })),
-    };
   }
 }
