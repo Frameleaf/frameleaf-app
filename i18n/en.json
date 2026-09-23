@@ -2222,6 +2222,7 @@
   "frameleaf_activity_kind_studio_bundle_export": "Project export",
   "frameleaf_activity_kind_studio_bundle_import": "Project import",
   "frameleaf_activity_kind_studio_export": "Export",
+  "frameleaf_activity_kind_studio_export_publish": "Export",
   "frameleaf_activity_kind_studio_preview": "Preview render",
   "frameleaf_activity_kind_takeout_import": "Google Photos import",
   "frameleaf_activity_kind_upload": "Upload",
