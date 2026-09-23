@@ -116,7 +116,7 @@
     class:tone-danger={tone === 'danger'}
     aria-hidden="true"
   >
-    <Icon icon={getIconType(notification.type)} size={18} />
+    <Icon icon={getIconType(notification.type)} size="18" />
   </span>
   <span class="fl-notif-text">
     <strong>

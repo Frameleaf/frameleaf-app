@@ -28,6 +28,7 @@ import {
   type StudioBundleImportCreateDto,
   type StudioBundleUploadDto,
 } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 import type { StudioCommandEnvelope, StudioCommandPayloads } from './commands';
 import { studioBundleMapping } from './project-library';
 
@@ -45,7 +46,7 @@ export const sdkStudioBundleApi: StudioBundleApi = {
 
 /** A refusal the person can read. The handler throws it; the host shows `messageKey`. */
 export class StudioBundleCommandError extends Error {
-  constructor(readonly messageKey: string) {
+  constructor(readonly messageKey: Translations) {
     super(messageKey);
   }
 }
@@ -75,7 +76,7 @@ export interface StudioBundleHandlerOptions {
   /** A job was queued; the host points the person at Activity. */
   onQueued: (operation: MediaOperationDto) => void;
   /** A refusal to show. The handler still throws, so the bridge reports the command as failed. */
-  onRefused: (messageKey: string) => void;
+  onRefused: (messageKey: Translations) => void;
 }
 
 export const createStudioBundleHandlers = ({
@@ -85,7 +86,7 @@ export const createStudioBundleHandlers = ({
   onQueued,
   onRefused,
 }: StudioBundleHandlerOptions) => {
-  const refuse = (messageKey: string): never => {
+  const refuse = (messageKey: Translations): never => {
     onRefused(messageKey);
     throw new StudioBundleCommandError(messageKey);
   };

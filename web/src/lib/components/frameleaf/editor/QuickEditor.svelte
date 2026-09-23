@@ -2,7 +2,7 @@
   import type { EditorSettings } from '$lib/frameleaf/editor-draft';
 
   /** Copy settings / Paste settings works across photos for the life of the page. */
-  let settingsClipboard: EditorSettings | null = null;
+  let settingsClipboard = $state<EditorSettings | null>(null);
 </script>
 
 <script lang="ts">
@@ -138,7 +138,7 @@
     mdiVectorEllipse,
   } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
-  import { t } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
 
   type Tool = 'adjust' | 'crop' | 'masks' | 'presets' | 'restore' | 'versions';
 
@@ -166,7 +166,7 @@
     edited: false,
   });
 
-  const tools: { id: Tool; label: string; icon: string }[] = [
+  const tools: { id: Tool; label: Translations; icon: string }[] = [
     { id: 'adjust', label: 'frameleaf_editor_tool_adjust', icon: mdiTune },
     { id: 'crop', label: 'frameleaf_editor_tool_crop', icon: mdiCropRotate },
     { id: 'masks', label: 'frameleaf_editor_tool_masks', icon: mdiVectorEllipse },
@@ -1025,9 +1025,10 @@
         </div>
       </div>
 
-      <nav
+      <div
         class="ed-rail"
         role="tablist"
+        tabindex="-1"
         aria-label={$t('frameleaf_editor_tools_label')}
         aria-orientation="vertical"
         onkeydown={railKey}
@@ -1048,9 +1049,9 @@
             <span>{$t(item.label)}</span>
           </button>
         {/each}
-      </nav>
+      </div>
 
-      <section
+      <div
         class="ed-panel"
         id="fl-editor-panel"
         role="tabpanel"
@@ -1119,7 +1120,7 @@
                   aria-checked={recipe.aspect === aspect.id}
                   onclick={() => chooseAspect(aspect.id)}
                 >
-                  {aspect.label.startsWith('frameleaf_') ? $t(aspect.label) : aspect.label}
+                  {aspect.label.startsWith('frameleaf_') ? $t(aspect.label as Translations) : aspect.label}
                 </button>
               {/each}
             </div>
@@ -1334,7 +1335,7 @@
             {/if}
           </div>
         {/if}
-      </section>
+      </div>
     {/if}
   </div>
   <div class="ed-live" role="status" aria-live="polite">{announce}</div>

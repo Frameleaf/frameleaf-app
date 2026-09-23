@@ -148,7 +148,7 @@
           class:pausing={row.pausing}
         >
           <a class="fl-job-main" href={row.href} onclick={() => onNavigate?.()}>
-            <span class="fl-job-icon" aria-hidden="true"><Icon icon={iconOf(row)} size={18} /></span>
+            <span class="fl-job-icon" aria-hidden="true"><Icon icon={iconOf(row)} size="18" /></span>
             <span class="fl-job-text">
               <span class="fl-job-row">
                 <strong>{name}</strong>
@@ -178,7 +178,7 @@
               aria-describedby={`${id}-reason`}
               title={$t(row.control.reasonKey)}
             >
-              <Icon icon={mdiPause} size={18} aria-hidden="true" />
+              <Icon icon={mdiPause} size="18" aria-hidden="true" />
             </button>
             <span id={`${id}-reason`} class="fl-sr-only">{$t(row.control.reasonKey)}</span>
           {:else}
@@ -191,7 +191,7 @@
               disabled={busyId === row.id}
               onclick={() => void toggle(row)}
             >
-              <Icon icon={row.control.kind === 'resume' ? mdiPlay : mdiPause} size={18} aria-hidden="true" />
+              <Icon icon={row.control.kind === 'resume' ? mdiPlay : mdiPause} size="18" aria-hidden="true" />
             </button>
           {/if}
 

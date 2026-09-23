@@ -1,4 +1,5 @@
 import type { SearchFilter } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 import { discoveryTextField, type DiscoveryQuery, type DiscoveryTextField } from '$lib/components/discovery/query';
 import type { FilterEntityKind } from '$lib/frameleaf/filter-entity-names';
 
@@ -23,7 +24,7 @@ export const FILTER_ENTITY_FIELDS: Readonly<Record<string, FilterEntityKind>> = 
 };
 
 /** i18n keys for an entity whose name could not be read (hidden, unnamed, gone or not allowed). */
-export const FILTER_ENTITY_FALLBACK_KEYS: Readonly<Record<FilterEntityKind, string>> = {
+export const FILTER_ENTITY_FALLBACK_KEYS: Readonly<Record<FilterEntityKind, Translations>> = {
   person: 'no_name',
   pet: 'frameleaf_pets_unnamed',
   tag: 'tag',
@@ -101,12 +102,12 @@ export type SearchContextKey = 'text' | 'queryAssetId' | 'spaceId';
 export type SearchContextChip = {
   key: SearchContextKey;
   /** i18n key naming the chip. */
-  labelKey: string;
+  labelKey: Translations;
   /** What was typed, for the text chip; null for the others, whose name says it all. */
   value: string | null;
 };
 
-const TEXT_FIELD_LABEL_KEYS: Readonly<Record<DiscoveryTextField, string>> = {
+const TEXT_FIELD_LABEL_KEYS: Readonly<Record<DiscoveryTextField, Translations>> = {
   originalFileName: 'file_name_text',
   description: 'description',
   ocr: 'ocr',

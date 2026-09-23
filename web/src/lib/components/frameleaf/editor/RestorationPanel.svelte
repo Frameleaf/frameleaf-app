@@ -421,7 +421,7 @@
       },
     });
 
-  const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString($locale) : '');
+  const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString($locale ?? undefined) : '');
 </script>
 
 <div class="ed-panel-body" data-testid="restoration-panel">

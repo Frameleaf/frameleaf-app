@@ -1,4 +1,5 @@
 import { getMediaOperation, MediaOperationStatus, type MediaOperationDetailDto } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 import { SvelteMap } from 'svelte/reactivity';
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
 import {
@@ -29,7 +30,7 @@ import {
  */
 
 /** What a tile shows for an item of a durable job. Absent means nothing. */
-export type DurableTileState = { state: 'pending' } | { state: 'failed'; reasonKey: string };
+export type DurableTileState = { state: 'pending' } | { state: 'failed'; reasonKey: Translations };
 
 type TrackedJob = {
   operationId: string;
