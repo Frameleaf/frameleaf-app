@@ -23,10 +23,12 @@ import {
  * 3. Every other asset the fork counts as sensitive gets a lock with reason `detected`, but only when
  *    the administrator had "hide sensitive detections from the library" switched on in the saved
  *    configuration: with it off, detections were never hidden, and locking them now would take them
- *    out of the timeline. The same switch decides whether new detections lock from now on.
+ *    out of the timeline. The same switch decides whether new detections lock from now on. A switch
+ *    turned on only in a configuration file is not visible here; the server locks those detections
+ *    once on its first start (`ImageEnrichmentService.onConfigInit`).
  *    In the fork's `active` phase the privacy sidecar (`immich_fork.asset_privacy`) is the source;
  *    otherwise `asset.is_nsfw` and the review in `asset_metadata`. Only positive evidence counts: an
- *    asset with no privacy row is not locked here.
+ *    asset with no privacy row is not locked here. Only rows whose asset still exists are read.
  * 4. Stacks and live photos lock as a whole: every other member of a stack with a locked member, and
  *    the video part of a locked live photo, get a lock with the same reason. (Migration 2100000000310
  *    no longer does this on the upstream Locked folder; it happens here, on the lock records.)
@@ -79,6 +81,7 @@ export async function up(db: Kysely<any>): Promise<void> {
       INSERT INTO "asset_lock" ("assetId", "reason", "lockedAt")
       SELECT "privacy"."assetId", 'marked', coalesce("privacy"."updatedAt", now())
       FROM immich_fork.asset_privacy AS "privacy"
+      INNER JOIN "asset" ON "asset"."id" = "privacy"."assetId"
       WHERE "privacy"."isNsfw" = true
         AND "privacy".suppression ->> 'isNsfw' = 'true'
       ON CONFLICT ("assetId") DO NOTHING
@@ -88,6 +91,7 @@ export async function up(db: Kysely<any>): Promise<void> {
         INSERT INTO "asset_lock" ("assetId", "reason", "lockedAt")
         SELECT "privacy"."assetId", 'detected', coalesce("privacy"."updatedAt", now())
         FROM immich_fork.asset_privacy AS "privacy"
+        INNER JOIN "asset" ON "asset"."id" = "privacy"."assetId"
         WHERE "privacy"."isNsfw" = true
         ON CONFLICT ("assetId") DO NOTHING
       `.execute(db);
@@ -97,6 +101,7 @@ export async function up(db: Kysely<any>): Promise<void> {
       INSERT INTO "asset_lock" ("assetId", "reason", "lockedAt")
       SELECT "asset_metadata"."assetId", 'marked', "asset_metadata"."updatedAt"
       FROM "asset_metadata"
+      INNER JOIN "asset" ON "asset"."id" = "asset_metadata"."assetId"
       WHERE "asset_metadata"."key" = 'ml-enrichment'
         AND "asset_metadata"."value" #>> '{nsfwDetection,review,isNsfw}' = 'true'
       ON CONFLICT ("assetId") DO NOTHING
