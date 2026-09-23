@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from '$app/state';
   /**
    * Utilities → Duplicate review (FL-61). The page is the prototype's fast duplicate review; the
    * review itself, its queue, decisions and undo live in `DuplicateReview`. This page owns the route:
@@ -6,8 +7,6 @@
    */
   import { goto } from '$app/navigation';
   import DuplicateReview from '$lib/components/frameleaf/DuplicateReview.svelte';
-  import Theme from '$lib/components/frameleaf/Theme.svelte';
-  import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import Portal from '$lib/elements/Portal.svelte';
   import type { ReviewGroup } from '$lib/frameleaf/duplicate-review';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -19,10 +18,10 @@
   import { handleError } from '$lib/utils/handle-error';
   import { navigate } from '$lib/utils/navigation';
   import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
-  import { Theme as AppTheme, themeManager } from '@immich/ui';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
-  import type { PageData } from './$types';
+  import type { UtilityData } from '$lib/frameleaf/utilities-load';
+  type PageData = Extract<UtilityData, { tool: 'duplicates' }>;
 
   type Props = {
     data: PageData;
@@ -62,22 +61,40 @@
   });
 
   onDestroy(() => assetViewerManager.showAssetViewer(false));
+  $effect(() => {
+    const id = page.url.searchParams.get('assetId');
+    if (!id) {
+      assetViewerManager.showAssetViewer(false);
+      return;
+    }
+    let active = true;
+    void getAssetInfo({ ...authManager.params, id })
+      .then((asset) => {
+        if (active) {
+          assetViewerManager.setAsset(asset);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          assetViewerManager.showAssetViewer(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  });
 </script>
 
-<UserPageLayout title={data.meta.title} scrollbar={true}>
-  <Theme theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}>
-    <div class="fl-duplicates-page">
-      <DuplicateReview
-        groups={data.groups}
-        history={data.history}
-        trashEnabled={featureFlagsManager.value.trash}
-        keyboardPaused={assetViewerManager.isViewing}
-        onOpen={(asset, group) => void openAsset(asset, group)}
-        onOpenTrash={() => void goto(Route.trash())}
-      />
-    </div>
-  </Theme>
-</UserPageLayout>
+<div class="fl-duplicates-page">
+  <DuplicateReview
+    groups={data.groups}
+    history={data.history}
+    trashEnabled={featureFlagsManager.value.trash}
+    keyboardPaused={assetViewerManager.isViewing}
+    onOpen={(asset, group) => void openAsset(asset, group)}
+    onOpenTrash={() => void goto(Route.trash())}
+  />
+</div>
 
 {#if assetViewerManager.isViewing}
   {#await import('$lib/components/asset-viewer/AssetViewer.svelte') then { default: AssetViewer }}
