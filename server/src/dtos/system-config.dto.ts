@@ -128,3 +128,32 @@ const SmartAlbumReevaluateRequestSchema = z
   .meta({ id: 'SmartAlbumReevaluateRequestDto' });
 
 export class SmartAlbumReevaluateRequestDto extends createZodDto(SmartAlbumReevaluateRequestSchema) {}
+
+// FL-66: the settings editor's baseline. The revision is a digest of the saved settings; a save
+// that sends it back as `expectedRevision` is refused (409) when the settings changed since.
+const AdminConfigRevisionResponseSchema = z
+  .object({
+    config: AdminConfigSchema,
+    revision: z
+      .string()
+      .describe(
+        'Changes whenever a saved setting changes; send it back as expectedRevision so a save made against older settings is refused',
+      ),
+  })
+  .meta({ id: 'AdminConfigRevisionResponseDto' });
+
+export class AdminConfigRevisionResponseDto extends createZodDto(AdminConfigRevisionResponseSchema) {}
+
+const AdminConfigRevisionUpdateSchema = z
+  .object({
+    config: AdminConfigSchema,
+    expectedRevision: z
+      .string()
+      .min(1)
+      .describe(
+        'The revision the changes were made against. When the saved settings no longer match it the update is refused with 409 and nothing is changed',
+      ),
+  })
+  .meta({ id: 'AdminConfigRevisionUpdateDto' });
+
+export class AdminConfigRevisionUpdateDto extends createZodDto(AdminConfigRevisionUpdateSchema) {}

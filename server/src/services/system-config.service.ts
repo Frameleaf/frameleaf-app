@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { isEqual, omit } from 'lodash-es';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent } from 'src/decorators.js';
@@ -13,19 +13,28 @@ import {
   mapUserConfig,
 } from 'src/dtos/config.dto.js';
 import {
+  AdminConfigRevisionResponseDto,
+  AdminConfigRevisionUpdateDto,
   ImageDescriptionRequeueEstimateDto,
   ImageDescriptionRequeueResponseDto,
   SmartAlbumReevaluateEstimateDto,
   SmartAlbumReevaluateRequestDto,
   SmartAlbumReevaluateResponseDto,
 } from 'src/dtos/system-config.dto.js';
-import { BootstrapEventPriority, JobName, MlDestinationKind, QueueName, SystemMetadataKey } from 'src/enum.js';
+import {
+  BootstrapEventPriority,
+  DatabaseLock,
+  JobName,
+  MlDestinationKind,
+  QueueName,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import {
   MachineLearningHardwareResponse,
   defaultMachineLearningHardware,
 } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
-import { clearConfigCache } from 'src/utils/config.js';
+import { SYSTEM_CONFIG_CHANGED_MESSAGE, clearConfigCache, getConfigRevision } from 'src/utils/config.js';
 import { isImageDescriptionEnabled } from 'src/utils/misc.js';
 import { resolveEndpoint } from 'src/utils/ml-destination.js';
 import { toPlainObject } from 'src/utils/object.js';
@@ -170,13 +179,60 @@ export class SystemConfigService extends BaseService {
     }
   }
 
+  /** FL-66: the saved settings with the revision the settings editor sends back on save. */
+  async getAdminConfigWithRevision(): Promise<AdminConfigRevisionResponseDto> {
+    const config = await this.getConfig({ withCache: false });
+    return { config: mapAdminConfig(config), revision: getConfigRevision(config) };
+  }
+
+  /**
+   * FL-66: save the settings editor's draft only when the saved settings still match the
+   * revision it was made against; otherwise nothing changes and the editor keeps the draft (409).
+   */
+  async updateAdminConfigWithRevision({
+    config,
+    expectedRevision,
+  }: AdminConfigRevisionUpdateDto): Promise<AdminConfigRevisionResponseDto> {
+    const newConfig = await this.saveAdminConfig(config, expectedRevision);
+    return { config: mapAdminConfig(newConfig), revision: getConfigRevision(newConfig) };
+  }
+
   async updateAdminConfig(dto: AdminConfigDto): Promise<AdminConfigDto> {
+    return mapAdminConfig(await this.saveAdminConfig(dto));
+  }
+
+  /**
+   * One settings save (FL-66). The transaction boundary is the configuration itself: reading the
+   * saved settings, the revision check, validation and the write happen under one database lock,
+   * so two administrators saving at the same moment cannot both pass the check, and the write is
+   * a single database transaction (see ForkSchemaRepository.persistConfig). Resources that
+   * follow from settings (local machine learning destinations, smart album backfill, the RunPod
+   * serverless endpoint, queue concurrency) are reconciled afterwards by the ConfigUpdate
+   * listeners through their own services; a failure there never rolls the saved settings back.
+   */
+  private async saveAdminConfig(dto: AdminConfigDto, expectedRevision?: string): Promise<SystemConfig> {
     const { configFile } = this.configRepository.getEnv();
     if (configFile) {
       throw new BadRequestException('Cannot update configuration while IMMICH_CONFIG_FILE is in use');
     }
 
+    const { oldConfig, newConfig } = await this.databaseRepository.withLock(DatabaseLock.SystemConfigUpdate, () =>
+      this.writeAdminConfig(dto, expectedRevision),
+    );
+
+    await this.eventRepository.emit('ConfigUpdate', { newConfig, oldConfig });
+
+    return newConfig;
+  }
+
+  private async writeAdminConfig(
+    dto: AdminConfigDto,
+    expectedRevision?: string,
+  ): Promise<{ oldConfig: SystemConfig; newConfig: SystemConfig }> {
     const oldConfig = await this.getConfig({ withCache: false });
+    if (expectedRevision !== undefined && getConfigRevision(oldConfig) !== expectedRevision) {
+      throw new ConflictException(SYSTEM_CONFIG_CHANGED_MESSAGE);
+    }
 
     // mapConfig redacts machineLearning.runpod.apiKey to '' on read. Mirror
     // the convention on write: an empty incoming apiKey means "preserve the
@@ -235,9 +291,7 @@ export class SystemConfigService extends BaseService {
 
     const newConfig: SystemConfig = await this.updateConfig(dto);
 
-    await this.eventRepository.emit('ConfigUpdate', { newConfig, oldConfig });
-
-    return mapAdminConfig(newConfig);
+    return { oldConfig, newConfig };
   }
 
   async getCustomCss(): Promise<string> {

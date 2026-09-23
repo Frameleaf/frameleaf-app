@@ -7,6 +7,7 @@ import { DeepPartial, UserMetadataItem, UserPreferences } from 'src/types.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
 import { emptySuppressionPreferences } from 'src/utils/hidden-content.js';
 import { getKeysDeep } from 'src/utils/misc.js';
+import { canonicalJson } from 'src/utils/object.js';
 
 /**
  * FL-77: preferences plus the Frameleaf admin-enforced casting permission.
@@ -156,24 +157,6 @@ export const restrictPreferencesUpdate = (
   }
 
   return { ...allowed, cast };
-};
-
-/** Serialises a value with object keys sorted, so equal preferences always hash the same way. */
-const canonicalJson = (value: unknown): string => {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
-  }
-
-  if (value !== null && typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    const entries = Object.keys(record)
-      .filter((key) => record[key] !== undefined)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`);
-    return `{${entries.join(',')}}`;
-  }
-
-  return JSON.stringify(value) ?? 'null';
 };
 
 /**

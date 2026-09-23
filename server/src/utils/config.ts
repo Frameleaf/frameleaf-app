@@ -1,6 +1,7 @@
 import AsyncLock from 'async-lock';
 import { load as loadYaml } from 'js-yaml';
 import { cloneDeep, get, isEmpty, isEqual, set } from 'lodash-es';
+import { createHash } from 'node:crypto';
 import type { DeepPartial } from 'src/types.js';
 import { AdminConfigDto, SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { DatabaseLock, SystemMetadataKey } from 'src/enum.js';
@@ -9,6 +10,7 @@ import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { getKeysDeep, unsetDeep } from 'src/utils/misc.js';
+import { canonicalJson } from 'src/utils/object.js';
 
 type RepoDeps = {
   configRepo: ConfigRepository;
@@ -40,6 +42,36 @@ export const getConfig = async (repos: RepoDeps, { withCache }: { withCache: boo
   }
 
   return repos.forkSchemaRepo ? repos.forkSchemaRepo.overlayConfig(config!) : config!;
+};
+
+/**
+ * FL-66: values the server writes on its own (bookkeeping for the image description re-queue
+ * reminder). Every update keeps the stored values whatever a client sends, so they are left out
+ * of the revision: deferring a re-queue must not make another administrator's draft stale.
+ */
+export const SERVER_MANAGED_CONFIG_PATHS = [
+  'machineLearning.imageDescription.pendingRequeueAt',
+  'machineLearning.imageDescription.lastConfigChangeAt',
+] as const;
+
+export const SYSTEM_CONFIG_CHANGED_MESSAGE =
+  'The system settings changed after they were loaded. Load the latest settings and try again.';
+
+/**
+ * FL-66: a digest of the effective system configuration (stored values merged over the
+ * defaults, including the fork's configuration sidecar), reported to the settings editor as
+ * `revision`. It changes whenever a saved value changes, so a save made against settings that
+ * another administrator (or a resource action such as RunPod provisioning) changed since they
+ * were loaded can be refused instead of silently overwriting them. The revision is never
+ * stored, so no schema change is needed. Only administrators ever see it.
+ */
+export const getConfigRevision = (config: SystemConfig): string => {
+  const comparable = cloneDeep(config) as unknown as Record<string, unknown>;
+  for (const path of SERVER_MANAGED_CONFIG_PATHS) {
+    set(comparable, path, undefined);
+  }
+
+  return createHash('sha256').update(canonicalJson(comparable)).digest('hex').slice(0, 32);
 };
 
 export const updateConfig = async (repos: RepoDeps, newConfig: SystemConfig): Promise<SystemConfig> => {
