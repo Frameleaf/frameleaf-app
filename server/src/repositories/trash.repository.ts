@@ -40,6 +40,7 @@ export type TrashItemRow = {
   id: string;
   originalFileName: string;
   type: AssetType;
+  status: AssetStatus;
   fileSizeInByte: number | string | null;
   deletedAt: Date | null;
   isLocked: boolean;
@@ -58,9 +59,11 @@ export class TrashRepository {
    * part of a live photo follows its photo and is never listed or changed on its own.
    *
    * `listed` is what the trash shows, as the trash timeline always has: everything with a deletion
-   * date that is not yet permanently deleted. That includes external-library originals that went
-   * missing (`isOffline`), which the library scan put there and brings back; they are listed but no
-   * action here changes them, because every action starts from `trashed`.
+   * date that is not yet permanently deleted. That includes external-library originals the library
+   * scan found missing: they stay `active` with a deletion date, and the scan brings them back. They
+   * are listed but no action here changes them, because every action starts from `trashed` (or, for
+   * a move to the trash, from `active` without a deletion date). An item the owner trashed whose file
+   * went missing afterwards is `trashed` and is restored or deleted like any other.
    */
   private scope(
     db: Kysely<DB>,
@@ -88,7 +91,10 @@ export class TrashRepository {
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .select((eb) => [
         eb.fn.countAll<number>().as('count'),
-        sql<string>`count(*) filter (where asset."isOffline")`.as('offline'),
+        // missing external originals the library scan put here; they are listed but no action changes them
+        sql<string>`count(*) filter (where asset."isOffline" and asset.status = ${sql.lit(AssetStatus.Active)})`.as(
+          'offline',
+        ),
         sql<string>`coalesce(sum(asset_exif."fileSizeInByte"), 0)`.as('bytes'),
       ])
       .executeTakeFirstOrThrow();
@@ -128,6 +134,7 @@ export class TrashRepository {
       'asset.id',
       'asset.originalFileName',
       'asset.type',
+      'asset.status',
       'asset.deletedAt',
       'asset.isOffline',
       'asset_exif.fileSizeInByte',
@@ -182,11 +189,15 @@ export class TrashRepository {
         'asset_exif.fileSizeInByte',
         isLocked('asset').as('isLocked'),
         // Another asset naming the same original keeps it on disk; `FileDelete` refuses a path a
-        // live row still names (see PhysicalFileRepository.deleteUnreferencedPath).
+        // live row still names (see PhysicalFileRepository.deleteUnreferencedPath). A row already
+        // being removed, or one of the chosen items itself, does not keep it. Items of a whole-trash
+        // review are still counted, so the review can under-report freed space but never promise it.
         sql<boolean>`exists (
           select 1
           from asset as other
           where other.id != asset.id
+            and other.status != ${sql.lit(AssetStatus.Deleted)}
+            ${ids === undefined ? sql`` : sql`and not (other.id = ${anyUuid(ids)})`}
             and (
               other."originalPath" = asset."originalPath"
               or (

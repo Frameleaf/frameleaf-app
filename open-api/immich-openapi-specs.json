@@ -23997,7 +23997,7 @@
             "type": "boolean"
           },
           "isOffline": {
-            "description": "The original is missing from an external library",
+            "description": "The library scan found this external original missing and manages it; trash actions do not change it",
             "type": "boolean"
           },
           "originalFileName": {
