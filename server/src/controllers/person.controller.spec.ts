@@ -160,6 +160,35 @@ describe(PersonController.name, () => {
       expect(service.delete).toHaveBeenCalled();
     });
   });
+  describe('GET /people/merge-suggestions', () => {
+    it('should not be swallowed by GET /people/:id (route order regression)', async () => {
+      // FL-57: `merge-suggestions` must be declared before `:id` in the controller, or
+      // this path is matched by `getPerson` instead and 400s on UUID validation.
+      service.getMergeSuggestions.mockResolvedValue({ suggestions: [] });
+      const { status, body } = await request(ctx.getHttpServer()).get('/people/merge-suggestions');
+      expect(status).toBe(200);
+      expect(body).toEqual({ suggestions: [] });
+      expect(service.getMergeSuggestions).toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /people/:id/corrections', () => {
+    it('should require a valid uuid', async () => {
+      const { status, body } = await request(ctx.getHttpServer()).get('/people/invalid/corrections');
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.validationError([{ path: ['id'], message: 'Invalid UUID' }]));
+    });
+
+    it('should return the correction history', async () => {
+      const id = factory.uuid();
+      service.getCorrectionHistory.mockResolvedValue({ corrections: [] });
+      const { status, body } = await request(ctx.getHttpServer()).get(`/people/${id}/corrections`);
+      expect(status).toBe(200);
+      expect(body).toEqual({ corrections: [] });
+      expect(service.getCorrectionHistory).toHaveBeenCalledWith(undefined, id);
+    });
+  });
+
   it('should expose ordered and legacy merge routes', async () => {
     const ids = [factory.uuid(), factory.uuid()];
     service.mergePeople.mockResolvedValue([{ id: ids[1], success: true }]);

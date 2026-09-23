@@ -4,15 +4,15 @@
   import { clickOutside } from '$lib/actions/click-outside';
   import AccountMenu from '$lib/components/frameleaf/AccountMenu.svelte';
   import ActivityIndicator from '$lib/components/frameleaf/ActivityIndicator.svelte';
+  import FrameleafLogo from '$lib/components/frameleaf/Logo.svelte';
   import UploadMenuButton from '$lib/components/frameleaf/UploadMenuButton.svelte';
   import NotificationPanel from '$lib/components/shared-components/navigation-bar/NotificationPanel.svelte';
-  import SearchBar from '$lib/components/shared-components/search-bar/SearchBar.svelte';
+  import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
   import ThemeButton from '$lib/components/shared-components/ThemeButton.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
   import '$lib/frameleaf/tokens.css';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import SearchFilterModal from '$lib/modals/SearchFilterModal.svelte';
   import { Route } from '$lib/route';
   import { getGlobalActions } from '$lib/services/app.service';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
@@ -22,15 +22,13 @@
   import { handleError } from '$lib/utils/handle-error';
   import { isAlbumsRoute, isAssetViewerRoute, isLockedFolderRoute, navigate } from '$lib/utils/navigation';
   import { getAuthStatus, lockAuthSession } from '@immich/sdk';
-  import { ActionButton, IconButton, Logo, modalManager, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { ActionButton, IconButton, Theme as AppTheme, themeManager } from '@immich/ui';
   import {
     mdiBellBadge,
     mdiBellOutline,
     mdiLockOpenVariantOutline,
     mdiLockOutline,
-    mdiMagnify,
     mdiMenu,
-    mdiTune,
   } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -53,7 +51,6 @@
   let { onUploadClick, noBorder = false }: Props = $props();
 
   let showNotifications = $state(false);
-  let isSearchOptionsOpen = $state(false);
   let isElevated = $state(false);
   let isSessionLoading = $state(true);
 
@@ -147,24 +144,6 @@
     }
   };
 
-  const openSearchOptions = async () => {
-    if (isSearchOptionsOpen) {
-      return;
-    }
-
-    isSearchOptionsOpen = true;
-
-    try {
-      const result = modalManager.open(SearchFilterModal, { searchQuery: {} });
-      const searchResult = await result.onClose;
-
-      if (searchResult) {
-        await goto(Route.search(searchResult));
-      }
-    } finally {
-      isSearchOptionsOpen = false;
-    }
-  };
 </script>
 
 <nav
@@ -197,44 +176,29 @@
         class="sidebar:hidden"
       />
       <a data-sveltekit-preload-data="hover" href={Route.photos()} aria-label={$t('library')}>
-        <Logo variant={mediaQueryManager.isFullSidebar ? 'inline' : 'icon'} class="max-md:h-12" />
+        <FrameleafLogo
+          variant={mediaQueryManager.isFullSidebar ? 'inline' : 'icon'}
+          theme={appTheme}
+          decorative
+          class="h-12"
+        />
       </a>
     </div>
 
     <div class="flex min-w-0 justify-between gap-2 pe-4 md:gap-4 md:pe-6">
-      <!-- One search entry for the whole library. -->
-      <div class="hidden w-full max-w-5xl min-w-0 flex-1 sm:block">
+      <!--
+        FL-49: exactly one search entry for the whole library, at every width. It opens the
+        Frameleaf search dialog, which now carries the filter panel that the separate
+        search-options modal used to hold. Mounting it once also means one set of keyboard
+        shortcuts: a second instance would open the dialog twice.
+      -->
+      <div class="w-full max-w-5xl min-w-0 flex-1">
         {#if featureFlagsManager.value.search}
-          <SearchBar grayTheme={true} />
+          <SearchEntry />
         {/if}
       </div>
 
       <section class="flex min-w-0 place-items-center justify-end gap-1 md:gap-2">
-        {#if featureFlagsManager.value.search}
-          <IconButton
-            color="secondary"
-            shape="round"
-            variant="ghost"
-            size="medium"
-            icon={mdiMagnify}
-            href={Route.search()}
-            id="search-button"
-            class="sm:hidden"
-            aria-label={$t('go_to_search')}
-          />
-          <IconButton
-            color="secondary"
-            shape="round"
-            variant="ghost"
-            size="medium"
-            icon={mdiTune}
-            onclick={() => handlePromiseError(openSearchOptions())}
-            id="search-options-button"
-            class="sm:hidden"
-            aria-label={$t('show_search_options')}
-          />
-        {/if}
-
         {#if onUploadClick && !isAdminRoute}
           <UploadMenuButton defaultAlbumId={uploadAlbumId} isLockedAssets={uploadIsLocked} />
         {/if}

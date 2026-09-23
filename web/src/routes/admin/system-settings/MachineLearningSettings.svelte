@@ -1,5 +1,5 @@
 <script lang="ts">
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { getMachineLearningHardware, MachineLearningHardwareAcceleration } from '@immich/sdk';
@@ -52,9 +52,9 @@
   // Clamp minMatchingFrames to frameCount at save time, NOT in a $effect.
   // The previous `$effect` reactively clamped on every keystroke, so typing
   // a two-digit number in `frameCount` clobbered `minMatchingFrames` between
-  // digits. The SettingInputField `max={frameCount}` already gives a visible
+  // digits. The SettingField `max={frameCount}` already gives a visible
   // UI bound; this `onBeforeSave` hook just enforces it once at submit.
-  // Marked async to satisfy SystemConfigButtonRow's onBeforeSave: () => Promise<boolean>.
+  // Marked async to satisfy SettingActions' onBeforeSave: () => Promise<boolean>.
   const validateBeforeSave = (): Promise<boolean> => {
     const enhancedVideo = configToEdit.machineLearning.duplicateDetection.enhancedVideo;
     if (enhancedVideo.minMatchingFrames > enhancedVideo.frameCount) {
@@ -195,7 +195,7 @@
         {disabled}
       />
 
-      <SettingButtonsRow bind:configToEdit keys={['machineLearning']} {disabled} onBeforeSave={validateBeforeSave} />
+      <SettingActions bind:configToEdit keys={['machineLearning']} {disabled} onBeforeSave={validateBeforeSave} />
     </form>
   </div>
 </div>

@@ -10,6 +10,7 @@
     mdiAccountMultipleOutline,
     mdiBookshelf,
     mdiCog,
+    mdiContentDuplicate,
     mdiRobotOutline,
     mdiServer,
     mdiTrayFull,
@@ -40,6 +41,11 @@
       <NavbarItem title={$t('external_libraries')} href={Route.libraries()} icon={mdiBookshelf} />
       <NavbarItem title={$t('admin.queues')} href={Route.queues()} icon={mdiTrayFull} />
       <NavbarItem title={$t('settings')} href={Route.systemSettings()} icon={mdiCog} />
+      <NavbarItem
+        title={$t('admin.physical_deduplication')}
+        href={Route.physicalDeduplication()}
+        icon={mdiContentDuplicate}
+      />
       <NavbarItem title={$t('admin.maintenance_settings')} href={Route.systemMaintenance()} icon={mdiWrench} />
       <NavbarItem
         title={$t('admin.frameleaf_ml_destinations_title')}

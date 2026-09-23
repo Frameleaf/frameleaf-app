@@ -18,13 +18,17 @@ import {
   AssetFaceUpdateDto,
   FaceDto,
   MergePersonDto,
+  MergeSuggestionsResponseDto,
   PeopleResponseDto,
   PeopleUpdateDto,
+  PersonCorrectionsResponseDto,
   PersonCreateDto,
+  PersonMergeSuggestionDto,
   PersonResponseDto,
   PersonSearchDto,
   PersonStatisticsResponseDto,
   PersonUpdateDto,
+  mapCorrection,
   mapFaces,
   mapPerson,
 } from 'src/dtos/person.dto.js';
@@ -85,6 +89,50 @@ export class PersonService extends BaseService {
       total,
       hidden,
     };
+  }
+
+  /**
+   * FL-57: guided merge-suggestion verdict flow. Surfaces candidate pairs of people that
+   * may be the same person so the People page can offer accept/reject/skip instead of
+   * requiring the user to notice a duplicate on their own — FL-37's audit found no such
+   * endpoint existed. Reuses the facial-recognition job's own similarity metric
+   * (`machineLearning.facialRecognition.maxDistance`) rather than a second, invented
+   * threshold, so a suggestion here is calibrated the same way automatic clustering is.
+   *
+   * "Accept" is just the existing `POST /people/merge`. "Reject"/"skip" have no server
+   * state of their own yet — see the FL-57 handoff report for that gap.
+   */
+  async getMergeSuggestions(auth: AuthDto): Promise<MergeSuggestionsResponseDto> {
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    const candidates = await this.personRepository.getMergeSuggestions(auth.user.id, {
+      maxDistance: machineLearning.facialRecognition.maxDistance,
+      limit: 20,
+    });
+    if (candidates.length === 0) {
+      return { suggestions: [] };
+    }
+
+    const ids = [...new Set(candidates.flatMap((candidate) => [candidate.personId, candidate.suggestionId]))];
+    const people = await this.personRepository.getForMergePerson(ids);
+    const byId = new Map(people.map((person) => [person.personGroupId, person]));
+
+    const suggestions: PersonMergeSuggestionDto[] = [];
+    for (const candidate of candidates) {
+      const person = byId.get(candidate.personId);
+      const suggestion = byId.get(candidate.suggestionId);
+      if (person && suggestion) {
+        suggestions.push({ person: mapPerson(person), suggestion: mapPerson(suggestion), distance: candidate.distance });
+      }
+    }
+
+    return { suggestions };
+  }
+
+  /** FL-57: correction history for a person's faces (see `PersonRepository.getCorrections`). */
+  async getCorrectionHistory(auth: AuthDto, personGroupId: string): Promise<PersonCorrectionsResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.PersonRead, ids: [personGroupId] });
+    const corrections = await this.personRepository.getCorrections(personGroupId);
+    return { corrections: corrections.map((face) => mapCorrection(face)) };
   }
 
   async reassignFaces(auth: AuthDto, personGroupId: string, dto: AssetFaceUpdateDto): Promise<PersonResponseDto[]> {

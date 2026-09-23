@@ -21,8 +21,10 @@ import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.j
 import {
   AssetFaceUpdateDto,
   MergePersonDto,
+  MergeSuggestionsResponseDto,
   PeopleResponseDto,
   PeopleUpdateDto,
+  PersonCorrectionsResponseDto,
   PersonCreateDto,
   PersonResponseDto,
   PersonSearchDto,
@@ -91,6 +93,21 @@ export class PersonController {
     return this.service.deleteAll(auth, dto);
   }
 
+  // NOTE: this must be declared before `getPerson(:id)` below — both are GET and Nest
+  // matches routes in declaration order, so a later position here would make
+  // `/people/merge-suggestions` fall through to `:id` and fail UUID validation.
+  @Get('merge-suggestions')
+  @Authenticated({ permission: Permission.PersonRead })
+  @Endpoint({
+    summary: 'Get merge suggestions',
+    description:
+      'Retrieve suggested pairs of people that may be the same person, based on face similarity, for the guided merge review flow.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  getMergeSuggestions(@Auth() auth: AuthDto): Promise<MergeSuggestionsResponseDto> {
+    return this.service.getMergeSuggestions(auth);
+  }
+
   @Get(':id')
   @Authenticated({ permission: Permission.PersonRead })
   @Endpoint({
@@ -142,6 +159,19 @@ export class PersonController {
   })
   deletePerson(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
     return this.service.delete(auth, id);
+  }
+
+  @Get(':id/corrections')
+  @Authenticated({ permission: Permission.PersonRead })
+  @Endpoint({
+    summary: 'Get correction history',
+    description:
+      'Retrieve the manual face corrections (reassignments) made for this person, most recent first. Faces the ' +
+      'facial-recognition job assigned on its own and nobody has since corrected are not included.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  getCorrectionHistory(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<PersonCorrectionsResponseDto> {
+    return this.service.getCorrectionHistory(auth, id);
   }
 
   @Get(':id/statistics')
