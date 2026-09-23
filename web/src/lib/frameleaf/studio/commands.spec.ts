@@ -18,14 +18,24 @@ describe('studio command vocabulary', () => {
     }
   });
 
+  it('publishes the catalogue in sorted order, with no duplicates', () => {
+    // The published catalogue, the server mirror and the Dart contract are all generated in
+    // this order, so a row added out of order is caught here before CI regenerates them.
+    expect([...studioCommandIds]).toEqual([...studioCommandIds].sort());
+    expect(new Set(studioCommandIds).size).toBe(studioCommandIds.length);
+  });
+
   it('keeps job submissions off the undo stack and out of the graph', () => {
     for (const id of studioCommandIds) {
       const definition = studioCommandDefinition(id);
       if (definition.scope === 'job') {
         expect(definition.mutatesGraph).toBe(false);
         expect(definition.undoable).toBe(false);
-        // A job is work on a worker; it may never be offered without one.
-        expect(definition.requiresCapability).toBeDefined();
+        // Queued work is work on a worker; it may never be offered without one. Cancelling
+        // a job is the exception: it must stay available after a worker has gone away.
+        if (id.startsWith('job.enqueue')) {
+          expect(definition.requiresCapability).toBeDefined();
+        }
       }
     }
   });

@@ -2750,7 +2750,7 @@
       "nativeParity": "not-implemented"
     },
     {
-      "detail": "Project/revision/source review exists in preview; native graph editing, effects/animation/audio and qualified render/export remain unavailable",
+      "detail": "Project/revision/source review exists in preview; the canonical command and payload contract is published for native clients (mobile/lib/frameleaf/studio_commands.g.dart), while native graph editing, effects/animation/audio and qualified render/export remain unavailable",
       "id": "native-studio",
       "nativeParity": "partial-project-review"
     },
