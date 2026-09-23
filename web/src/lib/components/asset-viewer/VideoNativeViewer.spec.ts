@@ -167,7 +167,7 @@ describe('VideoNativeViewer component', () => {
       setPlayOriginalVideo: (value: boolean) =>
         viewer.rerender({ componentProps: { ...props, playOriginalVideo: value } }),
     });
-    await fireEvent.click(navbar.getByLabelText('more'));
+    await fireEvent.click(navbar.getByLabelText('frameleaf_viewer_more_actions'));
     await fireEvent.click(await navbar.findByText('play_original_video'));
     await waitFor(() =>
       expect(viewer.container.querySelector('video')).toHaveAttribute(

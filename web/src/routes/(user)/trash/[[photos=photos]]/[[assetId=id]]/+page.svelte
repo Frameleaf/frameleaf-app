@@ -31,6 +31,8 @@
 
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 
+  const loadAsset = (id?: string) => (id ? getAssetInfo({ id }).catch(() => undefined) : Promise.resolve(undefined));
+
   // The viewer's next and previous items are the trash page's own neighbours of the open item.
   $effect(() => {
     const current = assetViewerManager.isViewing ? assetViewerManager.asset : undefined;
@@ -40,8 +42,7 @@
     neighbours = {};
 
     let cancelled = false;
-    const load = (id?: string) => (id ? getAssetInfo({ id }).catch(() => undefined) : Promise.resolve(undefined));
-    void Promise.all([load(nextId), load(previousId)]).then(([nextAsset, previousAsset]) => {
+    void Promise.all([loadAsset(nextId), loadAsset(previousId)]).then(([nextAsset, previousAsset]) => {
       if (!cancelled) {
         neighbours = { nextAsset, previousAsset };
       }
@@ -60,7 +61,11 @@
 
   /** A restored or permanently deleted item leaves the trash: show the next one, as the timeline does. */
   const moveOn = async (assetId: string) => {
-    const { nextAsset, previousAsset } = neighbours;
+    // A second delete or restore can land before the neighbour lookup for this item finishes; look
+    // the neighbours up directly then, instead of closing the viewer on an empty lookup.
+    const index = items.findIndex((item) => item.id === assetId);
+    const nextAsset = neighbours.nextAsset ?? (index === -1 ? undefined : await loadAsset(items[index + 1]?.id));
+    const previousAsset = neighbours.previousAsset ?? (index > 0 ? await loadAsset(items[index - 1]?.id) : undefined);
     items = items.filter((item) => item.id !== assetId);
     if (!(await navigateToAsset(nextAsset)) && !(await navigateToAsset(previousAsset))) {
       closeViewer();
