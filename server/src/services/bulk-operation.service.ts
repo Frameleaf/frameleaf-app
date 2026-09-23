@@ -50,8 +50,6 @@ import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.j
 export const BULK_TICK_MS = 5000;
 /** The claim lease. Extended after every batch; a worker that stops writing loses the job. */
 export const BULK_LEASE_MS = 2 * 60_000;
-/** How often expired claims are returned to the queue. */
-export const BULK_RECOVERY_MS = 60_000;
 /** Parallel calls for the actions the server only accepts one item at a time. */
 export const BULK_ITEM_CONCURRENCY = 5;
 
@@ -149,7 +147,6 @@ export class BulkOperationService {
   private tickHandle?: ReturnType<typeof setInterval>;
   private active?: Promise<void>;
   private stopping = false;
-  private lastRecoveryAt = 0;
   private readonly workerId = `bulk-${randomUUID()}`;
   /** Stands in for a session on the worker's auth; nothing on these paths reads it back. */
   private readonly sessionId = randomUUID();
@@ -204,10 +201,14 @@ export class BulkOperationService {
       });
   }
 
-  /** Recover lapsed claims, then work through the queue until it is empty or we are stopping. */
+  /**
+   * Work through the queue until it is empty or we are stopping.
+   *
+   * Lapsed claims are not recovered here. One sweep owns recovery for every kind of media
+   * operation, so it never runs twice with two different answers: `RestorationWorkerService.sweep`
+   * returns lapsed bulk jobs to the queue (or gives them their automatic retry) with the rest.
+   */
   async drain(): Promise<void> {
-    await this.recover();
-
     while (!this.stopping) {
       const claim = await this.operations.claimNext({
         kinds: [MediaOperationKind.Bulk],
@@ -228,26 +229,6 @@ export class BulkOperationService {
           errorCode: 'bulk_failed',
         });
       }
-    }
-  }
-
-  private async recover() {
-    const now = Date.now();
-    if (now - this.lastRecoveryAt < BULK_RECOVERY_MS) {
-      return;
-    }
-    this.lastRecoveryAt = now;
-
-    const recovered = await this.operations.recoverExpiredClaims({
-      kinds: [MediaOperationKind.Bulk],
-      errorCode: 'bulk_worker_lost',
-      error: 'The server stopped repeatedly while this job was running',
-    });
-    const { requeued, retried, failed, abandonedCancels } = recovered;
-    if (requeued + retried + failed + abandonedCancels > 0) {
-      this.logger.log(
-        `Recovered bulk operations: ${requeued} requeued, ${retried} retrying, ${failed} failed, ${abandonedCancels} cancelled`,
-      );
     }
   }
 
