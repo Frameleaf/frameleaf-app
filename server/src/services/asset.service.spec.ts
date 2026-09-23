@@ -578,6 +578,40 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('shiftDateTimeOriginalFrom (FL-32)', () => {
+    it('requires update access for every item', async () => {
+      await expect(
+        sut.shiftDateTimeOriginalFrom(authStub.admin, [{ id: 'asset-1', from: new Date() }], 30),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.asset.setDateTimeOriginal).not.toHaveBeenCalled();
+    });
+
+    it('sets each item to its recorded start plus the shift, the same way twice', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.setDateTimeOriginal.mockResolvedValue({
+        assetId: 'asset-1',
+        dateTimeOriginal: new Date('2020-02-25T05:16:00.000Z'),
+      } as never);
+      const items = [{ id: 'asset-1', from: new Date('2020-02-25T04:41:00.000Z') }];
+
+      await sut.shiftDateTimeOriginalFrom(authStub.admin, items, 35);
+      await sut.shiftDateTimeOriginalFrom(authStub.admin, items, 35);
+
+      expect(mocks.asset.setDateTimeOriginal).toHaveBeenCalledTimes(2);
+      for (const call of mocks.asset.setDateTimeOriginal.mock.calls) {
+        expect(call).toEqual(['asset-1', new Date('2020-02-25T05:16:00.000Z')]);
+      }
+      expect(mocks.asset.updateDateTimeOriginal).not.toHaveBeenCalled();
+      expect(mocks.asset.update).toHaveBeenCalledWith({
+        id: 'asset-1',
+        fileCreatedAt: new Date('2020-02-25T05:16:00.000Z'),
+        localDateTime: new Date('2020-02-25T05:16:00.000Z'),
+      });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
+    });
+  });
+
   describe('deleteAll', () => {
     it('should require asset delete access for all ids', async () => {
       await expect(

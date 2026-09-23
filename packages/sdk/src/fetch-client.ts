@@ -2768,6 +2768,8 @@ export type MediaOperationBulkSummaryDto = {
     itemsTruncated: boolean;
     /** Items in the frozen set */
     requested: number;
+    /** Items that failed and were given their one automatic retry */
+    retried: number;
     /** Items refused before anything changed, e.g. no access */
     skipped: number;
     snapshotTruncated: boolean;
@@ -2868,6 +2870,8 @@ export type MediaOperationBulkItemDto = {
 };
 export type MediaOperationDetailDto = (MediaOperationDto) & {
     bulkItems: MediaOperationBulkItemDto[];
+    /** Asset IDs waiting for their automatic retry */
+    bulkRetryPending: string[];
     checkpoints: MediaOperationCheckpointDto[];
     /** The immutable binding the render was bound to */
     snapshot: {
