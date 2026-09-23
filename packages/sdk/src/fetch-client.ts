@@ -5800,7 +5800,7 @@ export type TimeBucketAssetResponseDto = {
     livePhotoVideoId: (string | null)[];
     /** Array of UTC offset hours at the time each photo was taken. Positive values are east of UTC, negative values are west of UTC. Values may be fractional (e.g., 5.5 for +05:30, -9.75 for -09:45). Applying this offset to 'fileCreatedAt' will give you the time the photo was taken from the photographer's perspective. */
     localOffsetHours: number[];
-    /** With visibility LOCKED only: why each asset is locked */
+    /** Why each asset is locked, or null when it is not. Returned with visibility LOCKED and for the timeline of an elevated owner, which reveals their marked and detected items */
     lockReason?: (AssetLockReason | null)[];
     /** Array of longitude coordinates extracted from EXIF GPS data */
     longitude?: (number | null)[];
