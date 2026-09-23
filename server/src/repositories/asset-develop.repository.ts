@@ -148,17 +148,27 @@ export class AssetDevelopRepository {
 
   /**
    * Records the start of a render attempt and returns the attempt number, or undefined when the
-   * revision is gone, finished, or was cancelled meanwhile. One guarded statement, so two
-   * deliveries of the same job can never both think they own attempt one.
+   * revision is gone, finished, cancelled meanwhile, or held by a render whose lease has not
+   * lapsed. One guarded statement, so two deliveries of the same job can never both claim it.
    */
-  async beginAttempt(id: string, rendererVersion: string): Promise<AssetDevelopRevision | undefined> {
+  async beginAttempt(
+    id: string,
+    rendererVersion: string,
+    leaseSeconds: number,
+  ): Promise<AssetDevelopRevision | undefined> {
     const { rows } = await sql<AssetDevelopRevision>`
       UPDATE ${TABLE}
       SET status = ${AssetDevelopRevisionStatus.Rendering}, progress = 5, error = NULL,
           attempts = attempts + 1, "rendererVersion" = ${rendererVersion}, "updatedAt" = now()
       WHERE id = ${id}::uuid
         AND NOT "cancelRequested"
-        AND status IN (${AssetDevelopRevisionStatus.Queued}, ${AssetDevelopRevisionStatus.Rendering})
+        AND (
+          status = ${AssetDevelopRevisionStatus.Queued}
+          OR (
+            status = ${AssetDevelopRevisionStatus.Rendering}
+            AND "updatedAt" < now() - make_interval(secs => ${leaseSeconds})
+          )
+        )
       RETURNING *
     `.execute(this.db);
     return rows[0];
