@@ -7,6 +7,7 @@
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import Portal from '$lib/elements/Portal.svelte';
   import '$lib/frameleaf/tokens.css';
+  import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -95,6 +96,7 @@
     {options}
     destination={{ kind: 'album', id: album.id }}
     {bulkContext}
+    downloadFileName={namedArchiveName(album.albumName, $t('frameleaf_archive_name_album'))}
     noSelectionBar={!sharedLink.allowDownload}
   >
     <section class="px-2 pt-8 md:px-0 md:pt-24">

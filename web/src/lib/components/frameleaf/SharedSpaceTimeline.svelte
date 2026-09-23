@@ -1,6 +1,7 @@
 <script lang="ts">
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
+  import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { filterToNew, shouldPageForNew } from '$lib/frameleaf/shared-space';
   import type { SpacePhotoSet } from '$lib/frameleaf/space-photos.svelte';
@@ -95,6 +96,7 @@
   <ResultsView
     assets={shown}
     bulkContext={{ albumId: space.id }}
+    downloadFileName={namedArchiveName(space.albumName, $t('frameleaf_archive_name_space'))}
     {tagOptions}
     {albumOptions}
     onEndReached={loadMore}

@@ -38,6 +38,7 @@
   import { exportProgress, isExportActive, latestExport } from '$lib/frameleaf/memory-stories';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
+  import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { writeStudioHandoff } from '$lib/frameleaf/studio-handoff';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -117,6 +118,13 @@
   const currentAssetId = $derived(current?.asset.id);
   // where the asset sits in its memory, for the progress bar, counter and Ken Burns cycle
   const assetIndex = $derived(current ? current.memory.assets.findIndex(({ id }) => id === currentAssetId) : -1);
+  /** FL-45: the memory's own title, so its gallery download is not just another generic zip. Dated,
+   * since a person is likely to open the same memory again on a later day. */
+  const memoryDownloadFileName = $derived(
+    current
+      ? namedArchiveName($memoryLaneTitle(current.memory), $t('frameleaf_archive_name_memory'), { withDate: true })
+      : undefined,
+  );
   const kenBurnsClass = $derived(KEN_BURNS_CLASSES[Math.max(0, assetIndex) % KEN_BURNS_CLASSES.length]);
   const currentMemoryAssetFull = $derived.by(async () =>
     currentAssetId ? await getAssetInfo({ ...authManager.params, id: currentAssetId }) : undefined,
@@ -720,6 +728,7 @@
     <div id="gallery-memory" {@attach galleryObserver} bind:this={memoryGallery}>
       <ResultsView
         assets={galleryAssets}
+        downloadFileName={memoryDownloadFileName}
         onSelectAll={handleSelectAll}
         onRemoved={handleHideAssets}
         onOpen={(asset) => void navigateToAsset(asset)}
