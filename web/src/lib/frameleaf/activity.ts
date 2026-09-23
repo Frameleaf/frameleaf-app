@@ -332,8 +332,10 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     canCancel: running || pause.paused,
     // A Library Care scan or search is started again from Library Care, not copied (FL-69); a
     // deduplication plan is reviewed again on its page and applied as a new plan (FL-73).
+    // A library scan is started again from Libraries, which checks its folders and owner first (FL-78).
     canRetry:
       operation.kind !== MediaOperationKind.MediaHealth &&
+      operation.kind !== MediaOperationKind.LibraryScan &&
       !dedup &&
       (status === MediaOperationStatus.Failed || status === MediaOperationStatus.Cancelled),
     canDismiss: finished,

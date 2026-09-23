@@ -47,12 +47,12 @@ describe('/libraries', () => {
     });
 
     it('should reimport a modified file', async () => {
+      utils.createImageFile(`${testAssetDir}/temp/reimport/asset.jpg`);
       const library = await utils.createLibrary(admin.accessToken, {
         ownerId: admin.userId,
         importPaths: [`${testAssetDirInternal}/temp/reimport`],
       });
 
-      utils.createImageFile(`${testAssetDir}/temp/reimport/asset.jpg`);
       await utimes(`${testAssetDir}/temp/reimport/asset.jpg`, 447_775_200_000);
 
       await utils.scan(admin.accessToken, library.id);
@@ -83,23 +83,23 @@ describe('/libraries', () => {
     });
 
     it('should not reimport a modified file more than once', async () => {
+      utils.createImageFile(`${testAssetDir}/temp/reimport-twice/asset.jpg`);
       const library = await utils.createLibrary(admin.accessToken, {
         ownerId: admin.userId,
-        importPaths: [`${testAssetDirInternal}/temp/reimport`],
+        importPaths: [`${testAssetDirInternal}/temp/reimport-twice`],
       });
 
-      utils.createImageFile(`${testAssetDir}/temp/reimport/asset.jpg`);
-      await utimes(`${testAssetDir}/temp/reimport/asset.jpg`, 447_775_200_000);
+      await utimes(`${testAssetDir}/temp/reimport-twice/asset.jpg`, 447_775_200_000);
 
       await utils.scan(admin.accessToken, library.id);
 
-      cpSync(`${testAssetDir}/albums/nature/tanners_ridge.jpg`, `${testAssetDir}/temp/reimport/asset.jpg`);
-      await utimes(`${testAssetDir}/temp/reimport/asset.jpg`, 447_775_200_001);
+      cpSync(`${testAssetDir}/albums/nature/tanners_ridge.jpg`, `${testAssetDir}/temp/reimport-twice/asset.jpg`);
+      await utimes(`${testAssetDir}/temp/reimport-twice/asset.jpg`, 447_775_200_001);
 
       await utils.scan(admin.accessToken, library.id);
 
-      cpSync(`${testAssetDir}/albums/nature/el_torcal_rocks.jpg`, `${testAssetDir}/temp/reimport/asset.jpg`);
-      await utimes(`${testAssetDir}/temp/reimport/asset.jpg`, 447_775_200_001);
+      cpSync(`${testAssetDir}/albums/nature/el_torcal_rocks.jpg`, `${testAssetDir}/temp/reimport-twice/asset.jpg`);
+      await utimes(`${testAssetDir}/temp/reimport-twice/asset.jpg`, 447_775_200_001);
 
       await utils.scan(admin.accessToken, library.id);
 
@@ -120,7 +120,7 @@ describe('/libraries', () => {
         }),
       );
 
-      utils.removeImageFile(`${testAssetDir}/temp/reimport/asset.jpg`);
+      utils.removeImageFile(`${testAssetDir}/temp/reimport-twice/asset.jpg`);
     });
   });
 });

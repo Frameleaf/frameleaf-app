@@ -25,6 +25,10 @@ const UNAUTHENTICATED_ADMIN_ROUTES = new Set([
 /** Admin-only routes that live outside `admin/`, i.e. `@Authenticated({ admin: true })` */
 const ADMIN_ROUTES = new Set([
   'DELETE libraries/:id',
+  'DELETE libraries/:id/scan',
+  'GET libraries/:id/removal',
+  'GET libraries/managed-uploads',
+  'POST libraries/:id/removal',
   'GET enrichment/options',
   'POST enrichment/preview',
   'DELETE ml-destinations/:id',
