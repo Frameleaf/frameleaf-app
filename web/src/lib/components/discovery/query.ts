@@ -822,8 +822,13 @@ const routeId = (pathname: string, prefix: string) =>
 
 /**
  * The query a search opened on this page starts from: the search it already shows, or the scope the
- * page stands for — an album, a pet, a shared space, the map. Searching again never resets a scope
- * the person did not ask to leave.
+ * page stands for — an album, a pet, a shared space. Searching again never resets a scope the person
+ * did not ask to leave.
+ *
+ * The map page contributes no scope (FL-48 map/space follow-ups): the prototype (`App.jsx`
+ * `exploreQuery`/`MapView`'s "Search this area") always lands a submitted search on the plain grid
+ * results, never on a persisted map view, so a search opened from `/map` is treated like any other
+ * unscoped page instead of tagging the query `view: 'map'` for a results page that would ignore it.
  */
 export const contextDiscoveryState = (url: URL): DiscoveryContext => {
   if (url.pathname === '/discover') {
@@ -853,9 +858,6 @@ export const contextDiscoveryState = (url: URL): DiscoveryContext => {
   }
   if (spaceId) {
     result.spaceId = spaceId;
-  }
-  if (url.pathname.startsWith('/map')) {
-    result.view = 'map';
   }
   return { query: result, unsupported: [] };
 };
