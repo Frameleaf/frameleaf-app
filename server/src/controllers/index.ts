@@ -10,6 +10,7 @@ import { AssetController } from 'src/controllers/asset.controller.js';
 import { AuthAdminController } from 'src/controllers/auth-admin.controller.js';
 import { AuthController } from 'src/controllers/auth.controller.js';
 import { BestPhotosController } from 'src/controllers/best-photos.controller.js';
+import { ClassificationController } from 'src/controllers/classification.controller.js';
 import { ClusterGroupController } from 'src/controllers/cluster-group.controller.js';
 import { ConfigAdminController } from 'src/controllers/config-admin.controller.js';
 import { ConfigPublicController } from 'src/controllers/config-public.controller.js';
@@ -80,6 +81,7 @@ export const controllers = [
   AuthController,
   AuthAdminController,
   BestPhotosController,
+  ClassificationController,
   ClusterGroupController,
   ConfigUserController,
   ConfigAdminController,

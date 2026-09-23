@@ -384,6 +384,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
   },
   smartAlbums: {
     enabled: false,
+    rules: { visualCategories: true, defaultAction: 'review' },
     builtIn: {
       travel: {
         enabled: true,
