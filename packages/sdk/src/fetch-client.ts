@@ -4142,6 +4142,7 @@ export type SearchFilterBranch = {
     originalFileName?: StringPatternFilter;
     originalPath?: StringPatternFilter;
     personIds?: IdsFilter;
+    petIds?: IdsFilter;
     rating?: NumberFilterNullable;
     state?: StringFilterNullable;
     tagIds?: IdsFilter;
@@ -4177,6 +4178,7 @@ export type SearchFilter = {
     originalFileName?: StringPatternFilter;
     originalPath?: StringPatternFilter;
     personIds?: IdsFilter;
+    petIds?: IdsFilter;
     rating?: NumberFilterNullable;
     state?: StringFilterNullable;
     tagIds?: IdsFilter;
@@ -4246,6 +4248,8 @@ export type AskSearchPlanDto = {
         page?: number;
         /** Filter by person IDs */
         personIds?: string[];
+        /** Filter by the caller's own pet IDs (confirmed pet observations only) */
+        petIds?: string[];
         /** Filter by preview file path */
         previewPath?: string;
         /** Filter by rating [1-5], or null for unrated */
@@ -4397,6 +4401,8 @@ export type MetadataSearchDto = {
     page?: number;
     /** Filter by person IDs */
     personIds?: string[];
+    /** Filter by the caller's own pet IDs (confirmed pet observations only) */
+    petIds?: string[];
     /** Filter by preview file path */
     previewPath?: string;
     /** Filter by rating [1-5], or null for unrated */
@@ -4481,6 +4487,8 @@ export type RandomSearchDto = {
     ocr?: string;
     /** Filter by person IDs */
     personIds?: string[];
+    /** Filter by the caller's own pet IDs (confirmed pet observations only) */
+    petIds?: string[];
     /** Filter by rating [1-5], or null for unrated */
     rating?: number | null;
     /** Number of results to return */
@@ -4553,6 +4561,8 @@ export type SmartSearchDto = {
     page?: number;
     /** Filter by person IDs */
     personIds?: string[];
+    /** Filter by the caller's own pet IDs (confirmed pet observations only) */
+    petIds?: string[];
     /** Natural language search query */
     query?: string;
     /** Asset ID to use as search reference */
@@ -4623,6 +4633,8 @@ export type StatisticsSearchDto = {
     ocr?: string;
     /** Filter by person IDs */
     personIds?: string[];
+    /** Filter by the caller's own pet IDs (confirmed pet observations only) */
+    petIds?: string[];
     /** Filter by rating [1-5], or null for unrated */
     rating?: number | null;
     /** Filter by state/province name */
@@ -10457,7 +10469,7 @@ export function getExploreData(opts?: Oazapfts.RequestOpts) {
 /**
  * Search large assets
  */
-export function searchLargeAssets({ albumIds, city, country, createdAfter, createdBefore, imageEnrichment, isEncoded, isFavorite, isMotion, isNotInAlbum, isOffline, lensModel, libraryId, make, minFileSize, model, ocr, personIds, rating, size, state, suppressedOnly, tagIds, takenAfter, takenBefore, trashedAfter, trashedBefore, $type, updatedAfter, updatedBefore, visibility, withDeleted, withExif }: {
+export function searchLargeAssets({ albumIds, city, country, createdAfter, createdBefore, imageEnrichment, isEncoded, isFavorite, isMotion, isNotInAlbum, isOffline, lensModel, libraryId, make, minFileSize, model, ocr, personIds, petIds, rating, size, state, suppressedOnly, tagIds, takenAfter, takenBefore, trashedAfter, trashedBefore, $type, updatedAfter, updatedBefore, visibility, withDeleted, withExif }: {
     albumIds?: string[];
     city?: string | null;
     country?: string | null;
@@ -10476,6 +10488,7 @@ export function searchLargeAssets({ albumIds, city, country, createdAfter, creat
     model?: string | null;
     ocr?: string;
     personIds?: string[];
+    petIds?: string[];
     rating?: number | null;
     size?: number;
     state?: string | null;
@@ -10514,6 +10527,7 @@ export function searchLargeAssets({ albumIds, city, country, createdAfter, creat
         model,
         ocr,
         personIds,
+        petIds,
         rating,
         size,
         state,
@@ -11978,7 +11992,7 @@ export function tagAssets({ id, bulkIdsDto }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, key, order, orderBy, personId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, key, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     bbox?: string;
     dateType?: TimeBucketDateType;
@@ -11988,6 +12002,7 @@ export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, 
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
+    petId?: string;
     slug?: string;
     suppressedOnly?: boolean;
     tagId?: string;
@@ -12011,6 +12026,7 @@ export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, 
         order,
         orderBy,
         personId,
+        petId,
         slug,
         suppressedOnly,
         tagId,
@@ -12027,7 +12043,7 @@ export function getTimeBucket({ albumId, bbox, dateType, isFavorite, isTrashed, 
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed, key, order, orderBy, personId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed, key, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     bbox?: string;
     dateType?: TimeBucketDateType;
@@ -12037,6 +12053,7 @@ export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed,
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
+    petId?: string;
     slug?: string;
     suppressedOnly?: boolean;
     tagId?: string;
@@ -12059,6 +12076,7 @@ export function getTimeBuckets({ albumId, bbox, dateType, isFavorite, isTrashed,
         order,
         orderBy,
         personId,
+        petId,
         slug,
         suppressedOnly,
         tagId,
