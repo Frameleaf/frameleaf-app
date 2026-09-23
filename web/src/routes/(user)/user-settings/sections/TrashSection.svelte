@@ -57,7 +57,8 @@
     neighbours = {};
 
     let cancelled = false;
-    const load = (id?: string) => (id ? getAssetInfo({ id }).catch(() => undefined) : Promise.resolve(undefined));
+    const load = (id?: string) =>
+      id ? getAssetInfo({ ...authManager.params, id }).catch(() => undefined) : Promise.resolve(undefined);
     void Promise.all([load(nextId), load(previousId)]).then(([nextAsset, previousAsset]) => {
       if (!cancelled) {
         neighbours = { nextAsset, previousAsset };
