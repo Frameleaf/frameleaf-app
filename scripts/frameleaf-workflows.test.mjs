@@ -109,15 +109,61 @@ test("standalone script tests install their locked JavaScript dependencies first
   ]) {
     assert.ok(scripts.findIndex((step) => step.run === command) > install);
   }
+});
 
+test("server E2E diagnostics preserve the failure state before maintenance", () => {
+  const steps = workflow("test.yml").jobs["e2e-tests-server-cli"].steps;
+  const api = steps.findIndex(
+    (step) => step.name === "Run e2e tests (api & cli)",
+  );
+  const capture = steps[api + 1];
+  assert.equal(capture.name, "Capture server diagnostics after API tests");
+  assert.equal(capture.if, "always()");
+  assert.equal(capture["working-directory"], "./e2e");
+  assert.equal(steps[api + 2].name, "Run e2e tests (maintenance)");
+  assert.match(capture.run, /docker compose ps --all --quiet/u);
+  assert.ok(
+    capture.run.includes(
+      "docker inspect --format '{{json .Name}} {{json .State}} {{json .RestartCount}}'",
+    ),
+  );
+  assert.match(capture.run, /docker compose logs --no-color --timestamps/u);
+  assert.match(capture.run, /> docker-diagnostics-after-api-tests\.txt 2>&1/u);
+  assert.doesNotMatch(
+    capture.run,
+    /docker stats|dmesg|free -h|df -h|\.Config|\.Env/u,
+  );
+  assert.equal(
+    steps.find((step) => step.name === "Capture Docker logs").run,
+    "docker compose logs --no-color > docker-compose-logs.txt",
+  );
+  const artifact = steps.find((step) => step.name === "Archive Docker logs");
+  assert.equal(artifact.if, "always()");
+  assert.deepEqual(artifact.with.path.trim().split("\n"), [
+    "e2e/docker-compose-logs.txt",
+    "e2e/docker-diagnostics-after-api-tests.txt",
+  ]);
 });
 
 test("retired mobile workflows and jobs remain absent", () => {
-  for (const file of ["build-mobile.yml", "fdroid.yml", "static_analysis.yml"]) {
+  for (const file of [
+    "build-mobile.yml",
+    "fdroid.yml",
+    "static_analysis.yml",
+  ]) {
     assert.equal(existsSync(path.join(root, ".github/workflows", file)), false);
   }
   assert.equal(workflow("test.yml").jobs["mobile-unit-tests"], undefined);
   assert.equal(workflow("fork-integration.yml").jobs["mobile"], undefined);
+  const apiGeneration = workflow("test.yml").jobs[
+    "generated-api-up-to-date"
+  ].steps.find((step) => step.name === "Run API generation").run;
+  assert.doesNotMatch(
+    apiGeneration,
+    /open-api-dart|generate-dart|\/\/:open-api(?:\s|$)/u,
+  );
+  assert.match(apiGeneration, /\/\/server:sync-open-api/u);
+  assert.match(apiGeneration, /\/\/:open-api-typescript/u);
 });
 
 test("locked Java and media tools include artifact URLs and checksums for hosted platforms", () => {
