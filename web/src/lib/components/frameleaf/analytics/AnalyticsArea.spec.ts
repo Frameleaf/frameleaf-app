@@ -1,6 +1,7 @@
 import { AnalyticsRange, AnalyticsScopeKind } from '@immich/sdk';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { SvelteURL } from 'svelte/reactivity';
 import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
 import { analyticsReportFixture } from '$lib/frameleaf/analytics.fixture';
 import en from '../../../../../../i18n/en.json';
@@ -55,6 +56,30 @@ describe('AnalyticsArea', () => {
     render(AnalyticsArea);
     await waitFor(() => expect(sdk.getAnalyticsReport).toHaveBeenCalled());
     expect(sdk.getAnalyticsReport).toHaveBeenCalledWith({ scope: 'all', range: AnalyticsRange.Year });
+  });
+
+  it('withholds the previous report while a changed selection loads and when it fails', async () => {
+    state.url = new SvelteURL('http://localhost/admin/system-settings?area=analytics');
+    render(AnalyticsArea);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Export CSV' })).toBeInTheDocument());
+    let rejectNext!: (reason: Error) => void;
+    const next = new Promise<never>((_resolve, reject) => {
+      rejectNext = reject;
+    });
+    sdk.getAnalyticsReport.mockReturnValue(next);
+    state.url.searchParams.set('scope', library);
+    state.url.searchParams.set('range', '90days');
+    await waitFor(() =>
+      expect(sdk.getAnalyticsReport).toHaveBeenLastCalledWith({
+        scope: library,
+        range: AnalyticsRange.$90Days,
+      }),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(en.frameleaf_analytics_loading);
+    expect(screen.queryByRole('button', { name: 'Export CSV' })).not.toBeInTheDocument();
+    rejectNext(new Error('scope unavailable'));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not load analytics'));
+    expect(screen.queryByRole('button', { name: 'Export CSV' })).not.toBeInTheDocument();
   });
 
   it('says so when the report cannot be read', async () => {

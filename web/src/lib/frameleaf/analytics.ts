@@ -342,7 +342,8 @@ export const CSV_HEADER = [
 
 const escape = (value: Cell) => {
   const text = value === null ? '' : String(value);
-  return `"${text.replaceAll('"', '""')}"`;
+  const safe = typeof value === 'string' && /^[=+\-@\t\r\n]/.test(text) ? `'${text}` : text;
+  return `"${safe.replaceAll('"', '""')}"`;
 };
 
 /**
