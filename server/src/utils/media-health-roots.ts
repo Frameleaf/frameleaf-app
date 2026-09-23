@@ -234,7 +234,7 @@ export const retainFile = async (source: string, destination: string): Promise<v
     } else if (code === 'EEXIST') {
       const [from, to] = await Promise.all([lstat(source), lstat(destination)]);
       if (from.ino !== to.ino || from.dev !== to.dev) {
-        throw new Error(`${destination} already holds a different file`);
+        throw new Error(`${destination} already holds a different file`, { cause: error });
       }
     } else {
       throw error;

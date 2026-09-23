@@ -643,20 +643,32 @@ export class ICloudSyncRepository {
         return { outcome: 'not-ready' };
       }
 
-      if (options.trigger === 'schedule') {
-        const recent = await sql`SELECT 1 FROM media_operation WHERE "ownerId" = ${ownerId}::uuid
+      switch (options.trigger) {
+        case 'schedule': {
+          const recent = await sql`SELECT 1 FROM media_operation WHERE "ownerId" = ${ownerId}::uuid
           AND kind = ${MediaOperationKind.ICloudSync} AND snapshot->>'connectionId' = ${connectionId}
           AND coalesce("finishedAt", "createdAt") > now() - make_interval(hours => ${connection.config.intervalHours}::int)
           LIMIT 1`.execute(db);
-        if (recent.rows.length > 0 || (connection.nextRunAt && new Date(connection.nextRunAt).getTime() > Date.now())) {
-          return { outcome: 'not-due' };
-        }
-      }
+          if (
+            recent.rows.length > 0 ||
+            (connection.nextRunAt && new Date(connection.nextRunAt).getTime() > Date.now())
+          ) {
+            return { outcome: 'not-due' };
+          }
 
-      if (options.trigger === 'retry') {
-        await this.retryFailures(connectionId, db);
-      } else if (options.trigger === 'rescan') {
-        await this.resetInventory(connectionId, db);
+          break;
+        }
+        case 'retry': {
+          await this.retryFailures(connectionId, db);
+
+          break;
+        }
+        case 'rescan': {
+          await this.resetInventory(connectionId, db);
+
+          break;
+        }
+        // No default
       }
       if (connection.state !== 'connected' || options.trigger === 'retry' || options.trigger === 'rescan') {
         // Asked for by the owner: the provider back-off and the last failure no longer apply.

@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import type { Mock } from 'vitest';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AlbumKind } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -22,11 +23,14 @@ import { AuthFactory } from 'test/factories/auth.factory.js';
 import { newUuid, newUuidV7 } from 'test/small.factory.js';
 import { getMocks } from 'test/utils.js';
 
-const envelope = (graph: Record<string, unknown> = { tracks: [] }) => ({
+// eslint-friendly alias: a mock whose implementation may return anything, promises included.
+type AnyMock = Mock<(...args: any[]) => any>;
+
+const envelope = (graph?: Record<string, unknown>) => ({
   schemaVersion: STUDIO_ENVELOPE_SCHEMA_VERSION,
   engine: STUDIO_ENGINE,
   engineRevision: 'rev-1',
-  graph,
+  graph: graph ?? { tracks: [] },
 });
 
 const future = () => new Date(Date.now() + 60_000);
@@ -44,11 +48,11 @@ const conflictOf = async (promise: Promise<unknown>) => {
 
 describe(StudioProjectService.name, () => {
   let sut: StudioProjectService;
-  let repository: Record<keyof StudioProjectRepository, ReturnType<typeof vi.fn>>;
+  let repository: Record<keyof StudioProjectRepository, AnyMock>;
   let access: {
-    album: { checkOwnerAccess: ReturnType<typeof vi.fn>; checkSharedAlbumAccess: ReturnType<typeof vi.fn> };
+    album: { checkOwnerAccess: AnyMock; checkSharedAlbumAccess: AnyMock };
   };
-  let resources: { resolveProjectResources: ReturnType<typeof vi.fn> };
+  let resources: { resolveProjectResources: AnyMock };
   let owner: AuthDto;
   let reviewer: AuthDto;
   let project: StudioProject;

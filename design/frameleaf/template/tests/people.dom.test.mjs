@@ -36,24 +36,17 @@ let PeopleLibrary, PersonHeader, ManagePeople, media, people, data;
 let mounted;
 
 before(async () => {
-  console.error("people DOM setup: vite");
   vite = await createServer({
     root,
     appType: "custom",
     logLevel: "silent",
     server: { middlewareMode: true },
   });
-  console.error("people DOM setup: People");
   ({ PeopleLibrary } = await vite.ssrLoadModule("/src/People.jsx"));
-  console.error("people DOM setup: PersonDetail");
   ({ PersonHeader } = await vite.ssrLoadModule("/src/PersonDetail.jsx"));
-  console.error("people DOM setup: ManagePeople");
   ({ ManagePeople } = await vite.ssrLoadModule("/src/ManagePeople.jsx"));
-  console.error("people DOM setup: media");
   ({ media, people } = await vite.ssrLoadModule("/src/media.js"));
-  console.error("people DOM setup: data");
   data = await vite.ssrLoadModule("/src/people-data.mjs");
-  console.error("people DOM setup: ready");
 });
 
 afterEach(async () => {
@@ -84,17 +77,29 @@ const button = (name) => {
   return match;
 };
 const click = async (name) => act(async () => button(name).click());
+// react-dom/client is imported before the happy-dom globals exist, so React
+// uses its focus/keyup value polyfill instead of native input events: focus the
+// field, set the value behind React's tracker, then send both events.
 const type = async (input, value) => {
   const setter = Object.getOwnPropertyDescriptor(
     window.HTMLInputElement.prototype,
     "value",
   ).set;
   await act(async () => {
+    input.focus();
     setter.call(input, value);
     input.dispatchEvent(new window.Event("input", { bubbles: true }));
+    input.dispatchEvent(
+      new window.KeyboardEvent("keyup", { key: value.at(-1), bubbles: true }),
+    );
   });
 };
 const text = () => document.body.textContent;
+// Compare DOM nodes by identity/presence only: a failed assert.equal on a
+// happy-dom node makes node:assert inspect the whole window graph, which
+// exhausts memory instead of reporting the failure.
+const assertAbsent = (selector) =>
+  assert.ok(!document.querySelector(selector), `${selector} should be absent`);
 
 test("People grid shows unnamed clusters, a merge suggestion and names inline", async () => {
   const changes = [];
@@ -124,7 +129,7 @@ test("People grid shows unnamed clusters, a merge suggestion and names inline", 
   assert.ok(document.querySelector('[role="listbox"]'), "suggestions listed");
   assert.match(document.querySelector('[role="listbox"]').textContent, /Emma/);
   await type(input, "Sam");
-  assert.equal(document.querySelector('[role="listbox"]'), null);
+  assertAbsent('[role="listbox"]');
   await click("Save name");
   assert.equal(changes.length, 2);
   const named = Object.entries(changes[1]).find(
@@ -132,7 +137,7 @@ test("People grid shows unnamed clusters, a merge suggestion and names inline", 
   );
   assert.ok(named, "name saved through onChange");
   assert.match(named[0], /^cluster-unnamed-/);
-  assert.equal(document.querySelector('input[role="combobox"]'), null);
+  assertAbsent('input[role="combobox"]');
 
   // Picking a suggestion commits that name for the other cluster.
   await click("Add a name");
@@ -144,7 +149,7 @@ test("People grid shows unnamed clusters, a merge suggestion and names inline", 
   );
   assert.equal(changes.length, 3);
   assert.ok(Object.values(changes[2]).some((entry) => entry.name === "Emma"));
-  assert.equal(document.querySelector('input[role="combobox"]'), null);
+  assertAbsent('input[role="combobox"]');
   // Cancel renaming leaves overrides untouched.
   await click("Rename Jamie");
   await click("Cancel renaming");
@@ -186,7 +191,7 @@ test("Card menu hides a person and the hidden toggle brings them back", async ()
       .click(),
   );
   assert.equal(overrides.Jamie?.hidden, true);
-  assert.equal(document.querySelector('[role="menu"]'), null);
+  assertAbsent('[role="menu"]');
   await rerender();
   assert.equal(document.querySelectorAll(".pl-card").length, 4);
   assert.match(text(), /1 hidden person/);
@@ -269,7 +274,10 @@ test("Person header renders facts and the fix-match panel routes face actions", 
   await click("Fix incorrect match");
   const panel = document.querySelector(".pd-fix");
   assert.ok(panel, "fix panel opened");
-  assert.equal(document.activeElement, panel.querySelector("h2"));
+  assert.ok(
+    document.activeElement === panel.querySelector("h2"),
+    "fix panel heading has focus",
+  );
   assert.equal(panel.querySelectorAll(".pd-fix-row").length, assets.length);
   assert.ok(panel.querySelector(".pp-face-crop"), "tagged face uses a crop");
   await act(async () => panel.querySelector(".pd-fix-menu-button").click());
@@ -287,5 +295,5 @@ test("Person header renders facts and the fix-match panel routes face actions", 
       new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
     ),
   );
-  assert.equal(document.querySelector(".pd-fix"), null);
+  assertAbsent(".pd-fix");
 });
