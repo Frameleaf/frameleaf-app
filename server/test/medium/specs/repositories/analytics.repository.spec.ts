@@ -87,7 +87,10 @@ describe(AnalyticsRepository.name, () => {
       externalPhysicalBytes: 0,
       sharedReferences: 2,
     });
-    await expect(sut.getPhysical(account(jamie.id))).resolves.toMatchObject({ physicalBytes: 1000, sharedReferences: 0 });
+    await expect(sut.getPhysical(account(jamie.id))).resolves.toMatchObject({
+      physicalBytes: 1000,
+      sharedReferences: 0,
+    });
     await expect(sut.getInventory(host)).resolves.toMatchObject({ photos: 4, logicalBytes: 3500 });
     await expect(sut.getPhysical(host)).resolves.toMatchObject({ physicalBytes: 1500, sharedReferences: 3 });
 
@@ -111,7 +114,11 @@ describe(AnalyticsRepository.name, () => {
     const { user } = await ctx.newUser();
     const { id: libraryId } = await newLibrary(db, user.id);
     await newSizedAsset(ctx, user.id, 700);
-    await newSizedAsset(ctx, user.id, 3000, { libraryId, isExternal: true, originalPath: `/mnt/archive/${randomUUID()}.jpg` });
+    await newSizedAsset(ctx, user.id, 3000, {
+      libraryId,
+      isExternal: true,
+      originalPath: `/mnt/archive/${randomUUID()}.jpg`,
+    });
 
     await expect(sut.getInventory(account(user.id))).resolves.toMatchObject({
       photos: 2,
@@ -205,7 +212,11 @@ describe(AnalyticsRepository.name, () => {
 
     const rows = await sut.getAlbums(account(taylor.id), taylor.id);
     expect(rows.map((row) => row.name).toSorted()).toEqual(['Rockies', 'Trails']);
-    expect(rows.find((row) => row.id === theirs.id)).toMatchObject({ ownerId: jamie.id, members: 1, viewerHasAccess: true });
+    expect(rows.find((row) => row.id === theirs.id)).toMatchObject({
+      ownerId: jamie.id,
+      members: 1,
+      viewerHasAccess: true,
+    });
     expect(rows.find((row) => row.id === owned.id)).toMatchObject({ members: 0 });
 
     const all = await sut.getAlbums(host, taylor.id);

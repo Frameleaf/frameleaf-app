@@ -11,7 +11,12 @@ import {
   AssetVisibility,
 } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
-import { AnalyticsSampleInsert, AnalyticsSampleRow, AnalyticsScope, assertApprovedSample } from 'src/utils/analytics.js';
+import {
+  AnalyticsSampleInsert,
+  AnalyticsSampleRow,
+  AnalyticsScope,
+  assertApprovedSample,
+} from 'src/utils/analytics.js';
 import { isNotLocked } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
@@ -81,7 +86,7 @@ export type AnalyticsScopeTargets = {
   libraries: Array<{ id: string; name: string; ownerId: string; deletedAt: Date | null }>;
 };
 
-const RAW_EXTENSION_PATTERN = `\\.(${Object.keys(mimeTypes.raw)
+const RAW_EXTENSION_PATTERN = String.raw`\.(${Object.keys(mimeTypes.raw)
   .map((extension) => extension.slice(1).replaceAll(/[^a-z0-9]/gi, ''))
   .join('|')})$`;
 

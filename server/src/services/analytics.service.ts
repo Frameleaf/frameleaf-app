@@ -1,4 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { IAnalyticsCollectJob } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
 import {
@@ -8,7 +10,6 @@ import {
   AnalyticsScopeOption,
   AnalyticsScopesResponseDto,
 } from 'src/dtos/analytics.dto.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   AnalyticsSampleGrain,
   AnalyticsScopeKind,
@@ -23,7 +24,6 @@ import { AnalyticsRepository, AnalyticsScopeTargets } from 'src/repositories/ana
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
-import type { IAnalyticsCollectJob } from 'src/types.js';
 import {
   ANALYTICS_AUTO_RETRIES,
   ANALYTICS_DAY_RETENTION_DAYS,
@@ -179,7 +179,10 @@ export class AnalyticsService {
     const cost = processing?.reduce((sum, row) => sum + row.costUsd, 0) ?? 0;
 
     const favorite = inventory.favoritePhotos + inventory.favoriteVideos;
-    const metadataRow = (field: 'captureDate' | 'location' | 'cameraModel' | 'aiDescription' | 'checksum', present: number) => ({
+    const metadataRow = (
+      field: 'captureDate' | 'location' | 'cameraModel' | 'aiDescription' | 'checksum',
+      present: number,
+    ) => ({
       field,
       present,
       missing: items - present,
@@ -324,7 +327,7 @@ export class AnalyticsService {
     ]);
 
     const samples: AnalyticsSampleInsert[] = [];
-    const add = (scope: AnalyticsScope, series: AnalyticsSeriesId, value: number) =>
+    const add = (scope: AnalyticsScope, series: AnalyticsSeriesId, value: number) => {
       samples.push({
         series,
         scopeKey: analyticsScopeKey(scope),
@@ -335,6 +338,7 @@ export class AnalyticsService {
         value,
         observedAt: now,
       });
+    };
 
     const find = (kind: AnalyticsScopeKind, id: string | null) =>
       snapshot.find((row) => row.kind === kind && row.id === id);
@@ -361,7 +365,9 @@ export class AnalyticsService {
       add({ kind: AnalyticsScopeKind.Host }, AnalyticsSeriesId.HostCapacityBytes, disk.total);
     } catch (error) {
       // A volume that cannot be read tonight is a gap in its history, never a zero.
-      this.logger.warn(`Analytics could not read the library volume: ${error instanceof Error ? error.message : error}`);
+      this.logger.warn(
+        `Analytics could not read the library volume: ${error instanceof Error ? error.message : error}`,
+      );
     }
 
     // Only series the registry marks as collected for each scope kind reach the table.
@@ -370,7 +376,7 @@ export class AnalyticsService {
         collectedSeriesFor(kind).map((series) => `${kind}:${series}`),
       ),
     );
-    const scopeKindOf = (key: string) => (key === 'host' ? AnalyticsScopeKind.Host : key.split(':')[0]);
+    const scopeKindOf = (key: string) => (key === 'host' ? AnalyticsScopeKind.Host : key.split(':', 1)[0]);
     await this.analyticsRepository.upsertSamples(
       samples.filter((sample) => allowed.has(`${scopeKindOf(sample.scopeKey)}:${sample.series}`)),
     );
@@ -411,7 +417,7 @@ export class AnalyticsService {
           freeBytes: null,
         };
       }
-      const observedAt = used.observedAt < capacity.observedAt ? used.observedAt : capacity.observedAt;
+      const observedAt = new Date(Math.min(used.observedAt.getTime(), capacity.observedAt.getTime()));
       return {
         state: historyState(observedAt, now),
         observedAt: observedAt.toISOString(),
