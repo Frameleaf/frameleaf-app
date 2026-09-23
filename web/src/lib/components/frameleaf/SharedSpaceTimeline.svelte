@@ -34,14 +34,12 @@
     photos: SpacePhotoSet;
     /** Only these ids, when a member asked to see what is new; `undefined` shows everything. */
     filter?: Set<string>;
-    /** Albums and spaces a bulk "add to album" may target. */
-    albumOptions?: { id: string; name: string; count?: number }[];
     onOpen: (asset: TimelineAsset) => void;
     /** A bulk action took items out of the space; the page refreshes its counts. */
     onChanged?: () => Promise<void> | void;
   }
 
-  let { space, photos, filter, albumOptions = [], onOpen, onChanged }: Props = $props();
+  let { space, photos, filter, onOpen, onChanged }: Props = $props();
 
   let tagOptions = $state<{ id: string; name: string }[]>([]);
 
@@ -98,7 +96,6 @@
     bulkContext={{ albumId: space.id }}
     downloadFileName={namedArchiveName(space.albumName, $t('frameleaf_archive_name_space'))}
     {tagOptions}
-    {albumOptions}
     onEndReached={loadMore}
     onRemoved={handleRemoved}
     onSelectAll={selectEverythingLoaded}

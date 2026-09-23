@@ -30,6 +30,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { isGranted, requireElevatedPermission } from 'src/utils/access.js';
 import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
 import { applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
 import { fromChecksum } from 'src/utils/request.js';
@@ -152,6 +153,8 @@ export class SearchService extends BaseService {
         checksum,
         ...privacyOptions,
         visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
+        // server derived and set after the request's own fields, so a request can never name another owner
+        lockedOwnerId: getLockedOwnerId(auth),
         userIds,
         viewingUserId: auth.user.id,
         orderDirection: dto.order ?? AssetOrder.Desc,
@@ -176,6 +179,7 @@ export class SearchService extends BaseService {
       ...searchDto,
       ...getPrivacyQueryOptions(auth, suppressedOnly),
       visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
+      lockedOwnerId: getLockedOwnerId(auth),
       userIds,
       viewingUserId: auth.user.id,
     });
@@ -197,6 +201,7 @@ export class SearchService extends BaseService {
       ...searchDto,
       ...getPrivacyQueryOptions(auth, suppressedOnly),
       visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
+      lockedOwnerId: getLockedOwnerId(auth),
       userIds,
       viewingUserId: auth.user.id,
     });
@@ -218,6 +223,7 @@ export class SearchService extends BaseService {
       ...searchDto,
       ...getPrivacyQueryOptions(auth, suppressedOnly),
       visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
+      lockedOwnerId: getLockedOwnerId(auth),
       userIds,
       viewingUserId: auth.user.id,
     });
@@ -257,6 +263,7 @@ export class SearchService extends BaseService {
         embedding,
         query: dto.query,
         visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
+        lockedOwnerId: getLockedOwnerId(auth),
       },
     );
 
