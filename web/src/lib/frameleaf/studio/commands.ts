@@ -404,7 +404,11 @@ export interface StudioCommandPayloads {
     viewportHeight: number;
   };
   'project.applyTemplate': { templateId: string };
-  'project.exportBundle': { sequenceIds?: string[] };
+  /**
+   * `includeMedia`: copy the media the person owns into the bundle. Shared media always travels as a
+   * reference and nothing Locked is ever copied. Left out, the host asks in its export dialog.
+   */
+  'project.exportBundle': { sequenceIds?: string[]; includeMedia?: boolean };
   'project.importBundle': { bundleUploadId: string };
   'project.rename': { name: string };
   'project.setMasterAudio': { gainDb?: number; muted?: boolean; ducking?: boolean };

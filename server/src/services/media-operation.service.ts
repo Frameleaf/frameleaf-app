@@ -23,6 +23,7 @@ import {
   MediaOperationRepository,
 } from 'src/repositories/media-operation.repository.js';
 import { isGranted, requireAccess } from 'src/utils/access.js';
+import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import {
   BULK_ACTION_PERMISSIONS,
   bulkOperationLabel,
@@ -37,6 +38,7 @@ import {
   type BulkOperationSnapshot,
 } from 'src/utils/bulk-operation.js';
 import {
+  ACTIVE_MEDIA_OPERATION_STATUSES,
   PAUSABLE_MEDIA_OPERATION_KINDS,
   canDismissMediaOperation,
   canPauseMediaOperation,
@@ -122,34 +124,49 @@ const mapSnapshot = (operation: MediaOperation): Record<string, unknown> => {
   return { ...rest, assetCount: Array.isArray(assetIds) ? assetIds.length : 0 };
 };
 
-const mapBulkItems = (operation: MediaOperation) => {
+const bulkItems = (operation: MediaOperation) =>
+  operation.kind === MediaOperationKind.Bulk
+    ? parseBulkResult(operation.result, Number(operation.totalUnits ?? 0)).items
+    : [];
+
+/** `hidden`: the caller's Locked media, never named to a session that has not unlocked it (FL-34). */
+const mapBulkItems = (operation: MediaOperation, hidden: ReadonlySet<string> = new Set()) =>
+  bulkItems(operation)
+    .filter((item) => !hidden.has(item.id))
+    .map((item) => ({
+      id: item.id,
+      status: item.status,
+      reasonKey: item.reasonKey ?? null,
+      message: item.message ?? null,
+    }));
+
+/** The items a bulk job's automatic retry pass has not reached yet. */
+const mapBulkRetryPending = (operation: MediaOperation, hidden: ReadonlySet<string> = new Set()): string[] => {
   if (operation.kind !== MediaOperationKind.Bulk) {
     return [];
   }
 
-  return parseBulkResult(operation.result, Number(operation.totalUnits ?? 0)).items.map((item) => ({
-    id: item.id,
-    status: item.status,
-    reasonKey: item.reasonKey ?? null,
-    message: item.message ?? null,
-  }));
+  const pending = bulkRetryPending(parseBulkResult(operation.result, Number(operation.totalUnits ?? 0)));
+  return pending.filter((id) => !hidden.has(id));
 };
 
-/** The items a bulk job's automatic retry pass has not reached yet. */
-const mapBulkRetryPending = (operation: MediaOperation): string[] =>
-  operation.kind === MediaOperationKind.Bulk
-    ? bulkRetryPending(parseBulkResult(operation.result, Number(operation.totalUnits ?? 0)))
-    : [];
+const UUID_PATTERN = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 
-export const mapOperation = (operation: MediaOperation): MediaOperationDto => ({
+const unlessHidden = (id: string | null, hidden: ReadonlySet<string>) => (id && hidden.has(id) ? null : id);
+
+/** `hidden`: the caller's Locked media, never named to a session that has not unlocked it (FL-34). */
+export const mapOperation = (
+  operation: MediaOperation,
+  hidden: ReadonlySet<string> = new Set(),
+): MediaOperationDto => ({
   id: operation.id,
   kind: operation.kind as MediaOperationKind,
   status: operation.status as MediaOperationStatus,
   destination: operation.destination as MediaOperationDestination,
   destinationDetail: operation.destinationDetail,
   label: operation.label,
-  assetId: operation.assetId,
-  resultAssetId: operation.resultAssetId,
+  assetId: unlessHidden(operation.assetId, hidden),
+  resultAssetId: unlessHidden(operation.resultAssetId, hidden),
   retryOfId: operation.retryOfId,
   projectId: operation.projectId,
   revisionId: operation.revisionId,
@@ -219,19 +236,39 @@ export class MediaOperationService {
       skip: dto.skip ?? 0,
     });
 
-    return { items: items.map((item) => mapOperation(item)), total };
+    const hidden = await this.hiddenLockedIds(auth, items);
+    return { items: items.map((item) => mapOperation(item, hidden)), total };
+  }
+
+  /**
+   * The account's unfinished jobs, paused ones included, for the notifications panel's running-jobs
+   * summary (FL-104). Read exactly as `search` reads them, Locked ids withheld from a session that
+   * has not unlocked them (FL-34).
+   */
+  async listUnfinished(auth: AuthDto, take: number): Promise<MediaOperationDto[]> {
+    const { items } = await this.repository.list({
+      ownerId: auth.user.id,
+      statuses: ACTIVE_MEDIA_OPERATION_STATUSES,
+      includeDismissed: false,
+      take,
+      skip: 0,
+    });
+
+    const hidden = await this.hiddenLockedIds(auth, items);
+    return items.map((item) => mapOperation(item, hidden));
   }
 
   async get(auth: AuthDto, id: string): Promise<MediaOperationDetailDto> {
     const operation = await this.findOwned(auth, id);
     const checkpoints = await this.repository.getCheckpoints(operation.id);
+    const hidden = await this.hiddenLockedIds(auth, [operation]);
 
     return {
-      ...mapOperation(operation),
+      ...mapOperation(operation, hidden),
       snapshot: mapSnapshot(operation),
       checkpoints: checkpoints.map((checkpoint) => mapCheckpoint(checkpoint)),
-      bulkItems: mapBulkItems(operation),
-      bulkRetryPending: mapBulkRetryPending(operation),
+      bulkItems: mapBulkItems(operation, hidden),
+      bulkRetryPending: mapBulkRetryPending(operation, hidden),
     };
   }
 
@@ -266,7 +303,7 @@ export class MediaOperationService {
     if (dto.requestId) {
       const existing = await this.repository.getBulkByRequestId(auth.user.id, dto.requestId);
       if (existing) {
-        return mapOperation(existing);
+        return this.present(auth, existing);
       }
     }
 
@@ -311,7 +348,7 @@ export class MediaOperationService {
     });
 
     this.logger.log(`Bulk ${dto.action} queued as media operation ${created.id} (${assetIds.length} items)`);
-    return mapOperation(created);
+    return this.present(auth, created);
   }
 
   /**
@@ -332,11 +369,11 @@ export class MediaOperationService {
     const cancelled = await this.repository.requestCancel(id, auth.user.id);
     if (!cancelled) {
       // It finished between the read and the write. Report the settled state, not an error.
-      return mapOperation(await this.findOwned(auth, id));
+      return this.present(auth, await this.findOwned(auth, id));
     }
 
     this.logger.log(`Cancellation requested for media operation ${id} (${cancelled.status})`);
-    return mapOperation(cancelled);
+    return this.present(auth, cancelled);
   }
 
   /**
@@ -356,7 +393,7 @@ export class MediaOperationService {
     }
 
     if (operation.status === MediaOperationStatus.Paused) {
-      return mapOperation(operation);
+      return this.present(auth, operation);
     }
 
     if (!canPauseMediaOperation(operation)) {
@@ -366,11 +403,11 @@ export class MediaOperationService {
     const paused = await this.repository.requestPause(id, auth.user.id, PAUSABLE_MEDIA_OPERATION_KINDS);
     if (!paused) {
       // It moved on between the read and the write: finished, validating or cancelled.
-      return mapOperation(await this.findOwned(auth, id));
+      return this.present(auth, await this.findOwned(auth, id));
     }
 
     this.logger.log(`Pause requested for media operation ${id} (${paused.status})`);
-    return mapOperation(paused);
+    return this.present(auth, paused);
   }
 
   /**
@@ -388,11 +425,11 @@ export class MediaOperationService {
 
     const resumed = await this.repository.resume(id, auth.user.id);
     if (!resumed) {
-      return mapOperation(await this.findOwned(auth, id));
+      return this.present(auth, await this.findOwned(auth, id));
     }
 
     this.logger.log(`Media operation ${id} resumed (${resumed.status})`);
-    return mapOperation(resumed);
+    return this.present(auth, resumed);
   }
 
   /**
@@ -431,7 +468,7 @@ export class MediaOperationService {
     });
 
     this.logger.log(`Media operation ${id} retried as ${retried.id}`);
-    return mapOperation(retried);
+    return this.present(auth, retried);
   }
 
   /** Clear a finished job from Activity. The row survives for lineage and remote cleanup. */
@@ -497,7 +534,7 @@ export class MediaOperationService {
 
     const active = await this.repository.getActiveRetry(operation.id, auth.user.id);
     if (active) {
-      return mapOperation(active);
+      return this.present(auth, active);
     }
 
     const snapshot = parseBulkSnapshot(operation.snapshot);
@@ -549,7 +586,7 @@ export class MediaOperationService {
     });
 
     this.logger.log(`Bulk media operation ${operation.id} retried as ${retried.id} (${remaining.length} items)`);
-    return mapOperation(retried);
+    return this.present(auth, retried);
   }
 
   /**
@@ -561,6 +598,34 @@ export class MediaOperationService {
    * touches any Locked item must come from an elevated session, exactly as a direct change would.
    * API keys and ordinary sessions can still queue jobs over everything else.
    */
+  /**
+   * The caller's own Locked media among these operations' asset ids. An operation keeps the ids it was
+   * given; a session that has not unlocked the Locked folder is never told which of them are Locked
+   * now, so those ids are left out of what it reads (FL-34).
+   */
+  private async hiddenLockedIds(auth: AuthDto, operations: MediaOperation[]): Promise<Set<string>> {
+    if (getLockedOwnerId(auth)) {
+      return new Set();
+    }
+
+    const ids = new Set<string>();
+    for (const operation of operations) {
+      const candidates = [operation.assetId, operation.resultAssetId, ...bulkItems(operation).map(({ id }) => id)];
+      for (const id of candidates) {
+        // stored results are data, not a contract: only well-formed ids reach the uuid lookup
+        if (id && UUID_PATTERN.test(id)) {
+          ids.add(id);
+        }
+      }
+    }
+
+    return ids.size > 0 ? this.repository.getLockedAssetIds(auth.user.id, [...ids]) : new Set();
+  }
+
+  private async present(auth: AuthDto, operation: MediaOperation): Promise<MediaOperationDto> {
+    return mapOperation(operation, await this.hiddenLockedIds(auth, [operation]));
+  }
+
   private async requireUnlockedFor(auth: AuthDto, assetIds: string[]): Promise<void> {
     if (auth.session?.hasElevatedPermission) {
       return;

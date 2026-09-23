@@ -701,6 +701,38 @@ describe(StudioBundleService.name, () => {
     });
   });
 
+  describe('getOperation', () => {
+    it('reports a job waiting for its automatic retry the way Activity does', async () => {
+      const retryAt = new Date(Date.now() + 30_000);
+      const waiting = operationOf({
+        kind: MediaOperationKind.StudioBundleExport,
+        status: MediaOperationStatus.Queued,
+        attempt: 1,
+        autoRetries: 1,
+        retryAt,
+        error: 'disk full',
+        errorCode: 'bundle_write_failed',
+        projectId: newUuidV7(),
+      });
+      operations.getForOwner.mockResolvedValue(waiting);
+
+      await expect(sut.getOperation(owner, waiting.id)).resolves.toMatchObject({
+        operationId: waiting.id,
+        status: MediaOperationStatus.Queued,
+        autoRetries: 1,
+        retryAt: retryAt.toISOString(),
+        export: null,
+      });
+    });
+
+    it('reports no retry state for a job that never failed', async () => {
+      const fresh = operationOf({ kind: MediaOperationKind.StudioBundleImport, status: MediaOperationStatus.Queued });
+      operations.getForOwner.mockResolvedValue(fresh);
+
+      await expect(sut.getOperation(owner, fresh.id)).resolves.toMatchObject({ autoRetries: 0, retryAt: null });
+    });
+  });
+
   describe('sweep', () => {
     it('purges expired trash, uploads and export files, and never touches library media', async () => {
       fs.files.set('/uploads/old.zip', Buffer.from('old'));

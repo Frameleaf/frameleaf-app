@@ -162,11 +162,9 @@
 </section>
 
 <style>
+  /* Placed by the top bar's anchor (FL-30); on phones it becomes the prototype's bottom sheet. */
   .fl-notif-panel {
-    position: absolute;
-    top: 4.375rem;
-    right: 1.5rem;
-    z-index: 40;
+    position: relative;
     display: flex;
     flex-direction: column;
     width: min(400px, calc(100vw - 32px));
@@ -274,6 +272,7 @@
   @media (max-width: 700px) {
     .fl-notif-panel {
       position: fixed;
+      z-index: 40;
       top: auto;
       right: 0;
       bottom: 0;

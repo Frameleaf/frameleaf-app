@@ -817,6 +817,7 @@ export const studioCommandMirror = {
     capability: null,
     owner: 'FL-91',
     payload: {
+      includeMedia: 'boolean?',
       sequenceIds: 'string[]?',
     },
   },

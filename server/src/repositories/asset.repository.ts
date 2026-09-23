@@ -16,6 +16,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { LockableProperty, Stack } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import {
@@ -41,15 +42,17 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
-import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import {
   anyUuid,
   asUuid,
   getHiddenContentFilter,
+  hasHiddenLockedPrimary,
   hasPeople,
   hasPets,
   hiddenContentAssetIdExists,
   inSharedAlbum,
+  isLockedAsset,
+  isMotionOfLockedStill,
   removeUndefinedKeys,
   truncatedDate,
   unnest,
@@ -64,12 +67,15 @@ import {
   withHiddenContentFilter,
   withHiddenContentOnly,
   withLibrary,
+  withLockedOwnerScope,
   withNsfwAssets,
   withOwner,
   withSmartSearch,
   withTagId,
   withTags,
 } from 'src/utils/database.js';
+import { onLockedStateChanged, onStacksJoined, otherStackMembers } from 'src/utils/locked-stacks.js';
+import { getLockedAssetIds, isLockingVisibility } from 'src/utils/locked-state.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 
@@ -94,7 +100,11 @@ interface AssetStatsOptions extends HiddenContentQueryOptions {
   visibility?: AssetVisibility;
 }
 
-type AssetChecksumOptions = HiddenContentQueryOptions;
+/**
+ * `lockedOwnerId`: the owner, when their session is elevated. Only then may a duplicate lookup name
+ * their Locked media; otherwise a Locked match stays unnamed (FL-34).
+ */
+type AssetChecksumOptions = HiddenContentQueryOptions & LockedVisibilityOptions;
 
 interface LivePhotoSearchOptions {
   ownerId: string;
@@ -168,7 +178,11 @@ interface GetByIdsRelations {
   library?: boolean;
   owner?: boolean;
   smartSearch?: boolean;
-  stack?: { assets?: boolean };
+  /**
+   * `lockedOwnerId`: the viewer, when their session is elevated. A stack whose primary is Locked media
+   * someone else owns, or that the viewer has not unlocked, is left off the asset (FL-34).
+   */
+  stack?: { assets?: boolean; lockedOwnerId?: string };
   tags?: boolean;
   edits?: boolean;
 }
@@ -761,7 +775,7 @@ export class AssetRepository {
       .selectFrom('asset')
       .select('asset.id')
       .where('asset.id', '=', anyUuid(ids))
-      .where('asset.visibility', '=', sql.lit(AssetVisibility.Locked))
+      .where((eb) => isLockedAsset(eb))
       .execute();
     return new Set(rows.map(({ id }) => id));
   }
@@ -893,7 +907,11 @@ export class AssetRepository {
       .$if(!!smartSearch, withSmartSearch)
       .$if(!!stack, (qb) =>
         qb
-          .leftJoin('stack', 'stack.id', 'asset.stackId')
+          .leftJoin('stack', (join) =>
+            join
+              .onRef('stack.id', '=', 'asset.stackId')
+              .on((eb) => eb.not(hasHiddenLockedPrimary(eb, stack!.lockedOwnerId))),
+          )
           .$if(!stack!.assets, (qb) =>
             qb.select((eb) => eb.fn.toJson(eb.table('stack')).$castTo<Stack | null>().as('stack')),
           )
@@ -934,21 +952,39 @@ export class AssetRepository {
       return;
     }
 
-    if (options.visibility !== AssetVisibility.Locked) {
+    const { visibility } = options;
+    if (visibility === undefined) {
       await this.db.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
       return;
     }
 
-    // A Locked photo is never a cover (FL-53): moving into the Locked folder releases every cover,
-    // featured photo and face thumbnail it was, in the same transaction.
+    // Moving into or out of the Locked folder moves whole stacks, and a Locked photo is never a cover
+    // (FL-53): the rest of each stack follows and every cover, featured photo and face thumbnail is
+    // released, in the same transaction.
     await this.inTransaction(async (tx) => {
+      const wereLocked = isLockingVisibility(visibility) ? [] : await getLockedAssetIds(tx, ids);
       await tx.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
-      await releaseLockedCoverReferences(tx, ids);
+      await onLockedStateChanged(tx, visibility, ids, wereLocked);
     });
   }
 
   async updateByLibraryId(libraryId: string, options: Updateable<AssetTable>): Promise<void> {
     await this.db.updateTable('asset').set(options).where('libraryId', '=', asUuid(libraryId)).execute();
+  }
+
+  /**
+   * The ids of every other member of the stacks `assetIds` belong to (FL-53). Call it after `update` or
+   * `updateAll` moves `assetIds` into or out of the Locked folder, so the caller can give every stack
+   * sibling the same real-time update the moved assets get: the cascade in `locked-stacks.ts` moves the
+   * whole stack in the same transaction, so by the time this reads, every sibling already reflects it.
+   */
+  async getStackSiblingIds(assetIds: string[]): Promise<string[]> {
+    if (assetIds.length === 0) {
+      return [];
+    }
+
+    const rows = await otherStackMembers(this.db, assetIds).execute();
+    return rows.map(({ id }) => id);
   }
 
   async update(asset: Updateable<AssetTable> & { id: string }) {
@@ -968,16 +1004,25 @@ export class AssetRepository {
         .$call((qb) => qb.select(withEdits))
         .executeTakeFirst();
 
-    if (asset.visibility !== AssetVisibility.Locked) {
+    const { visibility, stackId } = asset;
+    if (visibility === undefined && !stackId) {
       return updateAndSelect(this.db);
     }
 
-    // A Locked photo is never a cover (FL-53): moving into the Locked folder releases every cover,
-    // featured photo and face thumbnail it was, in the same transaction, as a separate statement so
-    // the new visibility is visible to it.
+    // Moving into or out of the Locked folder moves the whole stack, a stack that holds a Locked photo
+    // is Locked as a whole, and a Locked photo is never a cover (FL-53): the rest of the stack follows
+    // and every cover, featured photo and face thumbnail is released, in the same transaction and as
+    // separate statements so the change is visible to them.
     return this.inTransaction(async (tx) => {
+      const wereLocked =
+        visibility === undefined || isLockingVisibility(visibility) ? [] : await getLockedAssetIds(tx, [asset.id]);
       const updated = await updateAndSelect(tx);
-      await releaseLockedCoverReferences(tx, [asset.id]);
+      if (visibility !== undefined) {
+        await onLockedStateChanged(tx, visibility, [asset.id], wereLocked);
+      }
+      if (stackId) {
+        await onStacksJoined(tx, [stackId]);
+      }
       return updated;
     });
   }
@@ -1057,6 +1102,7 @@ export class AssetRepository {
       .select(['id', 'checksum', 'deletedAt'])
       .where('ownerId', '=', asUuid(userId))
       .where('checksum', 'in', checksums)
+      .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .execute();
   }
@@ -1073,6 +1119,7 @@ export class AssetRepository {
       .where('ownerId', '=', asUuid(ownerId))
       .where('checksum', '=', checksum)
       .where('libraryId', 'is', null)
+      .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .limit(1)
       .executeTakeFirst();
@@ -1115,7 +1162,10 @@ export class AssetRepository {
   @GenerateSql({
     params: [DummyValue.UUID, { from: DummyValue.DATE, to: DummyValue.DATE, type: CalendarHeatmapType.Upload }],
   })
-  getCalendarHeatmap(ownerId: string, dto: { from: Date; to: Date; type: CalendarHeatmapType }) {
+  getCalendarHeatmap(
+    ownerId: string,
+    dto: { from: Date; to: Date; type: CalendarHeatmapType; lockedOwnerId?: string },
+  ) {
     const dateColumns: Record<CalendarHeatmapType, { order: AssetOrderBy; column: 'createdAt' | 'localDateTime' }> = {
       [CalendarHeatmapType.Upload]: { order: AssetOrderBy.CreatedAt, column: 'createdAt' },
       [CalendarHeatmapType.Taken]: { order: AssetOrderBy.TakenAt, column: 'localDateTime' },
@@ -1133,6 +1183,8 @@ export class AssetRepository {
       .where(column, '>=', dto.from)
       .where(column, '<', dto.to)
       .where('deletedAt', 'is', null)
+      // Locked media counts only for its owner's elevated session (`lockedOwnerId`, FL-34)
+      .$call((qb) => withLockedOwnerScope(qb, dto.lockedOwnerId))
       .groupBy(date)
       .orderBy('date', 'asc')
       .execute();
@@ -1168,6 +1220,10 @@ export class AssetRepository {
           })
           .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
+          // hidden assets include live-photo motion parts; those of Locked stills stay private (FL-34)
+          .$if(options.visibility === AssetVisibility.Hidden, (qb) =>
+            qb.where((eb) => eb.not(isMotionOfLockedStill(eb))),
+          )
           .$call((qb) => withHiddenContentFilter(qb, options))
           .$if(!!options.albumId, (qb) =>
             qb
@@ -1285,6 +1341,10 @@ export class AssetRepository {
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
           .$if(options.visibility === undefined, (qb) => withAlbumVisibility(qb, options.lockedOwnerId))
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
+          // hidden assets include live-photo motion parts; those of Locked stills stay private (FL-34)
+          .$if(options.visibility === AssetVisibility.Hidden, (qb) =>
+            qb.where((eb) => eb.not(isMotionOfLockedStill(eb))),
+          )
           .$call((qb) => withHiddenContentFilter(qb, options))
           .$if(!!options.bbox, (qb) => {
             const bbox = options.bbox!;

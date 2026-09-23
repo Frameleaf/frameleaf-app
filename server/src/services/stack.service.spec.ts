@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { AssetVisibility } from 'src/enum.js';
 import { StackService } from 'src/services/stack.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -51,6 +52,33 @@ describe(StackService.name, () => {
         excludeNsfw: true,
       });
     });
+
+    it('should name the caller as the Locked owner only in an elevated session (FL-34)', async () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+      mocks.stack.search.mockResolvedValue([]);
+
+      await sut.search(auth, {});
+      expect(mocks.stack.search).toHaveBeenCalledWith({
+        ownerId: auth.user.id,
+        primaryAssetId: undefined,
+        lockedOwnerId: auth.user.id,
+      });
+    });
+
+    it('should never map a Locked member the viewer has not unlocked (FL-34)', async () => {
+      const auth = AuthFactory.create();
+      const primary = AssetFactory.from({ ownerId: auth.user.id }).exif().build();
+      const locked = AssetFactory.from({ ownerId: auth.user.id, visibility: AssetVisibility.Locked }).exif().build();
+      const stack = StackFactory.from()
+        .primaryAsset(primary, (builder) => builder.exif())
+        .asset(locked, (builder) => builder.exif())
+        .build();
+      mocks.stack.search.mockResolvedValue([getForStack(stack)]);
+
+      await expect(sut.search(auth, {})).resolves.toEqual([
+        expect.objectContaining({ primaryAssetId: primary.id, assets: [expect.objectContaining({ id: primary.id })] }),
+      ]);
+    });
   });
 
   describe('create', () => {
@@ -75,7 +103,7 @@ describe(StackService.name, () => {
         .build();
 
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([primaryAsset.id, asset.id]));
-      mocks.stack.create.mockResolvedValue(getForStack(stack));
+      mocks.stack.create.mockResolvedValue({ ...getForStack(stack), lockedAssetIds: [] });
 
       await expect(sut.create(auth, { assetIds: [primaryAsset.id, asset.id] })).resolves.toEqual({
         id: stack.id,
@@ -88,6 +116,28 @@ describe(StackService.name, () => {
         userId: auth.user.id,
       });
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalled();
+      // nothing became Locked by joining the stack
+      expect(mocks.person.getMissingThumbnailsForAssets).not.toHaveBeenCalled();
+      expect(mocks.user.getLockedProfileImageSources).not.toHaveBeenCalled();
+    });
+
+    it('follows up on photos a Locked stack member locked with it (FL-53)', async () => {
+      const auth = AuthFactory.create();
+      const [primaryAsset, asset] = [AssetFactory.from().exif().build(), AssetFactory.from().exif().build()];
+      const stack = StackFactory.from()
+        .primaryAsset(primaryAsset, (builder) => builder.exif())
+        .asset(asset, (builder) => builder.exif())
+        .build();
+
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([primaryAsset.id, asset.id]));
+      // the primary was Locked, so the other photo became Locked with it
+      mocks.stack.create.mockResolvedValue({ ...getForStack(stack), lockedAssetIds: [asset.id] });
+
+      await sut.create(auth, { assetIds: [primaryAsset.id, asset.id] });
+
+      // face thumbnails and profile pictures released by the photo the stack moved into Locked
+      expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith([asset.id]);
+      expect(mocks.user.getLockedProfileImageSources).toHaveBeenCalled();
     });
   });
 

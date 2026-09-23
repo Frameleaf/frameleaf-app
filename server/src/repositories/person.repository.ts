@@ -16,11 +16,14 @@ import {
   asUuid,
   dummy,
   inSharedAlbum,
+  isNotLockedAsset,
   nsfwAssetIdExists,
   removeUndefinedKeys,
   withFilePath,
   withHiddenContentFilter,
+  withLockedOwnerScope,
 } from 'src/utils/database.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
 
 export interface PersonSearchOptions extends HiddenContentQueryOptions {
@@ -742,7 +745,7 @@ export class PersonRepository {
         .innerJoin('asset', (join) =>
           join
             .onRef('asset.id', '=', 'asset_face.assetId')
-            .on('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
+            .on((eb) => isNotLockedAsset(eb)),
         )
         .where('asset_face.personGroupId', '=', personGroupId)
         .where('asset_face.deletedAt', 'is', null)
@@ -754,9 +757,10 @@ export class PersonRepository {
   }
 
   /**
-   * People with a face on one of `assetIds` who have a featured face but no thumbnail: after those
-   * assets move into the Locked folder, the people whose featured face was on them (FL-53). Their
-   * thumbnail is generated anew from the face that replaced it.
+   * People with a face on one of `assetIds`, or on another photo of their stacks, who have a featured
+   * face but no thumbnail: after those assets move into the Locked folder, taking the rest of their
+   * stacks with them, the people whose featured face was on them (FL-53). Their thumbnail is
+   * generated anew from the face that replaced it.
    */
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @ChunkedArray()
@@ -775,7 +779,20 @@ export class PersonRepository {
           eb
             .selectFrom('asset_face')
             .whereRef('asset_face.personGroupId', '=', 'person.personGroupId')
-            .where('asset_face.assetId', '=', anyUuid(assetIds)),
+            .where((eb) =>
+              eb.or([
+                eb('asset_face.assetId', '=', anyUuid(assetIds)),
+                eb(
+                  'asset_face.assetId',
+                  'in',
+                  eb
+                    .selectFrom('asset as stacked')
+                    .innerJoin('asset as moved', 'moved.stackId', 'stacked.stackId')
+                    .select('stacked.id')
+                    .where('moved.id', '=', anyUuid(assetIds)),
+                ),
+              ]),
+            ),
         ),
       )
       .execute();
@@ -918,11 +935,17 @@ export class PersonRepository {
    * FL-57: correction history for a person — faces explicitly moved onto them by a
    * human (see `reassignFace` above), most recent first. Machine-learning-only
    * assignments (never corrected) do not appear here.
+   *
+   * A person group spans every account in its cluster, so its faces sit on several owners' media.
+   * A face on Locked media is listed only for that media's owner in an elevated session
+   * (`lockedOwnerId`): nobody else learns the Locked item's id (FL-34).
    */
-  @GenerateSql({ params: [DummyValue.UUID] })
-  getCorrections(personGroupId: string) {
+  @GenerateSql({ params: [DummyValue.UUID, { lockedOwnerId: DummyValue.UUID }] })
+  getCorrections(personGroupId: string, options: LockedVisibilityOptions = {}) {
     return this.db
-      .selectFrom('asset_face')
+      .selectFrom('asset')
+      .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
+      .innerJoin('asset_face', 'asset_face.assetId', 'asset.id')
       .select(['asset_face.id', 'asset_face.assetId', 'asset_face.correctedAt'])
       .where('asset_face.personGroupId', '=', personGroupId)
       .where('asset_face.deletedAt', 'is', null)

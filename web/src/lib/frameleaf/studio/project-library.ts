@@ -22,6 +22,7 @@ import {
   type StudioBundleUploadDto,
   type StudioProjectDto,
 } from '@immich/sdk';
+import { isRetryingMediaOperation } from '$lib/frameleaf/activity';
 
 export type StudioLibraryShelf = 'active' | 'archived' | 'trashed';
 export type StudioLibrarySort = 'updated' | 'recent' | 'name';
@@ -207,6 +208,18 @@ const FINISHED: readonly MediaOperationStatus[] = [
 
 export const isStudioBundleSettled = (operation: Pick<StudioBundleOperationDto, 'status'>): boolean =>
   FINISHED.includes(operation.status);
+
+/**
+ * The status line for a bundle job, in Activity's words (FL-104). A queued job that has already
+ * failed once is waiting for its automatic retry, so it reads "Retrying shortly" here exactly as it
+ * does on the Activity page, never as freshly queued.
+ */
+export const studioBundleJobStatusKey = (
+  operation: Pick<StudioBundleOperationDto, 'status' | 'autoRetries' | 'retryAt'>,
+): string =>
+  isRetryingMediaOperation(operation)
+    ? 'frameleaf_activity_status_retrying'
+    : `frameleaf_activity_status_${operation.status}`;
 
 /**
  * How often to ask about a running bundle job. Quick at first, then slower: a large export spends
