@@ -12,6 +12,12 @@
   import IconChooser from '$lib/components/frameleaf/IconChooser.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
+  import RuleChips from '$lib/components/frameleaf/RuleChips.svelte';
+  import SmartAlbumReevaluateDialog from '$lib/components/frameleaf/SmartAlbumReevaluateDialog.svelte';
+  import SmartAlbumReviewDialog from '$lib/components/frameleaf/SmartAlbumReviewDialog.svelte';
+  import SmartAlbumRuleDialog from '$lib/components/frameleaf/SmartAlbumRuleDialog.svelte';
+  import { fromResponse } from '$lib/frameleaf/classification-rules';
+  import { loadRuleSources, type RuleSources } from '$lib/frameleaf/classification-sources';
   import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
   import { canEdit, defaultIconFor, isOwner, monthSpan, othersOf } from '$lib/frameleaf/album-directory';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -31,6 +37,8 @@
   import {
     AlbumKind,
     getAlbumMapMarkers,
+    getClassificationRule,
+    type ClassificationRuleResponseDto,
     SharedLinkType,
     type AlbumResponseDto,
     type CreateAlbumDto,
@@ -54,7 +62,10 @@
     mdiPencilOutline,
     mdiPlayCircleOutline,
     mdiPlus,
+    mdiRefresh,
+    mdiTextBoxCheckOutline,
     mdiTuneVariant,
+    mdiAutoFix,
     mdiUpload,
   } from '@mdi/js';
   import { locale, t } from 'svelte-i18n';
@@ -146,6 +157,56 @@
   let createOpen = $state(false);
   let linkFormOpen = $state(false);
   let status = $state('');
+
+  /* ---- smart album rule (FL-60): only the owner's own rule is ever returned ---- */
+  let rule = $state<ClassificationRuleResponseDto | undefined>();
+  let ruleSources = $state<RuleSources>({ people: [], tags: [] });
+  let reevaluateOpen = $state(false);
+  let reviewOpen = $state(false);
+  let ruleOpen = $state(false);
+
+  const loadRule = async (id: string) => {
+    try {
+      rule = await getClassificationRule({ id });
+    } catch {
+      rule = undefined;
+    }
+  };
+
+  $effect(() => {
+    const id = album.smartRuleId;
+    if (!id) {
+      rule = undefined;
+      return;
+    }
+    void loadRule(id);
+    void loadRuleSources().then((sources) => (ruleSources = sources));
+  });
+
+  const checkedLabel = $derived.by(() => {
+    if (!rule) {
+      return '';
+    }
+    if (!rule.lastAppliedAt) {
+      return $t('frameleaf_rules_not_applied');
+    }
+    return $t('frameleaf_rules_checked', {
+      values: {
+        date: new Date(rule.lastAppliedAt).toLocaleString($locale ?? undefined, {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        }),
+      },
+    });
+  });
+
+  const onRuleChanged = async (message: string) => {
+    status = message;
+    if (album.smartRuleId) {
+      await loadRule(album.smartRuleId);
+    }
+    await onRefresh();
+  };
 
   let mapMarkers = $state<MapMarkerResponseDto[]>([]);
   let markerController: AbortController | undefined;
@@ -314,6 +375,21 @@
         onSave={(description) => save({ description }, $t('frameleaf_album_description_saved'))}
       />
 
+      {#if rule}
+        <div class="rule-row">
+          <RuleChips rule={fromResponse(rule)} people={ruleSources.people} tags={ruleSources.tags} />
+          {#if !rule.enabled}
+            <span class="badge-pill">{$t('frameleaf_rules_paused')}</span>
+          {/if}
+          <span class="muted">{checkedLabel}</span>
+          {#if rule.counts.suggested > 0}
+            <button type="button" class="link" onclick={() => (reviewOpen = true)}>
+              {$t('frameleaf_rules_to_review', { values: { count: rule.counts.suggested } })}
+            </button>
+          {/if}
+        </div>
+      {/if}
+
       <div class="summary">
         <span>{$t('frameleaf_albums_items', { values: { count: assetCount } })}</span>
         {#if span}
@@ -366,6 +442,13 @@
       </Menu>
     {/if}
 
+    {#if rule}
+      <button type="button" class="action primary" disabled={!rule.enabled} onclick={() => (reevaluateOpen = true)}>
+        <Icon icon={mdiRefresh} size="18" />
+        <span>{$t('frameleaf_rules_reevaluate')}</span>
+      </button>
+    {/if}
+
     <button type="button" class="action" onclick={() => (shareOpen = true)}>
       <Icon icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline} size="18" />
       <span>{owner ? $t('share') : $t('frameleaf_albums_members')}</span>
@@ -415,6 +498,16 @@
         <MenuItem checked={ownerBadges} onSelect={() => onToggleOwnerBadges?.()}>
           <Icon icon={mdiAccountCircleOutline} size="18" />
           {$t('frameleaf_album_owner_badges')}
+        </MenuItem>
+      {/if}
+      {#if rule}
+        <MenuItem onSelect={() => (ruleOpen = true)}>
+          <Icon icon={mdiAutoFix} size="18" />
+          {$t('frameleaf_rules_edit')}
+        </MenuItem>
+        <MenuItem disabled={rule.counts.suggested === 0} onSelect={() => (reviewOpen = true)}>
+          <Icon icon={mdiTextBoxCheckOutline} size="18" />
+          {$t('frameleaf_rules_review')}
         </MenuItem>
       {/if}
       {#if editor && !album.isSmart}
@@ -482,6 +575,20 @@
   onCreate={createChildAlbum}
 />
 
+{#if rule}
+  <SmartAlbumReevaluateDialog {rule} sources={ruleSources} bind:open={reevaluateOpen} onApplied={onRuleChanged} />
+  <SmartAlbumReviewDialog {rule} bind:open={reviewOpen} onDecided={onRuleChanged} />
+  <SmartAlbumRuleDialog
+    {rule}
+    sources={ruleSources}
+    bind:open={ruleOpen}
+    onSaved={(saved, message) => {
+      rule = saved ?? undefined;
+      void onRuleChanged(message);
+    }}
+  />
+{/if}
+
 <AlbumConfirmDialog
   title={$t('frameleaf_album_delete_title', { values: { name } })}
   body={isCollection
@@ -504,6 +611,26 @@
 />
 
 <style>
+  .rule-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-block: 0.25rem;
+  }
+  .rule-row .muted {
+    font-size: var(--fl-font-small);
+    color: var(--fl-muted);
+  }
+  .rule-row .link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--fl-accent);
+    font-size: var(--fl-font-small);
+    text-decoration: underline;
+    cursor: pointer;
+  }
   .album-header {
     display: flex;
     flex-direction: column;

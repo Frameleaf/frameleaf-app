@@ -288,7 +288,11 @@ export class ClassificationService extends BaseService {
     if (!rule.enabled) {
       throw new BadRequestException('Turn the rule on before applying it');
     }
-    const outcome = await this.applyToAssets(rule, dto.assetIds);
+    // An empty plan only records the check.
+    const outcome =
+      dto.assetIds.length === 0
+        ? { added: 0, suggested: 0, removed: 0, unchanged: 0, tagged: [], untagged: [] }
+        : await this.applyToAssets(rule, dto.assetIds);
     if (!outcome) {
       throw new BadRequestException('Visual categories cannot be compared right now');
     }
