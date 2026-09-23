@@ -55,6 +55,7 @@ import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { StackService } from 'src/services/stack.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
+import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
 import { SystemMetadataService } from 'src/services/system-metadata.service.js';
@@ -129,6 +130,7 @@ export const services = [
   StackService,
   StorageService,
   StorageTemplateService,
+  StudioResourceService,
   SyncService,
   SystemConfigService,
   SystemMetadataService,
