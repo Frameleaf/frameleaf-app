@@ -58,6 +58,8 @@ const library = (overrides: Partial<LibraryResponseDto>): LibraryResponseDto => 
   ownerId: user.id,
   importPaths: ['/mnt/a'],
   exclusionPatterns: [],
+  deletedAt: null,
+  scan: null,
   assetCount: 0,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -161,7 +163,7 @@ describe('AccountDetailTabs (FL-76)', () => {
 
     it("counts uploads as the account's items less its external libraries' items", async () => {
       renderTabs([library({ id: 'lib-1', name: 'Trip photos' })], {
-        'lib-1': { photos: 40, videos: 2, total: 42, usage: 0 },
+        'lib-1': { photos: 40, videos: 2, total: 42, usage: 0, usagePhysical: 0 },
       });
 
       await fireEvent.click(tab(en.frameleaf_account_detail_tab_libraries));

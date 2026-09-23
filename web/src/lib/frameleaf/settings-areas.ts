@@ -25,6 +25,7 @@ export type SettingsAreaId =
   | 'intelligence'
   | 'editing'
   | 'care'
+  | 'libraries'
   | 'processing'
   | 'security'
   | 'notifications'
@@ -45,11 +46,14 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   // FL-75: `migration` is the template's "Move or export your library", last in this area.
   { id: 'storage', group: 'library', sections: ['storage-template', 'trash', 'user-settings', 'migration'] },
   // FL-74: "Originals & preservation" sits with imports and database backups, as in the design.
-  { id: 'backup', group: 'library', sections: ['external-library', 'takeout', 'backup', 'preservation'] },
+  { id: 'backup', group: 'library', sections: ['takeout', 'backup', 'preservation'] },
   { id: 'intelligence', group: 'library', sections: ['machine-learning', 'smart-albums', 'metadata'] },
   { id: 'editing', group: 'library', sections: ['image', 'video-transcoding'] },
   { id: 'utilities', group: 'library', sections: [] },
   { id: 'care', group: 'library', sections: ['integrity-checks'] },
+  // FL-78: the template moves external library settings out of "Import & protection" into their own
+  // area, where the Libraries manager sits above them (`moveSection("backup", "libraries", "sources")`).
+  { id: 'libraries', group: 'library', sections: ['external-library'] },
   { id: 'processing', group: 'server', sections: ['job', 'nightly-tasks'] },
   { id: 'security', group: 'server', sections: ['authentication'] },
   { id: 'notifications', group: 'server', sections: ['notifications'] },

@@ -621,7 +621,7 @@ export class AssetRepository {
     if (assets.length === 0) {
       return [];
     }
-    return this.db.transaction().execute(async (tx) => {
+    return this.inTransaction(async (tx) => {
       const ids = await tx.insertInto('asset').values(assets).returning('id').execute();
       await this.forkPrivacy.mirrorManyFromLegacy(
         ids.map(({ id }) => id),

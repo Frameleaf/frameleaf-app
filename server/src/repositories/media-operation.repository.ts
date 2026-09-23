@@ -334,6 +334,93 @@ export class MediaOperationRepository {
     });
   }
 
+  /**
+   * Create a job unless one of the same kind is already unfinished for the same subject, named by a
+   * snapshot key (FL-78: one scan per library). The check and the insert happen under one
+   * transaction-scoped advisory lock on the subject, so two requests at the same moment cannot both
+   * start a job; the loser is answered with the job that won.
+   */
+  async createUnlessActive(
+    operation: MediaOperationCreate,
+    subject: { key: string; value: string; lock: DatabaseLock },
+  ): Promise<{ created: MediaOperation } | { active: MediaOperation }> {
+    return this.db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(${subject.lock}::int, hashtext(${subject.value}))`.execute(trx);
+
+      const active = await trx
+        .selectFrom('media_operation')
+        .selectAll()
+        .where('kind', '=', operation.kind)
+        .where(sql<boolean>`"snapshot"->>${subject.key} = ${subject.value}`)
+        .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+        .orderBy('createdAt', 'asc')
+        .limit(1)
+        .executeTakeFirst();
+      if (active) {
+        return { active: active as unknown as MediaOperation };
+      }
+
+      const created = await trx
+        .insertInto('media_operation')
+        .values(operation)
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      return { created: created as unknown as MediaOperation };
+    });
+  }
+
+  /**
+   * The newest job of one kind for each of these subjects, named by a snapshot key (FL-78: each
+   * library's latest scan), whoever owns it. Unfinished ones first would hide a finished retry, so
+   * this is simply the newest.
+   */
+  async getLatestBySubject(kind: MediaOperationKind, key: string, values: string[]): Promise<MediaOperation[]> {
+    if (values.length === 0) {
+      return [];
+    }
+
+    return (
+      (await this.db
+        .selectFrom('media_operation')
+        .selectAll()
+        // the key is inlined, not bound: DISTINCT ON must match ORDER BY textually
+        .distinctOn(sql`"snapshot"->>${sql.lit(key)}`)
+        .where('kind', '=', kind)
+        .where(sql<boolean>`"snapshot"->>${sql.lit(key)} = any(${values}::text[])`)
+        .orderBy(sql`"snapshot"->>${sql.lit(key)}`)
+        .orderBy('createdAt', 'desc')
+        .orderBy('id', 'desc')
+        .execute()) as unknown as MediaOperation[]
+    );
+  }
+
+  /** The unfinished job of one kind for one subject, whoever owns it (FL-78). */
+  async getActiveBySubject(kind: MediaOperationKind, key: string, value: string): Promise<MediaOperation | undefined> {
+    return (await this.db
+      .selectFrom('media_operation')
+      .selectAll()
+      .where('kind', '=', kind)
+      .where(sql<boolean>`"snapshot"->>${key} = ${value}`)
+      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .orderBy('createdAt', 'asc')
+      .limit(1)
+      .executeTakeFirst()) as unknown as MediaOperation | undefined;
+  }
+
+  /** Whether any job of these kinds is waiting for a worker right now (FL-78 scan wake-up). */
+  async hasClaimable(kinds: readonly MediaOperationKind[]): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('media_operation')
+      .select('id')
+      .where('status', '=', MediaOperationStatus.Queued)
+      .where('kind', 'in', [...kinds])
+      .where('cancelRequestedAt', 'is', null)
+      .where((eb) => eb.or([eb('retryAt', 'is', null), eb('retryAt', '<=', sql<Date>`now()`)]))
+      .limit(1)
+      .executeTakeFirst();
+    return !!row;
+  }
+
   /** Any unfinished job of one kind, whoever owns it (FL-73), with the plan it is applying. */
   async getActiveOfKind(kind: MediaOperationKind): Promise<{ id: string; fingerprint: string | null } | undefined> {
     return this.db
@@ -943,7 +1030,7 @@ export class MediaOperationRepository {
    * has died instead, the lease expiring is how recovery finds out. Revoking the token here would
    * leave the job stuck at `cancelling` with nobody able to settle it.
    */
-  async requestCancel(id: string, ownerId: string): Promise<MediaOperation | undefined> {
+  async requestCancel(id: string, ownerId: string, claimToken?: string): Promise<MediaOperation | undefined> {
     return (await this.db
       .updateTable('media_operation')
       .set((eb) => ({
@@ -980,6 +1067,7 @@ export class MediaOperationRepository {
       }))
       .where('id', '=', id)
       .where('ownerId', '=', ownerId)
+      .$if(claimToken !== undefined, (qb) => qb.where('claimToken', '=', claimToken!))
       .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
       .returningAll()
       .executeTakeFirst()) as unknown as MediaOperation | undefined;
