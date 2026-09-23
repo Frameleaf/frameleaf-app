@@ -256,7 +256,7 @@ describe(ActivityService.name, () => {
       const activity = ActivityFactory.create();
 
       mocks.access.activity.checkOwnerAccess.mockResolvedValue(new Set([activity.id]));
-      mocks.activity.getById.mockResolvedValue(activity);
+      mocks.activity.getById.mockResolvedValue(getForActivity(activity));
       mocks.activity.delete.mockResolvedValue();
 
       await sut.delete(AuthFactory.create(), activity.id);
@@ -268,7 +268,7 @@ describe(ActivityService.name, () => {
       const activity = ActivityFactory.create();
 
       mocks.access.activity.checkAlbumOwnerAccess.mockResolvedValue(new Set([activity.id]));
-      mocks.activity.getById.mockResolvedValue(activity);
+      mocks.activity.getById.mockResolvedValue(getForActivity(activity));
       mocks.activity.delete.mockResolvedValue();
 
       await sut.delete(AuthFactory.create(), activity.id);
@@ -285,7 +285,7 @@ describe(ActivityService.name, () => {
         const activity = ActivityFactory.create({ albumId: space.id, userId: auth.user.id, comment: 'x' });
 
         mocks.access.activity.checkOwnerAccess.mockResolvedValue(new Set([activity.id]));
-        mocks.activity.getById.mockResolvedValue(activity);
+        mocks.activity.getById.mockResolvedValue(getForActivity(activity));
         mocks.album.getById.mockResolvedValue(getForAlbum(space));
         mocks.albumUser.deleteCommentWithReplies.mockResolvedValue();
 
@@ -301,7 +301,7 @@ describe(ActivityService.name, () => {
         const activity = ActivityFactory.create({ albumId: space.id, userId: auth.user.id, comment: 'x' });
 
         mocks.access.activity.checkOwnerAccess.mockResolvedValue(new Set([activity.id]));
-        mocks.activity.getById.mockResolvedValue(activity);
+        mocks.activity.getById.mockResolvedValue(getForActivity(activity));
         mocks.album.getById.mockResolvedValue(getForAlbum(space));
 
         await expect(sut.delete(auth, activity.id)).rejects.toBeInstanceOf(ForbiddenException);

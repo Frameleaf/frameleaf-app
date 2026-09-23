@@ -398,7 +398,7 @@ export class MachineLearningRepository implements RestorationInference {
       return finish({ reachable: false, workloads: [], hardware: null, error: describe(error) });
     }
 
-    let workloads: MlWorkload[] = [];
+    let workloads: MlWorkload[];
     try {
       const response = await fetch(new URL('capabilities', endpoint.url), {
         headers: this.authHeaders(endpoint),
@@ -481,6 +481,7 @@ export class MachineLearningRepository implements RestorationInference {
       selection.record(usage('failure', 0));
       throw new Error(
         `Machine learning request '${this.redact(config)}' to ${target} failed: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
       );
     }
 

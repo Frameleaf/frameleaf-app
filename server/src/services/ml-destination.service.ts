@@ -200,7 +200,7 @@ export class MlDestinationService extends BaseService {
       if (dto.url || dto.authToken) {
         throw new BadRequestException('A RunPod destination takes its URL and credentials from the RunPod service');
       }
-      const existing = (await this.mlDestinationRepository.getAll()).find(
+      const existing = (await this.mlDestinationRepository.getAll()).some(
         (row) => row.kind === MlDestinationKind.RunPod,
       );
       if (existing) {
