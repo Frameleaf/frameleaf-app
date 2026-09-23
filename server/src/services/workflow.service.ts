@@ -37,7 +37,7 @@ type StoredWorkflow = NonNullable<Awaited<ReturnType<WorkflowRepository['get']>>
  * Workflows (FL-82). A workflow's complete definition is stored as written — unknown methods,
  * parameters and additional fields included — so import, edit and export never lose anything. Only
  * the steps an enabled, installed plugin provides are written as runnable steps, and a workflow can be
- * enabled only while its whole definition can run here. Credentials in step parameters are kept on
+ * enabled only while its whole definition can run here. Credentials in step parameters and additional fields are kept on
  * the server and never returned.
  */
 @Injectable()
@@ -93,7 +93,7 @@ export class WorkflowService extends BaseService {
     const definition = changesDefinition
       ? this.parseDefinition({
           trigger: trigger ?? stored.trigger,
-          extra: extra ?? stored.extra,
+          extra: extra === undefined ? stored.extra : this.withStoredExtraCredentials(extra, stored.extra),
           steps: steps ? this.withStoredCredentials(steps, stored) : stored.steps,
         })
       : stored;
@@ -199,12 +199,26 @@ export class WorkflowService extends BaseService {
       }
       try {
         return previous && previous.method === step.method
-          ? { ...step, config: restoreCredentials(step.config, previous.config) }
+          ? {
+              ...step,
+              config: restoreCredentials(step.config, previous.config),
+              // additional fields left out are replaced as before; sent ones keep their stored credentials
+              extra: step.extra ? (restoreCredentials(step.extra, previous.extra) ?? undefined) : step.extra,
+            }
           : step;
       } catch (error) {
         throw new BadRequestException((error as Error).message);
       }
     });
+  }
+
+  /** Workflow-level additional fields are returned without credentials, so a saved copy keeps the stored ones. */
+  private withStoredExtraCredentials(extra: WorkflowDefinitionInput['extra'], stored: Record<string, unknown>) {
+    try {
+      return restoreCredentials(extra ?? null, stored);
+    } catch (error) {
+      throw new BadRequestException((error as Error).message);
+    }
   }
 
   private assertCanEnable(
