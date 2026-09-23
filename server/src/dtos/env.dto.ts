@@ -47,6 +47,22 @@ export const EnvSchema = z
     IMMICH_ENV: ImmichEnvironmentSchema.optional(),
     IMMICH_HOST: z.string().optional(),
     IMMICH_IGNORE_MOUNT_CHECK_ERRORS: stringBool.optional(),
+    /**
+     * Directories an administrator permits Google Photos imports to read from (FL-65), comma
+     * separated, each an absolute path. Only directories under one of these can be selected.
+     */
+    IMMICH_IMPORT_ROOTS: z
+      .string()
+      .optional()
+      .transform((value) =>
+        value
+          ? value
+              .split(',')
+              .map((root) => root.trim())
+              .filter(Boolean)
+          : [],
+      )
+      .pipe(z.array(z.string().regex(/^\//, 'Every import root must be an absolute path'))),
     IMMICH_LOG_LEVEL: LogLevelSchema.optional(),
     IMMICH_LOG_FORMAT: LogFormatSchema.optional(),
     IMMICH_MEDIA_LOCATION: absolutePath,

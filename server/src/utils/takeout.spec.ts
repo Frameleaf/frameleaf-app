@@ -32,7 +32,11 @@ describe('takeoutEntryPath', () => {
   );
 
   it('reads an extracted export that starts at the photo folder', () => {
-    expect(takeoutEntryPath('Google Photos/photo.jpg')).toEqual({ relativePath: 'photo.jpg', folder: '', name: 'photo.jpg' });
+    expect(takeoutEntryPath('Google Photos/photo.jpg')).toEqual({
+      relativePath: 'photo.jpg',
+      folder: '',
+      name: 'photo.jpg',
+    });
   });
 
   it('ignores other Google products and folders', () => {
@@ -49,9 +53,12 @@ describe('takeoutEntryPath', () => {
 });
 
 describe('folders', () => {
-  it.each(['Photos from 2020', 'Fotos von 2020', '2020年', 'Trip/Photos from 1999'])('treats %s as a year folder', (folder) => {
-    expect(isTakeoutYearFolder(folder)).toBe(true);
-  });
+  it.each(['Photos from 2020', 'Fotos von 2020', '2020年', 'Trip/Photos from 1999'])(
+    'treats %s as a year folder',
+    (folder) => {
+      expect(isTakeoutYearFolder(folder)).toBe(true);
+    },
+  );
 
   it('does not treat an album named with a year as a year folder', () => {
     expect(isTakeoutYearFolder('Paris 2020')).toBe(false);
@@ -112,9 +119,12 @@ describe('parseTakeoutSidecar', () => {
     expect(parseTakeoutSidecar({ ...metadata, description: '' })).not.toHaveProperty('description');
   });
 
-  it.each(['', null, undefined, 'bad', Infinity])('does not turn the malformed timestamp %s into the epoch', (timestamp) => {
-    expect(parseTakeoutSidecar({ ...metadata, photoTakenTime: { timestamp } })?.takenAt).toBeUndefined();
-  });
+  it.each(['', null, undefined, 'bad', Infinity])(
+    'does not turn the malformed timestamp %s into the epoch',
+    (timestamp) => {
+      expect(parseTakeoutSidecar({ ...metadata, photoTakenTime: { timestamp } })?.takenAt).toBeUndefined();
+    },
+  );
 
   it('ignores album and comment JSON without photo timestamps', () => {
     expect(parseTakeoutSidecar({ title: 'Album' })).toBeUndefined();
@@ -179,7 +189,13 @@ describe('takeoutScannedItem', () => {
   });
 
   it('uses a single sidecar as it is', () => {
-    expect(takeoutScannedItem({ name: 'photo.jpg', folder: 'Trip', candidates: [candidate('a')], invalidSidecar: false })).toEqual({
+    const item = takeoutScannedItem({
+      name: 'photo.jpg',
+      folder: 'Trip',
+      candidates: [candidate('a')],
+      invalidSidecar: false,
+    });
+    expect(item).toEqual({
       state: 'ready',
       metadata: { title: 'photo.jpg' },
       sidecarId: 'a',
@@ -207,15 +223,23 @@ describe('takeoutScannedItem', () => {
         invalidSidecar: false,
       }).locked,
     ).toBe(true);
-    expect(takeoutScannedItem({ name: 'photo.jpg', folder: 'Locked Folder', candidates: [], invalidSidecar: false })).toMatchObject({
-      locked: true,
-      warnings: ['no_sidecar', 'locked'],
+    const folderItem = takeoutScannedItem({
+      name: 'photo.jpg',
+      folder: 'Locked Folder',
+      candidates: [],
+      invalidSidecar: false,
     });
+    expect(folderItem).toMatchObject({ locked: true, warnings: ['no_sidecar', 'locked'] });
   });
 
   it('skips a photo Google had in the trash', () => {
     expect(
-      takeoutScannedItem({ name: 'photo.jpg', folder: '', candidates: [candidate('a', { trashed: true })], invalidSidecar: true }),
+      takeoutScannedItem({
+        name: 'photo.jpg',
+        folder: '',
+        candidates: [candidate('a', { trashed: true })],
+        invalidSidecar: true,
+      }),
     ).toMatchObject({ state: 'skipped', warnings: ['invalid_sidecar', 'trashed'] });
   });
 });
@@ -240,9 +264,8 @@ describe('metadata patches', () => {
       isFavorite: true,
       archive: true,
     });
-    expect(takeoutCreatedPatch(full, { ...TAKEOUT_DEFAULT_OPTIONS, dates: false, locations: false })).not.toHaveProperty(
-      'dateTimeOriginal',
-    );
+    const withoutDates = takeoutCreatedPatch(full, { ...TAKEOUT_DEFAULT_OPTIONS, dates: false, locations: false });
+    expect(withoutDates).not.toHaveProperty('dateTimeOriginal');
   });
 
   it('changes nothing on a matched photo unless asked', () => {
@@ -260,7 +283,11 @@ describe('metadata patches', () => {
       ),
     ).toEqual({});
     expect(
-      takeoutMatchedPatch(full, { description: '', latitude: null, longitude: null, isFavorite: false, archived: false }, options),
+      takeoutMatchedPatch(
+        full,
+        { description: '', latitude: null, longitude: null, isFavorite: false, archived: false },
+        options,
+      ),
     ).toEqual({ description: 'From Google', latitude: 1, longitude: 2, isFavorite: true, archive: true });
   });
 });
@@ -303,7 +330,9 @@ describe('identities', () => {
   it('derives the same id for the same source and entry, and a different one otherwise', () => {
     expect(takeoutStableId('one:photo.jpg')).toBe(takeoutStableId('one:photo.jpg'));
     expect(takeoutStableId('one:photo.jpg')).not.toBe(takeoutStableId('two:photo.jpg'));
-    expect(takeoutStableId('one:photo.jpg')).toMatch(/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);
+    expect(takeoutStableId('one:photo.jpg')).toMatch(
+      /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/,
+    );
   });
 
   it('pairs a Live Photo’s still and motion parts by name', () => {

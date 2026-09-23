@@ -112,7 +112,8 @@ export const MEDIA_OPERATION_AUTO_RETRY_DELAY_MS = 30_000;
  * The kinds that can stop partway and carry on later (FL-104, owner request September 23, 2026).
  *
  * Each one records where it has got to in a way the next claim resumes from: a bulk job its cursor
- * and per-item result, a Studio export and a restoration their checkpointed chunks. The rest are
+ * and per-item result, a Studio export and a restoration their checkpointed chunks, a Google Photos
+ * import (FL-65) every staged file and imported item. The rest are
  * one-shot — a preview, a still edit — or rebuild their output from the start (a portable project
  * bundle), so pausing one would only throw its work away; they are offered no pause at all.
  */
@@ -120,6 +121,7 @@ export const PAUSABLE_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [
   MediaOperationKind.Bulk,
   MediaOperationKind.StudioExport,
   MediaOperationKind.Restoration,
+  MediaOperationKind.TakeoutImport,
 ];
 
 export const isPausableMediaOperationKind = (kind: MediaOperationKind) => PAUSABLE_MEDIA_OPERATION_KINDS.includes(kind);
