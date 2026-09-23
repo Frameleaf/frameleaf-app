@@ -86,6 +86,7 @@ export class SharedLinkService extends BaseService {
         }
 
         await this.requireAccess({ auth, permission: Permission.AssetShare, ids: dto.assetIds });
+        await this.requireUnlockedAssets(auth, dto.assetIds);
 
         break;
       }
@@ -156,6 +157,27 @@ export class SharedLinkService extends BaseService {
     );
   }
 
+  /**
+   * A shared link never carries Locked media (owner decision, September 22, 2026). `Permission.AssetShare`
+   * lets an elevated owner's Locked items through so they can go into albums, so a link has to refuse
+   * them itself. Only an elevated session can get this far with Locked items, so only then is the
+   * database asked.
+   */
+  private async lockedAssetIds(auth: AuthDto, assetIds: string[]): Promise<Set<string>> {
+    if (!auth.session?.hasElevatedPermission || assetIds.length === 0) {
+      return new Set();
+    }
+
+    return this.assetRepository.getLockedAssetIds(assetIds);
+  }
+
+  private async requireUnlockedAssets(auth: AuthDto, assetIds: string[]): Promise<void> {
+    const lockedAssetIds = await this.lockedAssetIds(auth, assetIds);
+    if (lockedAssetIds.size > 0) {
+      throw new BadRequestException('Locked media cannot be put in a shared link');
+    }
+  }
+
   async addAssets(auth: AuthDto, id: string, dto: AssetIdsDto): Promise<AssetIdsResponseDto[]> {
     const [sharedLink, rawSharedLink] = await Promise.all([
       this.findOrFail(auth.user.id, id, this.nsfwOptions(auth)),
@@ -173,6 +195,7 @@ export class SharedLinkService extends BaseService {
       permission: Permission.AssetShare,
       ids: notPresentAssetIds,
     });
+    const lockedAssetIds = await this.lockedAssetIds(auth, [...allowedAssetIds]);
 
     const results: AssetIdsResponseDto[] = [];
     for (const assetId of dto.assetIds) {
@@ -187,7 +210,7 @@ export class SharedLinkService extends BaseService {
         continue;
       }
 
-      const hasAccess = allowedAssetIds.has(assetId);
+      const hasAccess = allowedAssetIds.has(assetId) && !lockedAssetIds.has(assetId);
       if (!hasAccess) {
         results.push({ assetId, success: false, error: AssetIdErrorReason.NO_PERMISSION });
         continue;
