@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Stats } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { Stats } from 'node:fs';
 import path from 'node:path';
 import picomatch from 'picomatch';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -56,8 +56,8 @@ import {
   parseLibraryScanResult,
   parseLibraryScanSnapshot,
 } from 'src/utils/library-scan.js';
-import { mimeTypes } from 'src/utils/mime-types.js';
 import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 
 const KIND = MediaOperationKind.LibraryScan;
 const SUBJECT_KEY = 'libraryId';
@@ -279,7 +279,8 @@ export class LibraryScanService {
   @OnEvent({ name: 'UserTrash' })
   async onUserTrash({ id }: ArgOf<'UserTrash'>) {
     const libraries = await this.libraryRepository.getAll(false);
-    for (const library of libraries.filter(({ ownerId }) => ownerId === id)) {
+    const owned = libraries.filter(({ ownerId }) => ownerId === id);
+    for (const library of owned) {
       await this.stop(library.id, 'owner_deleted');
     }
   }
@@ -578,7 +579,10 @@ export class LibraryScanService {
       // only missing when its folder is demonstrably there.
       await this.requireSources(roots);
 
-      const counts = await this.checkAssets(library, page.map(({ id }) => id));
+      const counts = await this.checkAssets(
+        library,
+        page.map(({ id }) => id),
+      );
       result = {
         ...result,
         cursor: page.at(-1)!.id,
@@ -629,13 +633,24 @@ export class LibraryScanService {
       }
     }
 
-    await Promise.all([
-      toOffline.length > 0 && this.assetRepository.updateAll(toOffline, { isOffline: true, deletedAt: new Date() }),
-      trashedToOffline.length > 0 && this.assetRepository.updateAll(trashedToOffline, { isOffline: true }),
-      toOnline.length > 0 && this.assetRepository.updateAll(toOnline, { isOffline: false, deletedAt: null }),
-      trashedToOnline.length > 0 && this.assetRepository.updateAll(trashedToOnline, { isOffline: false }),
-      toUpdate.length > 0 && this.queuePostSyncJobs(toUpdate),
-    ]);
+    const now = new Date();
+    const writes: Promise<unknown>[] = [];
+    if (toOffline.length > 0) {
+      writes.push(this.assetRepository.updateAll(toOffline, { isOffline: true, deletedAt: now }));
+    }
+    if (trashedToOffline.length > 0) {
+      writes.push(this.assetRepository.updateAll(trashedToOffline, { isOffline: true }));
+    }
+    if (toOnline.length > 0) {
+      writes.push(this.assetRepository.updateAll(toOnline, { isOffline: false, deletedAt: null }));
+    }
+    if (trashedToOnline.length > 0) {
+      writes.push(this.assetRepository.updateAll(trashedToOnline, { isOffline: false }));
+    }
+    if (toUpdate.length > 0) {
+      writes.push(this.queuePostSyncJobs(toUpdate));
+    }
+    await Promise.all(writes);
 
     return {
       offlined: toOffline.length + trashedToOffline.length,
@@ -687,7 +702,9 @@ export class LibraryScanService {
   /** Every folder must be a readable directory now, or the scan fails naming the ones that are not. */
   private async requireSources(roots: string[]) {
     const checks = await Promise.all(
-      roots.map((root) => checkImportPathFormat(root) ?? checkImportPathOnDisk(this.storageRepository, root)),
+      roots.map(
+        async (root) => checkImportPathFormat(root) ?? (await checkImportPathOnDisk(this.storageRepository, root)),
+      ),
     );
     const unavailable = checks.filter((check) => !check.isValid);
     if (unavailable.length > 0) {
@@ -768,10 +785,7 @@ export class LibraryScanService {
   private async stopSelf(operation: MediaOperation, result: LibraryScanResult, reason: LibraryScanStopReason) {
     await this.operations.requestCancel(operation.id, operation.ownerId);
     await this.operations.acknowledgeCancel(operation.id, { released: false });
-    await this.operations.setFinishedResult(operation.id, { ...result, stopReason: reason } as Record<
-      string,
-      unknown
-    >);
+    await this.operations.setFinishedResult(operation.id, { ...result, stopReason: reason } as Record<string, unknown>);
     this.logger.log(`Scan ${operation.id} stopped (${reason})`);
   }
 

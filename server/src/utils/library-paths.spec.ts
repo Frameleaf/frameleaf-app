@@ -32,7 +32,7 @@ describe('library import folders (FL-78)', () => {
   it.each([
     ['relative/path', LibraryImportPathReason.NotAbsolute],
     ['/mnt/../etc', LibraryImportPathReason.ParentTraversal],
-    ['/mnt/pho\u0007tos', LibraryImportPathReason.InvalidCharacters],
+    ['/mnt/pho\u{7}tos', LibraryImportPathReason.InvalidCharacters],
     ['/data/library', LibraryImportPathReason.UploadFolder],
     ['/', LibraryImportPathReason.ContainsUploadFolder],
   ])('refuses %s', (importPath, reason) => {
@@ -60,6 +60,6 @@ describe('library import folders (FL-78)', () => {
   });
 
   it('finds unusable exclusion patterns', () => {
-    expect(invalidExclusionPatterns(['**/.DS_Store', 'bad\u0000'])).toEqual(['bad\u0000']);
+    expect(invalidExclusionPatterns(['**/.DS_Store', 'bad\u{0}'])).toEqual(['bad\u{0}']);
   });
 });

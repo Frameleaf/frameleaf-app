@@ -172,10 +172,7 @@ export class LibraryRepository {
     const rows = await this.db
       .selectFrom('user')
       .leftJoin('asset', (join) =>
-        join
-          .onRef('asset.ownerId', '=', 'user.id')
-          .on('asset.libraryId', 'is', null)
-          .on('asset.deletedAt', 'is', null),
+        join.onRef('asset.ownerId', '=', 'user.id').on('asset.libraryId', 'is', null).on('asset.deletedAt', 'is', null),
       )
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .select('user.id as ownerId')
@@ -204,9 +201,7 @@ export class LibraryRepository {
           .as('videos'),
       )
       .select((eb) => eb.fn.coalesce(eb.fn.sum<number>('asset_exif.fileSizeInByte'), eb.lit(0)).as('usage'))
-      .select(
-        physicalUsage(sql`"scoped"."libraryId" IS NULL AND "scoped"."ownerId" = "user"."id"`).as('usagePhysical'),
-      )
+      .select(physicalUsage(sql`"scoped"."libraryId" IS NULL AND "scoped"."ownerId" = "user"."id"`).as('usagePhysical'))
       .where('user.deletedAt', 'is', null)
       .where('user.status', '=', UserStatus.Active)
       .groupBy('user.id')

@@ -351,17 +351,19 @@ export class MediaOperationRepository {
       return [];
     }
 
-    return (await this.db
-      .selectFrom('media_operation')
-      .selectAll()
-      // the key is inlined, not bound: DISTINCT ON must match ORDER BY textually
-      .distinctOn(sql`"snapshot"->>${sql.lit(key)}`)
-      .where('kind', '=', kind)
-      .where(sql<boolean>`"snapshot"->>${sql.lit(key)} = any(${values}::text[])`)
-      .orderBy(sql`"snapshot"->>${sql.lit(key)}`)
-      .orderBy('createdAt', 'desc')
-      .orderBy('id', 'desc')
-      .execute()) as unknown as MediaOperation[];
+    return (
+      (await this.db
+        .selectFrom('media_operation')
+        .selectAll()
+        // the key is inlined, not bound: DISTINCT ON must match ORDER BY textually
+        .distinctOn(sql`"snapshot"->>${sql.lit(key)}`)
+        .where('kind', '=', kind)
+        .where(sql<boolean>`"snapshot"->>${sql.lit(key)} = any(${values}::text[])`)
+        .orderBy(sql`"snapshot"->>${sql.lit(key)}`)
+        .orderBy('createdAt', 'desc')
+        .orderBy('id', 'desc')
+        .execute()) as unknown as MediaOperation[]
+    );
   }
 
   /** The unfinished job of one kind for one subject, whoever owns it (FL-78). */

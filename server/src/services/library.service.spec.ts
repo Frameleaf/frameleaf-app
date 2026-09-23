@@ -1,18 +1,27 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Stats } from 'node:fs';
 import { vitest } from 'vitest';
+import type { LibraryRemovalCounts } from 'src/repositories/library.repository.js';
 import type { ILibraryFileJob } from 'src/types.js';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { mapLibrary } from 'src/dtos/library.dto.js';
-import { AdminAuditAction, AssetType, CronJob, ImmichWorker, JobName, JobStatus, UserStatus, LibraryImportPathReason } from 'src/enum.js';
-import type { LibraryRemovalCounts } from 'src/repositories/library.repository.js';
+import {
+  AdminAuditAction,
+  AssetType,
+  CronJob,
+  ImmichWorker,
+  JobName,
+  JobStatus,
+  LibraryImportPathReason,
+  UserStatus,
+} from 'src/enum.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
 import { makeMockWatcher } from 'test/repositories/storage.repository.mock.js';
-import { factory, newDate, newUuid } from 'test/small.factory.js';
+import { factory, newUuid } from 'test/small.factory.js';
 import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
 
 const removalCounts = (counts: Partial<LibraryRemovalCounts> = {}): LibraryRemovalCounts => ({
@@ -336,7 +345,13 @@ describe(LibraryService.name, () => {
     it('should return library statistics', async () => {
       const library = factory.library();
 
-      mocks.library.getStatistics.mockResolvedValue({ photos: 10, videos: 0, total: 10, usage: 1337, usagePhysical: 1337 });
+      mocks.library.getStatistics.mockResolvedValue({
+        photos: 10,
+        videos: 0,
+        total: 10,
+        usage: 1337,
+        usagePhysical: 1337,
+      });
       await expect(sut.getStatistics(library.id)).resolves.toEqual({
         photos: 10,
         videos: 0,
@@ -478,9 +493,9 @@ describe(LibraryService.name, () => {
         mocks.library.getAll.mockResolvedValue([]);
         mocks.storage.stat.mockRejectedValue({ code: 'ENOENT' });
 
-        await expect(
-          sut.create({ ownerId: authStub.admin.user.id, importPaths: ['/mnt/missing'] }),
-        ).rejects.toThrow('Invalid import path: Path does not exist (ENOENT)');
+        await expect(sut.create({ ownerId: authStub.admin.user.id, importPaths: ['/mnt/missing'] })).rejects.toThrow(
+          'Invalid import path: Path does not exist (ENOENT)',
+        );
         expect(mocks.library.create).not.toHaveBeenCalled();
       });
 
@@ -489,9 +504,9 @@ describe(LibraryService.name, () => {
         mocks.storage.stat.mockResolvedValue({ isDirectory: () => true } as Stats);
         mocks.storage.checkFileExists.mockResolvedValue(false);
 
-        await expect(
-          sut.create({ ownerId: authStub.admin.user.id, importPaths: ['/mnt/forbidden'] }),
-        ).rejects.toThrow('Invalid import path: Lacking read permission for folder');
+        await expect(sut.create({ ownerId: authStub.admin.user.id, importPaths: ['/mnt/forbidden'] })).rejects.toThrow(
+          'Invalid import path: Lacking read permission for folder',
+        );
       });
 
       it('should refuse a folder another library already imports (FL-78)', async () => {
@@ -513,7 +528,6 @@ describe(LibraryService.name, () => {
           sut.create({ ownerId: authStub.admin.user.id, importPaths: ['/mnt/photos', '/mnt/photos/'] }),
         ).rejects.toThrow('Invalid import path: Import path is listed more than once');
       });
-
 
       it('should create with exclusion patterns', async () => {
         const library = factory.library();
@@ -659,7 +673,7 @@ describe(LibraryService.name, () => {
       const library = factory.library();
       mocks.library.get.mockResolvedValue(library);
 
-      await expect(sut.update(library.id, { exclusionPatterns: ['bad\u0000'] })).rejects.toThrow(
+      await expect(sut.update(library.id, { exclusionPatterns: ['bad\u{0}'] })).rejects.toThrow(
         'Invalid exclusion pattern',
       );
       expect(mocks.library.update).not.toHaveBeenCalled();
@@ -1230,7 +1244,9 @@ describe(LibraryService.name, () => {
 
       await sut.delete(library.id, authStub.admin);
 
-      expect(mocks.adminAudit.create).toHaveBeenCalledWith([{ ...entry(library, AdminAuditAction.LibraryDeleted), detail: '0' }]);
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+        { ...entry(library, AdminAuditAction.LibraryDeleted), detail: '0' },
+      ]);
     });
 
     it('records nothing for a library that does not exist', async () => {
