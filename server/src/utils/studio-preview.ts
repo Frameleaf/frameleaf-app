@@ -56,12 +56,15 @@ export const previewTimeKey = (time: PreviewTime): string => formatRational(time
 export type PreviewBinding = {
   /**
    * The account the frame is rendered for. Part of the identity so two accounts can never share
-   * a row: a project id and revision digest are strings the client supplies, and a key without
-   * the owner would let one account address another's frame by guessing them.
+   * a row: two accounts can resolve the same project and revision, and a key without the owner
+   * would let one account address another's frame.
    */
   ownerId: string;
   projectId: string;
-  /** The exact graph revision digest. Opaque to this module; never parsed, never ordered. */
+  /**
+   * The binding digest: FL-90's authorized manifest digest for the stored revision. Opaque to
+   * this module; never parsed, never ordered.
+   */
   revisionDigest: string;
   time: PreviewTime;
   quality: string;
@@ -130,8 +133,11 @@ export type PreviewDeliveryInput = {
   status: PreviewStatusValue;
   /** The revision this stored frame was rendered for. */
   revisionDigest: string;
-  /** The revision the project is on now, as the revision authority reports it. */
-  currentRevisionDigest: string;
+  /**
+   * The binding the project is on now, as the revision authority reports it. Null when the
+   * stored project revision itself has moved past the frame's, which nothing can match.
+   */
+  currentRevisionDigest: string | null;
   /** Null until a worker has published a validated frame. */
   framePath: string | null;
   /** Retention boundary; null means no expiry was set. */

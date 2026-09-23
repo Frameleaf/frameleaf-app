@@ -14,10 +14,11 @@ import { UUIDv7ParamDto } from 'src/validation.js';
 /**
  * Revision-bound remote preview (FL-96, `STU-402`).
  *
- * Every route is owner-scoped, and the frame route is the one that matters: it returns bytes
- * only while the revision the frame was rendered for is still the revision the project is on.
- * When it is not, the answer is `409` with the current digest — never the old picture, and
- * never a `304` that leaves the old picture on screen.
+ * Every route is scoped to the account that asked, and the frame route is the one that matters:
+ * it returns bytes only while that account may still read the project and the stored revision
+ * the frame was rendered for is still the project's head (FL-89). When it is not, the answer is
+ * `409` with the current revision — never the old picture, and never a `304` that leaves the
+ * old picture on screen.
  *
  * The React editor never reaches these routes. It asks for a preview through the host bridge as
  * a command; the Svelte host is the only thing here holding credentials.
@@ -38,13 +39,11 @@ export class StudioPreviewController {
   @Endpoint({
     summary: 'Request a Studio preview frame',
     description:
-      'Asks for one frame of a project at an exact revision, rational time, quality and viewport. An identical request shares the render rather than starting a second one, and previews of superseded revisions are cancelled.',
+      "Asks for one frame of a project's current stored revision at an exact rational time, quality and viewport. The server reads the graph from project storage and resolves its sources for the caller; a request naming a superseded revision is refused with the current one. An identical request shares the render rather than starting a second one, and previews of superseded revisions are cancelled.",
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
   requestStudioPreview(@Auth() auth: AuthDto, @Body() dto: StudioPreviewRequestDto): Promise<StudioPreviewResponseDto> {
-    // TODO(FL-89): resolve the project's manifest here and call `requestForManifest` once Studio
-    // project storage exists; see `StudioProjectRevisionAuthority` in the service.
-    return this.service.requestWithoutManifest(auth, dto);
+    return this.service.request(auth, dto);
   }
 
   @Get(':id')

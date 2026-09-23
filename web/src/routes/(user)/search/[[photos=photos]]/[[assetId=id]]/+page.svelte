@@ -7,7 +7,8 @@
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
   import { QueryParameter } from '$lib/constants';
-  import { brandedArchiveName } from '$lib/frameleaf/archive-name';
+  import { brandedArchiveName, namedEntitySegments } from '$lib/frameleaf/archive-name';
+  import { resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
@@ -165,8 +166,49 @@
     return undefined;
   });
 
+  /**
+   * FL-45 owner decision (September 22, 2026): a search filtered by person or tag ids names the
+   * download after their actual names wherever they can be resolved, instead of leaving the
+   * download generic. Kept separate from `searchDownloadText` above (which is synchronous) because
+   * resolving a name needs a lookup (`getPerson`/`getTagById`, the same calls `getPersonName`/
+   * `getTagNames` below already make for the filter-chip row) — cached and never blocking: a
+   * failed or disallowed lookup just leaves that id out rather than failing the download.
+   */
+  let resolvedFilterNameSegments = $state<string[]>([]);
+
+  $effect(() => {
+    const personIds = Array.isArray(terms.personIds) ? terms.personIds : [];
+    const tagIds = Array.isArray(terms.tagIds) ? terms.tagIds : [];
+    if (personIds.length === 0 && tagIds.length === 0) {
+      resolvedFilterNameSegments = [];
+      return;
+    }
+    let cancelled = false;
+    const andMoreLabel = (remaining: number) => $t('frameleaf_archive_name_and_n_more', { values: { count: remaining } });
+    handlePromiseError(
+      (async () => {
+        const personSegments =
+          personIds.length > 0
+            ? namedEntitySegments(await resolveEntityNames('person', personIds), personIds.length, andMoreLabel)
+            : [];
+        const tagSegments =
+          tagIds.length > 0
+            ? namedEntitySegments(await resolveEntityNames('tag', tagIds), tagIds.length, andMoreLabel)
+            : [];
+        if (!cancelled) {
+          resolvedFilterNameSegments = [...personSegments, ...tagSegments];
+        }
+      })(),
+    );
+    return () => {
+      cancelled = true;
+    };
+  });
+
   const searchDownloadFileName = $derived(
-    brandedArchiveName($t('frameleaf_archive_name_search'), [searchDownloadText], { withDate: true }),
+    brandedArchiveName($t('frameleaf_archive_name_search'), [searchDownloadText, ...resolvedFilterNameSegments], {
+      withDate: true,
+    }),
   );
 
   const updateAsset = (updated: AssetResponseDto) => {

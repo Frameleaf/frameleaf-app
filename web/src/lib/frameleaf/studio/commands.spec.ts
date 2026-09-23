@@ -74,6 +74,17 @@ describe('studio command vocabulary', () => {
     expect(studioCommandDefinition('preview.release').mutatesGraph).toBe(false);
   });
 
+  it('keeps review comments off the graph, the lease and the undo stack (FL-89 stores them beside it)', () => {
+    // A reviewer holds no lease and may be on an older revision; a comment is a record about
+    // the project, never a change to its graph, so neither may gate it.
+    for (const id of ['review.add', 'review.remove', 'review.update'] as const) {
+      const definition = studioCommandDefinition(id);
+      expect(definition.scope).toBe('review');
+      expect(definition.mutatesGraph).toBe(false);
+      expect(definition.undoable).toBe(false);
+    }
+  });
+
   it('recognises only published ids', () => {
     expect(isStudioCommandId('clip.split')).toBe(true);
     expect(isStudioCommandId('clip.explode')).toBe(false);
