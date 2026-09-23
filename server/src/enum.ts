@@ -976,6 +976,11 @@ export enum MediaOperationKind {
    * pause, survive a restart and carry on where it stopped.
    */
   MediaHealth = 'media_health',
+  /**
+   * One run of an iCloud Photos connection (FL-68): inventory, transfers and reconciliation. The
+   * connection's own tables are its checkpoints, so a claim resumes wherever the last one stopped.
+   */
+  ICloudSync = 'icloud_sync',
 }
 
 export const MediaOperationKindSchema = z

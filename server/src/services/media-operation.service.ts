@@ -9,6 +9,7 @@ import {
   MediaOperationStatisticsDto,
 } from 'src/dtos/media-operation.dto.js';
 import {
+  JobName,
   MediaOperationBulkAction,
   MediaOperationDestination,
   MediaOperationKind,
@@ -16,6 +17,8 @@ import {
   Permission,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   MediaOperation,
@@ -255,6 +258,8 @@ export class MediaOperationService {
     private logger: LoggingRepository,
     private repository: MediaOperationRepository,
     private access: AccessRepository,
+    private icloud: ICloudSyncRepository,
+    private jobs: JobRepository,
   ) {
     this.logger.setContext(MediaOperationService.name);
   }
@@ -416,6 +421,17 @@ export class MediaOperationService {
       return this.present(auth, await this.findOwned(auth, id));
     }
 
+    // An iCloud sync cancelled before a worker had it closes its run record here; the worker closes
+    // it for one it was running when it acknowledges the cancel (FL-68).
+    const connectionId = asObject(cancelled.snapshot).connectionId;
+    if (
+      cancelled.kind === MediaOperationKind.ICloudSync &&
+      cancelled.status === MediaOperationStatus.Cancelled &&
+      typeof connectionId === 'string'
+    ) {
+      await this.icloud.endRun(connectionId, 'cancelled');
+    }
+
     this.logger.log(`Cancellation requested for media operation ${id} (${cancelled.status})`);
     return this.present(auth, cancelled);
   }
@@ -498,6 +514,10 @@ export class MediaOperationService {
     // opens fresh runs; copying the old row would reopen finished runs beside a running job.
     if (operation.kind === MediaOperationKind.MediaHealth) {
       throw new BadRequestException('Start the scan or search again from Library Care');
+    }
+
+    if (operation.kind === MediaOperationKind.ICloudSync) {
+      return this.retryICloudSync(auth, operation);
     }
 
     if (!canRetryMediaOperation(operation.status as MediaOperationStatus)) {
@@ -700,6 +720,43 @@ export class MediaOperationService {
 
     this.logger.log(`Enrichment plan ${operation.id} retried as ${retried.id} (${remaining.length} items)`);
     return this.present(auth, retried);
+  }
+
+  /**
+   * Retry an iCloud sync run (FL-68): a new run of the same connection, through the connection's own
+   * locked path, so Activity can never start a second run beside one that is still going. The failed
+   * items' back-off is cleared first. When a run is already unfinished, that run is the answer.
+   */
+  private async retryICloudSync(auth: AuthDto, operation: MediaOperation): Promise<MediaOperationDto> {
+    if (!canRetryMediaOperation(operation.status as MediaOperationStatus)) {
+      throw new BadRequestException('Only a failed or cancelled job can be retried');
+    }
+
+    const connectionId = asObject(operation.snapshot).connectionId;
+    if (typeof connectionId !== 'string') {
+      throw new BadRequestException('This job cannot be retried');
+    }
+
+    const queued = await this.icloud.queueOperation(connectionId, auth.user.id, {
+      trigger: 'retry',
+      retryOfId: operation.id,
+    });
+    switch (queued.outcome) {
+      case 'created':
+      case 'existing':
+      case 'busy': {
+        this.logger.log(`iCloud sync run ${operation.id} retried as ${queued.operation.id} (${queued.outcome})`);
+        // Wake the worker now instead of at its next tick; losing the nudge only costs that delay.
+        void this.jobs.queue({ name: JobName.ICloudSync, data: { id: connectionId } }).catch(() => undefined);
+        return this.present(auth, queued.operation);
+      }
+      case 'not-ready': {
+        throw new BadRequestException('Sign in to this iCloud connection again before retrying');
+      }
+      default: {
+        throw new BadRequestException('This iCloud connection is no longer connected');
+      }
+    }
   }
 
   /**
