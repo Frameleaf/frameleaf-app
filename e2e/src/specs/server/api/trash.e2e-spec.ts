@@ -1,4 +1,4 @@
-import { LoginResponseDto, getAlbumInfo, getAssetInfo, getAssetStatistics } from '@immich/sdk';
+import { LoginResponseDto, getAssetInfo, getAssetStatistics } from '@immich/sdk';
 import { existsSync } from 'node:fs';
 import { Socket } from 'socket.io-client';
 import { app, asBearerAuth, testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
@@ -366,8 +366,8 @@ describe('/trash', () => {
         isTrashed: false,
         isFavorite: true,
       });
-      const { assets } = await getAlbumInfo({ id: album.id }, { headers: asBearerAuth(admin.accessToken) });
-      expect(assets.map((asset) => asset.id)).toContain(id);
+      const { assets } = await utils.searchAssets(admin.accessToken, { albumIds: [album.id] });
+      expect(assets.items.map((asset) => asset.id)).toContain(id);
     });
 
     it('should move reviewed library items to the trash once', async () => {

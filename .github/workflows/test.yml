@@ -617,6 +617,14 @@ jobs:
         run: pnpm --filter immich migrations:run
       - name: Test npm run schema:reset command works
         run: pnpm --filter immich schema:reset
+      - name: Capture exact fork catalog for reconciliation
+        run: pnpm --filter immich exec tsx scripts/snapshot-fork-schema-catalog.ts /tmp/fork-v2-catalog.json
+      - name: Archive exact fork catalog
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frameleaf-fork-catalog-diagnostic
+          path: /tmp/fork-v2-catalog.json
+          retention-days: 7
       - name: Generate new migrations
         run: pnpm --filter immich migrations:generate src/schema/migrations/TestMigration
       - name: Find file changes

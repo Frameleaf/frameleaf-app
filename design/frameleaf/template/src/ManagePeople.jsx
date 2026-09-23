@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Button, Dialog } from "./App";
+import { Button, Dialog } from "./Controls";
 import { Icon } from "./Icon";
 import { PersonAvatar, usePhoneLayout } from "./People";
 import {

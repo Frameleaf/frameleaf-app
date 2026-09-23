@@ -1,4 +1,4 @@
-import { createPerson, deleteFace, getAllPeople, reassignFacesById } from '@immich/sdk';
+import { createPerson, deleteFace, getAllPeople, reassignFacesById, type AssetFaceResponseDto } from '@immich/sdk';
 import { modalManager, toastManager } from '@immich/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { personFactory } from '@test-data/factories/person-factory';
@@ -49,7 +49,7 @@ describe('PersonFaceActions', () => {
     boundingBoxX2: 1,
     boundingBoxY1: 0,
     boundingBoxY2: 1,
-  } as never;
+  } as unknown as AssetFaceResponseDto;
 
   const openMenu = async () => {
     await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_faces_options_for' }));
@@ -64,7 +64,7 @@ describe('PersonFaceActions', () => {
     const person = personFactory.build({ name: 'Alex', isHidden: false });
     const target = personFactory.build({ name: 'Bailey' });
     const onFacesChanged = vi.fn();
-    vi.mocked(getAllPeople).mockResolvedValue({ people: [target], total: 1, hasNextPage: false });
+    vi.mocked(getAllPeople).mockResolvedValue({ people: [target], total: 1, hidden: 0, hasNextPage: false });
     vi.mocked(reassignFacesById).mockResolvedValue(target);
 
     render(PersonFaceActions, { person, face, previousRoute: '/photos', onFacesChanged });
@@ -84,7 +84,7 @@ describe('PersonFaceActions', () => {
   it('excludes the currently-assigned person from the reassign candidates', async () => {
     const person = personFactory.build({ name: 'Alex', isHidden: false });
     const target = personFactory.build({ name: 'Bailey' });
-    vi.mocked(getAllPeople).mockResolvedValue({ people: [person, target], total: 2, hasNextPage: false });
+    vi.mocked(getAllPeople).mockResolvedValue({ people: [person, target], total: 2, hidden: 0, hasNextPage: false });
 
     render(PersonFaceActions, { person, face, previousRoute: '/photos', onFacesChanged: vi.fn() });
 
