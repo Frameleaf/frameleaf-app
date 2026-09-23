@@ -127,6 +127,24 @@ export class MediaOperationTable {
   @Column({ type: 'timestamp with time zone', nullable: true })
   heartbeatAt!: Timestamp | null;
 
+  /**
+   * Admission bookkeeping (FL-95). When a worker looked at this job and was refused by a limit,
+   * the reason is written here so the owner sees why a queued job is still queued, and the count
+   * shows whether it is a passing shortage or a job that will never fit anywhere.
+   */
+  @Column({ nullable: true })
+  lastAdmissionRefusalReason!: string | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  lastAdmissionRefusedAt!: Timestamp | null;
+
+  @Column({ type: 'integer', default: 0 })
+  admissionRefusals!: Generated<number>;
+
+  /** Output bytes the claim has reported so far. Compared against the output ceiling on heartbeat. */
+  @Column({ type: 'bigint', default: 0 })
+  outputBytes!: Generated<Int8>;
+
   @Column({ type: 'timestamp with time zone', nullable: true })
   cancelRequestedAt!: Timestamp | null;
 

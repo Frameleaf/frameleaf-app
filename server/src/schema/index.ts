@@ -67,6 +67,12 @@ import {
   MediaOperationCheckpointTable,
   MediaOperationTable,
 } from 'src/schema/tables/media-operation.table.js';
+import {
+  RenderWorkerAuditTable,
+  RenderWorkerLimitTable,
+  RenderWorkerSessionTable,
+  RenderWorkerTable,
+} from 'src/schema/tables/render-worker.table.js';
 import { MemoryAssetAuditTable } from 'src/schema/tables/memory-asset-audit.table.js';
 import { MemoryAssetTable } from 'src/schema/tables/memory-asset.table.js';
 import { MemoryAuditTable } from 'src/schema/tables/memory-audit.table.js';
@@ -158,6 +164,10 @@ export class ImmichDatabase {
     LibraryTable,
     MediaOperationTable,
     MediaOperationCheckpointTable,
+    RenderWorkerTable,
+    RenderWorkerSessionTable,
+    RenderWorkerLimitTable,
+    RenderWorkerAuditTable,
     MemoryTable,
     MemoryAuditTable,
     MemoryAssetTable,
@@ -284,6 +294,9 @@ export interface DB {
 
   library: LibraryTable;
 
+  media_operation: MediaOperationTable;
+  media_operation_checkpoint: MediaOperationCheckpointTable;
+
   memory: MemoryTable;
   memory_audit: MemoryAuditTable;
   memory_asset: MemoryAssetTable;
@@ -314,6 +327,11 @@ export interface DB {
   cluster_group_request: ClusterGroupRequestTable;
 
   physical_file: PhysicalFileTable;
+
+  render_worker: RenderWorkerTable;
+  render_worker_session: RenderWorkerSessionTable;
+  render_worker_limit: RenderWorkerLimitTable;
+  render_worker_audit: RenderWorkerAuditTable;
 
   session: SessionTable;
   session_sync_checkpoint: SessionSyncCheckpointTable;
