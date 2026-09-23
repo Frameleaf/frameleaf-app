@@ -72,7 +72,7 @@ describe(BulkOperationService.name, () => {
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
       settlePause: vi.fn().mockResolvedValue(true),
       getDateTimeOriginals: vi.fn().mockResolvedValue(new Map()),
-      getLockedAssetIds: vi.fn().mockResolvedValue(new Set()),
+      getLockedIds: vi.fn().mockResolvedValue(new Set()),
     } as unknown as MediaOperationRepository;
     assets = {
       updateAll: vi.fn().mockResolvedValue(undefined),
@@ -171,7 +171,7 @@ describe(BulkOperationService.name, () => {
       const snapshot = snapshotOf({ action: MediaOperationBulkAction.Archive });
       const [lockedSince, ...rest] = snapshot.assetIds;
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
-      vi.mocked(operations.getLockedAssetIds).mockResolvedValue(new Set([lockedSince]));
+      vi.mocked(operations.getLockedIds).mockResolvedValue(new Set([lockedSince]));
 
       const outcomes = await sut.applyBatch(auth, snapshot, snapshot.assetIds);
 
@@ -190,7 +190,7 @@ describe(BulkOperationService.name, () => {
 
       await sut.applyBatch(auth, snapshot, snapshot.assetIds);
 
-      expect(operations.getLockedAssetIds).not.toHaveBeenCalled();
+      expect(operations.getLockedIds).not.toHaveBeenCalled();
       expect(enrichment.unlockAssets).toHaveBeenCalledWith(auth, { ids: snapshot.assetIds });
     });
 
