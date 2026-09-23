@@ -8,6 +8,7 @@ import { AssetDevelopRepository } from 'src/repositories/asset-develop.repositor
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
@@ -98,6 +99,7 @@ export const repositories = [
   AssetEditRepository,
   AssetFileRepository,
   AssetJobRepository,
+  AssetRestorationRepository,
   ConfigRepository,
   CronRepository,
   CryptoRepository,
