@@ -19,6 +19,13 @@ describe('/trash', () => {
     utils.disconnectWebsocket(ws);
   });
 
+  const bearer = () => `Bearer ${admin.accessToken}`;
+  const trashed = async () => {
+    const { id } = await utils.createAsset(admin.accessToken);
+    await utils.deleteAssets(admin.accessToken, [id]);
+    return id;
+  };
+
   describe('POST /trash/empty', () => {
     it('should empty the trash', async () => {
       const { id: assetId } = await utils.createAsset(admin.accessToken);
@@ -238,8 +245,6 @@ describe('/trash', () => {
   });
 
   describe('reviewed trash (FL-47)', () => {
-    const bearer = () => `Bearer ${admin.accessToken}`;
-
     const review = (body: object) => request(app).post('/trash/review').set('Authorization', bearer()).send(body);
     const apply = (body: object) => request(app).post('/trash/apply').set('Authorization', bearer()).send(body);
     const lock = (ids: string[]) =>
@@ -247,12 +252,6 @@ describe('/trash', () => {
 
     /** Start from an empty visible trash, so whole-trash reviews see only this test's items. */
     const emptyVisibleTrash = () => request(app).post('/trash/empty').set('Authorization', bearer()).expect(200);
-
-    const trashed = async () => {
-      const { id } = await utils.createAsset(admin.accessToken);
-      await utils.deleteAssets(admin.accessToken, [id]);
-      return id;
-    };
 
     it('should permanently delete exactly the reviewed items', async () => {
       await emptyVisibleTrash();

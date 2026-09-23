@@ -55,7 +55,8 @@ test.describe('Duplicate review', () => {
   });
 
   test('keeps every copy with one key, without a confirmation, and undoes it after a reload', async ({ page }) => {
-    const before = (await reviewGroups()).length;
+    const initialGroups = await reviewGroups();
+    const before = initialGroups.length;
     await page.goto('/utilities/duplicates');
     const review = page.getByTestId('frameleaf-duplicate-review');
     await expect(review.getByRole('heading', { level: 2 })).toBeVisible();
@@ -63,14 +64,30 @@ test.describe('Duplicate review', () => {
     // A: keep all. No dialog; the decision runs as a durable job and the group leaves the review.
     await page.keyboard.press('a');
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect.poll(async () => (await reviewGroups()).length, { timeout: 30_000 }).toBe(before - 1);
+    await expect
+      .poll(
+        async () => {
+          const groups = await reviewGroups();
+          return groups.length;
+        },
+        { timeout: 30_000 },
+      )
+      .toBe(before - 1);
 
     // the undo survives a reload: the server keeps the decision history
     await page.reload();
     const undo = page.getByRole('button', { name: /^Undo/ }).first();
     await expect(undo).toBeEnabled();
     await undo.click();
-    await expect.poll(async () => (await reviewGroups()).length, { timeout: 30_000 }).toBe(before);
+    await expect
+      .poll(
+        async () => {
+          const groups = await reviewGroups();
+          return groups.length;
+        },
+        { timeout: 30_000 },
+      )
+      .toBe(before);
   });
 
   test('lists only the signed-in account’s groups, each complete', async () => {

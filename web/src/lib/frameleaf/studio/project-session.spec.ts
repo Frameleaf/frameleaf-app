@@ -474,14 +474,12 @@ describe('studio project session', () => {
     it('flushes the draft, appends the restore against the current head and reloads the graph', async () => {
       api.save.mockResolvedValue(saved(4));
       api.restore.mockResolvedValue(saved(5));
-      api.get
-        .mockResolvedValueOnce(detail())
-        .mockResolvedValueOnce(
-          detail({
-            revision: 5,
-            envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { old: true } },
-          }),
-        );
+      api.get.mockResolvedValueOnce(detail()).mockResolvedValueOnce(
+        detail({
+          revision: 5,
+          envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev', graph: { old: true } },
+        }),
+      );
       const session = create();
       await session.open();
       session.stage({ mine: true }, ['clip.add']);
