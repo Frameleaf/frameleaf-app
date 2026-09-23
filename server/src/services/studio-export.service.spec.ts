@@ -452,6 +452,40 @@ describe(StudioExportService.name, () => {
       expect(operations.complete).not.toHaveBeenCalled();
     });
 
+    it('leaves the prepared output in place when a replacement runner has verified it', async () => {
+      const firstPrepared = Promise.withResolvers<void>();
+      const replacementPrepared = Promise.withResolvers<void>();
+      const firstFinished = Promise.withResolvers<void>();
+      let finalPath = '';
+      repository.publish = vi.fn(async (input: { claimToken: string; path: string }) => {
+        if (input.claimToken === 'claim-p') {
+          firstPrepared.resolve();
+          await replacementPrepared.promise;
+          throw new StudioExportRefusal('claim-lost', 'replacement claimed the operation');
+        }
+        finalPath = input.path;
+        replacementPrepared.resolve();
+        await firstFinished.promise;
+        expect(await storage.checkFileExists(finalPath)).toBe(true);
+        return published();
+      });
+
+      const first = sut.run(job());
+      await firstPrepared.promise;
+      const replacement = sut.run({ ...job(), claimToken: 'replacement-claim' });
+      await first;
+      firstFinished.resolve();
+      await replacement;
+
+      expect(crypto.hashFile).toHaveBeenCalledWith(finalPath, 'sha256');
+      expect(storage.rename).toHaveBeenCalledExactlyOnceWith(staged, finalPath);
+      expect(operations.complete).toHaveBeenCalledExactlyOnceWith(PUBLISH, 'replacement-claim', {
+        resultAssetId: 'asset-new',
+      });
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(operations.requestCancel).not.toHaveBeenCalled();
+    });
+
     it('verifies the file, moves it into the library and publishes it with the sources re-checked', async () => {
       repository.publish.mockResolvedValue(published());
 

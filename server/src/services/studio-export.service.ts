@@ -597,11 +597,12 @@ export class StudioExportService {
         })`,
       );
     } catch (error) {
+      if (error instanceof StudioExportRefusal && error.code === 'claim-lost') {
+        // A replacement claim may already be using the prepared file. Leave it in place.
+        return;
+      }
       if (prepared) {
         await this.restoreStaged(prepared);
-      }
-      if (error instanceof StudioExportRefusal && error.code === 'claim-lost') {
-        return;
       }
       if (error instanceof StudioExportRefusal && error.cancels) {
         await this.cancelVersion(version, error.code, error.message);
