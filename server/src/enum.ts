@@ -755,8 +755,17 @@ export enum MlDestinationKind {
   Local = 'local',
   /** Another machine on the home network, configured by URL. Media stays on the LAN. */
   Lan = 'lan',
-  /** The RunPod pod or serverless endpoint managed by the RunPod service. Media leaves the network. */
+  /**
+   * The RunPod pod or serverless endpoint managed by the RunPod service. It runs the ordinary
+   * `/predict` image, so it is a library-analysis worker only. Media leaves the network.
+   */
   RunPod = 'runpod',
+  /**
+   * A persistent restoration worker on RunPod (FL-72), reached by its own URL and credential
+   * and never by the library-analysis pod's endpoint. The server does not create or stop it.
+   * Media leaves the network.
+   */
+  RunPodVideo = 'runpod-video',
 }
 
 export const MlDestinationKindSchema = z
@@ -765,7 +774,10 @@ export const MlDestinationKindSchema = z
   .meta({ id: 'MlDestinationKind' });
 
 /** Destination kinds whose selection sends media off the operator's network. */
-export const CLOUD_ML_DESTINATION_KINDS: ReadonlySet<MlDestinationKind> = new Set([MlDestinationKind.RunPod]);
+export const CLOUD_ML_DESTINATION_KINDS: ReadonlySet<MlDestinationKind> = new Set([
+  MlDestinationKind.RunPod,
+  MlDestinationKind.RunPodVideo,
+]);
 
 /**
  * A kind of work a destination can serve. Capabilities (what a destination can run) and
@@ -794,6 +806,90 @@ export const LIBRARY_ML_WORKLOADS: readonly MlWorkload[] = [
   MlWorkload.Enrichment,
 ];
 
+/** The workloads only the separate restoration worker serves (FL-114, FL-72). */
+export const RESTORATION_ML_WORKLOADS: readonly MlWorkload[] = [
+  MlWorkload.RestorationFaithful,
+  MlWorkload.RestorationCreative,
+];
+
+/**
+ * What a worker is for, from the workloads it is allowed to run (FL-72). Library analysis and
+ * restoration never share a worker: a destination may not allow both, and a restoration is
+ * refused on any endpoint library analysis is routed to, so a long restoration cannot hold the
+ * hardware library analysis needs.
+ */
+export enum MlWorkerRole {
+  LibraryAnalysis = 'library-analysis',
+  Restoration = 'restoration',
+  Studio = 'studio',
+  /** Allowed both library-analysis and restoration workloads; restoration is refused on it. */
+  Mixed = 'mixed',
+  Unassigned = 'unassigned',
+}
+
+export const MlWorkerRoleSchema = z.enum(MlWorkerRole).describe('What a worker is for').meta({ id: 'MlWorkerRole' });
+
+/**
+ * One worker's state in the inventory (FL-72). Reachability, model support and acceleration
+ * are separate facts; this names the most useful combination for the administrator.
+ */
+export enum MlWorkerReadiness {
+  /** Never checked, or no evidence yet. */
+  Unknown = 'unknown',
+  /** Turned off by the administrator, or revoked. */
+  Disabled = 'disabled',
+  /** Did not answer the last check, or has no address to check. */
+  Unreachable = 'unreachable',
+  /** Answered, but serves none of the work it is allowed to run. */
+  NotServing = 'not-serving',
+  /** Serves its work on the CPU only. */
+  Cpu = 'cpu',
+  /** Serves its work and reported an accelerator, or did not report its hardware at all. */
+  ModelReady = 'model-ready',
+}
+
+export const MlWorkerReadinessSchema = z
+  .enum(MlWorkerReadiness)
+  .describe('State of one worker in the inventory')
+  .meta({ id: 'MlWorkerReadiness' });
+
+export enum MlWorkerAcceleration {
+  Unknown = 'unknown',
+  Cpu = 'cpu',
+  Gpu = 'gpu',
+}
+
+export const MlWorkerAccelerationSchema = z
+  .enum(MlWorkerAcceleration)
+  .describe('Acceleration a worker reported on its last check')
+  .meta({ id: 'MlWorkerAcceleration' });
+
+/** Where an inventory entry comes from. */
+export enum WorkerInventorySource {
+  MlDestination = 'ml-destination',
+  RenderWorker = 'render-worker',
+}
+
+export const WorkerInventorySourceSchema = z
+  .enum(WorkerInventorySource)
+  .describe('Where an inventory entry comes from')
+  .meta({ id: 'WorkerInventorySource' });
+
+/** How a worker's credential is held; the credential itself is never returned. */
+export enum WorkerCredentialState {
+  None = 'none',
+  Stored = 'stored',
+  /** Held by the RunPod service for the pod or serverless endpoint it manages. */
+  Managed = 'managed',
+  /** An enrolled render worker's hashed secret. */
+  Enrolled = 'enrolled',
+}
+
+export const WorkerCredentialStateSchema = z
+  .enum(WorkerCredentialState)
+  .describe('How a worker credential is held')
+  .meta({ id: 'WorkerCredentialState' });
+
 export enum MlDestinationHealth {
   Healthy = 'healthy',
   Unhealthy = 'unhealthy',
@@ -816,6 +912,8 @@ export enum MlAdmissionRefusal {
   BudgetExceeded = 'budget-exceeded',
   EndpointUnresolved = 'endpoint-unresolved',
   DestinationUnhealthy = 'destination-unhealthy',
+  /** A restoration on an endpoint that library analysis is allowed or routed to (FL-72). */
+  RoleConflict = 'role-conflict',
 }
 
 export const MlAdmissionRefusalSchema = z

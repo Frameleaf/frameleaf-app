@@ -97,7 +97,9 @@ describe(AssetRestorationService.name, () => {
     mocks.asset.getById.mockResolvedValue(asset as never);
     // A LAN worker that is allowed to and reports that it serves faithful restoration.
     mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.lan);
-    mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, mlDestinationStub.lan, mlDestinationStub.runPod]);
+    mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, mlDestinationStub.lan, mlDestinationStub.runPodVideo]);
+    // No library routes by default; the FL-72 case below sets one.
+    mocks.mlDestination.getRoutes.mockResolvedValue([]);
     mocks.mlDestination.getThroughput.mockResolvedValue({ sampleCount: 0, bytesSent: 0, durationMs: 0, spentUsd: 0 });
     mocks.machineLearning.probe.mockResolvedValue({ ...mlProbeStub.healthy, workloads: [MlWorkload.RestorationFaithful] });
 
@@ -153,7 +155,7 @@ describe(AssetRestorationService.name, () => {
       expect(options).toMatchObject({ sourceType: 'image', outputWidth: 3240, outputHeight: 2160, previewSeconds: null, adapterInstalled: true });
       const local = options.destinations.find((item) => item.id === mlDestinationStub.local.id);
       const lan = options.destinations.find((item) => item.id === mlDestinationStub.lan.id);
-      const runPod = options.destinations.find((item) => item.id === mlDestinationStub.runPod.id);
+      const runPod = options.destinations.find((item) => item.id === mlDestinationStub.runPodVideo.id);
       expect(local).toMatchObject({ available: false, refusal: MlAdmissionRefusal.WorkloadNotAllowed, leavesNetwork: false });
       expect(lan).toMatchObject({ available: true, refusal: null, leavesNetwork: false });
       expect(lan?.estimate.fullSeconds).toBe(6);
@@ -163,15 +165,33 @@ describe(AssetRestorationService.name, () => {
       expect(runPod?.estimate.fullSeconds).toBeNull();
       expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
     });
+
+    it('never offers an endpoint library analysis is routed to (FL-72)', async () => {
+      const sameUrl = { ...mlDestinationStub.lan, url: mlDestinationStub.local.url };
+      mocks.mlDestination.getAll.mockResolvedValue([mlDestinationStub.local, sameUrl]);
+      mocks.mlDestination.getRoutes.mockResolvedValue([
+        { workload: MlWorkload.Face, destinationId: mlDestinationStub.local.id, updatedAt: new Date() },
+      ]);
+      mocks.mlDestination.getById.mockImplementation((id: string) =>
+        Promise.resolve(id === mlDestinationStub.local.id ? mlDestinationStub.local : sameUrl),
+      );
+
+      const options = await sut.getOptions(authStub.user1, asset.id, { mode: AssetRestorationMode.Faithful, upscale: 2 });
+
+      expect(options.destinations.find((item) => item.id === sameUrl.id)).toMatchObject({
+        available: false,
+        refusal: MlAdmissionRefusal.RoleConflict,
+      });
+    });
   });
 
   describe('requestPreview', () => {
     const request = { mode: AssetRestorationMode.Faithful, upscale: 2 as const, keepGrain: false, destinationId: mlDestinationStub.lan.id };
 
     it('refuses a cloud destination without consent and creates nothing', async () => {
-      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPod);
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.runPodVideo);
 
-      await expect(sut.requestPreview(authStub.user1, asset.id, { ...request, destinationId: mlDestinationStub.runPod.id })).rejects.toBeInstanceOf(
+      await expect(sut.requestPreview(authStub.user1, asset.id, { ...request, destinationId: mlDestinationStub.runPodVideo.id })).rejects.toBeInstanceOf(
         MlDestinationRefusedError,
       );
       expect(restorations.create).not.toHaveBeenCalled();

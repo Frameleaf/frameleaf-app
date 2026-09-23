@@ -26,6 +26,7 @@ import {
   MlDestinationRefusedError,
   MlSelectionDeps,
   isCloudDestination,
+  restorationRoleConflict,
   routedMlDestinationId,
   selectMlDestination,
 } from 'src/utils/ml-destination.js';
@@ -114,7 +115,10 @@ export const mediaOperationDestinationOf = (kind: MlDestinationKind): MediaOpera
     case MlDestinationKind.Lan: {
       return MediaOperationDestination.Lan;
     }
-    case MlDestinationKind.RunPod: {
+    // Both RunPod kinds are the configured RunPod workload as far as a job record is concerned;
+    // `destinationDetail` names which worker it was.
+    case MlDestinationKind.RunPod:
+    case MlDestinationKind.RunPodVideo: {
       return MediaOperationDestination.RunPod;
     }
   }
@@ -474,6 +478,15 @@ export const selectRestorationDestination = async (
       destination.id,
       `${destination.name} sends the media off this network; confirm the upload for this restoration first`,
     );
+  }
+
+  // FL-72: restoration never runs on an endpoint library analysis is allowed or routed to, so a
+  // long restoration cannot hold the hardware library analysis needs. Refused, never moved.
+  if (destination) {
+    const conflict = await restorationRoleConflict(deps, destination, workload);
+    if (conflict) {
+      throw new MlDestinationRefusedError(MlAdmissionRefusal.RoleConflict, workload, destination.id, conflict);
+    }
   }
 
   const selection = await selectMlDestination(deps, {

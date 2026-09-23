@@ -24,6 +24,7 @@ import {
   CacheControl,
   JobName,
   MediaOperationKind,
+  MlAdmissionRefusal,
   MlDestinationHealth,
   MlDestinationKind,
   MlWorkload,
@@ -50,6 +51,7 @@ import {
   hasRequiredConsent,
   isCloudDestination,
   resolveEndpoint,
+  restorationRoleConflict,
   selectMlDestination,
 } from 'src/utils/ml-destination.js';
 import {
@@ -185,13 +187,25 @@ export class AssetRestorationService {
 
     const destinations: AssetRestorationDestinationDto[] = [];
     for (const row of rows) {
-      const verdict = evaluateAdmission({
+      let verdict = evaluateAdmission({
         destination: row,
         workload,
         endpoint: resolveEndpoint(row, this.machineLearningRepository.getRunPodEndpoint()),
         probe: this.probeFromRow(row),
         spentUsd: row.budgetLimitUsd === null ? 0 : await this.mlDestinationRepository.getSpend(row.id, windowStart(ML_BUDGET_WINDOW_DAYS)),
       });
+      if (verdict.admitted) {
+        // FL-72: the same rule the submission applies, so the picker never offers an endpoint
+        // library analysis uses.
+        const conflict = await restorationRoleConflict(
+          { mlDestinationRepository: this.mlDestinationRepository, machineLearningRepository: this.machineLearningRepository },
+          row,
+          workload,
+        );
+        if (conflict) {
+          verdict = { admitted: false, refusal: MlAdmissionRefusal.RoleConflict, detail: conflict };
+        }
+      }
       const sample = await this.mlDestinationRepository.getThroughput(row.id, since, workload);
       destinations.push({
         id: row.id,

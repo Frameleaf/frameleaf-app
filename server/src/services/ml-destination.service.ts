@@ -23,17 +23,23 @@ import {
   LIBRARY_ML_WORKLOADS,
   MlDestinationHealth,
   MlDestinationKind,
+  MlWorkerRole,
   MlWorkload,
+  RESTORATION_ML_WORKLOADS,
 } from 'src/enum.js';
 import type { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
   ML_BUDGET_WINDOW_DAYS,
+  hardwareFromProbe,
   hasRequiredConsent,
   healthFromProbe,
   isCloudDestination,
+  mlWorkerRoleOf,
   resolveEndpoint,
+  restorationRoleConflict,
   summarizeProbe,
+  workloadPolicyProblem,
 } from 'src/utils/ml-destination.js';
 
 /** Window over which measured throughput is averaged for estimates. */
@@ -151,7 +157,11 @@ export class MlDestinationService extends BaseService {
       }
     } else if (dto.kind === MlDestinationKind.Lan && !dto.url) {
       throw new BadRequestException('A LAN destination needs a URL');
+    } else if (dto.kind === MlDestinationKind.RunPodVideo && !dto.url) {
+      throw new BadRequestException('A RunPod video worker needs the URL of the persistent worker');
     }
+    const workloads = this.uniqueWorkloads(dto.workloads);
+    this.assertWorkloadPolicy(dto.kind, workloads, dto.sharesLibraryHardware ?? false);
 
     const row = await this.mlDestinationRepository.create({
       kind: dto.kind,
@@ -159,10 +169,11 @@ export class MlDestinationService extends BaseService {
       url: dto.url ?? null,
       authToken: dto.authToken ?? null,
       enabled: dto.enabled,
-      workloads: this.uniqueWorkloads(dto.workloads),
+      workloads,
       budgetLimitUsd: dto.budgetLimitUsd ?? null,
       maxRuntimeMinutes: dto.maxRuntimeMinutes ?? null,
       maxUploadBytes: dto.maxUploadBytes ?? null,
+      sharesLibraryHardware: dto.sharesLibraryHardware ?? false,
     });
     return this.toDto(row);
   }
@@ -175,16 +186,26 @@ export class MlDestinationService extends BaseService {
     if (current.kind === MlDestinationKind.Lan && dto.url === null) {
       throw new BadRequestException('A LAN destination needs a URL');
     }
+    if (current.kind === MlDestinationKind.RunPodVideo && dto.url === null) {
+      throw new BadRequestException('A RunPod video worker needs the URL of the persistent worker');
+    }
+    const nextWorkloads = dto.workloads === undefined ? current.workloads : this.uniqueWorkloads(dto.workloads);
+    // Checked only when the allowed work changes, so a row saved before FL-72 that mixes roles
+    // can still be renamed or disabled; its restoration work is refused at admission meanwhile.
+    if (dto.workloads !== undefined || dto.sharesLibraryHardware !== undefined) {
+      this.assertWorkloadPolicy(current.kind, nextWorkloads, dto.sharesLibraryHardware ?? current.sharesLibraryHardware);
+    }
 
     const row = await this.mlDestinationRepository.update(id, {
       name: dto.name,
       url: dto.url === undefined ? undefined : dto.url,
       authToken: dto.authToken === undefined ? undefined : dto.authToken,
       enabled: dto.enabled,
-      workloads: dto.workloads === undefined ? undefined : this.uniqueWorkloads(dto.workloads),
+      workloads: dto.workloads === undefined ? undefined : nextWorkloads,
       budgetLimitUsd: dto.budgetLimitUsd,
       maxRuntimeMinutes: dto.maxRuntimeMinutes,
       maxUploadBytes: dto.maxUploadBytes,
+      sharesLibraryHardware: dto.sharesLibraryHardware,
     });
     return this.toDto(row);
   }
@@ -238,6 +259,8 @@ export class MlDestinationService extends BaseService {
         summary,
         workloads: null,
         probedAt,
+        hardware: null,
+        latencyMs: null,
       });
       return { status: MlDestinationHealth.Unhealthy, probedAt: probedAt.toISOString(), summary, servedWorkloads: null };
     }
@@ -246,11 +269,24 @@ export class MlDestinationService extends BaseService {
     const health = healthFromProbe(probe);
     const summary = summarizeProbe(probe);
     const servedWorkloads = probe.reachable ? probe.workloads : null;
+    // A restoration worker names its GPUs and their memory; the /predict container does not.
+    // Only metadata travels, so a cloud destination needs no consent for this (FL-114).
+    let gpus: Array<{ name: string; memoryTotalBytes: number }> = [];
+    if (probe.reachable && probe.workloads.some((workload) => RESTORATION_ML_WORKLOADS.includes(workload))) {
+      try {
+        const report = await this.machineLearningRepository.getRestorationModels(endpoint);
+        gpus = report.gpus.map((gpu) => ({ name: gpu.name, memoryTotalBytes: gpu.memoryTotalBytes }));
+      } catch (error) {
+        this.logger.debug(`Could not read restoration GPUs from ${row.name}: ${error}`);
+      }
+    }
     await this.mlDestinationRepository.recordProbe(row.id, {
       health,
       summary,
       workloads: servedWorkloads,
       probedAt: probe.probedAt,
+      hardware: hardwareFromProbe(probe, gpus),
+      latencyMs: probe.reachable ? probe.latencyMs : null,
     });
     return { status: health, probedAt: probe.probedAt.toISOString(), summary, servedWorkloads };
   }
@@ -330,6 +366,15 @@ export class MlDestinationService extends BaseService {
     if (!hasRequiredConsent(destination)) {
       throw new BadRequestException(`${destination.name} sends media off this network; record consent before routing to it`);
     }
+    // FL-72: a restoration route never lands on an endpoint library analysis uses.
+    const conflict = await restorationRoleConflict(
+      { mlDestinationRepository: this.mlDestinationRepository, machineLearningRepository: this.machineLearningRepository },
+      destination,
+      workload,
+    );
+    if (conflict) {
+      throw new BadRequestException(conflict);
+    }
     await this.mlDestinationRepository.setRoute(workload, destination.id);
     return this.getRoutes();
   }
@@ -377,9 +422,15 @@ export class MlDestinationService extends BaseService {
     const workloads: MlWorkloadCapabilityDto[] = Object.values(MlWorkload).map((workload) => {
       const destinations = rows.map((row) => {
         const consentGranted = hasRequiredConsent(row);
+        // FL-72: restoration is never available on the library-analysis pod or on a worker that
+        // is also allowed library analysis, matching what admission would answer.
+        const roleConflict =
+          RESTORATION_ML_WORKLOADS.includes(workload) &&
+          (row.kind === MlDestinationKind.RunPod || mlWorkerRoleOf(row.workloads) === MlWorkerRole.Mixed);
         const available =
           row.enabled &&
           consentGranted &&
+          !roleConflict &&
           row.workloads.includes(workload) &&
           row.lastProbeHealth === MlDestinationHealth.Healthy &&
           (row.lastProbeWorkloads ?? []).includes(workload);
@@ -419,6 +470,21 @@ export class MlDestinationService extends BaseService {
     return [...new Set(workloads)];
   }
 
+  /**
+   * FL-72: library analysis and restoration never share a worker, the managed RunPod pod is a
+   * library-analysis worker and a RunPod video worker runs restoration only. The shared-hardware
+   * flag only means something on a restoration worker.
+   */
+  private assertWorkloadPolicy(kind: MlDestinationKind, workloads: MlWorkload[], sharesLibraryHardware: boolean) {
+    const problem = workloadPolicyProblem(kind, workloads);
+    if (problem) {
+      throw new BadRequestException(problem);
+    }
+    if (sharesLibraryHardware && !workloads.some((workload) => RESTORATION_ML_WORKLOADS.includes(workload))) {
+      throw new BadRequestException('Only a restoration worker can be marked as sharing hardware with library analysis');
+    }
+  }
+
   private healthOf(row: MlDestinationRow): MlDestinationHealthStateDto {
     return {
       status: row.lastProbeHealth,
@@ -442,6 +508,8 @@ export class MlDestinationService extends BaseService {
       authTokenConfigured: row.kind === MlDestinationKind.RunPod ? Boolean(endpoint?.authToken) : row.authToken !== null,
       enabled: row.enabled,
       workloads: row.workloads,
+      role: mlWorkerRoleOf(row.workloads),
+      sharesLibraryHardware: row.sharesLibraryHardware,
       consent: {
         required: isCloudDestination(row.kind),
         acknowledgedAt: row.consentAcknowledgedAt ? new Date(row.consentAcknowledgedAt).toISOString() : null,
