@@ -33,8 +33,10 @@ import {
   type MediaOperationDto,
   type MetadataSearchDto,
   type SearchFilter,
+  type SearchResponseDto,
   type SmartSearchDto,
 } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 import {
   discoveryTextField,
   textFieldCondition,
@@ -512,7 +514,7 @@ export const resolveMatchingIds = async (
     if (signal?.aborted) {
       return { ids: [...found], total, truncated: false, cancelled: true };
     }
-    const { assets } =
+    const { assets }: SearchResponseDto =
       search.kind === 'smart'
         ? await gateway.searchSmart({ smartSearchDto: search.dto })
         : await gateway.searchAssets({ metadataSearchDto: { ...search.dto, ...(cursor && { cursor }) } });
@@ -948,7 +950,7 @@ export const runBulkOperation = async (
 /** The i18n key and values for the result toast, including the partial-failure wording. */
 export const bulkResultSummary = (
   result: BulkResult,
-): { key: string; values: { count: number; failed: number; skipped: number; total: number } } => {
+): { key: Translations; values: { count: number; failed: number; skipped: number; total: number } } => {
   const values = {
     count: result.succeeded.length,
     failed: result.failed.length,

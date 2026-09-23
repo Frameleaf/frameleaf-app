@@ -90,7 +90,7 @@ describe('fileUploader error handling', () => {
   it('should add the uploaded asset to the target album', async () => {
     authManager.setUser(mockUserObject);
     vi.spyOn(utils, 'uploadRequest').mockResolvedValue({ status: 200, data: mockUploadResponse });
-    const addAssetsToAlbumsSpy = vi.spyOn(albumService, 'addAssetsToAlbums').mockResolvedValue([mockUploadResponse.id]);
+    const addAssetsToAlbumsSpy = vi.spyOn(albumService, 'addAssetsToAlbums').mockResolvedValue(true);
 
     await fileUploadHandler({ files: [mockFile], albumId: 'album-1' });
 

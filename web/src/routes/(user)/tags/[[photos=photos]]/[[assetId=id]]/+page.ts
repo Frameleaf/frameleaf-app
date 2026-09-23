@@ -16,7 +16,7 @@ export const load = (async ({ url }) => {
   // A tag that is gone, or suppressed while the session is locked (and so left out of the list),
   // gets the not-found page rather than an empty browser that hints something was there.
   if (!tagPathExists(tags, path)) {
-    error(404, { message: 'Tag not found', code: 404 });
+    error(404, { message: 'Tag not found' });
   }
 
   return {

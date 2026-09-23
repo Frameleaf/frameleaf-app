@@ -3,6 +3,7 @@
  */
 
 import {
+  AlbumKind,
   AlbumUserRole,
   AssetTypeEnum,
   AssetVisibility,
@@ -412,6 +413,7 @@ export function getAlbum(
   // For a basic mock album, we don't include any albumUsers (shared users)
   // The owner is represented by the owner field, not in albumUsers
   const response: AlbumResponseDto = {
+    kind: AlbumKind.Album,
     id: album.id,
     albumName: album.albumName,
     description: album.description,

@@ -1,5 +1,5 @@
 import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter } from '@immich/sdk';
-import type { MessageFormatter } from 'svelte-i18n';
+import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { activeFilterFields, ENRICHMENT_FIELD, type DiscoveryQuery } from '$lib/components/discovery/query';
 
 /**
@@ -224,13 +224,13 @@ export const toggleFlagCondition = (condition: Condition, value: boolean): Condi
  * description failed, needs sensitivity review) are the first three here; the rest of the
  * enum is offered in the filter panel so nothing the server supports is unreachable.
  */
-export const ENRICHMENT_QUICK_FILTERS: readonly { value: ImageEnrichmentFilter; labelKey: string }[] = [
+export const ENRICHMENT_QUICK_FILTERS: readonly { value: ImageEnrichmentFilter; labelKey: Translations }[] = [
   { value: ImageEnrichmentFilter.MissingImageDescription, labelKey: 'image_enrichment_filter_missing_description' },
   { value: ImageEnrichmentFilter.ImageDescriptionFailed, labelKey: 'image_enrichment_filter_description_failed' },
   { value: ImageEnrichmentFilter.NsfwReview, labelKey: 'image_enrichment_filter_nsfw_review' },
 ];
 
-export const ENRICHMENT_OPTIONS: readonly { value: ImageEnrichmentFilter; labelKey: string }[] = [
+export const ENRICHMENT_OPTIONS: readonly { value: ImageEnrichmentFilter; labelKey: Translations }[] = [
   { value: ImageEnrichmentFilter.Nsfw, labelKey: 'image_enrichment_filter_nsfw' },
   { value: ImageEnrichmentFilter.NsfwReview, labelKey: 'image_enrichment_filter_nsfw_review' },
   { value: ImageEnrichmentFilter.NsfwReviewed, labelKey: 'image_enrichment_filter_nsfw_reviewed' },
@@ -249,7 +249,7 @@ export const isEnrichmentFilter = (value: unknown): value is ImageEnrichmentFilt
 /* -------------------------------------------------------------------------- */
 
 /** Translated field names for the chip row, keyed by `SearchFilter` field. */
-const FIELD_LABEL_KEYS: Record<string, string> = {
+const FIELD_LABEL_KEYS: Record<string, Translations> = {
   personIds: 'people',
   petIds: 'frameleaf_pets_title',
   tagIds: 'tags',
@@ -284,7 +284,7 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
   [ENRICHMENT_FIELD]: 'image_enrichment',
 };
 
-const BOOLEAN_LABEL_KEYS: Record<string, [string, string]> = {
+const BOOLEAN_LABEL_KEYS: Record<string, [Translations, Translations]> = {
   isFavorite: ['frameleaf_search_not_favorites', 'favorites'],
   hasPeople: ['frameleaf_search_no_people', 'frameleaf_search_with_people'],
   hasAlbums: ['not_in_any_album', 'frameleaf_search_in_an_album'],

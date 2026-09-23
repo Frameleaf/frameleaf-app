@@ -1,5 +1,6 @@
 import type { MediaOperationDto } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
+import type { Translations } from 'svelte-i18n';
 import { activitySession } from '$lib/frameleaf/activity-session.svelte';
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
 import {
@@ -110,7 +111,7 @@ export class BulkController {
     const translate = await getFormatter();
     toastManager.primary(
       translate('frameleaf_bulk_queued', {
-        values: { action: translate(`frameleaf_bulk_${action.replaceAll('-', '_')}`), count },
+        values: { action: translate(`frameleaf_bulk_${action.replaceAll('-', '_')}` as Translations), count },
       }),
     );
     this.undo = null;
@@ -125,7 +126,7 @@ export class BulkController {
   async #report(action: BulkActionId, result: BulkResult) {
     const translate = await getFormatter();
     const { key, values } = bulkResultSummary(result);
-    const message = `${translate(`frameleaf_bulk_${action.replaceAll('-', '_')}`)}: ${translate(key, { values })}`;
+    const message = `${translate(`frameleaf_bulk_${action.replaceAll('-', '_')}` as Translations)}: ${translate(key, { values })}`;
     if (result.succeeded.length === 0 && result.failed.length > 0) {
       toastManager.danger(message);
     } else {
@@ -140,7 +141,7 @@ export class BulkController {
     // Trash undoes through restore; every other reversible action reverses itself.
     this.undo = result.undo
       ? {
-          label: translate(`frameleaf_bulk_${result.undo.action.replaceAll('-', '_')}`),
+          label: translate(`frameleaf_bulk_${result.undo.action.replaceAll('-', '_')}` as Translations),
           run: async () => {
             const entry = result.undo!;
             this.undo = null;

@@ -145,7 +145,7 @@ export interface CommandIndexInput {
  * Entries without an id or a title are dropped, and the first entry wins a duplicate id.
  */
 export const buildCommandIndex = (input: CommandIndexInput = {}): CommandItem[] => {
-  const source = record(input) ? input : {};
+  const source: CommandIndexInput = record(input) ? input : {};
   const result: CommandItem[] = [];
   const groups: [CommandGroupId, CommandInput[]][] = [
     ['actions', list(source.actions)],

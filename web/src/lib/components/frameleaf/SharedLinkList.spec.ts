@@ -51,7 +51,7 @@ describe('SharedLinkList', () => {
       password: null,
     });
     vi.mocked(getAllSharedLinks).mockResolvedValue([link]);
-    vi.mocked(removeSharedLink).mockResolvedValue();
+    vi.mocked(removeSharedLink).mockResolvedValue('');
 
     render(SharedLinkList);
     await screen.findByText('Rockies');
