@@ -62,9 +62,13 @@ describe(MediaOperationService.name, () => {
   let sut: MediaOperationService;
   let mocks: ServiceMocks;
   let repository: MediaOperationRepository;
+  let icloud: { queueOperation: ReturnType<typeof vi.fn>; endRun: ReturnType<typeof vi.fn> };
+  let jobs: { queue: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     mocks = getMocks();
+    icloud = { queueOperation: vi.fn(), endRun: vi.fn() };
+    jobs = { queue: vi.fn().mockResolvedValue(undefined) };
     repository = {
       create: vi.fn(),
       getForOwner: vi.fn(),
@@ -82,7 +86,13 @@ describe(MediaOperationService.name, () => {
       getLockedAssetIds: vi.fn().mockResolvedValue(new Set()),
     } as unknown as MediaOperationRepository;
 
-    sut = new MediaOperationService(mocks.logger as never, repository, mocks.access as never);
+    sut = new MediaOperationService(
+      mocks.logger as never,
+      repository,
+      mocks.access as never,
+      icloud as never,
+      jobs as never,
+    );
   });
 
   describe('search', () => {
@@ -423,6 +433,81 @@ describe(MediaOperationService.name, () => {
       expect(result.retryOfId).toBe(failed.id);
       expect(result.status).toBe(MediaOperationStatus.Queued);
     });
+
+    describe('an iCloud sync run (FL-68)', () => {
+      const connectionId = '0195e2a0-0000-7000-8000-0000000000c1';
+      const failedRun = () =>
+        operationStub({
+          kind: MediaOperationKind.ICloudSync,
+          status: MediaOperationStatus.Failed,
+          snapshot: { connectionId, trigger: 'schedule' },
+          projectId: null,
+          revisionId: null,
+        });
+
+      it('queues through the connection, never by copying the row beside a run that is still going', async () => {
+        const run = failedRun();
+        vi.mocked(repository.getForOwner).mockResolvedValue(run);
+        icloud.queueOperation.mockResolvedValue({
+          outcome: 'created',
+          operation: operationStub({
+            id: '0195e2a0-0000-7000-8000-000000000003',
+            kind: MediaOperationKind.ICloudSync,
+            status: MediaOperationStatus.Queued,
+            retryOfId: run.id,
+          }),
+        });
+
+        const result = await sut.retry(authStub.user1, run.id);
+
+        expect(icloud.queueOperation).toHaveBeenCalledWith(connectionId, authStub.user1.user.id, {
+          trigger: 'retry',
+          retryOfId: run.id,
+        });
+        expect(repository.create).not.toHaveBeenCalled();
+        expect(result.retryOfId).toBe(run.id);
+        expect(jobs.queue).toHaveBeenCalledWith({ name: 'ICloudSync', data: { id: connectionId } });
+      });
+
+      it('closes the run record when a run no worker held is cancelled', async () => {
+        const queued = operationStub({
+          kind: MediaOperationKind.ICloudSync,
+          status: MediaOperationStatus.Queued,
+          snapshot: { connectionId, trigger: 'schedule' },
+        });
+        vi.mocked(repository.getForOwner).mockResolvedValue(queued);
+        vi.mocked(repository.requestCancel).mockResolvedValue({ ...queued, status: MediaOperationStatus.Cancelled });
+
+        await sut.cancel(authStub.user1, queued.id);
+
+        expect(icloud.endRun).toHaveBeenCalledWith(connectionId, 'cancelled');
+      });
+
+      it('answers with the unfinished run when one is already going', async () => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(failedRun());
+        const active = operationStub({
+          id: '0195e2a0-0000-7000-8000-000000000004',
+          kind: MediaOperationKind.ICloudSync,
+          status: MediaOperationStatus.Rendering,
+        });
+        icloud.queueOperation.mockResolvedValue({ outcome: 'busy', operation: active });
+
+        await expect(sut.retry(authStub.user1, failedRun().id)).resolves.toMatchObject({ id: active.id });
+      });
+
+      it('asks for the account when the connection is signed out, and refuses a running run', async () => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(failedRun());
+        icloud.queueOperation.mockResolvedValue({ outcome: 'not-ready' });
+        await expect(sut.retry(authStub.user1, failedRun().id)).rejects.toBeInstanceOf(BadRequestException);
+
+        icloud.queueOperation.mockClear();
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({ kind: MediaOperationKind.ICloudSync, status: MediaOperationStatus.Rendering }),
+        );
+        await expect(sut.retry(authStub.user1, failedRun().id)).rejects.toBeInstanceOf(BadRequestException);
+        expect(icloud.queueOperation).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('createBulk', () => {
@@ -471,6 +556,22 @@ describe(MediaOperationService.name, () => {
       expect(repository.getBulkByRequestId).toHaveBeenCalledWith(authStub.user1.user.id, requestId);
       expect(repository.create).not.toHaveBeenCalled();
       expect(result.id).toBe(existing.id);
+    });
+
+    it('queues Library Care actions only from Library Care, whose gates it cannot see (FL-69)', async () => {
+      const payload = { mediaHealth: [{ assetId: assetIds[0], findingId: newUuid(), candidateId: newUuid() }] };
+      const request = { action: MediaOperationBulkAction.RecoverDamagedMedia, assetIds: [assetIds[0]], payload };
+
+      await expect(sut.createBulk(authStub.user1, request)).rejects.toBeInstanceOf(BadRequestException);
+      expect(repository.create).not.toHaveBeenCalled();
+
+      await sut.createBulk(authStub.user1, request, { libraryCare: true });
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: MediaOperationKind.Bulk,
+          snapshot: expect.objectContaining({ action: MediaOperationBulkAction.RecoverDamagedMedia, payload }),
+        }),
+      );
     });
 
     it('refuses an action that is missing its payload', async () => {
@@ -676,6 +777,26 @@ describe(MediaOperationService.name, () => {
 
       expect(result.snapshot.payload).toEqual({ groupCount: 1 });
       expect(JSON.stringify(result.snapshot)).not.toContain(assetIds[1]);
+    });
+
+    it('sends a Library Care relink, recovery or trash back to Library Care instead of copying it (FL-69)', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(
+        bulkStub({
+          snapshot: { action: MediaOperationBulkAction.TrashDamagedMedia, assetIds, payload: { mediaHealth: [] } },
+        }),
+      );
+
+      await expect(sut.retry(authStub.user1, bulkStub().id)).rejects.toThrow('Library Care');
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
+    it('starts a Library Care scan or search again from Library Care only (FL-69)', async () => {
+      vi.mocked(repository.getForOwner).mockResolvedValue(
+        operationStub({ kind: MediaOperationKind.MediaHealth, status: MediaOperationStatus.Failed }),
+      );
+
+      await expect(sut.retry(authStub.user1, operationStub().id)).rejects.toThrow('Library Care');
+      expect(repository.create).not.toHaveBeenCalled();
     });
 
     it('retries only the failed and unreached items, with lineage', async () => {

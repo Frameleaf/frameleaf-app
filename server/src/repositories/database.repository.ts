@@ -70,7 +70,13 @@ import { vectorIndexQuery } from 'src/utils/database.js';
 
 export let cachedVectorExtension: VectorExtension | undefined;
 
-const CLIP_TABLES = ['smart_search', 'smart_search_description', 'asset_video_duplicate_frame'] as const;
+const CLIP_TABLES = [
+  'smart_search',
+  'smart_search_description',
+  'asset_video_duplicate_frame',
+  // FL-59: only the frame embeddings; frames and moments survive a search-model change
+  'video_moment_frame_embedding',
+] as const;
 
 const FORK_CATALOG_MANIFEST = forkCatalogManifest as CatalogManifest;
 const OFFICIAL_CATALOG_MANIFEST = officialCatalogManifest as CatalogManifest;
@@ -568,7 +574,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
   }
 
   async deleteAllSearchEmbeddings(): Promise<void> {
-    await sql`truncate ${sql.table('smart_search')}, ${sql.table('smart_search_description')}, ${sql.table('asset_video_duplicate_frame')}`.execute(
+    await sql`truncate ${sql.table('smart_search')}, ${sql.table('smart_search_description')}, ${sql.table('asset_video_duplicate_frame')}, ${sql.table('video_moment_frame_embedding')}`.execute(
       this.db,
     );
   }

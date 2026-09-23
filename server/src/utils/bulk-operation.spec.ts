@@ -13,6 +13,7 @@ import {
   classifyBulkError,
   emptyBulkResult,
   fromBulkIdResponse,
+  isMediaHealthBulkAction,
   isRelativeDateShift,
   mergeBulkOutcomes,
   parseBulkResult,
@@ -345,6 +346,47 @@ describe('bulk-operation', () => {
           ['a', 'b'],
         ),
       ).toBeNull();
+    });
+
+    it.each([MediaOperationBulkAction.RelinkMissingMedia, MediaOperationBulkAction.RecoverDamagedMedia])(
+      'requires one reviewed finding and candidate for every item of %s (FL-69)',
+      (action) => {
+        const entry = (assetId: string, findingId: string, candidateId?: string) => ({
+          assetId,
+          findingId,
+          candidateId,
+        });
+        expect(bulkPayloadProblem(action, {}, ['a'])).not.toBeNull();
+        expect(bulkPayloadProblem(action, { mediaHealth: [entry('a', 'f1')] }, ['a'])).not.toBeNull();
+        expect(bulkPayloadProblem(action, { mediaHealth: [entry('a', 'f1', 'c1')] }, ['a', 'b'])).not.toBeNull();
+        expect(
+          bulkPayloadProblem(action, { mediaHealth: [entry('a', 'f1', 'c1'), entry('a', 'f2', 'c2')] }, ['a']),
+        ).not.toBeNull();
+        expect(
+          bulkPayloadProblem(action, { mediaHealth: [entry('a', 'f1', 'c1'), entry('b', 'f1', 'c2')] }, ['a', 'b']),
+        ).not.toBeNull();
+        expect(bulkPayloadProblem(action, { mediaHealth: [entry('a', 'f1', 'c1')] }, ['a'])).toBeNull();
+      },
+    );
+
+    it('trashes confirmed damage without a candidate (FL-69)', () => {
+      expect(
+        bulkPayloadProblem(
+          MediaOperationBulkAction.TrashDamagedMedia,
+          { mediaHealth: [{ assetId: 'a', findingId: 'f1' }] },
+          ['a'],
+        ),
+      ).toBeNull();
+    });
+  });
+
+  describe(isMediaHealthBulkAction.name, () => {
+    it('names exactly the three Library Care actions (FL-69)', () => {
+      expect(Object.values(MediaOperationBulkAction).filter((action) => isMediaHealthBulkAction(action))).toEqual([
+        MediaOperationBulkAction.RelinkMissingMedia,
+        MediaOperationBulkAction.RecoverDamagedMedia,
+        MediaOperationBulkAction.TrashDamagedMedia,
+      ]);
     });
   });
 
