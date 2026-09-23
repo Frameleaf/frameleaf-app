@@ -8,6 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import { crc32, createInflateRaw } from 'node:zlib';
 import type { TakeoutSource } from 'src/repositories/takeout.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
+import { compareCodeUnits } from 'src/utils/compare.js';
 import {
   TakeoutZipEntry,
   TakeoutZipSource,
@@ -177,7 +178,7 @@ export class TakeoutStagingRepository {
     while (pending.length > 0) {
       const next = pending.pop()!;
       const entries = await readdir(next.directory, { withFileTypes: true });
-      entries.sort((a, b) => (a.name < b.name ? 1 : a.name > b.name ? -1 : 0));
+      entries.sort((a, b) => compareCodeUnits(b.name, a.name));
       for (const entry of entries) {
         signal.throwIfAborted();
         const filePath = path.join(next.directory, entry.name);
@@ -354,7 +355,7 @@ export class TakeoutStagingRepository {
     signal: AbortSignal,
   ): Promise<StagedDigest> {
     const start = await takeoutZipDataOffset(source, entry);
-    const openEntry = async (): Promise<Readable> => {
+    const openEntryNow = (): Readable => {
       const raw =
         entry.compressedSize === 0
           ? Readable.from([])
@@ -366,6 +367,8 @@ export class TakeoutStagingRepository {
       raw.on('error', (error: Error) => inflate.destroy(error));
       return raw.pipe(inflate);
     };
+    // Deferred like an async function, so a synchronous failure to open still arrives as a rejection.
+    const openEntry = () => Promise.try(openEntryNow);
     return this.writeStaged(openEntry, entry.uncompressedSize, destination, signal, entry.crc32);
   }
 
