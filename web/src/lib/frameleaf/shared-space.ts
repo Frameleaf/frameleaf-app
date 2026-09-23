@@ -6,6 +6,7 @@ import {
   type PersonResponseDto,
   type SharedSpaceActivityResponseDto,
   type SharedSpaceAlbumResponseDto,
+  type SharedSpaceCommentResponseDto,
   type SharedSpaceEventResponseDto,
   type SharedSpaceMemberResponseDto,
   type SharedSpaceNewResponseDto,
@@ -392,6 +393,9 @@ export const spaceEventMessageKey = (event: Pick<SharedSpaceEventResponseDto, 't
     case SharedSpaceEventType.Comment: {
       return event.assetCount > 0 ? 'frameleaf_spaces_activity_comment_item' : 'frameleaf_spaces_activity_comment_space';
     }
+    case SharedSpaceEventType.Reply: {
+      return event.assetCount > 0 ? 'frameleaf_spaces_activity_reply_item' : 'frameleaf_spaces_activity_reply_space';
+    }
     case SharedSpaceEventType.Like: {
       return event.assetCount > 0 ? 'frameleaf_spaces_activity_like_item' : 'frameleaf_spaces_activity_like_space';
     }
@@ -408,3 +412,128 @@ export const EVENT_THUMBNAILS = 4;
 export const activityUnreadHint = (
   feed: Pick<SharedSpaceActivityResponseDto, 'unreadCount'> | null | undefined,
 ): string | undefined => (feed && feed.unreadCount > 0 ? String(feed.unreadCount) : undefined);
+
+/* -------------------------------------------------------------------------- */
+/* Threaded replies (FL-55)                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** A top-level comment and its replies, oldest reply first. */
+export type CommentThread = {
+  comment: SharedSpaceCommentResponseDto;
+  replies: SharedSpaceCommentResponseDto[];
+  /** The newest moment anything was said in the thread: the comment or its latest reply. */
+  lastActivityAt: string;
+};
+
+const time = (iso: string) => new Date(iso).getTime();
+const latest = (a: string, b: string) => (time(b) > time(a) ? b : a);
+
+/**
+ * Arrange the server's flat, oldest-first list into one-level threads.
+ *
+ * Replies sit under the top-level comment they name, oldest first, as a
+ * conversation reads. Threads are ordered by their latest activity with the
+ * most recent last, so whatever was said most recently — a new comment or a
+ * new reply in an older thread — is next to the composer where the list is
+ * scrolled to. A reply whose comment is not in the list is shown as a thread
+ * of its own rather than dropped.
+ */
+export const groupCommentThreads = (comments: SharedSpaceCommentResponseDto[]): CommentThread[] => {
+  const ids = new Set(comments.map(({ id }) => id));
+  const threads = new Map<string, CommentThread>();
+  const replies: SharedSpaceCommentResponseDto[] = [];
+
+  for (const comment of comments) {
+    if (comment.parentId && ids.has(comment.parentId)) {
+      replies.push(comment);
+    } else {
+      threads.set(comment.id, { comment, replies: [], lastActivityAt: comment.createdAt });
+    }
+  }
+
+  for (const reply of replies) {
+    const thread = threads.get(reply.parentId!);
+    if (thread) {
+      thread.replies.push(reply);
+      thread.lastActivityAt = latest(thread.lastActivityAt, reply.createdAt);
+    } else {
+      // The named comment is itself a reply; keep it visible on its own.
+      threads.set(reply.id, { comment: reply, replies: [], lastActivityAt: reply.createdAt });
+    }
+  }
+
+  const byTime = (a: { createdAt: string }, b: { createdAt: string }) => time(a.createdAt) - time(b.createdAt);
+
+  return [...threads.values()]
+    .map((thread) => ({ ...thread, replies: [...thread.replies].sort(byTime) }))
+    .sort((a, b) => time(a.lastActivityAt) - time(b.lastActivityAt) || byTime(a.comment, b.comment));
+};
+
+/** The comment a reply is posted to: the thread's top-level comment, whichever comment was answered. */
+export const threadRootId = (comment: Pick<SharedSpaceCommentResponseDto, 'id' | 'parentId'>): string =>
+  comment.parentId ?? comment.id;
+
+/**
+ * What a reply box starts with.
+ *
+ * Answering a reply mentions the person who wrote it, so they hear about it
+ * even though the reply is stored under the thread's top-level comment.
+ * Answering a top-level comment starts empty — its author is told anyway —
+ * and so does answering oneself. The mention is only offered for somebody
+ * who is still a member, because the server refuses a mention of anyone else.
+ */
+const prefillFor = (
+  authorId: string | undefined,
+  answersAReply: boolean,
+  currentUserId: string | undefined,
+  members: Pick<SharedSpaceMemberResponseDto, 'user' | 'pending'>[],
+): string => {
+  if (!authorId || !answersAReply || authorId === currentUserId) {
+    return '';
+  }
+  const stillMember = members.some(({ user, pending }) => !pending && user.id === authorId);
+  return stillMember ? `${mentionToken(authorId)} ` : '';
+};
+
+export const replyPrefill = (
+  comment: Pick<SharedSpaceCommentResponseDto, 'parentId' | 'user'>,
+  currentUserId: string | undefined,
+  members: Pick<SharedSpaceMemberResponseDto, 'user' | 'pending'>[],
+): string => prefillFor(comment.user.id, !!comment.parentId, currentUserId, members);
+
+/** The same rule for answering from the activity feed, where a reply is a Reply event by its actor. */
+export const eventReplyPrefill = (
+  event: Pick<SharedSpaceEventResponseDto, 'type' | 'actor'>,
+  currentUserId: string | undefined,
+  members: Pick<SharedSpaceMemberResponseDto, 'user' | 'pending'>[],
+): string => prefillFor(event.actor?.id, event.type === SharedSpaceEventType.Reply, currentUserId, members);
+
+/** Whether a feed event is a comment or reply that can be answered from the feed. */
+export const canReplyToEvent = (event: Pick<SharedSpaceEventResponseDto, 'type' | 'activityId'>): boolean =>
+  !!event.activityId && (event.type === SharedSpaceEventType.Comment || event.type === SharedSpaceEventType.Reply);
+
+/** A comment list after one comment is removed: a top-level comment takes its replies with it. */
+export const withoutComment = (
+  comments: SharedSpaceCommentResponseDto[],
+  removed: Pick<SharedSpaceCommentResponseDto, 'id' | 'parentId'>,
+): SharedSpaceCommentResponseDto[] => {
+  if (removed.parentId) {
+    return comments
+      .filter(({ id }) => id !== removed.id)
+      .map((comment) =>
+        comment.id === removed.parentId ? { ...comment, replyCount: Math.max(0, comment.replyCount - 1) } : comment,
+      );
+  }
+  return comments.filter(({ id, parentId }) => id !== removed.id && parentId !== removed.id);
+};
+
+/** A comment list after a reply is added: the reply joins, and its thread's count goes up. */
+export const withReply = (
+  comments: SharedSpaceCommentResponseDto[],
+  reply: SharedSpaceCommentResponseDto,
+): SharedSpaceCommentResponseDto[] => [
+  ...comments.map((comment) =>
+    comment.id === reply.parentId ? { ...comment, replyCount: comment.replyCount + 1 } : comment,
+  ),
+  reply,
+];
