@@ -4,7 +4,7 @@ Status: implementation plan for the features added to the design template on Sep
 
 ## What the prototype now contains
 
-The template in `design/frameleaf/template` carries the full product surface the parity audit found missing plus the polish directions from the product review. The written decisions are in the "September 22, 2026 revision" of [the interaction requirements](../../../../design/frameleaf/INTERACTION-REQUIREMENTS.md). The prototype is evidence of the intended interaction and layout. Everything in it that renders, computes or persists does so with sample data in the browser. Production keeps its NestJS services, PostgreSQL schema, Python ML and the Svelte web client, and ports the behaviour through real APIs.
+The template in `design/frameleaf/template` carries the full product surface the parity audit found missing plus the polish directions from the product review. The written decisions are in the "September 22, 2026 revision" of [the interaction requirements](https://github.com/Frameleaf/frameleaf-app/blob/caefcdd0cf4267347f769f77e96a483a615adc2f/design/frameleaf/INTERACTION-REQUIREMENTS.md). The prototype is evidence of the intended interaction and layout. Everything in it that renders, computes or persists does so with sample data in the browser. Production keeps its NestJS services, PostgreSQL schema, Python ML and the Svelte web client, and ports the behaviour through real APIs.
 
 Prototype source anchors used below are relative to `design/frameleaf/template/src`.
 
