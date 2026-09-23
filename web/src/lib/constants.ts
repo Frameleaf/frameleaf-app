@@ -78,6 +78,8 @@ export enum OpenQueryParam {
   SHARING = 'sharing',
   /** The trash retention settings, from the Trash page (FL-47). */
   TRASH = 'trash',
+  /** The image description / enrichment settings, from the Jobs manager's Enrichment tasks entry (FL-59). */
+  IMAGE_DESCRIPTION = 'machine-learning',
 }
 
 export const maximumLengthSearchPeople = 100;
