@@ -31,11 +31,21 @@ describe('parseAppReleases', () => {
     );
   });
 
+  it('requires a versioned Android destination', () => {
+    expect(() =>
+      parseAppReleases({
+        FRAMELEAF_ANDROID_RELEASE_URL: 'https://releases.example.test/android',
+        FRAMELEAF_ANDROID_APP_ID: 'app.frameleaf.android',
+        FRAMELEAF_ANDROID_SIGNING_SHA256: fingerprint,
+      }),
+    ).toThrow(/\{version\}/);
+  });
+
   it.each([
     // eslint-disable-next-line unicorn/prefer-https -- an http destination is what is being refused
-    ['http://releases.example.test', /https/],
-    ['https://user:pass@releases.example.test', /credentials/],
-    ['not a url', /not a URL/],
+    ['http://releases.example.test/{version}', /https/],
+    ['https://user:pass@releases.example.test/{version}', /credentials/],
+    ['not a url/{version}', /not a URL/],
   ])('refuses the release URL %s', (url, error) => {
     expect(() =>
       parseAppReleases({
@@ -47,7 +57,7 @@ describe('parseAppReleases', () => {
   });
 
   it('refuses a fingerprint that is not SHA-256 and a package id that is not one', () => {
-    const base = { FRAMELEAF_ANDROID_RELEASE_URL: 'https://releases.example.test' };
+    const base = { FRAMELEAF_ANDROID_RELEASE_URL: 'https://releases.example.test/{version}' };
     expect(() =>
       parseAppReleases({ ...base, FRAMELEAF_ANDROID_APP_ID: 'app.frameleaf', FRAMELEAF_ANDROID_SIGNING_SHA256: 'abc' }),
     ).toThrow(/64 hex/);

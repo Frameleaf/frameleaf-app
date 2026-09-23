@@ -77,6 +77,9 @@ export const parseAppReleases = (env: AppReleaseEnv): AppReleaseConfig => {
     if (!/^[A-Za-z]\w*(\.[A-Za-z]\w*)+$/.test(appId!)) {
       throw new Error(`FRAMELEAF_ANDROID_APP_ID: "${appId}" is not an Android package id`);
     }
+    if (!releaseUrl!.includes('{version}')) {
+      throw new Error('FRAMELEAF_ANDROID_RELEASE_URL: include {version} so links match this server version');
+    }
     config.android = {
       releaseUrl: httpsUrl('FRAMELEAF_ANDROID_RELEASE_URL', releaseUrl!),
       appId: appId!,
