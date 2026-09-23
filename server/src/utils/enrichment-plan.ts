@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { EnrichmentItemState, EnrichmentStage, MediaOperationStatus } from 'src/enum.js';
+import { EnrichmentItemState, EnrichmentStage, EnrichmentStaleReason, MediaOperationStatus } from 'src/enum.js';
 
 /**
  * The durable rules for enrichment plans and the moment index (FL-59, `REC-101`), kept free of the
@@ -128,7 +128,8 @@ export type EnrichmentPlanSnapshot = {
   config: EnrichmentPinnedConfig;
   /** Digest of `config`, recorded on every generated result the plan writes. */
   configHash: string;
-  requestId: string | null;
+  /** Client idempotency key: a repeated submit answers with the first plan. */
+  requestKey: string | null;
   /** True when submitted from an unlocked session; Locked items may only be included then. */
   elevated: boolean;
 };
@@ -207,7 +208,7 @@ export const parseEnrichmentPlanSnapshot = (value: unknown): EnrichmentPlanSnaps
     },
     config: config as unknown as EnrichmentPinnedConfig,
     configHash: typeof value.configHash === 'string' ? value.configHash : '',
-    requestId: typeof value.requestId === 'string' ? value.requestId : null,
+    requestKey: typeof value.requestKey === 'string' ? value.requestKey : null,
     elevated: value.elevated === true,
   };
 };
@@ -356,6 +357,23 @@ export const enrichmentResumeIds = (
   return snapshot.assetIds.filter((id) => failed.has(id) || unreached.has(id));
 };
 
+/**
+ * The record a manual retry starts from: the same pinned stages, destinations and configuration
+ * over exactly the assets that did not finish, each carrying the stage outcomes it already has so
+ * the retry only runs what failed. A retry is a new submission, so it has no idempotency key.
+ */
+export const enrichmentRetryRecord = (
+  snapshot: EnrichmentPlanSnapshot,
+  result: EnrichmentPlanResult,
+  remaining: readonly string[],
+): { snapshot: EnrichmentPlanSnapshot; result: EnrichmentPlanResult } => {
+  const keep = new Set(remaining);
+  return {
+    snapshot: { ...snapshot, assetIds: [...remaining], requestKey: null },
+    result: { ...emptyEnrichmentPlanResult(), items: result.items.filter(({ id }) => keep.has(id)) },
+  };
+};
+
 const RUNNING_STATUSES: ReadonlySet<MediaOperationStatus> = new Set([
   MediaOperationStatus.Preparing,
   MediaOperationStatus.Rendering,
@@ -480,8 +498,10 @@ export const sourceFingerprint = (source: {
   originalPath: string;
   fileModifiedAt: Date | string | null;
 }): string => {
-  const checksum =
-    source.checksum === null ? '' : Buffer.isBuffer(source.checksum) ? source.checksum.toString('hex') : source.checksum;
+  let checksum = '';
+  if (source.checksum !== null) {
+    checksum = Buffer.isBuffer(source.checksum) ? source.checksum.toString('hex') : source.checksum;
+  }
   const modified =
     source.fileModifiedAt === null
       ? ''
@@ -497,9 +517,6 @@ export const identityHash = (names: readonly string[]): string =>
     JSON.stringify([...new Set(names.map((name) => name.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b))),
     16,
   );
-
-/** Why a generated result no longer describes what it claims to, most fundamental reason first. */
-export type EnrichmentStaleReason = 'source-changed' | 'identity-changed' | 'config-changed';
 
 export type EnrichmentProvenance = {
   sourceFingerprint?: string | null;
@@ -519,13 +536,13 @@ export const enrichmentStaleReason = (
     return null;
   }
   if (pinned.sourceFingerprint && current.sourceFingerprint && pinned.sourceFingerprint !== current.sourceFingerprint) {
-    return 'source-changed';
+    return EnrichmentStaleReason.SourceChanged;
   }
   if (pinned.identityHash && current.identityHash && pinned.identityHash !== current.identityHash) {
-    return 'identity-changed';
+    return EnrichmentStaleReason.IdentityChanged;
   }
   if (pinned.configHash && current.configHash && pinned.configHash !== current.configHash) {
-    return 'config-changed';
+    return EnrichmentStaleReason.ConfigChanged;
   }
   return null;
 };
@@ -580,6 +597,7 @@ export const coverFrameFor = <T extends { timestampMs: number; rank: number }>(
     return [...frames].sort((a, b) => a.rank - b.rank)[0];
   }
   return [...frames].sort(
-    (a, b) => Math.abs(a.timestampMs - coverTimestampMs) - Math.abs(b.timestampMs - coverTimestampMs) || a.rank - b.rank,
+    (a, b) =>
+      Math.abs(a.timestampMs - coverTimestampMs) - Math.abs(b.timestampMs - coverTimestampMs) || a.rank - b.rank,
   )[0];
 };
