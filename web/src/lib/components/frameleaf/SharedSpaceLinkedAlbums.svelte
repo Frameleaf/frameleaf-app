@@ -36,6 +36,10 @@
    *
    * Unlinking removes the reference. No photo, no album and no membership
    * changes — which is exactly what makes it safe to offer.
+   *
+   * The picture is the one thing on a row that opens: it is an item already in
+   * the space, so it opens in the space's own viewer, where every member may
+   * look at it.
    */
   interface Props {
     space: AlbumResponseDto;
@@ -45,9 +49,11 @@
     library?: AlbumResponseDto[];
     /** Re-fetch after a change; the route owns the loader. */
     onChanged: () => Promise<void> | void;
+    /** Open an item that is in the space, in the space's viewer. */
+    onOpenAsset?: (assetId: string) => void;
   }
 
-  let { space, albums, library = [], onChanged }: Props = $props();
+  let { space, albums, library = [], onChanged, onOpenAsset }: Props = $props();
 
   const currentUserId = $derived(authManager.user.id);
   const contributor = $derived(canContribute(space, currentUserId));
@@ -122,13 +128,26 @@
     <ul>
       {#each albums as album (album.id)}
         <li>
-          <span class="cover" aria-hidden={true}>
-            {#if coverOf(album)}
+          {#if onOpenAsset && album.thumbnailAssetId}
+            {@const assetId = album.thumbnailAssetId}
+            <button
+              type="button"
+              class="cover open"
+              aria-label={$t('frameleaf_spaces_viewer_open_photo', { values: { name: album.albumName } })}
+              title={$t('frameleaf_spaces_viewer_open_photo', { values: { name: album.albumName } })}
+              onclick={() => onOpenAsset?.(assetId)}
+            >
               <img src={coverOf(album)} alt="" loading="lazy" draggable="false" />
-            {:else}
-              <AlbumIcon name={album.icon} size="20" />
-            {/if}
-          </span>
+            </button>
+          {:else}
+            <span class="cover" aria-hidden={true}>
+              {#if coverOf(album)}
+                <img src={coverOf(album)} alt="" loading="lazy" draggable="false" />
+              {:else}
+                <AlbumIcon name={album.icon} size="20" />
+              {/if}
+            </span>
+          {/if}
           <span class="about">
             <span class="name">{album.albumName}</span>
             <span class="meta">
@@ -225,6 +244,12 @@
     overflow: hidden;
     border-radius: var(--fl-radius);
     background: var(--fl-raised);
+  }
+  button.cover {
+    padding: 0;
+    min-height: 0;
+    border: 1px solid var(--fl-border);
+    cursor: pointer;
   }
   .cover img {
     width: 100%;

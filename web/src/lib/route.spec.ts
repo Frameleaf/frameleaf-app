@@ -44,6 +44,15 @@ describe('Route', () => {
     });
   });
 
+  describe(Route.viewSharedSpaceAsset.name, () => {
+    it('keeps the viewer inside the shared space', () => {
+      expect(Route.viewSharedSpace({ id: 'space-1' })).toBe('/sharing/space-1');
+      expect(Route.viewSharedSpaceAsset({ spaceId: 'space-1', assetId: 'asset-1' })).toBe(
+        '/sharing/space-1/photos/asset-1',
+      );
+    });
+  });
+
   describe(Route.tags.name, () => {
     it('should work', () => {
       expect(Route.tags()).toBe('/tags');

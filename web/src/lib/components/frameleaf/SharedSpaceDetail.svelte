@@ -1,7 +1,9 @@
 <script lang="ts">
   import { goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
+  import ActivityViewer from '$lib/components/asset-viewer/ActivityViewer.svelte';
   import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
+  import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import SharedSpaceActivity from '$lib/components/frameleaf/SharedSpaceActivity.svelte';
   import SharedSpaceAddMatching from '$lib/components/frameleaf/SharedSpaceAddMatching.svelte';
@@ -13,7 +15,11 @@
   import SharedSpaceTimeline from '$lib/components/frameleaf/SharedSpaceTimeline.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { canEdit } from '$lib/frameleaf/album-directory';
+  import { SpacePhotoSet } from '$lib/frameleaf/space-photos.svelte';
+  import { shouldPageForViewer, spaceAssetHref, spaceViewerList } from '$lib/frameleaf/space-viewer';
+  import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import {
     canContribute,
     isSpaceOwner,
@@ -29,6 +35,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import type {
     AlbumResponseDto,
+    AssetResponseDto,
     SharedSpaceAlbumResponseDto,
     SharedSpaceMemberResponseDto,
     SharedSpaceNewResponseDto,
@@ -43,18 +50,24 @@
     mdiLogoutVariant,
     mdiPencilOutline,
   } from '@mdi/js';
+  import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
    * One shared space (FL-55).
    *
-   * A space is an album, so the album view still owns the viewer, per-item
-   * activity, the cover and the slideshow; this page is the space's home. Its
-   * panels are the ways into it: the photos (with what is new since this
-   * member's last visit), the albums members have linked, the people members
-   * have named for everyone, where the photos were taken, the conversation,
-   * and who is in it with what role. The open panel is in the address, so a
-   * link or a reload lands on the same one.
+   * This page is the space's home, and a space is its own context: its panels
+   * are the ways into it — the photos (with what is new since this member's
+   * last visit), the albums members have linked, the people members have named
+   * for everyone, where the photos were taken, the conversation, and who is in
+   * it with what role — and every photo they open, opens in the space's own
+   * viewer at `/sharing/{spaceId}/photos/{assetId}`. Next and previous there
+   * walk the space's photos in the grid's order, and closing it comes back to
+   * this page on the same panel. The open panel is in the address, so a link
+   * or a reload lands on the same one.
+   *
+   * A space is still an album underneath, so the album view of it keeps the
+   * slideshow and adding photos.
    *
    * Leaving and deleting mean what they say: leaving takes you out and keeps
    * the space, deleting removes the space and keeps every original file in its
@@ -135,8 +148,57 @@
       .map((entry) => ({ id: entry.id, name: entry.albumName || $t('unnamed_album'), count: entry.assetCount })),
   );
 
-  // The viewer, per-item activity and the slideshow live on the album view of the same space.
-  const openAsset = (assetId: string) => goto(Route.viewAlbumAsset({ albumId: space.id, assetId }));
+  /* ------------------------------------------------------------------ */
+  /* The space's photos and its own viewer                              */
+  /* ------------------------------------------------------------------ */
+  // One set per space and order, shared by the grid and the viewer. Keyed on the values, not the
+  // space object, so a refresh after a membership change keeps what is already loaded.
+  const spaceId = $derived(space.id);
+  const spaceOrder = $derived(space.order);
+  const photos = $derived(
+    new SpacePhotoSet({
+      spaceId,
+      order: spaceOrder,
+      onError: (error) => handleError(error, $t('frameleaf_spaces_error_timeline')),
+    }),
+  );
+
+  const viewingId = $derived(assetViewerManager.isViewing ? assetViewerManager.asset?.id : undefined);
+  const viewerAssets = $derived(spaceViewerList(photos.assets, timelineFilter, viewingId));
+
+  // An item opened from the map, a comment or a linked album may not be loaded yet, and one near
+  // the end of what is loaded needs the next page before "next" can reach it.
+  $effect(() => {
+    if (!viewingId) {
+      return;
+    }
+    const next = shouldPageForViewer({
+      index: photos.indexOf(viewingId),
+      length: photos.assets.length,
+      page: photos.page,
+      exhausted: photos.exhausted,
+      loading: photos.loading,
+      failed: photos.failed,
+    });
+    if (next) {
+      untrack(() => void photos.loadMore());
+    }
+  });
+
+  // The address keeps the open panel, so closing the viewer lands on it again.
+  const openAsset = (assetId: string) => goto(spaceAssetHref(space.id, assetId, globalThis.location?.search ?? ''));
+
+  // Removing an item from the space in the viewer takes it out of the grid too.
+  onMount(() =>
+    eventManager.on({
+      AlbumRemoveAssets: ({ assetIds, albumIds }) => {
+        if (albumIds.includes(space.id)) {
+          photos.remove(assetIds);
+          void onRefresh();
+        }
+      },
+    }),
+  );
 
   /** A map pin can stand for several items; the viewer opens on the first of them. */
   const openFirst = (assetIds: string[]) => {
@@ -259,25 +321,72 @@
         {/if}
         <SharedSpaceTimeline
           {space}
+          {photos}
           filter={timelineFilter}
           {albumOptions}
           onOpen={(asset) => void openAsset(asset.id)}
           onChanged={onRefresh}
         />
       {:else if panel === 'albums'}
-        <SharedSpaceLinkedAlbums {space} albums={linkedAlbums} library={albums} onChanged={onRefresh} />
+        <SharedSpaceLinkedAlbums
+          {space}
+          albums={linkedAlbums}
+          library={albums}
+          onChanged={onRefresh}
+          onOpenAsset={(assetId) => void openAsset(assetId)}
+        />
       {:else if panel === 'people'}
         <SharedSpacePeople {space} linked={people.linked} candidates={people.candidates} onChanged={onRefresh} />
       {:else if panel === 'places'}
         <SharedSpaceMap {space} onSelect={openFirst} />
       {:else if panel === 'activity'}
-        <SharedSpaceActivity {space} onClose={() => choosePanel('timeline')} />
+        <SharedSpaceActivity
+          {space}
+          onClose={() => choosePanel('timeline')}
+          onOpenAsset={(assetId) => void openAsset(assetId)}
+        />
       {:else}
         <SharedSpaceMembers {space} {members} onChanged={onRefresh} />
       {/if}
     </div>
   {/key}
 </section>
+
+<!--
+  The space's own viewer. It walks the same photo set the grid draws, and its activity side panel is
+  the space's per-item conversation.
+-->
+<ResultsAssetViewer
+  assets={viewerAssets}
+  album={space}
+  isShared={true}
+  emptyRoute={Route.viewSharedSpace({ id: space.id })}
+  onAssetChange={(asset) => photos.replace(asset)}
+  onRemove={(id) => {
+    photos.remove([id]);
+    void onRefresh();
+  }}
+  activityPanel={spaceComments}
+/>
+
+{#snippet spaceComments(asset: AssetResponseDto)}
+  <!--
+    TODO(FL-55 collaboration): mount the space's per-item comments here, replacing the interim viewer
+    below, as
+      <SpaceMediaComments spaceId={space.id} assetId={asset.id} />
+    from `$lib/components/frameleaf/SpaceMediaComments.svelte` (branch codex/FL-55-space-collaboration).
+    Until it lands, the album activity viewer keeps likes and comments on the item working.
+  -->
+  <div class="space-comments" data-space-comments-mount data-space-id={space.id} data-comments-asset-id={asset.id}>
+    <ActivityViewer
+      disabled={!space.isActivityEnabled}
+      assetType={asset.type}
+      albumUsers={space.albumUsers}
+      albumId={space.id}
+      assetId={asset.id}
+    />
+  </div>
+{/snippet}
 
 <style>
   .space {
@@ -360,6 +469,9 @@
   .panels :global(.segments) {
     flex-wrap: nowrap;
     white-space: nowrap;
+  }
+  .space-comments {
+    block-size: 100%;
   }
   .panel {
     display: flex;
