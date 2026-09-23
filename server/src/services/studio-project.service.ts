@@ -1127,7 +1127,7 @@ export class StudioProjectService {
       lastOpenedAt: isOwner ? asIso(project.lastOpenedAt) : null,
       thumbnailAssetId: isOwner ? project.thumbnailAssetId : null,
       duplicatedFromId: isOwner ? project.duplicatedFromId : null,
-      importedFromBundle: !!project.importedFromDigest,
+      importedFromBundle: isOwner && !!project.importedFromDigest,
       createdAt: asRequiredIso(project.createdAt),
       updatedAt: asRequiredIso(project.updatedAt),
     };

@@ -446,6 +446,12 @@ export type ZipEntry = {
   crc32: number;
   /** Offset of the local file header. The data offset is resolved when the entry is read. */
   localHeaderOffset: number;
+  /**
+   * Where the next entry's local header (or the central directory) begins. An entry's data must
+   * end before it: the local header's own name and extra lengths are only known when the entry is
+   * read, so this is checked then.
+   */
+  dataLimit: number;
 };
 
 export type ZipDirectory = {
@@ -598,6 +604,7 @@ export const readZipDirectory = async (source: ZipByteSource): Promise<ZipDirect
       uncompressedSize,
       crc32,
       localHeaderOffset,
+      dataLimit: directoryOffset,
     };
     entries.push(entry);
     byName.set(name, entry);
@@ -616,6 +623,7 @@ export const readZipDirectory = async (source: ZipByteSource): Promise<ZipDirect
     if (previous.localHeaderOffset + LOCAL_MIN + previous.compressedSize > ordered[index].localHeaderOffset) {
       refuse('bundle_overlap', `${ordered[index].name.slice(0, 80)} overlaps the entry before it`);
     }
+    previous.dataLimit = ordered[index].localHeaderOffset;
   }
 
   return { entries, byName };
@@ -632,6 +640,9 @@ export const zipEntryDataOffset = async (source: ZipByteSource, entry: ZipEntry)
   const start = entry.localHeaderOffset + LOCAL_MIN + nameLength + extraLength;
   if (start + entry.compressedSize > source.size) {
     refuse('bundle_corrupt', `${entry.name.slice(0, 80)} runs past the end of the file`);
+  }
+  if (start + entry.compressedSize > entry.dataLimit) {
+    refuse('bundle_overlap', `${entry.name.slice(0, 80)} runs into the entry after it`);
   }
   return start;
 };
