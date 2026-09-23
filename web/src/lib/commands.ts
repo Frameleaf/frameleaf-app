@@ -66,7 +66,7 @@ export const getPagesProvider = ($t: MessageFormatter) => {
       title: $t('frameleaf_analytics_title'),
       description: $t('frameleaf_analytics_description'),
       icon: mdiServer,
-      onAction: () => goto(Route.systemStatistics()),
+      onAction: () => goto(Route.libraryAnalytics()),
     },
     {
       title: $t('admin.maintenance_settings'),
