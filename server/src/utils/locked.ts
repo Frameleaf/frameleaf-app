@@ -49,7 +49,7 @@ export const lockedForReason = (reasons: AssetLockReason[], assetAlias = 'asset'
  * belongs to `lockedOwnerId`. Pass the viewer as `lockedOwnerId` only when their session is elevated
  * (`getLockedOwnerId`); without it no locked asset matches, whoever owns it.
  */
-export const lockedOwnerScope = (lockedOwnerId: string | undefined, assetAlias = 'asset') =>
+export const notLockedOrOwnedBy = (lockedOwnerId: string | undefined, assetAlias = 'asset') =>
   lockedOwnerId
     ? sql<boolean>`(${isNotLocked(assetAlias)} or ${assetRef(assetAlias, 'ownerId')} = ${lockedOwnerId}::uuid)`
     : isNotLocked(assetAlias);
@@ -100,7 +100,7 @@ export const lockReasonOf = (assetAlias = 'asset') =>
  * (select `isLocked().as('isLocked')`) or an effective visibility of `locked`
  * (select `effectiveVisibility().as('visibility')`).
  */
-export const isLockedAsset = (asset: { isLocked?: boolean | null; visibility?: AssetVisibility | string | null }) =>
+export const isLockedRow = (asset: { isLocked?: boolean | null; visibility?: AssetVisibility | string | null }) =>
   asset.isLocked === true || asset.visibility === AssetVisibility.Locked;
 
 /**

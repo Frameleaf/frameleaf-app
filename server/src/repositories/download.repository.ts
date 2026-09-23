@@ -5,8 +5,7 @@ import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
-import { anyUuid, withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
-import { lockedOwnerScope } from 'src/utils/locked.js';
+import { anyUuid, withAlbumVisibility, withHiddenContentFilter, withLockedOwnerScope } from 'src/utils/database.js';
 
 type DownloadPrivacyOptions = HiddenContentQueryOptions & LockedVisibilityOptions;
 
@@ -39,12 +38,12 @@ export class DownloadRepository {
       .stream();
   }
 
-  /** A whole timeline: locked media (FL-34) only when it is the viewer's own in an elevated session. */
+  /** A whole-library download holds the owner's Locked media only for their elevated session (FL-34). */
   downloadUserId(userId: string, options?: DownloadPrivacyOptions) {
     return builder(this.db, options)
       .where('asset.ownerId', '=', userId)
       .where('asset.visibility', '!=', AssetVisibility.Hidden)
-      .where(lockedOwnerScope(options?.lockedOwnerId, 'asset'))
+      .$call((qb) => withLockedOwnerScope(qb, options?.lockedOwnerId))
       .stream();
   }
 }

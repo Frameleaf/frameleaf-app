@@ -400,7 +400,7 @@ describe(RestorationWorkerService.name, () => {
   });
 
   describe('sweep', () => {
-    it('recovers expired claims, aligns rows with finished jobs and applies preview retention', async () => {
+    it('aligns rows with finished jobs and applies preview retention, leaving recovery to the one sweep', async () => {
       restorations.listExpiredPreviews.mockResolvedValue([
         row({ status: AssetRestorationStatus.PreviewReady, previewBeforePath: '/b.jpg', previewAfterPath: '/a.png' }),
         row({ id: 'other', status: AssetRestorationStatus.Rejected, previewBeforePath: '/rb.jpg', previewAfterPath: null }),
@@ -408,7 +408,8 @@ describe(RestorationWorkerService.name, () => {
 
       const result = await sut.sweep();
 
-      expect(operations.recoverExpiredClaims).toHaveBeenCalled();
+      // Lapsed claims are MediaOperationSweepService's to recover, for every kind (FL-104).
+      expect(operations.recoverExpiredClaims).not.toHaveBeenCalled();
       expect(restorations.alignWithOperations).toHaveBeenCalled();
       // An unreviewed preview expires; a decided one only loses its files.
       expect(restorations.update).toHaveBeenCalledWith(

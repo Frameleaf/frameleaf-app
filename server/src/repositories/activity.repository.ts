@@ -9,7 +9,7 @@ import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { DB } from 'src/schema/index.js';
 import { ActivityTable } from 'src/schema/tables/activity.table.js';
 import { asUuid, dummy, withHiddenContentFilter } from 'src/utils/database.js';
-import { isNotLocked, lockedOwnerScope } from 'src/utils/locked.js';
+import { isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
 
 export interface ActivitySearch extends HiddenContentQueryOptions, LockedVisibilityOptions {
   albumId?: string;
@@ -58,7 +58,7 @@ export class ActivityRepository {
       // learns the item's id or what was said about it (owner decision, September 22, 2026)
       .$if(!options.includeLocked, (qb) =>
         qb.where((eb) =>
-          eb.or([eb('asset.id', 'is', null), lockedOwnerScope(options.lockedOwnerId, 'asset')]),
+          eb.or([eb('asset.id', 'is', null), notLockedOrOwnedBy(options.lockedOwnerId, 'asset')]),
         ),
       )
       .$call((qb) => withHiddenContentFilter(qb, options))
@@ -137,7 +137,7 @@ export class ActivityRepository {
       .where('activity.albumId', '=', albumId)
       .where(({ or, and, eb }) => {
         // counted exactly as `search` lists: a Locked item's reactions only for its owner's elevated session
-        const visible = lockedOwnerId ? lockedOwnerScope(lockedOwnerId, 'asset') : isNotLocked('asset');
+        const visible = lockedOwnerId ? notLockedOrOwnedBy(lockedOwnerId, 'asset') : isNotLocked('asset');
         return or([and([eb('asset.deletedAt', 'is', null), visible]), eb('asset.id', 'is', null)]);
       })
       .executeTakeFirstOrThrow();

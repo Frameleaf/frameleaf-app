@@ -23,7 +23,7 @@ import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/h
 import {
   isDefaultVisible,
   isNotLocked,
-  lockedOwnerScope,
+  notLockedOrOwnedBy,
   visibilityIn,
   visibilityIs,
 } from 'src/utils/locked.js';
@@ -125,6 +125,21 @@ export function withDefaultVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>)
 }
 
 /**
+ * FL-34: the single SQL test for "this asset is Locked" in expression-builder form. Locked is the lock
+ * record (`asset_lock`, see `src/utils/locked.ts`); every Locked privacy filter goes through these two
+ * (directly, or through `withLockedOwnerScope` / `withAlbumVisibility`). `alias` names the asset table
+ * in the query (default `asset`).
+ */
+export function isLockedAsset<QDB, TB extends keyof QDB>(_eb: ExpressionBuilder<QDB, TB>, alias = 'asset') {
+  return isLocked(alias);
+}
+
+/** The negation of {@link isLockedAsset}. */
+export function isNotLockedAsset<QDB, TB extends keyof QDB>(_eb: ExpressionBuilder<QDB, TB>, alias = 'asset') {
+  return isNotLocked(alias);
+}
+
+/**
  * What an album read shows (owner decision, September 22, 2026): Timeline and Archive media that is not
  * locked, plus the locked media of `lockedOwnerId` — the viewer, when their session is elevated. Locked
  * media of anyone else never shows, whatever the viewer's own session. Without an owner this is
@@ -137,7 +152,7 @@ export function withAlbumVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>, l
 
   return qb
     .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
-    .where(lockedOwnerScope(lockedOwnerId, 'asset'));
+    .where(notLockedOrOwnedBy(lockedOwnerId, 'asset'));
 }
 
 /**
@@ -147,7 +162,57 @@ export function withAlbumVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>, l
  * without an owner no locked media matches at all.
  */
 export function withLockedOwnerScope<O>(qb: SelectQueryBuilder<DB, 'asset', O>, lockedOwnerId?: string) {
-  return qb.where(lockedOwnerScope(lockedOwnerId, 'asset'));
+  return qb.where(notLockedOrOwnedBy(lockedOwnerId, 'asset'));
+}
+
+/**
+ * The condition behind {@link withLockedOwnerScope}, for a query that reaches the asset table through a
+ * join or under another alias: not locked, or locked and owned by `lockedOwnerId`.
+ */
+export function lockedOwnerScope<QDB, TB extends keyof QDB>(
+  _eb: ExpressionBuilder<QDB, TB>,
+  lockedOwnerId?: string,
+  alias = 'asset',
+) {
+  return notLockedOrOwnedBy(lockedOwnerId, alias);
+}
+
+/**
+ * FL-34: the video part of a live photo keeps visibility `hidden` and locks with its still (stacks and
+ * live photos lock as a whole). This matches such a motion part whose still is locked, unless the
+ * still belongs to `lockedOwnerId` (the viewer, when their session is elevated). Filters apply it
+ * negated to any read that can return hidden assets; the `hidden` test first keeps the lookup off every
+ * other row. It also guards a motion part linked to a locked still after the lock was written.
+ */
+export function isMotionOfLockedStill(eb: ExpressionBuilder<DB, 'asset'>, lockedOwnerId?: string) {
+  return eb.and([
+    eb('asset.visibility', '=', sql.lit(AssetVisibility.Hidden)),
+    eb.exists(
+      eb
+        .selectFrom('asset as lockedStill')
+        .select(sql.lit(1).as('exists'))
+        .whereRef('lockedStill.livePhotoVideoId', '=', 'asset.id')
+        .where((eb) => isLockedAsset(eb, 'lockedStill'))
+        .$if(!!lockedOwnerId, (qb) => qb.where('lockedStill.ownerId', '!=', lockedOwnerId!)),
+    ),
+  ]);
+}
+
+/**
+ * FL-34: whether a stack's primary asset is Locked media that `lockedOwnerId` (the viewer, when
+ * their session is elevated) does not own. Such a stack is left out of a read, so its primary id
+ * never reaches anyone but that owner's elevated session. A stack with a Locked member becomes
+ * Locked as a whole (owner decision, September 22, 2026); this guards reads until that holds.
+ */
+export function hasHiddenLockedPrimary(eb: ExpressionBuilder<DB, 'stack'>, lockedOwnerId?: string) {
+  return eb.exists(
+    eb
+      .selectFrom('asset as lockedPrimary')
+      .select(sql.lit(1).as('exists'))
+      .whereRef('lockedPrimary.id', '=', 'stack.primaryAssetId')
+      .where((eb) => isLockedAsset(eb, 'lockedPrimary'))
+      .$if(!!lockedOwnerId, (qb) => qb.where('lockedPrimary.ownerId', '!=', lockedOwnerId!)),
+  );
 }
 
 const selectExifInfo = (eb: AssetExpressionBuilder) =>
@@ -515,6 +580,7 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
     .$if(options.visibility === undefined || options.visibility === AssetVisibility.Locked, (qb) =>
       withLockedOwnerScope(qb, options.lockedOwnerId),
     )
+    .$if(!!options.hideLockedMotion, (qb) => qb.where((eb) => eb.not(isMotionOfLockedStill(eb, options.lockedOwnerId))))
     .$if(!!options.albumIds && options.albumIds.length > 0, (qb) => inAlbums(qb, options.albumIds!))
     .$if(!!options.tagIds && options.tagIds.length > 0, (qb) => hasTags(qb, options.tagIds!))
     .$if(options.tagIds === null, (qb) =>
@@ -954,7 +1020,10 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
       .$if(!!options.withExif, (qb) => qb.select(selectExifInfo))
       .$if(scopeGlobally, (qb) => qb.where(ownershipPredicate))
-      .where(lockedOwnerScope(scope.lockedOwnerId || undefined, 'asset'))
+      .where(notLockedOrOwnedBy(scope.lockedOwnerId || undefined, 'asset'))
+      .$if(!!scope.lockedMotion, (qb) =>
+        qb.where((eb) => eb.not(isMotionOfLockedStill(eb, scope.lockedMotion!.lockedOwnerId))),
+      )
       .$if(!!(options.withFaces || options.withPeople), (qb) =>
         qb.select(withFacesAndPeople({ viewingUserId: scope.viewingUserId! })),
       )
