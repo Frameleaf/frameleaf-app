@@ -5,11 +5,11 @@
   import PeopleInfiniteScroll from './PeopleInfiniteScroll.svelte';
   import SearchPeople from '$lib/components/faces-page/PeopleSearch.svelte';
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
+  import MergeSuggestionBanner from '$lib/components/frameleaf/people/MergeSuggestionBanner.svelte';
   import PersonCard from '$lib/components/frameleaf/people/PersonCard.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { QueryParameter, SessionStorageKey } from '$lib/constants';
-  import PersonMergeSuggestionModal from '$lib/modals/PersonMergeSuggestionModal.svelte';
   import { Route } from '$lib/route';
   import { getPersonActions } from '$lib/services/person.service';
   import { locale } from '$lib/stores/preferences.store';
@@ -18,8 +18,17 @@
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { clearQueryParam } from '$lib/utils/navigation';
-  import { getAllPeople, getPerson, searchPerson, updatePerson, type PersonResponseDto } from '@immich/sdk';
-  import { Button, Icon, modalManager, toastManager } from '@immich/ui';
+  import {
+    getAllPeople,
+    getMergeSuggestions,
+    getPerson,
+    mergePeople,
+    searchPerson,
+    updatePerson,
+    type PersonMergeSuggestionDto,
+    type PersonResponseDto,
+  } from '@immich/sdk';
+  import { Button, Icon, toastManager } from '@immich/ui';
   import { mdiAccountOff, mdiEyeOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -32,13 +41,8 @@
   let { data }: Props = $props();
 
   let searchName = $state('');
-  let newName = $state('');
   let currentPage = $state(1);
   let nextPage = $state(data.people.hasNextPage ? 2 : null);
-  let personMerge1 = $state<PersonResponseDto>();
-  let personMerge2 = $state<PersonResponseDto>();
-  let potentialMergePeople: PersonResponseDto[] = $state([]);
-  let editingPerson: PersonResponseDto | null = $state(null);
   let searchedPeopleLocal: PersonResponseDto[] = $state([]);
   let innerHeight = $state(0);
   let searchPeopleElement = $state<ReturnType<typeof SearchPeople>>();
@@ -52,6 +56,9 @@
       }
     }
 
+    // FL-57: guided merge-suggestion verdict flow.
+    handlePromiseError(loadMergeSuggestions());
+
     return websocketEvents.on('on_person_thumbnail', (personId: string) => {
       for (const person of people) {
         if (person.id === personId) {
@@ -60,6 +67,59 @@
       }
     });
   });
+
+  // FL-57: guided merge-suggestion verdicts (accept/reject/skip). The endpoint recomputes
+  // suggestions from face-embedding similarity on every call — there is no persisted
+  // "reject" or "skip" state on the server (see the FL-57 handoff report), so both verdicts
+  // only affect what this session shows next: reject drops the pair, skip moves it behind
+  // the others so it can resurface later in the same session.
+  let mergeSuggestions: PersonMergeSuggestionDto[] = $state([]);
+  let mergeSuggestionBusy = $state(false);
+  const suggestionKey = (suggestion: PersonMergeSuggestionDto) => [suggestion.person.id, suggestion.suggestion.id].sort().join('|');
+
+  const loadMergeSuggestions = async () => {
+    try {
+      const { suggestions } = await getMergeSuggestions();
+      mergeSuggestions = suggestions;
+    } catch (error) {
+      // Non-critical: the People grid works fine without suggestions.
+      handleError(error, $t('errors.failed_to_load_people'));
+    }
+  };
+
+  const handleAcceptSuggestion = async (suggestion: PersonMergeSuggestionDto) => {
+    mergeSuggestionBusy = true;
+    try {
+      // The named person's identity survives; between two named/two unnamed people the
+      // order is otherwise arbitrary, matching `POST /people/merge`'s own "first defined
+      // value wins" rule.
+      const [survivorId, mergedId] = suggestion.person.name
+        ? [suggestion.person.id, suggestion.suggestion.id]
+        : [suggestion.suggestion.id, suggestion.person.id];
+      await mergePeople({ mergePersonDto: { ids: [survivorId, mergedId] } });
+      mergeSuggestions = mergeSuggestions.filter(
+        (entry) => entry.person.id !== mergedId && entry.suggestion.id !== mergedId,
+      );
+      const survivor = await getPerson({ id: survivorId });
+      people = people.filter((person) => person.id !== mergedId).map((person) => (person.id === survivorId ? survivor : person));
+      toastManager.primary($t('frameleaf_people_merge_suggestion_merged_toast', { values: { name: survivor.name } }));
+    } catch (error) {
+      handleError(error, $t('errors.unable_to_save_name'));
+    } finally {
+      mergeSuggestionBusy = false;
+    }
+  };
+
+  const handleRejectSuggestion = (suggestion: PersonMergeSuggestionDto) => {
+    mergeSuggestions = mergeSuggestions.filter((entry) => suggestionKey(entry) !== suggestionKey(suggestion));
+    toastManager.primary($t('frameleaf_people_merge_suggestion_rejected_toast'));
+  };
+
+  const handleSkipSuggestion = (suggestion: PersonMergeSuggestionDto) => {
+    const key = suggestionKey(suggestion);
+    const rest = mergeSuggestions.filter((entry) => suggestionKey(entry) !== key);
+    mergeSuggestions = [...rest, suggestion];
+  };
 
   const loadInitialScroll = () =>
     new Promise<void>((resolve) => {
@@ -113,52 +173,6 @@
     if (getSearchedPeople !== searchName) {
       $page.url.searchParams.set(QueryParameter.SEARCHED_PEOPLE, searchName);
       await goto($page.url, { keepFocus: true });
-    }
-  };
-
-  const handleMerge = async () => {
-    if (!editingPerson || !personMerge1 || !personMerge2) {
-      return;
-    }
-
-    const response = await modalManager.show(PersonMergeSuggestionModal, {
-      personToMerge: personMerge1,
-      personToBeMergedInto: personMerge2,
-      potentialMergePeople,
-    });
-
-    if (!response) {
-      await updateName(personMerge1.id, newName);
-      return;
-    }
-
-    const [personToMerge, personToBeMergedInto] = response;
-
-    const mergedPerson = await getPerson({ id: personToBeMergedInto.id });
-
-    people = people.filter((person: PersonResponseDto) => person.id !== personToMerge.id);
-    people = people.map((person: PersonResponseDto) => (person.id === personToBeMergedInto.id ? mergedPerson : person));
-
-    if (personToBeMergedInto.name !== newName && editingPerson.id === personToBeMergedInto.id) {
-      /*
-       *
-       * If the user merges one of the suggested people into the person he's editing, it's merging the suggested person AND renames
-       * the person he's editing
-       *
-       */
-      try {
-        await updatePerson({ id: personToBeMergedInto.id, personUpdateDto: { name: newName } });
-
-        for (const person of people) {
-          if (person.id === personToBeMergedInto.id) {
-            person.name = newName;
-            break;
-          }
-        }
-        toastManager.primary($t('change_name_successfully'));
-      } catch (error) {
-        handleError(error, $t('errors.unable_to_save_name'));
-      }
     }
   };
 
@@ -220,6 +234,13 @@
   );
   let frameleafHiddenCount = $derived(people.filter((person) => person.isHidden).length);
 
+  // FL-57: a Frameleaf rename commits immediately (inline editing has no separate
+  // confirm step to gate on) rather than blocking on a legacy modal. If the new name
+  // collides with an existing person, surface it through the same guided
+  // accept/reject/skip verdict flow the merge-suggestion banner already offers, instead
+  // of a second, disconnected "did you mean to merge" dialog. This replaces the old
+  // `editingPerson`-gated `handleMerge` path, which only the deleted legacy name input
+  // ever satisfied and so silently dropped every Frameleaf rename collision.
   const onNameChangeSubmit = async (name: string, targetPerson: PersonResponseDto) => {
     try {
       if (name === targetPerson.name) {
@@ -231,23 +252,17 @@
         return;
       }
 
+      await updateName(targetPerson.id, name);
+
       const personWithSimilarName = await findPeopleWithSimilarName(name, targetPerson.id);
       if (personWithSimilarName) {
-        personMerge1 = targetPerson;
-        personMerge2 = personWithSimilarName;
-        potentialMergePeople = people
-          .filter(
-            (person: PersonResponseDto) =>
-              normalizeSearchString(personMerge2?.name ?? '') === normalizeSearchString(person.name) &&
-              person.id !== personMerge2?.id &&
-              person.id !== personMerge1?.id &&
-              !person.isHidden,
-          )
-          .slice(0, 3);
-        await handleMerge();
-        return;
+        const renamed = { ...targetPerson, name };
+        const key = suggestionKey({ person: renamed, suggestion: personWithSimilarName, distance: 0 });
+        mergeSuggestions = [
+          { person: renamed, suggestion: personWithSimilarName, distance: 0 },
+          ...mergeSuggestions.filter((entry) => suggestionKey(entry) !== key),
+        ];
       }
-      await updateName(targetPerson.id, name);
     } catch (error) {
       handleError(error, $t('errors.unable_to_save_name'));
     }
@@ -258,8 +273,6 @@
       id,
       personUpdateDto: { name },
     });
-
-    newName = '';
   };
 
   const findPeopleWithSimilarName = async (name: string, personId: string) => {
@@ -339,6 +352,16 @@
     {/if}
   {/snippet}
 
+  {#if mergeSuggestions.length > 0}
+    <MergeSuggestionBanner
+      suggestion={mergeSuggestions[0]}
+      remaining={mergeSuggestions.length - 1}
+      busy={mergeSuggestionBusy}
+      onAccept={() => handleAcceptSuggestion(mergeSuggestions[0])}
+      onReject={() => handleRejectSuggestion(mergeSuggestions[0])}
+      onSkip={() => handleSkipSuggestion(mergeSuggestions[0])}
+    />
+  {/if}
   {#if frameleafCards.length > 0}
     <p class="frameleaf-people-summary">
       {$t('frameleaf_people_summary', {

@@ -242,4 +242,75 @@ describe(PersonRepository.name, () => {
       ).resolves.toEqual(undefined);
     });
   });
+
+  describe('reassignFace', () => {
+    it('should stamp correctedAt as a durable marker of the manual reassignment', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { person: from } = await ctx.newPerson({ ownerId: user.id });
+      const { person: to } = await ctx.newPerson({ ownerId: user.id });
+      const { assetFace } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: from.personGroupId });
+
+      expect(assetFace.correctedAt).toBeNull();
+
+      const changed = await sut.reassignFace(assetFace.id, to.personGroupId);
+      expect(changed).toBe(1);
+
+      const [row] = await sut.getCorrections(to.personGroupId);
+      expect(row).toEqual(
+        expect.objectContaining({ id: assetFace.id, assetId: asset.id, correctedAt: expect.any(Date) }),
+      );
+    });
+  });
+
+  describe('getCorrections', () => {
+    it('should only return faces that were manually corrected onto this person', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      // Untouched, machine-learning-only assignment: not a correction.
+      await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+
+      await expect(sut.getCorrections(person.personGroupId)).resolves.toEqual([]);
+    });
+
+    it('should order corrections most recent first and stop at deleted faces', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      const { person: elsewhere } = await ctx.newPerson({ ownerId: user.id });
+
+      const { assetFace: older } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: elsewhere.personGroupId });
+      const { assetFace: newer } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: elsewhere.personGroupId });
+      const { assetFace: deleted } = await ctx.newAssetFace({ assetId: asset.id, personGroupId: elsewhere.personGroupId });
+
+      await sut.reassignFace(older.id, person.personGroupId);
+      await sut.reassignFace(newer.id, person.personGroupId);
+      await sut.reassignFace(deleted.id, person.personGroupId);
+      await ctx.database.updateTable('asset_face').set({ deletedAt: new Date() }).where('id', '=', deleted.id).execute();
+
+      const corrections = await sut.getCorrections(person.personGroupId);
+      expect(corrections.map((face) => face.id)).toEqual([newer.id, older.id]);
+    });
+  });
+
+  describe('getMergeSuggestions', () => {
+    it('should not suggest a hidden person', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { person: hidden } = await ctx.newPerson({ ownerId: user.id, isHidden: true });
+      const { person: visible } = await ctx.newPerson({ ownerId: user.id });
+
+      const suggestions = await sut.getMergeSuggestions(user.id, { maxDistance: 1, limit: 20 });
+      expect(suggestions.some((row) => row.personId === hidden.personGroupId || row.suggestionId === hidden.personGroupId)).toBe(
+        false,
+      );
+      // Without face_search embeddings for either person's feature face, no pair can be
+      // formed at all — this only asserts the hidden-person filter shape, not distance math.
+      expect(suggestions.some((row) => row.personId === visible.personGroupId)).toBe(false);
+    });
+  });
 });

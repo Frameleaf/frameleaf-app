@@ -20076,6 +20076,109 @@
         ],
         "x-immich-permission": "workflow.read"
       }
+    },
+    "/people/merge-suggestions": {
+      "get": {
+        "description": "Retrieve suggested pairs of people that may be the same person, based on face similarity, for the guided merge review flow.",
+        "operationId": "getMergeSuggestions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeSuggestionsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get merge suggestions",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/people/{id}/corrections": {
+      "get": {
+        "description": "Retrieve the manual face corrections (reassignments) made for this person, most recent first. Faces the facial-recognition job assigned on its own and nobody has since corrected are not included.",
+        "operationId": "getCorrectionHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonCorrectionsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get correction history",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.read",
+        "x-immich-state": "Alpha"
+      }
     }
   },
   "info": {
@@ -39920,6 +40023,84 @@
             "description": "Workflow trigger type"
           }
         },
+        "type": "object"
+      },
+      "PersonMergeSuggestionDto": {
+        "properties": {
+          "distance": {
+            "minimum": 0,
+            "type": "number",
+            "description": "Face embedding distance between the two people (lower is more similar)"
+          },
+          "person": {
+            "$ref": "#/components/schemas/PersonResponseDto"
+          },
+          "suggestion": {
+            "$ref": "#/components/schemas/PersonResponseDto"
+          }
+        },
+        "required": [
+          "person",
+          "suggestion",
+          "distance"
+        ],
+        "type": "object"
+      },
+      "MergeSuggestionsResponseDto": {
+        "properties": {
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/PersonMergeSuggestionDto"
+            },
+            "type": "array",
+            "description": "Suggested pairs of people that may be the same person"
+          }
+        },
+        "required": [
+          "suggestions"
+        ],
+        "type": "object"
+      },
+      "PersonCorrectionDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "Asset the corrected face belongs to"
+          },
+          "correctedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the manual correction was made"
+          },
+          "faceId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string",
+            "description": "Face ID"
+          }
+        },
+        "required": [
+          "faceId",
+          "assetId",
+          "correctedAt"
+        ],
+        "type": "object"
+      },
+      "PersonCorrectionsResponseDto": {
+        "properties": {
+          "corrections": {
+            "items": {
+              "$ref": "#/components/schemas/PersonCorrectionDto"
+            },
+            "type": "array",
+            "description": "Manual face corrections for this person, most recent first"
+          }
+        },
+        "required": [
+          "corrections"
+        ],
         "type": "object"
       }
     }

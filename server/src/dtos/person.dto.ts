@@ -93,6 +93,47 @@ export class MergePersonDto extends createZodDto(MergePersonSchema) {}
 export class PersonSearchDto extends createZodDto(PersonSearchSchema) {}
 export class PersonResponseDto extends createZodDto(PersonResponseSchema) {}
 
+// FL-57: guided merge-suggestion verdict flow. `distance` is the face-embedding cosine
+// distance between the two people's feature faces (lower means more similar); the client
+// does not need to interpret it beyond ordering/labelling suggestions.
+const PersonMergeSuggestionSchema = z
+  .object({
+    person: PersonResponseSchema.describe('The person being reviewed'),
+    suggestion: PersonResponseSchema.describe('The suggested match for that person'),
+    distance: z.number().min(0).describe('Face embedding distance between the two people (lower is more similar)'),
+  })
+  .meta({ id: 'PersonMergeSuggestionDto' });
+
+const MergeSuggestionsResponseSchema = z
+  .object({
+    suggestions: z.array(PersonMergeSuggestionSchema).describe('Suggested pairs of people that may be the same person'),
+  })
+  .meta({ id: 'MergeSuggestionsResponseDto' });
+
+export class PersonMergeSuggestionDto extends createZodDto(PersonMergeSuggestionSchema) {}
+export class MergeSuggestionsResponseDto extends createZodDto(MergeSuggestionsResponseSchema) {}
+
+// FL-57: correction history. A correction is a face a human explicitly moved onto this
+// person (reassign, or the split flow's "someone new"/"someone existing" actions) —
+// distinct from faces the facial-recognition job assigned on its own and nobody has
+// since touched.
+const PersonCorrectionSchema = z
+  .object({
+    faceId: z.uuidv4().describe('Face ID'),
+    assetId: z.uuidv4().describe('Asset the corrected face belongs to'),
+    correctedAt: z.string().meta({ format: 'date-time' }).describe('When the manual correction was made'),
+  })
+  .meta({ id: 'PersonCorrectionDto' });
+
+const PersonCorrectionsResponseSchema = z
+  .object({
+    corrections: z.array(PersonCorrectionSchema).describe('Manual face corrections for this person, most recent first'),
+  })
+  .meta({ id: 'PersonCorrectionsResponseDto' });
+
+export class PersonCorrectionDto extends createZodDto(PersonCorrectionSchema) {}
+export class PersonCorrectionsResponseDto extends createZodDto(PersonCorrectionsResponseSchema) {}
+
 export const AssetFaceResponseSchema = z
   .object({
     id: z.uuidv4().describe('Face ID'),
@@ -216,5 +257,14 @@ export function mapFaces(
   return {
     ...mapFacesWithoutPerson(face, edits, assetDimensions),
     person: face.person ? mapPerson(face.person) : null,
+  };
+}
+
+export function mapCorrection(face: { id: string; assetId: string; correctedAt: Date | null }): PersonCorrectionDto {
+  return {
+    faceId: face.id,
+    assetId: face.assetId,
+    // Only ever called with rows already filtered on `correctedAt is not null`.
+    correctedAt: asDateTimeString(face.correctedAt) ?? '',
   };
 }

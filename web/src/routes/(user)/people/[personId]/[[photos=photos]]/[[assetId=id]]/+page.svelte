@@ -27,6 +27,7 @@
   import FrameleafMenu from '$lib/components/frameleaf/Menu.svelte';
   import FrameleafMenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import FrameleafPersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
+  import CorrectionHistoryPanel from '$lib/components/frameleaf/people/CorrectionHistoryPanel.svelte';
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
@@ -334,6 +335,9 @@
     // the mis-tagged photos first, then reassign them with the existing UnmergeFaceSelector.
     onAction: () => handleReassignAssets(),
   };
+
+  // FL-57: correction history view. New for this story — see CorrectionHistoryPanel.svelte.
+  let showCorrectionHistory = $state(false);
 </script>
 
 <OnEvents
@@ -429,6 +433,9 @@
                 <FrameleafMenuItem onSelect={SelectFeaturePhoto.onAction}>{$t('select_featured_photo')}</FrameleafMenuItem>
                 <FrameleafMenuItem onSelect={Merge.onAction}>{$t('merge_people')}</FrameleafMenuItem>
                 <FrameleafMenuItem onSelect={FixIncorrectMatch.onAction}>{$t('fix_incorrect_match')}</FrameleafMenuItem>
+                <FrameleafMenuItem onSelect={() => (showCorrectionHistory = true)}
+                  >{$t('frameleaf_people_correction_history')}</FrameleafMenuItem
+                >
                 <FrameleafMenuItem onSelect={SetDateOfBirth.onAction}>{$t('set_date_of_birth')}</FrameleafMenuItem>
                 {#if person.isHidden}
                   <FrameleafMenuItem onSelect={ShowPerson.onAction}>{$t('unhide_person')}</FrameleafMenuItem>
@@ -560,6 +567,10 @@
 
 {#if viewMode === PersonPageViewMode.MERGE_PEOPLE}
   <MergeFaceSelector {person} onBack={handleGoBack} onMerge={handleMerge} />
+{/if}
+
+{#if showCorrectionHistory}
+  <CorrectionHistoryPanel {person} close={() => (showCorrectionHistory = false)} />
 {/if}
 
 <style>

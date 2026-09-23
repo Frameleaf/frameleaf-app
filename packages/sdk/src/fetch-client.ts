@@ -1523,6 +1523,28 @@ export type PersonResponseDto = {
     /** Last update date */
     updatedAt?: string;
 };
+export type PersonMergeSuggestionDto = {
+    /** Face embedding distance between the two people (lower is more similar) */
+    distance: number;
+    person: PersonResponseDto;
+    suggestion: PersonResponseDto;
+};
+export type MergeSuggestionsResponseDto = {
+    /** Suggested pairs of people that may be the same person */
+    suggestions: PersonMergeSuggestionDto[];
+};
+export type PersonCorrectionDto = {
+    /** Asset the corrected face belongs to */
+    assetId: string;
+    /** When the manual correction was made */
+    correctedAt: string;
+    /** Face ID */
+    faceId: string;
+};
+export type PersonCorrectionsResponseDto = {
+    /** Manual face corrections for this person, most recent first */
+    corrections: PersonCorrectionDto[];
+};
 export type AssetStackResponseDto = {
     /** Number of assets in stack */
     assetCount: number;
@@ -7331,6 +7353,17 @@ export function mergePeople({ mergePersonDto }: {
     })));
 }
 /**
+ * Get merge suggestions
+ */
+export function getMergeSuggestions(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MergeSuggestionsResponseDto;
+    }>("/people/merge-suggestions", {
+        ...opts
+    }));
+}
+/**
  * Delete person
  */
 export function deletePerson({ id }: {
@@ -7401,6 +7434,19 @@ export function reassignFaces({ id, assetFaceUpdateDto }: {
         method: "PUT",
         body: assetFaceUpdateDto
     })));
+}
+/**
+ * Get correction history
+ */
+export function getCorrectionHistory({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PersonCorrectionsResponseDto;
+    }>(`/people/${encodeURIComponent(id)}/corrections`, {
+        ...opts
+    }));
 }
 /**
  * Get person statistics
