@@ -206,7 +206,7 @@
             ></progress>
           {/if}
 
-          {#if item.failed && item.error}
+          {#if (item.failed || item.statusKey === 'frameleaf_activity_status_retrying') && item.error}
             <p class="error">{item.error}</p>
           {/if}
         </div>
