@@ -121,7 +121,7 @@ export const mediaOperationPauseState = (
 
 /** A count the server sends as a string; null when absent or not a real number. */
 const asCount = (value: string | number | null | undefined): number | null => {
-  if (value === null || value === undefined || value === '') {
+  if ((value ?? '') === '') {
     return null;
   }
   const number = Number(value);
@@ -288,6 +288,11 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
   // every language (FL-73).
   const dedup = operation.kind === MediaOperationKind.PhysicalDeduplication;
   const dedupPlan = dedup ? asPlanName(operation.settings?.planId) : null;
+  // FL-74: a preservation job copies and checks files; "Rendering" would say something untrue.
+  const workingKey =
+    isPreservationKind(operation.kind) && BULK_WORKING.has(status)
+      ? 'frameleaf_activity_bulk_running'
+      : `frameleaf_activity_status_${status}`;
 
   return {
     id: `job:${operation.id}`,
@@ -302,10 +307,12 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
           ? 'frameleaf_activity_status_retrying'
           : icloud && ICLOUD_WORKING.has(status)
             ? 'frameleaf_activity_icloud_syncing'
-            : `frameleaf_activity_status_${status}`,
+            : workingKey,
     tone: retrying || pause.pausePending ? 'warning' : STATUS_TONE[status],
     title: operation.label,
     ...(dedup && { titleKey: 'frameleaf_activity_title_physical_deduplication' }),
+    // A job about a Locked item a locked session may not see comes without its file name (FL-43).
+    ...(operation.withheld && { titleKey: 'frameleaf_activity_title_locked_item' }),
     progress: status === MediaOperationStatus.Completed ? 100 : counted ? clampPercent(operation.progress) : null,
     running,
     ...pause,
@@ -332,6 +339,16 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     ...(status === MediaOperationStatus.Completed && studioBundleOf(operation.kind)),
   };
 };
+
+/** The four preservation kinds (FL-74), which Activity lists beside every other job. */
+const PRESERVATION_KINDS: ReadonlySet<MediaOperationKind> = new Set([
+  MediaOperationKind.PreservationExport,
+  MediaOperationKind.PreservationVerify,
+  MediaOperationKind.PreservationReview,
+  MediaOperationKind.PreservationRestore,
+]);
+
+const isPreservationKind = (kind: MediaOperationKind) => PRESERVATION_KINDS.has(kind);
 
 /** A finished bundle job's follow-up (FL-91), or nothing for every other kind. */
 const studioBundleOf = (kind: MediaOperationKind): Pick<ActivityItem, 'studioBundle'> => {
@@ -419,18 +436,16 @@ export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityIt
       (failed || unfinished || status === MediaOperationStatus.Cancelled),
     canDismiss: !running && !pause.paused,
     browserLocal: false,
-    ...(bulk
-      ? {
-          bulk: {
-            requested,
-            succeeded: bulk.succeeded,
-            failed: bulk.failed,
-            skipped: bulk.skipped,
-            // Failed items get one automatic retry before they count as failed (FL-104).
-            retried: bulk.retried ?? 0,
-          },
-        }
-      : {}),
+    ...(bulk && {
+      bulk: {
+        requested,
+        succeeded: bulk.succeeded,
+        failed: bulk.failed,
+        skipped: bulk.skipped,
+        // Failed items get one automatic retry before they count as failed (FL-104).
+        retried: bulk.retried ?? 0,
+      },
+    }),
   };
 };
 

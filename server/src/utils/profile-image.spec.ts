@@ -16,6 +16,8 @@ describe(replaceLockedProfileImages.name, () => {
   const replacement = { id: 'best-photo-id', path: '/thumbs/preview.jpeg' };
 
   const setup = () => {
+    // profile pictures are written under the media location, as the server sets it at startup
+    StorageCore.setMediaLocation('/data');
     const repos = {
       media: { generateThumbnail: vitest.fn().mockResolvedValue(undefined) } as unknown as MediaRepository,
       crypto: { randomUUID: vitest.fn().mockReturnValue('new-picture') } as unknown as CryptoRepository,

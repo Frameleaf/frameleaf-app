@@ -2,15 +2,16 @@
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { LogLevel } from '@immich/sdk';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
+  const config = $derived(settingsDraft.baseline);
 </script>
 
 <div>
@@ -39,7 +40,7 @@
           disabled={disabled || !configToEdit.logging.enabled}
         />
 
-        <SettingActions bind:configToEdit keys={['logging']} {disabled} />
+        <SettingActions keys={['logging']} {disabled} />
       </div>
     </form>
   </div>

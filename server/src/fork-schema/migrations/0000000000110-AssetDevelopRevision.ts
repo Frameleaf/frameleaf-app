@@ -8,6 +8,13 @@ import { Kysely, sql } from 'kysely';
  *
  * Fork-owned, so it lives in `immich_fork` and does not foreign-key into the official schema
  * (like `album_metadata`); the develop service clears rows and files on `AssetDelete`.
+ *
+ * FL-64 (edited in place before the first deployment, as the handoff allows for unreleased fork
+ * migrations): `kind` separates server-rendered recipes from files developed in another
+ * application and brought back; `sourceChecksum` is the SHA-256 of the original the version was
+ * made from, `renditionChecksum` the SHA-256 of its edited master, and `exportId` the recorded
+ * export of the original an imported file answers (`public.develop_export`, no foreign key across
+ * schemas). `attempts` counts renders so a failure gets exactly one automatic retry.
  */
 export async function up(db: Kysely<any>): Promise<void> {
   await sql`
@@ -30,6 +37,13 @@ export async function up(db: Kysely<any>): Promise<void> {
       width integer,
       height integer,
       "isCurrent" boolean NOT NULL DEFAULT false,
+      kind text NOT NULL DEFAULT 'recipe' CHECK (kind = ANY (ARRAY['recipe'::text, 'external'::text])),
+      "sourceChecksum" bytea,
+      "renditionChecksum" bytea,
+      "exportId" uuid,
+      "fileName" text CHECK ("fileName" IS NULL OR length("fileName") BETWEEN 1 AND 255),
+      software text CHECK (software IS NULL OR length(software) BETWEEN 1 AND 120),
+      attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
       "createdAt" timestamptz NOT NULL DEFAULT now(),
       "updatedAt" timestamptz NOT NULL DEFAULT now(),
       "renderedAt" timestamptz,

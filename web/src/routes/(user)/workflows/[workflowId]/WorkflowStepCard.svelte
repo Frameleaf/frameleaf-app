@@ -2,7 +2,6 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getAlbumInfo, getTagById } from '@immich/sdk';
 
-  // eslint-disable-next-line svelte/prefer-svelte-reactivity
   const albumNameCache = new Map<string, Promise<string>>();
   const getAlbumName = (id: string): Promise<string> => {
     let albumName = albumNameCache.get(id);
