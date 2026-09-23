@@ -21,7 +21,14 @@
   import { pluginManager } from '$lib/managers/plugin-manager.svelte';
   import { downloadJson } from '$lib/utils';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { getAllAlbums, getAllTags, getWorkflowForShare, updateWorkflow, type WorkflowResponseDto } from '@immich/sdk';
+  import {
+    getAllAlbums,
+    getAllTags,
+    getWorkflowForShare,
+    searchWorkflows,
+    updateWorkflow,
+    type WorkflowResponseDto,
+  } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiDownload, mdiPlus, mdiTuneVariant } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
@@ -98,13 +105,13 @@
   // a workflow's own address opens it once, when the page loads
   let opened = false;
   $effect(() => {
-    if (!openId || opened) {
+    if (!openId || opened || !loaded) {
       return;
     }
 
-    opened = true;
     const workflow = untrack(() => workflows.find((item) => item.id === openId));
     if (workflow) {
+      opened = true;
       untrack(() => openDesigner(workflow));
     }
   });
@@ -184,7 +191,7 @@
   {#if error}<p role="alert" class="error">{error}</p>{/if}
   {#if notice}<p role="status" class="notice">{notice}</p>{/if}
 
-  {#if loaded && workflows.length === 0}
+  {#if loaded && workflows.length === 0 && !error}
     <p class="empty">{$t('frameleaf_workflows.empty')}</p>
   {:else}
     <div class="list">
