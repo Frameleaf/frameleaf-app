@@ -1,5 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import {
+  AlbumUserRole,
   AssetType,
   AssetVisibility,
   ClassificationMatchDecision,
@@ -15,6 +16,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
+import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
@@ -55,6 +57,7 @@ const setup = (db?: Kysely<DB>) => {
       ClassificationRepository,
       ConfigRepository,
       PersonRepository,
+      PartnerRepository,
       SearchRepository,
       SmartAlbumRepository,
       SystemMetadataRepository,
@@ -135,6 +138,32 @@ const countRows = async (ctx: MediumTestContext) => {
       .executeTakeFirst(),
   ]);
   return { matches: Number(matches?.n), albumAssets: Number(albumAssets?.n), tagAssets: Number(tagAssets?.n) };
+};
+
+/** Pause the asset-lock query at a reproducible interleaving of two classification writes. */
+const pauseAssetLocks = (repo: ClassificationRepository) => {
+  const original = Reflect.get(repo, 'liveAssets') as (...args: unknown[]) => Promise<unknown>;
+  const releases: Array<() => void> = [];
+  const waiters = new Map<number, () => void>();
+  const spy = vi
+    .spyOn(repo as unknown as { liveAssets: (...args: unknown[]) => Promise<unknown> }, 'liveAssets')
+    .mockImplementation(async (...args) => {
+      const { promise: held, resolve: release } = Promise.withResolvers<void>();
+      releases.push(release);
+      waiters.get(releases.length)?.();
+      await held;
+      return original.apply(repo, args);
+    });
+  return {
+    waitFor: (count: number) =>
+      releases.length >= count
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => {
+            waiters.set(count, resolve);
+          }),
+    release: (index: number) => releases[index - 1]?.(),
+    restore: () => spy.mockRestore(),
+  };
 };
 
 /** Plan the rule and apply every change the plan names, as the web client does for a small plan. */
@@ -369,6 +398,43 @@ describe(ClassificationService.name, () => {
       expect(await albumAssetIds(ctx, rule.albumId)).toEqual([]);
     });
 
+    it('lets a partner editor remove membership without rejecting the owner rule or taking its tag', async () => {
+      const { sut, ctx, albums } = setup();
+      const { user, auth } = await newOwner(ctx);
+      const { user: editor, auth: editorAuth } = await newOwner(ctx);
+      const lake = await tagOf(ctx, user.id, 'lake');
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await tagAsset(ctx, lake.id, asset.id);
+      const rule = await sut.createRule(auth, {
+        ...baseRule,
+        albumName: 'Lake',
+        tagIds: [lake.id],
+        action: ClassificationRuleAction.Tag,
+        tagName: 'Lake album',
+      });
+      await reevaluate(sut, auth, rule.id);
+      await ctx.newAlbumUser({ albumId: rule.albumId, userId: editor.id, role: AlbumUserRole.Editor });
+      await ctx.newPartner({ sharedById: user.id, sharedWithId: editor.id });
+
+      await expect(albums.removeAssets(editorAuth, rule.albumId, { ids: [asset.id] })).resolves.toEqual([
+        { id: asset.id, success: true },
+      ]);
+      expect(await albumAssetIds(ctx, rule.albumId)).toEqual([]);
+      expect(await decisionOf(ctx, rule.id, asset.id)).toBe(ClassificationMatchDecision.Matched);
+      expect(await tagIdsOf(ctx, asset.id)).toContain(rule.tag!.id);
+
+      await sut.evaluateAsset(asset.id, user.id);
+      expect(await decisionOf(ctx, rule.id, asset.id)).toBe(ClassificationMatchDecision.Matched);
+      expect(await tagIdsOf(ctx, asset.id)).toContain(rule.tag!.id);
+      expect(await albumAssetIds(ctx, rule.albumId)).toEqual([asset.id]);
+
+      await albums.removeAssets(editorAuth, rule.albumId, { ids: [asset.id] });
+      await expect(albums.addAssets(editorAuth, rule.albumId, { ids: [asset.id] })).resolves.toEqual([
+        { id: asset.id, success: true },
+      ]);
+      expect(await decisionOf(ctx, rule.id, asset.id)).toBe(ClassificationMatchDecision.Matched);
+    });
+
     it('keeps a manual addition across reprocessing even when it does not match', async () => {
       const { sut, ctx, albums } = setup();
       const { user, auth } = await newOwner(ctx);
@@ -479,6 +545,125 @@ describe(ClassificationService.name, () => {
       // It was archived before the rule: the rule never un-archives it.
       expect(await visibilityOf(ctx, already.id)).toBe(AssetVisibility.Archive);
     });
+
+    it('shares an archive created by another rule until both stop matching', async () => {
+      const { sut, ctx } = setup();
+      const { user, auth } = await newOwner(ctx);
+      const lake = await tagOf(ctx, user.id, 'lake');
+      const water = await tagOf(ctx, user.id, 'water');
+      const unused = await tagOf(ctx, user.id, 'unused');
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await tagAsset(ctx, lake.id, asset.id);
+      await tagAsset(ctx, water.id, asset.id);
+      const makeRule = (tagId: string, name: string) =>
+        sut.createRule(auth, {
+          ...baseRule,
+          albumName: name,
+          tagIds: [tagId],
+          action: ClassificationRuleAction.Tag,
+          tagName: name,
+          archive: true,
+          archiveConsent: true,
+        });
+      const first = await makeRule(lake.id, 'Lake archive');
+      const second = await makeRule(water.id, 'Water archive');
+      await reevaluate(sut, auth, first.id);
+      await reevaluate(sut, auth, second.id);
+
+      await sut.updateRule(auth, first.id, { tagIds: [unused.id] });
+      await reevaluate(sut, auth, first.id);
+      expect(await visibilityOf(ctx, asset.id)).toBe(AssetVisibility.Archive);
+      await sut.updateRule(auth, second.id, { tagIds: [unused.id] });
+      await reevaluate(sut, auth, second.id);
+      expect(await visibilityOf(ctx, asset.id)).toBe(AssetVisibility.Timeline);
+    });
+  });
+
+  describe('concurrent application', () => {
+    it('keeps tag and archive provenance on two concurrent first applies', async () => {
+      const { sut, ctx } = setup();
+      const { user, auth } = await newOwner(ctx);
+      const lake = await tagOf(ctx, user.id, 'lake');
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await tagAsset(ctx, lake.id, asset.id);
+      const created = await sut.createRule(auth, {
+        ...baseRule,
+        albumName: 'Lake',
+        tagIds: [lake.id],
+        action: ClassificationRuleAction.Tag,
+        tagName: 'Lake album',
+        archive: true,
+        archiveConsent: true,
+      });
+      const repo = ctx.get(ClassificationRepository);
+      const rule = await repo.getRule(created.id);
+      expect(rule).toBeDefined();
+      const matches = new Map([[asset.id, null]]);
+      const gates = pauseAssetLocks(repo);
+      try {
+        const first = repo.apply(rule!, [asset.id], matches);
+        await gates.waitFor(1);
+        const second = repo.apply(rule!, [asset.id], matches);
+        // The second run waits on the first run's rule lock before it can read match rows.
+        gates.release(1);
+        await first;
+        await gates.waitFor(2);
+        gates.release(2);
+        await second;
+        const row = await ctx.database
+          .selectFrom('classification_match')
+          .select(['tagContributed', 'archiveContributed', 'decision'])
+          .where('ruleId', '=', created.id)
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow();
+        expect(row).toEqual({
+          tagContributed: true,
+          archiveContributed: true,
+          decision: ClassificationMatchDecision.Matched,
+        });
+        expect(await tagIdsOf(ctx, asset.id)).toContain(created.tag!.id);
+        expect(await visibilityOf(ctx, asset.id)).toBe(AssetVisibility.Archive);
+      } finally {
+        gates.release(1);
+        gates.release(2);
+        gates.restore();
+      }
+    });
+
+    it('keeps an owner acceptance made while first apply is waiting', async () => {
+      const { sut, ctx } = setup();
+      const { user, auth } = await newOwner(ctx);
+      const lake = await tagOf(ctx, user.id, 'lake');
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await tagAsset(ctx, lake.id, asset.id);
+      const created = await sut.createRule(auth, {
+        ...baseRule,
+        albumName: 'Lake',
+        tagIds: [lake.id],
+        action: ClassificationRuleAction.Tag,
+        tagName: 'Lake album',
+      });
+      const repo = ctx.get(ClassificationRepository);
+      const rule = await repo.getRule(created.id);
+      expect(rule).toBeDefined();
+      await ctx.database.insertInto('album_asset').values({ albumId: created.albumId, assetId: asset.id }).execute();
+      const gates = pauseAssetLocks(repo);
+      try {
+        const applying = repo.apply(rule!, [asset.id], new Map([[asset.id, null]]));
+        await gates.waitFor(1);
+        const accepting = repo.recordAlbumAdditions(created.albumId, [asset.id], user.id);
+        await gates.waitFor(2);
+        gates.release(2);
+        await accepting;
+        gates.release(1);
+        await applying;
+        expect(await decisionOf(ctx, created.id, asset.id)).toBe(ClassificationMatchDecision.Accepted);
+      } finally {
+        gates.release(1);
+        gates.release(2);
+        gates.restore();
+      }
+    });
   });
 
   describe('disabled rules and locked media', () => {
@@ -526,6 +711,74 @@ describe(ClassificationService.name, () => {
       await sut.apply(auth, rule.id, { assetIds: [locked.id] });
       expect(await albumAssetIds(ctx, rule.albumId)).toEqual([]);
       expect(await decisionOf(ctx, rule.id, locked.id)).toBeUndefined();
+    });
+
+    it('excludes a previously matched Locked asset from rule counts', async () => {
+      const { sut, ctx } = setup();
+      const { user, auth } = await newOwner(ctx);
+      const lake = await tagOf(ctx, user.id, 'lake');
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await tagAsset(ctx, lake.id, asset.id);
+      const rule = await sut.createRule(auth, {
+        ...baseRule,
+        albumName: 'Lake',
+        tagIds: [lake.id],
+        action: ClassificationRuleAction.Tag,
+        tagName: 'Lake album',
+      });
+      await reevaluate(sut, auth, rule.id);
+      expect((await sut.getRule(auth, rule.id)).counts.matched).toBe(1);
+      await ctx.database
+        .updateTable('asset')
+        .set({ visibility: AssetVisibility.Locked })
+        .where('id', '=', asset.id)
+        .execute();
+      expect((await sut.getRule(auth, rule.id)).counts.matched).toBe(0);
+    });
+
+    it.each([
+      { change: { enabled: false }, label: 'disabling' },
+      { change: { action: ClassificationRuleAction.Review }, label: 'changing the action' },
+      { change: { archive: false }, label: 'withdrawing archive consent' },
+    ])('does not apply stale inference after $label a rule', async ({ change }) => {
+      const { sut, ctx } = setup();
+      const { user, auth } = await newOwner(ctx);
+      const lake = await tagOf(ctx, user.id, 'lake');
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await tagAsset(ctx, lake.id, asset.id);
+      const rule = await sut.createRule(auth, {
+        ...baseRule,
+        albumName: 'Lake',
+        tagIds: [lake.id],
+        action: ClassificationRuleAction.Tag,
+        tagName: 'Lake album',
+        archive: true,
+        archiveConsent: true,
+      });
+      const repo = ctx.get(ClassificationRepository);
+      const findMatches = repo.findMatches.bind(repo);
+      const { promise: waiting, resolve: entered } = Promise.withResolvers<void>();
+      const { promise: held, resolve: release } = Promise.withResolvers<void>();
+      const spy = vi.spyOn(repo, 'findMatches').mockImplementation(async (...args) => {
+        entered();
+        await held;
+        return findMatches(...args);
+      });
+
+      try {
+        const applying = sut.apply(auth, rule.id, { assetIds: [asset.id] });
+        await waiting;
+        await sut.updateRule(auth, rule.id, change);
+        release();
+        await expect(applying).rejects.toThrow('Classification rule changed while matching');
+        expect(await decisionOf(ctx, rule.id, asset.id)).toBeUndefined();
+        expect(await albumAssetIds(ctx, rule.albumId)).toEqual([]);
+        expect(await tagIdsOf(ctx, asset.id)).not.toContain(rule.tag!.id);
+        expect(await visibilityOf(ctx, asset.id)).toBe(AssetVisibility.Timeline);
+      } finally {
+        release();
+        spy.mockRestore();
+      }
     });
 
     it('never grants the album’s members anything: a rule only reaches its owner’s media', async () => {
