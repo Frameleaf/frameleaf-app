@@ -810,6 +810,91 @@ export class MediaHealthRepository {
     });
   }
 
+  /** True when any asset, in any state (a trashed one can still be restored), has this original. */
+  async isOriginalPathInUse(originalPath: string): Promise<boolean> {
+    const row = await this.db
+      .withSchema('public')
+      .selectFrom('asset')
+      .select('id')
+      .where('originalPath', '=', originalPath)
+      .limit(1)
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  /** Record where a replaced damaged original is kept now (FL-69). Metadata only. */
+  async setRetainedPath(healthId: string, retainedPath: string): Promise<void> {
+    const phase = await getForkSchemaPhase(this.db);
+    await this.db.transaction().execute(async (trx) => {
+      for (const schema of this.writeSchemas(phase)) {
+        await trx
+          .withSchema(schema)
+          .updateTable('asset_health')
+          .set({
+            evidence: sql`coalesce(evidence, '{}'::jsonb) || jsonb_build_object('retainedPath', ${retainedPath}::text)`,
+          })
+          .where('id', '=', asUuid(healthId))
+          .execute();
+      }
+    });
+  }
+
+  /**
+   * Findings a trash job was queued for but no running job holds any more (FL-69): the job was
+   * cancelled, skipped them or failed. They go back to confirmed damage so they can be reviewed
+   * again. Findings queued in the last few minutes are left alone: their job may not exist yet.
+   */
+  async releaseTrashQueued(options: { ownerId?: string; keep: string[]; olderThan: Date }): Promise<number> {
+    const phase = await getForkSchemaPhase(this.db);
+    return this.db.transaction().execute(async (trx) => {
+      let released = 0;
+      for (const schema of this.writeSchemas(phase)) {
+        const result = await (trx as Kysely<any>)
+          .updateTable(`${schema}.asset_health as asset_health`)
+          .set({ status: MediaHealthStatus.CorruptConfirmed })
+          .where('asset_health.status', '=', MediaHealthStatus.TrashQueued)
+          .where('asset_health.updatedAt', '<', options.olderThan)
+          .$if(options.keep.length > 0, (qb) =>
+            qb.where((eb) => eb.not(eb('asset_health.id', '=', anyUuid(options.keep)))),
+          )
+          .$if(!!options.ownerId, (qb) =>
+            qb.where(
+              sql<boolean>`EXISTS (
+                SELECT 1 FROM public.asset
+                WHERE asset.id = asset_health."assetId" AND asset."ownerId" = ${options.ownerId}::uuid
+              )`,
+            ),
+          )
+          .executeTakeFirst();
+        released = Math.max(released, Number(result.numUpdatedRows ?? 0));
+      }
+      return released;
+    });
+  }
+
+  /** Findings a running or waiting trash job still holds, across every account (FL-69). */
+  async getActiveTrashFindingIds(): Promise<string[]> {
+    const result = await sql<{ findingId: string | null }>`
+      SELECT entry->>'findingId' AS "findingId"
+      FROM media_operation, jsonb_array_elements(coalesce(snapshot->'payload'->'mediaHealth', '[]'::jsonb)) AS entry
+      WHERE kind = 'bulk'
+        AND snapshot->>'action' = 'trash-damaged-media'
+        AND status IN ('queued', 'preparing', 'rendering', 'validating', 'cancelling', 'paused')`.execute(this.db);
+    return result.rows.map(({ findingId }) => findingId).filter((id): id is string => !!id);
+  }
+
+  /**
+   * Serialize Library Care job admission for one account (FL-69): the check for a running scan or
+   * search and the creation of a new one happen under one transaction-scoped advisory lock, so two
+   * requests cannot both start a job.
+   */
+  async withLibraryCareLock<T>(ownerId: string, work: () => Promise<T>): Promise<T> {
+    return this.db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtext(${`library-care:${ownerId}`}))`.execute(trx);
+      return work();
+    });
+  }
+
   async markStatus(ids: string[], status: MediaHealthStatus): Promise<void> {
     if (ids.length === 0) {
       return;

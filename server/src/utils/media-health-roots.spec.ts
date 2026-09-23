@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -12,6 +12,7 @@ import {
   publishVerifiedCopy,
   recoveryRootId,
   resolveInsideRoot,
+  retainFile,
   rootForPath,
   rootKindOf,
 } from 'src/utils/media-health-roots.js';
@@ -129,6 +130,34 @@ describe('media-health-roots (FL-69)', () => {
         'does not match',
       );
       await expect(readFile(destination, 'utf8')).resolves.toBe('someone else’s file');
+    });
+
+    it('moves a retained file to a new name and never replaces a different file there', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'media', '.library-care', 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+
+      await retainFile(source, destination);
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(source)).rejects.toThrow();
+
+      const other = join(root, 'other.jpg');
+      await writeFile(other, 'other');
+      await expect(retainFile(other, destination)).rejects.toThrow('different file');
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(other, 'utf8')).resolves.toBe('other');
+    });
+
+    it('finishes a move that was interrupted after the new name was made', async () => {
+      const source = join(root, 'damaged.jpg');
+      const destination = join(root, 'asset-finding.damaged.jpg');
+      await writeFile(source, 'damaged');
+      await link(source, destination);
+
+      await retainFile(source, destination);
+
+      await expect(readFile(destination, 'utf8')).resolves.toBe('damaged');
+      await expect(readFile(source)).rejects.toThrow();
     });
 
     it('refuses a source whose content is not the expected original', async () => {
