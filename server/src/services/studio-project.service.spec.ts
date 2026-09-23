@@ -675,13 +675,24 @@ describe(StudioProjectService.name, () => {
     });
 
     it('hides lineage, recents and the poster from a reviewer', async () => {
-      project = projectStub({ spaceId: newUuid(), thumbnailAssetId: newUuid(), lastOpenedAt: new Date() } as never);
+      project = projectStub({
+        spaceId: newUuid(),
+        thumbnailAssetId: newUuid(),
+        lastOpenedAt: new Date(),
+        duplicatedFromId: newUuidV7(),
+        importedFromDigest: 'a'.repeat(64),
+      } as never);
       memberOf(project.spaceId as string);
 
       const seen = await sut.get(reviewer, project.id);
       expect(seen.thumbnailAssetId).toBeNull();
       expect(seen.lastOpenedAt).toBeNull();
       expect(seen.duplicatedFromId).toBeNull();
+      expect(seen.importedFromBundle).toBe(false);
+
+      const own = await sut.get(owner, project.id);
+      expect(own.importedFromBundle).toBe(true);
+      expect(own.duplicatedFromId).toBe(project.duplicatedFromId);
     });
 
     it('lists one shelf with the query and order the library asked for', async () => {

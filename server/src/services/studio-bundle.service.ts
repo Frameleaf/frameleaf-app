@@ -1,4 +1,10 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { basename, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -202,6 +208,10 @@ export class StudioBundleService {
         dto.requestKey,
       );
       if (existing) {
+        // A key names one request. The same key for another project is a client bug, not a replay.
+        if ((existing.snapshot as { projectId?: unknown } | null)?.projectId !== projectId) {
+          throw new ConflictException('This request key was already used for another export');
+        }
         return mapOperation(existing);
       }
     }
@@ -351,15 +361,22 @@ export class StudioBundleService {
       throw error;
     }
 
-    const upload = await this.projects.createUpload({
-      ownerId: auth.user.id,
-      path: file.path,
-      sizeBytes: file.size,
-      digest,
-      originalFileName: basename(file.originalname || 'bundle.zip').slice(0, 255),
-      manifest: manifest as unknown as Record<string, unknown>,
-      expiresAt: hoursFrom(new Date(), STUDIO_BUNDLE_UPLOAD_TTL_HOURS),
-    });
+    let upload: StudioBundleUpload;
+    try {
+      upload = await this.projects.createUpload({
+        ownerId: auth.user.id,
+        path: file.path,
+        sizeBytes: file.size,
+        digest,
+        originalFileName: basename(file.originalname || 'bundle.zip').slice(0, 255),
+        manifest: manifest as unknown as Record<string, unknown>,
+        expiresAt: hoursFrom(new Date(), STUDIO_BUNDLE_UPLOAD_TTL_HOURS),
+      });
+    } catch (error) {
+      // No row, no way for the sweep to find the file: remove it now.
+      await this.storage.unlink(file.path);
+      throw error;
+    }
 
     this.logger.log(`Studio bundle upload ${upload.id} registered (${manifest.sources.length} sources)`);
     return this.mapUpload(auth, upload, manifest);
@@ -397,6 +414,9 @@ export class StudioBundleService {
         dto.requestKey,
       );
       if (existing) {
+        if ((existing.snapshot as { uploadId?: unknown } | null)?.uploadId !== dto.uploadId) {
+          throw new ConflictException('This request key was already used for another import');
+        }
         return mapOperation(existing);
       }
     }
@@ -758,15 +778,24 @@ export class StudioBundleService {
       referenced: sources.length - embeds.length,
     };
 
-    await this.finish(operation.id, claimToken, result as unknown as Record<string, unknown>, total);
+    if (!(await this.finish(operation.id, claimToken, result as unknown as Record<string, unknown>, total))) {
+      // Cancelled at the last moment: the finished file goes with the job.
+      await this.storage.unlink(target);
+      return;
+    }
     this.logger.log(
       `Studio bundle export ${operation.id} finished: ${embeds.length} embedded, ${result.referenced} referenced`,
     );
   }
 
+  /**
+   * Remove whatever an export that did not complete left behind. Only a completed export's file is
+   * kept, and the sweep removes that one at its expiry, so nothing here outlives its job.
+   */
   private async discardPartial(operation: MediaOperation) {
     const folder = studioBundleFolder(operation.ownerId);
     await this.storage.unlink(join(folder, `${operation.id}.zip.partial`));
+    await this.storage.unlink(join(folder, `${operation.id}.zip`));
   }
 
   /* ------------------------------------------------------------------ */
@@ -948,6 +977,17 @@ export class StudioBundleService {
       throw new StudioBundleArchiveError('bundle_project_invalid', project.detail);
     }
 
+    // Every media source the document names must be in the manifest, so the review the person
+    // sees before importing is the whole truth about what the project points at.
+    const listed = new Set(manifest.sources.map((source) => source.key));
+    const unlisted = studioBundleSourceKeys(project.envelope.graph).filter((source) => !listed.has(source.key));
+    if (unlisted.length > 0) {
+      throw new StudioBundleArchiveError(
+        'bundle_manifest_invalid',
+        `The manifest does not list ${unlisted.length} source(s) the project uses`,
+      );
+    }
+
     return { directory, manifest, envelope: project.envelope as StudioProjectEnvelope };
   }
 
@@ -1033,6 +1073,7 @@ export class StudioBundleService {
     return true;
   }
 
+  /** Publish the result. False when the owner cancelled at the last moment; the cancel is acknowledged. */
   private async finish(id: string, claimToken: string, result: Record<string, unknown>, total: number) {
     const written = await this.operations.setBulkResult(id, claimToken, {
       result,
@@ -1046,9 +1087,10 @@ export class StudioBundleService {
     }
     if (await this.operations.beginValidation(id, claimToken)) {
       await this.operations.complete(id, claimToken, { resultAssetId: null });
-      return;
+      return true;
     }
     await this.operations.acknowledgeCancel(id, { released: false });
+    return false;
   }
 
   /**

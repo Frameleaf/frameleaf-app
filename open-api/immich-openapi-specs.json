@@ -25160,7 +25160,7 @@
             "type": "string"
           },
           "importedFromBundle": {
-            "description": "The project was read in from a portable bundle",
+            "description": "The project was read in from a portable bundle; always false for a reviewer",
             "type": "boolean"
           },
           "lastOpenedAt": {
@@ -25358,7 +25358,7 @@
             "type": "string"
           },
           "importedFromBundle": {
-            "description": "The project was read in from a portable bundle",
+            "description": "The project was read in from a portable bundle; always false for a reviewer",
             "type": "boolean"
           },
           "lastOpenedAt": {
