@@ -3,9 +3,9 @@ import { getPerson, getPet, getTagById } from '@immich/sdk';
 /**
  * Name lookups for a person/pet/tag behind an id-list library filter (FL-45).
  *
- * A structured filter (`personIds`, `tagIds`, and — once a view can filter by pet — `petIds`)
- * carries only ids: the route that owns the filter (Photos reached from a "view in library" link,
- * a typed search) has no name to give a bulk-download archive without asking for one. This module
+ * A structured filter (`personIds`, `petIds` since FL-58's pet search filter, `tagIds`) carries
+ * only ids: the route that owns the filter (Photos reached from a "view in library" link, a typed
+ * search, a pet's page) has no name to give a bulk-download archive without asking for one. This module
  * is that ask: a thin, cached wrapper over the already-authorized single-entity SDK reads
  * (`getPerson`, `getPet`, `getTagById`), used only for naming — never for access control, which
  * those endpoints already enforce (an id the caller cannot see 403s, which resolves here to `null`
