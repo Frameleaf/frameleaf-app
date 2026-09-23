@@ -12,6 +12,7 @@ RUN npm install --global corepack@latest && \
 WORKDIR /usr/src/app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
+COPY ./packages/patches ./packages/patches/
 
 FROM builder AS sdk
 

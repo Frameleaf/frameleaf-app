@@ -1,0 +1,12 @@
+diff --git a/dist/components/Modal/Modal.svelte b/dist/components/Modal/Modal.svelte
+index fb67d736f2b81e188738264c75d10d57ea4aaadd..7f7c724dc0fd15c364f119f94a96f9b423a8be80 100644
+--- a/dist/components/Modal/Modal.svelte
++++ b/dist/components/Modal/Modal.svelte
+@@ -118,6 +118,7 @@
+       class="{zIndex.ModalBackdrop} fixed inset-s-0 top-0  flex h-dvh max-h-dvh w-screen bg-black/30 dark:bg-black/70"
+     />
+     <Dialog.Content
++      aria-label={title}
+       onOpenAutoFocus={handleOpenAutoFocus}
+       onEscapeKeydown={handleEscapeKeydown}
+       {escapeKeydownBehavior}
