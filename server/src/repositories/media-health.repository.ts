@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import {
   AssetFileType,
   AssetStatus,
@@ -31,7 +32,14 @@ import {
   AssetHealthTable,
 } from 'src/schema/tables/asset-health.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
-import { anyUuid, asUuid, withHiddenContentFilter } from 'src/utils/database.js';
+import { anyUuid, asUuid, lockedOwnerScope, withHiddenContentFilter } from 'src/utils/database.js';
+
+/**
+ * What an interactive read may show: the viewer's hidden-content settings, and their Locked media only
+ * in their elevated session (`lockedOwnerId`, FL-34). Background jobs pass no privacy and see every
+ * asset, Locked included (owner decision, September 22, 2026).
+ */
+type MediaHealthPrivacy = HiddenContentQueryOptions & LockedVisibilityOptions;
 
 export type MediaHealthRun = Selectable<AssetHealthRunTable>;
 export type MediaHealthFinding = Selectable<AssetHealthTable>;
@@ -217,7 +225,7 @@ export class MediaHealthRepository {
   async list(options: {
     category?: MediaHealthCategory;
     ownerId?: string;
-    privacy?: HiddenContentQueryOptions;
+    privacy?: MediaHealthPrivacy;
     status?: MediaHealthStatus;
     size: number;
   }): Promise<MediaHealthFinding[]> {
@@ -228,6 +236,7 @@ export class MediaHealthRepository {
       .innerJoin('public.asset as asset', 'asset.id', 'asset_health.assetId')
       .selectAll('asset_health')
       .$if(!!options.ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(options.ownerId!)))
+      .$if(!!options.privacy, (qb) => qb.where((eb) => lockedOwnerScope(eb, options.privacy!.lockedOwnerId)))
       .$call((qb) => withHiddenContentFilter(qb, options.privacy))
       .$if(!!options.category, (qb) => qb.where('asset_health.category', '=', options.category!))
       .$if(!!options.status, (qb) => qb.where('asset_health.status', '=', options.status!))
@@ -239,7 +248,7 @@ export class MediaHealthRepository {
   async count(options: {
     category?: MediaHealthCategory;
     ownerId?: string;
-    privacy?: HiddenContentQueryOptions;
+    privacy?: MediaHealthPrivacy;
     status?: MediaHealthStatus;
   }): Promise<number> {
     const phase = await getForkSchemaPhase(this.db);
@@ -249,6 +258,7 @@ export class MediaHealthRepository {
       .innerJoin('public.asset as asset', 'asset.id', 'asset_health.assetId')
       .select((eb) => eb.fn.countAll<number>().as('count'))
       .$if(!!options.ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(options.ownerId!)))
+      .$if(!!options.privacy, (qb) => qb.where((eb) => lockedOwnerScope(eb, options.privacy!.lockedOwnerId)))
       .$call((qb) => withHiddenContentFilter(qb, options.privacy))
       .$if(!!options.category, (qb) => qb.where('asset_health.category', '=', options.category!))
       .$if(!!options.status, (qb) => qb.where('asset_health.status', '=', options.status!))
@@ -256,7 +266,7 @@ export class MediaHealthRepository {
     return Number(row.count);
   }
 
-  async getByIds(ids: string[], ownerId?: string, privacy?: HiddenContentQueryOptions): Promise<MediaHealthFinding[]> {
+  async getByIds(ids: string[], ownerId?: string, privacy?: MediaHealthPrivacy): Promise<MediaHealthFinding[]> {
     if (ids.length === 0) {
       return [];
     }
@@ -268,6 +278,7 @@ export class MediaHealthRepository {
       .selectAll('asset_health')
       .where('asset_health.id', '=', anyUuid(ids))
       .$if(!!ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(ownerId!)))
+      .$if(!!privacy, (qb) => qb.where((eb) => lockedOwnerScope(eb, privacy!.lockedOwnerId)))
       .$call((qb) => withHiddenContentFilter(qb, privacy))
       .execute() as Promise<MediaHealthFinding[]>;
   }
@@ -732,7 +743,7 @@ export class MediaHealthRepository {
     }
   }
 
-  getAssets(assetIds: string[], ownerId?: string, privacy?: HiddenContentQueryOptions): Promise<MediaHealthAsset[]> {
+  getAssets(assetIds: string[], ownerId?: string, privacy?: MediaHealthPrivacy): Promise<MediaHealthAsset[]> {
     if (assetIds.length === 0) {
       return Promise.resolve([]);
     }
@@ -761,6 +772,7 @@ export class MediaHealthRepository {
       ])
       .where('asset.id', '=', anyUuid(assetIds))
       .$if(!!ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(ownerId!)))
+      .$if(!!privacy, (qb) => qb.where((eb) => lockedOwnerScope(eb, privacy!.lockedOwnerId)))
       .$call((qb) => withHiddenContentFilter(qb, privacy))
       .execute();
   }
