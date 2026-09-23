@@ -746,6 +746,28 @@ describe(RenderWorkerService.name, () => {
       );
     });
 
+    it('never asks the queue for a server-side kind, even one a saved scope still lists (FL-73)', async () => {
+      installSessions({
+        worker: workerA,
+        session: sessionStub(workerA, SESSION_A, {
+          scopes: [
+            MediaOperationKind.StudioExport,
+            MediaOperationKind.Bulk,
+            MediaOperationKind.PhysicalDeduplication,
+          ] as never,
+        }),
+      });
+
+      await sut.claim(SESSION_A, {} as never);
+
+      expect(workers.peekQueued).toHaveBeenCalledWith(
+        expect.objectContaining({ kinds: [MediaOperationKind.StudioExport] }),
+      );
+      await expect(
+        sut.claim(SESSION_A, { kinds: [MediaOperationKind.PhysicalDeduplication] } as never),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
     it('refuses a claim narrowed to kinds outside the session scopes', async () => {
       await expect(sut.claim(SESSION_A, { kinds: [MediaOperationKind.QuickEdit] } as never)).rejects.toBeInstanceOf(
         ForbiddenException,

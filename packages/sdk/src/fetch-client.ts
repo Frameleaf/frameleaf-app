@@ -14723,7 +14723,8 @@ export enum MediaOperationKind {
     StudioBundleExport = "studio_bundle_export",
     StudioBundleImport = "studio_bundle_import",
     EnrichmentPlan = "enrichment_plan",
-    MediaHealth = "media_health"
+    MediaHealth = "media_health",
+    PhysicalDeduplication = "physical_deduplication"
 }
 export enum MediaOperationBulkAction {
     Favorite = "favorite",

@@ -12419,7 +12419,8 @@
           "studio_bundle_export",
           "studio_bundle_import",
           "enrichment_plan",
-          "media_health"
+          "media_health",
+          "physical_deduplication"
         ],
         "type": "string"
       },
