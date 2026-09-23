@@ -195,7 +195,10 @@ const ClassificationPlanResponseSchema = z
 
 const ClassificationApplySchema = z
   .object({
-    assetIds: z.array(z.uuidv4()).min(1).max(CLASSIFICATION_INLINE_LIMIT).describe('Items from the plan'),
+    assetIds: z
+      .array(z.uuidv4())
+      .max(CLASSIFICATION_INLINE_LIMIT)
+      .describe('Items from the plan; empty records the check when nothing changed'),
   })
   .meta({ id: 'ClassificationApplyDto' });
 
@@ -241,7 +244,8 @@ const ClassificationDecisionSchema = z
     assetIds: z.array(z.uuidv4()).min(1).max(CLASSIFICATION_INLINE_LIMIT),
     decision: z
       .enum([ClassificationMatchDecision.Accepted, ClassificationMatchDecision.Rejected])
-      .describe('Keep the matches, or turn them down and undo what the rule applied'),
+      .describe('Keep the matches, or turn them down and undo what the rule applied')
+      .meta({ id: 'ClassificationReviewDecision' }),
   })
   .meta({ id: 'ClassificationDecisionDto' });
 

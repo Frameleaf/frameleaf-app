@@ -39145,14 +39145,13 @@
       "ClassificationApplyDto": {
         "properties": {
           "assetIds": {
-            "description": "Items from the plan",
+            "description": "Items from the plan; empty records the check when nothing changed",
             "items": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
             },
             "maxItems": 500,
-            "minItems": 1,
             "type": "array"
           }
         },
@@ -39254,12 +39253,7 @@
             "type": "array"
           },
           "decision": {
-            "description": "Keep the matches, or turn them down and undo what the rule applied",
-            "enum": [
-              "accepted",
-              "rejected"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/ClassificationReviewDecision"
           }
         },
         "required": [
@@ -39534,6 +39528,14 @@
           "visualSearchAvailable"
         ],
         "type": "object"
+      },
+      "ClassificationReviewDecision": {
+        "description": "Keep the matches, or turn them down and undo what the rule applied",
+        "enum": [
+          "accepted",
+          "rejected"
+        ],
+        "type": "string"
       },
       "ClassificationRuleAction": {
         "description": "What a classification rule does with a match",
