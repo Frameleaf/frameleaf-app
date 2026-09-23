@@ -1,10 +1,50 @@
+import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import type { Kysely } from 'kysely';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { TrashReviewRow, TrashScopeRow } from 'src/utils/trash-review.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetStatus } from 'src/enum.js';
+import { TrashItemSort } from 'src/dtos/trash.dto.js';
+import { AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
-import { isNotLockedAsset } from 'src/utils/database.js';
-import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { anyUuid, asUuid, withHiddenContentFilter } from 'src/utils/database.js';
+import { isLocked, isNotLocked } from 'src/utils/locked.js';
+import {
+  TrashReviewAction,
+  escapeLikeTerm,
+  toByteCount,
+  trashActionSourceStatus,
+  trashActionTargetStatus,
+} from 'src/utils/trash-review.js';
+
+/**
+ * Who is looking (FL-47). Everything this repository reads or changes is one owner's own media, and
+ * only what that owner's session may see: Locked media only for the owner's elevated session
+ * (`lockedOwnerId`), and nothing the owner's privacy filters hide from an ordinary session.
+ */
+export type TrashScopeOptions = {
+  /** The owner, when their session is unlocked; their Locked media is then included. */
+  lockedOwnerId?: string;
+  /** Suppressed people, pets and tags, and hidden sensitive detections, for an ordinary session. */
+  privacy?: HiddenContentQueryOptions;
+};
+
+export type TrashItemsOptions = TrashScopeOptions & {
+  terms: string[];
+  type?: AssetType;
+  order: TrashItemSort;
+  page: number;
+  size: number;
+};
+
+export type TrashItemRow = {
+  id: string;
+  originalFileName: string;
+  type: AssetType;
+  fileSizeInByte: number | string | null;
+  deletedAt: Date | null;
+  isLocked: boolean;
+  isOffline: boolean;
+};
 
 export class TrashRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
@@ -14,49 +54,202 @@ export class TrashRepository {
   }
 
   /**
-   * Restores the user's whole trash. Their Locked media in it is restored only from their elevated
-   * session (`lockedOwnerId`), so an ordinary session neither changes nor counts it (FL-34).
+   * The owner's items in one lifecycle state, as far as this session may see them. The hidden video
+   * part of a live photo follows its photo and is never listed or changed on its own.
    */
-  @GenerateSql({ params: [DummyValue.UUID] })
-  async restore(userId: string, { lockedOwnerId }: LockedVisibilityOptions = {}): Promise<number> {
-    const { numUpdatedRows } = await this.db
-      .updateTable('asset')
-      .where('ownerId', '=', userId)
-      .where('status', '=', AssetStatus.Trashed)
-      .$if(lockedOwnerId !== userId, (qb) => qb.where((eb) => isNotLockedAsset(eb)))
-      .set({ status: AssetStatus.Active, deletedAt: null })
-      .executeTakeFirst();
-
-    return Number(numUpdatedRows);
+  private scope(db: Kysely<DB>, userId: string, status: AssetStatus, { lockedOwnerId, privacy }: TrashScopeOptions) {
+    return db
+      .selectFrom('asset')
+      .where('asset.ownerId', '=', asUuid(userId))
+      .where('asset.status', '=', status)
+      .where('asset.visibility', '!=', AssetVisibility.Hidden)
+      .$if(lockedOwnerId !== userId, (qb) => qb.where(isNotLocked('asset')))
+      .$call((qb) => withHiddenContentFilter(qb, privacy));
   }
 
-  /** Empties the user's whole trash; their Locked media in it only from their elevated session (FL-34). */
-  @GenerateSql({ params: [DummyValue.UUID] })
-  async empty(userId: string, { lockedOwnerId }: LockedVisibilityOptions = {}): Promise<number> {
-    const { numUpdatedRows } = await this.db
-      .updateTable('asset')
-      .where('ownerId', '=', userId)
-      .where('status', '=', AssetStatus.Trashed)
-      .$if(lockedOwnerId !== userId, (qb) => qb.where((eb) => isNotLockedAsset(eb)))
-      .set({ status: AssetStatus.Deleted })
-      .executeTakeFirst();
+  /** The trash counts the page shows: what is in it, and what is still being removed from storage. */
+  async getSummary(userId: string, options: TrashScopeOptions = {}) {
+    const trashed = await this.scope(this.db, userId, AssetStatus.Trashed, options)
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .select((eb) => [
+        eb.fn.countAll<number>().as('count'),
+        sql<string>`coalesce(sum(asset_exif."fileSizeInByte"), 0)`.as('bytes'),
+      ])
+      .executeTakeFirstOrThrow();
 
-    return Number(numUpdatedRows);
+    const deleted = await this.scope(this.db, userId, AssetStatus.Deleted, options)
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .executeTakeFirstOrThrow();
+
+    return {
+      count: Number(trashed.count),
+      bytes: toByteCount(trashed.bytes),
+      pendingDeletion: Number(deleted.count),
+    };
   }
 
-  @GenerateSql({ params: [[DummyValue.UUID]] })
-  async restoreAll(ids: string[]): Promise<number> {
-    if (ids.length === 0) {
-      return 0;
+  /** One page of the owner's trash, filtered and ordered as the page asks, with the matching total. */
+  async getItems(userId: string, options: TrashItemsOptions) {
+    const filtered = this.scope(this.db, userId, AssetStatus.Trashed, options)
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .$if(!!options.type, (qb) => qb.where('asset.type', '=', options.type as AssetType))
+      .$call((qb) => {
+        let query = qb;
+        for (const term of options.terms) {
+          query = query.where(
+            sql`f_unaccent(asset."originalFileName")`,
+            'ilike',
+            sql`'%' || f_unaccent(${escapeLikeTerm(term)}) || '%'`,
+          );
+        }
+        return query;
+      });
+
+    const { count } = await filtered.select((eb) => eb.fn.countAll<number>().as('count')).executeTakeFirstOrThrow();
+
+    let query = filtered.select([
+      'asset.id',
+      'asset.originalFileName',
+      'asset.type',
+      'asset.deletedAt',
+      'asset.isOffline',
+      'asset_exif.fileSizeInByte',
+      isLocked('asset').as('isLocked'),
+    ]);
+    switch (options.order) {
+      case TrashItemSort.Size: {
+        query = query
+          .orderBy('asset_exif.fileSizeInByte', (ob) => ob.desc().nullsLast())
+          .orderBy('asset.id', 'asc');
+        break;
+      }
+      case TrashItemSort.Name: {
+        query = query.orderBy('asset.originalFileName', 'asc').orderBy('asset.id', 'asc');
+        break;
+      }
+      default: {
+        query = query.orderBy('asset.deletedAt', (ob) => ob.desc().nullsLast()).orderBy('asset.id', 'desc');
+        break;
+      }
     }
 
-    const { numUpdatedRows } = await this.db
+    const rows: TrashItemRow[] = await query
+      .limit(options.size + 1)
+      .offset((options.page - 1) * options.size)
+      .execute();
+
+    const hasNextPage = rows.length > options.size;
+    rows.splice(options.size);
+    return { items: rows, hasNextPage, total: Number(count) };
+  }
+
+  /**
+   * The set an action would change, with what the review shows about each item. `ids` names the
+   * items for the actions that take them; without it the whole visible trash is the set.
+   */
+  async getReviewRows(
+    userId: string,
+    action: TrashReviewAction,
+    ids: string[] | undefined,
+    options: TrashScopeOptions = {},
+  ): Promise<TrashReviewRow[]> {
+    const rows = await this.scope(this.db, userId, trashActionSourceStatus(action), options)
+      .$if(ids !== undefined, (qb) => qb.where('asset.id', '=', anyUuid(ids ?? [])))
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .select([
+        'asset.id',
+        'asset.ownerId',
+        'asset.status',
+        'asset.deletedAt',
+        'asset.originalFileName',
+        'asset_exif.fileSizeInByte',
+        isLocked('asset').as('isLocked'),
+        // Another asset naming the same original keeps it on disk; `FileDelete` refuses a path a
+        // live row still names (see PhysicalFileRepository.deleteUnreferencedPath).
+        sql<boolean>`exists (
+          select 1
+          from asset as other
+          where other.id != asset.id
+            and (
+              other."originalPath" = asset."originalPath"
+              or (
+                asset."physicalOriginalFileId" is not null
+                and other."physicalOriginalFileId" = asset."physicalOriginalFileId"
+              )
+            )
+        )`.as('sharesOriginal'),
+      ])
+      .orderBy('asset.id', 'asc')
+      .execute();
+
+    return rows.map((row) => ({ ...row, isLocked: !!row.isLocked, sharesOriginal: !!row.sharesOriginal }));
+  }
+
+  /**
+   * Apply a reviewed action. The set is found again inside the transaction and its rows are locked
+   * before `verify` compares it with the review, so nothing can join or leave it between the check
+   * and the change. Returns the changed ids, or null when `verify` refused the set.
+   */
+  async applyReviewed(
+    userId: string,
+    action: TrashReviewAction,
+    ids: string[] | undefined,
+    options: TrashScopeOptions,
+    verify: (rows: TrashScopeRow[]) => boolean,
+  ): Promise<string[] | null> {
+    const source = trashActionSourceStatus(action);
+    const target = trashActionTargetStatus(action);
+
+    return this.db.transaction().execute(async (trx) => {
+      const found = await this.scope(trx, userId, source, options)
+        .$if(ids !== undefined, (qb) => qb.where('asset.id', '=', anyUuid(ids ?? [])))
+        .select(['asset.id', 'asset.ownerId', 'asset.status', 'asset.deletedAt', isLocked('asset').as('isLocked')])
+        .orderBy('asset.id', 'asc')
+        .forUpdate()
+        .execute();
+
+      const rows = found.map((row) => ({ ...row, isLocked: !!row.isLocked }));
+      if (!verify(rows)) {
+        return null;
+      }
+      if (rows.length === 0) {
+        return [];
+      }
+
+      const changes =
+        target === AssetStatus.Active
+          ? { status: target, deletedAt: null }
+          : target === AssetStatus.Trashed
+            ? { status: target, deletedAt: new Date() }
+            : { status: target };
+
+      const updated = await trx
+        .updateTable('asset')
+        .where('asset.id', '=', anyUuid(rows.map((row) => row.id)))
+        .where('asset.status', '=', source)
+        .set(changes)
+        .returning('asset.id')
+        .execute();
+
+      return updated.map((row) => row.id);
+    });
+  }
+
+  /** Restores chosen items that are still in the trash, and says which ones actually were. */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  async restoreAll(ids: string[]): Promise<string[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const restored = await this.db
       .updateTable('asset')
       .where('status', '=', AssetStatus.Trashed)
       .where('id', 'in', ids)
       .set({ status: AssetStatus.Active, deletedAt: null })
-      .executeTakeFirst();
+      .returning('id')
+      .execute();
 
-    return Number(numUpdatedRows);
+    return restored.map(({ id }) => id);
   }
 }
