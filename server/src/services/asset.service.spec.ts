@@ -284,6 +284,34 @@ describe(AssetService.name, () => {
       expect(mocks.asset.update).toHaveBeenCalledWith({ id: asset.id, isFavorite: true });
     });
 
+    it('should queue a new face thumbnail for people whose featured face moved into the Locked folder (FL-53)', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([
+        { ownerId: 'owner-1', personGroupId: 'person-group-1' },
+      ]);
+
+      await sut.update(authStub.adminWithElevatedPermission, asset.id, { visibility: AssetVisibility.Locked });
+
+      expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith([asset.id]);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.PersonGenerateThumbnail, data: { ownerId: 'owner-1', personGroupId: 'person-group-1' } },
+      ]);
+    });
+
+    it('should not look for face thumbnails when the asset does not move into the Locked folder', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { visibility: AssetVisibility.Archive });
+
+      expect(mocks.person.getMissingThumbnailsForAssets).not.toHaveBeenCalled();
+    });
+
     it('should update the exif description', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
@@ -486,12 +514,31 @@ describe(AssetService.name, () => {
       const auth = authStub.adminWithElevatedPermission;
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
 
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
+
       await sut.updateAll(auth, { ids: ['asset-1', 'asset-2'], visibility: AssetVisibility.Locked });
 
       expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1', 'asset-2'], {
         visibility: AssetVisibility.Locked,
       });
       expect(mocks.album.removeAssetsFromAll).not.toHaveBeenCalled();
+    });
+
+    it('should queue a new face thumbnail once, for people whose featured face moved into the Locked folder (FL-53)', async () => {
+      const auth = authStub.adminWithElevatedPermission;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+      // the same person twice, e.g. from two chunks of a large move
+      mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([
+        { ownerId: 'owner-1', personGroupId: 'person-group-1' },
+        { ownerId: 'owner-1', personGroupId: 'person-group-1' },
+      ]);
+
+      await sut.updateAll(auth, { ids: ['asset-1', 'asset-2'], visibility: AssetVisibility.Locked });
+
+      expect(mocks.person.getMissingThumbnailsForAssets).toHaveBeenCalledWith(['asset-1', 'asset-2']);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.PersonGenerateThumbnail, data: { ownerId: 'owner-1', personGroupId: 'person-group-1' } },
+      ]);
     });
 
     it('should not update Assets table if no relevant fields are provided', async () => {
