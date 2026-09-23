@@ -32,6 +32,7 @@ import { OAuthController } from 'src/controllers/oauth.controller.js';
 import { PartnerController } from 'src/controllers/partner.controller.js';
 import { PersonController } from 'src/controllers/person.controller.js';
 import { PetController } from 'src/controllers/pet.controller.js';
+import { PhysicalDeduplicationController } from 'src/controllers/physical-deduplication.controller.js';
 import { PluginController } from 'src/controllers/plugin.controller.js';
 import { QueueController } from 'src/controllers/queue.controller.js';
 import { RunPodController } from 'src/controllers/runpod.controller.js';
@@ -87,6 +88,7 @@ export const controllers = [
   PartnerController,
   PersonController,
   PetController,
+  PhysicalDeduplicationController,
   PluginController,
   QueueController,
   RunPodController,
