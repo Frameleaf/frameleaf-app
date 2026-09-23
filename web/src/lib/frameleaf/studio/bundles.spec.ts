@@ -40,7 +40,7 @@ const upload = {
   ],
 } as StudioBundleUploadDto;
 
-const setup = (project = { id: 'p-1', revision: 4, saved: true }) => {
+const setup = (project = { id: 'p-1', revision: 4, saved: true }, askIncludeMedia?: () => Promise<boolean | null>) => {
   const api: StudioBundleApi = {
     exportProject: vi.fn().mockResolvedValue(operation),
     getUpload: vi.fn().mockResolvedValue(upload),
@@ -48,7 +48,13 @@ const setup = (project = { id: 'p-1', revision: 4, saved: true }) => {
   };
   const onQueued = vi.fn();
   const onRefused = vi.fn();
-  const handlers = createStudioBundleHandlers({ api, project: () => project, onQueued, onRefused });
+  const handlers = createStudioBundleHandlers({
+    api,
+    project: () => project,
+    askIncludeMedia,
+    onQueued,
+    onRefused,
+  });
   const bridge = createStudioBridge({
     context: () => ({
       revision: project.revision,
@@ -85,12 +91,61 @@ describe('studio bundle commands', () => {
     expect(api.exportProject).not.toHaveBeenCalled();
   });
 
-  it('asks for a save before exporting a project that has none', async () => {
-    const { api, onRefused, bridge } = setup({ id: 'draft', revision: 0, saved: false });
+  it('asks for a save before exporting a project that has none, without asking about copies', async () => {
+    const ask = vi.fn().mockResolvedValue(true);
+    const { api, onRefused, bridge } = setup({ id: 'draft', revision: 0, saved: false }, ask);
     await bridge.submit([createStudioCommandEnvelope('project.exportBundle', {}, 0)]);
 
     expect(onRefused).toHaveBeenCalledWith('frameleaf_studio_bundle_save_first');
+    expect(ask).not.toHaveBeenCalled();
     expect(api.exportProject).not.toHaveBeenCalled();
+  });
+
+  it('sends the choice to include copies of owned media exactly as the payload states it', async () => {
+    const ask = vi.fn();
+    const { api, bridge } = setup(undefined, ask);
+    await bridge.submit([
+      createStudioCommandEnvelope('project.exportBundle', { includeMedia: true }, 4, { idempotencyKey: 'with-media' }),
+      createStudioCommandEnvelope('project.exportBundle', { includeMedia: false }, 4, { idempotencyKey: 'no-media' }),
+    ]);
+
+    expect(api.exportProject).toHaveBeenNthCalledWith(1, 'p-1', { includeMedia: true, requestKey: 'with-media' });
+    expect(api.exportProject).toHaveBeenNthCalledWith(2, 'p-1', { includeMedia: false, requestKey: 'no-media' });
+    // An explicit choice is never asked again.
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it('asks the person in the export dialog when the payload leaves the choice open', async () => {
+    const ask = vi.fn().mockResolvedValue(true);
+    const { api, onQueued, bridge } = setup(undefined, ask);
+    const [result] = await bridge.submit([
+      createStudioCommandEnvelope('project.exportBundle', {}, 4, { idempotencyKey: 'asked' }),
+    ]);
+
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(api.exportProject).toHaveBeenCalledWith('p-1', { includeMedia: true, requestKey: 'asked' });
+    expect(onQueued).toHaveBeenCalledWith(operation);
+    expect(result.status).toBe('accepted');
+  });
+
+  it('queues nothing and reports nothing when the person cancels the export dialog', async () => {
+    const ask = vi.fn().mockResolvedValue(null);
+    const { api, onQueued, onRefused, bridge } = setup(undefined, ask);
+    const [result] = await bridge.submit([createStudioCommandEnvelope('project.exportBundle', {}, 4)]);
+
+    expect(result.status).toBe('rejected');
+    expect(api.exportProject).not.toHaveBeenCalled();
+    expect(onQueued).not.toHaveBeenCalled();
+    expect(onRefused).not.toHaveBeenCalled();
+  });
+
+  it('says so when the server does not take the export', async () => {
+    const { api, onRefused, bridge } = setup();
+    vi.mocked(api.exportProject).mockRejectedValueOnce(new Error('offline'));
+    const [result] = await bridge.submit([createStudioCommandEnvelope('project.exportBundle', {}, 4)]);
+
+    expect(result.status).toBe('rejected');
+    expect(onRefused).toHaveBeenCalledWith('frameleaf_studio_bundle_export_failed');
   });
 
   it('imports into a new project with the accepted suggestions and leaves the open project alone', async () => {
