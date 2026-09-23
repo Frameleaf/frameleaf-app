@@ -221,6 +221,9 @@ const requireRenderKinds = (kinds: readonly MediaOperationKind[]) => {
   }
 };
 
+/** A worker named a result asset that is not a live asset of the job's owner (FL-43). */
+export const RENDER_RESULT_NOT_OWNED = 'result_not_owned';
+
 /**
  * Authenticated renderer admission and resource limits (FL-95 `STU-401`).
  *
@@ -237,6 +240,7 @@ const requireRenderKinds = (kinds: readonly MediaOperationKind[]) => {
  * The decisions themselves are the pure functions in `src/utils/render-admission.ts`; this
  * service gathers their inputs, applies the answer and records it.
  */
+
 @Injectable()
 export class RenderWorkerService {
   private destinationHealth: DestinationHealthProvider;
@@ -894,6 +898,10 @@ export class RenderWorkerService {
    * re-checks access and installs the sources' privacy before anything becomes visible. Only then is
    * the render job itself completed, without a result asset. For other kinds, adoption of an output
    * belongs to their own publish paths; this only records that the claim finished.
+   *
+   * Any other kind may name a result, which must be a live asset of the job's owner (FL-43): a
+   * worker naming anything else — another account's media, a deleted asset — is refused, and the
+   * job fails with a stable code instead of publishing it as lineage.
    */
   async complete(
     sessionToken: string | undefined,
@@ -928,6 +936,17 @@ export class RenderWorkerService {
         this.logger.log(`Render worker ${worker.id} completed Studio export render ${operation.id}`);
       }
       return { accepted, refusal: null };
+    }
+
+    if (dto.resultAssetId && !(await this.operations.isPublishableResult(operation.ownerId, dto.resultAssetId))) {
+      this.logger.warn(
+        `Render worker ${worker.id} named a result for media operation ${operation.id} that is not the owner's`,
+      );
+      await this.operations.fail(operation.id, dto.claimToken, {
+        error: 'The worker reported a result that does not belong to this account',
+        errorCode: RENDER_RESULT_NOT_OWNED,
+      });
+      return { accepted: false, refusal: null };
     }
 
     const accepted = await this.operations.complete(operation.id, dto.claimToken, { resultAssetId: dto.resultAssetId });
@@ -982,7 +1001,7 @@ export class RenderWorkerService {
       return { accepted: false, refusal: null };
     }
 
-    const accepted = await this.operations.acknowledgeCancel(operation.id, { released: dto.released });
+    const accepted = await this.operations.acknowledgeCancel(operation.id, dto.claimToken, { released: dto.released });
     if (accepted && operation.kind === MediaOperationKind.StudioExport) {
       await this.studioExports.onRenderCancelAcknowledged(operation, worker.id, dto.released);
     }

@@ -2885,6 +2885,10 @@
       "identity": "public.media_operation_checkpoint.updatedAt"
     },
     {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.media_operation_checkpoint.updateId"
+    },
+    {
       "definition": "integer|not null|0||",
       "identity": "public.media_operation.admissionRefusals"
     },
@@ -9841,6 +9845,10 @@
     {
       "definition": "CREATE INDEX \"media_operation_resultAssetId_idx\" ON public.media_operation USING btree (\"resultAssetId\")",
       "identity": "public.media_operation.media_operation_resultAssetId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"media_operation_retryOfId_active_uq\" ON public.media_operation USING btree (\"retryOfId\") WHERE ((\"retryOfId\" IS NOT NULL) AND ((status)::text <> ALL ((ARRAY['completed'::character varying, 'cancelled'::character varying, 'failed'::character varying])::text[])))",
+      "identity": "public.media_operation.media_operation_retryOfId_active_uq"
     },
     {
       "definition": "CREATE INDEX \"media_operation_retryOfId_idx\" ON public.media_operation USING btree (\"retryOfId\")",

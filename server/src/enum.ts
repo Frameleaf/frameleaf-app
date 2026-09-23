@@ -471,6 +471,11 @@ export enum SystemMetadataKey {
    * through a configuration file the upgrade migration cannot read.
    */
   LockedDetectionsState = 'locked-detections-state',
+  /**
+   * FL-66: the settings change history (the newest saved settings changes, who saved them and
+   * their values before and after; credentials only as replaced or cleared, never a value).
+   */
+  SystemConfigHistory = 'system-config-history',
 }
 
 export enum UserMetadataKey {
@@ -1960,6 +1965,8 @@ export enum DatabaseLock {
   RunPodTransition = 900,
   MlDestinationBootstrap = 910,
   HlsSessionCleanup = 850,
+  /** FL-66: an administrator's settings save compares the revision and writes as one step. */
+  SystemConfigUpdate = 930,
 }
 
 export enum MaintenanceAction {
