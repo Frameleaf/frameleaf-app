@@ -476,10 +476,7 @@
       "sourceSha256": "5e0f8a3cb00193ebe5a5698e9ae5d3d71b6d6f9ecd8858e9b21eec52c9b43512",
       "title": "Feature Reference — Preservation",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374992/Feature+Reference+Preservation",
-      "version": 3,
-      "verified": true,
-      "verification": "Read back Confluence page 61374992 version 3; verified preservation package source hash, export, verification, download, restore and format content from unmerged PR 137.",
-      "verifiedAt": "2026-09-23T17:24:12.114Z"
+      "version": 3
     },
     {
       "bytes": 4197,
