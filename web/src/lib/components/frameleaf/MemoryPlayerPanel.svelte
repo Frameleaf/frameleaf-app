@@ -372,9 +372,16 @@
       return;
     }
 
+    // navigating to the next memory while this request is in flight must not leave the
+    // previous memory's run showing under the new one
+    let stale = false;
+
     void (async () => {
       try {
         const runs = await getMemoryExports({ memoryId });
+        if (stale) {
+          return;
+        }
         const existing = latestExport(runs, memoryId);
         if (existing) {
           exportRun = existing;
@@ -387,7 +394,10 @@
       }
     })();
 
-    return stopPolling;
+    return () => {
+      stale = true;
+      stopPolling();
+    };
   });
 
   const startExport = async () => {

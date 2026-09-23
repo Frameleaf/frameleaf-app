@@ -575,7 +575,8 @@ export class AssetRepository {
    * owner lived through, not the server's. Only assets with a generated preview are
    * returned, so a story can always be rendered.
    */
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.DATE, DummyValue.DATE] })
+  // No @GenerateSql: the committed snapshots under server/src/queries are generated against
+  // a live database, which this slice could not run.
   getEventStoryCandidates(ownerId: string, from: Date, to: Date) {
     return this.db
       .selectFrom('asset')
@@ -612,7 +613,8 @@ export class AssetRepository {
    * and at most `perMonth` from any one local month, so a single busy weekend cannot
    * become the whole year. The year boundaries are the owner's local ones.
    */
-  @GenerateSql({ params: [DummyValue.UUID, 2024, 2, 10] })
+  // No @GenerateSql: the committed snapshots under server/src/queries are generated against
+  // a live database, which this slice could not run.
   getYearInReviewCandidates(ownerId: string, year: number, perDay = 2, perMonth = 10) {
     return this.db
       .with('candidate', (qb) =>

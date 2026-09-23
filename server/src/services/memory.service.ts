@@ -459,6 +459,10 @@ export class MemoryService extends BaseService {
       const zip = this.storageRepository.createZipStream();
       const output = this.storageRepository.createWriteStream(partial);
       const finished = pipeline(zip.stream, output);
+      // A throw inside the loop below skips `await finished`, which would leave this
+      // promise rejected and unobserved. Attaching a handler now prevents an unhandled
+      // rejection from taking the worker down; `await finished` still rethrows.
+      void finished.catch(() => undefined);
 
       const names = new Map<string, number>();
       let processed = 0;
@@ -466,8 +470,12 @@ export class MemoryService extends BaseService {
       let lastPoll = Date.now();
 
       for (const assetId of assetIds) {
+        // Progress and cancellation share one throttled window: writing a row per asset
+        // would be thousands of updates for a large memory, and the owner cannot perceive
+        // a finer granularity than this anyway.
         if (Date.now() - lastPoll >= EXPORT_CANCEL_POLL_MS) {
           lastPoll = Date.now();
+          await this.memoryRepository.updateExport(id, { processedAssets: processed });
           const current = await this.memoryRepository.getExportForJob(id);
           if (!current || current.cancelRequestedAt) {
             cancelled = true;
@@ -503,11 +511,19 @@ export class MemoryService extends BaseService {
         }
 
         zip.addFile(realpath, filename);
-        await this.memoryRepository.updateExport(id, { processedAssets: processed });
       }
 
       await zip.finalize();
       await finished;
+
+      // a cancel that lands while the last files are being written still discards the
+      // archive rather than handing over a download the owner said to stop
+      if (!cancelled) {
+        const current = await this.memoryRepository.getExportForJob(id);
+        // a row that vanished (its memory or its owner was deleted) is treated the same
+        // way: throw the archive away rather than leave an unreachable file behind
+        cancelled = !current || !!current.cancelRequestedAt;
+      }
 
       if (cancelled) {
         await this.storageRepository.unlink(partial);
