@@ -6860,18 +6860,27 @@
       },
       "CastResponse": {
         "properties": {
+          "adminDisabled": {
+            "description": "Whether an administrator has turned casting off for this user",
+            "type": "boolean"
+          },
           "gCastEnabled": {
-            "description": "Whether Google Cast is enabled",
+            "description": "Whether Google Cast is enabled (always false while an administrator has turned casting off)",
             "type": "boolean"
           }
         },
         "required": [
+          "adminDisabled",
           "gCastEnabled"
         ],
         "type": "object"
       },
       "CastUpdate": {
         "properties": {
+          "adminDisabled": {
+            "description": "Administrator only: turn casting off for this user. Accepted only by the admin user preferences endpoint; ignored when a user updates their own preferences",
+            "type": "boolean"
+          },
           "gCastEnabled": {
             "description": "Whether Google Cast is enabled",
             "type": "boolean"
