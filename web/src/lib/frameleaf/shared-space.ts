@@ -203,3 +203,45 @@ export const defaultSpacePersonName = (person: Pick<PersonResponseDto, 'name'>):
 /** People worth offering: the caller's own, seen in the space, that have a name or a face count. */
 export const spacePersonCandidates = (people: PersonResponseDto[]): PersonResponseDto[] =>
   people.filter((person) => !person.isHidden);
+
+/** The panel a URL asks for, or the timeline when it names none or one that does not exist. */
+export const panelFromSearch = (search: URLSearchParams): SpacePanel => {
+  const value = search.get('panel');
+  return isSpacePanel(value) ? value : 'timeline';
+};
+
+/** How many items the timeline asks for at a time. Matches the collection view's page. */
+export const SPACE_TIMELINE_PAGE = 250;
+
+/** The loaded items the timeline shows: all of them, or only the new ones when a filter is on. */
+export const filterToNew = <T extends { id: string }>(assets: T[], filter: Set<string> | undefined): T[] =>
+  filter ? assets.filter(({ id }) => filter.has(id)) : assets;
+
+/**
+ * Whether the timeline should fetch another page on its own while "only what is new" is on.
+ *
+ * The timeline pages the space by date taken, while "new" means added since the last visit, so a
+ * new item can sit on any page. Scrolling cannot be relied on to reach it — a filtered list may be
+ * too short to scroll at all — so the timeline keeps paging until it has found every id the banner
+ * named, or the space runs out.
+ */
+export const shouldPageForNew = ({
+  filter,
+  found,
+  exhausted,
+  loading,
+}: {
+  filter: Set<string> | undefined;
+  found: number;
+  exhausted: boolean;
+  loading: boolean;
+}): boolean => !!filter && found < filter.size && !exhausted && !loading;
+
+/**
+ * Which sentence the "new since your last visit" banner uses. Somebody who has never marked the
+ * space seen has no "last visit", so for them it is simply what other members added.
+ */
+export const newSinceMessageKey = (
+  info: Pick<SharedSpaceNewResponseDto, 'lastVisitedAt'>,
+): 'frameleaf_spaces_new_since' | 'frameleaf_spaces_new_first' =>
+  info.lastVisitedAt ? 'frameleaf_spaces_new_since' : 'frameleaf_spaces_new_first';
