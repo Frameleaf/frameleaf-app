@@ -44,6 +44,7 @@ import { MediaRecoveryRepository } from 'src/repositories/media-recovery.reposit
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { MoveRepository } from 'src/repositories/move.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
@@ -122,6 +123,7 @@ export const repositories = [
   MediaRepository,
   MemoryRepository,
   MetadataRepository,
+  MlDestinationRepository,
   MoveRepository,
   NotificationRepository,
   OAuthRepository,

@@ -3,7 +3,7 @@ import type { SystemConfig } from 'src/config.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { BootstrapEventPriority, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { BootstrapEventPriority, ImmichWorker, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { dot, l2Normalize, parseEmbedding } from 'src/utils/embedding.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
@@ -255,8 +255,8 @@ export class SmartAlbumService extends BaseService {
     if (cached) {
       return cached;
     }
-    const promise = this.machineLearningRepository
-      .encodeText(query, { modelName: clip.modelName })
+    const promise = this.selectRoutedMlDestination({ workload: MlWorkload.Clip })
+      .then((selection) => this.machineLearningRepository.encodeText(selection, query, { modelName: clip.modelName }))
       .then((raw) => {
         const parsed = parseEmbedding(raw);
         return parsed ? l2Normalize(parsed) : undefined;

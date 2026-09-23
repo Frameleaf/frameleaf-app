@@ -4,7 +4,7 @@ import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 
-import { AssetVisibility, DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { AssetVisibility, DatabaseLock, ImmichWorker, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 import { batched, getCLIPModelInfo, isSmartSearchEnabled } from 'src/utils/misc.js';
@@ -113,7 +113,16 @@ export class SmartInfoService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const embedding = await this.machineLearningRepository.encodeImage(asset.files[0].path, machineLearning.clip);
+    const selection = await this.selectRoutedMlDestination({
+      workload: MlWorkload.Clip,
+      jobId: id,
+      jobName: JobName.SmartSearch,
+    });
+    const embedding = await this.machineLearningRepository.encodeImage(
+      selection,
+      asset.files[0].path,
+      machineLearning.clip,
+    );
 
     if (this.databaseRepository.isBusy(DatabaseLock.CLIPDimSize)) {
       this.logger.verbose(`Waiting for CLIP dimension size to be updated`);

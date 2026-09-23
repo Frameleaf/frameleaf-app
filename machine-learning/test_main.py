@@ -2382,6 +2382,37 @@ def test_extract_signal_field_returns_bool_for_non_canonical_values() -> None:
     assert result["is_nsfw_likely"] is True
 
 
+def test_capabilities_endpoint_lists_only_library_workloads(deployed_app: TestClient) -> None:
+    response = deployed_app.get("http://localhost:3003/capabilities")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["protocol"] == "predict-v1"
+    # The ordinary predict container never claims restoration or Studio workloads.
+    assert body["workloads"] == ["face", "clip", "ocr", "enrichment"]
+    assert not {"restoration-faithful", "restoration-creative", "studio-ai"} & set(body["workloads"])
+
+
+def test_capabilities_endpoint_requires_bearer_when_token_is_set() -> None:
+    # Capabilities describe what the worker can run and are probed with the same credentials
+    # as inference, so they are not on the unauthenticated health allow-list.
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse as _JR
+    from starlette.routing import Route
+
+    from immich_ml.main import BearerAuthMiddleware
+
+    async def caps(_req: Any) -> Any:
+        return _JR({"workloads": ["face"]})
+
+    app = Starlette(routes=[Route("/capabilities", caps)])
+    app.add_middleware(BearerAuthMiddleware, expected_token="my-token")
+    client = TestClient(app)
+
+    assert client.get("/capabilities").status_code == 401
+    assert client.get("/capabilities", headers={"Authorization": "Bearer my-token"}).status_code == 200
+
+
 def test_hardware_endpoint_reports_cuda(deployed_app: TestClient, monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(
         "immich_ml.main.ort.get_available_providers",

@@ -3029,6 +3029,145 @@ export type MemoryUpdateDto = {
     /** Date when memory was seen */
     seenAt?: string;
 };
+export type MlDestinationConsentDto = {
+    /** When an administrator recorded consent, or null */
+    acknowledgedAt: string | null;
+    /** Administrator who recorded consent, or null */
+    acknowledgedBy: string | null;
+    /** Whether this destination sends media off the network and needs consent */
+    required: boolean;
+};
+export type MlDestinationCostControlsDto = {
+    /** Spend ceiling over the rolling budget window, or null for no ceiling */
+    budgetLimitUsd: number | null;
+    /** Length of the rolling window `spentUsd` covers */
+    budgetWindowDays: number;
+    /** Longest single job this destination may run, or null */
+    maxRuntimeMinutes: number | null;
+    /** Largest upload one job may send to this destination, or null */
+    maxUploadBytes: number | null;
+    /** Attributed spend inside the budget window; 0 when no cost has been attributed yet */
+    spentUsd: number;
+};
+export type MlDestinationHealthStateDto = {
+    /** When the destination was last probed, or null */
+    probedAt: string | null;
+    /** Workloads the worker itself reported on the last probe, or null when it never answered */
+    servedWorkloads: MlWorkload[] | null;
+    status: MlDestinationHealth;
+    /** Human-readable probe result, or null */
+    summary: string | null;
+};
+export type MlDestinationResponseDto = {
+    /** Whether a bearer token is stored for this destination */
+    authTokenConfigured: boolean;
+    consent: MlDestinationConsentDto;
+    costControls: MlDestinationCostControlsDto;
+    createdAt: string;
+    enabled: boolean;
+    health: MlDestinationHealthStateDto;
+    id: string;
+    kind: MlDestinationKind;
+    name: string;
+    updatedAt: string;
+    /** Endpoint URL; null for a RunPod destination with no ready worker */
+    url: string | null;
+    /** Workloads the administrator allows on this destination */
+    workloads: MlWorkload[];
+};
+export type MlDestinationCreateDto = {
+    /** Bearer token for a LAN worker (write-only) */
+    authToken?: string;
+    budgetLimitUsd?: number | null;
+    enabled?: boolean;
+    kind: MlDestinationKind;
+    maxRuntimeMinutes?: number | null;
+    maxUploadBytes?: number | null;
+    name: string;
+    /** Required for a LAN destination, optional for a local one, forbidden for RunPod */
+    url?: string;
+    workloads?: MlWorkload[];
+};
+export type MlCapabilityDestinationDto = {
+    /** Enabled, healthy on the last probe, consented and reporting this workload */
+    available: boolean;
+    /** True when the destination needs no consent or consent is recorded */
+    consentGranted: boolean;
+    health: MlDestinationHealth;
+    id: string;
+    kind: MlDestinationKind;
+    name: string;
+};
+export type MlWorkloadCapabilityDto = {
+    /** At least one destination can serve this workload right now */
+    available: boolean;
+    destinations: MlCapabilityDestinationDto[];
+    /** Destination library jobs use for this workload, or null */
+    routedDestinationId: string | null;
+    workload: MlWorkload;
+};
+export type StudioCapabilitiesDto = {
+    /** False until the Studio render worker admission (FL-95, FL-104) reports one */
+    gpuWorker: boolean;
+    /** False until the Studio render worker admission (FL-95, FL-104) reports one */
+    renderWorker: boolean;
+    /** A destination can serve a restoration workload right now */
+    restorationWorker: boolean;
+    /** A destination can serve the Studio AI workload right now */
+    transcriptionWorker: boolean;
+};
+export type MlCapabilitiesResponseDto = {
+    /** When this snapshot was assembled */
+    probedAt: string;
+    studio: StudioCapabilitiesDto;
+    workloads: MlWorkloadCapabilityDto[];
+};
+export type MlWorkloadRouteDto = {
+    /** Destination the workload is routed to, or null when unrouted */
+    destinationId: string | null;
+    workload: MlWorkload;
+};
+export type MlWorkloadRoutesResponseDto = {
+    routes: MlWorkloadRouteDto[];
+};
+export type MlWorkloadRouteUpdateDto = {
+    /** Destination to route the workload to; null removes the route */
+    destinationId: string | null;
+};
+export type MlDestinationUpdateDto = {
+    /** New bearer token; null clears it; omitted keeps the stored token */
+    authToken?: string | null;
+    budgetLimitUsd?: number | null;
+    enabled?: boolean;
+    maxRuntimeMinutes?: number | null;
+    maxUploadBytes?: number | null;
+    name?: string;
+    url?: string | null;
+    workloads?: MlWorkload[];
+};
+export type MlThroughputEstimateDto = {
+    /** Measured throughput for this destination and workload, or null with no samples */
+    bytesPerSecond: number | null;
+    /** Successful requests the estimate is measured from */
+    sampleCount: number;
+    windowDays: number;
+};
+export type MlAdmissionResponseDto = {
+    destinationId: string;
+    estimate: MlThroughputEstimateDto;
+    health: MlDestinationHealthStateDto;
+    kind: MlDestinationKind;
+    workload: MlWorkload;
+};
+export type MlAdmissionRequestDto = {
+    /** Job the admission is for, recorded with the accounting row */
+    jobId?: string;
+    workload: MlWorkload;
+};
+export type MlDestinationConsentRequestDto = {
+    /** The administrator confirms that media sent to this destination leaves the network */
+    acknowledgeMediaLeavesNetwork: true;
+};
 export type NotificationDeleteAllDto = {
     /** Notification IDs to delete */
     ids: string[];
@@ -8044,6 +8183,170 @@ export function addMemoryAssets({ id, bulkIdsDto }: {
     })));
 }
 /**
+ * List machine-learning destinations
+ */
+export function listMlDestinations(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlDestinationResponseDto[];
+    }>("/ml-destinations", {
+        ...opts
+    }));
+}
+/**
+ * Create a machine-learning destination
+ */
+export function createMlDestination({ mlDestinationCreateDto }: {
+    mlDestinationCreateDto: MlDestinationCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MlDestinationResponseDto;
+    }>("/ml-destinations", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mlDestinationCreateDto
+    })));
+}
+/**
+ * Get machine-learning capabilities
+ */
+export function getMlCapabilities(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlCapabilitiesResponseDto;
+    }>("/ml-destinations/capabilities", {
+        ...opts
+    }));
+}
+/**
+ * List workload routes
+ */
+export function getMlWorkloadRoutes(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlWorkloadRoutesResponseDto;
+    }>("/ml-destinations/routes", {
+        ...opts
+    }));
+}
+/**
+ * Route a workload
+ */
+export function setMlWorkloadRoute({ workload, mlWorkloadRouteUpdateDto }: {
+    workload: MlWorkload;
+    mlWorkloadRouteUpdateDto: MlWorkloadRouteUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlWorkloadRoutesResponseDto;
+    }>(`/ml-destinations/routes/${encodeURIComponent(workload)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: mlWorkloadRouteUpdateDto
+    })));
+}
+/**
+ * Delete a machine-learning destination
+ */
+export function deleteMlDestination({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/ml-destinations/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get a machine-learning destination
+ */
+export function getMlDestination({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlDestinationResponseDto;
+    }>(`/ml-destinations/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Update a machine-learning destination
+ */
+export function updateMlDestination({ id, mlDestinationUpdateDto }: {
+    id: string;
+    mlDestinationUpdateDto: MlDestinationUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlDestinationResponseDto;
+    }>(`/ml-destinations/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: mlDestinationUpdateDto
+    })));
+}
+/**
+ * Admit a workload on a destination
+ */
+export function admitMlWorkload({ id, mlAdmissionRequestDto }: {
+    id: string;
+    mlAdmissionRequestDto: MlAdmissionRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlAdmissionResponseDto;
+    }>(`/ml-destinations/${encodeURIComponent(id)}/admission`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mlAdmissionRequestDto
+    })));
+}
+/**
+ * Revoke consent for a cloud destination
+ */
+export function revokeMlDestinationConsent({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlDestinationResponseDto;
+    }>(`/ml-destinations/${encodeURIComponent(id)}/consent`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Record consent for a cloud destination
+ */
+export function grantMlDestinationConsent({ id, mlDestinationConsentRequestDto }: {
+    id: string;
+    mlDestinationConsentRequestDto: MlDestinationConsentRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlDestinationResponseDto;
+    }>(`/ml-destinations/${encodeURIComponent(id)}/consent`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: mlDestinationConsentRequestDto
+    })));
+}
+/**
+ * Probe a machine-learning destination
+ */
+export function probeMlDestination({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlDestinationHealthStateDto;
+    }>(`/ml-destinations/${encodeURIComponent(id)}/probe`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Delete notifications
  */
 export function deleteNotifications({ notificationDeleteAllDto }: {
@@ -9954,11 +10257,15 @@ export function getImageDescriptionRequeueEstimate(opts?: Oazapfts.RequestOpts) 
 /**
  * Get machine learning hardware
  */
-export function getMachineLearningHardware(opts?: Oazapfts.RequestOpts) {
+export function getMachineLearningHardware({ destinationId }: {
+    destinationId?: string;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: MachineLearningHardwareResponseDto;
-    }>("/system-config/machine-learning/hardware", {
+    }>(`/system-config/machine-learning/hardware${QS.query(QS.explode({
+        destinationId
+    }))}`, {
         ...opts
     }));
 }
@@ -11301,6 +11608,36 @@ export enum StudioPreviewStatus {
     Superseded = "superseded",
     Failed = "failed",
     Evicted = "evicted"
+}
+export enum MlDestinationKind {
+    Local = "local",
+    Lan = "lan",
+    RunPod = "runpod"
+}
+export enum MlWorkload {
+    Face = "face",
+    Clip = "clip",
+    Ocr = "ocr",
+    Enrichment = "enrichment",
+    RestorationFaithful = "restoration-faithful",
+    RestorationCreative = "restoration-creative",
+    StudioAi = "studio-ai"
+}
+export enum MlDestinationHealth {
+    Healthy = "healthy",
+    Unhealthy = "unhealthy",
+    Unknown = "unknown"
+}
+export enum MlAdmissionRefusal {
+    DestinationMissing = "destination-missing",
+    DestinationDisabled = "destination-disabled",
+    WorkloadNotRouted = "workload-not-routed",
+    WorkloadNotAllowed = "workload-not-allowed",
+    WorkloadNotServed = "workload-not-served",
+    ConsentMissing = "consent-missing",
+    BudgetExceeded = "budget-exceeded",
+    EndpointUnresolved = "endpoint-unresolved",
+    DestinationUnhealthy = "destination-unhealthy"
 }
 export enum MemorySearchOrder {
     Asc = "asc",

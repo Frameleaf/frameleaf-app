@@ -93,6 +93,7 @@ describe(OcrService.name, () => {
       expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Success);
 
       expect(mocks.machineLearning.ocr).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         '/uploads/user-id/thumbs/path.jpg',
         expect.objectContaining({
           modelName: 'PP-OCRv5_mobile',
@@ -156,6 +157,7 @@ describe(OcrService.name, () => {
       expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Success);
 
       expect(mocks.machineLearning.ocr).toHaveBeenCalledWith(
+        expect.objectContaining({ destinationId: expect.any(String), workload: expect.any(String) }),
         '/uploads/user-id/thumbs/path.jpg',
         expect.objectContaining({
           modelName: 'PP-OCRv5_server',

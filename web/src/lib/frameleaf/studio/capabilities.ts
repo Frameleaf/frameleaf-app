@@ -1,21 +1,35 @@
 /**
- * What this deployment can actually run (FL-88 consumer, FL-84/FL-91 owner).
+ * What this deployment can actually run (FL-88 consumer, FL-110 owner).
  *
  * Full Studio needs a compatible GPU on the server or a configured worker; ordinary library
  * use and the quick editor stay GPU-free and must never be made to depend on one. The
- * server does not publish worker capabilities yet — `ServerFeaturesDto` has no Studio row —
- * so this probe reports every capability as absent, and the route renders the unavailable
- * state naming exactly which workers are missing.
+ * server publishes its capability snapshot at `GET /ml-destinations/capabilities`, built from
+ * the last health probe of every configured destination: a workload is available only when
+ * a destination is enabled, consented, allowed to run it, probed healthy and reporting that
+ * it serves it. The Studio row of that snapshot is what this probe returns.
  *
- * That is the honest answer for this checkout rather than a placeholder: there is no worker
- * here, and reporting one would be the "coming soon" substitution the execution guide
- * forbids. When the capability endpoint lands with the Studio worker admission work, this
- * function is the single place that changes; nothing downstream assumes the values are
- * static.
+ * `gpuWorker` and `renderWorker` stay false until the render worker admission (FL-95,
+ * FL-104) reports one; the destination service has no evidence of a render worker and says
+ * so rather than inferring one from an ML endpoint. A request failure reports every
+ * capability as absent, because a capability the server did not confirm is not one the
+ * route may claim.
  */
 
+import { getMlCapabilities, type StudioCapabilitiesDto } from '@immich/sdk';
 import { emptyStudioCapabilities, type StudioCapabilities } from './host-contract';
 
-export const probeStudioCapabilities = async (): Promise<StudioCapabilities> =>
-  // Async by contract: the real probe is a request, and callers must already await it.
-  Promise.resolve(emptyStudioCapabilities());
+export const toStudioCapabilities = (studio: StudioCapabilitiesDto): StudioCapabilities => ({
+  gpuWorker: studio.gpuWorker === true,
+  renderWorker: studio.renderWorker === true,
+  restorationWorker: studio.restorationWorker === true,
+  transcriptionWorker: studio.transcriptionWorker === true,
+});
+
+export const probeStudioCapabilities = async (): Promise<StudioCapabilities> => {
+  try {
+    const { studio } = await getMlCapabilities();
+    return toStudioCapabilities(studio);
+  } catch {
+    return emptyStudioCapabilities();
+  }
+};

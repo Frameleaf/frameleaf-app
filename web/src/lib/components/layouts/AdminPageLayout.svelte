@@ -11,6 +11,7 @@
     mdiBookshelf,
     mdiCog,
     mdiContentDuplicate,
+    mdiRobotOutline,
     mdiServer,
     mdiTrayFull,
     mdiWrench,
@@ -46,6 +47,11 @@
         icon={mdiContentDuplicate}
       />
       <NavbarItem title={$t('admin.maintenance_settings')} href={Route.systemMaintenance()} icon={mdiWrench} />
+      <NavbarItem
+        title={$t('admin.frameleaf_ml_destinations_title')}
+        href={Route.systemProcessingDestinations()}
+        icon={mdiRobotOutline}
+      />
       <NavbarItem title={$t('server_stats')} href={Route.systemStatistics()} icon={mdiServer} />
     </div>
 

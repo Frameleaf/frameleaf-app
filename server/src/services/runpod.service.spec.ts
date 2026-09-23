@@ -214,12 +214,12 @@ describe(RunPodService.name, () => {
         maxRuntimeHours: 24,
         instanceTag: 'tag-1',
       });
-      (mocks.machineLearning.getManagedUrl as ReturnType<typeof vi.fn>).mockReturnValue(null);
+      (mocks.machineLearning.getRunPodEndpoint as ReturnType<typeof vi.fn>).mockReturnValue(null);
 
       sut.onJobStart('smartSearch' as never, { name: JobName.SmartSearch, data: { id: 'asset-1' } } as never);
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(mocks.machineLearning.setManagedUrl).toHaveBeenCalledWith(PROXY_URL, 'tok-xyz');
+      expect(mocks.machineLearning.setRunPodEndpoint).toHaveBeenCalledWith(PROXY_URL, 'tok-xyz');
     });
 
     it('does NOT sync the managed URL on JobStart for non-ML jobs', async () => {
@@ -236,7 +236,7 @@ describe(RunPodService.name, () => {
         maxRuntimeHours: 24,
         instanceTag: 'tag-1',
       });
-      (mocks.machineLearning.getManagedUrl as ReturnType<typeof vi.fn>).mockReturnValue(null);
+      (mocks.machineLearning.getRunPodEndpoint as ReturnType<typeof vi.fn>).mockReturnValue(null);
 
       sut.onJobStart(
         'thumbnailGeneration' as never,
@@ -244,7 +244,23 @@ describe(RunPodService.name, () => {
       );
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(mocks.machineLearning.setManagedUrl).not.toHaveBeenCalled();
+      expect(mocks.machineLearning.setRunPodEndpoint).not.toHaveBeenCalled();
+    });
+
+    it('never provisions a serverless endpoint because a job started (FL-110)', async () => {
+      // Serverless mode is configured but nothing has been created yet. Before FL-110 the
+      // first ML job would create the cloud endpoint; now only boot, config update and the
+      // admin's own setup action may do that.
+      stubConfig({ enabled: true, mode: 'serverless' });
+      setState({ status: 'idle' });
+      (mocks.machineLearning.getRunPodEndpoint as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
+      sut.onJobStart('smartSearch' as never, { name: JobName.SmartSearch, data: { id: 'asset-1' } } as never);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(mocks.runPod.createTemplate).not.toHaveBeenCalled();
+      expect(mocks.runPod.createEndpoint).not.toHaveBeenCalled();
+      expect(mocks.runPod.listEndpoints).not.toHaveBeenCalled();
     });
 
     it('does NOT update lastBusyAt for non-ML jobs', async () => {
@@ -288,7 +304,7 @@ describe(RunPodService.name, () => {
         maxRuntimeHours: 24,
         instanceTag: 'tag-1',
       };
-      // get returns the running state initially, then whatever was last `set` (so syncManagedUrl sees the new state).
+      // get returns the running state initially, then whatever was last `set` (so publishRunPodEndpoint sees the new state).
       let current: RunPodPersistedState = initial;
       (mocks.systemMetadata.get as Mock<(...args: any[]) => Promise<unknown>>).mockImplementation(
         (key: SystemMetadataKey) => Promise.resolve(key === SystemMetadataKey.RunPodState ? current : null),
@@ -301,7 +317,7 @@ describe(RunPodService.name, () => {
           return Promise.resolve();
         },
       );
-      (mocks.machineLearning.getManagedUrl as ReturnType<typeof vi.fn>).mockReturnValue(PROXY_URL);
+      (mocks.machineLearning.getRunPodEndpoint as ReturnType<typeof vi.fn>).mockReturnValue({ url: PROXY_URL, authToken: 'tok' });
       (mocks.runPod.stopPod as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
       const result = await sut.stop();
@@ -311,7 +327,7 @@ describe(RunPodService.name, () => {
         expect.objectContaining({ status: 'stopping', podId: 'pod_abc' }),
       );
       // Clearing the managed URL on the local ML repo
-      expect(mocks.machineLearning.clearManagedUrl).toHaveBeenCalled();
+      expect(mocks.machineLearning.clearRunPodEndpoint).toHaveBeenCalled();
     });
   });
 
@@ -367,7 +383,7 @@ describe(RunPodService.name, () => {
     });
   });
 
-  describe('syncManagedUrl via ConfigInit', () => {
+  describe('publishRunPodEndpoint via ConfigInit', () => {
     it('injects the managed URL when state is running', async () => {
       setState({
         status: 'running',
@@ -382,20 +398,20 @@ describe(RunPodService.name, () => {
         maxRuntimeHours: 24,
         instanceTag: 'tag-1',
       });
-      (mocks.machineLearning.getManagedUrl as ReturnType<typeof vi.fn>).mockReturnValue(null);
+      (mocks.machineLearning.getRunPodEndpoint as ReturnType<typeof vi.fn>).mockReturnValue(null);
 
       await sut.onConfigInit({ newConfig: _systemConfigWithRunPod() } as never);
 
-      expect(mocks.machineLearning.setManagedUrl).toHaveBeenCalledWith(PROXY_URL, 'tok-123');
+      expect(mocks.machineLearning.setRunPodEndpoint).toHaveBeenCalledWith(PROXY_URL, 'tok-123');
     });
 
     it('clears the managed URL when state is idle', async () => {
       setState({ status: 'idle' });
-      (mocks.machineLearning.getManagedUrl as ReturnType<typeof vi.fn>).mockReturnValue(PROXY_URL);
+      (mocks.machineLearning.getRunPodEndpoint as ReturnType<typeof vi.fn>).mockReturnValue({ url: PROXY_URL, authToken: 'tok' });
 
       await sut.onConfigInit({ newConfig: _systemConfigWithRunPod() } as never);
 
-      expect(mocks.machineLearning.clearManagedUrl).toHaveBeenCalled();
+      expect(mocks.machineLearning.clearRunPodEndpoint).toHaveBeenCalled();
     });
   });
 
@@ -417,7 +433,7 @@ describe(RunPodService.name, () => {
     it('ensureServerlessEndpoint creates template + endpoint and writes ready state', async () => {
       stubServerlessConfig();
       // Make the get/set mocks behave like a real key/value store so that the
-      // post-write syncManagedUrl() observes the freshly written state.
+      // post-write publishRunPodEndpoint() observes the freshly written state.
       let currentState: RunPodPersistedState = { status: 'idle' };
       (mocks.systemMetadata.get as Mock<(...args: any[]) => Promise<unknown>>).mockImplementation(
         (key: SystemMetadataKey) => Promise.resolve(key === SystemMetadataKey.RunPodState ? currentState : null),
@@ -428,7 +444,7 @@ describe(RunPodService.name, () => {
           return Promise.resolve();
         },
       );
-      (mocks.machineLearning.getManagedUrl as ReturnType<typeof vi.fn>).mockReturnValue(null);
+      (mocks.machineLearning.getRunPodEndpoint as ReturnType<typeof vi.fn>).mockReturnValue(null);
       (mocks.runPod.listEndpoints as ReturnType<typeof vi.fn>).mockResolvedValue([]);
       (mocks.runPod.createTemplate as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: 'tmpl_abc',
@@ -467,7 +483,7 @@ describe(RunPodService.name, () => {
         expect.objectContaining({ status: 'serverless-ready', endpointId: 'ep_xyz' }),
       );
       // The managed URL must be set with the RunPod API key as the bearer.
-      expect(mocks.machineLearning.setManagedUrl).toHaveBeenCalledWith(ENDPOINT_URL, 'rp_test');
+      expect(mocks.machineLearning.setRunPodEndpoint).toHaveBeenCalledWith(ENDPOINT_URL, 'rp_test');
     });
 
     it('ensureServerlessEndpoint adopts an existing endpoint instead of creating a duplicate', async () => {
@@ -541,7 +557,7 @@ describe(RunPodService.name, () => {
       expect(result.status).toBe('idle');
       expect(mocks.runPod.deleteEndpoint).toHaveBeenCalledWith('rp_test', 'ep_existing');
       expect(mocks.runPod.deleteTemplate).toHaveBeenCalledWith('rp_test', 'tmpl_existing');
-      expect(mocks.machineLearning.clearManagedUrl).toHaveBeenCalled();
+      expect(mocks.machineLearning.clearRunPodEndpoint).toHaveBeenCalled();
     });
 
     it('teardownServerlessEndpoint soft-fails when the endpoint is already gone', async () => {
@@ -604,7 +620,7 @@ describe(RunPodService.name, () => {
       await expect(sut.runBackfill()).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it('syncManagedUrl injects the endpoint URL with the API key as bearer in serverless-ready', async () => {
+    it('publishRunPodEndpoint injects the endpoint URL with the API key as bearer in serverless-ready', async () => {
       stubServerlessConfig();
       setState({
         status: 'serverless-ready',
@@ -619,16 +635,16 @@ describe(RunPodService.name, () => {
         idleTimeoutSeconds: 30,
         createdAt: '2026-05-22T20:00:00.000Z',
       });
-      (mocks.machineLearning.getManagedUrl as ReturnType<typeof vi.fn>).mockReturnValue(null);
+      (mocks.machineLearning.getRunPodEndpoint as ReturnType<typeof vi.fn>).mockReturnValue(null);
 
       await sut.onConfigInit({ newConfig: _systemConfigWithRunPod({ mode: 'serverless' }) } as never);
 
-      expect(mocks.machineLearning.setManagedUrl).toHaveBeenCalledWith(ENDPOINT_URL, 'rp_test');
+      expect(mocks.machineLearning.setRunPodEndpoint).toHaveBeenCalledWith(ENDPOINT_URL, 'rp_test');
     });
 
-    it('syncManagedUrl refreshes bearer even when endpoint URL is unchanged (API key rotation)', async () => {
+    it('publishRunPodEndpoint refreshes bearer even when endpoint URL is unchanged (API key rotation)', async () => {
       // Regression: admin rotates the RunPod API key. The endpoint URL stays
-      // the same but the bearer changes — we must call setManagedUrl so the
+      // the same but the bearer changes — we must call setRunPodEndpoint so the
       // worker picks up the new token instead of failing requests with 401.
       stubServerlessConfig({ apiKey: 'rp_rotated' });
       setState({
@@ -645,13 +661,13 @@ describe(RunPodService.name, () => {
         createdAt: '2026-05-22T20:00:00.000Z',
       });
       // Same URL already cached on this worker.
-      (mocks.machineLearning.getManagedUrl as ReturnType<typeof vi.fn>).mockReturnValue(ENDPOINT_URL);
+      (mocks.machineLearning.getRunPodEndpoint as ReturnType<typeof vi.fn>).mockReturnValue({ url: ENDPOINT_URL, authToken: 'rp_old' });
 
       await sut.onConfigInit({
         newConfig: _systemConfigWithRunPod({ mode: 'serverless', apiKey: 'rp_rotated' }),
       } as never);
 
-      expect(mocks.machineLearning.setManagedUrl).toHaveBeenCalledWith(ENDPOINT_URL, 'rp_rotated');
+      expect(mocks.machineLearning.setRunPodEndpoint).toHaveBeenCalledWith(ENDPOINT_URL, 'rp_rotated');
     });
   });
 });
