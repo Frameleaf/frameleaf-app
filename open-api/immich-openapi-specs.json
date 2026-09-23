@@ -7079,6 +7079,11 @@
       },
       "CreateProfileImageDto": {
         "properties": {
+          "assetId": {
+            "description": "ID of the photo the image was copied from, if any. A Locked photo is refused.",
+            "format": "uuid",
+            "type": "string"
+          },
           "file": {
             "description": "Profile image file",
             "format": "binary",

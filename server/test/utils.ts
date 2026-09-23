@@ -395,6 +395,11 @@ export const getMocks = () => {
   // every new user gets a cluster group, which is incidental to most tests
   mocks.clusterGroup.create.mockResolvedValue(ClusterGroupFactory.create());
 
+  // moving photos into the Locked folder finds no released face thumbnails or profile pictures
+  // unless a test says otherwise (FL-53)
+  mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
+  mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
+
   // library workloads are routed to a healthy local destination unless a test says otherwise
   mocks.mlDestination.getRoute.mockImplementation((workload) =>
     Promise.resolve({ workload, destinationId: mlDestinationStub.local.id, updatedAt: new Date() }),
