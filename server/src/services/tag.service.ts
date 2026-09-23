@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Insertable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { OnJob } from 'src/decorators.js';
@@ -15,10 +15,10 @@ import {
 import { JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import { requireEntityAccess } from 'src/utils/access.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import { findOrFail } from 'src/utils/misc.js';
 import { upsertTags } from 'src/utils/tag.js';
 
 @Injectable()
@@ -29,7 +29,7 @@ export class TagService extends BaseService {
   }
 
   async get(auth: AuthDto, id: string): Promise<TagResponseDto> {
-    await this.requireAccess({ auth, permission: Permission.TagRead, ids: [id] });
+    await this.requireTag(auth, Permission.TagRead, id);
     const tag = await this.findOrFail(id);
     return mapTag(tag);
   }
@@ -58,7 +58,7 @@ export class TagService extends BaseService {
   }
 
   async update(auth: AuthDto, id: string, dto: TagUpdateDto): Promise<TagResponseDto> {
-    await this.requireAccess({ auth, permission: Permission.TagUpdate, ids: [id] });
+    await this.requireTag(auth, Permission.TagUpdate, id);
 
     const { name, color } = dto;
     const existing = await this.findOrFail(id);
@@ -82,7 +82,7 @@ export class TagService extends BaseService {
   }
 
   async remove(auth: AuthDto, id: string): Promise<void> {
-    await this.requireAccess({ auth, permission: Permission.TagDelete, ids: [id] });
+    await this.requireTag(auth, Permission.TagDelete, id);
 
     // TODO sync tag changes for affected assets
 
@@ -112,7 +112,7 @@ export class TagService extends BaseService {
   }
 
   async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
-    await this.requireAccess({ auth, permission: Permission.TagAsset, ids: [id] });
+    await this.requireTag(auth, Permission.TagAsset, id);
 
     const results = await addAssets(
       auth,
@@ -133,7 +133,7 @@ export class TagService extends BaseService {
   }
 
   async removeAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
-    await this.requireAccess({ auth, permission: Permission.TagAsset, ids: [id] });
+    await this.requireTag(auth, Permission.TagAsset, id);
 
     const results = await removeAssets(
       auth,
@@ -159,8 +159,22 @@ export class TagService extends BaseService {
     return JobStatus.Success;
   }
 
-  private findOrFail(id: string) {
-    return findOrFail(() => this.tagRepository.get(id), 'Tag');
+  /**
+   * The access check for a route that names one tag (FL-46). A missing tag, someone else's, and one
+   * suppressed (or nested under a suppressed tag) while the session is not unlocked (owner decision,
+   * September 22, 2026) all answer the same 404; the access query itself leaves the suppressed tag out.
+   */
+  private requireTag(auth: AuthDto, permission: Permission, id: string) {
+    return requireEntityAccess(this.accessRepository, { auth, permission, ids: [id] }, 'Tag');
+  }
+
+  private async findOrFail(id: string) {
+    // A 404 like the access check's, so a tag removed between the two reads looks missing too
+    const tag = await this.tagRepository.get(id);
+    if (!tag) {
+      throw new NotFoundException('Tag not found');
+    }
+    return tag;
   }
 
   private async updateTags(assetId: string) {

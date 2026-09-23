@@ -1413,6 +1413,18 @@ const nonHiddenTaggedAssetExists = (tagId: Expression<unknown>, filter = nsfwOnl
 export const tagHasVisibleAssetOrNoAssets = (tagId: Expression<unknown>, filter?: HiddenContentFilter) =>
   sql<boolean>`(not ${taggedAssetExists(tagId)} or ${nonHiddenTaggedAssetExists(tagId, filter)})`;
 
+/**
+ * FL-46: the tag is one of the suppressed tags or nested under one. Suppressing a tag hides the
+ * photos of every tag below it (see `hiddenContentAssetExists`), so those tags are suppressed too.
+ * The closure table holds a row for each tag with itself, which covers the tag's own id.
+ */
+export const tagIsSuppressed = (tagId: Expression<unknown>, suppressedTagIds: string[]) => sql<boolean>`exists (
+      select 1
+      from tag_closure
+      where tag_closure.id_descendant = ${tagId}
+        and tag_closure.id_ancestor = ${anyUuid(suppressedTagIds)}
+    )`;
+
 const enrichmentExists = (assetAlias: string, predicate: ReturnType<typeof sql>) => sql<boolean>`exists (
       select 1
       from asset_metadata
