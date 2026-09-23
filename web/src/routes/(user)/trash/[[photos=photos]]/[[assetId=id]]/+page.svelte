@@ -6,6 +6,7 @@
   import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import Portal from '$lib/elements/Portal.svelte';
+  import { brandedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -54,6 +55,7 @@
       {options}
       destination={{ kind: 'trash' }}
       bulkContext={{ trash: true }}
+      downloadFileName={brandedArchiveName($t('frameleaf_archive_name_trash'))}
       enableRouting
       syncUrl={false}
       selectAll="loaded"

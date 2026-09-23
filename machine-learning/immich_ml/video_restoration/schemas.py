@@ -19,9 +19,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 RESTORATION_PROTOCOL: Final = "restoration-v1"
 RESULT_HEADER = "x-restoration-result"
 
-# 2x enlargement is capped at a 3840-pixel long edge (03-studio-rendering-and-restoration.md).
-MAX_OUTPUT_LONG_EDGE = 3840
-SUPPORTED_SCALES = (1, 2)
+# Output is capped at 4K: the server passes the exact box (3840 on the long edge, 2160 on
+# the short one for the orientation at hand) and the worker never exceeds it.
+MAX_OUTPUT_EDGE = 3840
+SUPPORTED_SCALES = (1, 2, 4)
 
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 RATIONAL_PATTERN = r"^[1-9][0-9]{0,8}/[1-9][0-9]{0,8}$"
@@ -101,32 +102,48 @@ class TimeSegment(WireModel):
 
 class SourceDescription(WireModel):
     """What the server measured about the uploaded media. The worker re-probes the bytes and
-    refuses when they disagree, so a stale or mismatched upload never produces a derivative."""
+    refuses when they disagree, so a stale or mismatched upload never produces a derivative.
+    Fields the server did not measure are left out and checked only by the worker's own probe."""
 
     width: int = Field(gt=0, le=16384)
     height: int = Field(gt=0, le=16384)
-    frameRate: str = Field(pattern=RATIONAL_PATTERN)
-    durationMs: int = Field(gt=0)
-    dynamicRange: DynamicRange
-    bitDepth: int = Field(ge=8, le=16)
+    # Required for a video, absent for a still.
+    durationMs: int | None = Field(default=None, gt=0)
+    frameRate: str | None = Field(default=None, pattern=RATIONAL_PATTERN)
+    dynamicRange: DynamicRange | None = None
+    bitDepth: int | None = Field(default=None, ge=8, le=16)
 
 
 class RestorationRequest(WireModel):
     protocol: Literal["restoration-v1"]
     requestId: str = Field(min_length=1, max_length=200)
     mode: RestorationMode
+    # A still is restored as a one-frame sequence and returned as PNG; a video as MP4.
+    kind: Literal["image", "video"] = "video"
     # None: the worker's available model for the mode. A value names one model exactly.
     modelId: str | None = Field(default=None, min_length=1, max_length=64)
     # A full render passes the fingerprint its approved preview reported; any change to the
     # model revision or weights since then is refused with ``model-changed``.
     modelFingerprint: str | None = Field(default=None, pattern=SHA256_PATTERN)
-    scale: Literal[1, 2] = 2
-    maxLongEdge: int = Field(default=MAX_OUTPUT_LONG_EDGE, ge=16, le=MAX_OUTPUT_LONG_EDGE)
-    # None restores the whole upload. Prefer cutting the segment before upload so a
-    # remote worker never receives more of the original than the job needs.
+    scale: Literal[1, 2, 4] = 2
+    # The output never exceeds this box on either edge; aspect is kept.
+    maxWidth: int = Field(default=MAX_OUTPUT_EDGE, ge=16, le=MAX_OUTPUT_EDGE)
+    maxHeight: int = Field(default=MAX_OUTPUT_EDGE, ge=16, le=MAX_OUTPUT_EDGE)
+    # Neither pinned model has a grain control; asking for it is answered with a warning.
+    keepGrain: bool = False
+    # None restores the whole upload. The server cuts clips before upload so a remote worker
+    # never receives more of the original than the job needs; this is for local callers.
     segment: TimeSegment | None = None
     seed: int = Field(default=0, ge=0, le=2**31 - 1)
     source: SourceDescription
+
+    @model_validator(mode="after")
+    def _kind_fields(self) -> "RestorationRequest":
+        if self.kind == "video" and self.source.durationMs is None:
+            raise ValueError("a video request needs source.durationMs")
+        if self.kind == "image" and self.segment is not None:
+            raise ValueError("a still has no segment")
+        return self
 
 
 class WeightIdentity(WireModel):
@@ -147,11 +164,12 @@ class ModelIdentity(WireModel):
 class OutputDescription(WireModel):
     width: int
     height: int
-    frameRate: str
+    # None for a still.
+    frameRate: str | None
     frameCount: int
-    durationMs: int
-    container: Literal["mp4"]
-    videoCodec: str
+    durationMs: int | None
+    container: Literal["mp4", "png"]
+    codec: str
     dynamicRange: DynamicRange
     bitDepth: int
     # "transcoded" when a source codec cannot live in MP4 (PCM, for example) and became AAC.

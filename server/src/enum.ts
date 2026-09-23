@@ -26,6 +26,8 @@ export enum ImmichHeader {
   CorrelationId = 'X-Correlation-ID',
   HlsInitSegment = 'x-immich-hls-msn',
   HlsPosition = 'x-immich-hls-pos',
+  /** The scoped, expiring session credential a render worker was handed at admission (FL-95). */
+  RenderWorkerSession = 'x-frameleaf-worker-session',
 }
 
 export enum ImmichQuery {
@@ -876,12 +878,70 @@ export enum MediaOperationKind {
   RestorationPreview = 'restoration_preview',
   /** A still-image edit recipe render. */
   QuickEdit = 'quick_edit',
+  /**
+   * A library bulk operation over a frozen set of assets (FL-32). The server applies the action in
+   * batches through the same services a single request would use, so it survives the browser.
+   */
+  Bulk = 'bulk',
 }
 
 export const MediaOperationKindSchema = z
   .enum(MediaOperationKind)
   .describe('Media operation kind')
   .meta({ id: 'MediaOperationKind' });
+
+/**
+ * The bulk actions the server is willing to run durably (FL-32).
+ *
+ * Deliberately not the whole selection bar. Anything that only makes sense in the browser tab that
+ * asked for it — a download, a shared link the user is about to copy — stays in the browser, and
+ * so do moves into and out of the Locked folder, which the person confirms in the unlocked session
+ * they are looking at. The worker itself may act on Locked items the owner submitted.
+ */
+export enum MediaOperationBulkAction {
+  Favorite = 'favorite',
+  Unfavorite = 'unfavorite',
+  Archive = 'archive',
+  Unarchive = 'unarchive',
+  AddToAlbum = 'add-to-album',
+  RemoveFromAlbum = 'remove-from-album',
+  Tag = 'tag',
+  Untag = 'untag',
+  ChangeDate = 'change-date',
+  ChangeDescription = 'change-description',
+  ChangeLocation = 'change-location',
+  MarkSensitive = 'mark-sensitive',
+  UnmarkSensitive = 'unmark-sensitive',
+  Delete = 'delete',
+  DeletePermanently = 'delete-permanently',
+  Restore = 'restore',
+  Stack = 'stack',
+  Unstack = 'unstack',
+  RefreshThumbnails = 'refresh-thumbnails',
+  RefreshMetadata = 'refresh-metadata',
+  RefreshEncoded = 'refresh-encoded',
+  RefreshFaces = 'refresh-faces',
+}
+
+export const MediaOperationBulkActionSchema = z
+  .enum(MediaOperationBulkAction)
+  .describe('Bulk action a durable media operation applies')
+  .meta({ id: 'MediaOperationBulkAction' });
+
+/** The outcome recorded for one item of a bulk operation. */
+export enum MediaOperationItemStatus {
+  /** The server applied the action to this item. */
+  Ok = 'ok',
+  /** Not attempted, or refused before anything changed: no access, or nothing to do. */
+  Skipped = 'skipped',
+  /** Attempted and rejected. Retryable. */
+  Failed = 'failed',
+}
+
+export const MediaOperationItemStatusSchema = z
+  .enum(MediaOperationItemStatus)
+  .describe('Per-item outcome of a bulk media operation')
+  .meta({ id: 'MediaOperationItemStatus' });
 
 /**
  * The durable state machine. `cancelling` is a real persisted state: the request is recorded
@@ -984,6 +1044,87 @@ export const StudioPreviewStatusSchema = z
   .enum(StudioPreviewStatus)
   .describe('Studio preview status')
   .meta({ id: 'StudioPreviewStatus' });
+
+/**
+ * Render worker admission (FL-95 `STU-401`).
+ *
+ * A worker is an identity an administrator enrolled, not a machine that showed up. It is
+ * either active or revoked; there is no "pending" because a worker that has not been admitted
+ * simply has no session, and an admission that fails is an audit row, not a worker state.
+ */
+export enum RenderWorkerStatus {
+  Active = 'active',
+  Revoked = 'revoked',
+}
+
+export const RenderWorkerStatusSchema = z
+  .enum(RenderWorkerStatus)
+  .describe('Render worker status')
+  .meta({ id: 'RenderWorkerStatus' });
+
+/** What the audit trail records about a worker. Never a secret, never media. */
+export enum RenderWorkerAuditEvent {
+  /** An administrator created the identity. */
+  Enrolled = 'enrolled',
+  /** A worker presented a valid enrolment secret and fresh evidence and received a session. */
+  Admitted = 'admitted',
+  /** Admission was refused; `reason` says why. */
+  Refused = 'refused',
+  /** A claim was refused at admission time by a worker, user or hardware limit. */
+  ClaimRefused = 'claim_refused',
+  /** A running operation was stopped because it exceeded a limit. */
+  LimitExceeded = 'limit_exceeded',
+  /** An administrator revoked the worker; every session it held is dead. */
+  Revoked = 'revoked',
+  /** An administrator changed the worker's limits or scopes. */
+  Updated = 'updated',
+}
+
+export const RenderWorkerAuditEventSchema = z
+  .enum(RenderWorkerAuditEvent)
+  .describe('Render worker audit event')
+  .meta({ id: 'RenderWorkerAuditEvent' });
+
+/**
+ * Why a worker was turned away. Stable codes: the admin page turns them into messages, and
+ * the same code is written on a refused operation so its owner sees why it is still queued.
+ */
+export enum RenderWorkerRefusalReason {
+  InvalidCredential = 'invalid_credential',
+  WorkerRevoked = 'worker_revoked',
+  SessionExpired = 'session_expired',
+  /** The conformance evidence is older than the worker's configured maximum age. */
+  ConformanceStale = 'conformance_stale',
+  /** The evidence has been presented before; a replayed report is not fresh evidence. */
+  ConformanceReplayed = 'conformance_replayed',
+  /** The engine or patch digest the worker reports is not the one it was enrolled with. */
+  EngineDigestMismatch = 'engine_digest_mismatch',
+  /** A software or fallback renderer was reported where a GPU is required. */
+  SoftwareRenderer = 'software_renderer',
+  /** The worker's destination is not the destination the operation was submitted to. */
+  DestinationMismatch = 'destination_mismatch',
+  /** The operation names a worker and this is not it. */
+  WorkerMismatch = 'worker_mismatch',
+  /** The operation kind is outside the worker's admitted scopes. */
+  ScopeExceeded = 'scope_exceeded',
+  /** The worker already holds as many operations as it is allowed. */
+  WorkerConcurrency = 'worker_concurrency_exceeded',
+  /** The operation's owner already has as many operations running as they are allowed. */
+  UserConcurrency = 'user_concurrency_exceeded',
+  /** The operation needs more GPU memory than the worker was admitted with. */
+  GpuMemoryInsufficient = 'gpu_memory_insufficient',
+  WallClockExceeded = 'wall_clock_exceeded',
+  OutputBytesExceeded = 'output_bytes_exceeded',
+  /** The chosen destination reports itself unavailable. */
+  DestinationUnavailable = 'destination_unavailable',
+  /** FL-90 refused at least one graph resource; a render needs a complete manifest. */
+  ManifestIncomplete = 'manifest_incomplete',
+}
+
+export const RenderWorkerRefusalReasonSchema = z
+  .enum(RenderWorkerRefusalReason)
+  .describe('Render worker refusal reason')
+  .meta({ id: 'RenderWorkerRefusalReason' });
 
 export enum LogLevel {
   Verbose = 'verbose',
@@ -1627,6 +1768,7 @@ export enum NotificationType {
   AlbumInvite = 'AlbumInvite',
   AlbumUpdate = 'AlbumUpdate',
   ClusterGroupRequest = 'ClusterGroupRequest',
+  SharedSpaceMention = 'SharedSpaceMention',
   Custom = 'Custom',
 }
 
@@ -1634,6 +1776,32 @@ export const NotificationTypeSchema = z
   .enum(NotificationType)
   .describe('Notification type')
   .meta({ id: 'NotificationType' });
+
+/**
+ * What a shared space's activity feed records (FL-55). Each value is one durable
+ * row in `shared_space_event`, written by the service that made the change and
+ * read back only by current members, with anything about media they cannot see
+ * filtered out at read time.
+ */
+export enum SharedSpaceEventType {
+  AssetsAdded = 'AssetsAdded',
+  AssetsRemoved = 'AssetsRemoved',
+  AlbumLinked = 'AlbumLinked',
+  AlbumUnlinked = 'AlbumUnlinked',
+  PersonLinked = 'PersonLinked',
+  PersonUnlinked = 'PersonUnlinked',
+  MemberJoined = 'MemberJoined',
+  MemberLeft = 'MemberLeft',
+  MemberRemoved = 'MemberRemoved',
+  MemberRoleChanged = 'MemberRoleChanged',
+  Comment = 'Comment',
+  Like = 'Like',
+}
+
+export const SharedSpaceEventTypeSchema = z
+  .enum(SharedSpaceEventType)
+  .describe('Shared space event type')
+  .meta({ id: 'SharedSpaceEventType' });
 
 export enum OAuthTokenEndpointAuthMethod {
   ClientSecretPost = 'client_secret_post',
@@ -1704,6 +1872,7 @@ export enum ApiTag {
   Map = 'Map',
   MediaHealth = 'Media Health',
   MediaOperations = 'Media operations',
+  RenderWorkers = 'Render workers',
   Memories = 'Memories',
   MlDestinations = 'ML destinations',
   Notifications = 'Notifications',
@@ -1722,6 +1891,7 @@ export enum ApiTag {
   SharedSpaces = 'Shared spaces',
   Stacks = 'Stacks',
   StudioPreviews = 'Studio previews',
+  StudioProjects = 'Studio projects',
   Sync = 'Sync',
   SystemConfig = 'System config',
   SystemMetadata = 'System metadata',

@@ -3,9 +3,15 @@ import { MediaOperationKind, StudioPreviewQuality, StudioPreviewStatus } from 's
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StudioPreviewFrame, StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
 import { StudioPreviewService } from 'src/services/studio-preview.service.js';
+import {
+  StudioProjectService,
+  StudioRevisionAuthorization,
+  StudioRevisionListener,
+} from 'src/services/studio-project.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { rational } from 'src/utils/rational-time.js';
 import { previewETag } from 'src/utils/studio-preview.js';
+import { StudioDestination } from 'src/utils/studio-resources.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
 
@@ -16,9 +22,9 @@ const frameStub = (overrides: Partial<StudioPreviewFrame> = {}): StudioPreviewFr
     projectId: 'project-1',
     revisionDigest: 'rev-a',
     cacheKey: 'cache-key',
-    projectRevision: null,
-    grantToken: null,
-    grantSessionId: null,
+    projectRevision: 7,
+    grantToken: 'grant-token',
+    grantSessionId: 'session-1',
     timeNumerator: '1001',
     timeDenominator: '30000',
     quality: StudioPreviewQuality.Standard,
@@ -45,10 +51,11 @@ const frameStub = (overrides: Partial<StudioPreviewFrame> = {}): StudioPreviewFr
     ...overrides,
   }) as unknown as StudioPreviewFrame;
 
+/** What the client sends: the project and the stored revision it is on, never a graph or digest. */
 const request = (overrides: Record<string, unknown> = {}) =>
   ({
     projectId: 'project-1',
-    revisionDigest: 'rev-a',
+    revision: 7,
     time: { numerator: '1001', denominator: '30000' },
     quality: StudioPreviewQuality.Standard,
     viewportWidth: 1920,
@@ -57,12 +64,27 @@ const request = (overrides: Record<string, unknown> = {}) =>
     ...overrides,
   }) as never;
 
+const conflictOf = async (promise: Promise<unknown>): Promise<Record<string, unknown>> => {
+  try {
+    await promise;
+  } catch (error) {
+    expect(error).toBeInstanceOf(ConflictException);
+    return (error as ConflictException).getResponse() as Record<string, unknown>;
+  }
+  throw new Error('expected a conflict');
+};
+
 describe(StudioPreviewService.name, () => {
   let sut: StudioPreviewService;
   let mocks: ServiceMocks;
   let previews: StudioPreviewRepository;
   let operations: MediaOperationRepository;
   let resources: StudioResourceService;
+  let projects: {
+    registerRevisionListener: ReturnType<typeof vi.fn>;
+    authorizeRevision: ReturnType<typeof vi.fn>;
+    getReadableRevision: ReturnType<typeof vi.fn>;
+  };
 
   const manifest = (overrides: Partial<StudioAuthorizedManifest> = {}) =>
     ({
@@ -86,6 +108,25 @@ describe(StudioPreviewService.name, () => {
       ...overrides,
     }) as unknown as StudioAuthorizedManifest;
 
+  const authorization = (overrides: Partial<StudioRevisionAuthorization> = {}) =>
+    ({
+      project: { id: 'project-1', ownerId: authStub.user1.user.id, spaceId: null, currentRevision: 7 },
+      access: 'owner',
+      revision: { projectId: 'project-1', revision: 7, digest: 'graph-digest' },
+      envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev-1', graph: { tracks: [] } },
+      manifest: manifest(),
+      refused: [],
+      cached: false,
+      ...overrides,
+    }) as unknown as StudioRevisionAuthorization;
+
+  const frameRequest = {
+    time: { numerator: '0', denominator: '1' },
+    quality: StudioPreviewQuality.Draft,
+    viewportWidth: 960,
+    viewportHeight: 540,
+  } as never;
+
   beforeEach(() => {
     mocks = getMocks();
 
@@ -103,6 +144,7 @@ describe(StudioPreviewService.name, () => {
       publish: vi.fn(),
       markFailed: vi.fn(),
       supersede: vi.fn().mockResolvedValue([]),
+      supersedeBeforeRevision: vi.fn().mockResolvedValue([]),
       evict: vi.fn().mockResolvedValue([]),
       listExpired: vi.fn().mockResolvedValue([]),
       deleteEvictedBefore: vi.fn(),
@@ -120,18 +162,41 @@ describe(StudioPreviewService.name, () => {
       cacheKey: vi.fn().mockReturnValue('studio:project-1:7:user:local:manifest-digest'),
     } as unknown as StudioResourceService;
 
-    sut = new StudioPreviewService(mocks.logger as never, previews, operations, resources);
+    projects = {
+      registerRevisionListener: vi.fn(),
+      authorizeRevision: vi.fn().mockResolvedValue(authorization()),
+      getReadableRevision: vi.fn().mockResolvedValue(7),
+    };
+
+    sut = new StudioPreviewService(
+      mocks.logger as never,
+      previews,
+      operations,
+      resources,
+      projects as unknown as StudioProjectService,
+    );
   });
 
-  describe('requestWithoutManifest (TODO(FL-89) seam)', () => {
-    it('records the request against the exact revision and rational time', async () => {
-      await sut.requestWithoutManifest(authStub.user1, request());
+  describe('request (bound to FL-89 stored revisions)', () => {
+    it('resolves the stored head through project storage for this account, locally', async () => {
+      await sut.request(authStub.user1, request());
+
+      expect(projects.authorizeRevision).toHaveBeenCalledWith(authStub.user1, {
+        projectId: 'project-1',
+        destination: StudioDestination.Local,
+      });
+    });
+
+    it('binds the frame to the authorized manifest of the stored revision, never to a client value', async () => {
+      await sut.request(authStub.user1, request());
 
       expect(previews.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           ownerId: authStub.user1.user.id,
           projectId: 'project-1',
-          revisionDigest: 'rev-a',
+          revisionDigest: 'manifest-digest',
+          projectRevision: 7,
+          grantToken: 'grant-token',
           timeNumerator: '1001',
           timeDenominator: '30000',
           viewportWidth: 1920,
@@ -140,31 +205,89 @@ describe(StudioPreviewService.name, () => {
       );
     });
 
+    it('reports the stored revision it answered for', async () => {
+      const result = await sut.request(authStub.user1, request());
+
+      expect(result.currentRevision).toBe(7);
+      expect(result.preview.revision).toBe(7);
+    });
+
     it('canonicalises the time so the same instant is one cache entry', async () => {
-      await sut.requestWithoutManifest(authStub.user1, request({ time: { numerator: '2002', denominator: '60000' } }));
+      await sut.request(authStub.user1, request({ time: { numerator: '2002', denominator: '60000' } }));
 
       expect(previews.upsert).toHaveBeenCalledWith(
         expect.objectContaining({ timeNumerator: '1001', timeDenominator: '30000' }),
       );
     });
 
-    it('creates a durable preview operation carrying the immutable binding', async () => {
-      await sut.requestWithoutManifest(authStub.user1, request());
+    it('creates a durable preview operation naming the stored revision and carrying no graph', async () => {
+      await sut.request(authStub.user1, request());
 
       expect(operations.create).toHaveBeenCalledWith(
         expect.objectContaining({
           kind: MediaOperationKind.StudioPreview,
           projectId: 'project-1',
-          revisionId: 'rev-a',
+          revisionId: 'manifest-digest',
           maxAttempts: 1,
           snapshot: expect.objectContaining({
-            revisionDigest: 'rev-a',
             time: '1001/30000',
-            // FL-90 owns the authorized manifest; a preview with none has nothing it may read.
-            manifestDigest: null,
+            manifestDigest: 'manifest-digest',
+            projectRevision: 7,
+            // FL-95's renderer reads the graph from storage and resolves it as a background runner.
+            studio: { stored: true, revision: 7, cloudConsent: false },
           }),
         }),
       );
+      const { snapshot } = vi.mocked(operations.create).mock.calls[0][0] as { snapshot: Record<string, any> };
+      expect(snapshot.studio).not.toHaveProperty('graph');
+      expect(JSON.stringify(snapshot)).not.toContain('tracks');
+    });
+
+    it('refuses a request naming a revision the project has moved past, with the current one', async () => {
+      projects.authorizeRevision.mockResolvedValue(
+        authorization({ revision: { projectId: 'project-1', revision: 8, digest: 'graph-8' } as never }),
+      );
+
+      const body = await conflictOf(sut.request(authStub.user1, request({ revision: 7 })));
+
+      expect(body).toEqual(expect.objectContaining({ code: 'studio_preview_stale_revision', currentRevision: 8 }));
+      expect(previews.upsert).not.toHaveBeenCalled();
+      expect(operations.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses, without issuing a grant, when a source is unavailable to this account', async () => {
+      // Locked, trashed, unshared: the interactive resolution refuses it, so no frame is rendered.
+      projects.authorizeRevision.mockResolvedValue(
+        authorization({ manifest: manifest({ complete: false, refusedCount: 1 }) }),
+      );
+
+      const body = await conflictOf(sut.request(authStub.user1, request()));
+
+      expect(body).toEqual(expect.objectContaining({ code: 'studio_preview_sources_refused', refusedCount: 1 }));
+      expect(resources.issuePreviewGrant).not.toHaveBeenCalled();
+      expect(previews.upsert).not.toHaveBeenCalled();
+    });
+
+    it('answers "not found" when the account may not read the project', async () => {
+      projects.authorizeRevision.mockRejectedValue(new NotFoundException('Studio project not found'));
+
+      await expect(sut.request(authStub.user1, request())).rejects.toBeInstanceOf(NotFoundException);
+      expect(previews.upsert).not.toHaveBeenCalled();
+    });
+
+    it('refuses an out-of-range viewport before resolving anything', async () => {
+      await expect(sut.request(authStub.user1, request({ viewportWidth: 99_999 }))).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(projects.authorizeRevision).not.toHaveBeenCalled();
+      expect(previews.upsert).not.toHaveBeenCalled();
+    });
+
+    it('refuses a zero denominator rather than rendering an undefined instant', async () => {
+      await expect(
+        sut.request(authStub.user1, request({ time: { numerator: '1', denominator: '0' } })),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(projects.authorizeRevision).not.toHaveBeenCalled();
     });
 
     it('does not start a second render for a frame that already has one', async () => {
@@ -173,19 +296,18 @@ describe(StudioPreviewService.name, () => {
         created: false,
       });
 
-      await sut.requestWithoutManifest(authStub.user1, request());
+      await sut.request(authStub.user1, request());
 
       expect(operations.create).not.toHaveBeenCalled();
     });
 
     it('does not start a render for a pending row another request created', async () => {
-      // Two concurrent requests for the same frame: only the writer that created the row enqueues.
       vi.mocked(previews.upsert).mockResolvedValue({
         frame: frameStub({ status: StudioPreviewStatus.Pending, operationId: null }),
         created: false,
       });
 
-      await sut.requestWithoutManifest(authStub.user1, request());
+      await sut.request(authStub.user1, request());
 
       expect(operations.create).not.toHaveBeenCalled();
     });
@@ -196,7 +318,7 @@ describe(StudioPreviewService.name, () => {
         created: true,
       });
 
-      const { preview } = await sut.requestWithoutManifest(authStub.user1, request());
+      const { preview } = await sut.request(authStub.user1, request());
 
       expect(operations.create).toHaveBeenCalledTimes(1);
       expect(previews.markRendering).toHaveBeenCalledWith(frameStub().id, '0195e2a0-0000-7000-8000-0000000000ff');
@@ -206,7 +328,7 @@ describe(StudioPreviewService.name, () => {
     it('cancels the operation it just created when the row stopped waiting for it', async () => {
       vi.mocked(previews.markRendering).mockResolvedValue(false);
 
-      const { preview } = await sut.requestWithoutManifest(authStub.user1, request());
+      const { preview } = await sut.request(authStub.user1, request());
 
       expect(operations.requestCancel).toHaveBeenCalledWith(
         '0195e2a0-0000-7000-8000-0000000000ff',
@@ -215,9 +337,13 @@ describe(StudioPreviewService.name, () => {
       expect(preview.status).toBe(StudioPreviewStatus.Pending);
     });
 
-    it('never shares a row between accounts naming the same project and revision', async () => {
-      await sut.requestWithoutManifest(authStub.user1, request());
-      await sut.requestWithoutManifest(authStub.admin, request());
+    it('never shares a row between accounts previewing the same project and revision', async () => {
+      projects.authorizeRevision.mockImplementation((auth: typeof authStub.user1) =>
+        Promise.resolve(authorization({ manifest: manifest({ userId: auth.user.id }) })),
+      );
+
+      await sut.request(authStub.user1, request());
+      await sut.request(authStub.admin, request());
 
       const [first, second] = vi.mocked(previews.upsert).mock.calls.map(([row]) => row);
       expect(first.ownerId).toBe(authStub.user1.user.id);
@@ -225,70 +351,52 @@ describe(StudioPreviewService.name, () => {
       expect(first.cacheKey).not.toBe(second.cacheKey);
     });
 
-    it('supersedes and cancels previews of the revision that was replaced', async () => {
-      vi.mocked(previews.getLatestRevisionDigest).mockResolvedValue('rev-old');
+    it('supersedes and cancels previews bound to an earlier resolution', async () => {
+      vi.mocked(previews.getLatestRevisionDigest).mockResolvedValue('older-manifest-digest');
       vi.mocked(previews.supersede).mockResolvedValue([
-        frameStub({ id: 'old-1', revisionDigest: 'rev-old', status: StudioPreviewStatus.Rendering, operationId: 'op-1' }),
+        frameStub({
+          id: 'old-1',
+          revisionDigest: 'older-manifest-digest',
+          status: StudioPreviewStatus.Rendering,
+          operationId: 'op-1',
+        }),
       ]);
 
-      const result = await sut.requestWithoutManifest(authStub.user1, request({ revisionDigest: 'rev-b' }));
+      const result = await sut.request(authStub.user1, request());
 
-      expect(previews.supersede).toHaveBeenCalledWith('project-1', authStub.user1.user.id, 'rev-b');
+      expect(previews.supersede).toHaveBeenCalledWith('project-1', authStub.user1.user.id, 'manifest-digest');
       expect(operations.requestCancel).toHaveBeenCalledWith('op-1', authStub.user1.user.id);
       expect(result.supersededPreviewIds).toEqual(['old-1']);
-      expect(result.currentRevisionDigest).toBe('rev-b');
     });
 
     it('does not cancel a frame that is already rendered', async () => {
-      vi.mocked(previews.getLatestRevisionDigest).mockResolvedValue('rev-old');
+      vi.mocked(previews.getLatestRevisionDigest).mockResolvedValue('older-manifest-digest');
       vi.mocked(previews.supersede).mockResolvedValue([
-        frameStub({ id: 'old-1', revisionDigest: 'rev-old', status: StudioPreviewStatus.Ready, operationId: 'op-1' }),
+        frameStub({
+          id: 'old-1',
+          revisionDigest: 'older-manifest-digest',
+          status: StudioPreviewStatus.Ready,
+          operationId: 'op-1',
+        }),
       ]);
 
-      await sut.requestWithoutManifest(authStub.user1, request({ revisionDigest: 'rev-b' }));
+      await sut.request(authStub.user1, request());
 
       expect(operations.requestCancel).not.toHaveBeenCalled();
     });
 
-    it('refuses a request naming a revision the project has moved past', async () => {
-      sut.setRevisionAuthority({ getCurrentRevisionDigest: vi.fn().mockResolvedValue('rev-b') });
-
-      await expect(sut.requestWithoutManifest(authStub.user1, request({ revisionDigest: 'rev-a' }))).rejects.toBeInstanceOf(
-        ConflictException,
-      );
-      expect(previews.upsert).not.toHaveBeenCalled();
-      expect(operations.create).not.toHaveBeenCalled();
-    });
-
-    it('answers "not found" when the revision authority says the project is not readable', async () => {
-      sut.setRevisionAuthority({ getCurrentRevisionDigest: vi.fn().mockResolvedValue(null) });
-
-      await expect(sut.requestWithoutManifest(authStub.user1, request())).rejects.toBeInstanceOf(NotFoundException);
-    });
-
-    it('refuses an out-of-range viewport before touching the store', async () => {
-      await expect(sut.requestWithoutManifest(authStub.user1, request({ viewportWidth: 99_999 }))).rejects.toBeInstanceOf(
-        ConflictException,
-      );
-      expect(previews.upsert).not.toHaveBeenCalled();
-    });
-
-    it('refuses a zero denominator rather than rendering an undefined instant', async () => {
-      await expect(
-        sut.requestWithoutManifest(authStub.user1, request({ time: { numerator: '1', denominator: '0' } })),
-      ).rejects.toBeInstanceOf(ConflictException);
-    });
-
-    it('never returns the frame path or the store key', async () => {
-      const { preview } = await sut.requestWithoutManifest(authStub.user1, request());
+    it('never returns the frame path, the store key or the grant', async () => {
+      const { preview } = await sut.request(authStub.user1, request());
 
       expect(preview).not.toHaveProperty('framePath');
       expect(preview).not.toHaveProperty('cacheKey');
       expect(preview).not.toHaveProperty('ownerId');
+      expect(preview).not.toHaveProperty('grantToken');
+      expect(JSON.stringify(preview)).not.toContain('grant-token');
     });
 
     it('echoes the seek generation so a late frame can be discarded', async () => {
-      await sut.requestWithoutManifest(authStub.user1, request({ seekGeneration: 12 }));
+      await sut.request(authStub.user1, request({ seekGeneration: 12 }));
 
       expect(previews.upsert).toHaveBeenCalledWith(expect.objectContaining({ seekGeneration: '12' }));
     });
@@ -300,39 +408,14 @@ describe(StudioPreviewService.name, () => {
         throw new Error('expired');
       });
 
-      await expect(
-        sut.requestForManifest(authStub.user1, manifest(), {
-          time: { numerator: '1001', denominator: '30000' },
-          quality: StudioPreviewQuality.Standard,
-          viewportWidth: 1920,
-          viewportHeight: 1080,
-        } as never),
-      ).rejects.toThrow('expired');
+      await expect(sut.requestForManifest(authStub.user1, manifest(), frameRequest)).rejects.toThrow('expired');
 
       expect(previews.upsert).not.toHaveBeenCalled();
       expect(operations.create).not.toHaveBeenCalled();
     });
 
-    it('binds the frame to the manifest digest, not to the graph revision alone', async () => {
-      await sut.requestForManifest(authStub.user1, manifest(), {
-        time: { numerator: '1001', denominator: '30000' },
-        quality: StudioPreviewQuality.Standard,
-        viewportWidth: 1920,
-        viewportHeight: 1080,
-      } as never);
-
-      expect(previews.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ revisionDigest: 'manifest-digest', projectRevision: 7, grantToken: 'grant-token' }),
-      );
-    });
-
     it('issues a viewer-session preview grant and records the manifest on the render snapshot', async () => {
-      await sut.requestForManifest(authStub.user1, manifest(), {
-        time: { numerator: '0', denominator: '1' },
-        quality: StudioPreviewQuality.Draft,
-        viewportWidth: 960,
-        viewportHeight: 540,
-      } as never);
+      await sut.requestForManifest(authStub.user1, manifest(), frameRequest);
 
       expect(resources.issuePreviewGrant).toHaveBeenCalledWith(
         expect.objectContaining({ digest: 'manifest-digest' }),
@@ -347,53 +430,43 @@ describe(StudioPreviewService.name, () => {
 
     it('answers "not found" for a manifest resolved for another account', async () => {
       await expect(
-        sut.requestForManifest(authStub.user1, manifest({ userId: 'someone-else' }), {
-          time: { numerator: '0', denominator: '1' },
-          quality: StudioPreviewQuality.Draft,
-          viewportWidth: 960,
-          viewportHeight: 540,
-        } as never),
+        sut.requestForManifest(authStub.user1, manifest({ userId: 'someone-else' }), frameRequest),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
+  });
 
-    it('does not consult the interim revision authority', async () => {
-      const getCurrentRevisionDigest = vi.fn().mockResolvedValue('something-else');
-      sut.setRevisionAuthority({ getCurrentRevisionDigest });
+  describe('revision commits (FL-89 listener)', () => {
+    const listener = (): StudioRevisionListener => projects.registerRevisionListener.mock.calls[0][0];
 
-      await sut.requestForManifest(authStub.user1, manifest(), {
-        time: { numerator: '0', denominator: '1' },
-        quality: StudioPreviewQuality.Draft,
-        viewportWidth: 960,
-        viewportHeight: 540,
-      } as never);
-
-      expect(getCurrentRevisionDigest).not.toHaveBeenCalled();
-      expect(previews.upsert).toHaveBeenCalled();
+    it('registers with project storage at startup', () => {
+      expect(projects.registerRevisionListener).toHaveBeenCalledTimes(1);
     });
 
-    it('supersedes frames bound to an earlier manifest', async () => {
-      vi.mocked(previews.getLatestRevisionDigest).mockResolvedValue('older-manifest-digest');
+    it("supersedes every account's previews of earlier revisions and cancels the ones rendering", async () => {
+      vi.mocked(previews.supersedeBeforeRevision).mockResolvedValue([
+        frameStub({ id: 'owner-1', status: StudioPreviewStatus.Rendering, operationId: 'op-owner' }),
+        frameStub({
+          id: 'reviewer-1',
+          ownerId: authStub.admin.user.id,
+          status: StudioPreviewStatus.Pending,
+          operationId: 'op-reviewer',
+        }),
+        frameStub({ id: 'ready-1', status: StudioPreviewStatus.Ready, operationId: 'op-ready' }),
+      ]);
 
-      await sut.requestForManifest(authStub.user1, manifest(), {
-        time: { numerator: '0', denominator: '1' },
-        quality: StudioPreviewQuality.Draft,
-        viewportWidth: 960,
-        viewportHeight: 540,
-      } as never);
+      await listener()({
+        projectId: 'project-1',
+        ownerId: authStub.user1.user.id,
+        revision: 8,
+        digest: 'graph-8',
+        restoredFromRevision: null,
+      });
 
-      expect(previews.supersede).toHaveBeenCalledWith('project-1', authStub.user1.user.id, 'manifest-digest');
-    });
-
-    it('never leaks the grant to the browser', async () => {
-      const { preview } = await sut.requestForManifest(authStub.user1, manifest(), {
-        time: { numerator: '0', denominator: '1' },
-        quality: StudioPreviewQuality.Draft,
-        viewportWidth: 960,
-        viewportHeight: 540,
-      } as never);
-
-      expect(preview).not.toHaveProperty('grantToken');
-      expect(JSON.stringify(preview)).not.toContain('grant-token');
+      expect(previews.supersedeBeforeRevision).toHaveBeenCalledWith('project-1', 8);
+      // Each operation is cancelled as the account it belongs to, not as the project owner.
+      expect(operations.requestCancel).toHaveBeenCalledWith('op-owner', authStub.user1.user.id);
+      expect(operations.requestCancel).toHaveBeenCalledWith('op-reviewer', authStub.admin.user.id);
+      expect(operations.requestCancel).not.toHaveBeenCalledWith('op-ready', expect.anything());
     });
   });
 
@@ -405,12 +478,13 @@ describe(StudioPreviewService.name, () => {
       expect(previews.getForOwner).toHaveBeenCalledWith(frameStub().id, authStub.user1.user.id);
     });
 
-    it('reports a revision-bound entity tag', async () => {
+    it('reports a binding-bound entity tag and the stored revision', async () => {
       vi.mocked(previews.getForOwner).mockResolvedValue(frameStub());
 
       const preview = await sut.get(authStub.user1, frameStub().id);
 
       expect(preview.etag).toContain('rev-a');
+      expect(preview.revision).toBe(7);
     });
   });
 
@@ -426,17 +500,31 @@ describe(StudioPreviewService.name, () => {
         viewportHeight: 1080,
       });
 
+    beforeEach(() => {
+      vi.mocked(previews.getLatestRevisionDigest).mockResolvedValue('rev-a');
+    });
+
     it('serves a ready frame on the current revision and records the access', async () => {
       vi.mocked(previews.getForOwner).mockResolvedValue(frameStub());
-      vi.mocked(previews.getLatestRevisionDigest).mockResolvedValue('rev-a');
 
       const result = await sut.getFrame(authStub.user1, frameStub().id, {});
 
       expect(result).toMatchObject({ etag: etag(), file: expect.objectContaining({ path: '/frames/a.png' }) });
       expect(previews.markAccessed).toHaveBeenCalled();
+      expect(projects.getReadableRevision).toHaveBeenCalledWith('project-1', authStub.user1.user.id);
     });
 
-    it('refuses rather than serves once the revision has advanced', async () => {
+    it('refuses once the stored revision has advanced, even before any new preview was asked for', async () => {
+      vi.mocked(previews.getForOwner).mockResolvedValue(frameStub());
+      projects.getReadableRevision.mockResolvedValue(8);
+
+      const body = await conflictOf(sut.getFrame(authStub.user1, frameStub().id, {}));
+
+      expect(body).toEqual(expect.objectContaining({ code: 'studio_preview_stale_revision', currentRevision: 8 }));
+      expect(previews.markAccessed).not.toHaveBeenCalled();
+    });
+
+    it('refuses a frame bound to an earlier resolution of the same revision', async () => {
       vi.mocked(previews.getForOwner).mockResolvedValue(frameStub());
       vi.mocked(previews.getLatestRevisionDigest).mockResolvedValue('rev-b');
 
@@ -445,16 +533,35 @@ describe(StudioPreviewService.name, () => {
 
     it('refuses a conditional request for a superseded revision instead of answering 304', async () => {
       vi.mocked(previews.getForOwner).mockResolvedValue(frameStub());
-      vi.mocked(previews.getLatestRevisionDigest).mockResolvedValue('rev-b');
+      projects.getReadableRevision.mockResolvedValue(8);
 
       await expect(
         sut.getFrame(authStub.user1, frameStub().id, { ifNoneMatch: etag() }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
+    it('refuses a row recorded before previews were bound to project storage', async () => {
+      vi.mocked(previews.getForOwner).mockResolvedValue(
+        frameStub({ projectRevision: null, grantToken: null, grantSessionId: null }),
+      );
+
+      const body = await conflictOf(sut.getFrame(authStub.user1, frameStub().id, {}));
+
+      expect(body).toEqual(expect.objectContaining({ code: 'studio_preview_stale_revision' }));
+    });
+
+    it('answers "not found", and drops the frame, once the account may no longer read the project', async () => {
+      // A reviewer removed from the space, or a deleted project.
+      vi.mocked(previews.getForOwner).mockResolvedValue(frameStub());
+      projects.getReadableRevision.mockResolvedValue(null);
+
+      await expect(sut.getFrame(authStub.user1, frameStub().id, {})).rejects.toBeInstanceOf(NotFoundException);
+      expect(previews.evict).toHaveBeenCalledWith([frameStub().id]);
+      expect(previews.markAccessed).not.toHaveBeenCalled();
+    });
+
     it('answers 304 for an unchanged frame on the current revision', async () => {
       vi.mocked(previews.getForOwner).mockResolvedValue(frameStub());
-      vi.mocked(previews.getLatestRevisionDigest).mockResolvedValue('rev-a');
 
       await expect(sut.getFrame(authStub.user1, frameStub().id, { ifNoneMatch: etag() })).resolves.toEqual({
         notModified: true,
@@ -466,7 +573,6 @@ describe(StudioPreviewService.name, () => {
       vi.mocked(previews.getForOwner).mockResolvedValue(
         frameStub({ status: StudioPreviewStatus.Evicted, framePath: null }),
       );
-      vi.mocked(previews.getLatestRevisionDigest).mockResolvedValue('rev-a');
 
       await expect(sut.getFrame(authStub.user1, frameStub().id, {})).rejects.toBeInstanceOf(GoneException);
     });
@@ -475,7 +581,6 @@ describe(StudioPreviewService.name, () => {
       vi.mocked(previews.getForOwner).mockResolvedValue(
         frameStub({ status: StudioPreviewStatus.Rendering, framePath: null }),
       );
-      vi.mocked(previews.getLatestRevisionDigest).mockResolvedValue('rev-a');
 
       await expect(sut.getFrame(authStub.user1, frameStub().id, {})).rejects.toBeInstanceOf(ConflictException);
     });
@@ -484,13 +589,11 @@ describe(StudioPreviewService.name, () => {
       vi.mocked(previews.getForOwner).mockResolvedValue(undefined);
 
       await expect(sut.getFrame(authStub.user1, frameStub().id, {})).rejects.toBeInstanceOf(NotFoundException);
+      expect(projects.getReadableRevision).not.toHaveBeenCalled();
     });
 
     it('verifies the FL-90 grant on every request, not once at admission', async () => {
-      vi.mocked(previews.getForOwner).mockResolvedValue(
-        frameStub({ grantToken: 'grant-token', grantSessionId: 'session-1' }),
-      );
-      vi.mocked(previews.getLatestRevisionDigest).mockResolvedValue('rev-a');
+      vi.mocked(previews.getForOwner).mockResolvedValue(frameStub());
 
       await sut.getFrame(authStub.user1, frameStub().id, {});
 
@@ -501,11 +604,9 @@ describe(StudioPreviewService.name, () => {
     });
 
     it('stops serving, and drops the frame, the moment the grant stops verifying', async () => {
-      // A relock, an unshare or a re-resolution all land here: the picture must stop at once,
-      // not at the next render.
-      vi.mocked(previews.getForOwner).mockResolvedValue(
-        frameStub({ grantToken: 'grant-token', grantSessionId: 'session-1' }),
-      );
+      // An expired grant or a re-resolution lands here: the picture must stop at once, not at the
+      // next render.
+      vi.mocked(previews.getForOwner).mockResolvedValue(frameStub());
       vi.mocked(resources.verifyReadGrant).mockResolvedValue({
         valid: false,
         reason: 'expired',

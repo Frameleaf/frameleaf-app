@@ -3,6 +3,7 @@
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
+  import { brandedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { navigateToAsset } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
@@ -81,6 +82,7 @@
   <section class="m-4 mb-12 bg-immich-bg dark:bg-immich-dark-bg">
     <ResultsView
       assets={timelineAssets}
+      downloadFileName={brandedArchiveName($t('frameleaf_archive_name_best_photos'))}
       onEndReached={() => void loadNextPage()}
       onRemoved={onAssetDelete}
       onSelectAll={handleSelectAll}

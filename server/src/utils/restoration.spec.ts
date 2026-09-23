@@ -1,22 +1,240 @@
 import { describe, expect, it, vi } from 'vitest';
+import { AssetRestorationMode, AssetRestorationSourceType, AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import {
-  RestorationDynamicRange,
-  RestorationMode,
-  RestorationModelCapability,
-  RestorationModelState,
-} from 'src/dtos/restoration-inference.dto.js';
-import { MlAdmissionRefusal, MlDestinationKind, MlWorkload } from 'src/enum.js';
+  MediaOperationDestination,
+  MediaOperationKind,
+  MlAdmissionRefusal,
+  MlDestinationKind,
+  MlWorkload,
+} from 'src/enum.js';
 import type { MachineLearningRepository, MlEndpointProbe } from 'src/repositories/machine-learning.repository.js';
 import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
-import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
+import { MlDestinationRefusedError, selectMlDestination } from 'src/utils/ml-destination.js';
 import {
-  chooseRestorationModel,
-  estimateRestorationSeconds,
-  restorationTargetGeometry,
-  restorationWorkload,
+  RESTORATION_PREVIEW_AFTER_DECISION_DAYS,
+  RESTORATION_PREVIEW_EDGE,
+  RESTORATION_PREVIEW_UNREVIEWED_DAYS,
+  RestorationSnapshot,
+  canAcceptRestoration,
+  canDiscardRestoration,
+  canRunStage,
+  canSelectRestoration,
+  cappedOutputSize,
+  estimateSeconds,
+  isFullRegion,
+  mediaOperationDestinationOf,
+  parseRestorationSnapshot,
+  planRestorationChunks,
+  previewExpiryAfterDecision,
+  previewExpiryAfterReady,
+  previewInputBytes,
+  previewRegionPixels,
+  restorationChunkIdentity,
+  restorationEstimate,
+  restorationAdmissionOf,
+  restorationOutputPaths,
   selectRestorationDestination,
+  stageOfKind,
+  workloadForMode,
 } from 'src/utils/restoration.js';
 import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
+
+const snapshot = (overrides: Partial<RestorationSnapshot> = {}): RestorationSnapshot => ({
+  version: 1,
+  stage: 'preview',
+  restorationId: '0195e2a0-0000-7000-8000-000000000010',
+  assetId: 'asset-1',
+  ownerId: 'owner-1',
+  sourceType: AssetRestorationSourceType.Image,
+  sourceChecksumHex: 'abcd',
+  sourceWidth: 6000,
+  sourceHeight: 4000,
+  sourceDurationSeconds: null,
+  mode: AssetRestorationMode.Faithful,
+  upscale: 2,
+  keepGrain: false,
+  workload: MlWorkload.RestorationFaithful,
+  destinationId: 'destination-1',
+  destinationKind: MlDestinationKind.Local,
+  region: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 },
+  output: { width: 3240, height: 2160 },
+  ...overrides,
+});
+
+describe('restoration rules (FL-115)', () => {
+  describe('modes and kinds', () => {
+    it('maps each mode to its own workload and each job kind to a stage', () => {
+      expect(workloadForMode(AssetRestorationMode.Faithful)).toBe(MlWorkload.RestorationFaithful);
+      expect(workloadForMode(AssetRestorationMode.Creative)).toBe(MlWorkload.RestorationCreative);
+      expect(stageOfKind(MediaOperationKind.RestorationPreview)).toBe('preview');
+      expect(stageOfKind(MediaOperationKind.Restoration)).toBe('full');
+      expect(stageOfKind(MediaOperationKind.StudioExport)).toBeNull();
+    });
+
+    it('maps destination kinds one to one and never invents a cloud destination', () => {
+      expect(mediaOperationDestinationOf(MlDestinationKind.Local)).toBe(MediaOperationDestination.Local);
+      expect(mediaOperationDestinationOf(MlDestinationKind.Lan)).toBe(MediaOperationDestination.Lan);
+      expect(mediaOperationDestinationOf(MlDestinationKind.RunPod)).toBe(MediaOperationDestination.RunPod);
+    });
+  });
+
+  describe('sizing', () => {
+    it('turns a fractional region into a clamped pixel rectangle', () => {
+      expect(previewRegionPixels({ x: 0.25, y: 0.25, w: 0.5, h: 0.5 }, 4000, 3000)).toEqual({
+        left: 1000,
+        top: 750,
+        width: 2000,
+        height: 1500,
+      });
+      // A region hanging past the edge is clamped to the frame rather than producing an empty extract.
+      expect(previewRegionPixels({ x: 0.9, y: 0.9, w: 0.5, h: 0.5 }, 100, 100)).toEqual({
+        left: 84,
+        top: 84,
+        width: 16,
+        height: 16,
+      });
+      expect(isFullRegion({ x: 0, y: 0, w: 1, h: 1 })).toBe(true);
+      expect(isFullRegion({ x: 0, y: 0, w: 0.5, h: 1 })).toBe(false);
+    });
+
+    it('caps the full output at 4K on both edges and reports when the cap won', () => {
+      expect(cappedOutputSize(1920, 1080, 2)).toEqual({ width: 3840, height: 2160, scale: 2, capped: false });
+      expect(cappedOutputSize(6000, 4000, 2)).toEqual({ width: 3240, height: 2160, scale: 0.54, capped: true });
+      // Portrait: the long edge is the height.
+      expect(cappedOutputSize(1080, 1920, 4)).toEqual({ width: 2160, height: 3840, scale: 2, capped: true });
+      expect(cappedOutputSize(800, 600, 1)).toEqual({ width: 800, height: 600, scale: 1, capped: false });
+    });
+
+    it('derives the preview payload from the region area and the preview edge', () => {
+      const full = previewInputBytes(4_000_000, { x: 0, y: 0, w: 1, h: 1 }, 1024, 768, AssetRestorationSourceType.Image, null);
+      expect(full).toBe(4_000_000);
+      const quarter = previewInputBytes(4_000_000, { x: 0.25, y: 0.25, w: 0.5, h: 0.5 }, 1024, 768, AssetRestorationSourceType.Image, null);
+      expect(quarter).toBe(1_000_000);
+      // A large frame is downscaled to the preview edge, shrinking the upload further.
+      const large = previewInputBytes(40_000_000, { x: 0, y: 0, w: 1, h: 1 }, 8192, 6144, AssetRestorationSourceType.Image, null);
+      expect(large).toBe(Math.round(40_000_000 * (RESTORATION_PREVIEW_EDGE / 8192) ** 2));
+      // Video previews scale by clip length.
+      expect(previewInputBytes(100_000_000, { x: 0, y: 0, w: 1, h: 1 }, 1920, 1080, AssetRestorationSourceType.Video, 50)).toBe(10_000_000);
+    });
+  });
+
+  describe('estimates', () => {
+    it('never invents a figure: no samples means null seconds', () => {
+      const none = { sampleCount: 0, bytesSent: 0, durationMs: 0, spentUsd: 0 };
+      expect(estimateSeconds(1_000_000, none)).toBeNull();
+      const estimate = restorationEstimate(none, { preview: 1000, full: 5000 }, 30);
+      expect(estimate).toEqual({
+        sampleCount: 0,
+        bytesPerSecond: null,
+        windowDays: 30,
+        previewBytes: 1000,
+        fullBytes: 5000,
+        previewSeconds: null,
+        fullSeconds: null,
+      });
+    });
+
+    it('derives seconds from measured throughput', () => {
+      const sample = { sampleCount: 4, bytesSent: 8_000_000, durationMs: 4000, spentUsd: 0 };
+      expect(estimateSeconds(4_000_000, sample)).toBe(2);
+      expect(restorationEstimate(sample, { preview: 1_000_000, full: 20_000_000 }, 30)).toMatchObject({
+        bytesPerSecond: 2_000_000,
+        previewSeconds: 0.5,
+        fullSeconds: 10,
+      });
+    });
+  });
+
+  describe('state machine', () => {
+    it('allows accept and reject only on a ready preview and selection only on a finished result', () => {
+      expect(canAcceptRestoration(AssetRestorationStatus.PreviewReady)).toBe(true);
+      expect(canAcceptRestoration(AssetRestorationStatus.PreviewRendering)).toBe(false);
+      expect(canAcceptRestoration(AssetRestorationStatus.Restored)).toBe(false);
+      expect(canSelectRestoration(AssetRestorationStatus.Restored)).toBe(true);
+      expect(canSelectRestoration(AssetRestorationStatus.PreviewReady)).toBe(false);
+      expect(canDiscardRestoration(AssetRestorationStatus.Discarded)).toBe(false);
+      expect(canDiscardRestoration(AssetRestorationStatus.Restored)).toBe(true);
+    });
+
+    it('lets a stage resume only from its own states, so a retry can never cross a decision', () => {
+      for (const status of [
+        AssetRestorationStatus.PreviewQueued,
+        AssetRestorationStatus.PreviewRendering,
+        AssetRestorationStatus.PreviewFailed,
+        AssetRestorationStatus.PreviewCancelled,
+      ]) {
+        expect(canRunStage('preview', status)).toBe(true);
+        expect(canRunStage('full', status)).toBe(false);
+      }
+      for (const status of [
+        AssetRestorationStatus.Accepted,
+        AssetRestorationStatus.Restoring,
+        AssetRestorationStatus.RestoreFailed,
+        AssetRestorationStatus.RestoreCancelled,
+      ]) {
+        expect(canRunStage('full', status)).toBe(true);
+        expect(canRunStage('preview', status)).toBe(false);
+      }
+      for (const status of [AssetRestorationStatus.PreviewReady, AssetRestorationStatus.Rejected, AssetRestorationStatus.Restored, AssetRestorationStatus.Discarded]) {
+        expect(canRunStage('preview', status)).toBe(false);
+        expect(canRunStage('full', status)).toBe(false);
+      }
+    });
+
+    it('sets retention dates from the moment of readiness and of decision', () => {
+      const now = new Date('2026-09-22T12:00:00.000Z');
+      expect(previewExpiryAfterReady(now).getTime() - now.getTime()).toBe(RESTORATION_PREVIEW_UNREVIEWED_DAYS * 86_400_000);
+      expect(previewExpiryAfterDecision(now).getTime() - now.getTime()).toBe(RESTORATION_PREVIEW_AFTER_DECISION_DAYS * 86_400_000);
+    });
+  });
+
+  describe('snapshot', () => {
+    it('round-trips a valid snapshot and rejects one it cannot read back exactly', () => {
+      const valid = snapshot();
+      expect(parseRestorationSnapshot(valid)).toEqual(valid);
+      expect(parseRestorationSnapshot({ ...valid, version: 2 })).toBeNull();
+      expect(parseRestorationSnapshot({ ...valid, destinationId: '' })).toBeNull();
+      expect(parseRestorationSnapshot({ ...valid, upscale: 3 })).toBeNull();
+      expect(parseRestorationSnapshot(null)).toBeNull();
+    });
+  });
+
+  describe('video chunks', () => {
+    it('cuts a video into fixed chunks with the remainder in the last one', () => {
+      expect(planRestorationChunks(45, 20)).toEqual([
+        { sequence: 0, startSeconds: 0, endSeconds: 20 },
+        { sequence: 1, startSeconds: 20, endSeconds: 40 },
+        { sequence: 2, startSeconds: 40, endSeconds: 45 },
+      ]);
+      expect(planRestorationChunks(5, 20)).toEqual([{ sequence: 0, startSeconds: 0, endSeconds: 5 }]);
+      expect(planRestorationChunks(0)).toEqual([]);
+    });
+
+    it('keys a chunk by every input that changes its output, never by its number alone', () => {
+      const base = snapshot({ stage: 'full', sourceType: AssetRestorationSourceType.Video, sourceDurationSeconds: 45 });
+      const chunk = { sequence: 1, startSeconds: 20, endSeconds: 40 };
+      const identity = restorationChunkIdentity(base, chunk);
+      expect(identity.sequence).toBe(1);
+      expect(identity.timebase).toBe('1/1000');
+      expect(identity.startTicks).toBe(20_000n);
+      expect(identity.endTicks).toBe(40_000n);
+      expect(restorationChunkIdentity(base, chunk).chunkKey).toBe(identity.chunkKey);
+      expect(restorationChunkIdentity(base, { ...chunk, endSeconds: 41 }).chunkKey).not.toBe(identity.chunkKey);
+      expect(restorationChunkIdentity({ ...base, sourceChecksumHex: 'ffff' }, chunk).chunkKey).not.toBe(identity.chunkKey);
+      expect(restorationChunkIdentity({ ...base, mode: AssetRestorationMode.Creative }, chunk).chunkKey).not.toBe(identity.chunkKey);
+      expect(restorationChunkIdentity({ ...base, destinationId: 'elsewhere' }, chunk).chunkKey).not.toBe(identity.chunkKey);
+    });
+  });
+
+  describe('paths', () => {
+    it('names outputs by restoration id so a re-run lands on the same paths', () => {
+      const paths = restorationOutputPaths('/data/thumbs/o/as/se', 'asset-1', 'rest-1');
+      expect(paths.before).toBe('/data/thumbs/o/as/se/asset-1_restore_rest-1_before');
+      expect(paths.result).toBe('/data/thumbs/o/as/se/asset-1_restore_rest-1_result');
+      expect(paths.resultPreview).toBe('/data/thumbs/o/as/se/asset-1_restore_rest-1_result_preview.jpg');
+    });
+  });
+});
 
 const runPodEndpoint = { url: 'https://pod.proxy.runpod.net/', authToken: 'rpa_test_key' };
 
@@ -48,19 +266,12 @@ const refusalOf = async (promise: Promise<unknown>) => {
   return (error as MlDestinationRefusedError).refusal;
 };
 
-describe('restorationWorkload', () => {
-  it('maps each mode to its own workload', () => {
-    expect(restorationWorkload(RestorationMode.Faithful)).toBe(MlWorkload.RestorationFaithful);
-    expect(restorationWorkload(RestorationMode.Creative)).toBe(MlWorkload.RestorationCreative);
-  });
-});
-
-describe('selectRestorationDestination', () => {
-  it('admits the LAN worker the person chose for the mode', async () => {
+describe('selectRestorationDestination (FL-114)', () => {
+  it('admits the LAN worker the person chose and records the admission', async () => {
     const d = deps({});
 
     const selection = await selectRestorationDestination(d, {
-      mode: RestorationMode.Faithful,
+      mode: AssetRestorationMode.Faithful,
       destinationId: mlDestinationStub.lan.id,
       acknowledgeCloudUpload: false,
       jobId: 'operation-1',
@@ -70,16 +281,32 @@ describe('selectRestorationDestination', () => {
       destinationId: mlDestinationStub.lan.id,
       kind: MlDestinationKind.Lan,
       workload: MlWorkload.RestorationFaithful,
-      cloudUploadAcknowledged: false,
     });
+    expect(restorationAdmissionOf(selection)).toEqual({ cloudUploadConfirmed: false });
     expect(d.machineLearningRepository.probe).toHaveBeenCalledTimes(1);
+  });
+
+  it('never marks a plain selection or a copy of an admitted one as admitted', async () => {
+    const d = deps({});
+    const plain = await selectMlDestination(d, {
+      workload: MlWorkload.RestorationFaithful,
+      destinationId: mlDestinationStub.lan.id,
+    });
+    const admitted = await selectRestorationDestination(d, {
+      mode: AssetRestorationMode.Faithful,
+      destinationId: mlDestinationStub.lan.id,
+      acknowledgeCloudUpload: false,
+    });
+
+    expect(restorationAdmissionOf(plain)).toBeNull();
+    expect(restorationAdmissionOf({ ...admitted })).toBeNull();
   });
 
   it('uses the administrator route when the person made no choice', async () => {
     const d = deps({ route: { workload: MlWorkload.RestorationFaithful, destinationId: mlDestinationStub.lan.id } });
 
     const selection = await selectRestorationDestination(d, {
-      mode: RestorationMode.Faithful,
+      mode: AssetRestorationMode.Faithful,
       destinationId: null,
       acknowledgeCloudUpload: false,
     });
@@ -90,7 +317,7 @@ describe('selectRestorationDestination', () => {
 
   it('refuses when there is neither a choice nor a route', async () => {
     const d = deps({});
-    const request = { mode: RestorationMode.Creative, destinationId: null, acknowledgeCloudUpload: false };
+    const request = { mode: AssetRestorationMode.Creative, destinationId: null, acknowledgeCloudUpload: false };
 
     expect(await refusalOf(selectRestorationDestination(d, request))).toBe(MlAdmissionRefusal.WorkloadNotRouted);
     expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
@@ -99,7 +326,7 @@ describe('selectRestorationDestination', () => {
   it('never contacts a cloud destination until the person confirms the upload', async () => {
     const d = deps({ destination: mlDestinationStub.runPodConsented, runPod: runPodEndpoint });
     const request = {
-      mode: RestorationMode.Creative,
+      mode: AssetRestorationMode.Creative,
       destinationId: mlDestinationStub.runPodConsented.id,
       acknowledgeCloudUpload: false,
     };
@@ -108,13 +335,13 @@ describe('selectRestorationDestination', () => {
     expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
   });
 
-  it('also refuses a routed cloud destination without the confirmation', async () => {
+  it('also refuses a routed cloud destination nobody confirmed', async () => {
     const d = deps({
       destination: mlDestinationStub.runPodConsented,
       runPod: runPodEndpoint,
       route: { workload: MlWorkload.RestorationCreative, destinationId: mlDestinationStub.runPodConsented.id },
     });
-    const request = { mode: RestorationMode.Creative, destinationId: null, acknowledgeCloudUpload: false };
+    const request = { mode: AssetRestorationMode.Creative, destinationId: null, acknowledgeCloudUpload: false };
 
     expect(await refusalOf(selectRestorationDestination(d, request))).toBe(MlAdmissionRefusal.ConsentMissing);
     expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
@@ -123,7 +350,7 @@ describe('selectRestorationDestination', () => {
   it('still needs the administrator consent when the person confirms the upload', async () => {
     const d = deps({ destination: mlDestinationStub.runPod, runPod: runPodEndpoint });
     const request = {
-      mode: RestorationMode.Creative,
+      mode: AssetRestorationMode.Creative,
       destinationId: mlDestinationStub.runPod.id,
       acknowledgeCloudUpload: true,
     };
@@ -136,100 +363,24 @@ describe('selectRestorationDestination', () => {
     const d = deps({ destination: mlDestinationStub.runPodConsented, runPod: runPodEndpoint });
 
     const selection = await selectRestorationDestination(d, {
-      mode: RestorationMode.Creative,
+      mode: AssetRestorationMode.Creative,
       destinationId: mlDestinationStub.runPodConsented.id,
       acknowledgeCloudUpload: true,
     });
 
     expect(selection).toMatchObject({ kind: MlDestinationKind.RunPod, workload: MlWorkload.RestorationCreative });
     expect(selection.endpoint).toEqual(runPodEndpoint);
-    expect(selection.cloudUploadAcknowledged).toBe(true);
+    expect(restorationAdmissionOf(selection)).toEqual({ cloudUploadConfirmed: true });
   });
 
   it('refuses a worker that reports no qualified model for the mode', async () => {
     const d = deps({ probe: mlProbeStub.healthy });
     const request = {
-      mode: RestorationMode.Faithful,
+      mode: AssetRestorationMode.Faithful,
       destinationId: mlDestinationStub.lan.id,
       acknowledgeCloudUpload: false,
     };
 
     expect(await refusalOf(selectRestorationDestination(d, request))).toBe(MlAdmissionRefusal.WorkloadNotServed);
-  });
-});
-
-describe('restorationTargetGeometry', () => {
-  it.each([
-    [1920, 1080, 2, 3840, 2160],
-    [1280, 720, 2, 2560, 1440],
-    [3000, 2000, 2, 3840, 2560],
-    [1080, 1920, 2, 2160, 3840],
-    [721, 405, 1, 720, 404],
-    [640, 480, 2, 1280, 960],
-  ] as const)('%ix%i at %ix is %ix%i', (width, height, scale, targetWidth, targetHeight) => {
-    expect(restorationTargetGeometry(width, height, scale)).toEqual({ width: targetWidth, height: targetHeight });
-  });
-});
-
-const model = (overrides: Partial<RestorationModelCapability> = {}): RestorationModelCapability => ({
-  id: 'realbasicvsr-x4',
-  family: 'realbasicvsr',
-  mode: RestorationMode.Faithful,
-  displayName: 'RealBasicVSR x4',
-  revision: '0123456789abcdef0123456789abcdef01234567',
-  fingerprint: 'a'.repeat(64),
-  state: RestorationModelState.Available,
-  reasons: [],
-  nativeScale: 4,
-  maxInputLongEdge: 1280,
-  maxFrames: 300,
-  dynamicRanges: [RestorationDynamicRange.Sdr],
-  measured: [
-    { gpu: 'GPU A', inputWidth: 640, inputHeight: 360, frames: 150, framesPerSecond: 5, peakVramBytes: 1 },
-    { gpu: 'GPU A', inputWidth: 1280, inputHeight: 720, frames: 150, framesPerSecond: 2, peakVramBytes: 1 },
-  ],
-  qualificationId: 'realbasicvsr-x4-2026-09',
-  ...overrides,
-});
-
-describe('chooseRestorationModel', () => {
-  it('chooses an available model for the mode', () => {
-    expect(chooseRestorationModel([model()], RestorationMode.Faithful)).toEqual({ available: true, model: model() });
-  });
-
-  it('explains every reason nothing is available', () => {
-    const reasons = ['evidence compare-faces is pending'];
-    const unqualified = model({ state: RestorationModelState.Unqualified, reasons });
-
-    expect(chooseRestorationModel([unqualified], RestorationMode.Faithful)).toEqual({
-      available: false,
-      reasons: ['realbasicvsr-x4: unqualified (evidence compare-faces is pending)'],
-    });
-    expect(chooseRestorationModel([model()], RestorationMode.Creative)).toEqual({
-      available: false,
-      reasons: ['no creative model is configured'],
-    });
-  });
-
-  it('only accepts the exact model a preview was made with', () => {
-    expect(chooseRestorationModel([model()], RestorationMode.Faithful, 'b'.repeat(64))).toMatchObject({
-      available: false,
-    });
-    expect(chooseRestorationModel([model()], RestorationMode.Faithful, 'a'.repeat(64))).toMatchObject({
-      available: true,
-    });
-  });
-});
-
-describe('estimateRestorationSeconds', () => {
-  it('uses the smallest measured input that covers the source', () => {
-    expect(estimateRestorationSeconds(model(), { width: 640, height: 360, frames: 150 })).toBe(30);
-    expect(estimateRestorationSeconds(model(), { width: 960, height: 540, frames: 150 })).toBe(75);
-  });
-
-  it('gives no estimate for a source larger than anything measured or another GPU', () => {
-    expect(estimateRestorationSeconds(model(), { width: 1920, height: 1080, frames: 150 })).toBeNull();
-    expect(estimateRestorationSeconds(model(), { width: 640, height: 360, frames: 150 }, 'GPU B')).toBeNull();
-    expect(estimateRestorationSeconds(model({ measured: [] }), { width: 640, height: 360, frames: 1 })).toBeNull();
   });
 });

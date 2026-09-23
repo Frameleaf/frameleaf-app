@@ -1922,6 +1922,139 @@ export type AssetDevelopRevertDto = {
     /** Rendered revision to make current again; omitted, the original becomes current */
     revisionId?: string;
 };
+export type AssetRestorationRegionDto = {
+    /** Preview area height as a fraction of the frame */
+    h: number;
+    /** Video only: where the preview clip starts. Ignored for stills. */
+    startSeconds?: number;
+    /** Preview area width as a fraction of the frame */
+    w: number;
+    /** Left edge of the preview area as a fraction of the frame width */
+    x: number;
+    /** Top edge of the preview area as a fraction of the frame height */
+    y: number;
+};
+export type AssetRestorationRequestDto = {
+    /** The processing destination this restoration runs on. Required; never inferred. */
+    destinationId: string;
+    /** Preserve fine film grain instead of smoothing it */
+    keepGrain?: boolean;
+    mode: AssetRestorationMode;
+    region?: AssetRestorationRegionDto;
+    /** Upscale factor. Output is additionally capped at 4K. */
+    upscale?: 1 | 2 | 4;
+};
+export type AssetRestorationEstimateDto = {
+    /** Measured upload throughput for this destination and workload, or null with no samples */
+    bytesPerSecond: number | null;
+    /** Approximate bytes the full render sends */
+    fullBytes: number;
+    /** Estimated full render time from measured throughput, or null when nothing is measured */
+    fullSeconds: number | null;
+    /** Approximate bytes the preview sends */
+    previewBytes: number;
+    /** Estimated preview time from measured throughput, or null when nothing is measured */
+    previewSeconds: number | null;
+    /** Successful requests the throughput was measured from */
+    sampleCount: number;
+    /** Length of the measurement window */
+    windowDays: number;
+};
+export type AssetRestorationResponseDto = {
+    /** The job currently running for this restoration, for cancel and retry; null when idle */
+    activeOperationId: string | null;
+    assetId: string;
+    createdAt: string;
+    /** The bound destination, or null once an administrator removed it */
+    destinationId: string | null;
+    destinationKind: MlDestinationKind;
+    destinationName: string;
+    error: string | null;
+    estimate: (AssetRestorationEstimateDto) | null;
+    /** The durable job that renders the full result */
+    fullOperationId: string | null;
+    /** Both preview files exist */
+    hasPreview: boolean;
+    /** The full-resolution result exists */
+    hasResult: boolean;
+    /** Restoration ID */
+    id: string;
+    /** The owner chose this result as the asset’s playback version */
+    isCurrent: boolean;
+    keepGrain: boolean;
+    mode: AssetRestorationMode;
+    /** Model the adapter reported, for provenance */
+    modelName: string | null;
+    modelVersion: string | null;
+    outputHeight: number | null;
+    outputWidth: number | null;
+    previewExpiresAt: string | null;
+    /** The durable job that rendered the preview */
+    previewOperationId: string | null;
+    previewReadyAt: string | null;
+    previewRegion: AssetRestorationRegionDto;
+    restoredAt: string | null;
+    resultExpiresAt: string | null;
+    reviewedAt: string | null;
+    /** Per-asset sequence number, 1 for the first restoration */
+    revision: number;
+    sourceDurationSeconds: number | null;
+    sourceHeight: number;
+    sourceType: AssetRestorationSourceType;
+    sourceWidth: number;
+    status: AssetRestorationStatus;
+    updatedAt: string;
+    upscale: number;
+    workload: MlWorkload;
+};
+export type AssetRestorationListResponseDto = {
+    assetId: string;
+    /** The restoration the owner chose as the playback version; null means the original */
+    currentRestorationId: string | null;
+    /** Every restoration of the asset, newest first */
+    items: AssetRestorationResponseDto[];
+};
+export type AssetRestorationDestinationDto = {
+    /** The server would admit this workload on this destination right now */
+    available: boolean;
+    /** True when no consent is needed or an administrator recorded it */
+    consentGranted: boolean;
+    consentRequired: boolean;
+    estimate: AssetRestorationEstimateDto;
+    health: MlDestinationHealth;
+    id: string;
+    kind: MlDestinationKind;
+    /** Media sent to this destination leaves the network */
+    leavesNetwork: boolean;
+    name: string;
+    /** Why the destination cannot be chosen, or null */
+    refusal: (MlAdmissionRefusal) | null;
+    refusalDetail: string | null;
+};
+export type AssetRestorationOptionsDto = {
+    /** Always true since the restoration adapter ships with the server; whether a model can run is reported per destination. */
+    adapterInstalled: boolean;
+    assetId: string;
+    destinations: AssetRestorationDestinationDto[];
+    /** Video length; null for stills */
+    durationSeconds: number | null;
+    mode: AssetRestorationMode;
+    /** Height the full render would produce after the 4K cap */
+    outputHeight: number;
+    /** Width the full render would produce after the 4K cap */
+    outputWidth: number;
+    /** Length of a video preview clip; null for stills */
+    previewSeconds: number | null;
+    sourceHeight: number;
+    sourceType: AssetRestorationSourceType;
+    sourceWidth: number;
+    upscale: number;
+    workload: MlWorkload;
+};
+export type AssetRestorationSelectDto = {
+    /** Restored revision to use as the playback version; omitted, the original is used */
+    restorationId?: string;
+};
 export type AssetEditActionItemResponseDto = {
     action: AssetEditAction;
     /** Asset edit ID */
@@ -2761,10 +2894,23 @@ export type MediaOperationEstimateDto = {
     /** Estimated output size */
     sizeBytes: string | null;
 };
+export type MediaOperationBulkSummaryDto = {
+    action: MediaOperationBulkAction;
+    /** Items the server attempted and could not apply; a retry covers these */
+    failed: number;
+    itemsTruncated: boolean;
+    /** Items in the frozen set */
+    requested: number;
+    /** Items refused before anything changed, e.g. no access */
+    skipped: number;
+    snapshotTruncated: boolean;
+    succeeded: number;
+};
 export type MediaOperationDto = {
     /** Source asset, when the workload has exactly one */
     assetId: string | null;
     attempt: number;
+    bulk: (MediaOperationBulkSummaryDto) | null;
     cancelAcknowledgedAt: string | null;
     cancelRequestedAt: string | null;
     createdAt: string;
@@ -2840,7 +2986,17 @@ export type MediaOperationCheckpointDto = {
     /** Rational timebase for the tick range, e.g. 30000/1001 */
     timebase: string;
 };
+export type MediaOperationBulkItemDto = {
+    /** Asset ID */
+    id: string;
+    /** Operator detail from the server */
+    message: string | null;
+    /** Stable key the client turns into a message */
+    reasonKey: string | null;
+    status: MediaOperationItemStatus;
+};
 export type MediaOperationDetailDto = (MediaOperationDto) & {
+    bulkItems: MediaOperationBulkItemDto[];
     checkpoints: MediaOperationCheckpointDto[];
     /** The immutable binding the render was bound to */
     snapshot: {
@@ -2870,7 +3026,9 @@ export type StudioPreviewDto = {
     quality: StudioPreviewQuality;
     readyAt: string | null;
     requestedAt: string;
-    /** The exact revision this frame is bound to */
+    /** The stored project revision this frame was rendered for */
+    revision: number;
+    /** Digest of the authorized resolution the frame is bound to; changes with the revision and whenever access is re-resolved */
     revisionDigest: string;
     /** The seek this frame answers */
     seekGeneration: string;
@@ -2883,8 +3041,8 @@ export type StudioPreviewDto = {
     viewportWidth: number;
 };
 export type StudioPreviewResponseDto = {
-    /** The revision the project is on now */
-    currentRevisionDigest: string;
+    /** The stored revision the project is on now */
+    currentRevision: number;
     preview: StudioPreviewDto;
     /** Previews cancelled because the revision advanced */
     supersededPreviewIds: string[];
@@ -2893,13 +3051,266 @@ export type StudioPreviewRequestDto = {
     /** Studio project the frame belongs to */
     projectId: string;
     quality: StudioPreviewQuality;
-    /** Exact graph revision digest the frame is bound to; a superseded revision is refused */
-    revisionDigest: string;
+    /** Stored project revision the frame is bound to; a superseded revision is refused */
+    revision: number;
     /** The client's monotonic seek counter, echoed back on the result */
     seekGeneration?: number;
     time: StudioPreviewTimeDto;
     viewportHeight: number;
     viewportWidth: number;
+};
+export type MediaOperationBulkPayloadDto = {
+    albumId?: string;
+    dateMode?: DateMode;
+    dateTimeOriginal?: string;
+    description?: string;
+    latitude?: number;
+    longitude?: number;
+    /** Relative shift in minutes, for `dateMode: shift` */
+    minutes?: number;
+    primaryId?: string;
+    stackIds?: string[];
+    tagIds?: string[];
+    timeZone?: string;
+};
+export type MediaOperationBulkCreateDto = {
+    action: MediaOperationBulkAction;
+    /** The frozen matching set, in order */
+    assetIds: string[];
+    payload?: MediaOperationBulkPayloadDto;
+    /** Client idempotency key; submitting the same key again returns the existing operation */
+    requestId?: string;
+    /** A record of the view the set came from; never re-resolved */
+    scope?: {
+        [key: string]: any;
+    };
+    /** The count shown to the person at submit */
+    submittedTotal?: number | null;
+    /** The client could not resolve the whole matching set */
+    truncated?: boolean;
+};
+export type RenderWorkerDto = {
+    /** Operations the worker currently holds */
+    activeOperations: number;
+    /** Oldest conformance evidence admission accepts, in milliseconds */
+    conformanceMaxAgeMs: number;
+    createdAt: string;
+    destination: MediaOperationDestination;
+    /** Engine and patch digest the worker must keep reporting */
+    engineDigest: string | null;
+    /** GPU memory the worker was qualified with, in bytes */
+    gpuMemoryBytes: string | null;
+    /** Render worker ID */
+    id: string;
+    /** Operation kinds this worker may claim */
+    kinds: MediaOperationKind[];
+    lastAdmittedAt: string | null;
+    lastSeenAt: string | null;
+    /** Operations this worker may hold at once */
+    maxConcurrentOperations: number;
+    /** Most output bytes one operation may produce here */
+    maxOutputBytes: string | null;
+    /** Longest one operation may run here, in milliseconds */
+    maxWallClockMs: string | null;
+    /** What the administrator calls this worker */
+    name: string;
+    revokedAt: string | null;
+    status: RenderWorkerStatus;
+    updatedAt: string;
+};
+export type RenderWorkerCreateDto = {
+    conformanceMaxAgeMs?: number;
+    destination: MediaOperationDestination;
+    engineDigest?: string | null;
+    gpuMemoryBytes?: string | null;
+    /** Operation kinds this worker may claim */
+    kinds: MediaOperationKind[];
+    maxConcurrentOperations?: number;
+    maxOutputBytes?: string | null;
+    maxWallClockMs?: string | null;
+    name: string;
+};
+export type RenderWorkerCreateResponseDto = {
+    /** Shown once. Give it to the worker; the server keeps only its hash */
+    enrolmentSecret: string;
+    worker: RenderWorkerDto;
+};
+export type RenderWorkerAuditDto = {
+    /** The administrator who acted, when one did */
+    actorId: string | null;
+    createdAt: string;
+    /** Operator detail. Never a secret, never a path */
+    detail: {
+        [key: string]: any;
+    } | null;
+    event: RenderWorkerAuditEvent;
+    id: string;
+    operationId: string | null;
+    reason: (RenderWorkerRefusalReason) | null;
+    workerId: string | null;
+};
+export type RenderWorkerLimitDto = {
+    /** Operations one account may have claimed at once */
+    maxConcurrentOperations: number;
+    maxOutputBytes: string | null;
+    maxWallClockMs: string | null;
+    /** `instance` for the default, otherwise a user ID */
+    subject: string;
+    updatedAt: string;
+    userId: string | null;
+};
+export type RenderWorkerLimitsResponseDto = {
+    instance: RenderWorkerLimitDto;
+    users: RenderWorkerLimitDto[];
+};
+export type RenderWorkerLimitUpdateDto = {
+    maxConcurrentOperations: number;
+    maxOutputBytes: string | null;
+    maxWallClockMs: string | null;
+    /** Omit or null for the instance default */
+    userId?: string | null;
+};
+export type RenderWorkerUpdateDto = {
+    conformanceMaxAgeMs?: number;
+    engineDigest?: string | null;
+    gpuMemoryBytes?: string | null;
+    kinds?: MediaOperationKind[];
+    maxConcurrentOperations?: number;
+    maxOutputBytes?: string | null;
+    maxWallClockMs?: string | null;
+    name?: string;
+};
+export type RenderWorkerAdmissionDto = {
+    /** Encoder and decoder names the check verified */
+    codecs?: string[];
+    /** When the conformance check ran */
+    conformanceReportedAt: string;
+    /** Digest of the engine and patches actually loaded */
+    engineDigest: string;
+    enrolmentSecret: string;
+    /** GPU memory measured by the conformance check */
+    gpuMemoryBytes: string | null;
+    /** True when the renderer is a software or fallback device */
+    softwareRenderer: boolean;
+    workerId: string;
+};
+export type RenderWorkerSessionDto = {
+    expiresAt: string;
+    /** How often the worker should heartbeat a held claim */
+    heartbeatIntervalMs: number;
+    /** How long a claim lasts without a heartbeat */
+    leaseMs: number;
+    scopes: MediaOperationKind[];
+    /** Present as the x-frameleaf-worker-session header on every worker call */
+    sessionToken: string;
+    workerId: string;
+};
+export type RenderWorkerInputGrantDto = {
+    /** Digest the manifest was resolved against, when known */
+    checksum: string | null;
+    expiresAt: string;
+    /** FL-90 resource key, or `source` for a single-asset workload */
+    inputId: string;
+    /** Resource class: library-asset, edited-master, font, lut, … */
+    kind: string;
+    /** Asset or resource id. Never a path */
+    resourceId: string;
+    /** Relative URL, valid for this claim only and only until expiresAt */
+    url: string;
+};
+export type RenderWorkerClaimLimitsDto = {
+    maxOutputBytes: string | null;
+    maxWallClockMs: string | null;
+};
+export type RenderWorkerClaimDto = {
+    attempt: number;
+    checkpoints: MediaOperationCheckpointDto[];
+    /** Required on every write to this operation */
+    claimToken: string;
+    inputs: RenderWorkerInputGrantDto[];
+    kind: MediaOperationKind;
+    leaseMs: number;
+    limits: RenderWorkerClaimLimitsDto;
+    operationId: string;
+    projectId: string | null;
+    revisionId: string | null;
+    settings: {
+        [key: string]: any;
+    };
+    snapshot: {
+        [key: string]: any;
+    };
+};
+export type RenderWorkerClaimRequestDto = {
+    /** Narrow the claim to these kinds */
+    kinds?: MediaOperationKind[];
+};
+export type RenderWorkerWriteResultDto = {
+    accepted: boolean;
+    refusal: (RenderWorkerRefusalReason) | null;
+};
+export type RenderWorkerCancelAckDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    /** True when remote resources are confirmed gone */
+    released: boolean;
+};
+export type RenderWorkerCheckpointPlanDto = {
+    chunkKey: string;
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    configDigest: string;
+    endTicks: string;
+    historyDigest: string;
+    inputDigest: string;
+    prerollTicks?: string;
+    requiresSequentialContext?: boolean;
+    seed: string | null;
+    sequence: number;
+    startTicks: string;
+    timebase: string;
+};
+export type RenderWorkerCheckpointCompleteDto = {
+    /** Must match the planned chunk; a re-planned chunk cannot be completed */
+    chunkKey: string;
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    outputChecksum: string;
+    outputPath: string;
+    sizeInBytes: string;
+};
+export type RenderWorkerCompleteDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    resultAssetId: string | null;
+};
+export type RenderWorkerFailDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    error: string;
+    errorCode: string;
+};
+export type RenderWorkerHeartbeatResponseDto = {
+    /** The owner asked to stop; acknowledge with cancel-ack */
+    cancelRequested: boolean;
+    leaseExtended: boolean;
+    leaseMs: number;
+    /** Set when a limit stopped the operation */
+    refusal: (RenderWorkerRefusalReason) | null;
+};
+export type RenderWorkerHeartbeatDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    /** Total output bytes produced so far */
+    outputBytes?: string;
+};
+export type RenderWorkerProgressDto = {
+    /** The claim token this operation was handed out with */
+    claimToken: string;
+    outputBytes?: string;
+    processedUnits: number;
+    status: "preparing" | "rendering";
+    totalUnits: number | null;
 };
 export type OnThisDayDto = {
     /** Year for on this day memory */
@@ -3199,7 +3610,7 @@ export type RestorationModelCapabilityDto = {
     maxInputLongEdge: number;
     /** Throughput measured during qualification; estimates come from these */
     measured: RestorationMeasuredThroughputDto[];
-    mode: RestorationMode;
+    mode: AssetRestorationMode;
     /** Fixed enlargement the model restores at, or null */
     nativeScale: number | null;
     /** Qualification record covering this model, or null */
@@ -4587,6 +4998,39 @@ export type SharedSpaceMembersResponseDto = {
     /** Members and pending invitations, owner first */
     members: SharedSpaceMemberResponseDto[];
 };
+export type SharedSpaceEventResponseDto = {
+    /** The comment or like this event announces, if any */
+    activityId: string | null;
+    /** Who did it; null once that account is gone */
+    actor: UserResponseDto | null;
+    /** How many of the items this event is about the reader may see */
+    assetCount: number;
+    /** The items this event is about that the reader may see and that are still in the shared space. Empty for a removal. */
+    assetIds: string[];
+    /** The comment text, for a comment event. Mentions are @{userId} tokens. */
+    comment: string | null;
+    /** When it happened */
+    createdAt: string;
+    /** Event ID */
+    id: string;
+    /** Members named in the comment */
+    mentions: UserResponseDto[];
+    /** A linked album's or person's name as the space knew it, or the new role; null otherwise */
+    subject: string | null;
+    /** The member a member event is about; null otherwise */
+    targetUser: UserResponseDto | null;
+    "type": SharedSpaceEventType;
+};
+export type SharedSpaceActivityResponseDto = {
+    /** Newest first */
+    events: SharedSpaceEventResponseDto[];
+    /** True when older events exist beyond this page */
+    hasMore: boolean;
+    /** When this member last marked the shared space seen; null if they never have */
+    lastVisitedAt: string | null;
+    /** Events by other members since then that this member may see. Capped at 500. */
+    unreadCount: number;
+};
 export type SharedSpaceAlbumResponseDto = {
     /** The linked album name */
     albumName: string;
@@ -4608,6 +5052,40 @@ export type SharedSpaceAlbumResponseDto = {
 export type SharedSpaceAlbumsResponseDto = {
     /** Albums linked into the shared space, by name */
     albums: SharedSpaceAlbumResponseDto[];
+};
+export type SharedSpaceCommentResponseDto = {
+    /** The item commented on; null for a comment on the space itself */
+    assetId: string | null;
+    /** True when the caller may remove the comment */
+    canDelete: boolean;
+    /** True when the caller may change the text */
+    canEdit: boolean;
+    /** The text, with @{userId} mention tokens */
+    comment: string;
+    /** When it was written */
+    createdAt: string;
+    /** Comment ID */
+    id: string;
+    /** Members named in the comment */
+    mentions: UserResponseDto[];
+    /** When it was last edited */
+    updatedAt: string;
+    /** The author */
+    user: UserResponseDto;
+};
+export type SharedSpaceCommentsResponseDto = {
+    /** Oldest first */
+    comments: SharedSpaceCommentResponseDto[];
+};
+export type SharedSpaceCommentCreateDto = {
+    /** The item to comment on. Left out, the comment is on the space itself. */
+    assetId?: string;
+    /** The text. Mention a member with @{userId}; every mention must name a current member. */
+    comment: string;
+};
+export type SharedSpaceCommentUpdateDto = {
+    /** The text. Mention a member with @{userId}; every mention must name a current member. */
+    comment: string;
 };
 export type SharedSpaceNewResponseDto = {
     /** Items other members added since then */
@@ -4738,6 +5216,228 @@ export type StackCreateDto = {
 export type StackUpdateDto = {
     /** Primary asset ID */
     primaryAssetId?: string;
+};
+export type StudioProjectLeaseDto = {
+    /** Pause in editing after which the client saves */
+    autosaveDebounceMs: number;
+    /** When the current lease lapses */
+    expiresAt: string | null;
+    /** A live lease belongs to another editor instance */
+    heldByAnother: boolean;
+    /** This client holds the write lease */
+    heldByYou: boolean;
+    /** Lease length the server grants */
+    leaseMs: number;
+    /** How often the holder should renew */
+    renewMs: number;
+};
+export type StudioProjectDto = {
+    access: StudioProjectAccess;
+    createdAt: string;
+    /** Studio project ID */
+    id: string;
+    lease: StudioProjectLeaseDto;
+    name: string;
+    /** The only account that may write */
+    ownerId: string;
+    /** Head revision number; 0 until the first save */
+    revision: number;
+    /** Shared space whose members may review the project */
+    spaceId: string | null;
+    updatedAt: string;
+};
+export type StudioProjectListResponseDto = {
+    items: StudioProjectDto[];
+    /** Matching projects, before paging */
+    total: number;
+};
+export type StudioProjectEnvelopeDto = {
+    /** The engine that produced the graph; `freecut` */
+    engine: string;
+    /** Pinned engine revision the editor was built from */
+    engineRevision: string;
+    /** Opaque engine document, stored and returned byte for byte */
+    graph: {
+        [key: string]: any;
+    };
+    /** Envelope shape version; the server accepts exactly one */
+    schemaVersion: number;
+};
+export type StudioProjectResourcesDto = {
+    /** When the resolution ran */
+    checkedAt: string;
+    /** Every referenced source resolved for the acting account */
+    complete: boolean;
+    /** References that were refused for the acting account */
+    refusedCount: number;
+};
+export type StudioProjectDetailDto = {
+    access: StudioProjectAccess;
+    createdAt: string;
+    /** Key-sorted SHA-256 of the head envelope; null when withheld */
+    digest: string | null;
+    envelope: (StudioProjectEnvelopeDto) | null;
+    /** Studio project ID */
+    id: string;
+    lease: StudioProjectLeaseDto;
+    name: string;
+    /** The only account that may write */
+    ownerId: string;
+    resources: (StudioProjectResourcesDto) | null;
+    /** Head revision number; 0 until the first save */
+    revision: number;
+    /** Shared space whose members may review the project */
+    spaceId: string | null;
+    updatedAt: string;
+    /** The graph was withheld because a source is unavailable to you */
+    withheld: boolean;
+};
+export type StudioProjectCreateDto = {
+    /** This editor instance; it receives the lease */
+    clientId: string;
+    /** An initial document, saved as revision 1 */
+    envelope?: StudioProjectEnvelopeDto;
+    name: string;
+    /** Idempotency key for the initial save */
+    requestKey?: string;
+    /** Share the project with a shared space for review */
+    spaceId?: string | null;
+};
+export type StudioProjectUpdateDto = {
+    name?: string;
+    /** Set or clear the reviewing shared space */
+    spaceId?: string | null;
+};
+export type StudioProjectLeaseRequestDto = {
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    clientId: string;
+    /** Take a live lease away from another of your editor instances; never implicit */
+    takeover?: boolean;
+};
+export type StudioCommandSummaryDto = {
+    /** Command id to how many times it appeared */
+    counts: {
+        [key: string]: number;
+    };
+    /** Commands in the batch */
+    total: number;
+};
+export type StudioProjectSaveResponseDto = {
+    /** Digest of the head envelope */
+    digest: string;
+    lease: StudioProjectLeaseDto;
+    /** This request key was already accepted; the earlier result is returned */
+    replayed: boolean;
+    /** The head after this request */
+    revision: number;
+    /** The revision row; null when nothing was written */
+    revisionId: string | null;
+    /** The document equals the head, so no revision was written */
+    unchanged: boolean;
+};
+export type StudioProjectSaveDto = {
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    clientId: string;
+    envelope: StudioProjectEnvelopeDto;
+    /** The head this document was built on */
+    expectedRevision: number;
+    /** Stable per attempt; a retry carries the same key */
+    requestKey: string;
+    summary?: StudioCommandSummaryDto;
+};
+export type StudioProjectRevisionDto = {
+    authorId: string | null;
+    createdAt: string;
+    /** Null for a reviewer; the digest travels with the graph */
+    digest: string | null;
+    graphBytes: number;
+    id: string;
+    /** Set when this revision restored an earlier one */
+    restoredFromRevision: number | null;
+    revision: number;
+    summary: StudioCommandSummaryDto;
+};
+export type StudioProjectHistoryResponseDto = {
+    /** Newest first */
+    items: StudioProjectRevisionDto[];
+    total: number;
+};
+export type StudioProjectRestoreDto = {
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    clientId: string;
+    /** The current head; the restore appends after it */
+    expectedRevision: number;
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    requestKey: string;
+    /** The historical revision to bring back */
+    revision: number;
+};
+export type StudioProjectRevisionDetailDto = {
+    authorId: string | null;
+    createdAt: string;
+    /** Null for a reviewer; the digest travels with the graph */
+    digest: string | null;
+    envelope: (StudioProjectEnvelopeDto) | null;
+    graphBytes: number;
+    id: string;
+    resources: (StudioProjectResourcesDto) | null;
+    /** Set when this revision restored an earlier one */
+    restoredFromRevision: number | null;
+    revision: number;
+    summary: StudioCommandSummaryDto;
+    withheld: boolean;
+};
+export type StudioProjectDiffDto = {
+    added: number;
+    /** Size change of the serialized graph */
+    byteDelta: number;
+    changed: number;
+    /** Commands the saves between the two revisions reported */
+    commands: StudioCommandSummaryDto;
+    from: number;
+    /** The two envelopes have the same digest */
+    identical: boolean;
+    /** Changed graph paths, aggregated and capped */
+    paths: string[];
+    removed: number;
+    to: number;
+    /** More paths changed than are listed */
+    truncated: boolean;
+};
+export type StudioTimeDto = {
+    /** Denominator */
+    den: number;
+    /** Numerator; zero is the start of the sequence */
+    num: number;
+};
+export type StudioCommentDto = {
+    authorId: string;
+    createdAt: string;
+    id: string;
+    projectId: string;
+    resolvedAt: string | null;
+    resolvedById: string | null;
+    /** The revision the reviewer was looking at */
+    revision: number;
+    text: string;
+    time: StudioTimeDto;
+    updatedAt: string;
+};
+export type StudioCommentListResponseDto = {
+    /** Oldest first */
+    items: StudioCommentDto[];
+    total: number;
+};
+export type StudioCommentCreateDto = {
+    /** Client-chosen identifier; letters, digits, `_ . : -`, up to 128 characters */
+    requestKey?: string;
+    revision: number;
+    text: string;
+    time: StudioTimeDto;
+};
+export type StudioCommentUpdateDto = {
+    resolved?: boolean;
+    text?: string;
 };
 export type SyncAckDeleteDto = {
     /** Sync entity types to delete acks for */
@@ -5917,6 +6617,126 @@ export function requestPhysicalDeduplicationPreview({ physicalDeduplicationPrevi
     })));
 }
 /**
+ * List render workers
+ */
+export function listRenderWorkers(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerDto[];
+    }>("/admin/render-workers", {
+        ...opts
+    }));
+}
+/**
+ * Enrol a render worker
+ */
+export function createRenderWorker({ renderWorkerCreateDto }: {
+    renderWorkerCreateDto: RenderWorkerCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: RenderWorkerCreateResponseDto;
+    }>("/admin/render-workers", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCreateDto
+    })));
+}
+/**
+ * Search the render worker audit trail
+ */
+export function searchRenderWorkerAudit({ take, workerId }: {
+    take?: number;
+    workerId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerAuditDto[];
+    }>(`/admin/render-workers/audit${QS.query(QS.explode({
+        take,
+        workerId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get render limits
+ */
+export function getRenderWorkerLimits(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerLimitsResponseDto;
+    }>("/admin/render-workers/limits", {
+        ...opts
+    }));
+}
+/**
+ * Set render limits
+ */
+export function updateRenderWorkerLimits({ renderWorkerLimitUpdateDto }: {
+    renderWorkerLimitUpdateDto: RenderWorkerLimitUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerLimitDto;
+    }>("/admin/render-workers/limits", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: renderWorkerLimitUpdateDto
+    })));
+}
+/**
+ * Remove an account’s render limits
+ */
+export function deleteRenderWorkerUserLimit({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/render-workers/limits/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Revoke a render worker
+ */
+export function revokeRenderWorker({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/render-workers/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get a render worker
+ */
+export function getRenderWorker({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerDto;
+    }>(`/admin/render-workers/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Update a render worker
+ */
+export function updateRenderWorker({ id, renderWorkerUpdateDto }: {
+    id: string;
+    renderWorkerUpdateDto: RenderWorkerUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerDto;
+    }>(`/admin/render-workers/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: renderWorkerUpdateDto
+    })));
+}
+/**
  * Search users
  */
 export function searchUsersAdmin({ id, withDeleted }: {
@@ -6932,6 +7752,128 @@ export function downloadAsset({ edited, id, key, slug }: {
     }));
 }
 /**
+ * List restorations of an asset
+ */
+export function getAssetRestorations({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetRestorationListResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations`, {
+        ...opts
+    }));
+}
+/**
+ * Request a restoration preview
+ */
+export function requestAssetRestoration({ id, assetRestorationRequestDto }: {
+    id: string;
+    assetRestorationRequestDto: AssetRestorationRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssetRestorationResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetRestorationRequestDto
+    })));
+}
+/**
+ * Choose the restoration used for playback
+ */
+export function setCurrentAssetRestoration({ id, assetRestorationSelectDto }: {
+    id: string;
+    assetRestorationSelectDto: AssetRestorationSelectDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetRestorationListResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations/current`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: assetRestorationSelectDto
+    })));
+}
+/**
+ * Get restoration options for an asset
+ */
+export function getAssetRestorationOptions({ id, mode, upscale }: {
+    id: string;
+    mode?: AssetRestorationMode;
+    upscale?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetRestorationOptionsDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations/options${QS.query(QS.explode({
+        mode,
+        upscale
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Discard a restoration
+ */
+export function discardAssetRestoration({ id, restorationId }: {
+    id: string;
+    restorationId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/restorations/${encodeURIComponent(restorationId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Accept a restoration preview
+ */
+export function acceptAssetRestoration({ id, restorationId }: {
+    id: string;
+    restorationId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetRestorationResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations/${encodeURIComponent(restorationId)}/accept`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * View a restoration file
+ */
+export function viewAssetRestorationFile({ id, kind, restorationId }: {
+    id: string;
+    kind?: AssetRestorationFileKind;
+    restorationId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/assets/${encodeURIComponent(id)}/restorations/${encodeURIComponent(restorationId)}/file${QS.query(QS.explode({
+        kind
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Reject a restoration preview
+ */
+export function rejectAssetRestoration({ id, restorationId }: {
+    id: string;
+    restorationId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetRestorationResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/restorations/${encodeURIComponent(restorationId)}/reject`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * View asset thumbnail
  */
 export function viewAsset({ edited, id, key, size, slug }: {
@@ -7868,6 +8810,219 @@ export function startMissingScan(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Admit a render worker
+ */
+export function admitRenderWorker({ renderWorkerAdmissionDto }: {
+    renderWorkerAdmissionDto: RenderWorkerAdmissionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: RenderWorkerSessionDto;
+    }>("/render-workers/admission", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerAdmissionDto
+    })));
+}
+/**
+ * Claim the next admitted operation
+ */
+export function claimRenderOperation({ renderWorkerClaimRequestDto, xFrameleafWorkerSession }: {
+    renderWorkerClaimRequestDto: RenderWorkerClaimRequestDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerClaimDto;
+    }>("/render-workers/claims", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerClaimRequestDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Acknowledge a cancellation
+ */
+export function acknowledgeRenderCancel({ id, renderWorkerCancelAckDto, xFrameleafWorkerSession }: {
+    id: string;
+    renderWorkerCancelAckDto: RenderWorkerCancelAckDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/cancel-ack`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCancelAckDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Plan a render checkpoint
+ */
+export function planRenderCheckpoint({ id, renderWorkerCheckpointPlanDto, xFrameleafWorkerSession }: {
+    id: string;
+    renderWorkerCheckpointPlanDto: RenderWorkerCheckpointPlanDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/checkpoints`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCheckpointPlanDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Complete a render checkpoint
+ */
+export function completeRenderCheckpoint({ id, sequence, renderWorkerCheckpointCompleteDto, xFrameleafWorkerSession }: {
+    id: string;
+    sequence: number;
+    renderWorkerCheckpointCompleteDto: RenderWorkerCheckpointCompleteDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/checkpoints/${encodeURIComponent(sequence)}/complete`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCheckpointCompleteDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Complete a claimed operation
+ */
+export function completeRenderOperation({ id, renderWorkerCompleteDto, xFrameleafWorkerSession }: {
+    id: string;
+    renderWorkerCompleteDto: RenderWorkerCompleteDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/complete`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCompleteDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Fail a claimed operation
+ */
+export function failRenderOperation({ id, renderWorkerFailDto, xFrameleafWorkerSession }: {
+    id: string;
+    renderWorkerFailDto: RenderWorkerFailDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/fail`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerFailDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Heartbeat a claimed operation
+ */
+export function heartbeatRenderOperation({ id, renderWorkerHeartbeatDto, xFrameleafWorkerSession }: {
+    id: string;
+    renderWorkerHeartbeatDto: RenderWorkerHeartbeatDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerHeartbeatResponseDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/heartbeat`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerHeartbeatDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Read an operation input
+ */
+export function readRenderOperationInput({ grant, id, xFrameleafWorkerSession }: {
+    grant: string;
+    id: string;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/inputs/${encodeURIComponent(grant)}`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    }));
+}
+/**
+ * Report progress on a claimed operation
+ */
+export function reportRenderOperationProgress({ id, renderWorkerProgressDto, xFrameleafWorkerSession }: {
+    id: string;
+    renderWorkerProgressDto: RenderWorkerProgressDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/progress`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerProgressDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
+ * Begin validating a claimed operation
+ */
+export function validateRenderOperation({ id, renderWorkerCompleteDto, xFrameleafWorkerSession }: {
+    id: string;
+    renderWorkerCompleteDto: RenderWorkerCompleteDto;
+    xFrameleafWorkerSession: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: RenderWorkerWriteResultDto;
+    }>(`/render-workers/operations/${encodeURIComponent(id)}/validate`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: renderWorkerCompleteDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-worker-session": xFrameleafWorkerSession
+        })
+    })));
+}
+/**
  * List your media operations
  */
 export function searchMediaOperations({ includeDismissed, kind, skip, status, take }: {
@@ -7889,6 +9044,21 @@ export function searchMediaOperations({ includeDismissed, kind, skip, status, ta
     }))}`, {
         ...opts
     }));
+}
+/**
+ * Queue a bulk operation
+ */
+export function createBulkMediaOperation({ mediaOperationBulkCreateDto }: {
+    mediaOperationBulkCreateDto: MediaOperationBulkCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: MediaOperationDto;
+    }>("/media-operations/bulk", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: mediaOperationBulkCreateDto
+    })));
 }
 /**
  * Get media operation statistics
@@ -9956,6 +11126,24 @@ export function acceptSharedSpaceInvitation({ id }: {
     }));
 }
 /**
+ * What happened in a shared space
+ */
+export function getSharedSpaceActivity({ id, before, take }: {
+    id: string;
+    before?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceActivityResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/activity${QS.query(QS.explode({
+        before,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * List albums linked into a shared space
  */
 export function getSharedSpaceAlbums({ id }: {
@@ -9994,6 +11182,67 @@ export function linkSharedSpaceAlbum({ id, albumId }: {
         ...opts,
         method: "PUT"
     }));
+}
+/**
+ * List comments in a shared space
+ */
+export function getSharedSpaceComments({ id, assetId }: {
+    id: string;
+    assetId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceCommentsResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/comments${QS.query(QS.explode({
+        assetId
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Comment in a shared space
+ */
+export function createSharedSpaceComment({ id, sharedSpaceCommentCreateDto }: {
+    id: string;
+    sharedSpaceCommentCreateDto: SharedSpaceCommentCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: SharedSpaceCommentResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/comments`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: sharedSpaceCommentCreateDto
+    })));
+}
+/**
+ * Remove a shared space comment
+ */
+export function deleteSharedSpaceComment({ id, commentId }: {
+    id: string;
+    commentId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Edit a shared space comment
+ */
+export function updateSharedSpaceComment({ id, commentId, sharedSpaceCommentUpdateDto }: {
+    id: string;
+    commentId: string;
+    sharedSpaceCommentUpdateDto: SharedSpaceCommentUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedSpaceCommentResponseDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: sharedSpaceCommentUpdateDto
+    })));
 }
 /**
  * Decline a shared space invitation
@@ -10204,6 +11453,251 @@ export function removeAssetFromStack({ assetId, id }: {
     return oazapfts.ok(oazapfts.fetchText(`/stacks/${encodeURIComponent(id)}/assets/${encodeURIComponent(assetId)}`, {
         ...opts,
         method: "DELETE"
+    }));
+}
+/**
+ * List Studio projects
+ */
+export function searchStudioProjects({ skip, take }: {
+    skip?: number;
+    take?: number;
+} = {}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectListResponseDto;
+    }>(`/studio/projects${QS.query(QS.explode({
+        skip,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Create a Studio project
+ */
+export function createStudioProject({ studioProjectCreateDto }: {
+    studioProjectCreateDto: StudioProjectCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioProjectDetailDto;
+    }>("/studio/projects", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioProjectCreateDto
+    })));
+}
+/**
+ * Get a Studio project
+ */
+export function getStudioProject({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectDetailDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Update a Studio project
+ */
+export function updateStudioProject({ id, studioProjectUpdateDto }: {
+    id: string;
+    studioProjectUpdateDto: StudioProjectUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: studioProjectUpdateDto
+    })));
+}
+/**
+ * Delete a Studio project
+ */
+export function deleteStudioProject({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/studio/projects/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * List Studio review comments
+ */
+export function getStudioProjectComments({ id, skip, take }: {
+    id: string;
+    skip?: number;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioCommentListResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/comments${QS.query(QS.explode({
+        skip,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Add a Studio review comment
+ */
+export function addStudioProjectComment({ id, studioCommentCreateDto }: {
+    id: string;
+    studioCommentCreateDto: StudioCommentCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioCommentDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/comments`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioCommentCreateDto
+    })));
+}
+/**
+ * Update a Studio review comment
+ */
+export function updateStudioProjectComment({ commentId, id, studioCommentUpdateDto }: {
+    commentId: string;
+    id: string;
+    studioCommentUpdateDto: StudioCommentUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioCommentDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: studioCommentUpdateDto
+    })));
+}
+/**
+ * Remove a Studio review comment
+ */
+export function removeStudioProjectComment({ commentId, id }: {
+    commentId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/studio/projects/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Acquire or renew the write lease
+ */
+export function acquireStudioProjectLease({ id, studioProjectLeaseRequestDto }: {
+    id: string;
+    studioProjectLeaseRequestDto: StudioProjectLeaseRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectLeaseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/lease`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioProjectLeaseRequestDto
+    })));
+}
+/**
+ * Release the write lease
+ */
+export function releaseStudioProjectLease({ id, studioProjectLeaseRequestDto }: {
+    id: string;
+    studioProjectLeaseRequestDto: StudioProjectLeaseRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/studio/projects/${encodeURIComponent(id)}/lease/release`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioProjectLeaseRequestDto
+    })));
+}
+/**
+ * Restore a Studio project revision
+ */
+export function restoreStudioProjectRevision({ id, studioProjectRestoreDto }: {
+    id: string;
+    studioProjectRestoreDto: StudioProjectRestoreDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioProjectSaveResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/restore`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioProjectRestoreDto
+    })));
+}
+/**
+ * Save a Studio project revision
+ */
+export function saveStudioProjectRevision({ id, studioProjectSaveDto }: {
+    id: string;
+    studioProjectSaveDto: StudioProjectSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioProjectSaveResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/revisions`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioProjectSaveDto
+    })));
+}
+/**
+ * List Studio project history
+ */
+export function getStudioProjectHistory({ id, skip, take }: {
+    id: string;
+    skip?: number;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectHistoryResponseDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/revisions${QS.query(QS.explode({
+        skip,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get a Studio project revision
+ */
+export function getStudioProjectRevision({ id, revision }: {
+    id: string;
+    revision: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectRevisionDetailDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/revisions/${encodeURIComponent(revision)}`, {
+        ...opts
+    }));
+}
+/**
+ * Compare two Studio project revisions
+ */
+export function diffStudioProjectRevision({ against, id, revision }: {
+    against: number;
+    id: string;
+    revision: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectDiffDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/revisions/${encodeURIComponent(revision)}/diff${QS.query(QS.explode({
+        against
+    }))}`, {
+        ...opts
     }));
 }
 /**
@@ -11046,6 +12540,20 @@ export enum ReactionType {
     Comment = "comment",
     Like = "like"
 }
+export enum SharedSpaceEventType {
+    AssetsAdded = "AssetsAdded",
+    AssetsRemoved = "AssetsRemoved",
+    AlbumLinked = "AlbumLinked",
+    AlbumUnlinked = "AlbumUnlinked",
+    PersonLinked = "PersonLinked",
+    PersonUnlinked = "PersonUnlinked",
+    MemberJoined = "MemberJoined",
+    MemberLeft = "MemberLeft",
+    MemberRemoved = "MemberRemoved",
+    MemberRoleChanged = "MemberRoleChanged",
+    Comment = "Comment",
+    Like = "Like"
+}
 export enum UserAvatarColor {
     Primary = "primary",
     Pink = "pink",
@@ -11189,6 +12697,7 @@ export enum NotificationType {
     AlbumInvite = "AlbumInvite",
     AlbumUpdate = "AlbumUpdate",
     ClusterGroupRequest = "ClusterGroupRequest",
+    SharedSpaceMention = "SharedSpaceMention",
     Custom = "Custom"
 }
 export enum UserStatus {
@@ -11455,6 +12964,35 @@ export enum AssetDevelopFileKind {
     Master = "master",
     Preview = "preview"
 }
+export enum AssetRestorationMode {
+    Faithful = "faithful",
+    Creative = "creative"
+}
+export enum AssetRestorationSourceType {
+    Image = "image",
+    Video = "video"
+}
+export enum AssetRestorationStatus {
+    PreviewQueued = "preview_queued",
+    PreviewRendering = "preview_rendering",
+    PreviewReady = "preview_ready",
+    PreviewFailed = "preview_failed",
+    PreviewCancelled = "preview_cancelled",
+    Accepted = "accepted",
+    Restoring = "restoring",
+    Restored = "restored",
+    RestoreFailed = "restore_failed",
+    RestoreCancelled = "restore_cancelled",
+    Rejected = "rejected",
+    Discarded = "discarded",
+    Expired = "expired"
+}
+export enum AssetRestorationFileKind {
+    Before = "before",
+    After = "after",
+    Result = "result",
+    ResultPreview = "result_preview"
+}
 export enum AssetEditAction {
     Crop = "crop",
     Rotate = "rotate",
@@ -11644,7 +13182,32 @@ export enum MediaOperationKind {
     StudioPreview = "studio_preview",
     Restoration = "restoration",
     RestorationPreview = "restoration_preview",
-    QuickEdit = "quick_edit"
+    QuickEdit = "quick_edit",
+    Bulk = "bulk"
+}
+export enum MediaOperationBulkAction {
+    Favorite = "favorite",
+    Unfavorite = "unfavorite",
+    Archive = "archive",
+    Unarchive = "unarchive",
+    AddToAlbum = "add-to-album",
+    RemoveFromAlbum = "remove-from-album",
+    Tag = "tag",
+    Untag = "untag",
+    ChangeDate = "change-date",
+    ChangeDescription = "change-description",
+    ChangeLocation = "change-location",
+    MarkSensitive = "mark-sensitive",
+    UnmarkSensitive = "unmark-sensitive",
+    Delete = "delete",
+    DeletePermanently = "delete-permanently",
+    Restore = "restore",
+    Stack = "stack",
+    Unstack = "unstack",
+    RefreshThumbnails = "refresh-thumbnails",
+    RefreshMetadata = "refresh-metadata",
+    RefreshEncoded = "refresh-encoded",
+    RefreshFaces = "refresh-faces"
 }
 export enum MediaOperationStatus {
     Queued = "queued",
@@ -11713,10 +13276,6 @@ export enum RestorationDynamicRange {
     Sdr = "sdr",
     Hdr = "hdr"
 }
-export enum RestorationMode {
-    Faithful = "faithful",
-    Creative = "creative"
-}
 export enum RestorationModelState {
     Available = "available",
     Verifying = "verifying",
@@ -11730,6 +13289,47 @@ export enum RestorationModelState {
     NoGpu = "no-gpu",
     GpuUnqualified = "gpu-unqualified",
     InsufficientVram = "insufficient-vram"
+}
+export enum MediaOperationItemStatus {
+    Ok = "ok",
+    Skipped = "skipped",
+    Failed = "failed"
+}
+export enum DateMode {
+    Set = "set",
+    Shift = "shift"
+}
+export enum RenderWorkerStatus {
+    Active = "active",
+    Revoked = "revoked"
+}
+export enum RenderWorkerAuditEvent {
+    Enrolled = "enrolled",
+    Admitted = "admitted",
+    Refused = "refused",
+    ClaimRefused = "claim_refused",
+    LimitExceeded = "limit_exceeded",
+    Revoked = "revoked",
+    Updated = "updated"
+}
+export enum RenderWorkerRefusalReason {
+    InvalidCredential = "invalid_credential",
+    WorkerRevoked = "worker_revoked",
+    SessionExpired = "session_expired",
+    ConformanceStale = "conformance_stale",
+    ConformanceReplayed = "conformance_replayed",
+    EngineDigestMismatch = "engine_digest_mismatch",
+    SoftwareRenderer = "software_renderer",
+    DestinationMismatch = "destination_mismatch",
+    WorkerMismatch = "worker_mismatch",
+    ScopeExceeded = "scope_exceeded",
+    WorkerConcurrencyExceeded = "worker_concurrency_exceeded",
+    UserConcurrencyExceeded = "user_concurrency_exceeded",
+    GpuMemoryInsufficient = "gpu_memory_insufficient",
+    WallClockExceeded = "wall_clock_exceeded",
+    OutputBytesExceeded = "output_bytes_exceeded",
+    DestinationUnavailable = "destination_unavailable",
+    ManifestIncomplete = "manifest_incomplete"
 }
 export enum MemorySearchOrder {
     Asc = "asc",
@@ -11905,6 +13505,10 @@ export enum AssetIdErrorReason {
     Duplicate = "duplicate",
     NoPermission = "no_permission",
     NotFound = "not_found"
+}
+export enum StudioProjectAccess {
+    Owner = "owner",
+    Reviewer = "reviewer"
 }
 export enum SyncEntityType {
     AuthUserV1 = "AuthUserV1",

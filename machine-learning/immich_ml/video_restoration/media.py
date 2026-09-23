@@ -99,14 +99,18 @@ def bit_depth_of(pix_fmt: str | None, bits_per_raw_sample: str | None) -> int:
     if bits_per_raw_sample and bits_per_raw_sample.isdigit():
         return int(bits_per_raw_sample)
     if pix_fmt:
+        # Packed RGB formats name the bits per pixel: rgb48 and rgba64 are 16 bits a channel.
+        if "48" in pix_fmt or "64" in pix_fmt:
+            return 16
         for depth in (16, 14, 12, 10, 9):
             if f"p{depth}" in pix_fmt or f"{depth}le" in pix_fmt or f"{depth}be" in pix_fmt:
                 return depth
     return 8
 
 
-def parse_probe(payload: dict[str, Any]) -> SourceProbe:
-    """Interpret ``ffprobe -show_streams -show_format -of json`` output."""
+def parse_probe(payload: dict[str, Any], *, still: bool = False) -> SourceProbe:
+    """Interpret ``ffprobe -show_streams -show_format -of json`` output. A still has no
+    meaningful frame rate or duration; it is treated as one frame at 1/1 lasting 0 ms."""
     streams: list[dict[str, Any]] = payload.get("streams") or []
     video = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
     if video is None:
@@ -117,19 +121,23 @@ def parse_probe(payload: dict[str, Any]) -> SourceProbe:
     if width <= 0 or height <= 0:
         raise MediaError("the video stream has no dimensions", unsupported=True)
 
-    nominal = parse_rational(video.get("r_frame_rate"))
-    average = parse_rational(video.get("avg_frame_rate"))
-    if nominal is None:
-        raise MediaError("the video stream has no frame rate", unsupported=True)
-    variable = average is not None and abs(average - nominal) / nominal > FRAME_RATE_TOLERANCE
+    if still:
+        nominal, variable, duration_ms = Fraction(1, 1), False, 0
+    else:
+        parsed_rate = parse_rational(video.get("r_frame_rate"))
+        average = parse_rational(video.get("avg_frame_rate"))
+        if parsed_rate is None:
+            raise MediaError("the video stream has no frame rate", unsupported=True)
+        nominal = parsed_rate
+        variable = average is not None and abs(average - nominal) / nominal > FRAME_RATE_TOLERANCE
 
-    duration_text = video.get("duration") or (payload.get("format") or {}).get("duration")
-    try:
-        duration_ms = int(round(float(duration_text) * 1000))
-    except (TypeError, ValueError):
-        raise MediaError("the upload has no duration", unsupported=True)
-    if duration_ms <= 0:
-        raise MediaError("the upload has no duration", unsupported=True)
+        duration_text = video.get("duration") or (payload.get("format") or {}).get("duration")
+        try:
+            duration_ms = int(round(float(duration_text) * 1000))
+        except (TypeError, ValueError):
+            raise MediaError("the upload has no duration", unsupported=True)
+        if duration_ms <= 0:
+            raise MediaError("the upload has no duration", unsupported=True)
 
     transfer = video.get("color_transfer")
     primaries = video.get("color_primaries")
@@ -165,7 +173,7 @@ def _run(args: list[str], *, timeout: float) -> subprocess.CompletedProcess[str]
     return completed
 
 
-def probe(path: Path, *, timeout: float = 60.0) -> SourceProbe:
+def probe(path: Path, *, still: bool = False, timeout: float = 60.0) -> SourceProbe:
     completed = _run(
         [FFPROBE, "-v", "error", "-print_format", "json", "-show_streams", "-show_format", str(path)],
         timeout=timeout,
@@ -174,7 +182,7 @@ def probe(path: Path, *, timeout: float = 60.0) -> SourceProbe:
         payload = json.loads(completed.stdout)
     except json.JSONDecodeError as error:
         raise MediaError(f"ffprobe returned unreadable output: {error}")
-    return parse_probe(payload)
+    return parse_probe(payload, still=still)
 
 
 def _even_floor(value: float) -> int:
@@ -183,14 +191,12 @@ def _even_floor(value: float) -> int:
     return max(2, whole)
 
 
-def target_geometry(width: int, height: int, scale: int, max_long_edge: int) -> tuple[int, int]:
-    """Output size: ``scale`` times the source, the long edge capped at ``max_long_edge``,
-    aspect preserved and both sides floored to even numbers for 4:2:0 encoding.
-
-    KEEP IN SYNC WITH ``restorationTargetGeometry`` in ``server/src/utils/restoration.ts``.
-    """
+def target_geometry(width: int, height: int, scale: int, max_width: int, max_height: int) -> tuple[int, int]:
+    """Output size: ``scale`` times the source, fitted inside ``max_width`` x ``max_height``
+    with the aspect preserved and both sides floored to even numbers for 4:2:0 encoding, so
+    the result never exceeds the box the server asked for."""
     scaled_width, scaled_height = width * scale, height * scale
-    ratio = min(1.0, max_long_edge / max(scaled_width, scaled_height))
+    ratio = min(1.0, max_width / scaled_width, max_height / scaled_height)
     return _even_floor(scaled_width * ratio), _even_floor(scaled_height * ratio)
 
 
@@ -430,3 +436,24 @@ def encode_output(
         timeout=timeout,
     )
     return audio
+
+
+def encode_still_output(frames_dir: Path, output: Path, *, target: tuple[int, int], timeout: float) -> None:
+    """Resize the one restored frame to the target with Lanczos and write a lossless PNG."""
+    width, height = target
+    _run(
+        [
+            FFMPEG,
+            "-nostdin",
+            "-v",
+            "error",
+            "-i",
+            str(frames_dir / (FRAME_PATTERN % 1)),
+            "-vf",
+            f"scale={width}:{height}:flags=lanczos,format=rgb24",
+            "-frames:v",
+            "1",
+            str(output),
+        ],
+        timeout=timeout,
+    )

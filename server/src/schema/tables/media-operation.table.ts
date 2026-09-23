@@ -96,6 +96,17 @@ export class MediaOperationTable {
   @Column({ type: 'jsonb', nullable: true })
   estimate!: Record<string, unknown> | null;
 
+  /**
+   * What actually happened, as it happens. The one deliberately mutable JSON column (FL-32).
+   *
+   * `snapshot` above says what was asked for and never changes; this says what the server has done
+   * about it so far. A bulk operation records its counts and its per-item refusals here after every
+   * batch, so a browser that closed, a worker that died and a server that restarted all come back
+   * to the same answer — including which items still need retrying.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  result!: Record<string, unknown> | null;
+
   /** 0 to 100. Derived from completed units, persisted so a reconnect shows the real figure. */
   @Column({ type: 'double precision', default: 0 })
   progress!: Generated<number>;
@@ -126,6 +137,36 @@ export class MediaOperationTable {
 
   @Column({ type: 'timestamp with time zone', nullable: true })
   heartbeatAt!: Timestamp | null;
+
+  /**
+   * Admission bookkeeping (FL-95). When a worker looked at this job and was refused by a limit,
+   * the reason is written here so the owner sees why a queued job is still queued, and the count
+   * shows whether it is a passing shortage or a job that will never fit anywhere.
+   */
+  @Column({ nullable: true })
+  lastAdmissionRefusalReason!: string | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  lastAdmissionRefusedAt!: Timestamp | null;
+
+  @Column({ type: 'integer', default: 0 })
+  admissionRefusals!: Generated<number>;
+
+  /**
+   * Output bytes the current attempt has reported so far. Compared against the output ceiling on
+   * heartbeat and reset to zero by every claim, so a re-dispatched attempt is not charged for the
+   * bytes a failed one produced.
+   */
+  @Column({ type: 'bigint', default: 0 })
+  outputBytes!: Generated<Int8>;
+
+  /**
+   * When the current attempt was claimed (FL-95). `startedAt` keeps the first attempt's start for
+   * Activity; the wall-clock ceiling is measured from this one, so the automatic retry every
+   * operation gets (owner decision, September 22, 2026) starts its clock from zero.
+   */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  attemptStartedAt!: Timestamp | null;
 
   @Column({ type: 'timestamp with time zone', nullable: true })
   cancelRequestedAt!: Timestamp | null;

@@ -1,8 +1,9 @@
-import { Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
+  MediaOperationBulkCreateDto,
   MediaOperationDetailDto,
   MediaOperationDto,
   MediaOperationListResponseDto,
@@ -20,7 +21,7 @@ import { UUIDv7ParamDto } from 'src/validation.js';
  * Everything here is owner-scoped. The one administrator route returns aggregate counts and
  * nothing else; there is no route that shows an administrator another account's jobs.
  *
- * Route order matters: `statistics` is declared before `:id` so it is never matched as an id.
+ * Route order matters: `statistics` and `bulk` are declared before `:id` so neither is matched as an id.
  */
 @ApiTags(ApiTag.MediaOperations)
 @Controller('media-operations')
@@ -52,6 +53,22 @@ export class MediaOperationController {
   })
   getMediaOperationStatistics(): Promise<MediaOperationStatisticsDto> {
     return this.service.getStatistics();
+  }
+
+  @Post('bulk')
+  @HttpCode(HttpStatus.CREATED)
+  @Authenticated()
+  @Endpoint({
+    summary: 'Queue a bulk operation',
+    description:
+      'Applies one action to a frozen list of assets in the background. The list is never re-resolved; access is checked for every item as it is changed, and items the account cannot change are reported as skipped. Submitting the same requestId again returns the existing operation.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  createBulkMediaOperation(
+    @Auth() auth: AuthDto,
+    @Body() dto: MediaOperationBulkCreateDto,
+  ): Promise<MediaOperationDto> {
+    return this.service.createBulk(auth, dto);
   }
 
   @Get(':id')

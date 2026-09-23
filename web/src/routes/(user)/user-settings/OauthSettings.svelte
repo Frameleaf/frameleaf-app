@@ -42,7 +42,7 @@
 
 <section class="my-4">
   <div in:fade={{ duration: 500 }}>
-    <div class="flex justify-end gap-3 sm:ms-8">
+    <div class="flex justify-end gap-3">
       {#if loading}
         <div class="flex place-content-center place-items-center">
           <LoadingSpinner />
