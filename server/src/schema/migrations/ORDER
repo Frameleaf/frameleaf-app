@@ -142,3 +142,4 @@
 2100000000340-AddMediaOperationPause
 2100000000390-AddDuplicateDecision
 2100000000400-AddAssetDocumentEdit
+2100000000450-AddAdminAuditEvent

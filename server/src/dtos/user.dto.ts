@@ -4,7 +4,13 @@ import type { MaybeDehydrated, UserMetadataItem } from 'src/types.js';
 import { User, UserAdmin } from 'src/database.js';
 import { HistoryBuilder } from 'src/decorators.js';
 import { pinCodeRegex } from 'src/dtos/auth.dto.js';
-import { UserAvatarColor, UserAvatarColorSchema, UserMetadataKey, UserStatusSchema } from 'src/enum.js';
+import {
+  AdminAuditActionSchema,
+  UserAvatarColor,
+  UserAvatarColorSchema,
+  UserMetadataKey,
+  UserStatusSchema,
+} from 'src/enum.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { isoDatetimeToDate, sanitizeFilename, stringToBool, toEmail } from 'src/validation.js';
 
@@ -127,6 +133,52 @@ const UserAdminSessionParamSchema = z.object({
 });
 
 export class UserAdminSessionParamDto extends createZodDto(UserAdminSessionParamSchema) {}
+
+/**
+ * FL-76: one page of an account's administrator history, the account detail's Activity tab. Paged
+ * newest first: `before` is the id of the last event already shown.
+ */
+const UserAdminHistorySearchSchema = z.object({
+  before: z.uuidv7().optional().describe('Only events older than this event, for paging'),
+  take: z.coerce.number().int().min(1).max(200).optional().describe('Page size, 50 by default'),
+});
+
+export class UserAdminHistorySearchDto extends createZodDto(UserAdminHistorySearchSchema) {}
+
+/**
+ * What an administrator did to an account or one of its libraries. Names and settings only: a
+ * password or PIN change is recorded as having happened, never with its value.
+ */
+const UserAdminHistoryEventResponseSchema = z
+  .object({
+    id: z.uuidv7().describe('Event ID'),
+    action: AdminAuditActionSchema,
+    subject: z.string().describe("The account's or library's name at the time"),
+    detail: z
+      .string()
+      .nullable()
+      .describe(
+        'What the action carries: a quota in bytes, a storage label, a recovery period in days, a device name or the changed preference sections; null otherwise',
+      ),
+    libraryId: z
+      .uuidv4()
+      .nullable()
+      .describe('The library a library event is about; null for account events and once the library is gone'),
+    actorId: z.uuidv4().nullable().describe('The administrator who did it; null once that account is gone'),
+    actorName: z.string().nullable().describe("That administrator's name; null once that account is gone"),
+    createdAt: z.string().meta({ format: 'date-time' }).describe('When it happened'),
+  })
+  .meta({ id: 'UserAdminHistoryEventResponseDto' });
+
+const UserAdminHistoryResponseSchema = z
+  .object({
+    events: z.array(UserAdminHistoryEventResponseSchema).describe('Newest first'),
+    hasMore: z.boolean().describe('True when older events exist beyond this page'),
+  })
+  .meta({ id: 'UserAdminHistoryResponseDto' });
+
+export class UserAdminHistoryEventResponseDto extends createZodDto(UserAdminHistoryEventResponseSchema) {}
+export class UserAdminHistoryResponseDto extends createZodDto(UserAdminHistoryResponseSchema) {}
 
 const UserAdminResponseSchema = UserResponseSchema.extend({
   clusterGroupId: z

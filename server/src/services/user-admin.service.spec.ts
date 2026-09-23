@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, NotFoundExc
 import { describe } from 'vitest';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { mapUserAdmin } from 'src/dtos/user.dto.js';
-import { AssetVisibility, JobName, UserMetadataKey, UserStatus } from 'src/enum.js';
+import { AdminAuditAction, AssetVisibility, JobName, UserMetadataKey, UserStatus } from 'src/enum.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
 import { UserMetadataItem } from 'src/types.js';
 import { getPreferences, getPreferencesRevision } from 'src/utils/preferences.js';
@@ -11,6 +11,7 @@ import { SessionFactory } from 'test/factories/session.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { userStub } from 'test/fixtures/user.stub.js';
+import { newUuidV7 } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(UserAdminService.name, () => {
@@ -23,6 +24,12 @@ describe(UserAdminService.name, () => {
     mocks.user.get.mockImplementation((userId) =>
       Promise.resolve([userStub.admin, userStub.user1].find((user) => user.id === userId) ?? undefined),
     );
+
+    // the session repository mock is strict: PIN changes lock sessions, deletion signs them out and
+    // an administrator can revoke one (FL-76)
+    mocks.session.lockAll.mockResolvedValue();
+    mocks.session.invalidateAll.mockResolvedValue();
+    mocks.session.delete.mockResolvedValue();
   });
 
   describe('create', () => {
@@ -30,7 +37,7 @@ describe(UserAdminService.name, () => {
       mocks.user.getAdmin.mockResolvedValueOnce(void 0);
 
       await expect(
-        sut.create({
+        sut.create(authStub.admin, {
           email: 'john_smith@email.com',
           name: 'John Smith',
           password: 'password',
@@ -43,7 +50,7 @@ describe(UserAdminService.name, () => {
       mocks.user.create.mockResolvedValue(userStub.user1);
 
       await expect(
-        sut.create({
+        sut.create(authStub.admin, {
           email: userStub.user1.email,
           name: userStub.user1.name,
           password: 'password',
@@ -68,7 +75,7 @@ describe(UserAdminService.name, () => {
       mocks.user.create.mockResolvedValue(userStub.user1);
       mocks.crypto.hashBcrypt.mockImplementation((value) => Promise.resolve(`hashed:${value as string}`));
 
-      await sut.create({
+      await sut.create(authStub.admin, {
         email: userStub.user1.email,
         name: userStub.user1.name,
         password: 'password',
@@ -88,7 +95,7 @@ describe(UserAdminService.name, () => {
       mocks.user.getAdmin.mockResolvedValue(userStub.admin);
       mocks.user.create.mockResolvedValue(userStub.user1);
 
-      await sut.create({
+      await sut.create(authStub.admin, {
         email: userStub.user1.email,
         name: userStub.user1.name,
         password: 'password',
@@ -101,7 +108,7 @@ describe(UserAdminService.name, () => {
       mocks.systemMetadata.get.mockResolvedValue({ oauth: { enabled: false } });
 
       await expect(
-        sut.create({
+        sut.create(authStub.admin, {
           email: 'john_smith@email.com',
           name: 'John Smith',
           password: '',
@@ -116,7 +123,7 @@ describe(UserAdminService.name, () => {
       mocks.user.getAdmin.mockResolvedValue(userStub.admin);
       mocks.user.create.mockResolvedValue(userStub.user1);
 
-      await sut.create({
+      await sut.create(authStub.admin, {
         email: userStub.user1.email,
         name: userStub.user1.name,
         password: '',
@@ -130,7 +137,7 @@ describe(UserAdminService.name, () => {
       mocks.user.getByEmail.mockResolvedValue(userStub.user1);
 
       await expect(
-        sut.create({
+        sut.create(authStub.admin, {
           email: userStub.user1.email,
           name: userStub.user1.name,
           password: 'password',
@@ -274,6 +281,21 @@ describe(UserAdminService.name, () => {
         status: UserStatus.Deleted,
         deletedAt: expect.any(Date),
       });
+    });
+
+    it("should sign out the account's devices, so a restored account signs in again (FL-76)", async () => {
+      mocks.user.get.mockResolvedValue(userStub.user1);
+      mocks.user.update.mockResolvedValue(userStub.user1);
+
+      await sut.delete(authStub.admin, userStub.user1.id, {});
+
+      expect(mocks.session.invalidateAll).toHaveBeenCalledWith({ userId: userStub.user1.id });
+    });
+
+    it('should leave sessions alone when the account cannot be deleted', async () => {
+      await expect(sut.delete(authStub.admin, userStub.admin.id, {})).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(mocks.session.invalidateAll).not.toHaveBeenCalled();
     });
 
     it('should force delete user', async () => {
@@ -483,6 +505,191 @@ describe(UserAdminService.name, () => {
         NotFoundException,
       );
       expect(mocks.session.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('administrator history (FL-76)', () => {
+    const entry = (action: AdminAuditAction, detail: string | null = null) => ({
+      userId: userStub.user1.id,
+      actorId: authStub.admin.user.id,
+      action,
+      subject: userStub.user1.name,
+      detail,
+    });
+
+    it('records who created an account', async () => {
+      mocks.user.getAdmin.mockResolvedValue(userStub.admin);
+      mocks.user.create.mockResolvedValue(userStub.user1);
+
+      await sut.create(authStub.admin, { email: userStub.user1.email, name: userStub.user1.name, password: 'secret' });
+
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([entry(AdminAuditAction.AccountCreated)]);
+    });
+
+    it('records role, quota and storage label changes as separate entries', async () => {
+      mocks.user.update.mockResolvedValue({
+        ...userStub.user1,
+        isAdmin: true,
+        quotaSizeInBytes: 1024,
+        storageLabel: 'label',
+      });
+
+      await sut.update(authStub.admin, userStub.user1.id, {
+        isAdmin: true,
+        quotaSizeInBytes: 1024,
+        storageLabel: 'label',
+      });
+
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+        entry(AdminAuditAction.AdminGranted),
+        entry(AdminAuditAction.QuotaChanged, '1024'),
+        entry(AdminAuditAction.StorageLabelChanged, 'label'),
+      ]);
+    });
+
+    it('records a password reset without the password', async () => {
+      mocks.user.update.mockResolvedValue({ ...userStub.user1, shouldChangePassword: true });
+      mocks.crypto.hashBcrypt.mockResolvedValue('hashed');
+
+      await sut.update(authStub.admin, userStub.user1.id, { password: 'new-password', shouldChangePassword: true });
+
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([entry(AdminAuditAction.PasswordReset, 'change-required')]);
+      expect(JSON.stringify(mocks.adminAudit.create.mock.calls)).not.toContain('new-password');
+      expect(JSON.stringify(mocks.adminAudit.create.mock.calls)).not.toContain('hashed');
+    });
+
+    it('records a PIN reset and a PIN set without the PIN', async () => {
+      mocks.user.update.mockResolvedValue(userStub.user1);
+      mocks.crypto.hashBcrypt.mockResolvedValue('hashed');
+
+      await sut.update(authStub.admin, userStub.user1.id, { pinCode: null });
+      await sut.update(authStub.admin, userStub.user1.id, { pinCode: '123456' });
+
+      expect(mocks.adminAudit.create).toHaveBeenNthCalledWith(1, [entry(AdminAuditAction.PinReset)]);
+      expect(mocks.adminAudit.create).toHaveBeenNthCalledWith(2, [entry(AdminAuditAction.PinSet)]);
+      expect(JSON.stringify(mocks.adminAudit.create.mock.calls)).not.toContain('123456');
+    });
+
+    it('records nothing when an update changes nothing', async () => {
+      mocks.user.update.mockResolvedValue(userStub.user1);
+
+      await sut.update(authStub.admin, userStub.user1.id, { name: userStub.user1.name });
+
+      expect(mocks.adminAudit.create).not.toHaveBeenCalled();
+    });
+
+    it('records a deletion with its recovery period', async () => {
+      mocks.user.get.mockResolvedValue(userStub.user1);
+      mocks.user.update.mockResolvedValue(userStub.user1);
+
+      await sut.delete(authStub.admin, userStub.user1.id, {});
+
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([entry(AdminAuditAction.AccountDeleted, '7')]);
+    });
+
+    it('records a permanent removal', async () => {
+      mocks.user.get.mockResolvedValue(userStub.user1);
+      mocks.user.update.mockResolvedValue(userStub.user1);
+
+      await sut.delete(authStub.admin, userStub.user1.id, { force: true });
+
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([entry(AdminAuditAction.AccountRemovalScheduled)]);
+    });
+
+    it('records a restore', async () => {
+      mocks.user.restore.mockResolvedValue(userStub.user1);
+
+      await sut.restore(authStub.admin, userStub.user1.id);
+
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([entry(AdminAuditAction.AccountRestored)]);
+    });
+
+    it('records the device an administrator signed out', async () => {
+      const session = SessionFactory.create({ userId: userStub.user1.id, deviceOS: 'iOS', deviceType: 'iPhone' });
+      mocks.session.getByUserId.mockResolvedValue([session]);
+
+      await sut.deleteSession(authStub.admin, userStub.user1.id, session.id);
+
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([entry(AdminAuditAction.SessionRevoked, 'iOS · iPhone')]);
+    });
+
+    it('records turning casting off on its own, not as a preferences change', async () => {
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.user.upsertMetadata.mockResolvedValue();
+
+      await sut.updatePreferences(authStub.admin, userStub.user1.id, { cast: { adminDisabled: true } });
+
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([entry(AdminAuditAction.CastingDisabled)]);
+    });
+
+    it('records which preference sections a save changed', async () => {
+      mocks.user.getMetadata.mockResolvedValue([]);
+      mocks.user.upsertMetadata.mockResolvedValue();
+
+      await sut.updatePreferences(authStub.admin, userStub.user1.id, {
+        download: { archiveSize: 1_234_567 },
+        tags: { enabled: true },
+      });
+
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+        entry(AdminAuditAction.PreferencesUpdated, 'download,tags'),
+      ]);
+    });
+
+    it('never fails the change when recording it fails', async () => {
+      mocks.user.restore.mockResolvedValue(userStub.user1);
+      mocks.adminAudit.create.mockRejectedValue(new Error('database unavailable'));
+
+      await expect(sut.restore(authStub.admin, userStub.user1.id)).resolves.toEqual(mapUserAdmin(userStub.user1));
+    });
+
+    describe('getHistory', () => {
+      const row = (createdAt: string) => ({
+        id: newUuidV7(),
+        userId: userStub.user1.id,
+        actorId: authStub.admin.user.id,
+        actorName: userStub.admin.name,
+        libraryId: null,
+        action: AdminAuditAction.PinReset,
+        subject: userStub.user1.name,
+        detail: null,
+        createdAt: new Date(createdAt),
+      });
+
+      it('returns one page, newest first, and says an older page exists', async () => {
+        const rows = [
+          row('2026-09-03T00:00:00.000Z'),
+          row('2026-09-02T00:00:00.000Z'),
+          row('2026-09-01T00:00:00.000Z'),
+        ];
+        mocks.adminAudit.getByUserId.mockResolvedValue(rows);
+        const before = newUuidV7();
+
+        const result = await sut.getHistory(authStub.admin, userStub.user1.id, { before, take: 2 });
+
+        expect(mocks.adminAudit.getByUserId).toHaveBeenCalledWith(userStub.user1.id, { before, take: 3 });
+        expect(result.hasMore).toBe(true);
+        expect(result.events).toEqual([
+          expect.objectContaining({ id: rows[0].id, createdAt: '2026-09-03T00:00:00.000Z', actorName: 'admin_name' }),
+          expect.objectContaining({ id: rows[1].id, createdAt: '2026-09-02T00:00:00.000Z' }),
+        ]);
+      });
+
+      it('reports the last page', async () => {
+        mocks.adminAudit.getByUserId.mockResolvedValue([row('2026-09-01T00:00:00.000Z')]);
+
+        const result = await sut.getHistory(authStub.admin, userStub.user1.id, {});
+
+        expect(mocks.adminAudit.getByUserId).toHaveBeenCalledWith(userStub.user1.id, { before: undefined, take: 51 });
+        expect(result).toMatchObject({ hasMore: false, events: [expect.objectContaining({ action: 'pin-reset' })] });
+      });
+
+      it('refuses an unknown account', async () => {
+        mocks.user.get.mockResolvedValue(void 0);
+
+        await expect(sut.getHistory(authStub.admin, 'not-found', {})).rejects.toBeInstanceOf(BadRequestException);
+        expect(mocks.adminAudit.getByUserId).not.toHaveBeenCalled();
+      });
     });
   });
 });
