@@ -703,10 +703,10 @@ describe(SharedSpaceService.name, () => {
       expect(mocks.albumUser.getSpaceEvents).toHaveBeenCalledWith(space.id, { since: lastSeenAt, take: 500 });
     });
 
-    it('is for members only', async () => {
-      const space = AlbumFactory.from({ kind: AlbumKind.Space }).build();
-      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
-      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set());
+    it('is for members only, even for somebody who can read the album row', async () => {
+      const { space } = spaceWithEditor();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([space.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(space));
 
       await expect(sut.getActivity(AuthFactory.create(), space.id, {})).rejects.toBeInstanceOf(ForbiddenException);
       expect(mocks.albumUser.getSpaceEvents).not.toHaveBeenCalled();
@@ -732,7 +732,7 @@ describe(SharedSpaceService.name, () => {
       asEditor(space);
       mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
       const activity = ActivityFactory.from({ albumId: space.id, userId: editor.id, comment: 'x' })
-        .user(editor)
+        .user({ id: editor.id, name: editor.name })
         .build();
       mocks.activity.create.mockResolvedValue(activity);
       mocks.user.get.mockResolvedValue(owner);
@@ -782,7 +782,7 @@ describe(SharedSpaceService.name, () => {
       const { space, owner, editor } = spaceWithEditor();
       asOwner(space);
       const editorsComment = ActivityFactory.from({ albumId: space.id, userId: editor.id, comment: 'x' })
-        .user(editor)
+        .user({ id: editor.id, name: editor.name })
         .build();
       mocks.activity.getById.mockResolvedValue(editorsComment);
 
@@ -796,7 +796,7 @@ describe(SharedSpaceService.name, () => {
       const { space, owner, editor } = spaceWithEditor();
       asEditor(space);
       const existing = ActivityFactory.from({ albumId: space.id, userId: editor.id, comment: `@{${owner.id}}` })
-        .user(editor)
+        .user({ id: editor.id, name: editor.name })
         .build();
       mocks.activity.getById.mockResolvedValue(existing);
       mocks.albumUser.getMentions.mockResolvedValue([{ activityId: existing.id, userId: owner.id }]);
