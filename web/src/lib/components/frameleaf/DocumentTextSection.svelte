@@ -101,6 +101,8 @@
   const fields = $derived(shown?.fieldsEnabled ? shown.fields : []);
   const recognition = $derived(shown?.recognition ?? null);
   const canReadAgain = $derived(!!recognition?.enabled && !!recognition?.routed);
+  // someone else's photo shows only its readable text; the owner also reviews dismissed and kept lines
+  const hasContent = $derived(canEdit ? lines.length > 0 : readable.length > 0);
 
   const stopPolling = () => {
     if (pollTimer) {
@@ -198,9 +200,11 @@
   const mutate = async (key: string, action: () => Promise<DocumentResponseDto>) => {
     busy = key;
     actionFailure = null;
+    // a read still on its way describes the text before this change; it must not land after it
+    const { isCurrent } = request.start();
     try {
       const next = await action();
-      if (next.assetId === asset.id) {
+      if (isCurrent() && next.assetId === asset.id) {
         apply(next);
         editing = null;
       }
@@ -443,7 +447,7 @@
   <section class="px-4 pt-4" data-testid="frameleaf-document-text-error">
     <ViewerInlineEditError failure={loadFailure} onRetry={() => void load(asset.id)} />
   </section>
-{:else if shown && lines.length > 0}
+{:else if shown && hasContent}
   <section class="px-4 pt-4 text-sm" data-testid="frameleaf-document-text">
     <div class="flex min-h-10 w-full flex-wrap items-center justify-between gap-2">
       <Text color="muted">{$t('frameleaf_documents_text_in_photo')}</Text>
@@ -496,9 +500,13 @@
     </div>
     {#if canEdit && recognition && !canReadAgain}
       <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-        {recognition.enabled
-          ? $t('frameleaf_documents_read_again_unrouted')
-          : $t('frameleaf_documents_read_again_disabled')}
+        {#if !recognition.enabled}
+          {$t('frameleaf_documents_read_again_disabled')}
+        {:else if authManager.authenticated && authManager.user.isAdmin}
+          {$t('frameleaf_documents_read_again_unrouted_admin')}
+        {:else}
+          {$t('frameleaf_documents_read_again_unrouted')}
+        {/if}
       </p>
     {/if}
 
