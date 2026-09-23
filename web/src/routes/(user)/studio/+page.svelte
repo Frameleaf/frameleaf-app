@@ -19,6 +19,7 @@
   import { Route } from '$lib/route';
   import { toStudioAssets } from '$lib/frameleaf/studio/assets';
   import { createStudioBridge } from '$lib/frameleaf/studio/bridge';
+  import { createStudioBundleHandlers } from '$lib/frameleaf/studio/bundles';
   import type { StudioCommandPayloads } from '$lib/frameleaf/studio/commands';
   import { probeStudioCapabilities } from '$lib/frameleaf/studio/capabilities';
   import { pinnedFreecutRevision } from '$lib/frameleaf/studio/engine-loader';
@@ -53,6 +54,8 @@
   let accessLost = $state(false);
   let preview = $state<StudioPreviewView>(idleStudioPreviewView());
   let sessionState = $state<StudioProjectSessionState | null>(null);
+  /** Bundle jobs this session handed to Activity (FL-91). */
+  let queuedJobs = $state(0);
 
   const assets = $derived(toStudioAssets(data.assets));
   const handoffAssetIds = $derived(assets.map((asset) => asset.id));
@@ -172,6 +175,24 @@
     });
   });
 
+  /**
+   * Portable bundles (FL-91). Both commands queue a durable job and leave the open graph alone: an
+   * export writes the stored revision, an import creates a new project. The person follows either
+   * in Activity.
+   */
+  const bundleHandlers = createStudioBundleHandlers({
+    project: () => ({
+      id: project.id,
+      revision: storedRevision ?? 0,
+      saved: storedRevision !== null,
+    }),
+    onQueued: () => {
+      queuedJobs += 1;
+      toastManager.primary($t('frameleaf_studio_bundle_queued'));
+    },
+    onRefused: (messageKey) => toastManager.danger($t(messageKey)),
+  });
+
   const bridge = createStudioBridge({
     context: () => ({
       revision: project.revision,
@@ -180,8 +201,8 @@
       online,
       capabilities,
     }),
-    // The only implemented handlers in this slice are the preview pair. Every editing command
-    // stays a typed extension point owned by a later story and is rejected as
+    // Implemented here: the preview pair (FL-96) and the bundle pair (FL-91). Every editing
+    // command stays a typed extension point owned by a later story and is rejected as
     // `not-implemented` rather than silently no-oped.
     handlers: {
       'preview.request': async (envelope) => {
@@ -217,6 +238,14 @@
         await resetPreview();
         return project.revision;
       },
+      'project.exportBundle': async (envelope) => {
+        // A bundle is made from the stored revision, so edits waiting for autosave go first.
+        if (sessionState?.hasDraft && writable) {
+          await session.flush().catch(() => {});
+        }
+        return bundleHandlers['project.exportBundle'](envelope);
+      },
+      'project.importBundle': (envelope) => bundleHandlers['project.importBundle'](envelope),
     },
   });
 
@@ -238,10 +267,8 @@
           break;
         }
         case 'activity': {
-          // The Activity page is FL-104's route and does not exist yet. No command in this
-          // slice can enqueue a job, so nothing can reach this branch today; it refuses
-          // rather than sending the person somewhere that is not Activity.
-          toastManager.danger($t('frameleaf_studio_activity_unavailable'));
+          // Bundle jobs (FL-91) are followed on the Activity page (FL-104).
+          void goto(Route.activity());
           break;
         }
         case 'asset': {
@@ -258,7 +285,9 @@
     },
   };
 
-  const onBack = () => void goto(Route.photos());
+  /** Back to the project library (FL-91), where every project and the trash live. */
+  const onBack = () => void goto(Route.studioProjects());
+  const onOpenActivity = () => void goto(Route.activity());
 
   const onReload = () => void session.reload();
   const onReacquire = () => void session.reacquire();
@@ -341,9 +370,9 @@
 <!--
   `droppedAssetCount` keeps the handoff honest: items the person selected that this session
   cannot read are reported in the chrome rather than quietly missing from the bin.
-  `onOpenActivity` is deliberately not supplied — the Activity route is FL-104's, so the
-  host renders no link to it. `accessLost` also covers a project this account can no longer
-  read, so the forbidden state is shown and the engine disposed.
+  `onOpenActivity` follows the bundle jobs this session queued (FL-91) to Activity (FL-104).
+  `accessLost` also covers a project this account can no longer read, so the forbidden state is
+  shown and the engine disposed.
 -->
 <StudioHost
   {project}
@@ -353,6 +382,8 @@
   {capabilities}
   {services}
   {onBack}
+  {onOpenActivity}
+  {queuedJobs}
   dirty={dirty || (sessionState?.hasDraft ?? false)}
   accessLost={accessLost || forbidden}
   {preview}

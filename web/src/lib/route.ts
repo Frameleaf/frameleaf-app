@@ -162,6 +162,10 @@ export const Route = {
    */
   studio: (params?: { projectId?: string | null; assetIds?: readonly string[] }) =>
     '/studio' + studioHandoffQuery(params ?? {}),
+  /** The Studio project library (FL-91): every project, the archive and the trash. */
+  studioProjects: (params?: { shelf?: 'active' | 'archived' | 'trashed' }) =>
+    '/studio/projects' +
+    asQueryString(params?.shelf && params.shelf !== 'active' ? { shelf: params.shelf } : undefined),
 
   // tags
   tags: (params?: { path?: string }) => '/tags' + asQueryString(params),

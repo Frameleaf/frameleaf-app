@@ -101,6 +101,11 @@ export type ActivityItem = {
    * shown here, so a Locked or sensitive item never appears on this page by name or thumbnail.
    */
   bulk?: { requested: number; succeeded: number; failed: number; skipped: number };
+  /**
+   * Set on a completed portable Studio bundle job (FL-91): an export offers its file, an import the
+   * project it created; both are looked up through the owner-scoped bundle routes when asked for.
+   */
+  studioBundle?: 'export' | 'import';
 };
 
 const DESTINATION_KEY: Record<MediaOperationDestination, string> = {
@@ -187,7 +192,19 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     canRetry: status === MediaOperationStatus.Failed || status === MediaOperationStatus.Cancelled,
     canDismiss: finished,
     browserLocal: false,
+    ...(status === MediaOperationStatus.Completed ? studioBundleOf(operation.kind) : {}),
   };
+};
+
+/** A finished bundle job's follow-up (FL-91), or nothing for every other kind. */
+const studioBundleOf = (kind: MediaOperationKind): Pick<ActivityItem, 'studioBundle'> => {
+  if (kind === MediaOperationKind.StudioBundleExport) {
+    return { studioBundle: 'export' };
+  }
+  if (kind === MediaOperationKind.StudioBundleImport) {
+    return { studioBundle: 'import' };
+  }
+  return {};
 };
 
 /** Server statuses a bulk job passes through while the worker has it. */
