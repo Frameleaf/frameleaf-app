@@ -1,6 +1,6 @@
 # Studio preservation contracts
 
-This directory currently contains metadata only. It does not contain an integrated editor, a vendored Freecut checkout, a renderer, a worker, model weights, hardware qualification, or licensed Dolby tools.
+This directory contains preservation metadata and an explicit isolated engine build. The source archive is recovered only by the preparation command below; the vendor snapshot and generated workspace are not committed. The production Studio host is present, but this build does not supply its engine adapter, deploy a rendering worker, qualify hardware or provide licensed Dolby tools. Locked npm packages may contain payloads recorded in the FL-86 resource inventory; no separate weight acquisition is authorized by this build.
 
 - `freecut-provenance.json` records the immutable upstream Freecut revision, exact archive URL and digest, MIT license, and 2,646 ordered source-file hashes.
 - `freecut-feature-manifest.json` preserves 210 source-derived feature rows and a pinned contract for all 2,204 family-source references across ten categories. Every row remains explicitly not implemented in Frameleaf, not run, and unqualified for rendering.
@@ -17,10 +17,33 @@ node --test scripts/frameleaf-studio-contracts.test.mjs
 
 See [the Studio, rendering and restoration preservation plan](../docs/docs/developer/frameleaf-plan/03-studio-rendering-and-restoration.md) for scope, ownership and remaining proof gates.
 
+## Reproducible engine workspace (FL-84)
+
+Use Node 24.21.0 and npm 11.8.0. `engine-build.json` pins the upstream revision, patch hashes, independent npm lockfile and adapted source digest. Versioned patches set the private package identity and toolchain declaration, remove automatic `prepare`, and omit embedded source text from worker source maps. Vite embeds transient asset handles in that text, which otherwise makes identical fresh builds differ. Worker maps retain their mappings, names and source paths; use the preserved source files for debugging. Application maps retain embedded sources. The first three patches preserve feature behavior. Patch 0004 adds FL-86 default-deny resource admission in the isolated editor/headless engine; unresolved model/font/Lottie/resource operations are explicit release blockers. See [the runtime acceptance ledger](../docs/docs/developer/frameleaf-plan/fl86-distribution-rights.md). This npm workspace is intentionally outside the application's pnpm workspace.
+
+```sh
+# Explicit network step; alternatively provide --archive /path/to/freecut.tar.gz.
+node studio/tools/engine.mjs prepare
+npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund
+npm --prefix studio/engine run test:run
+npm --prefix studio/engine run headless:test:node
+npm --prefix studio/engine run build
+node studio/tools/engine.mjs attest
+node studio/tools/feature-manifest.mjs --check
+```
+
+Preparation rejects an existing `studio/engine`; preserve any work before explicitly removing that generated directory. It never installs into `studio/vendor/freecut`, applies patches there, or rewrites an existing snapshot. The recovered archive must match its pinned digest and all 2,646 paths and hashes, with no extra files or symlinks. Vendored assistant instructions remain upstream data and are not Frameleaf authority.
+
+`frameleaf-source.json` records all adapted input hashes. `frameleaf-build.json` records the sorted output hashes/digest, upstream and patch identities, toolchain/platform, and every direct/transitive/optional/development package's lockfile license declaration. Missing declarations remain `UNDECLARED`. The original MIT license and bundled SoundTouch/WebSR notices are retained. These records do not establish redistribution approval; FL-86 retains that gate, including external models, fonts and assets.
+
+The dedicated read-only Actions workflow runs the upstream unit and Node headless contracts, builds twice from separately prepared workspaces, compares artifact digests, and rechecks the complete original snapshot. Both build manifests are retained even on comparison failure, and mismatches report the affected artifact paths. Uploaded provenance is build evidence only after the exact candidate passes. Browser/GPU/media headless tests, full feature conformance, HDR/Dolby qualification and application integration remain separate gates.
+
+No library startup script, web/server entry point or Docker image invokes this build or imports its output. Ordinary Frameleaf library startup therefore does not fetch the Freecut archive or any engine model/font/asset. Launching the standalone upstream editor is outside this isolation guarantee; its resource refusals are tested independently, while complete project-resource admission and offline lifecycle still require qualification before production integration. This slice does not mount or ship that editor.
+
 ## Web integration boundary (FL-88)
 
-The Svelte host for the editor is already in the production application, and it does not
-depend on this directory containing anything yet:
+The Svelte host for the editor is already in the production application. The isolated build
+above remains separate from that host until its adapter is implemented:
 
 - `web/src/lib/frameleaf/studio/host-contract.ts` is the typed `mount` / `update` /
   `dispose` contract an adapter must satisfy, plus the data the host passes (project handle,
@@ -64,6 +87,7 @@ worker-bound grants, which are re-checked against live access on every use. A cl
 destination without recorded consent fails before anything is enumerated. Nothing in this
 directory or in the resolver claims that a graph renders; that remains the engine conformance
 work.
+
 ## Canonical command catalogue (FL-92)
 
 `frameleaf-studio-commands.json` is the published Studio command vocabulary: 88 commands,
