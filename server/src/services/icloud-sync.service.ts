@@ -61,6 +61,14 @@ const ICLOUD_HEARTBEAT_MS = 60_000;
 export const ICLOUD_IDLE_WAIT_MS = 5 * 60_000;
 /** The longest a run waits for the provider before its claim is taken again. */
 const ICLOUD_MAX_WAIT_MS = 24 * 60 * 60_000;
+/**
+ * Idle waits in a row before a run that cannot move is reported (a day of five-minute waits): the
+ * staging budget stays full, or every remaining item is stuck on its own back-off. Any step that
+ * makes progress starts the count again.
+ */
+export const ICLOUD_MAX_IDLE_WAITS = 288;
+/** How long a run waits while its owner is signing in again, without spending an attempt. */
+export const ICLOUD_SIGN_IN_WAIT_MS = 30_000;
 /** Runs one worker process drives at once, so one large first import does not hold up the rest. */
 const ICLOUD_PARALLEL_RUNS = 2;
 /** Connections one account may keep, matching the design's Add connection limit. */
@@ -127,8 +135,10 @@ export const connectionStateCode = (connection: Pick<ICloudConnection, 'state' |
 /** A run as the connection page shows it. The same row is what Activity shows. */
 export const mapICloudRun = (operation: MediaOperation) => {
   const status = operation.status as MediaOperationStatus;
-  const phase = asObject(operation.result).phase;
+  // One rule with Activity: a delayed queued run that has spent its automatic retry is retrying;
+  // one that has not failed is waiting out the provider or its items' back-off.
   const queuedWithDelay = status === MediaOperationStatus.Queued && !!operation.retryAt;
+  const retried = (operation.autoRetries ?? 0) > 0;
   return {
     id: operation.id,
     status,
@@ -136,8 +146,8 @@ export const mapICloudRun = (operation: MediaOperation) => {
     processedUnits: Number(operation.processedUnits ?? 0),
     totalUnits:
       operation.totalUnits === null || operation.totalUnits === undefined ? null : Number(operation.totalUnits),
-    retrying: queuedWithDelay && phase !== 'waiting',
-    waiting: queuedWithDelay && phase === 'waiting',
+    retrying: queuedWithDelay && retried,
+    waiting: queuedWithDelay && !retried,
     pauseRequested: !!operation.pauseRequestedAt && status !== MediaOperationStatus.Paused,
     errorCode: operation.errorCode,
     startedAt: asIso(operation.startedAt),
@@ -222,9 +232,8 @@ export class ICloudSyncService {
       return null;
     }
     const backoff = connection.nextRunAt ? new Date(connection.nextRunAt).getTime() : 0;
-    const interval = run
-      ? new Date(run.createdAt as unknown as string).getTime() + connection.config.intervalHours * 3_600_000
-      : 0;
+    const last = run ? new Date((run.finishedAt ?? run.createdAt) as unknown as string).getTime() : 0;
+    const interval = run ? last + connection.config.intervalHours * 3_600_000 : 0;
     return new Date(Math.max(backoff, interval, Date.now())).toISOString();
   }
 
@@ -246,15 +255,16 @@ export class ICloudSyncService {
     if (!this.transport.enabled()) {
       throw new BadRequestException('icloud_disabled');
     }
-    if ((await this.repository.list(auth.user.id)).length >= ICLOUD_MAX_CONNECTIONS) {
-      throw new BadRequestException('icloud_connection_limit');
-    }
     await this.staging.root();
     this.checkLimits(dto.config);
     if (dto.config.includeHidden) {
       requireElevatedPermission(auth);
     }
-    return this.response(await this.repository.create(auth.user.id, dto.label, dto.config));
+    const created = await this.repository.create(auth.user.id, dto.label, dto.config, ICLOUD_MAX_CONNECTIONS);
+    if (!created) {
+      throw new BadRequestException('icloud_connection_limit');
+    }
+    return this.response(created);
   }
 
   private checkLimits(config: ICloudConnection['config']) {
@@ -426,6 +436,10 @@ export class ICloudSyncService {
    */
   async disconnect(auth: AuthDto, id: string): Promise<void> {
     await this.owned(auth, id);
+    // Disconnected first, under the connection's lock: `queueOperation` takes the same lock and
+    // refuses a disconnected connection, so no run can be queued after this. The run read next is
+    // then the last one there will be.
+    await this.repository.disconnect(id, auth.user.id);
     const active = await this.repository.latestOperation(id, auth.user.id, { activeOnly: true });
     if (active) {
       const cancelled = await this.operations.requestCancel(active.id, auth.user.id);
@@ -433,7 +447,6 @@ export class ICloudSyncService {
         await this.repository.endRun(id, 'cancelled');
       }
     }
-    await this.repository.disconnect(id, auth.user.id);
   }
 
   /**
@@ -587,6 +600,8 @@ export class ICloudSyncService {
     const claim: Claim = { operation, claimToken };
     const { id, ownerId } = operation;
     const snapshot = asObject(operation.snapshot);
+    const recordedIdle = Number(asObject(operation.result).idleWaits ?? 0);
+    let idleWaits = Number.isSafeInteger(recordedIdle) && recordedIdle > 0 ? recordedIdle : 0;
     const connectionId = typeof snapshot.connectionId === 'string' ? snapshot.connectionId : undefined;
     if (!connectionId) {
       await this.fail(claim, 'icloud_snapshot_invalid');
@@ -600,6 +615,11 @@ export class ICloudSyncService {
     }
     if (!this.transport.enabled()) {
       await this.settle(claim, connectionId, 'icloud_disabled');
+      return;
+    }
+    if (connection.state === 'authenticating') {
+      // The owner is signing in again right now; the answer decides, not this claim.
+      await this.wait(claim, connectionId, ICLOUD_SIGN_IN_WAIT_MS, idleWaits);
       return;
     }
     if (connection.state === 'error' && (operation.autoRetries ?? 0) > 0 && connection.encryptedSession) {
@@ -634,6 +654,10 @@ export class ICloudSyncService {
           return;
         }
         const current = await this.repository.get(connectionId, ownerId);
+        if (current?.state === 'authenticating') {
+          await this.wait(claim, connectionId, ICLOUD_SIGN_IN_WAIT_MS, idleWaits);
+          return;
+        }
         if (!current || current.state !== 'connected') {
           await this.settle(
             claim,
@@ -653,7 +677,7 @@ export class ICloudSyncService {
           if (after?.state === 'connected') {
             // A rate limit, a timeout or a reset change token: wait out the connection's back-off.
             const until = after.nextRunAt ? new Date(after.nextRunAt).getTime() - Date.now() : ICLOUD_IDLE_WAIT_MS;
-            await this.wait(claim, connectionId, until);
+            await this.wait(claim, connectionId, until, idleWaits);
             return;
           }
           await this.settle(claim, connectionId, after ? connectionStateCode(after, code) : code);
@@ -661,11 +685,17 @@ export class ICloudSyncService {
         }
 
         if (outcome === 'idle') {
-          await this.wait(claim, connectionId, ICLOUD_IDLE_WAIT_MS);
+          idleWaits += 1;
+          if (idleWaits > ICLOUD_MAX_IDLE_WAITS) {
+            await this.settle(claim, connectionId, 'icloud_sync_stalled');
+            return;
+          }
+          await this.wait(claim, connectionId, ICLOUD_IDLE_WAIT_MS, idleWaits);
           return;
         }
 
-        const written = await this.record(claim, connectionId, outcome === 'done' ? 'complete' : 'syncing');
+        idleWaits = 0;
+        const written = await this.record(claim, connectionId, outcome === 'done' ? 'complete' : 'syncing', 0);
         if (!(await this.proceed(claim, connectionId, written))) {
           return;
         }
@@ -715,13 +745,13 @@ export class ICloudSyncService {
   }
 
   /** Real counts onto the run's row, and the lease renewed. The answer says whether to carry on. */
-  private async record(claim: Claim, connectionId: string, phase: string) {
+  private async record(claim: Claim, connectionId: string, phase: string, idleWaits: number) {
     const counts = await this.repository.counts(connectionId);
     const total = counts.resources ?? 0;
     const open = OPEN_RESOURCE_STATUSES.reduce((sum, status) => sum + (counts[status] ?? 0), 0);
     const processed = Math.max(0, total - open);
     return this.operations.setBulkResult(claim.operation.id, claim.claimToken, {
-      result: { phase, counts },
+      result: { phase, counts, idleWaits },
       processedUnits: processed,
       totalUnits: total,
       progress: total > 0 ? (processed / total) * 100 : 0,
@@ -759,8 +789,8 @@ export class ICloudSyncService {
   }
 
   /** Hand the run back for `delayMs` without spending an attempt: it is waiting, not failing. */
-  private async wait(claim: Claim, connectionId: string, delayMs: number): Promise<void> {
-    const written = await this.record(claim, connectionId, 'waiting');
+  private async wait(claim: Claim, connectionId: string, delayMs: number, idleWaits: number): Promise<void> {
+    const written = await this.record(claim, connectionId, 'waiting', idleWaits);
     if (!(await this.proceed(claim, connectionId, written))) {
       return;
     }
@@ -772,7 +802,8 @@ export class ICloudSyncService {
 
   /** Stop with a failure, unless the owner cancelled or paused first. */
   private async settle(claim: Claim, connectionId: string, code: string): Promise<void> {
-    const written = await this.record(claim, connectionId, 'stopped');
+    const recorded = Number(asObject(claim.operation.result).idleWaits ?? 0);
+    const written = await this.record(claim, connectionId, 'stopped', Number.isSafeInteger(recorded) ? recorded : 0);
     if (!(await this.proceed(claim, connectionId, written))) {
       return;
     }
@@ -786,6 +817,11 @@ export class ICloudSyncService {
    */
   private async fail(claim: Claim, code: string): Promise<void> {
     const outcome = await this.operations.fail(claim.operation.id, claim.claimToken, { error: code, errorCode: code });
+    const connectionId = asObject(claim.operation.snapshot).connectionId;
+    if (outcome === 'failed' && typeof connectionId === 'string') {
+      // The run record ends with the run; the next run starts a fresh inventory pass.
+      await this.repository.endRun(connectionId, 'failed').catch(() => undefined);
+    }
     if (outcome === 'failed' && !SIGN_IN_CODES.has(code)) {
       await this.repository
         .notify(
