@@ -85,8 +85,11 @@ describe('bulk action descriptors', () => {
     expect(available({ assets: [photo('a')] })).toContain('mark-sensitive');
     expect(available({ assets: [photo('a')], trash: true })).not.toContain('mark-sensitive');
     expect(available({ assets: [photo('a')], locked: true })).not.toContain('mark-sensitive');
-    // an unlocked session shows a marked item in the library, where it can be unmarked
-    expect(available({ assets: [photo('a', { isLocked: true })] })).toContain('unmark-sensitive');
+    // an unlocked session shows a marked item in the library, where it can be unmarked but not
+    // archived, which would store another visibility and unlock it
+    const revealed = available({ assets: [photo('a', { isLocked: true })] });
+    expect(revealed).toContain('unmark-sensitive');
+    expect(revealed).not.toContain('archive');
   });
 
   it('leaves a read-only shared link with the download alone', () => {
