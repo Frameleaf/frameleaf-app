@@ -3,8 +3,15 @@
   import { activityManager } from '$lib/managers/activity-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
+  import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { AlbumUserRole, ReactionType, type ActivityResponseDto, type AlbumResponseDto } from '@immich/sdk';
+  import {
+    AlbumUserRole,
+    AssetMediaSize,
+    ReactionType,
+    type ActivityResponseDto,
+    type AlbumResponseDto,
+  } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiArrowUp, mdiClose, mdiCommentOutline, mdiDeleteOutline, mdiHeart, mdiHeartOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -23,9 +30,14 @@
   interface Props {
     album: AlbumResponseDto;
     onClose: () => void;
+    /**
+     * FL-55: open the photo a comment is about. A shared space opens its own viewer; where this is
+     * absent, a comment on a photo shows no picture to open.
+     */
+    onOpenAsset?: (assetId: string) => void;
   }
 
-  let { album, onClose }: Props = $props();
+  let { album, onClose, onOpenAsset }: Props = $props();
 
   let draft = $state('');
   let sending = $state(false);
@@ -169,6 +181,23 @@
             {/if}
           </div>
           <p>{entry.comment}</p>
+          {#if onOpenAsset && entry.assetId}
+            {@const assetId = entry.assetId}
+            <button
+              type="button"
+              class="subject"
+              aria-label={$t('frameleaf_spaces_viewer_open_comment_photo')}
+              title={$t('frameleaf_spaces_viewer_open_comment_photo')}
+              onclick={() => onOpenAsset?.(assetId)}
+            >
+              <img
+                src={getAssetMediaUrl({ id: assetId, size: AssetMediaSize.Thumbnail })}
+                alt=""
+                loading="lazy"
+                draggable="false"
+              />
+            </button>
+          {/if}
         </div>
       </li>
     {/each}
@@ -337,6 +366,22 @@
     font-size: 0.875rem;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
+  }
+  .subject {
+    display: block;
+    margin-block-start: 0.375rem;
+    inline-size: 4.5rem;
+    block-size: 4.5rem;
+    padding: 0;
+    overflow: hidden;
+    background: var(--fl-canvas);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius);
+  }
+  .subject img {
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
   }
   .composer {
     display: flex;

@@ -2659,6 +2659,8 @@
   "frameleaf_spaces_role_viewer": "Can view",
   "frameleaf_spaces_timeline_empty": "No photos in this shared space yet.",
   "frameleaf_spaces_title": "Shared spaces",
+  "frameleaf_spaces_viewer_open_comment_photo": "Open the photo this comment is about",
+  "frameleaf_spaces_viewer_open_photo": "Open a photo from {name} in this shared space",
   "frameleaf_spaces_withdraw_for": "Withdraw the invitation to {name}",
   "frameleaf_studio_activity_unavailable": "Activity is not available in this build, so the job cannot be followed from here yet.",
   "frameleaf_studio_all_saved": "All changes saved",
