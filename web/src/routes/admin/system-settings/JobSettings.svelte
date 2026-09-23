@@ -1,6 +1,6 @@
 <script lang="ts">
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
@@ -68,7 +68,7 @@
       {#each queueNames as queueName (queueName)}
         <div class="ms-4 mt-4 flex flex-col gap-4">
           {#if isSystemConfigJobDto(queueName)}
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.NUMBER}
               {disabled}
               label={$t('admin.job_concurrency', { values: { job: queueTitles[queueName] } })}
@@ -78,7 +78,7 @@
               isEdited={configToEdit.job[queueName]!.concurrency !== config.job[queueName]!.concurrency}
             />
           {:else}
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.NUMBER}
               label={$t('admin.job_concurrency', { values: { job: queueTitles[queueName] } })}
               description=""
@@ -91,7 +91,7 @@
       {/each}
 
       <div class="ms-4">
-        <SettingButtonsRow bind:configToEdit keys={['job']} {disabled} />
+        <SettingActions bind:configToEdit keys={['job']} {disabled} />
       </div>
     </form>
   </div>

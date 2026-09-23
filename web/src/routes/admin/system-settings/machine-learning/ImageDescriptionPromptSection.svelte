@@ -1,14 +1,14 @@
 <script lang="ts">
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { PlaceholderValidation, Style, type AdminConfigImageDescriptionDto } from '@immich/sdk';
   import { Button } from '@immich/ui';
   import { t } from 'svelte-i18n';
-  import SettingSelect from '../SettingSelect.svelte';
-  import SettingTextarea from '../SettingTextarea.svelte';
+  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
+  import SettingTextarea from '$lib/components/frameleaf/settings/SettingTextarea.svelte';
   import { parseLines } from './machine-learning-helpers';
 
   interface Props {
@@ -22,7 +22,7 @@
 
   // List-type prompt fields are displayed as newline-joined text and parsed back on input.
   // Using $derived ensures the textareas always reflect the live config — including
-  // after a Reset (which replaces configToEdit wholesale via SystemConfigButtonRow).
+  // after a Reset (which replaces configToEdit wholesale via SettingActions).
   const lookForText = $derived((imageDescription.prompt?.lookFor ?? []).join('\n'));
   const customVocabularyText = $derived((imageDescription.prompt?.customVocabulary ?? []).join('\n'));
   const nsfwIndicatorsText = $derived((imageDescription.prompt?.nsfwIndicators ?? []).join('\n'));
@@ -31,7 +31,7 @@
   const rawPromptTemplateText = $derived(imageDescription.prompt?.advanced?.rawPromptTemplate ?? '');
 </script>
 
-<SettingAccordion
+<SettingGroup
   key="image-description-prompt"
   title={$t('admin.machine_learning_image_description_prompt')}
   subtitle={$t('admin.machine_learning_image_description_prompt_description')}
@@ -51,7 +51,7 @@
       isEdited={imageDescription.prompt?.style !== savedImageDescription.prompt?.style}
     />
 
-    <SettingInputField
+    <SettingField
       inputType={SettingInputFieldType.NUMBER}
       label={$t('admin.machine_learning_image_description_sentence_count')}
       description={$t('admin.machine_learning_image_description_sentence_count_description')}
@@ -103,7 +103,7 @@
         JSON.stringify(savedImageDescription.prompt?.forbiddenInferences)}
     />
 
-    <SettingAccordion
+    <SettingGroup
       key="image-description-nsfw-indicators"
       title={$t('admin.machine_learning_image_description_nsfw_indicators')}
       subtitle={$t('admin.machine_learning_image_description_nsfw_indicators_description')}
@@ -118,9 +118,9 @@
             JSON.stringify(savedImageDescription.prompt?.nsfwIndicators)}
         />
       </div>
-    </SettingAccordion>
+    </SettingGroup>
 
-    <SettingAccordion
+    <SettingGroup
       key="image-description-medical-indicators"
       title={$t('admin.machine_learning_image_description_medical_indicators')}
       subtitle={$t('admin.machine_learning_image_description_medical_indicators_description')}
@@ -135,15 +135,15 @@
             JSON.stringify(savedImageDescription.prompt?.medicalIndicators)}
         />
       </div>
-    </SettingAccordion>
+    </SettingGroup>
 
-    <SettingAccordion
+    <SettingGroup
       key="image-description-identity-injection"
       title={$t('admin.machine_learning_image_description_identity_injection')}
       subtitle={$t('admin.machine_learning_image_description_identity_injection_description')}
     >
       <div class="ms-4 mt-4 flex flex-col gap-4">
-        <SettingSwitch
+        <SettingToggle
           title={$t('admin.machine_learning_image_description_identity_injection_enabled')}
           bind:checked={imageDescription.prompt!.identityInjection!.enabled}
           disabled={disabled || !workingMlEnabled || !imageDescription.enabled}
@@ -151,7 +151,7 @@
             savedImageDescription.prompt?.identityInjection?.enabled}
         />
 
-        <SettingInputField
+        <SettingField
           inputType={SettingInputFieldType.NUMBER}
           label={$t('admin.machine_learning_image_description_identity_injection_max_names')}
           description={$t('admin.machine_learning_image_description_identity_injection_max_names_description')}
@@ -167,7 +167,7 @@
             savedImageDescription.prompt?.identityInjection?.maxNames}
         />
 
-        <SettingInputField
+        <SettingField
           inputType={SettingInputFieldType.NUMBER}
           label={$t('admin.machine_learning_image_description_identity_injection_min_confidence')}
           description={$t('admin.machine_learning_image_description_identity_injection_min_confidence_description')}
@@ -183,15 +183,15 @@
             savedImageDescription.prompt?.identityInjection?.minFaceConfidence}
         />
       </div>
-    </SettingAccordion>
+    </SettingGroup>
 
-    <SettingAccordion
+    <SettingGroup
       key="image-description-advanced"
       title={$t('admin.machine_learning_image_description_advanced')}
       subtitle={$t('admin.machine_learning_image_description_advanced_description')}
     >
       <div class="ms-4 mt-4 flex flex-col gap-4">
-        <SettingSwitch
+        <SettingToggle
           title={$t('admin.machine_learning_image_description_advanced_enabled')}
           checked={imageDescription.prompt?.advanced?.enabled ?? false}
           onToggle={(next) => {
@@ -252,6 +252,6 @@
           />
         {/if}
       </div>
-    </SettingAccordion>
+    </SettingGroup>
   </div>
-</SettingAccordion>
+</SettingGroup>
