@@ -51688,7 +51688,12 @@
             "type": "boolean"
           },
           "match": {
-            "$ref": "#/components/schemas/PreservationRestoreMatch"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PreservationRestoreMatch"
+              }
+            ],
+            "nullable": true
           },
           "name": {
             "nullable": true,
@@ -51768,10 +51773,8 @@
         "enum": [
           "new",
           "existing",
-          "trashed",
-          null
+          "trashed"
         ],
-        "nullable": true,
         "type": "string"
       },
       "PreservationRestoreStatus": {
