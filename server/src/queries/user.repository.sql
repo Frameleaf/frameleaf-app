@@ -324,6 +324,7 @@ select
       (
         "asset"."type" = 'IMAGE'
         and "asset"."visibility" != 'hidden'
+        and "asset"."visibility" != 'locked'
       )
   ) as "photos",
   count(*) filter (
@@ -331,6 +332,7 @@ select
       (
         "asset"."type" = 'VIDEO'
         and "asset"."visibility" != 'hidden'
+        and "asset"."visibility" != 'locked'
       )
   ) as "videos",
   coalesce(
