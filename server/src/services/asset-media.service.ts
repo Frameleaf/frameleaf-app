@@ -21,6 +21,7 @@ import {
 import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import {
   AssetFileType,
+  AssetLockReason,
   AssetVisibility,
   CacheControl,
   ChecksumAlgorithm,
@@ -167,10 +168,17 @@ export class AssetMediaService extends BaseService {
         type: mimeTypes.assetType(file.originalPath),
         isFavorite: dto.isFavorite,
         duration: dto.duration || null,
-        visibility: dto.visibility ?? AssetVisibility.Timeline,
+        // `locked` is a lock record, never a stored visibility (FL-34): an upload into the Locked view
+        // arrives on the timeline and is locked straight away, before anything can list it
+        visibility:
+          dto.visibility && dto.visibility !== AssetVisibility.Locked ? dto.visibility : AssetVisibility.Timeline,
         livePhotoVideoId: dto.livePhotoVideoId,
         originalFileName: dto.filename || file.originalName,
       });
+
+      if (dto.visibility === AssetVisibility.Locked) {
+        await this.assetRepository.lock([asset.id], AssetLockReason.Marked, auth.user.id);
+      }
 
       if (dto.metadata?.length) {
         await this.assetRepository.upsertMetadata(asset.id, dto.metadata);

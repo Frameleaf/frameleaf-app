@@ -2,7 +2,13 @@ import { DateTime } from 'luxon';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { BBoxSchema } from 'src/dtos/bbox.dto.js';
-import { AssetOrderBySchema, AssetOrderSchema, AssetVisibilitySchema, TimeBucketDateTypeSchema } from 'src/enum.js';
+import {
+  AssetLockReasonSchema,
+  AssetOrderBySchema,
+  AssetOrderSchema,
+  AssetVisibilitySchema,
+  TimeBucketDateTypeSchema,
+} from 'src/enum.js';
 import { stringToBool } from 'src/validation.js';
 
 const TimeBucketQueryBaseSchema = z
@@ -34,6 +40,9 @@ const TimeBucketQueryBaseSchema = z
     ),
     visibility: AssetVisibilitySchema.optional().describe(
       'Filter by asset visibility status (ARCHIVE, TIMELINE, HIDDEN, LOCKED)',
+    ),
+    lockReason: AssetLockReasonSchema.optional().describe(
+      'With visibility LOCKED only: return only assets locked for this reason. Requires an elevated session.',
     ),
     withCoordinates: stringToBool.optional().describe('Include location data in the response'),
     key: z.string().optional(),
@@ -126,6 +135,10 @@ const TimeBucketAssetResponseSchema = z
     livePhotoVideoId: z
       .array(z.string().nullable())
       .describe('Array of live photo video asset IDs (null for non-live photos)'),
+    lockReason: z
+      .array(AssetLockReasonSchema.nullable())
+      .optional()
+      .describe('With visibility LOCKED only: why each asset is locked'),
     city: z.array(z.string().nullable()).optional().describe('Array of city names extracted from EXIF GPS data'),
     country: z.array(z.string().nullable()).optional().describe('Array of country names extracted from EXIF GPS data'),
     latitude: z
