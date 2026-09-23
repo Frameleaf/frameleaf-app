@@ -1,5 +1,5 @@
 import { Selectable } from 'kysely';
-import { AlbumUserRole, AssetOrder } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, AssetOrder } from 'src/enum.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
 import { AlbumUserFactory } from 'test/factories/album-user.factory.js';
@@ -34,6 +34,7 @@ export class AlbumFactory {
       parentId: null,
       icon: null,
       sortOrder: null,
+      kind: AlbumKind.Album,
       updatedAt: newDate(),
       updateId: newUuidV7(),
       ...dto,

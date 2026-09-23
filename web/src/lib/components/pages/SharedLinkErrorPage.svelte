@@ -3,46 +3,32 @@
   import Brand from '$lib/components/frameleaf/Brand.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import '$lib/frameleaf/tokens.css';
-  import { frameleafShell } from '$lib/frameleaf/rollout';
   import { Theme as AppTheme, themeManager } from '@immich/ui';
   import { t } from 'svelte-i18n';
 
   // FL-56: both the key and slug shared-link routes render this on an invalid, expired or
   // revoked link (the `getMySharedLink`/`getAssetInfoFromParam` failure in
   // `$lib/utils/shared-links.ts` throws and SvelteKit lands here). Own layout, no
-  // LibraryRail/TopBar/account menu in either branch below.
+  // LibraryRail/TopBar/account menu.
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 </script>
 
-{#if $frameleafShell}
-  <svelte:head>
-    <title>{$t('frameleaf_public_unavailable_title')}</title>
-  </svelte:head>
+<svelte:head>
+  <title>{$t('frameleaf_public_unavailable_title')}</title>
+</svelte:head>
 
-  <main class="frameleaf pv-error-shell" data-theme={appTheme}>
-    <a class="pv-brand" href="/" data-sveltekit-preload-data="hover">
-      <Brand />
-    </a>
-    <div class="pv-error-card" role="status">
-      <h1>{$t('frameleaf_public_unavailable_title')}</h1>
-      <p>{page.error?.message || $t('frameleaf_public_unavailable_body')}</p>
-      <Button variant="primary" onclick={() => (globalThis.location.href = '/')}>
-        {$t('frameleaf_public_go_home')}
-      </Button>
-    </div>
-  </main>
-{:else}
-  <svelte:head>
-    <title>{$t('error')}</title>
-  </svelte:head>
-
-  <section class="flex h-dvh w-dvw flex-col place-content-center place-items-center px-4">
-    <h1 class="py-10 text-4xl text-primary"><span>{$t('errors.page_not_found')}</span><span class="ps-3">:/</span></h1>
-    {#if page.error?.message}
-      <h2 class="text-xl text-immich-fg dark:text-immich-dark-fg">{page.error.message}</h2>
-    {/if}
-  </section>
-{/if}
+<main class="frameleaf pv-error-shell" data-theme={appTheme}>
+  <a class="pv-brand" href="/" data-sveltekit-preload-data="hover">
+    <Brand />
+  </a>
+  <div class="pv-error-card" role="status">
+    <h1>{$t('frameleaf_public_unavailable_title')}</h1>
+    <p>{page.error?.message || $t('frameleaf_public_unavailable_body')}</p>
+    <Button variant="primary" onclick={() => (globalThis.location.href = '/')}>
+      {$t('frameleaf_public_go_home')}
+    </Button>
+  </div>
+</main>
 
 <style>
   .pv-error-shell {

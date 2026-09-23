@@ -74,6 +74,23 @@ export enum AlbumUserRole {
 
 export const AlbumUserRoleSchema = z.enum(AlbumUserRole).describe('Album user role').meta({ id: 'AlbumUserRole' });
 
+/**
+ * What an album row represents. An album holds photos; a collection is a named
+ * group of albums, one level deep; a shared space is a top-level library that
+ * several people add to. Albums nest only inside collections; collections and
+ * spaces never nest.
+ */
+export enum AlbumKind {
+  Album = 'album',
+  Collection = 'collection',
+  Space = 'space',
+}
+
+export const AlbumKindSchema = z
+  .enum(AlbumKind)
+  .describe('Album kind: album (holds photos), collection (groups albums one level deep) or space (shared, top level)')
+  .meta({ id: 'AlbumKind' });
+
 export enum AssetOrder {
   Asc = 'asc',
   Desc = 'desc',

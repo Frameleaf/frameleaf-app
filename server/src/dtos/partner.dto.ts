@@ -11,9 +11,16 @@ const PartnerCreateSchema = z
   })
   .meta({ id: 'PartnerCreateDto' });
 
+// Exactly one field per request: `inTimeline` is the recipient's preference on the partner who shares
+// with them (`:id` shares with me); `shareLocation` is the sharing user's setting on the partner they
+// share with (I share with `:id`). The service rejects requests that set both or neither.
 const PartnerUpdateSchema = z
   .object({
-    inTimeline: z.boolean().describe('Show partner assets in timeline'),
+    inTimeline: z.boolean().optional().describe('Show partner assets in timeline'),
+    shareLocation: z
+      .boolean()
+      .optional()
+      .describe('Share asset locations with this partner; only the sharing user can change it'),
   })
   .meta({ id: 'PartnerUpdateDto' });
 
@@ -25,6 +32,7 @@ const PartnerSearchSchema = z
 
 const PartnerResponseSchema = UserResponseSchema.extend({
   inTimeline: z.boolean().optional().describe('Show in timeline'),
+  shareLocation: z.boolean().optional().describe('Sharer allows this partner to see asset locations'),
 })
   .describe('Partner response')
   .meta({ id: 'PartnerResponseDto' });

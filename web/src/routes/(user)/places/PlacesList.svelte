@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { frameleafShell } from '$lib/frameleaf/rollout';
   import { buildCountryStateGroups } from '$lib/frameleaf/places';
   import { Route } from '$lib/route';
   import { PlacesGroupBy, type PlacesViewSettings } from '$lib/stores/preferences.store';
@@ -78,7 +77,7 @@
       : places;
   });
 
-  const isCountryState = $derived(userSettings.groupBy === PlacesGroupBy.CountryState && $frameleafShell);
+  const isCountryState = $derived(userSettings.groupBy === PlacesGroupBy.CountryState);
   const countryStateGroups = $derived(
     isCountryState
       ? buildCountryStateGroups(filteredPlaces, $t('unknown_country'), $t('frameleaf_places_unknown_state'))

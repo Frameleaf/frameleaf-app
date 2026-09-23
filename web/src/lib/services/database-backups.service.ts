@@ -31,27 +31,11 @@ export const getDatabaseBackupActions = ($t: MessageFormatter, filename: string)
   return { Download, Delete };
 };
 
-export const handleRestoreDatabaseBackup = async (filename: string) => {
-  const $t = await getFormatter();
-  const confirm = await modalManager.showDialog({
-    confirmText: $t('restore'),
-    title: $t('admin.maintenance_restore_backup'),
-    prompt: $t('admin.maintenance_restore_backup_description'),
-  });
-
-  if (!confirm) {
-    return;
-  }
-
-  await restoreDatabaseBackup(filename);
-};
-
 /**
- * Restores a database backup without prompting first. Used by the Frameleaf typed-confirmation
- * dialog (`MaintenanceRestoreConfirmDialog.svelte`), which owns its own, stricter confirmation
- * step (typing RESTORE) instead of the generic `modalManager` confirm that
- * `handleRestoreDatabaseBackup` uses for the legacy shell. Both end up calling the same
- * `setMaintenanceMode` endpoint with `MaintenanceAction.RestoreDatabase`.
+ * Restores a database backup without prompting first. The caller owns the confirmation
+ * step: `MaintenanceRestoreConfirmDialog.svelte` requires the administrator to type
+ * RESTORE before this runs. It calls `setMaintenanceMode` with
+ * `MaintenanceAction.RestoreDatabase`.
  */
 export const restoreDatabaseBackup = async (filename: string) => {
   const $t = await getFormatter();

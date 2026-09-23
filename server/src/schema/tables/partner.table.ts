@@ -43,6 +43,10 @@ export class PartnerTable {
   @Column({ type: 'boolean', default: false })
   inTimeline!: Generated<boolean>;
 
+  /** Set by the sharing user (`sharedById`): whether `sharedWithId` may see the sharer's asset locations. */
+  @Column({ type: 'boolean', default: true })
+  shareLocation!: Generated<boolean>;
+
   @UpdateIdColumn({ index: true })
   updateId!: Generated<string>;
 }

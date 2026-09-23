@@ -3,14 +3,8 @@
   import MaintenanceBackupsPanel from '$lib/components/frameleaf/MaintenanceBackupsPanel.svelte';
   import MaintenanceIntegrityPanel from '$lib/components/frameleaf/MaintenanceIntegrityPanel.svelte';
   import MaintenanceModeCard from '$lib/components/frameleaf/MaintenanceModeCard.svelte';
-  import MaintenanceBackupsList from '$lib/components/maintenance/MaintenanceBackupsList.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
-  import ServerStatisticsCard from '$lib/components/server-statistics/ServerStatisticsCard.svelte';
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import { frameleafShell } from '$lib/frameleaf/rollout';
-  import { Route } from '$lib/route';
   import { handleCreateJob } from '$lib/services/job.service';
-  import { getMaintenanceAdminActions } from '$lib/services/maintenance.service';
   import {
     getIntegrityReportSummary,
     getQueuesLegacy,
@@ -20,10 +14,9 @@
     type JobCreateDto,
     type QueuesResponseLegacyDto,
   } from '@immich/sdk';
-  import { Button, Container, HStack, Text } from '@immich/ui';
-  import { mdiRefresh } from '@mdi/js';
+  import { Container } from '@immich/ui';
   import { onMount } from 'svelte';
-  import { t, type Translations } from 'svelte-i18n';
+  import { type Translations } from 'svelte-i18n';
   import type { PageData } from './$types';
   import { SvelteSet } from 'svelte/reactivity';
 
@@ -32,7 +25,6 @@
   };
 
   const { data }: Props = $props();
-  const { StartMaintenance } = $derived(getMaintenanceAdminActions($t));
 
   let integrityReport: IntegrityReportSummaryResponseDto = $state(data.integrityReport);
 
@@ -113,120 +105,36 @@
 
 <OnEvents {onJobCreate} />
 
-{#if $frameleafShell}
-  <!--
-    Frameleaf redesign (FL-81): the same integrityReport/jobs/activeJobs state and the same
-    handleCreateJob/getQueuesLegacy polling above drive these Frameleaf-styled panels; only the
-    presentation differs from the legacy branch below. The header's Start-maintenance action is
-    replaced by MaintenanceModeCard's own confirmation dialog, so it is intentionally omitted
-    from `actions` here.
-  -->
-  <AdminPageLayout breadcrumbs={[{ title: data.meta.title }]}>
-    <Container size="large" center class="my-4 flex flex-col gap-6">
-      <MaintenanceModeCard />
-      <MaintenanceIntegrityPanel
-        {reportTypes}
-        {integrityReport}
-        {jobNames}
-        {refreshJobNames}
-        {activeJobs}
-        {getReportTypeTranslation}
-        {getReportTypeDescriptionKey}
-        onCheck={(type) => void handleCreateJob({ name: jobNames[type] })}
-        onRefresh={(type) => void handleCreateJob({ name: refreshJobNames[type] })}
-        onCheckAll={() => {
-          for (const name of Object.values(jobNames)) {
-            void handleCreateJob({ name });
-          }
-        }}
-        onRefreshAll={() => {
-          for (const name of Object.values(refreshJobNames)) {
-            void handleCreateJob({ name });
-          }
-        }}
-      />
-      <MaintenanceBackupsPanel backups={data.backups} expectedVersion={data.expectedVersion} />
-    </Container>
-  </AdminPageLayout>
-{:else}
-  <AdminPageLayout breadcrumbs={[{ title: data.meta.title }]} actions={[StartMaintenance]}>
-    <Container size="large" center class="my-4 flex flex-col gap-6">
-      <section class="w-full pb-4">
-        <HStack>
-          <Text size="small">{$t('admin.maintenance_integrity_report')}</Text>
-          <Button
-            size="tiny"
-            variant="ghost"
-            onclick={() => {
-              for (const name of Object.values(jobNames)) {
-                void handleCreateJob({ name });
-              }
-            }}
-            class="mt-1 self-end"
-            disabled={activeJobs.size > 0}>{$t('admin.maintenance_integrity_check_all')}</Button
-          >
-          <Button
-            size="tiny"
-            variant="ghost"
-            onclick={() => {
-              for (const name of Object.values(refreshJobNames)) {
-                void handleCreateJob({ name });
-              }
-            }}
-            class="mt-1 self-end"
-            disabled={activeJobs.size > 0}>{$t('refresh')}</Button
-          ></HStack
-        >
-
-        <div class="mt-5 flex justify-between gap-4 max-lg:flex-wrap">
-          {#each reportTypes as reportType (reportType)}
-            <ServerStatisticsCard
-              title={$t(getReportTypeTranslation(reportType))}
-              tooltip={$t(getReportTypeDescriptionKey(reportType))}
-              valuePromise={{ value: integrityReport[reportType] }}
-            >
-              {#snippet footer()}
-                <HStack gap={1} class="justify-between">
-                  <HStack gap={0}>
-                    <Button
-                      onclick={() =>
-                        handleCreateJob({
-                          name: jobNames[reportType],
-                        })}
-                      size="tiny"
-                      variant="ghost"
-                      disabled={activeJobs.has(jobNames[reportType])}>{$t('admin.maintenance_integrity_check')}</Button
-                    >
-                    <Button
-                      onclick={() =>
-                        handleCreateJob({
-                          name: refreshJobNames[reportType],
-                        })}
-                      size="tiny"
-                      variant="ghost"
-                      disabled={activeJobs.has(refreshJobNames[reportType])}>{$t('refresh')}</Button
-                    >
-                  </HStack>
-                  <Button href={Route.systemMaintenanceIntegrityReport({ reportType })} size="tiny">{$t('view')}</Button>
-                </HStack>
-              {/snippet}
-            </ServerStatisticsCard>
-          {/each}
-        </div>
-      </section>
-
-      <section class="w-full pb-28">
-        <Text size="small">{$t('admin.maintenance_backup_management')}</Text>
-
-        <SettingAccordion
-          title={$t('admin.maintenance_restore_database_backup')}
-          subtitle={$t('admin.maintenance_restore_database_backup_description')}
-          icon={mdiRefresh}
-          key="backups"
-        >
-          <MaintenanceBackupsList backups={data.backups} expectedVersion={data.expectedVersion} />
-        </SettingAccordion>
-      </section>
-    </Container>
-  </AdminPageLayout>
-{/if}
+<!--
+  Maintenance (FL-81): the integrityReport/jobs/activeJobs state and the
+  handleCreateJob/getQueuesLegacy polling above drive these panels. The page header has no
+  Start-maintenance action because MaintenanceModeCard owns that flow, with its own
+  confirmation dialog.
+-->
+<AdminPageLayout breadcrumbs={[{ title: data.meta.title }]}>
+  <Container size="large" center class="my-4 flex flex-col gap-6">
+    <MaintenanceModeCard />
+    <MaintenanceIntegrityPanel
+      {reportTypes}
+      {integrityReport}
+      {jobNames}
+      {refreshJobNames}
+      {activeJobs}
+      {getReportTypeTranslation}
+      {getReportTypeDescriptionKey}
+      onCheck={(type) => void handleCreateJob({ name: jobNames[type] })}
+      onRefresh={(type) => void handleCreateJob({ name: refreshJobNames[type] })}
+      onCheckAll={() => {
+        for (const name of Object.values(jobNames)) {
+          void handleCreateJob({ name });
+        }
+      }}
+      onRefreshAll={() => {
+        for (const name of Object.values(refreshJobNames)) {
+          void handleCreateJob({ name });
+        }
+      }}
+    />
+    <MaintenanceBackupsPanel backups={data.backups} expectedVersion={data.expectedVersion} />
+  </Container>
+</AdminPageLayout>

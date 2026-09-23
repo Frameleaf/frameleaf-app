@@ -1095,16 +1095,19 @@ export type AlbumResponseDto = {
     endDate?: string;
     /** Has shared link */
     hasSharedLink: boolean;
-    /** Icon key (null = default folder icon) */
+    /** Icon: a Material Design Icons name or legacy key (null = default icon) */
     icon: string | null;
     /** Album ID */
     id: string;
     /** Activity feed enabled */
     isActivityEnabled: boolean;
+    /** True when the album is filled by the smart album rules. Only populated by GET /albums/tree. */
+    isSmart?: boolean;
+    kind: AlbumKind;
     /** Last modified asset timestamp */
     lastModifiedAssetTimestamp?: string;
     order?: AssetOrder;
-    /** Parent album ID for nesting (null = top-level) */
+    /** Collection this album belongs to (null = top-level) */
     parentId: string | null;
     /** Is shared album */
     shared: boolean;
@@ -1129,9 +1132,11 @@ export type CreateAlbumDto = {
     assetIds?: string[];
     /** Album description */
     description?: string | null;
-    /** Optional icon key (see album-icons.ts) */
+    /** Optional icon: any Material Design Icons name (see GET /albums/icons) */
     icon?: string;
-    /** Parent album ID for nesting (omit for top-level) */
+    /** What to create: an album (default), a collection of albums or a shared space */
+    kind?: AlbumKind;
+    /** Collection to create the album inside (omit for top-level). Only albums nest, and only inside a collection. */
     parentId?: string;
 };
 export type AlbumsAddAssetsDto = {
@@ -1145,6 +1150,26 @@ export type AlbumsAddAssetsResponseDto = {
     /** Operation success */
     success: boolean;
 };
+export type AlbumIconSuggestionResponseDto = {
+    /** Human label for search and accessibility */
+    label: string;
+    /** Material Design Icons name, e.g. mdiCameraOutline */
+    name: string;
+};
+export type AlbumIconGroupResponseDto = {
+    /** Suggested icons in this category */
+    icons: AlbumIconSuggestionResponseDto[];
+    /** Category label */
+    label: string;
+};
+export type AlbumIconCatalogueResponseDto = {
+    /** Every valid icon name, sorted */
+    names: string[];
+    /** Categorised suggested set offered first */
+    suggested: AlbumIconGroupResponseDto[];
+    /** Material Design Icons catalogue version the names come from */
+    version: string;
+};
 export type AlbumStatisticsResponseDto = {
     /** Number of non-shared albums */
     notShared: number;
@@ -1153,6 +1178,23 @@ export type AlbumStatisticsResponseDto = {
     /** Number of shared albums */
     shared: number;
 };
+export type AlbumCollectionResponseDto = {
+    /** Number of albums inside the collection */
+    albumCount: number;
+    /** Albums inside the collection, in display order */
+    albums: AlbumResponseDto[];
+    /** Items in the collection and its albums (sum, not deduplicated) */
+    assetCount: number;
+    collection: AlbumResponseDto;
+};
+export type AlbumTreeResponseDto = {
+    /** Albums that stand on their own (not inside a visible collection) */
+    albums: AlbumResponseDto[];
+    /** Collections visible to the user with their albums */
+    collections: AlbumCollectionResponseDto[];
+    /** Shared spaces, always top level */
+    spaces: AlbumResponseDto[];
+};
 export type UpdateAlbumDto = {
     /** Album name */
     albumName?: string;
@@ -1160,12 +1202,12 @@ export type UpdateAlbumDto = {
     albumThumbnailAssetId?: string;
     /** Album description */
     description?: string | null;
-    /** Icon key (null = clear / use default folder icon) */
+    /** Icon: any Material Design Icons name (null = clear / use default icon) */
     icon?: string | null;
     /** Enable activity feed */
     isActivityEnabled?: boolean;
     order?: AssetOrder;
-    /** Parent album ID for nesting (null = move to top-level, omit = no change) */
+    /** Collection to move the album into (null = move to top-level, omit = no change) */
     parentId?: string | null;
     /** Sibling display position. Lower values appear first. Computed by the client as a midpoint. */
     sortOrder?: number;
@@ -1181,6 +1223,10 @@ export type BulkIdResponseDto = {
     id: string;
     /** Whether operation succeeded */
     success: boolean;
+};
+export type MoveAlbumDto = {
+    /** Collection to move the album into, or null to take it out so it stands on its own */
+    collectionId: string | null;
 };
 export type AlbumDescendantCountResponseDto = {
     /** Number of descendant albums (children, grandchildren, etc.) */
@@ -2616,6 +2662,8 @@ export type PartnerResponseDto = {
     profileChangedAt: string;
     /** Profile image path */
     profileImagePath: string;
+    /** Sharer allows this partner to see asset locations */
+    shareLocation?: boolean;
 };
 export type PartnerCreateDto = {
     /** User ID to share with */
@@ -2623,7 +2671,9 @@ export type PartnerCreateDto = {
 };
 export type PartnerUpdateDto = {
     /** Show partner assets in timeline */
-    inTimeline: boolean;
+    inTimeline?: boolean;
+    /** Share asset locations with this partner; only the sharing user can change it */
+    shareLocation?: boolean;
 };
 export type PeopleResponseDto = {
     /** Whether there are more pages */
@@ -5226,6 +5276,17 @@ export function addAssetsToAlbums({ albumsAddAssetsDto }: {
     })));
 }
 /**
+ * Retrieve the album icon catalogue
+ */
+export function getAlbumIconCatalogue(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumIconCatalogueResponseDto;
+    }>("/albums/icons", {
+        ...opts
+    }));
+}
+/**
  * Retrieve album statistics
  */
 export function getAlbumStatistics(opts?: Oazapfts.RequestOpts) {
@@ -5233,6 +5294,17 @@ export function getAlbumStatistics(opts?: Oazapfts.RequestOpts) {
         status: 200;
         data: AlbumStatisticsResponseDto;
     }>("/albums/statistics", {
+        ...opts
+    }));
+}
+/**
+ * Retrieve the album directory
+ */
+export function getAlbumTree(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumTreeResponseDto;
+    }>("/albums/tree", {
         ...opts
     }));
 }
@@ -5313,6 +5385,22 @@ export function addAssetsToAlbum({ id, bulkIdsDto }: {
         ...opts,
         method: "PUT",
         body: bulkIdsDto
+    })));
+}
+/**
+ * Move an album into or out of a collection
+ */
+export function moveAlbumToCollection({ id, moveAlbumDto }: {
+    id: string;
+    moveAlbumDto: MoveAlbumDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumResponseDto;
+    }>(`/albums/${encodeURIComponent(id)}/collection`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: moveAlbumDto
     })));
 }
 /**
@@ -9395,6 +9483,11 @@ export enum AlbumUserRole {
     Editor = "editor",
     Owner = "owner",
     Viewer = "viewer"
+}
+export enum AlbumKind {
+    Album = "album",
+    Collection = "collection",
+    Space = "space"
 }
 export enum BulkIdErrorReason {
     Duplicate = "duplicate",
