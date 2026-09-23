@@ -17,6 +17,7 @@ test.describe('Shared Links', () => {
   let sharedLink: SharedLinkResponseDto;
   let sharedLinkPassword: SharedLinkResponseDto;
   let individualSharedLink: SharedLinkResponseDto;
+  let viewOnlySharedLink: SharedLinkResponseDto;
 
   test.beforeAll(async () => {
     utils.initSdk();
@@ -46,20 +47,62 @@ test.describe('Shared Links', () => {
       type: SharedLinkType.Individual,
       assetIds: [asset.id, asset2.id],
     });
+    viewOnlySharedLink = await utils.createSharedLink(admin.accessToken, {
+      type: SharedLinkType.Album,
+      albumId: album.id,
+      allowDownload: false,
+      allowUpload: true,
+    });
   });
 
   test('download from a shared link', async ({ page }) => {
     await page.goto(`/share/${sharedLink.key}`);
     await page.getByRole('heading', { name: 'Test Album' }).waitFor();
     await page.locator(`[data-asset-id="${asset.id}"]`).hover();
-    await page.locator(`[data-asset-id="${asset.id}"]`).getByRole('checkbox').waitFor();
-    await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download' }).click()]);
+    await page.locator(`[data-asset-id="${asset.id}"]`).getByRole('checkbox').click();
+    // PublicViewer.jsx: a selection turns the header's download into "Download selected (n)".
+    await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: 'Download selected (1)' }).click(),
+    ]);
   });
 
   test('download all from shared link', async ({ page }) => {
     await page.goto(`/share/${sharedLink.key}`);
     await page.getByRole('heading', { name: 'Test Album' }).waitFor();
-    await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download' }).click()]);
+    await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download all' }).click()]);
+  });
+
+  test('select mode picks items with a plain click', async ({ page }) => {
+    await page.goto(`/share/${sharedLink.key}`);
+    await page.getByRole('heading', { name: 'Test Album' }).waitFor();
+    await expect(page.getByText('1 item', { exact: false }).first()).toBeVisible();
+
+    await page.getByRole('button', { name: 'Select', exact: true }).click();
+    const selection = page.getByRole('toolbar', { name: 'Selection' });
+    await expect(selection).toContainText('0 of 1 selected');
+    await expect(page.getByRole('button', { name: 'Download selected (0)' })).toBeDisabled();
+
+    await page.locator(`[data-asset-id="${asset.id}"]`).click();
+    await expect(selection).toContainText('1 of 1 selected');
+    await expect(page.getByRole('button', { name: 'Download selected (1)' })).toBeEnabled();
+    await expect(page.locator('#immich-asset-viewer')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(selection).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Download all' })).toBeVisible();
+  });
+
+  test('offers only what the link allows', async ({ page }) => {
+    await page.goto(`/share/${viewOnlySharedLink.key}`);
+    await page.getByRole('heading', { name: 'Test Album' }).waitFor();
+    await expect(page.getByRole('button', { name: 'Add photos' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Download/ })).toHaveCount(0);
+
+    await page.goto(`/share/${sharedLink.key}`);
+    await page.getByRole('heading', { name: 'Test Album' }).waitFor();
+    await expect(page.getByRole('button', { name: 'Download all' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add photos' })).toHaveCount(0);
   });
 
   test('enter password for a shared link', async ({ page }) => {
@@ -112,7 +155,7 @@ test.describe('Shared Links', () => {
     await page.goto(`/share/${sharedLink.key}`);
     await page.getByRole('heading', { name: 'Test Album' }).waitFor();
 
-    await page.locator('a[href="/"]').click();
+    await page.getByRole('link', { name: 'Go to Frameleaf' }).click();
     await page.waitForURL('/photos');
     await page.locator(`[data-asset-id="${asset.id}"]`).waitFor();
   });
