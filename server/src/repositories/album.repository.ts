@@ -14,6 +14,7 @@ import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js
 import { DB } from 'src/schema/index.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
+import { albumCoverCandidates, automaticAlbumCover } from 'src/utils/album-cover.js';
 import { anyUuid, asUuid, dummy, withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 
 export interface AlbumAssetCount {
@@ -591,6 +592,7 @@ export class AlbumRepository {
    * - Removing thumbnails from albums without assets
    * - Removing references of thumbnails to assets outside the album
    * - Setting a thumbnail when none is set and the album contains assets
+   * - Replacing a Locked or trashed thumbnail (see `albumCoverCandidates`)
    *
    * @returns Amount of updated album thumbnails or undefined when unknown
    */
@@ -599,23 +601,18 @@ export class AlbumRepository {
 
     const result = await this.db
       .updateTable('album')
-      .set((eb) => ({
-        albumThumbnailAssetId: this.updateThumbnailBuilder(eb)
-          .select('album_asset.assetId')
-          .orderBy('asset.fileCreatedAt', 'desc')
-          .limit(sql.lit(1)),
-      }))
+      .set((eb) => ({ albumThumbnailAssetId: automaticAlbumCover(eb) }))
       .where((eb) =>
         eb.or([
           eb.and([
             eb('albumThumbnailAssetId', 'is', null),
-            eb.exists(this.updateThumbnailBuilder(eb).select(sql`1`.as('1'))), // Has assets
+            eb.exists(albumCoverCandidates(eb).select(sql`1`.as('1'))), // Has assets
           ]),
           eb.and([
             eb('albumThumbnailAssetId', 'is not', null),
             eb.not(
               eb.exists(
-                this.updateThumbnailBuilder(eb)
+                albumCoverCandidates(eb)
                   .select(sql`1`.as('1'))
                   .whereRef('album.albumThumbnailAssetId', '=', 'album_asset.assetId'), // Has invalid assets
               ),
@@ -626,23 +623,6 @@ export class AlbumRepository {
       .execute();
 
     return Number(result[0].numUpdatedRows);
-  }
-
-  /**
-   * The album assets that may serve as its cover. Locked media never does (owner decision, September
-   * 22, 2026): the cover shows on album lists, in shared links and to other members, none of whom may
-   * see it, so a Locked cover is treated as invalid and replaced here.
-   */
-  private updateThumbnailBuilder(eb: ExpressionBuilder<DB, 'album'>) {
-    return eb
-      .selectFrom('album_asset')
-      .innerJoin('asset', (join) =>
-        join
-          .onRef('album_asset.assetId', '=', 'asset.id')
-          .on('asset.deletedAt', 'is', null)
-          .on('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
-      )
-      .whereRef('album_asset.albumId', '=', 'album.id');
   }
 
   /**

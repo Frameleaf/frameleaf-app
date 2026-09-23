@@ -7,6 +7,7 @@ import { AssetVisibility } from 'src/enum.js';
 import { isForkWriteEnabled } from 'src/fork-schema/authority.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
+import { releaseLockedAlbumCovers } from 'src/utils/album-cover.js';
 
 type Values = { isFavorite?: boolean; isHidden?: boolean; fileCreatedAt?: string };
 type Baseline = {
@@ -148,6 +149,8 @@ export class ICloudMetadataRepository {
               .where('id', '=', candidate.assetId)
               .where('ownerId', '=', ownerId)
               .execute();
+            // an album cover is never a Locked photo (FL-53)
+            await releaseLockedAlbumCovers(db, [candidate.assetId]);
             state.applied.visibility = AssetVisibility.Locked;
           } else {
             state.overridden.push('isHidden');
