@@ -14,6 +14,7 @@
   import { locale, t } from 'svelte-i18n';
   import { toastManager } from '@immich/ui';
   import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
+  import NavigationBar from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
@@ -44,6 +45,7 @@
     type StudioProjectSessionState,
   } from '$lib/frameleaf/studio/project-session';
   import { getProfileImageUrl } from '$lib/utils';
+  import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -366,6 +368,15 @@
     }
   });
 </script>
+
+<!--
+  The Frameleaf top bar stays above the editor, as on the prototype's Studio screen, so Library,
+  Studio and Activity are one click away (FL-30). Studio has no library rail. Leaving through the
+  bar goes through the same unsaved-work guard as any other navigation.
+-->
+<header>
+  <NavigationBar onUploadClick={() => openFileUploadDialog()} hasRail={false} />
+</header>
 
 <!--
   `droppedAssetCount` keeps the handoff honest: items the person selected that this session

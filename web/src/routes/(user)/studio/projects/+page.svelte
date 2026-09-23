@@ -6,6 +6,7 @@
   let { data }: { data: PageData } = $props();
 </script>
 
-<UserPageLayout title={data.meta.title}>
+<!-- Studio is a top bar workspace with no library rail, as in the prototype (FL-30). -->
+<UserPageLayout title={data.meta.title} rail={false}>
   <StudioProjectLibrary shelf={data.shelf} />
 </UserPageLayout>
