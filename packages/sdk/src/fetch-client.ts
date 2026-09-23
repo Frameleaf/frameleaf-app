@@ -7116,6 +7116,18 @@ export function getUserSessionsAdmin({ id }: {
     }));
 }
 /**
+ * Delete a user session
+ */
+export function deleteUserSessionAdmin({ id, sessionId }: {
+    id: string;
+    sessionId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/users/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Retrieve user statistics
  */
 export function getUserStatisticsAdmin({ id, isFavorite, isTrashed, visibility }: {
@@ -13361,6 +13373,7 @@ export enum Permission {
     AdminUserUpdate = "adminUser.update",
     AdminUserDelete = "adminUser.delete",
     AdminSessionRead = "adminSession.read",
+    AdminSessionDelete = "adminSession.delete",
     AdminAuthUnlinkAll = "adminAuth.unlinkAll"
 }
 export enum AssetFileType {
