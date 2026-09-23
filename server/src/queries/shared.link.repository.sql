@@ -54,7 +54,14 @@ select
         where
           "shared_link"."id" = "shared_link_asset"."sharedLinkId"
           and "asset"."deletedAt" is null
-          and "asset"."visibility" != 'locked'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
           and not (
             case
               when "asset"."id" is null then false
@@ -167,7 +174,14 @@ from
         where
           "album_asset"."assetId" = "asset"."id"
           and "asset"."deletedAt" is null
-          and "asset"."visibility" != 'locked'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
           and not (
             case
               when "asset"."id" is null then false
@@ -453,7 +467,14 @@ from
       ) as "exifInfo" on true
     where
       "asset"."id" = "shared_link_asset"."assetId"
-      and "asset"."visibility" != 'locked'
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
   ) as "assets" on true
 where
   "shared_link"."id" = $1

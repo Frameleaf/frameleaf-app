@@ -416,7 +416,14 @@ where
   "asset"."type" = 'VIDEO'
   and "asset"."deletedAt" is null
   and "asset"."visibility" != 'hidden'
-  and "asset"."visibility" != 'locked'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
 group by
   "asset"."id"
 having

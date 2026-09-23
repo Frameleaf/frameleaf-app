@@ -325,10 +325,9 @@ where
     select
       1
     from
-      asset as locked_asset
+      asset_lock
     where
-      locked_asset.id = "user"."profileImageAssetId"
-      and locked_asset.visibility = 'locked'
+      asset_lock."assetId" = "user"."profileImageAssetId"
   )
 
 -- UserRepository.getLockedProfileImageSources
@@ -344,10 +343,9 @@ where
     select
       1
     from
-      asset as locked_asset
+      asset_lock
     where
-      locked_asset.id = "user"."profileImageAssetId"
-      and locked_asset.visibility = 'locked'
+      asset_lock."assetId" = "user"."profileImageAssetId"
   )
   and "user"."deletedAt" is null
 
@@ -366,7 +364,14 @@ where
   and "asset"."type" = 'IMAGE'
   and "asset"."status" = 'active'
   and "asset"."visibility" = 'timeline'
-  and "asset"."visibility" != 'locked'
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and "asset"."deletedAt" is null
   and not case
     when "asset"."id" is null then false
@@ -445,7 +450,14 @@ select
       (
         "asset"."type" = 'IMAGE'
         and "asset"."visibility" != 'hidden'
-        and "asset"."visibility" != 'locked'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
       )
   ) as "photos",
   count(*) filter (
@@ -453,7 +465,14 @@ select
       (
         "asset"."type" = 'VIDEO'
         and "asset"."visibility" != 'hidden'
-        and "asset"."visibility" != 'locked'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
       )
   ) as "videos",
   coalesce(
