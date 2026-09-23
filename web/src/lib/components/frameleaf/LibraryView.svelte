@@ -300,7 +300,7 @@
       : session.selection
           .map((id) => findAsset(id))
           .filter((asset): asset is TimelineAsset => !!asset)
-          .map(toBulk),
+          .map((asset) => toBulk(asset)),
   );
 
   const runBulk = (id: BulkActionId, payload?: BulkPayload) => {

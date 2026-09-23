@@ -37,7 +37,8 @@
 
   const onsubmit = (event: Event) => {
     event.preventDefault();
-    commit(active >= 0 && suggestions[active] ? suggestions[active].name : value);
+    const suggestion = active >= 0 ? suggestions[active] : undefined;
+    commit(suggestion?.name ?? value);
   };
 
   const onkeydown = (event: KeyboardEvent) => {

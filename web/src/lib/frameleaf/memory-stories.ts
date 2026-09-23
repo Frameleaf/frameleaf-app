@@ -97,5 +97,5 @@ export const exportProgress = ({ assetCount, processedAssets }: MemoryExportResp
 export const latestExport = (runs: MemoryExportResponseDto[], memoryId: string): MemoryExportResponseDto | undefined =>
   runs
     .filter((run) => run.memoryId === memoryId)
-    .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .at(0);

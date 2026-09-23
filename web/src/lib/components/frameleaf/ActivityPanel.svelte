@@ -54,7 +54,7 @@
   const comments = $derived(
     activityManager.activities
       .filter((entry) => entry.type === ReactionType.Comment)
-      .toSorted((a, b) => a.createdAt.localeCompare(b.createdAt)),
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
   );
   const likeCount = $derived(activityManager.likeCount);
   const liked = $derived(!!activityManager.isLiked);

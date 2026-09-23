@@ -212,8 +212,8 @@ export const arrangeAlbumDirectory = (
     }
   }
 
-  const albums = tree.albums.filter(passes).sort(compare);
-  const spaces = tree.spaces.filter(passes).sort(compare);
+  const albums = tree.albums.filter((node) => passes(node)).sort(compare);
+  const spaces = tree.spaces.filter((node) => passes(node)).sort(compare);
 
   const everything = [
     ...tree.collections.flatMap((node) => [node.collection, ...node.albums]),

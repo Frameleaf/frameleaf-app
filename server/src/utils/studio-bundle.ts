@@ -169,7 +169,7 @@ const checkFiles = (value: unknown): Record<string, StudioBundleFileDigest> | st
     if (!isPlainObject(entry) || typeof entry.sha256 !== 'string' || !sha256Hex.test(entry.sha256)) {
       return `files[${name}]: sha256 must be 64 hex characters`;
     }
-    if (typeof entry.bytes !== 'number' || !Number.isInteger(entry.bytes) || entry.bytes < 0) {
+    if (typeof entry.bytes !== 'number' || !Number.isSafeInteger(entry.bytes) || entry.bytes < 0) {
       return `files[${name}]: bytes must be a non-negative integer`;
     }
     files[name] = { sha256: entry.sha256, bytes: entry.bytes };
@@ -233,7 +233,7 @@ const checkSources = (value: unknown, files: Record<string, StudioBundleFileDige
       return `sources[${index}]: sha256 must be 64 hex characters or null`;
     }
     const bytes = raw.bytes === null || raw.bytes === undefined ? null : raw.bytes;
-    if (bytes !== null && (typeof bytes !== 'number' || !Number.isInteger(bytes) || bytes < 0)) {
+    if (bytes !== null && (typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 0)) {
       return `sources[${index}]: bytes must be a non-negative integer or null`;
     }
 
@@ -283,7 +283,7 @@ export const checkStudioBundleManifest = (value: unknown): StudioBundleManifestC
     typeof project.name !== 'string' ||
     project.name.trim().length === 0 ||
     typeof project.revision !== 'number' ||
-    !Number.isInteger(project.revision) ||
+    !Number.isSafeInteger(project.revision) ||
     project.revision < 1 ||
     typeof project.digest !== 'string' ||
     !sha256Hex.test(project.digest) ||

@@ -63,7 +63,7 @@ export const recentStudioProjects = (
         project.shelf === StudioProjectShelf.Active &&
         project.lastOpenedAt,
     )
-    .toSorted((a, b) => Date.parse(b.lastOpenedAt as string) - Date.parse(a.lastOpenedAt as string))
+    .sort((a, b) => Date.parse(b.lastOpenedAt as string) - Date.parse(a.lastOpenedAt as string))
     .slice(0, limit);
 
 export type StudioProjectAction =

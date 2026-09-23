@@ -133,6 +133,8 @@ export default typescriptEslint.config(
       'unicorn/name-replacements': 'off',
       'unicorn/no-nested-ternary': 'off',
       'unicorn/consistent-function-scoping': 'off',
+      'unicorn/no-await-expression-member': 'off',
+      'svelte/prefer-svelte-reactivity': 'off', // immutable state copies and private caches use native collections
       'unicorn/filename-case': 'off',
       'unicorn/prefer-top-level-await': 'off',
       'unicorn/import-style': 'off',
@@ -205,7 +207,6 @@ export default typescriptEslint.config(
     files: ['**/*.spec.ts'],
     rules: {
       '@typescript-eslint/require-await': 'off',
-      'unicorn/no-await-expression-member': 'off',
     },
   },
 );

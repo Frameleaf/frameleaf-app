@@ -36,17 +36,24 @@ let PeopleLibrary, PersonHeader, ManagePeople, media, people, data;
 let mounted;
 
 before(async () => {
+  console.error("people DOM setup: vite");
   vite = await createServer({
     root,
     appType: "custom",
     logLevel: "silent",
     server: { middlewareMode: true },
   });
+  console.error("people DOM setup: People");
   ({ PeopleLibrary } = await vite.ssrLoadModule("/src/People.jsx"));
+  console.error("people DOM setup: PersonDetail");
   ({ PersonHeader } = await vite.ssrLoadModule("/src/PersonDetail.jsx"));
+  console.error("people DOM setup: ManagePeople");
   ({ ManagePeople } = await vite.ssrLoadModule("/src/ManagePeople.jsx"));
+  console.error("people DOM setup: media");
   ({ media, people } = await vite.ssrLoadModule("/src/media.js"));
+  console.error("people DOM setup: data");
   data = await vite.ssrLoadModule("/src/people-data.mjs");
+  console.error("people DOM setup: ready");
 });
 
 afterEach(async () => {
@@ -100,7 +107,10 @@ test("People grid shows unnamed clusters, a merge suggestion and names inline", 
     onManage() {},
   });
   assert.equal(document.querySelectorAll(".pl-card").length, 5);
-  assert.equal(buttons().filter((b) => b.textContent.trim() === "Add a name").length, 2);
+  assert.equal(
+    buttons().filter((b) => b.textContent.trim() === "Add a name").length,
+    2,
+  );
   assert.match(text(), /Are these the same person\?/);
   await click("Yes, merge");
   assert.equal(changes.length, 1);
@@ -117,7 +127,9 @@ test("People grid shows unnamed clusters, a merge suggestion and names inline", 
   assert.equal(document.querySelector('[role="listbox"]'), null);
   await click("Save name");
   assert.equal(changes.length, 2);
-  const named = Object.entries(changes[1]).find(([, entry]) => entry.name === "Sam");
+  const named = Object.entries(changes[1]).find(
+    ([, entry]) => entry.name === "Sam",
+  );
   assert.ok(named, "name saved through onChange");
   assert.match(named[0], /^cluster-unnamed-/);
   assert.equal(document.querySelector('input[role="combobox"]'), null);
@@ -248,7 +260,10 @@ test("Person header renders facts and the fix-match panel routes face actions", 
   assert.equal(document.querySelector("h1").textContent, "Jamie");
   assert.match(text(), /Born March 4, 2012/);
   assert.match(text(), /years old/);
-  assert.match(text(), new RegExp(`${assets.filter((a) => a.type !== "video").length} photos`));
+  assert.match(
+    text(),
+    new RegExp(`${assets.filter((a) => a.type !== "video").length} photos`),
+  );
   await click("Favorite");
   assert.equal(changes.at(-1).Jamie.favorite, true);
   await click("Fix incorrect match");

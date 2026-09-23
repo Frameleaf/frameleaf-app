@@ -171,7 +171,7 @@ const parseInFlight = (value: unknown): BulkOperationResult['inFlight'] => {
   }
   const start = asNumber(value.start);
   const size = asNumber(value.size);
-  return Number.isInteger(start) && Number.isInteger(size) && start >= 0 && size > 0 ? { start, size } : null;
+  return Number.isSafeInteger(start) && Number.isSafeInteger(size) && start >= 0 && size > 0 ? { start, size } : null;
 };
 
 const parseRetryPass = (value: unknown): BulkRetryPass | null => {
@@ -185,7 +185,7 @@ const parseRetryPass = (value: unknown): BulkRetryPass | null => {
   return {
     ids,
     total,
-    processed: Number.isInteger(processed) ? Math.min(Math.max(0, processed), total) : 0,
+    processed: Number.isSafeInteger(processed) ? Math.min(Math.max(0, processed), total) : 0,
     inFlight: parseInFlight(value.inFlight),
   };
 };
@@ -483,7 +483,7 @@ export const carriedShiftOrigins = (
   Object.fromEntries(ids.filter((id) => id in result.shiftFrom).map((id) => [id, result.shiftFrom[id]]));
 
 export const chunkIds = (ids: readonly string[], size = BULK_BATCH_SIZE): string[][] => {
-  const width = Number.isInteger(size) && size > 0 ? size : BULK_BATCH_SIZE;
+  const width = Number.isSafeInteger(size) && size > 0 ? size : BULK_BATCH_SIZE;
   const batches: string[][] = [];
   for (let index = 0; index < ids.length; index += width) {
     batches.push(ids.slice(index, index + width));
@@ -731,7 +731,7 @@ export const bulkPayloadProblem = (
     }
     case MediaOperationBulkAction.ChangeDate: {
       if (payload.dateMode === 'shift') {
-        return Number.isInteger(payload.minutes) && payload.minutes !== 0
+        return Number.isSafeInteger(payload.minutes) && payload.minutes !== 0
           ? null
           : 'A whole, non-zero number of minutes is required to shift dates';
       }

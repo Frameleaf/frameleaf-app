@@ -336,8 +336,8 @@ export const PREVIEW_MIN_VIEWPORT = 16;
 export const PREVIEW_MAX_VIEWPORT = 7680;
 
 export const isValidPreviewViewport = (width: number, height: number): boolean =>
-  Number.isInteger(width) &&
-  Number.isInteger(height) &&
+  Number.isSafeInteger(width) &&
+  Number.isSafeInteger(height) &&
   width >= PREVIEW_MIN_VIEWPORT &&
   height >= PREVIEW_MIN_VIEWPORT &&
   width <= PREVIEW_MAX_VIEWPORT &&

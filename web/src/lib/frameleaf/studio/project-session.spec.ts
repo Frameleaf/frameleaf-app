@@ -80,7 +80,7 @@ const makeTimers = () => {
   };
   const pending = () => timers.filter((timer) => !timer.cancelled);
   const fire = async (predicate: (timer: Timer) => boolean = () => true) => {
-    const timer = pending().find(predicate);
+    const timer = pending().find((timer) => predicate(timer));
     if (!timer) {
       throw new Error('no pending timer');
     }

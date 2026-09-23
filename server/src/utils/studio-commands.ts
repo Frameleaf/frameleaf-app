@@ -155,7 +155,7 @@ export const validateStudioCommandEnvelope = (value: unknown): StudioCommandVali
     return { valid: false, reason: 'unknown-command', detail: `unknown command ${String(value.id)}` };
   }
 
-  if (typeof value.revision !== 'number' || !Number.isInteger(value.revision) || value.revision < 0) {
+  if (typeof value.revision !== 'number' || !Number.isSafeInteger(value.revision) || value.revision < 0) {
     return { valid: false, reason: 'invalid', detail: `${value.id}: revision must be a non-negative integer` };
   }
 

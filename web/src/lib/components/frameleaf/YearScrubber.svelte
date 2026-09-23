@@ -174,11 +174,12 @@
     } else if (event.key === 'End') {
       next = months.length - 1;
     }
-    if (next === null || !months[next]) {
+    const month = next === null ? undefined : months[next];
+    if (!month) {
       return;
     }
     event.preventDefault();
-    scrubTo(months[next], months[next].start);
+    scrubTo(month, month.start);
   };
 
   const bubble = $derived(hover?.month ?? (dragging ? current : null));
