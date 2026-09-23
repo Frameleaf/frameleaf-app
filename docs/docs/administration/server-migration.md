@@ -145,6 +145,9 @@ recorded in the ledger against the destination by checksum and writes
 the ledger was written for. It does not look for photos added to the source
 after the run; run step 5 again to pick those up, then verify.
 
+A ledger that has only been used for dry runs verifies as a dry run and never
+as a pass: run step 5 first. `--verify` takes no other migration options.
+
 The exit status is `0` only for a pass, `2` for anything else and `1` for an
 error, so verification can be scripted.
 
@@ -167,9 +170,10 @@ discards it.
 
 The report is refused, and nothing is shown, if it contains credentials (an API
 key, a token, a password in a server address) or file paths from either
-computer, if its counts contradict each other or its own verdict, or if it is
-not a current audit report. The command-line tool never writes those; run the
-verify command again for a clean file.
+computer in its details, if its counts contradict each other or its own verdict, or if it is
+not a current audit report. Album, tag, person and file names are shown as they
+are, even when they look like a path. The command-line tool never writes
+credentials or paths into details; run the verify command again for a clean file.
 
 ## Retiring the source server
 
