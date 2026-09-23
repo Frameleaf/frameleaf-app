@@ -13,10 +13,11 @@ import {
   UserAdminUpdateDto,
   mapUserAdmin,
 } from 'src/dtos/user.dto.js';
-import { JobName, UserMetadataKey, UserStatus } from 'src/enum.js';
+import { AssetVisibility, JobName, UserMetadataKey, UserStatus } from 'src/enum.js';
 import { UserFindOptions } from 'src/repositories/user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
+import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import { findOrFail } from 'src/utils/misc.js';
 import { getPreferences, getPreferencesPartial, mergePreferences } from 'src/utils/preferences.js';
 
@@ -150,6 +151,11 @@ export class UserAdminService extends BaseService {
   }
 
   async getStatistics(auth: AuthDto, id: string, dto: AssetStatsDto): Promise<AssetStatsResponseDto> {
+    // an administrator never counts someone's Locked media: only its owner's elevated session does (FL-34)
+    if (dto.visibility === AssetVisibility.Locked && !(id === auth.user.id && getLockedOwnerId(auth))) {
+      throw new ForbiddenException('Locked media statistics are only available to their owner');
+    }
+
     const stats = await this.assetRepository.getStatistics(id, dto);
     return mapStats(stats);
   }
