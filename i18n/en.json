@@ -2616,7 +2616,6 @@
   "frameleaf_restoration_accept": "Accept and restore",
   "frameleaf_restoration_accept_error": "Unable to start the full restoration",
   "frameleaf_restoration_accepted": "Restoration {revision} accepted. The full version is rendering.",
-  "frameleaf_restoration_adapter_missing": "This server has no restoration model installed yet. Requests will not run until an administrator adds one.",
   "frameleaf_restoration_after_preview": "After · preview",
   "frameleaf_restoration_after_result": "Restored",
   "frameleaf_restoration_area_centre": "Centre of the frame",

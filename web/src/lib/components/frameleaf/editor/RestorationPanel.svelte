@@ -117,7 +117,7 @@
   const selected = $derived(destinations.find((item) => item.id === destinationId) ?? null);
   const capped = $derived(options ? isOutputCapped(options) : false);
   const canRequest = $derived(
-    !!options && options.adapterInstalled && !!selected && selected.available && !submitting && !loadError,
+    !!options && !!selected && selected.available && !submitting && !loadError,
   );
   const previewEstimate = $derived(selected ? formatEstimateSeconds(selected.estimate.previewSeconds, $locale) : null);
   const fullEstimate = $derived(selected ? formatEstimateSeconds(selected.estimate.fullSeconds, $locale) : null);
@@ -527,10 +527,6 @@
       </p>
     {:else}
       <p class="rs-help">{$t('frameleaf_restoration_estimate_pick')}</p>
-    {/if}
-
-    {#if !options.adapterInstalled}
-      <p class="rs-warning" role="status">{$t('frameleaf_restoration_adapter_missing')}</p>
     {/if}
   {/if}
 
