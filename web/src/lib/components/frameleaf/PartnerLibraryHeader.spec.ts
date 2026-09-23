@@ -1,11 +1,19 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
-import { removePartner, updatePartner, UserAvatarColor, type PartnerResponseDto } from '@immich/sdk';
+import {
+  getPartners,
+  PartnerDirection,
+  removePartner,
+  updatePartner,
+  UserAvatarColor,
+  type PartnerResponseDto,
+} from '@immich/sdk';
 import en from '../../../../../i18n/en.json';
 import PartnerLibraryHeader from './PartnerLibraryHeader.svelte';
 
 vi.mock('@immich/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@immich/sdk')>()),
+  getPartners: vi.fn(),
   updatePartner: vi.fn(),
   removePartner: vi.fn(),
 }));
@@ -20,9 +28,15 @@ const partner: PartnerResponseDto = {
   inTimeline: false,
 };
 
+/** the same user seen from my side: I share my library with them */
+const sharedBack: PartnerResponseDto = { ...partner, inTimeline: true, shareLocation: true };
+
+const locationSwitchName = en.frameleaf_sharing.share_location_title;
+
 beforeEach(() => {
   vi.clearAllMocks();
   addMessages('dev', en);
+  vi.mocked(getPartners).mockResolvedValue([]);
 });
 
 describe('PartnerLibraryHeader', () => {
@@ -58,8 +72,53 @@ describe('PartnerLibraryHeader', () => {
     await waitFor(() => expect(onStopped).toHaveBeenCalledOnce());
   });
 
-  it('never renders a location-sharing control that has no backing endpoint', () => {
-    render(PartnerLibraryHeader, { partner: { ...partner }, onStopped: vi.fn() });
-    expect(screen.queryByText(/location/i)).toBeNull();
+  describe('location sharing', () => {
+    it('offers the switch, on by default, only when I share my library back with this partner', async () => {
+      vi.mocked(getPartners).mockResolvedValue([sharedBack]);
+      render(PartnerLibraryHeader, { partner: { ...partner }, onStopped: vi.fn() });
+
+      const toggle = (await screen.findByRole('switch', { name: locationSwitchName })) as HTMLInputElement;
+
+      expect(getPartners).toHaveBeenCalledWith({ direction: PartnerDirection.SharedBy });
+      expect(toggle.checked).toBe(true);
+      expect(screen.queryByText(en.frameleaf_sharing.location_already_seen.replace('{name}', 'Riley'))).toBeNull();
+    });
+
+    it('explains why there is no switch when I do not share my library with this partner', async () => {
+      vi.mocked(getPartners).mockResolvedValue([{ ...sharedBack, id: 'someone-else' }]);
+      render(PartnerLibraryHeader, { partner: { ...partner }, onStopped: vi.fn() });
+
+      await screen.findByText(en.frameleaf_sharing.location_not_sharing_back.replace('{name}', 'Riley'));
+      expect(screen.queryByRole('switch', { name: locationSwitchName })).toBeNull();
+    });
+
+    it('turns location sharing off on my own sharing relation and warns that locations were already visible', async () => {
+      vi.mocked(getPartners).mockResolvedValue([sharedBack]);
+      vi.mocked(updatePartner).mockResolvedValue({ ...sharedBack, shareLocation: false });
+      render(PartnerLibraryHeader, { partner: { ...partner }, onStopped: vi.fn() });
+
+      const toggle = (await screen.findByRole('switch', { name: locationSwitchName })) as HTMLInputElement;
+      await fireEvent.click(toggle);
+
+      // the sharer's setting goes through the same endpoint with only shareLocation set
+      expect(updatePartner).toHaveBeenCalledWith({ id: 'partner-1', partnerUpdateDto: { shareLocation: false } });
+      await waitFor(() => expect(toggle.checked).toBe(false));
+      await screen.findByText(en.frameleaf_sharing.location_already_seen.replace('{name}', 'Riley'));
+      // the browsed relation itself is untouched
+      expect(updatePartner).not.toHaveBeenCalledWith(
+        expect.objectContaining({ partnerUpdateDto: expect.objectContaining({ inTimeline: expect.anything() }) }),
+      );
+    });
+
+    it('reverts the location switch when the update fails', async () => {
+      vi.mocked(getPartners).mockResolvedValue([sharedBack]);
+      vi.mocked(updatePartner).mockRejectedValue(new Error('network'));
+      render(PartnerLibraryHeader, { partner: { ...partner }, onStopped: vi.fn() });
+
+      const toggle = (await screen.findByRole('switch', { name: locationSwitchName })) as HTMLInputElement;
+      await fireEvent.click(toggle);
+
+      await waitFor(() => expect(toggle.checked).toBe(true));
+    });
   });
 });

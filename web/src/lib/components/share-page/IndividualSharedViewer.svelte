@@ -8,30 +8,20 @@
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
   import { AssetAction } from '$lib/constants';
   import '$lib/frameleaf/tokens.css';
-  import { frameleafShell } from '$lib/frameleaf/rollout';
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import type { Viewport } from '$lib/managers/timeline-manager/types';
   import { Route } from '$lib/route';
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
-  import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { handlePromiseError } from '$lib/utils';
   import { downloadArchive } from '$lib/utils/asset-utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import { handleError } from '$lib/utils/handle-error';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { getAssetInfo, type AssetResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
-  import {
-    Icon,
-    IconButton as ImmichIconButton,
-    Logo,
-    Theme as AppTheme,
-    themeManager,
-    toastManager,
-  } from '@immich/ui';
+  import { Icon, IconButton as ImmichIconButton, Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
   import { mdiDownload, mdiFileImagePlusOutline, mdiSelectAll } from '@mdi/js';
   import { t } from 'svelte-i18n';
-  import ControlAppBar from '../shared-components/ControlAppBar.svelte';
   import GalleryViewer from '../shared-components/gallery-viewer/GalleryViewer.svelte';
 
   interface Props {
@@ -133,8 +123,8 @@
           <RemoveFromSharedLink bind:sharedLink />
         {/if}
       </AssetSelectControlBar>
-    {:else if $frameleafShell}
-      <!-- Frameleaf shell rollout (FL-30/FL-56): own brand, no LibraryRail/TopBar/account menu. -->
+    {:else}
+      <!-- FL-56: the public viewer has its own brand, no LibraryRail/TopBar/account menu. -->
       <div class="frameleaf pv-header" data-theme={appTheme}>
         <a class="pv-brand" href="/" data-sveltekit-preload-data="hover">
           <Brand />
@@ -152,38 +142,6 @@
           {/if}
         </div>
       </div>
-    {:else}
-      <ControlAppBar>
-        {#snippet leading()}
-          <a data-sveltekit-preload-data="hover" class="ms-4" href="/">
-            <Logo variant={mediaQueryManager.maxMd ? 'icon' : 'inline'} class="min-w-10" />
-          </a>
-        {/snippet}
-
-        {#snippet trailing()}
-          {#if sharedLink?.allowUpload}
-            <ImmichIconButton
-              shape="round"
-              color="secondary"
-              variant="ghost"
-              aria-label={$t('add_photos')}
-              onclick={() => handleUploadAssets()}
-              icon={mdiFileImagePlusOutline}
-            />
-          {/if}
-
-          {#if sharedLink?.allowDownload}
-            <ImmichIconButton
-              shape="round"
-              color="secondary"
-              variant="ghost"
-              aria-label={$t('download')}
-              onclick={downloadAssets}
-              icon={mdiDownload}
-            />
-          {/if}
-        {/snippet}
-      </ControlAppBar>
     {/if}
   </header>
 {:else if assets.length === 1}

@@ -116,6 +116,8 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
   visibility?: AssetVisibility;
   withCoordinates?: boolean;
   bbox?: BoundingBox;
+  /** owners whose location columns (city, country, latitude, longitude) come back null for this viewer */
+  locationHiddenOwnerIds?: string[];
 }
 
 export interface TimeBucketOptions extends AssetBuilderOptions {
@@ -1034,6 +1036,15 @@ export class AssetRepository {
   })
   getTimeBucket(timeBucket: string, options: TimeBucketOptions, auth: AuthDto) {
     const order = options.order ?? 'desc';
+    const withPlaces = !auth.sharedLink || auth.sharedLink.showExif;
+    // partners who hide their locations from this viewer (FL-54): their location columns are nulled in SQL
+    // so the pre-jsonified bucket never carries them; the plain column selects stay untouched otherwise
+    const hiddenOwnerIds = options.locationHiddenOwnerIds ?? [];
+    const hidesLocation = hiddenOwnerIds.length > 0;
+    const locationColumn = <C extends 'city' | 'country' | 'latitude' | 'longitude'>(column: C) =>
+      sql<(C extends 'city' | 'country' ? string : number) | null>`case when asset."ownerId" = ${anyUuid(
+        hiddenOwnerIds,
+      )} then null else asset_exif.${sql.ref(column)} end`.as(column);
     const useAddedDate = options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt;
     const timeBucketDate = useAddedDate
       ? sql`date_trunc(${sql.lit('MONTH')}, asset."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`
@@ -1086,10 +1097,14 @@ export class AssetRepository {
               )
               .as('ratio'),
           ])
-          .$if(!auth.sharedLink || auth.sharedLink.showExif, (qb) =>
-            qb.select(['asset_exif.city', 'asset_exif.country']),
+          .$if(withPlaces && !hidesLocation, (qb) => qb.select(['asset_exif.city', 'asset_exif.country']))
+          .$if(withPlaces && hidesLocation, (qb) => qb.select([locationColumn('city'), locationColumn('country')]))
+          .$if(!!options.withCoordinates && !hidesLocation, (qb) =>
+            qb.select(['asset_exif.latitude', 'asset_exif.longitude']),
           )
-          .$if(!!options.withCoordinates, (qb) => qb.select(['asset_exif.latitude', 'asset_exif.longitude']))
+          .$if(!!options.withCoordinates && hidesLocation, (qb) =>
+            qb.select([locationColumn('latitude'), locationColumn('longitude')]),
+          )
           .where('asset.deletedAt', options.isTrashed ? 'is not' : 'is', null)
           .$if(options.visibility === undefined, withDefaultVisibility)
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))

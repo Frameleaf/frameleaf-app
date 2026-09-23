@@ -2,8 +2,6 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { scrollMemory } from '$lib/actions/scroll-memory';
-  import { shortcut } from '$lib/actions/shortcut';
-  import PeopleCard from './PeopleCard.svelte';
   import PeopleInfiniteScroll from './PeopleInfiniteScroll.svelte';
   import SearchPeople from '$lib/components/faces-page/PeopleSearch.svelte';
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
@@ -12,8 +10,6 @@
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { QueryParameter, SessionStorageKey } from '$lib/constants';
-  import { frameleafShell } from '$lib/frameleaf/rollout';
-  import PersonMergeSuggestionModal from '$lib/modals/PersonMergeSuggestionModal.svelte';
   import { Route } from '$lib/route';
   import { getPersonActions } from '$lib/services/person.service';
   import { locale } from '$lib/stores/preferences.store';
@@ -32,10 +28,9 @@
     type PersonMergeSuggestionDto,
     type PersonResponseDto,
   } from '@immich/sdk';
-  import { Button, Icon, modalManager, toastManager } from '@immich/ui';
+  import { Button, Icon, toastManager } from '@immich/ui';
   import { mdiAccountOff, mdiEyeOutline } from '@mdi/js';
   import { onMount } from 'svelte';
-  import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
@@ -46,13 +41,8 @@
   let { data }: Props = $props();
 
   let searchName = $state('');
-  let newName = $state('');
   let currentPage = $state(1);
   let nextPage = $state(data.people.hasNextPage ? 2 : null);
-  let personMerge1 = $state<PersonResponseDto>();
-  let personMerge2 = $state<PersonResponseDto>();
-  let potentialMergePeople: PersonResponseDto[] = $state([]);
-  let editingPerson: PersonResponseDto | null = $state(null);
   let searchedPeopleLocal: PersonResponseDto[] = $state([]);
   let innerHeight = $state(0);
   let searchPeopleElement = $state<ReturnType<typeof SearchPeople>>();
@@ -66,10 +56,8 @@
       }
     }
 
-    // FL-57: guided merge-suggestion verdict flow. Only the Frameleaf grid offers it.
-    if (get(frameleafShell)) {
-      handlePromiseError(loadMergeSuggestions());
-    }
+    // FL-57: guided merge-suggestion verdict flow.
+    handlePromiseError(loadMergeSuggestions());
 
     return websocketEvents.on('on_person_thumbnail', (personId: string) => {
       for (const person of people) {
@@ -188,72 +176,6 @@
     }
   };
 
-  const handleMerge = async () => {
-    if (!editingPerson || !personMerge1 || !personMerge2) {
-      return;
-    }
-
-    const response = await modalManager.show(PersonMergeSuggestionModal, {
-      personToMerge: personMerge1,
-      personToBeMergedInto: personMerge2,
-      potentialMergePeople,
-    });
-
-    if (!response) {
-      await updateName(personMerge1.id, newName);
-      return;
-    }
-
-    const [personToMerge, personToBeMergedInto] = response;
-
-    const mergedPerson = await getPerson({ id: personToBeMergedInto.id });
-
-    people = people.filter((person: PersonResponseDto) => person.id !== personToMerge.id);
-    people = people.map((person: PersonResponseDto) => (person.id === personToBeMergedInto.id ? mergedPerson : person));
-
-    if (personToBeMergedInto.name !== newName && editingPerson.id === personToBeMergedInto.id) {
-      /*
-       *
-       * If the user merges one of the suggested people into the person he's editing, it's merging the suggested person AND renames
-       * the person he's editing
-       *
-       */
-      try {
-        await updatePerson({ id: personToBeMergedInto.id, personUpdateDto: { name: newName } });
-
-        for (const person of people) {
-          if (person.id === personToBeMergedInto.id) {
-            person.name = newName;
-            break;
-          }
-        }
-        toastManager.primary($t('change_name_successfully'));
-      } catch (error) {
-        handleError(error, $t('errors.unable_to_save_name'));
-      }
-    }
-  };
-
-  const handleHidePerson = async (detail: PersonResponseDto) => {
-    try {
-      const updatedPerson = await updatePerson({
-        id: detail.id,
-        personUpdateDto: { isHidden: true },
-      });
-
-      people = people.map((person: PersonResponseDto) => {
-        if (person.id === updatedPerson.id) {
-          return updatedPerson;
-        }
-        return person;
-      });
-
-      toastManager.primary($t('changed_visibility_successfully'));
-    } catch (error) {
-      handleError(error, $t('errors.unable_to_hide_person'));
-    }
-  };
-
   const handleToggleHidden = async (detail: PersonResponseDto) => {
     try {
       const updatedPerson = await updatePerson({
@@ -299,14 +221,11 @@
 
   let people = $derived(data.people.people);
 
-  let visiblePeople = $derived(people.filter((people) => !people.isHidden));
   let countVisiblePeople = $derived(searchName ? searchedPeopleLocal.length : data.people.total - data.people.hidden);
-  let showPeople = $derived(searchName ? searchedPeopleLocal : visiblePeople);
 
-  // Frameleaf People grid (FL-37): a "show hidden" toggle over the same `people` list the
-  // legacy grid uses. The search endpoint never returns hidden people (production does not
-  // pass `withHidden` to it), so a hidden person stays out of the grid while a search is
-  // active; this mirrors the legacy grid's existing search behaviour.
+  // People grid (FL-37): a "show hidden" toggle over the `people` list. The search endpoint
+  // never returns hidden people (production does not pass `withHidden` to it), so a hidden
+  // person stays out of the grid while a search is active.
   let showHiddenFrameleaf = $state(false);
   let editingIdFrameleaf: string | undefined = $state();
   let frameleafBase = $derived(searchName ? searchedPeopleLocal : people);
@@ -315,11 +234,13 @@
   );
   let frameleafHiddenCount = $derived(people.filter((person) => person.isHidden).length);
 
-  const onNameChangeInputFocus = (person: PersonResponseDto) => {
-    editingPerson = person;
-    newName = person.name;
-  };
-
+  // FL-57: a Frameleaf rename commits immediately (inline editing has no separate
+  // confirm step to gate on) rather than blocking on a legacy modal. If the new name
+  // collides with an existing person, surface it through the same guided
+  // accept/reject/skip verdict flow the merge-suggestion banner already offers, instead
+  // of a second, disconnected "did you mean to merge" dialog. This replaces the old
+  // `editingPerson`-gated `handleMerge` path, which only the deleted legacy name input
+  // ever satisfied and so silently dropped every Frameleaf rename collision.
   const onNameChangeSubmit = async (name: string, targetPerson: PersonResponseDto) => {
     try {
       if (name === targetPerson.name) {
@@ -331,31 +252,19 @@
         return;
       }
 
+      await updateName(targetPerson.id, name);
+
       const personWithSimilarName = await findPeopleWithSimilarName(name, targetPerson.id);
       if (personWithSimilarName) {
-        personMerge1 = targetPerson;
-        personMerge2 = personWithSimilarName;
-        potentialMergePeople = people
-          .filter(
-            (person: PersonResponseDto) =>
-              normalizeSearchString(personMerge2?.name ?? '') === normalizeSearchString(person.name) &&
-              person.id !== personMerge2?.id &&
-              person.id !== personMerge1?.id &&
-              !person.isHidden,
-          )
-          .slice(0, 3);
-        await handleMerge();
-        return;
+        const renamed = { ...targetPerson, name };
+        const key = suggestionKey({ person: renamed, suggestion: personWithSimilarName, distance: 0 });
+        mergeSuggestions = [
+          { person: renamed, suggestion: personWithSimilarName, distance: 0 },
+          ...mergeSuggestions.filter((entry) => suggestionKey(entry) !== key),
+        ];
       }
-      await updateName(targetPerson.id, name);
     } catch (error) {
       handleError(error, $t('errors.unable_to_save_name'));
-    }
-  };
-
-  const onNameChangeInputUpdate = (event: Event) => {
-    if (event.target) {
-      newName = (event.target as HTMLInputElement).value;
     }
   };
 
@@ -364,8 +273,6 @@
       id,
       personUpdateDto: { name },
     });
-
-    newName = '';
   };
 
   const findPeopleWithSimilarName = async (name: string, personId: string) => {
@@ -427,15 +334,13 @@
             />
           </div>
         </div>
-        {#if $frameleafShell}
-          <FrameleafButton
-            variant={showHiddenFrameleaf ? 'primary' : 'default'}
-            pressed={showHiddenFrameleaf}
-            onclick={() => (showHiddenFrameleaf = !showHiddenFrameleaf)}
-          >
-            {showHiddenFrameleaf ? $t('frameleaf_people_hide_hidden') : $t('frameleaf_people_show_hidden')}
-          </FrameleafButton>
-        {/if}
+        <FrameleafButton
+          variant={showHiddenFrameleaf ? 'primary' : 'default'}
+          pressed={showHiddenFrameleaf}
+          onclick={() => (showHiddenFrameleaf = !showHiddenFrameleaf)}
+        >
+          {showHiddenFrameleaf ? $t('frameleaf_people_hide_hidden') : $t('frameleaf_people_show_hidden')}
+        </FrameleafButton>
         <Button
           leadingIcon={mdiEyeOutline}
           onclick={() => goto('/people/manage')}
@@ -447,80 +352,43 @@
     {/if}
   {/snippet}
 
-  {#if $frameleafShell}
-    {#if mergeSuggestions.length > 0}
-      <MergeSuggestionBanner
-        suggestion={mergeSuggestions[0]}
-        remaining={mergeSuggestions.length - 1}
-        busy={mergeSuggestionBusy}
-        onAccept={() => handleAcceptSuggestion(mergeSuggestions[0])}
-        onReject={() => handleRejectSuggestion(mergeSuggestions[0])}
-        onSkip={() => handleSkipSuggestion(mergeSuggestions[0])}
-      />
-    {/if}
-    {#if frameleafCards.length > 0}
-      <p class="frameleaf-people-summary">
-        {$t('frameleaf_people_summary', {
-          values: { count: frameleafCards.length, hidden: frameleafHiddenCount },
-        })}
-      </p>
-      <div class="frameleaf-people-grid">
-        <PeopleInfiniteScroll people={frameleafCards} hasNextPage={!!nextPage && !searchName} {loadNextPage}>
-          {#snippet children({ person })}
-            <PersonCard
-              {person}
-              editing={editingIdFrameleaf === person.id}
-              onOpen={() => goto(Route.viewPerson(person, { previousRoute: Route.people() }))}
-              onStartRename={() => (editingIdFrameleaf = person.id)}
-              onCommitRename={async (name) => {
-                editingIdFrameleaf = undefined;
-                await onNameChangeSubmit(name, person);
-              }}
-              onCancelRename={() => (editingIdFrameleaf = undefined)}
-              onToggleFavorite={() => handleToggleFavorite(person)}
-              onToggleHide={() => handleToggleHidden(person)}
-              onMerge={() => handleMergePeople(person)}
-              onSetBirthday={() => getPersonActions($t, person).SetDateOfBirth.onAction()}
-            />
-          {/snippet}
-        </PeopleInfiniteScroll>
-      </div>
-    {:else}
-      <div class="flex min-h-[calc(66vh-11rem)] w-full place-content-center items-center dark:text-white">
-        <div class="flex flex-col content-center items-center text-center">
-          <Icon icon={mdiAccountOff} size="3.5em" />
-          <p class="mt-5 line-clamp-2 max-w-lg overflow-hidden text-3xl font-medium">
-            {$t(searchName ? 'search_no_people_named' : 'search_no_people', { values: { name: searchName } })}
-          </p>
-        </div>
-      </div>
-    {/if}
-  {:else if countVisiblePeople > 0 && (!searchName || searchedPeopleLocal.length > 0)}
-    <PeopleInfiniteScroll people={showPeople} hasNextPage={!!nextPage && !searchName} {loadNextPage}>
-      {#snippet children({ person })}
-        <div
-          class="rounded-xl border-2 border-transparent p-2 transition-all hover:border-immich-primary/50 hover:bg-gray-200 hover:shadow-sm hover:dark:border-immich-dark-primary/25 dark:hover:bg-immich-dark-primary/20"
-        >
-          <PeopleCard
+  {#if mergeSuggestions.length > 0}
+    <MergeSuggestionBanner
+      suggestion={mergeSuggestions[0]}
+      remaining={mergeSuggestions.length - 1}
+      busy={mergeSuggestionBusy}
+      onAccept={() => handleAcceptSuggestion(mergeSuggestions[0])}
+      onReject={() => handleRejectSuggestion(mergeSuggestions[0])}
+      onSkip={() => handleSkipSuggestion(mergeSuggestions[0])}
+    />
+  {/if}
+  {#if frameleafCards.length > 0}
+    <p class="frameleaf-people-summary">
+      {$t('frameleaf_people_summary', {
+        values: { count: frameleafCards.length, hidden: frameleafHiddenCount },
+      })}
+    </p>
+    <div class="frameleaf-people-grid">
+      <PeopleInfiniteScroll people={frameleafCards} hasNextPage={!!nextPage && !searchName} {loadNextPage}>
+        {#snippet children({ person })}
+          <PersonCard
             {person}
-            onMergePeople={() => handleMergePeople(person)}
-            onHidePerson={() => handleHidePerson(person)}
+            editing={editingIdFrameleaf === person.id}
+            onOpen={() => goto(Route.viewPerson(person, { previousRoute: Route.people() }))}
+            onStartRename={() => (editingIdFrameleaf = person.id)}
+            onCommitRename={async (name) => {
+              editingIdFrameleaf = undefined;
+              await onNameChangeSubmit(name, person);
+            }}
+            onCancelRename={() => (editingIdFrameleaf = undefined)}
             onToggleFavorite={() => handleToggleFavorite(person)}
+            onToggleHide={() => handleToggleHidden(person)}
+            onMerge={() => handleMergePeople(person)}
+            onSetBirthday={() => getPersonActions($t, person).SetDateOfBirth.onAction()}
           />
-
-          <input
-            type="text"
-            class="mt-2 w-full rounded-2xl border-gray-100 bg-white py-2 text-center text-sm text-primary placeholder-gray-400 dark:border-gray-900 dark:bg-immich-dark-gray"
-            value={person.name}
-            placeholder={$t('add_a_name')}
-            use:shortcut={{ shortcut: { key: 'Enter' }, onShortcut: (e) => e.currentTarget.blur() }}
-            onfocusin={() => onNameChangeInputFocus(person)}
-            onfocusout={() => onNameChangeSubmit(newName, person)}
-            oninput={(event) => onNameChangeInputUpdate(event)}
-          />
-        </div>
-      {/snippet}
-    </PeopleInfiniteScroll>
+        {/snippet}
+      </PeopleInfiniteScroll>
+    </div>
   {:else}
     <div class="flex min-h-[calc(66vh-11rem)] w-full place-content-center items-center dark:text-white">
       <div class="flex flex-col content-center items-center text-center">
