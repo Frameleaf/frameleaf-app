@@ -829,8 +829,13 @@ export class PreservationService {
     if (found.origin !== 'export' || found.removedAt || (found.status !== 'ready' && found.status !== 'incomplete')) {
       throw new BadRequestException('This package is not ready to download');
     }
-    if (!this.isUnlocked(auth) && (await this.repository.hasLockedItems(found.id))) {
-      throw new ForbiddenException('This package holds Locked items; unlock the Locked view to download it');
+    if (!this.isUnlocked(auth) && (found.includeLocked || (await this.repository.hasLockedItems(found.id)))) {
+      // A package made with Locked items, by the owner's own choice, says why. One whose items were
+      // locked after it was written gets the ordinary answer: a locked session learns nothing of them.
+      if (found.includeLocked) {
+        throw new ForbiddenException('This package holds Locked items; unlock the Locked view to download it');
+      }
+      throw new BadRequestException('This package is not ready to download');
     }
     return found;
   }

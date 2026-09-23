@@ -1,9 +1,10 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PreservationRepository } from 'src/repositories/preservation.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { PreservationEntrySchema } from 'src/utils/preservation.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -246,6 +247,80 @@ describe(PreservationRepository.name, () => {
 
       const locked = await sut.lockedRestoreItemIds(restore.id, [idOf(ids[0]), idOf(ids[1]), idOf(ids[2])]);
       expect(locked.toSorted()).toEqual([idOf(ids[1]), idOf(ids[2])].toSorted());
+    });
+  });
+  describe('jsonb columns', () => {
+    const typeOf = async (table: string, column: string, id: string) => {
+      const { rows } = await sql<{ type: string }>`
+        select jsonb_typeof(${sql.ref(column)}) as type from ${sql.table(table)} where id = ${id}::uuid
+      `.execute(defaultDatabase);
+      return rows[0]?.type;
+    };
+
+    it('stores documents as JSON objects and arrays, not strings, and reads them back', async () => {
+      const { ctx, sut } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: owner.id });
+      const created = await sut.createExport(
+        packageInput(owner.id),
+        (id) => `/exports/${id}`,
+        { assetIds: [asset.id] },
+        false,
+        100,
+      );
+      const packageId = created!.package.id;
+      const [item] = (await sut.listItems(packageId, { take: 10, skip: 0 })).items;
+      const entry = {
+        sourceAssetId: asset.id,
+        originalFileName: 'lake.jpg',
+        type: 'IMAGE',
+        locked: false,
+        original: { path: `originals/${asset.id}.jpg`, sha1: 'a'.repeat(40), sha256: 'b'.repeat(64), bytes: 1234 },
+        metadata: null,
+      };
+      await sut.finishItem(item.id, { state: 'copied', entry });
+      await sut.updatePackage(packageId, { manifest: { packageId, files: {} }, verification: { status: 'verified' } });
+
+      expect(await typeOf('preservation_item', 'entry', item.id)).toBe('object');
+      expect(await typeOf('preservation_package', 'manifest', packageId)).toBe('object');
+      expect(await typeOf('preservation_package', 'verification', packageId)).toBe('object');
+      const [listed] = await sut.listedItems(packageId, null, 10);
+      expect(PreservationEntrySchema.parse(listed.entry)).toEqual(entry);
+      expect((await sut.countItems([packageId])).get(packageId)).toMatchObject({ states: { copied: 1 }, bytes: 1234 });
+
+      const restore = await sut.createRestore({
+        ownerId: owner.id,
+        packageId,
+        name: 'Everything',
+        status: 'reviewing',
+        options: { restoreEditRecipes: false, conflictDefault: 'replace' },
+      });
+      await sut.updateRestore(restore.id, { summary: { albums: 2 } });
+      expect(await typeOf('preservation_restore', 'options', restore.id)).toBe('object');
+      expect(await typeOf('preservation_restore', 'summary', restore.id)).toBe('object');
+      expect((await sut.getRestore(restore.id, owner.id))?.options).toEqual({
+        restoreEditRecipes: false,
+        conflictDefault: 'replace',
+      });
+
+      await sut.addRestoreItems(restore.id, [{ sourceAssetId: asset.id, locked: false, entry }]);
+      const [restoreItem] = (await sut.listRestoreItems(restore.id, { take: 10, skip: 0 })).items;
+      await sut.updateRestoreItem(restoreItem.id, {
+        sidecar: { sourceAssetId: asset.id },
+        conflicts: [{ field: 'description', archived: 'a', current: 'b' }],
+        findings: ['library_values_kept'],
+      });
+      await sut.setDecisions(restore.id, [{ id: restoreItem.id, decisions: { description: 'replace' } }]);
+      for (const column of ['entry', 'sidecar', 'decisions']) {
+        expect(await typeOf('preservation_restore_item', column, restoreItem.id)).toBe('object');
+      }
+      for (const column of ['conflicts', 'findings']) {
+        expect(await typeOf('preservation_restore_item', column, restoreItem.id)).toBe('array');
+      }
+      expect(await sut.countRestoreItems(restore.id)).toMatchObject({ conflicts: 1, findings: 1 });
+      const [read] = (await sut.listRestoreItems(restore.id, { take: 10, skip: 0, filter: 'conflicts' })).items;
+      expect(read.decisions).toEqual({ description: 'replace' });
+      expect(read.findings).toEqual(['library_values_kept']);
     });
   });
 });
