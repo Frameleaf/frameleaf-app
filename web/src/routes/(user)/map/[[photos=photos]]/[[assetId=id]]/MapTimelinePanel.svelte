@@ -1,9 +1,13 @@
 <script lang="ts">
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
+  import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
+  import Portal from '$lib/elements/Portal.svelte';
   import type { SelectionBBox } from '$lib/components/shared-components/map/types';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
+  import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { mapSettings } from '$lib/stores/preferences.store';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
+  import { navigate } from '$lib/utils/navigation';
   import { AssetVisibility } from '@immich/sdk';
   import { CloseButton, Icon } from '@immich/ui';
   import { mdiImageMultiple } from '@mdi/js';
@@ -14,8 +18,8 @@
    * The map's timeline panel (FL-33 cleanup): the Frameleaf library over the assets inside the
    * map's current selection, with FL-32's selection bar in place of the legacy select bar.
    *
-   * The panel never routes to the viewer — the map owns the page's URL — so items open inside the
-   * map's own flow rather than through this panel.
+   * The panel does not restore scroll from the URL — the map owns where the page lands — but an
+   * item still opens in the production viewer, as it did from the legacy timeline here.
    */
   interface Props {
     bbox: SelectionBBox;
@@ -27,6 +31,7 @@
   let { bbox, selectedClusterIds, assetCount, onClose }: Props = $props();
 
   let timelineManager = $state<TimelineManager>() as TimelineManager;
+  let viewerInvisible = $state(false);
 
   const timelineBoundingBox = $derived(
     `${floor(bbox.west, 6)},${floor(bbox.south, 6)},${ceil(bbox.east, 6)},${ceil(bbox.north, 6)}`,
@@ -68,6 +73,15 @@
       destination={{ kind: 'place' }}
       syncUrl={false}
       selectAll="loaded"
-    />
+      onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
+    >
+      {#snippet viewer()}
+        <Portal target="body">
+          {#if assetViewerManager.isViewing}
+            <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} />
+          {/if}
+        </Portal>
+      {/snippet}
+    </LibraryView>
   </div>
 </aside>
