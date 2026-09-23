@@ -36,6 +36,7 @@ import {
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { handlePromiseError } from 'src/utils/misc.js';
+import { tryParseRational } from 'src/utils/rational-time.js';
 import { createAffineMatrix } from 'src/utils/transform.js';
 
 const probe = (input: string, options: string[]): Promise<FfprobeData> =>
@@ -300,6 +301,10 @@ export class MediaRepository {
             frameCount: this.parseInt(options?.countFrames ? stream.nb_read_packets : stream.nb_frames),
             frameRate: this.parseFrameRate(stream.avg_frame_rate ?? stream.r_frame_rate),
             timeBase: this.parseRational(stream.time_base)?.den ?? null,
+            // FL-93: the same two values kept exactly, so nothing downstream has to
+            // reconstruct 30000/1001 or 1/30000 out of a float.
+            timeBaseRational: tryParseRational(stream.time_base),
+            frameRateRational: tryParseRational(stream.avg_frame_rate ?? stream.r_frame_rate),
             rotation: this.parseInt(stream.rotation),
             bitrate: this.parseInt(stream.bit_rate),
             pixelFormat: stream.pix_fmt || 'yuv420p',
@@ -352,6 +357,14 @@ export class MediaRepository {
     const keyframeAccDuration: number[] = [];
     const keyframeOwnDuration: number[] = [];
     const postDiscard: { pts: number; duration: number }[] = [];
+    // FL-93: the stream's own origin and cadence, observed rather than assumed. `startPts` is
+    // the smallest presentation timestamp seen — packets arrive in decode order, so a B-frame
+    // reorder means the first line is not necessarily the earliest picture. `firstDuration`
+    // seeds the variable-frame-rate check: any packet whose duration differs makes the source
+    // genuinely VFR, and a VFR source must never be coerced onto a nominal fps.
+    let startPts: number | null = null;
+    let firstDuration: number | null = null;
+    let variableFrameRate = false;
     const parseLine = (line: string) => {
       if (!line) {
         return;
@@ -361,6 +374,14 @@ export class MediaRepository {
       const duration = Number.parseInt(durationStr);
       if (Number.isNaN(pts) || Number.isNaN(duration) || !flags) {
         return;
+      }
+      if (startPts === null || pts < startPts) {
+        startPts = pts;
+      }
+      if (firstDuration === null) {
+        firstDuration = duration;
+      } else if (duration !== firstDuration) {
+        variableFrameRate = true;
       }
       // Discarded packets don't contribute to packet count, but still contribute to video duration
       totalDuration += duration;
@@ -409,6 +430,8 @@ export class MediaRepository {
           keyframePts,
           keyframeAccDuration,
           keyframeOwnDuration,
+          startPts: startPts ?? 0,
+          variableFrameRate,
         });
       });
     });
