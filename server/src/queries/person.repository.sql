@@ -680,7 +680,9 @@ where
 
 -- PersonRepository.getForFeatureFaceUpdate
 select
-  "asset_face"."id"
+  "asset_face"."id",
+  "asset"."ownerId",
+  "asset"."visibility"
 from
   "asset_face"
   inner join "asset" on "asset"."id" = "asset_face"."assetId"

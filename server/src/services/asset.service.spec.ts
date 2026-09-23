@@ -284,7 +284,7 @@ describe(AssetService.name, () => {
       expect(mocks.asset.update).toHaveBeenCalledWith({ id: asset.id, isFavorite: true });
     });
 
-    it('should queue a new face thumbnail for people whose featured face moved into the Locked folder (FL-53)', async () => {
+    it('should queue a new thumbnail for people whose featured face became Locked (FL-53)', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
@@ -524,7 +524,7 @@ describe(AssetService.name, () => {
       expect(mocks.album.removeAssetsFromAll).not.toHaveBeenCalled();
     });
 
-    it('should queue a new face thumbnail once, for people whose featured face moved into the Locked folder (FL-53)', async () => {
+    it('should queue one new thumbnail per person whose featured face became Locked (FL-53)', async () => {
       const auth = authStub.adminWithElevatedPermission;
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
       // the same person twice, e.g. from two chunks of a large move

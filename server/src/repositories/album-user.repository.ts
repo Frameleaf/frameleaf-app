@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectKysely } from 'nestjs-kysely';
 import { sql, type Insertable, type Kysely, type Updateable } from 'kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
+import { AlbumUserRole, AssetVisibility, SharedSpaceEventType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
 import { SharedSpaceAlbumTable } from 'src/schema/tables/shared-space-album.table.js';
@@ -303,6 +303,10 @@ export class AlbumUserRepository {
    * appearing, but nothing of the person row is selected: the space's identity
    * for somebody is the link's own `name` and `coverAssetId`, never the
    * owner's private naming of their own faces.
+   *
+   * A Locked photo is never the cover (FL-53). Moving a photo into the Locked
+   * folder already replaces it (`releaseLockedCoverReferences`); the read still
+   * answers no cover rather than a Locked id, whatever wrote the row.
    */
   async getLinkedPeople(spaceId: string): Promise<SharedSpacePersonLink[]> {
     return this.db
@@ -312,6 +316,9 @@ export class AlbumUserRepository {
           .onRef('person.ownerId', '=', 'link.personOwnerId')
           .onRef('person.personGroupId', '=', 'link.personGroupId'),
       )
+      .leftJoin('asset as cover', (join) =>
+        join.onRef('cover.id', '=', 'link.coverAssetId').on('cover.visibility', '=', sql.lit(AssetVisibility.Locked)),
+      )
       .where('link.albumId', '=', spaceId)
       .select([
         'link.id as id',
@@ -319,7 +326,7 @@ export class AlbumUserRepository {
         'link.personOwnerId as personOwnerId',
         'link.personGroupId as personGroupId',
         'link.name as name',
-        'link.coverAssetId as coverAssetId',
+        sql<string | null>`case when "cover"."id" is null then "link"."coverAssetId" end`.as('coverAssetId'),
         'link.createdAt as createdAt',
       ])
       .orderBy('link.name', 'asc')

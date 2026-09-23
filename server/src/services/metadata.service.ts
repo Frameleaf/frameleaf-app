@@ -962,6 +962,7 @@ export class MetadataService extends BaseService {
       clusterGroupId: string;
       faces: { id: string; sourceType: SourceType }[];
       originalPath: string;
+      visibility: AssetVisibility;
     },
     tags: ImmichTags,
   ) {
@@ -1015,7 +1016,11 @@ export class MetadataService extends BaseService {
           clusterGroupId: asset.clusterGroupId,
           name: region.Name,
         });
-        missingWithFaceAsset.push({ personGroupId, ownerId: asset.ownerId, faceAssetId: face.id });
+        // A face on a Locked photo is never a person's thumbnail (FL-53): the person is created without
+        // one and takes another face of theirs later (the missing-thumbnail sweep), or keeps none.
+        if (asset.visibility !== AssetVisibility.Locked) {
+          missingWithFaceAsset.push({ personGroupId, ownerId: asset.ownerId, faceAssetId: face.id });
+        }
       }
     }
 
@@ -1028,7 +1033,7 @@ export class MetadataService extends BaseService {
         missing.map(({ name, ownerId, personGroupId }) => ({ name, ownerId, personGroupId })),
       );
 
-      const jobs = missing.map(
+      const jobs = missingWithFaceAsset.map(
         ({ personGroupId, ownerId }) =>
           ({ name: JobName.PersonGenerateThumbnail, data: { personGroupId, ownerId } }) as const,
       );
