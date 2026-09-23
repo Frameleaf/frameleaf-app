@@ -855,7 +855,9 @@ export class MediaOperationRepository {
       })
       .where('id', '=', id)
       .where('claimToken', '=', claimToken)
-      .where('status', 'in', WORKING_STATUSES)
+      // Never while validating: that output is about to be adopted, and a runner that moved there
+      // after it last looked must not have it thrown away by a late settle.
+      .where('status', 'in', [MediaOperationStatus.Preparing, MediaOperationStatus.Rendering])
       .where('pauseRequestedAt', 'is not', null)
       .where('cancelRequestedAt', 'is', null)
       .executeTakeFirst();
@@ -894,6 +896,8 @@ export class MediaOperationRepository {
   async recoverExpiredClaims(options: { errorCode: string; error: string }): Promise<MediaOperationRecovery> {
     // A job whose owner asked to pause stays paused when its worker disappears (FL-104): the pause
     // is what the owner wanted, and resuming it later picks up from its checkpoints like a requeue.
+    // Unlike `settlePause`, the attempt is not given back: the worker vanished, which is what
+    // attempts count, whether or not a pause was also waiting.
     const paused = await this.db
       .updateTable('media_operation')
       .set({ status: MediaOperationStatus.Paused, claimToken: null, claimedBy: null, claimExpiresAt: null })
@@ -904,9 +908,12 @@ export class MediaOperationRepository {
       .where('cancelRequestedAt', 'is', null)
       .executeTakeFirst();
 
+    // The steps below also land on `paused` if a pause arrived after the step above ran: the steps
+    // are separate statements, and a pause request between them must not leave a queued job with a
+    // pause pending that nothing would ever settle.
     const requeued = await this.db
       .updateTable('media_operation')
-      .set({ status: MediaOperationStatus.Queued, claimToken: null, claimedBy: null, claimExpiresAt: null })
+      .set({ status: pausedIfRequested(), claimToken: null, claimedBy: null, claimExpiresAt: null })
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)
@@ -919,7 +926,7 @@ export class MediaOperationRepository {
     const retried = await this.db
       .updateTable('media_operation')
       .set({
-        status: MediaOperationStatus.Queued,
+        status: pausedIfRequested(),
         error: options.error,
         errorCode: options.errorCode,
         autoRetries: sql<number>`"autoRetries" + 1`,
