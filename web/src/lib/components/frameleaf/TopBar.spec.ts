@@ -1,7 +1,12 @@
 import { render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
-import { sessionAccess, setSessionLockPending, trackSessionLockRefresh } from '$lib/frameleaf/session-access.svelte';
+import {
+  sessionAccess,
+  setSessionLockPending,
+  trackSessionLockRefresh,
+  trackSessionProtectedModal,
+} from '$lib/frameleaf/session-access.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { userAdminFactory } from '@test-data/factories/user-factory';
@@ -123,6 +128,33 @@ describe('TopBar session privacy', () => {
     await waitFor(() => expect(sessionAccess.lockPending).toBe(false));
     expect(sdkMock.getAuthStatus).not.toHaveBeenCalled();
     expect(sessionStorage.getItem('frameleaf:session-lock-pending')).toBeNull();
+    view.unmount();
+  });
+
+  it('unmounts body-mounted private dialogs before exposing the refreshed app', async () => {
+    sdkMock.getAuthStatus.mockResolvedValue(authStatus(true) as never);
+    sdkMock.lockAuthSession.mockResolvedValue(undefined as never);
+    const closeGate = deferred<void>();
+    const modalResult = deferred<boolean>();
+    const portal = document.createElement('div');
+    portal.textContent = 'Private asset date and timezone';
+    document.body.append(portal);
+    const close = vi.fn(async () => {
+      await closeGate.promise;
+      portal.remove();
+      modalResult.resolve(false);
+    });
+    void trackSessionProtectedModal(modalResult.promise, close);
+    const view = render(TopBarTestHarness);
+    await screen.findByRole('button', { name: en.frameleaf_locked_hide_content });
+
+    void sessionAccess.retryLock?.();
+    await waitFor(() => expect(close).toHaveBeenCalledOnce());
+    expect(sessionAccess.lockPending).toBe(true);
+    expect(portal).toBeInTheDocument();
+    closeGate.resolve();
+    await waitFor(() => expect(sessionAccess.lockPending).toBe(false));
+    expect(portal).not.toBeInTheDocument();
     view.unmount();
   });
 });

@@ -44,6 +44,20 @@ export const markSessionLockSucceeded = () => {
 };
 
 const refreshes = new Set<Promise<unknown>>();
+const protectedModals = new Set<() => Promise<void>>();
+
+/** A body-mounted modal outlives its viewer; retain its lifecycle close handle until it settles. */
+export const trackSessionProtectedModal = <T>(result: Promise<T>, close: () => Promise<void>): Promise<T> => {
+  protectedModals.add(close);
+  return result.finally(() => protectedModals.delete(close));
+};
+
+/** Unmount protected body portals before the app becomes visible after a successful lock. */
+export const closeSessionProtectedModals = async () => {
+  while (protectedModals.size > 0) {
+    await Promise.all([...protectedModals].map((close) => close()));
+  }
+};
 
 /** Keep the root shield up while mounted media views replace their cached elevated results. */
 export const trackSessionLockRefresh = <T>(refresh: Promise<T>): Promise<T> => {
