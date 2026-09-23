@@ -5,11 +5,11 @@ import { readLibraryView } from '$lib/frameleaf/library-session';
 /**
  * The query the top bar's search opens on (FL-48).
  *
- * The page's own search, or the scope the route stands for (an album, a pet, a shared space, the
- * map), comes from `contextDiscoveryState`. A library page also carries its session's portable view
- * state in the URL (`fl`); its query and scope are added, so the filters the results toolbar shows as
- * chips are the filters the search dialog opens with. Searching again never resets a scope nobody
- * asked to leave.
+ * The page's own search, or the scope the route stands for (an album, a pet, a shared space), comes
+ * from `contextDiscoveryState`. A library page also carries its session's portable view state in the
+ * URL (`fl`); its query and scope are added, so the filters the results toolbar shows as chips are
+ * the filters the search dialog opens with. Searching again never resets a scope nobody asked to
+ * leave.
  */
 
 /** Require one more id in an id-list condition, keeping every group it already has. */
@@ -47,9 +47,6 @@ export const searchContextFor = (url: URL): DiscoveryContext => {
   }
   if (route.spaceId && !query.spaceId) {
     query.spaceId = route.spaceId;
-  }
-  if (route.view !== 'photos' && query.view === 'photos') {
-    query.view = route.view;
   }
   return { query, unsupported: [] };
 };
