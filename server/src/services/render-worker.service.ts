@@ -853,12 +853,17 @@ export class RenderWorkerService {
     const { worker } = await this.authenticate(sessionToken);
     const operation = await this.requireClaimed(worker.id, operationId, dto.claimToken);
 
-    const accepted = await this.operations.fail(operation.id, dto.claimToken, {
+    // The report is accepted whether the job fails outright or goes back to the queue for its one
+    // automatic retry (FL-104); either way this worker's claim is spent.
+    const outcome = await this.operations.fail(operation.id, dto.claimToken, {
       error: dto.error,
       errorCode: dto.errorCode,
     });
+    const accepted = outcome !== false;
     if (accepted) {
-      this.logger.warn(`Render worker ${worker.id} failed media operation ${operation.id}: ${dto.errorCode}`);
+      this.logger.warn(
+        `Render worker ${worker.id} failed media operation ${operation.id}: ${dto.errorCode} (${outcome === 'retrying' ? 'retrying once' : 'reported'})`,
+      );
     }
 
     return { accepted, refusal: null };

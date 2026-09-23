@@ -254,7 +254,7 @@ describe(RenderWorkerService.name, () => {
       completeCheckpoint: vi.fn().mockResolvedValue(true),
       beginValidation: vi.fn().mockResolvedValue(true),
       complete: vi.fn().mockResolvedValue(true),
-      fail: vi.fn().mockResolvedValue(true),
+      fail: vi.fn().mockResolvedValue('failed'),
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
     } as unknown as MediaOperationRepository;
 
@@ -833,6 +833,30 @@ describe(RenderWorkerService.name, () => {
       await expect(sut.fail('forged', claimedByA.id, body)).rejects.toBeInstanceOf(UnauthorizedException);
       expect(operations.complete).not.toHaveBeenCalled();
       expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    it('accepts a failure report that sends the job to its automatic retry (FL-104)', async () => {
+      vi.mocked(operations.fail).mockResolvedValue('retrying');
+
+      const result = await sut.fail(SESSION_A, claimedByA.id, {
+        claimToken: 'claim-1',
+        error: 'decoder crashed',
+        errorCode: 'decoder_crashed',
+      } as never);
+
+      expect(result).toEqual({ accepted: true, refusal: null });
+    });
+
+    it('does not accept a failure report the job no longer takes', async () => {
+      vi.mocked(operations.fail).mockResolvedValue(false);
+
+      const result = await sut.fail(SESSION_A, claimedByA.id, {
+        claimToken: 'claim-1',
+        error: 'late',
+        errorCode: 'late',
+      } as never);
+
+      expect(result).toEqual({ accepted: false, refusal: null });
     });
 
     it('stops an operation over its output ceiling on heartbeat, under the claim, and audits it', async () => {

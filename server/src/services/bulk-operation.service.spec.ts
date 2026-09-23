@@ -579,13 +579,11 @@ describe(BulkOperationService.name, () => {
   });
 
   describe('drain', () => {
-    it('only claims bulk jobs and only recovers bulk claims', async () => {
+    it('only claims bulk jobs and leaves recovery to the one media-operation sweep', async () => {
       await sut.drain();
 
-      expect(operations.recoverExpiredClaims).toHaveBeenCalledWith(
-        expect.objectContaining({ kinds: [MediaOperationKind.Bulk] }),
-      );
       expect(operations.claimNext).toHaveBeenCalledWith(expect.objectContaining({ kinds: [MediaOperationKind.Bulk] }));
+      expect(operations.recoverExpiredClaims).not.toHaveBeenCalled();
     });
   });
 });

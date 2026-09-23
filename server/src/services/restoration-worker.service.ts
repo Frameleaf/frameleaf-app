@@ -210,8 +210,10 @@ export class RestorationWorkerService {
   /**
    * Recovery, alignment and retention.
    *
-   * Recovery returns jobs whose lease lapsed to the queue (or fails them once their attempts are
-   * spent). Alignment brings restoration rows into line with jobs that ended without a worker
+   * Recovery returns jobs whose lease lapsed to the queue; one that has spent its attempts gets its
+   * one automatic retry, and fails only after that (FL-104). This sweep is the single owner of
+   * recovery for every kind of media operation — bulk jobs included, whose worker no longer runs a
+   * recovery of its own — so a lapsed claim is never judged twice. Alignment brings restoration rows into line with jobs that ended without a worker
    * writing back — a queued job cancelled from Activity, for one. Retention removes preview files
    * past their date and marks a never-reviewed preview expired; the row itself stays as history.
    */
@@ -220,9 +222,9 @@ export class RestorationWorkerService {
       errorCode: 'lease_expired',
       error: 'The worker stopped responding before the job finished and it ran out of attempts',
     });
-    if (recovered.requeued || recovered.failed || recovered.abandonedCancels) {
+    if (recovered.requeued || recovered.retried || recovered.failed || recovered.abandonedCancels) {
       this.logger.log(
-        `Recovered media operations: ${recovered.requeued} requeued, ${recovered.failed} failed, ${recovered.abandonedCancels} cancelled`,
+        `Recovered media operations: ${recovered.requeued} requeued, ${recovered.retried} retrying, ${recovered.failed} failed, ${recovered.abandonedCancels} cancelled`,
       );
     }
 
@@ -873,9 +875,14 @@ export class RestorationWorkerService {
     const code = error instanceof RestorationFailure ? error.code : RestorationErrorCode.Failed;
     const message = (error instanceof Error ? error.message : String(error)).slice(0, 500);
     this.logger.error(`Restoration ${restoration.id} failed (${code}): ${message}`);
-    const failed = await this.operationRepository.fail(operation.id, claimToken, { error: message, errorCode: code });
-    if (failed) {
+    const outcome = await this.operationRepository.fail(operation.id, claimToken, { error: message, errorCode: code });
+    if (outcome === 'failed') {
       await this.restorationRepository.transition(restoration.id, [statuses.running], { status: statuses.failed, error: message });
+    } else if (outcome === 'retrying') {
+      // Every job gets one automatic retry before a failure is reported (FL-104, owner decision
+      // September 22, 2026). The row stays running: the stage is runnable from there, and the next
+      // claim resumes from the checkpoints.
+      this.logger.log(`Restoration ${restoration.id} ${code}; job ${operation.id} will be retried once`);
     }
   }
 
