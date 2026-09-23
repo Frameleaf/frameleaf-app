@@ -114,7 +114,7 @@ describe('viewerMenuGroups', () => {
       expect(ids).not.toContain('set-visibility-locked');
     });
 
-    it('offers one Locked entry, Lock or Unlock, to the owner (FL-34)', () => {
+    it('offers one Locked entry, Mark or Unmark Sensitive, to the owner (FL-34)', () => {
       expect(idsOf(baseContext())).toContain('set-visibility-locked');
       expect(idsOf(baseContext({ isLocked: true }))).toContain('set-visibility-locked');
       expect(VIEWER_ACTIONS).not.toContain('mark-sensitive' as never);

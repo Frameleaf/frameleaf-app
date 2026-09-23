@@ -21,9 +21,9 @@
  * FL-36 has landed and adds no id: the design keeps accept, clear and rerun inside the
  * enrichment card, where the score and the review state they act on are visible.
  *
- * FL-34: Locked is one lock, so the menu has one entry for it, `set-visibility-locked`, labelled
- * Lock or Unlock. The separate Mark Sensitive and Unmark Sensitive entries are gone: marking was the
- * same lock under another name.
+ * FL-34: Locked is one lock, so the menu has one entry for it, `set-visibility-locked`, labelled Mark
+ * Sensitive or Unmark Sensitive as in the prototype (its `lock` and `unlock`). The separate
+ * `mark-sensitive` and `unmark-sensitive` entries it used to carry wrote the same mark and are gone.
  */
 
 /** Every action the Frameleaf viewer menu can offer. Mirrors the prototype's `VIEWER_ACTIONS`. */
@@ -184,7 +184,7 @@ export function viewerMenuGroups(context: ViewerMenuContext): ViewerMenuGroup[] 
           'add-to-album',
           hasAlbumContext && canEditAlbum && 'remove-from-album',
           isOwner && !isLocked && (isArchived ? 'unarchive' : 'archive'),
-          // Lock or Unlock (FL-34): metadata on the asset, which keeps its albums and organisation.
+          // Mark or Unmark Sensitive (FL-34): the lock, metadata on the asset, which keeps its albums.
           isOwner && 'set-visibility-locked',
           tagsEnabled && 'add-tag',
         ]),
