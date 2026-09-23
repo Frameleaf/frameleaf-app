@@ -190,7 +190,6 @@
 <svelte:body {ondragstart} {ondragend} {ondragenter} {ondragleave} {ondrop} />
 
 {#if dragStartTarget}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="frameleaf fl-drop-overlay"
     data-theme={appTheme}

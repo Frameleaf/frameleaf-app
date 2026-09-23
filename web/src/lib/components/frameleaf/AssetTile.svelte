@@ -281,7 +281,6 @@
       class="fl-tile-image"
     />
     {#if previewMode && previewSource}
-      <!-- svelte-ignore a11y_media_has_caption -->
       <video
         bind:this={videoElement}
         class="fl-tile-preview"
