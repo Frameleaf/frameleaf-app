@@ -1,8 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
-import MaintenanceMigrationPanel, {
-  migrationCommands,
-} from '$lib/components/frameleaf/MaintenanceMigrationPanel.svelte';
+import MaintenanceMigrationPanel from '$lib/components/frameleaf/MaintenanceMigrationPanel.svelte';
+import { migrationCommands } from '$lib/frameleaf/migration-commands';
 import { cleanMigrationReport, failedMigrationReport } from '@test-data/frameleaf/migration-report';
 import en from '../../../../../i18n/en.json';
 
