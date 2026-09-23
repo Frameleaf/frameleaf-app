@@ -813,7 +813,7 @@ export type DiscoveryContext = {
   unsupported: string[];
 };
 
-const UUID = '[\\da-f-]{36}';
+const UUID = String.raw`[\da-f-]{36}`;
 const routeId = (pathname: string, prefix: string) =>
   pathname.match(new RegExp(`^/${prefix}/(${UUID})(?:/|$)`, 'i'))?.[1];
 
@@ -1273,10 +1273,10 @@ export const structuredSearchRequest = (dto: DiscoverySearchDto, cursor?: string
   return {
     filter: withSearchDefaults(filter),
     withExif: true,
-    ...(dto.query ? { query: dto.query } : {}),
-    ...(dto.queryAssetId ? { queryAssetId: dto.queryAssetId } : {}),
-    ...(dto.imageEnrichment ? { imageEnrichment: dto.imageEnrichment } : {}),
-    ...(cursor ? { cursor } : {}),
+    ...(dto.query && { query: dto.query }),
+    ...(dto.queryAssetId && { queryAssetId: dto.queryAssetId }),
+    ...(dto.imageEnrichment && { imageEnrichment: dto.imageEnrichment }),
+    ...(cursor && { cursor }),
   };
 };
 

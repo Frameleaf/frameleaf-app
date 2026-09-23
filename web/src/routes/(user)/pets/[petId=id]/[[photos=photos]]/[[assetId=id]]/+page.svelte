@@ -68,7 +68,7 @@
           filter: petPhotosFilter(petId),
           size: PAGE_SIZE,
           withExif: true,
-          ...(cursor ? { cursor } : {}),
+          ...(cursor && { cursor }),
         },
       });
       // A late page for a pet this page has already moved away from is dropped

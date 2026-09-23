@@ -25,33 +25,33 @@ export const TAKEOUT_STAGES = ['stage', 'scan', 'reconcile'] as const;
 export type TakeoutStage = (typeof TAKEOUT_STAGES)[number];
 
 /** States in which a job is working on the import: nothing may change, and the page keeps watching. */
-const BUSY: readonly TakeoutState[] = [
+const BUSY: ReadonlySet<TakeoutState> = new Set([
   TakeoutState.Queued,
   TakeoutState.Scanning,
   TakeoutState.Importing,
   TakeoutState.Paused,
   TakeoutState.Cancelling,
-];
+]);
 /** States the server moves out of by itself, so the page refreshes while it shows them. */
-const MOVING: readonly TakeoutState[] = [
+const MOVING: ReadonlySet<TakeoutState> = new Set([
   TakeoutState.Queued,
   TakeoutState.Scanning,
   TakeoutState.Importing,
   TakeoutState.Cancelling,
-];
+]);
 /** States in which review decisions and import choices may change. */
-const REVIEWABLE: readonly TakeoutState[] = [
+const REVIEWABLE: ReadonlySet<TakeoutState> = new Set([
   TakeoutState.Review,
   TakeoutState.Completed,
   TakeoutState.Failed,
   TakeoutState.Cancelled,
-];
+]);
 /** A job stopped without finishing. */
-const STOPPED: readonly TakeoutState[] = [TakeoutState.Failed, TakeoutState.Cancelled];
+const STOPPED: ReadonlySet<TakeoutState> = new Set([TakeoutState.Failed, TakeoutState.Cancelled]);
 
-export const isTakeoutBusy = (state: TakeoutState) => BUSY.includes(state);
-export const isTakeoutMoving = (state: TakeoutState) => MOVING.includes(state);
-export const isTakeoutStopped = (state: TakeoutState) => STOPPED.includes(state);
+export const isTakeoutBusy = (state: TakeoutState) => BUSY.has(state);
+export const isTakeoutMoving = (state: TakeoutState) => MOVING.has(state);
+export const isTakeoutStopped = (state: TakeoutState) => STOPPED.has(state);
 
 /** The prototype stage an import is on. */
 export const takeoutStage = (takeout?: Pick<TakeoutResponseDto, 'phase'>): TakeoutStage => {
@@ -63,9 +63,7 @@ export const takeoutStage = (takeout?: Pick<TakeoutResponseDto, 'phase'>): Takeo
 
 /** Decisions about items and pairs, and the import choices, can change. */
 export const canReviewTakeout = (takeout: Pick<TakeoutResponseDto, 'phase' | 'state'>) =>
-  takeout.phase !== TakeoutPhase.Sources &&
-  takeout.phase !== TakeoutPhase.Scanning &&
-  REVIEWABLE.includes(takeout.state);
+  takeout.phase !== TakeoutPhase.Sources && takeout.phase !== TakeoutPhase.Scanning && REVIEWABLE.has(takeout.state);
 
 /** A scan that stopped can be run again; archives can be added before it. */
 export const canRetryScan = (takeout: Pick<TakeoutResponseDto, 'phase' | 'state'>) =>

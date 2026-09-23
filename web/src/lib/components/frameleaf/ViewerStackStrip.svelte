@@ -111,7 +111,7 @@
 
         {#if stack.primaryAssetId === stackedAsset.id}
           <span
-            class="pointer-events-none absolute start-1 top-0 flex items-center gap-0.5 rounded-ee-sm rounded-ss-sm bg-black/70 px-1 text-[10px] text-white"
+            class="pointer-events-none absolute inset-s-1 top-0 flex items-center gap-0.5 rounded-ss-sm rounded-ee-sm bg-black/70 px-1 text-[10px] text-white"
           >
             <Icon icon={mdiCrownOutline} size="12" aria-hidden />
             {$t('frameleaf_viewer_stack_primary')}

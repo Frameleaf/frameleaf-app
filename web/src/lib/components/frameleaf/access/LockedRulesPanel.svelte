@@ -197,9 +197,9 @@
       let response: UserPreferencesResponseDto;
       try {
         response = await updateMyPreferences({ userPreferencesUpdateDto: lockedRulesUpdate(draft, revision) });
-      } catch (caught) {
-        if (!isStatus(caught, 409)) {
-          throw caught;
+      } catch (error_) {
+        if (!isStatus(error_, 409)) {
+          throw error_;
         }
         const decision = decideAfterConflict(baseline, await getMyPreferences());
         if (decision.action === 'conflict') {
@@ -214,10 +214,10 @@
       revision = response.revision;
       authManager.setPreferences(withoutLockedRuleIds(response));
       notice = $t('frameleaf_locked_rules_saved');
-    } catch (caught) {
-      if (isStatus(caught, 403) || isStatus(caught, 401)) {
+    } catch (error_) {
+      if (isStatus(error_, 403) || isStatus(error_, 401)) {
         relock($t('frameleaf_locked_rules_unlock_again'));
-      } else if (isStatus(caught, 409)) {
+      } else if (isStatus(error_, 409)) {
         conflict = true;
       } else {
         error = $t('frameleaf_locked_rules_save_failed');

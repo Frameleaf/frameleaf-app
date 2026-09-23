@@ -101,7 +101,7 @@ export const studioPreviewKey = (intent: StudioPreviewIntent): string =>
     intent.quality,
     String(intent.viewportWidth),
     String(intent.viewportHeight),
-  ].join('\u0000');
+  ].join('\u{0}');
 
 export const sameStudioPreviewIntent = (a: StudioPreviewIntent, b: StudioPreviewIntent): boolean =>
   studioPreviewKey(a) === studioPreviewKey(b);
@@ -354,7 +354,7 @@ export class StudioPreviewCache {
 
   /** Keep only the given revision. Everything else goes, including a stray future one. */
   keepOnly(revision: number, protectedUrls: ReadonlySet<string> = new Set()): void {
-    for (const held of [...this.buckets.keys()]) {
+    for (const held of this.buckets.keys()) {
       if (held !== revision) {
         this.dropRevision(held, protectedUrls);
       }
@@ -362,7 +362,7 @@ export class StudioPreviewCache {
   }
 
   clear(): void {
-    for (const held of [...this.buckets.keys()]) {
+    for (const held of this.buckets.keys()) {
       this.dropRevision(held);
     }
   }
@@ -435,10 +435,12 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
   };
 
   const releaseRetained = () => {
-    if (retainedStaleUrl) {
-      release(retainedStaleUrl);
-      retainedStaleUrl = null;
+    if (!retainedStaleUrl) {
+      return;
     }
+
+    release(retainedStaleUrl);
+    retainedStaleUrl = null;
   };
 
   /**

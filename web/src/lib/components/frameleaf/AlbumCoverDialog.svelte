@@ -63,10 +63,12 @@
   };
 
   $effect(() => {
-    if (open) {
-      choice = album.albumThumbnailAssetId;
-      void load();
+    if (!open) {
+      return;
     }
+
+    choice = album.albumThumbnailAssetId;
+    void load();
   });
 
   const save = async () => {

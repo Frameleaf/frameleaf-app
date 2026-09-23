@@ -50,7 +50,7 @@ const bodyOf = (error: unknown): Record<string, unknown> => {
  * make the client silently drop a cache it should have kept.
  */
 export const classifyPreviewError = (error: unknown): StudioPreviewTransportFailure => {
-  if (globalThis.navigator && globalThis.navigator.onLine === false) {
+  if (globalThis.navigator && !navigator.onLine) {
     return { kind: 'offline' };
   }
 

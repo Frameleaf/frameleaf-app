@@ -36,7 +36,7 @@
       { label: $t('frameleaf_error_go_photos'), href: Route.photos() },
     ];
     if (kind === 'failed') {
-      list.push({ label: $t('frameleaf_error_retry'), onclick: () => globalThis.location.reload() });
+      list.push({ label: $t('frameleaf_error_retry'), onclick: () => location.reload() });
     }
     return list;
   });

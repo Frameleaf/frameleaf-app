@@ -201,11 +201,11 @@
     }
   });
 
-  const FINISHED: readonly MediaOperationStatus[] = [
+  const FINISHED: ReadonlySet<MediaOperationStatus> = new Set([
     MediaOperationStatus.Completed,
     MediaOperationStatus.Cancelled,
     MediaOperationStatus.Failed,
-  ];
+  ]);
 
   const poll = async () => {
     const wasActive = active;
@@ -230,7 +230,7 @@
         }
       }
       itemStates = next;
-      if (FINISHED.includes(detail.status)) {
+      if (FINISHED.has(detail.status)) {
         const remaining = new Map(jobs);
         remaining.delete(operationId);
         jobs = remaining;

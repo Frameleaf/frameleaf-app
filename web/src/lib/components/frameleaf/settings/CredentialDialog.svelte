@@ -37,11 +37,13 @@
   let saved = false;
 
   $effect(() => {
-    if (!open) {
-      // The typed value never outlives the dialog.
-      value = '';
-      onClose(saved);
+    if (open) {
+      return;
     }
+
+    // The typed value never outlives the dialog.
+    value = '';
+    onClose(saved);
   });
 
   const submit = async (event: SubmitEvent) => {
@@ -60,8 +62,8 @@
       eventManager.emit('SystemConfigUpdate', next);
       toastManager.primary($t('frameleaf_credentials_saved'));
       open = false;
-    } catch (caught) {
-      error = getServerErrorMessage(caught) ?? $t('frameleaf_credentials_save_failed');
+    } catch (error_) {
+      error = getServerErrorMessage(error_) ?? $t('frameleaf_credentials_save_failed');
     } finally {
       working = false;
     }

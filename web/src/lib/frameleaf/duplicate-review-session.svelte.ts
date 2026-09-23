@@ -52,7 +52,7 @@ export const duplicateReviewGateway: DuplicateReviewGateway = {
         action,
         assetIds: decisionAssetIds(groups),
         payload: { duplicateGroups: groups },
-        ...(requestId ? { requestId } : {}),
+        ...(requestId && { requestId }),
         submittedTotal: groups.length,
       },
     }),
@@ -73,7 +73,7 @@ export type TrackedJob = {
  * key, as the library's bulk actions do.
  */
 export const newRequestId = (): string | undefined => {
-  const api = globalThis.crypto;
+  const api = crypto;
   if (typeof api?.randomUUID === 'function') {
     return api.randomUUID();
   }
@@ -207,10 +207,8 @@ export class DuplicateReviewSession {
       // a finished group has left the review; anything still running keeps its loader
       const present = new Set(groups.map((group) => group.duplicateId));
       for (const [duplicateId, progress] of this.progress) {
-        if (progress.state === 'done' || !present.has(duplicateId)) {
-          if (progress.state !== 'pending') {
-            this.progress.delete(duplicateId);
-          }
+        if ((progress.state === 'done' || !present.has(duplicateId)) && progress.state !== 'pending') {
+          this.progress.delete(duplicateId);
         }
       }
       this.#resumeActive();
@@ -276,7 +274,7 @@ export class DuplicateReviewSession {
 
   async #pollAll() {
     let finished = false;
-    for (const [operationId, job] of [...this.#jobs.entries()]) {
+    for (const [operationId, job] of this.#jobs) {
       if (this.#destroyed) {
         return;
       }
@@ -292,7 +290,7 @@ export class DuplicateReviewSession {
       }
     }
     if (finished) {
-      if (![...this.#jobs.values()].some((job) => job.action === MediaOperationBulkAction.UndoDuplicates)) {
+      if ([...this.#jobs.values()].every((job) => job.action !== MediaOperationBulkAction.UndoDuplicates)) {
         this.undoing = false;
       }
       try {

@@ -15,7 +15,7 @@ const rowWidth = (row: { tiles: { width: number }[] }, gap = 4) =>
 
 describe('clampAspectRatio', () => {
   it('falls back to 3:2 for missing or nonsensical ratios', () => {
-    for (const value of [undefined, null, Number.NaN, 0, -3, 'wide']) {
+    for (const value of [undefined, null, NaN, 0, -3, 'wide']) {
       expect(clampAspectRatio(value)).toBe(1.5);
     }
   });
@@ -30,7 +30,7 @@ describe('justifiedRows', () => {
   it('returns nothing without items or a measured container', () => {
     expect(justifiedRows([], options())).toEqual([]);
     expect(justifiedRows([1.5], options({ containerWidth: 0 }))).toEqual([]);
-    expect(justifiedRows([1.5], options({ containerWidth: Number.NaN }))).toEqual([]);
+    expect(justifiedRows([1.5], options({ containerWidth: NaN }))).toEqual([]);
   });
 
   it('fills the width on the last row as well, so a short day group is not left ragged', () => {
@@ -90,7 +90,7 @@ describe('justifiedRows', () => {
 describe('rowHeightFor', () => {
   it('scales the row height with the available width and clamps it', () => {
     expect(rowHeightFor(0)).toBe(120);
-    expect(rowHeightFor(Number.NaN)).toBe(120);
+    expect(rowHeightFor(NaN)).toBe(120);
     expect(rowHeightFor(400)).toBe(133);
     expect(rowHeightFor(1600)).toBe(213);
     expect(rowHeightFor(100_000)).toBe(260);
@@ -103,7 +103,7 @@ describe('filledJustifiedLayout', () => {
   it('exposes positions for every box and a height covering the last row', () => {
     const ratios = [1.5, 1.5, 1.5, 0.75, 1.78];
     const layout = filledJustifiedLayout(ratios, layoutOptions);
-    for (const [index] of ratios.entries()) {
+    for (const index of ratios.keys()) {
       const position = layout.getPosition(index);
       expect(position.width).toBeGreaterThan(0);
       expect(position.height).toBeGreaterThan(0);

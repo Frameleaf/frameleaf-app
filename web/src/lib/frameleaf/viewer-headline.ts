@@ -24,7 +24,7 @@ export const formatFileSize = (bytes: number | null | undefined): string | null 
 };
 
 export const megapixels = (width: number | null | undefined, height: number | null | undefined): string | null => {
-  if (![width, height].every((value) => typeof value === 'number' && Number.isFinite(value) && value > 0)) {
+  if ([width, height].some((value) => !(typeof value === 'number' && Number.isFinite(value) && value > 0))) {
     return null;
   }
   const value = (width! * height!) / 1e6;
@@ -63,7 +63,7 @@ const exposureSeconds = (value: string | null | undefined): string | null => {
     return null;
   }
   const text = value.trim();
-  return /s$/.test(text) ? text : `${text} s`;
+  return text.endsWith('s') ? text : `${text} s`;
 };
 
 export const exposureParts = (exif: ExifResponseDto | undefined): string[] => {

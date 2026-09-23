@@ -66,7 +66,7 @@
   });
 
   const onSharedLinkCreate = (link: SharedLinkResponseDto) => {
-    if (!links.some((entry) => entry.id === link.id)) {
+    if (links.every((entry) => entry.id !== link.id)) {
       links = [link, ...links];
     }
   };
@@ -238,8 +238,10 @@
     </ul>
   {:else}
     <div class="sl-empty">
-      <h2>{links.length ? $t('frameleaf_sharing.empty_matches_title') : $t('frameleaf_sharing.empty_links_title')}</h2>
-      <p>{links.length ? $t('frameleaf_sharing.empty_matches_body') : $t('frameleaf_sharing.empty_links_body')}</p>
+      <h2>
+        {links.length > 0 ? $t('frameleaf_sharing.empty_matches_title') : $t('frameleaf_sharing.empty_links_title')}
+      </h2>
+      <p>{links.length > 0 ? $t('frameleaf_sharing.empty_matches_body') : $t('frameleaf_sharing.empty_links_body')}</p>
     </div>
   {/if}
 </section>

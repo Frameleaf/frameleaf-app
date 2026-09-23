@@ -77,11 +77,13 @@
   };
 
   const onkeydown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      onCancelRename();
+    if (event.key !== 'Escape') {
+      return;
     }
+
+    event.preventDefault();
+    event.stopPropagation();
+    onCancelRename();
   };
 </script>
 

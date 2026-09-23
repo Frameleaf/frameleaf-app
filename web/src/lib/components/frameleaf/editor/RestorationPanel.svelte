@@ -310,10 +310,12 @@
     run(
       item,
       async () => {
-        if (item.activeOperationId) {
-          await activitySession.cancel(item.activeOperationId);
-          schedulePoll();
+        if (!item.activeOperationId) {
+          return;
         }
+
+        await activitySession.cancel(item.activeOperationId);
+        schedulePoll();
       },
       $t('frameleaf_restoration_cancel_error'),
     );

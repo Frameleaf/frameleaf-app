@@ -39,7 +39,7 @@ const config = (): AdminConfigDto =>
 describe('write-only credentials (FL-67)', () => {
   it('names every credential the server accepts', () => {
     const byName = (a: string, b: string) => a.localeCompare(b);
-    expect(Object.keys(CREDENTIALS).sort(byName)).toEqual([...Object.values(ConfigCredential)].sort(byName));
+    expect(Object.keys(CREDENTIALS).sort(byName)).toEqual(Object.values(ConfigCredential).sort(byName));
   });
 
   it('empties every credential value and keeps everything else, without touching the original', () => {
@@ -104,7 +104,7 @@ describe('write-only credentials (FL-67)', () => {
   it('accepts any non-blank value up to the server limit, as typed', () => {
     expect(isCredentialValueValid('  spaced secret  ')).toBe(true);
     expect(isCredentialValueValid('')).toBe(false);
-    expect(isCredentialValueValid('   ')).toBe(false);
+    expect(isCredentialValueValid(' '.repeat(3))).toBe(false);
     expect(isCredentialValueValid('x'.repeat(4096))).toBe(true);
     expect(isCredentialValueValid('x'.repeat(4097))).toBe(false);
   });

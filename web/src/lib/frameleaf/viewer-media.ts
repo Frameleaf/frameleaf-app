@@ -25,4 +25,4 @@ export const isPanorama = (asset: Pick<AssetResponseDto, 'type' | 'exifInfo' | '
 export const isLivePhoto = (asset: Pick<AssetResponseDto, 'livePhotoVideoId'>): boolean => !!asset.livePhotoVideoId;
 
 /** True when the asset's original file is recorded as missing from its library. */
-export const isOffline = (asset: Pick<AssetResponseDto, 'isOffline'>): boolean => asset.isOffline === true;
+export const isOffline = (asset: Pick<AssetResponseDto, 'isOffline'>): boolean => asset.isOffline;

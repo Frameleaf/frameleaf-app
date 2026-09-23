@@ -281,7 +281,7 @@ const defaultTimer = (callback: () => void, ms: number): CancelTimer => {
 
 const defaultKey = (): string =>
   typeof globalThis.crypto?.randomUUID === 'function'
-    ? globalThis.crypto.randomUUID()
+    ? crypto.randomUUID()
     : `k-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 const emptyEnvelope = (engineRevision: string, graph: unknown): StudioProjectEnvelopeDto => ({
@@ -303,7 +303,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
   const api = options.api ?? studioProjectSdkApi;
   const now = options.now ?? (() => Date.now());
   const setTimer = options.setTimer ?? defaultTimer;
-  const isOnline = options.isOnline ?? (() => globalThis.navigator?.onLine !== false);
+  const isOnline = options.isOnline ?? (() => globalThis.navigator?.onLine);
   const newKey = options.newKey ?? defaultKey;
   const { clientId, engineRevision } = options;
 
@@ -565,7 +565,19 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
     saving = (async () => {
       try {
         let result: { revision: number; lease: StudioProjectLeaseDto | null };
-        if (!projectId) {
+        if (projectId) {
+          const saved = await api.save(projectId, {
+            clientId,
+            requestKey: current.requestKey as string,
+            expectedRevision: state.project.revision,
+            envelope: emptyEnvelope(engineRevision, current.graph),
+            summary: summaryOf(current),
+          });
+          if (gen !== generation) {
+            return;
+          }
+          result = { revision: saved.revision, lease: saved.lease };
+        } else {
           const created = await api.create({
             name: state.project.name,
             clientId,
@@ -581,18 +593,6 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
             access: 'owner',
           });
           result = { revision: created.revision, lease: created.lease };
-        } else {
-          const saved = await api.save(projectId, {
-            clientId,
-            requestKey: current.requestKey as string,
-            expectedRevision: state.project.revision,
-            envelope: emptyEnvelope(engineRevision, current.graph),
-            summary: summaryOf(current),
-          });
-          if (gen !== generation) {
-            return;
-          }
-          result = { revision: saved.revision, lease: saved.lease };
         }
 
         if (result.lease) {
@@ -690,10 +690,10 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         scheduleRenewal(gen);
         return true;
       }
-      if (!draft) {
-        applyDetail(detail, gen, true);
-      } else {
+      if (draft) {
         emit({ project: { ...state.project, hasLease: true } });
+      } else {
+        applyDetail(detail, gen, true);
       }
       emit({ status: draft ? 'dirty' : 'saved', conflict: null });
       scheduleRenewal(gen);

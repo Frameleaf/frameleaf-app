@@ -40,10 +40,12 @@
   );
 
   $effect(() => {
-    if (!open) {
-      key = '';
-      onClose(activated);
+    if (open) {
+      return;
     }
+
+    key = '';
+    onClose(activated);
   });
 
   const submit = async (event: SubmitEvent) => {
@@ -61,8 +63,8 @@
       await (kind === 'server' ? setServerLicense({ licenseKeyDto }) : setUserLicense({ licenseKeyDto }));
       activated = true;
       open = false;
-    } catch (caught) {
-      error = getServerErrorMessage(caught) ?? $t('frameleaf_access_supporter_activate_failed');
+    } catch (error_) {
+      error = getServerErrorMessage(error_) ?? $t('frameleaf_access_supporter_activate_failed');
     } finally {
       working = false;
     }

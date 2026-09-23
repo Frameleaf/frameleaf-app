@@ -50,10 +50,12 @@
   };
 
   $effect(() => {
-    if (open) {
-      mode = 'people';
-      void loadPeople();
+    if (!open) {
+      return;
     }
+
+    mode = 'people';
+    void loadPeople();
   });
 
   const toggle = (id: string) => {
@@ -112,7 +114,7 @@
     event.preventDefault();
     const next = mode === 'people' ? 'link' : 'people';
     mode = next;
-    (event.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-mode="${next}"]`)?.focus();
+    (event.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-mode="${CSS.escape(next)}"]`)?.focus();
   };
 </script>
 

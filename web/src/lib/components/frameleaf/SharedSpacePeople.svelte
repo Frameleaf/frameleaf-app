@@ -74,7 +74,7 @@
       const label = name.trim() || defaultSpacePersonName(chosen ?? { name: '' });
       await linkSharedSpacePerson({
         id: space.id,
-        sharedSpacePersonLinkDto: { personId: choice, ...(name.trim() ? { name: name.trim() } : {}) },
+        sharedSpacePersonLinkDto: { personId: choice, ...(name.trim() && { name: name.trim() }) },
       });
       status = $t('frameleaf_spaces_person_linked', { values: { name: label } });
       choice = '';

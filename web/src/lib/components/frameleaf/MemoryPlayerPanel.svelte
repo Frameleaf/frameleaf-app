@@ -330,10 +330,12 @@
   const exportPercent = $derived(exportRun ? Math.round(exportProgress(exportRun) * 100) : 0);
 
   const stopPolling = () => {
-    if (exportTimer) {
-      clearTimeout(exportTimer);
-      exportTimer = undefined;
+    if (!exportTimer) {
+      return;
     }
+
+    clearTimeout(exportTimer);
+    exportTimer = undefined;
   };
 
   const pollExport = async () => {

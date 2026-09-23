@@ -114,7 +114,7 @@ export function parseStudioHandoff(raw: string | null | undefined, now = Date.no
  */
 export function writeStudioHandoff(
   input: { source: StudioHandoffSource; sourceId: string; title: string; assetIds: string[] },
-  storage: Storage | undefined = globalThis.localStorage,
+  storage: Storage | undefined = localStorage,
 ): StudioHandoff {
   const handoff: StudioHandoff = {
     version: 1,
@@ -133,7 +133,7 @@ export function writeStudioHandoff(
 }
 
 /** Reads and validates the queued handoff, if any. Does not clear it. */
-export function readStudioHandoff(storage: Storage | undefined = globalThis.localStorage): StudioHandoff | null {
+export function readStudioHandoff(storage: Storage | undefined = localStorage): StudioHandoff | null {
   try {
     return parseStudioHandoff(storage?.getItem(studioHandoffKey) ?? null);
   } catch {
@@ -142,7 +142,7 @@ export function readStudioHandoff(storage: Storage | undefined = globalThis.loca
 }
 
 /** Drops the queued handoff. Studio must call this once it has seeded a project from it. */
-export function clearStudioHandoff(storage: Storage | undefined = globalThis.localStorage): void {
+export function clearStudioHandoff(storage: Storage | undefined = localStorage): void {
   try {
     storage?.removeItem(studioHandoffKey);
   } catch {

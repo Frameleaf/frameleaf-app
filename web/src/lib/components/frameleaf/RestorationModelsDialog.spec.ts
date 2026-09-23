@@ -21,7 +21,7 @@ const lan: MlDestinationResponseDto = {
   id: '33333333-3333-4333-8333-333333333333',
   kind: MlDestinationKind.Lan,
   name: 'Workshop GPU',
-  url: 'http://workshop.lan:3004',
+  url: 'https://workshop.lan:3004',
   authTokenConfigured: true,
   enabled: true,
   workloads: [MlWorkload.RestorationFaithful, MlWorkload.RestorationCreative],

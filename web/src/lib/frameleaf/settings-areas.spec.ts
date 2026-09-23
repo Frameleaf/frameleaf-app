@@ -51,7 +51,7 @@ describe('Frameleaf settings areas', () => {
         'job',
         'authentication',
       ]);
-      expect(searchSettingsSections(sections, '   ')).toEqual([]);
+      expect(searchSettingsSections(sections, ' '.repeat(3))).toEqual([]);
     });
   });
 

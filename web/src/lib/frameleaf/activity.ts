@@ -39,13 +39,13 @@ export type ActivityFilter = 'all' | 'running' | 'done' | 'failed';
 export const ACTIVITY_FILTERS: readonly ActivityFilter[] = ['all', 'running', 'done', 'failed'];
 
 /** Server statuses where the job is still the server's problem. */
-const RUNNING_STATUSES: readonly MediaOperationStatus[] = [
+const RUNNING_STATUSES: ReadonlySet<MediaOperationStatus> = new Set([
   MediaOperationStatus.Queued,
   MediaOperationStatus.Preparing,
   MediaOperationStatus.Rendering,
   MediaOperationStatus.Validating,
   MediaOperationStatus.Cancelling,
-];
+]);
 
 const STATUS_TONE: Record<MediaOperationStatus, ActivityTone> = {
   [MediaOperationStatus.Queued]: 'neutral',
@@ -62,18 +62,18 @@ const STATUS_TONE: Record<MediaOperationStatus, ActivityTone> = {
 };
 
 /** Statuses a pause may be asked for from; the server refuses the rest (FL-104). */
-const PAUSABLE_STATUSES: readonly MediaOperationStatus[] = [
+const PAUSABLE_STATUSES: ReadonlySet<MediaOperationStatus> = new Set([
   MediaOperationStatus.Queued,
   MediaOperationStatus.Preparing,
   MediaOperationStatus.Rendering,
-];
+]);
 
 /** Statuses a worker is on the job in; a pause asked for here lands at its next checkpoint. */
-const WORKING_STATUSES: readonly MediaOperationStatus[] = [
+const WORKING_STATUSES: ReadonlySet<MediaOperationStatus> = new Set([
   MediaOperationStatus.Preparing,
   MediaOperationStatus.Rendering,
   MediaOperationStatus.Validating,
-];
+]);
 
 /**
  * What a job's pause control does (FL-104, owner request September 23, 2026).
@@ -101,13 +101,12 @@ export const mediaOperationPauseState = (
 ): ActivityPauseState => {
   const status = operation.status;
   const paused = status === MediaOperationStatus.Paused;
-  const pausePending = !paused && !!operation.pauseRequestedAt && WORKING_STATUSES.includes(status);
+  const pausePending = !paused && !!operation.pauseRequestedAt && WORKING_STATUSES.has(status);
   const canResume = paused || pausePending;
-  const canPause =
-    !canResume && !!operation.pausable && PAUSABLE_STATUSES.includes(status) && !operation.cancelRequestedAt;
+  const canPause = !canResume && !!operation.pausable && PAUSABLE_STATUSES.has(status) && !operation.cancelRequestedAt;
 
   let pauseBlockedKey: string | undefined;
-  if (!canPause && !canResume && RUNNING_STATUSES.includes(status)) {
+  if (!canPause && !canResume && RUNNING_STATUSES.has(status)) {
     if (!operation.pausable) {
       pauseBlockedKey = 'frameleaf_running_pause_unavailable_kind';
     } else if (status === MediaOperationStatus.Cancelling || operation.cancelRequestedAt) {
@@ -117,7 +116,7 @@ export const mediaOperationPauseState = (
     }
   }
 
-  return { paused, pausePending, canPause, canResume, ...(pauseBlockedKey ? { pauseBlockedKey } : {}) };
+  return { paused, pausePending, canPause, canResume, ...(pauseBlockedKey && { pauseBlockedKey }) };
 };
 
 /** A count the server sends as a string; null when absent or not a real number. */
@@ -246,11 +245,11 @@ export const isRetryingMediaOperation = (operation: Pick<MediaOperationDto, 'sta
   operation.status === MediaOperationStatus.Queued && ((operation.autoRetries ?? 0) > 0 || !!operation.retryAt);
 
 /** Statuses an iCloud sync's worker is on it in; "Rendering" means nothing for a sync (FL-68). */
-const ICLOUD_WORKING: readonly MediaOperationStatus[] = [
+const ICLOUD_WORKING: ReadonlySet<MediaOperationStatus> = new Set([
   MediaOperationStatus.Preparing,
   MediaOperationStatus.Rendering,
   MediaOperationStatus.Validating,
-];
+]);
 
 /**
  * An iCloud sync back in the queue to wait out the provider or items on their own back-off (FL-68).
@@ -275,7 +274,7 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
   }
 
   const status = operation.status;
-  const running = RUNNING_STATUSES.includes(status);
+  const running = RUNNING_STATUSES.has(status);
   const pause = mediaOperationPauseState(operation);
   const finished = !running && !pause.paused;
   const failed = status === MediaOperationStatus.Failed;
@@ -301,12 +300,12 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
         ? 'frameleaf_activity_status_waiting'
         : retrying
           ? 'frameleaf_activity_status_retrying'
-          : icloud && ICLOUD_WORKING.includes(status)
+          : icloud && ICLOUD_WORKING.has(status)
             ? 'frameleaf_activity_icloud_syncing'
             : `frameleaf_activity_status_${status}`,
     tone: retrying || pause.pausePending ? 'warning' : STATUS_TONE[status],
     title: operation.label,
-    ...(dedup ? { titleKey: 'frameleaf_activity_title_physical_deduplication' } : {}),
+    ...(dedup && { titleKey: 'frameleaf_activity_title_physical_deduplication' }),
     progress: status === MediaOperationStatus.Completed ? 100 : counted ? clampPercent(operation.progress) : null,
     running,
     ...pause,
@@ -330,7 +329,7 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
       (status === MediaOperationStatus.Failed || status === MediaOperationStatus.Cancelled),
     canDismiss: finished,
     browserLocal: false,
-    ...(status === MediaOperationStatus.Completed ? studioBundleOf(operation.kind) : {}),
+    ...(status === MediaOperationStatus.Completed && studioBundleOf(operation.kind)),
   };
 };
 
@@ -346,11 +345,11 @@ const studioBundleOf = (kind: MediaOperationKind): Pick<ActivityItem, 'studioBun
 };
 
 /** Server statuses a bulk job passes through while the worker has it. */
-const BULK_WORKING: readonly MediaOperationStatus[] = [
+const BULK_WORKING: ReadonlySet<MediaOperationStatus> = new Set([
   MediaOperationStatus.Preparing,
   MediaOperationStatus.Rendering,
   MediaOperationStatus.Validating,
-];
+]);
 
 /**
  * One durable bulk job (FL-32) as a row.
@@ -361,15 +360,15 @@ const BULK_WORKING: readonly MediaOperationStatus[] = [
  * exactly the items that did not go through; so does one that stopped before reaching the end.
  */
 /** Bulk actions only Library Care queues, with gates a copied retry would skip (FL-69). */
-const LIBRARY_CARE_BULK_ACTIONS: readonly MediaOperationBulkAction[] = [
+const LIBRARY_CARE_BULK_ACTIONS: ReadonlySet<MediaOperationBulkAction> = new Set([
   MediaOperationBulkAction.RelinkMissingMedia,
   MediaOperationBulkAction.RecoverDamagedMedia,
   MediaOperationBulkAction.TrashDamagedMedia,
-];
+]);
 
 export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityItem => {
   const status = operation.status;
-  const running = RUNNING_STATUSES.includes(status);
+  const running = RUNNING_STATUSES.has(status);
   const pause = mediaOperationPauseState(operation);
   const bulk = operation.bulk;
   const requested = bulk?.requested ?? Number(operation.totalUnits ?? 0);
@@ -387,12 +386,12 @@ export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityIt
       ? 'frameleaf_activity_status_pausing'
       : retrying
         ? 'frameleaf_activity_status_retrying'
-        : BULK_WORKING.includes(status)
+        : BULK_WORKING.has(status)
           ? 'frameleaf_activity_bulk_running'
           : `frameleaf_activity_status_${status}`,
     tone: failed ? 'danger' : retrying || pause.pausePending ? 'warning' : STATUS_TONE[status],
     title: operation.label,
-    ...(bulk ? { titleKey: `frameleaf_bulk_${bulk.action.replaceAll('-', '_')}` } : {}),
+    ...(bulk && { titleKey: `frameleaf_bulk_${bulk.action.replaceAll('-', '_')}` }),
     progress:
       status === MediaOperationStatus.Completed
         ? 100
@@ -414,7 +413,7 @@ export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityIt
     canCancel: (running && status !== MediaOperationStatus.Cancelling) || pause.paused,
     // Library Care relinks, recoveries and trash are reviewed again in Library Care (FL-69).
     canRetry:
-      !LIBRARY_CARE_BULK_ACTIONS.includes(bulk?.action as MediaOperationBulkAction) &&
+      !LIBRARY_CARE_BULK_ACTIONS.has(bulk?.action as MediaOperationBulkAction) &&
       !running &&
       !pause.paused &&
       (failed || unfinished || status === MediaOperationStatus.Cancelled),

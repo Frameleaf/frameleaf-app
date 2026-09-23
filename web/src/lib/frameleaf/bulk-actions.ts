@@ -448,10 +448,10 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       confirm: false,
       undoable: false,
       ...row,
-      ...(row.group === 'album' && albumId ? { albumId } : {}),
+      ...(row.group === 'album' && albumId && { albumId }),
       // A space viewer's matching set never offers more than download and add-to-album, whatever the
       // asset-shaped predicates above decided.
-      ...(spaceViewerMatching && !SPACE_VIEWER_MATCHING_ACTIONS.has(row.id) ? { available: false } : {}),
+      ...(spaceViewerMatching && !SPACE_VIEWER_MATCHING_ACTIONS.has(row.id) && { available: false }),
     }))
     .sort((left, right) => BULK_ACTION_GROUP_ORDER.indexOf(left.group) - BULK_ACTION_GROUP_ORDER.indexOf(right.group));
 };

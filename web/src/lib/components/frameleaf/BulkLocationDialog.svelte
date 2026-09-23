@@ -26,7 +26,7 @@
   let latitude = $state(Number.isFinite(initialLatitude) ? String(initialLatitude) : '');
   let longitude = $state(Number.isFinite(initialLongitude) ? String(initialLongitude) : '');
 
-  const asNumber = (value: string) => (value.trim() === '' ? Number.NaN : Number(value));
+  const asNumber = (value: string) => (value.trim() === '' ? NaN : Number(value));
   let lat = $derived(asNumber(latitude));
   let lng = $derived(asNumber(longitude));
   let error = $derived(

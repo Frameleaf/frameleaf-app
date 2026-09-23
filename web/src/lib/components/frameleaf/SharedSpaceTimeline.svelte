@@ -55,7 +55,7 @@
 
   let { space, photos, filter, isViewer = false, onOpen, onChanged }: Props = $props();
 
-  const bulkContext = $derived({ albumId: space.id, ...(isViewer ? { spaceViewerMatching: true } : {}) });
+  const bulkContext = $derived({ albumId: space.id, ...(isViewer && { spaceViewerMatching: true }) });
 
   // A "select all matching" snapshot is a server-side search over the whole space; the client-side
   // "only new since visit" id set has no server-side equivalent to intersect it with, so that view

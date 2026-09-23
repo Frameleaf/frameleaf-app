@@ -129,10 +129,12 @@
   class="activity"
   aria-label={$t('frameleaf_album_activity_title')}
   onkeydown={(event) => {
-    if (event.key === 'Escape') {
-      event.stopPropagation();
-      onClose();
+    if (event.key !== 'Escape') {
+      return;
     }
+
+    event.stopPropagation();
+    onClose();
   }}
 >
   <header>
@@ -226,10 +228,12 @@
         placeholder={$t('frameleaf_album_activity_write')}
         aria-label={$t('frameleaf_album_activity_write')}
         onkeydown={(event) => {
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
-            void send();
+          if (event.key !== 'Enter' || event.shiftKey) {
+            return;
           }
+
+          event.preventDefault();
+          void send();
         }}></textarea>
       <button
         type="submit"

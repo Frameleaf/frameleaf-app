@@ -70,43 +70,43 @@ const problemOf = (run: () => unknown): WorkerUrlProblem | null => {
 };
 
 describe('the machine-learning URL list (prototype worker-settings rules)', () => {
-  const urls = ['http://a.lan:3003', 'http://b.lan:3003'];
+  const urls = ['https://a.lan:3003', 'https://b.lan:3003'];
 
   it('accepts only HTTP(S) base URLs without credentials, query or fragment', () => {
-    expect(normalizeWorkerUrl('http://gpu.lan:3003/')).toBe('http://gpu.lan:3003');
+    expect(normalizeWorkerUrl('http://machine-learning:3003/')).toBe('http://machine-learning:3003');
     expect(normalizeWorkerUrl('  https://gpu.example  ')).toBe('https://gpu.example');
     expect(normalizeWorkerUrl('ftp://gpu.lan')).toBeNull();
-    expect(normalizeWorkerUrl('http://user:pass@gpu.lan')).toBeNull();
-    expect(normalizeWorkerUrl('http://gpu.lan/?token=1')).toBeNull();
-    expect(normalizeWorkerUrl('http://gpu.lan/#x')).toBeNull();
+    expect(normalizeWorkerUrl('https://user:pass@gpu.lan')).toBeNull();
+    expect(normalizeWorkerUrl('https://gpu.lan/?token=1')).toBeNull();
+    expect(normalizeWorkerUrl('https://gpu.lan/#x')).toBeNull();
     expect(normalizeWorkerUrl('')).toBeNull();
     expect(normalizeWorkerUrl(42)).toBeNull();
   });
 
   it('adds, edits, moves and removes against the current list', () => {
-    expect(applyWorkerUrlChange(urls, { kind: 'add', url: 'http://c.lan:3003/' })).toEqual([
+    expect(applyWorkerUrlChange(urls, { kind: 'add', url: 'https://c.lan:3003/' })).toEqual([
       ...urls,
-      'http://c.lan:3003',
+      'https://c.lan:3003',
     ]);
-    expect(applyWorkerUrlChange(urls, { kind: 'edit', original: urls[1], url: 'http://d.lan:3003' })).toEqual([
+    expect(applyWorkerUrlChange(urls, { kind: 'edit', original: urls[1], url: 'https://d.lan:3003' })).toEqual([
       urls[0],
-      'http://d.lan:3003',
+      'https://d.lan:3003',
     ]);
     expect(applyWorkerUrlChange(urls, { kind: 'move', original: urls[1], direction: -1 })).toEqual([urls[1], urls[0]]);
     expect(applyWorkerUrlChange(urls, { kind: 'remove', original: urls[0] })).toEqual([urls[1]]);
     // The input is never modified.
-    expect(urls).toEqual(['http://a.lan:3003', 'http://b.lan:3003']);
+    expect(urls).toEqual(['https://a.lan:3003', 'https://b.lan:3003']);
   });
 
   it('refuses a change to an endpoint that changed elsewhere', () => {
-    expect(problemOf(() => applyWorkerUrlChange(urls, { kind: 'remove', original: 'http://gone.lan:3003' }))).toBe(
+    expect(problemOf(() => applyWorkerUrlChange(urls, { kind: 'remove', original: 'https://gone.lan:3003' }))).toBe(
       'changed-elsewhere',
     );
   });
 
   it('keeps at least one endpoint, refuses duplicates and moves past the ends', () => {
     expect(problemOf(() => applyWorkerUrlChange([urls[0]], { kind: 'remove', original: urls[0] }))).toBe('keep-one');
-    expect(problemOf(() => applyWorkerUrlChange(urls, { kind: 'add', url: 'http://a.lan:3003/' }))).toBe('duplicate');
+    expect(problemOf(() => applyWorkerUrlChange(urls, { kind: 'add', url: 'https://a.lan:3003/' }))).toBe('duplicate');
     expect(problemOf(() => applyWorkerUrlChange(urls, { kind: 'move', original: urls[0], direction: -1 }))).toBe(
       'cannot-move',
     );
@@ -117,7 +117,7 @@ describe('the machine-learning URL list (prototype worker-settings rules)', () =
 
   it('supports up to the prototype limit', () => {
     const full = Array.from({ length: ML_ENDPOINT_LIMIT }, (_, i) => `http://w${i}.lan:3003`);
-    expect(problemOf(() => applyWorkerUrlChange(full, { kind: 'add', url: 'http://extra.lan:3003' }))).toBe('limit');
+    expect(problemOf(() => applyWorkerUrlChange(full, { kind: 'add', url: 'https://extra.lan:3003' }))).toBe('limit');
   });
 
   it('has a message for every refusal', () => {
@@ -140,9 +140,14 @@ describe('inventory sections (FL-72)', () => {
     entries: [
       entry(),
       entry({ id: 'old', url: 'http://removed:3003', configured: false }),
-      entry({ id: 'lan', kind: MlDestinationKind.Lan, url: 'http://study.lan:3003' }),
+      entry({ id: 'lan', kind: MlDestinationKind.Lan, url: 'https://study.lan:3003' }),
       entry({ id: 'pod', kind: MlDestinationKind.RunPod, url: null, leavesNetwork: true }),
-      entry({ id: 'restore', kind: MlDestinationKind.Lan, role: MlWorkerRole.Restoration, url: 'http://gpu.lan:3004' }),
+      entry({
+        id: 'restore',
+        kind: MlDestinationKind.Lan,
+        role: MlWorkerRole.Restoration,
+        url: 'https://gpu.lan:3004',
+      }),
       entry({ id: 'video', kind: MlDestinationKind.RunPodVideo, role: MlWorkerRole.Restoration, leavesNetwork: true }),
       entry({ id: 'both', kind: MlDestinationKind.Lan, role: MlWorkerRole.Mixed }),
       entry({ id: 'render', source: WorkerInventorySource.RenderWorker, kind: 'lan', role: null, url: null }),

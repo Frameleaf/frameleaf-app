@@ -218,10 +218,12 @@ const union = (current: Iterable<string>, extra: Iterable<string>): string[] => 
   const seen = new Set(ids(current));
   const next = [...seen];
   for (const id of extra) {
-    if (typeof id === 'string' && !seen.has(id)) {
-      seen.add(id);
-      next.push(id);
+    if (typeof id !== 'string' || seen.has(id)) {
+      continue;
     }
+
+    seen.add(id);
+    next.push(id);
   }
   return next;
 };
@@ -240,7 +242,7 @@ export const selectRange = (
 ): string[] => {
   const order = Array.isArray(orderedIds) ? orderedIds : [];
   const target = order.indexOf(targetId);
-  if (target < 0) {
+  if (target === -1) {
     return ids(current);
   }
   const anchor = anchorId === null ? -1 : order.indexOf(anchorId);
@@ -417,7 +419,7 @@ export const reduceLibrarySession = (session: LibrarySession, action: LibrarySes
     case 'mutated': {
       // A bulk operation removed assets from the page. Page state — scope, query, filter, sort,
       // grouping, view and layout — is untouched; only references to the gone assets are dropped.
-      const removed = new Set(action.removedIds ?? []);
+      const removed = new Set(action.removedIds);
       if (removed.size === 0) {
         return session;
       }
@@ -489,7 +491,7 @@ export const reduceLibrarySession = (session: LibrarySession, action: LibrarySes
         failures: (action.failures ?? []).slice(0, BULK_OPERATION_FAILURE_LIMIT),
         truncated: action.truncated ?? operation.truncated,
         finishedAt: Date.now(),
-        ...(action.errorKey ? { errorKey: action.errorKey } : {}),
+        ...(action.errorKey && { errorKey: action.errorKey }),
       }));
     }
     case 'operation-dismiss': {
@@ -664,8 +666,8 @@ export const toStoredLibrarySession = (session: LibrarySession): StoredLibrarySe
   version: 1,
   layout: session.layout,
   state: structuredClone(session.state),
-  ...(session.openAssetId ? { openAssetId: session.openAssetId } : {}),
-  ...(session.playbackPosition > 0 ? { playbackPosition: session.playbackPosition } : {}),
+  ...(session.openAssetId && { openAssetId: session.openAssetId }),
+  ...(session.playbackPosition > 0 && { playbackPosition: session.playbackPosition }),
 });
 
 /**

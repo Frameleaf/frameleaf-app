@@ -112,11 +112,13 @@
   });
 
   $effect(() => {
-    if (!open) {
-      // The secret never outlives the dialog.
-      secret = '';
-      onClose(saved);
+    if (open) {
+      return;
     }
+
+    // The secret never outlives the dialog.
+    secret = '';
+    onClose(saved);
   });
 
   const submit = async (event: SubmitEvent) => {

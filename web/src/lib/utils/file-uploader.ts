@@ -137,13 +137,15 @@ export const cancelRemainingUploads = () => {
 
   const $t = get(t);
   for (const asset of get(uploadAssetsStore)) {
-    if (asset.state === UploadState.PENDING) {
-      uploadAssetsStore.track('error');
-      uploadAssetsStore.updateItem(asset.id, {
-        state: UploadState.ERROR,
-        error: $t('frameleaf_transfer_upload_cancelled'),
-      });
+    if (asset.state !== UploadState.PENDING) {
+      continue;
     }
+
+    uploadAssetsStore.track('error');
+    uploadAssetsStore.updateItem(asset.id, {
+      state: UploadState.ERROR,
+      error: $t('frameleaf_transfer_upload_cancelled'),
+    });
   }
 };
 

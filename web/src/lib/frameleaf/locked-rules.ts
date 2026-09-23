@@ -194,5 +194,5 @@ export const canCreateTag = (tags: TagResponseDto[], query: string) => {
     return false;
   }
   const needle = name.toLocaleLowerCase();
-  return !tags.some((tag) => tag.value.toLocaleLowerCase() === needle);
+  return tags.every((tag) => tag.value.toLocaleLowerCase() !== needle);
 };

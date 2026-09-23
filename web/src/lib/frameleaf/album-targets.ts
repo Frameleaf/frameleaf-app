@@ -125,15 +125,17 @@ export const countAlbumTargets = (directory: AlbumTargetDirectory) => flattenAlb
  */
 export const albumTargetRows = (
   directory: AlbumTargetDirectory,
-  limit = Number.POSITIVE_INFINITY,
+  limit = Infinity,
 ): { rows: AlbumTargetRow[]; hasMore: boolean } => {
   const rows: AlbumTargetRow[] = [];
   let shown = 0;
   const push = (target: AlbumTarget, nested: boolean) => {
-    if (shown < limit) {
-      rows.push({ type: 'target', target, nested });
-      shown++;
+    if (!(shown < limit)) {
+      return;
     }
+
+    rows.push({ type: 'target', target, nested });
+    shown++;
   };
 
   for (const album of directory.albums) {

@@ -115,7 +115,7 @@
   const session = new DuplicateReviewSession(
     { groups: initialGroups, history },
     {
-      ...(gateway ? { gateway } : {}),
+      ...(gateway && { gateway }),
       onSettled: ({ action, failed }) => {
         if (action === MediaOperationBulkAction.UndoDuplicates) {
           notice = { message: $t('frameleaf_duplicates_notice_undone') };
@@ -175,7 +175,7 @@
   });
 
   $effect(() => {
-    if (!groups.some((group) => group.duplicateId === activeId)) {
+    if (groups.every((group) => group.duplicateId !== activeId)) {
       activeId = groups[0]?.duplicateId ?? '';
     }
   });
@@ -247,8 +247,8 @@
     let decisions;
     try {
       decisions = buildDecisionGroups(targets, decision, { keeperId, keeperIds });
-    } catch (caught) {
-      error = caught instanceof DuplicateDecisionError ? $t(caught.key) : $t('frameleaf_duplicates_error_submit');
+    } catch (error_) {
+      error = error_ instanceof DuplicateDecisionError ? $t(error_.key) : $t('frameleaf_duplicates_error_submit');
       return;
     }
 

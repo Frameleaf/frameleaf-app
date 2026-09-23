@@ -82,7 +82,7 @@ const restoration = entry({
   name: 'Workshop GPU',
   kind: MlDestinationKind.Lan,
   role: MlWorkerRole.Restoration,
-  url: 'http://workshop.lan:3004',
+  url: 'https://workshop.lan:3004',
   readiness: MlWorkerReadiness.ModelReady,
   acceleration: MlWorkerAcceleration.Gpu,
   gpus: [{ name: 'RTX 4070 Ti SUPER', memoryTotalBytes: 17_179_869_184 }],
@@ -175,7 +175,7 @@ describe('WorkerInventoryPanel (FL-72)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Add endpoint' }));
     const dialog = await screen.findByRole('dialog', { name: 'Add ML endpoint' });
     await fireEvent.input(within(dialog).getByLabelText('Endpoint URL'), {
-      target: { value: 'http://study.lan:3003/' },
+      target: { value: 'http://study:3003/' },
     });
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
 
@@ -183,7 +183,7 @@ describe('WorkerInventoryPanel (FL-72)', () => {
       expect(sdkMock.updateConfig).toHaveBeenCalledWith({
         adminConfigDto: expect.objectContaining({
           machineLearning: expect.objectContaining({
-            urls: ['http://immich-machine-learning:3003', 'http://study.lan:3003'],
+            urls: ['http://immich-machine-learning:3003', 'http://study:3003'],
           }),
         }),
       }),

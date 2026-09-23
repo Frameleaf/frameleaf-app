@@ -160,7 +160,7 @@
    * contributes to the index, rather than the library search dialog.
    */
   const openSettingsSearch = () => {
-    const input = document.getElementById('settings-search');
+    const input = document.querySelector('#settings-search');
     if (input instanceof HTMLInputElement) {
       input.focus();
       return;

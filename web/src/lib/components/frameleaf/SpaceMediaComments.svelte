@@ -246,7 +246,7 @@
       if (replyingTo && (gone(replyingTo.id) || (!comment.parentId && gone(replyingTo.parentId)))) {
         cancelReply();
       }
-      if (editingId && !comments.some(({ id }) => id === editingId)) {
+      if (editingId && comments.every(({ id }) => id !== editingId)) {
         editingId = null;
       }
       status =
@@ -350,10 +350,12 @@
   aria-busy={loading}
   onkeydown={(event) => {
     // A composer that is replying or editing handles Escape itself first.
-    if (event.key === 'Escape' && onClose) {
-      event.stopPropagation();
-      onClose();
+    if (!(event.key === 'Escape' && onClose)) {
+      return;
     }
+
+    event.stopPropagation();
+    onClose();
   }}
 >
   <header>

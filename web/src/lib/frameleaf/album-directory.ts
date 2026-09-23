@@ -108,7 +108,7 @@ export const matchesSearch = (album: AlbumResponseDto, query: string): boolean =
   return tokens.every((token) => text.includes(token));
 };
 
-const time = (value: string | undefined) => (value ? new Date(value).getTime() : Number.NaN);
+const time = (value: string | undefined) => (value ? new Date(value).getTime() : NaN);
 
 /** Missing dates sort last whichever way the list runs. */
 const compareDates = (a: string | undefined, b: string | undefined, direction: 'asc' | 'desc') => {

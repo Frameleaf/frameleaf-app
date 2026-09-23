@@ -5,7 +5,7 @@ describe('frameleaf people helpers', () => {
   describe('isUnnamedPerson', () => {
     it('treats an empty or whitespace-only name as unnamed', () => {
       expect(isUnnamedPerson({ name: '' })).toBe(true);
-      expect(isUnnamedPerson({ name: '   ' })).toBe(true);
+      expect(isUnnamedPerson({ name: ' '.repeat(3) })).toBe(true);
     });
 
     it('treats a real name as named', () => {
@@ -16,7 +16,7 @@ describe('frameleaf people helpers', () => {
   describe('matchesPersonSearch', () => {
     it('matches everyone when the query is empty', () => {
       expect(matchesPersonSearch({ name: 'Jamie' }, '')).toBe(true);
-      expect(matchesPersonSearch({ name: 'Jamie' }, '   ')).toBe(true);
+      expect(matchesPersonSearch({ name: 'Jamie' }, ' '.repeat(3))).toBe(true);
     });
 
     it('matches case-insensitively as a substring', () => {

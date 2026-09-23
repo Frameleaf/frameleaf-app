@@ -86,7 +86,7 @@
   const current = $derived(activeIndex >= 0 ? flat[activeIndex] : undefined);
 
   $effect(() => {
-    recent = loadRecentCommands(globalThis.localStorage);
+    recent = loadRecentCommands(localStorage);
   });
 
   $effect(() => {
@@ -120,7 +120,7 @@
     }
     const next = rememberCommand(recent, command.id);
     recent = next;
-    saveRecentCommands(globalThis.localStorage, next);
+    saveRecentCommands(localStorage, next);
     onRun?.(command);
     onClose();
   };

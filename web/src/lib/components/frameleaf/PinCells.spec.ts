@@ -9,7 +9,6 @@ describe('PinCells', () => {
 
     const input = screen.getByLabelText('Six-digit PIN');
     for (const digit of '123456') {
-      // eslint-disable-next-line no-await-in-loop
       await fireEvent.input(input, { target: { value: (input as HTMLInputElement).value + digit } });
     }
 

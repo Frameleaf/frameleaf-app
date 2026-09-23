@@ -69,7 +69,7 @@ const absent = (reason: StudioEngineAbsenceReason, detail?: string): StudioEngin
       : reason === 'revision-mismatch'
         ? 'frameleaf_studio_engine_mismatch_body'
         : 'frameleaf_studio_engine_failed_body',
-  ...(detail === undefined ? {} : { detail }),
+  ...(detail !== undefined && { detail }),
 });
 
 export const loadStudioEngine = async (): Promise<StudioEngineResolution> => {

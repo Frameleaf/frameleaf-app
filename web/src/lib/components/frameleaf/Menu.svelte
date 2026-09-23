@@ -104,7 +104,7 @@
 
     const onClick = (event: MouseEvent) => {
       const item = (event.target as HTMLElement | null)?.closest('[role^="menuitem"]');
-      if (!item || item.getAttribute('aria-disabled') === 'true' || item.getAttribute('data-keep-open') === 'true') {
+      if (!item || item.getAttribute('aria-disabled') === 'true' || item.dataset.keepOpen === 'true') {
         return;
       }
       // The item's own handler has already run in the target phase.
@@ -128,7 +128,7 @@
     menu.addEventListener('keydown', onKeydown);
     menu.addEventListener('click', onClick);
     container.addEventListener('focusout', onFocusOut);
-    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('pointerdown', onPointerDown, { capture: true });
     return () => {
       menu.removeEventListener('keydown', onKeydown);
       menu.removeEventListener('click', onClick);

@@ -265,7 +265,7 @@
 
             {#if description.suggestion}
               <p
-                class="rounded bg-gray-100 p-2 text-xs break-words dark:bg-gray-800"
+                class="rounded-sm bg-gray-100 p-2 text-xs wrap-break-word dark:bg-gray-800"
                 data-testid="frameleaf-description-suggestion"
               >
                 {description.suggestion}

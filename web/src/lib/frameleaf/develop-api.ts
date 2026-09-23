@@ -30,7 +30,7 @@ export const developFileUrl = (
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries({ ...authManager.params, kind, c: cacheKey ?? undefined })) {
     if (value !== undefined && value !== null) {
-      search.set(key, String(value));
+      search.set(key, value);
     }
   }
   return `${getBaseUrl()}/assets/${encodeURIComponent(assetId)}/develop/revisions/${encodeURIComponent(revisionId)}/file?${search.toString()}`;

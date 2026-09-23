@@ -171,17 +171,17 @@ export const planStaleReason = (
   return null;
 };
 
-const ACTIVE_APPLY_STATUSES: readonly MediaOperationStatus[] = [
+const ACTIVE_APPLY_STATUSES: ReadonlySet<MediaOperationStatus> = new Set([
   MediaOperationStatus.Queued,
   MediaOperationStatus.Preparing,
   MediaOperationStatus.Rendering,
   MediaOperationStatus.Validating,
   MediaOperationStatus.Cancelling,
   MediaOperationStatus.Paused,
-];
+]);
 
 export const isApplyActive = (apply: Pick<PhysicalDeduplicationApplyDto, 'status'>) =>
-  ACTIVE_APPLY_STATUSES.includes(apply.status);
+  ACTIVE_APPLY_STATUSES.has(apply.status);
 
 /** The newest job applying this plan, if any. The server lists applies newest first. */
 export const applyForPlan = (

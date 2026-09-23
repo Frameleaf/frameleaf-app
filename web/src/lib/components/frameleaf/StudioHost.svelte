@@ -243,7 +243,7 @@
   };
 
   onMount(() => {
-    online = globalThis.navigator?.onLine !== false;
+    online = globalThis.navigator?.onLine;
     dispatch({ type: 'connectivity', online });
 
     const goOnline = () => {

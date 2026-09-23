@@ -69,7 +69,7 @@
             <!-- Frameleaf (FL-51): every place card links back to the real map, centred on
                  this city, matching `PlaceCard`'s onOpenMap button in the design template. -->
             <a
-              class="absolute end-2 top-2 flex size-7 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80"
+              class="absolute inset-e-2 top-2 flex size-7 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80"
               href={Route.map({ zoom: 11, lat: location.latitude, lng: location.longitude })}
               aria-label={$t('frameleaf_places_view_on_map') + (city ? `: ${city}` : '')}
               title={$t('frameleaf_places_view_on_map')}

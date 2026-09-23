@@ -83,10 +83,12 @@
 
   const playTogether = () => {
     for (const video of videos) {
-      if (video) {
-        video.currentTime = 0;
-        void video.play().catch(() => {});
+      if (!video) {
+        continue;
       }
+
+      video.currentTime = 0;
+      void video.play().catch(() => {});
     }
   };
 

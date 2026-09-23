@@ -136,7 +136,7 @@ export const justifiedRows = (ratios: readonly number[], options: JustifiedRowsO
 
 /** Row height that keeps roughly `perRow` landscape photos per row at this width. */
 export const rowHeightFor = (containerWidth: number, { min = 120, max = 260 }: { min?: number; max?: number } = {}) => {
-  const width = Number(containerWidth);
+  const width = containerWidth;
   if (!Number.isFinite(width) || width <= 0) {
     return min;
   }

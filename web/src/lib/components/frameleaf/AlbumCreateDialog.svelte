@@ -31,13 +31,15 @@
   let error = $state('');
 
   $effect(() => {
-    if (open) {
-      albumName = '';
-      description = '';
-      icon = defaultIconFor(kind);
-      parentId = kind === AlbumKind.Album ? defaultParentId : null;
-      error = '';
+    if (!open) {
+      return;
     }
+
+    albumName = '';
+    description = '';
+    icon = defaultIconFor(kind);
+    parentId = kind === AlbumKind.Album ? defaultParentId : null;
+    error = '';
   });
 
   const title = $derived(

@@ -58,10 +58,10 @@ export function buildCountryStateGroups(
     (states.get(state) as AssetResponseDto[]).push(place);
   }
 
-  return [...countries.entries()]
+  return [...countries]
     .sort(([a], [b]) => byNameWithUnknownLast(unknownCountry)(a, b))
     .map(([country, states]) => {
-      const stateGroups: FrameleafPlacesStateGroup[] = [...states.entries()]
+      const stateGroups: FrameleafPlacesStateGroup[] = [...states]
         .sort(([a], [b]) => byNameWithUnknownLast(unknownState)(a, b))
         .map(([state, statePlaces]) => {
           const located = statePlaces.filter(
@@ -71,8 +71,8 @@ export function buildCountryStateGroups(
             id: `${country}::${state}`,
             name: state,
             places: statePlaces,
-            latitude: located.length ? average(located.map((place) => place.exifInfo?.latitude as number)) : null,
-            longitude: located.length ? average(located.map((place) => place.exifInfo?.longitude as number)) : null,
+            latitude: located.length > 0 ? average(located.map((place) => place.exifInfo?.latitude as number)) : null,
+            longitude: located.length > 0 ? average(located.map((place) => place.exifInfo?.longitude as number)) : null,
           };
         });
       return {
