@@ -469,14 +469,17 @@
       "version": 2
     },
     {
-      "bytes": 7066,
+      "bytes": 9297,
       "category": "features",
       "id": "61374992",
       "source": "docs/docs/features/preservation.md",
-      "sourceSha256": "f2e650f9cfef0a19806545da5a474715397abc29b5096cfe42b7e022f40eedaa",
+      "sourceSha256": "5e0f8a3cb00193ebe5a5698e9ae5d3d71b6d6f9ecd8858e9b21eec52c9b43512",
       "title": "Feature Reference — Preservation",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374992/Feature+Reference+Preservation",
-      "version": 2
+      "version": 3,
+      "verified": true,
+      "verification": "Read back Confluence page 61374992 version 3; verified preservation package source hash, export, verification, download, restore and format content from unmerged PR 137.",
+      "verifiedAt": "2026-09-23T17:24:12.114Z"
     },
     {
       "bytes": 4197,
