@@ -16,6 +16,7 @@ import { ClusterGroupService } from 'src/services/cluster-group.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
 import { DownloadService } from 'src/services/download.service.js';
+import { DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
 import { DuplicateService } from 'src/services/duplicate.service.js';
 import { ForkCutoverVerificationService } from 'src/services/fork-cutover-verification.service.js';
 import { ForkHandoffService } from 'src/services/fork-handoff.service.js';
@@ -110,6 +111,7 @@ export const services = [
   DatabaseBackupService,
   DatabaseService,
   DownloadService,
+  DuplicateDecisionService,
   DuplicateService,
   ForkCutoverVerificationService,
   ForkHandoffService,

@@ -244,7 +244,9 @@ export const duplicateQualityReasons = (assets: readonly ReviewAsset[]): Map<str
   for (const [index, asset] of assets.entries()) {
     const list = reasons.get(asset.id) as DuplicateQualityReason[];
     if (topRank !== lowRank) {
-      list.push(ranks[index] === topRank ? DuplicateQualityReason.OriginalFormat : DuplicateQualityReason.CompressedCopy);
+      list.push(
+        ranks[index] === topRank ? DuplicateQualityReason.OriginalFormat : DuplicateQualityReason.CompressedCopy,
+      );
     }
     if (areas[index] > 0 && Math.min(...areas) !== Math.max(...areas)) {
       list.push(
