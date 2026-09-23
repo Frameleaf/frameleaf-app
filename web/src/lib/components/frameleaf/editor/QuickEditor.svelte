@@ -66,6 +66,7 @@
   import {
     anyRevisionBusy,
     changeDraft,
+    rebaseDraft,
     createDraft,
     geometryIsDefault,
     initialRecipe,
@@ -214,7 +215,7 @@
     try {
       develop = await getAssetDevelop({ id: asset.id });
       const start = openingRecipe(develop);
-      draft = createDraft(start);
+      draft = rebaseDraft(draft, start);
       opened = start;
       if (anyRevisionBusy(develop.revisions)) {
         follow();
