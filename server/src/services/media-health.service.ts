@@ -94,6 +94,7 @@ import {
   libraryRootId,
   publishVerifiedCopy,
   recoveryRootId,
+  retainFile,
   resolveInsideRoot,
   rootForPath,
   rootKindOf,
@@ -109,6 +110,13 @@ const MANAGED_LOOKUP_MAX_BYTES = 10 * 1024 ** 3;
  * crawler never adopts a copy that is not committed yet.
  */
 const RECOVERY_FOLDER = '.library-care';
+
+type DurableScan = { missingRunId: string; corruptRunId: string; operationId: string };
+
+/** Run states that mean "a job is still working on this". */
+const OPEN_RUN_STATES: readonly string[] = ['running', 'paused', 'retrying'];
+/** A trash job is created just after its findings are queued; leave them this long before releasing them. */
+const TRASH_QUEUE_GRACE_MS = 10 * 60_000;
 
 type CandidateValidation = {
   status: MediaHealthStatus;
@@ -238,7 +246,7 @@ export class MediaHealthService {
         severity: finding.severity,
         originalPath,
         originalFileName: finding.originalFileName,
-        evidence: finding.evidence,
+        evidence: this.findingEvidenceFor(finding.evidence, asset.isExternal ? null : candidateRoots, auth),
         resolution: finding.resolution,
         checkedAt: asDateTimeString(finding.checkedAt),
         dismissedAt: finding.dismissedAt ? asDateTimeString(finding.dismissedAt) : null,
@@ -272,6 +280,7 @@ export class MediaHealthService {
     const privacy = this.privacyFor(auth);
     const { ownerId } = this.scopeFor(auth, dto);
     const runOwner = ownerId ?? auth.user.id;
+    await this.releaseStaleTrashQueue();
     const [byStatus, duplicates, importReview, enrichmentPending, missingRun, corruptRun, jobs, bulk] =
       await Promise.all([
         this.mediaHealthRepository.countByStatus({ ownerId, privacy }),
@@ -303,6 +312,10 @@ export class MediaHealthService {
         .reduce((sum, row) => sum + row.count, 0);
 
     const latest = jobs.items[0];
+    const runs =
+      runOwner === auth.user.id
+        ? await this.settleStaleRuns(latest, [missingRun, corruptRun])
+        : [missingRun, corruptRun];
     const recent = [...jobs.items, ...bulk.items]
       .map((operation) => this.mapActivity(operation))
       .filter((item): item is MediaHealthActivityResponse => item !== null)
@@ -317,7 +330,10 @@ export class MediaHealthService {
           MediaHealthStatus.Found,
         ]),
         missingVerified: countOf(MediaHealthCategory.Missing, [MediaHealthStatus.Found]),
-        damagedConfirmed: countOf(MediaHealthCategory.Corrupt, [MediaHealthStatus.CorruptConfirmed]),
+        damagedConfirmed: countOf(MediaHealthCategory.Corrupt, [
+          MediaHealthStatus.CorruptConfirmed,
+          MediaHealthStatus.TrashQueued,
+        ]),
         damagedSuspected: countOf(MediaHealthCategory.Corrupt, [MediaHealthStatus.CorruptSuspect]),
         unsupportedRaw: countOf(MediaHealthCategory.Corrupt, [MediaHealthStatus.UnsupportedRaw]),
         duplicates,
@@ -326,8 +342,8 @@ export class MediaHealthService {
       },
       operation: latest ? this.mapOperationState(latest) : null,
       runs: {
-        missing: missingRun ? this.mapRun(missingRun) : null,
-        corrupt: corruptRun ? this.mapRun(corruptRun) : null,
+        missing: runs[0] ? this.mapRun(runs[0]) : null,
+        corrupt: runs[1] ? this.mapRun(runs[1]) : null,
       },
       recent,
       recoveryAvailable: auth.user.isAdmin && this.recoveryRoots().length > 0,
@@ -391,6 +407,10 @@ export class MediaHealthService {
         results.push({ id: choice.findingId, success: false, error: 'Only a verified exact copy can be chosen' });
         continue;
       }
+      if (!auth.user.isAdmin && this.candidateRootKind(candidate) === 'recovery') {
+        results.push({ id: choice.findingId, success: false, error: 'Location not available' });
+        continue;
+      }
       const saved = await this.mediaHealthRepository.setChosenCandidate(finding.id, candidate.id);
       results.push(
         saved
@@ -420,6 +440,42 @@ export class MediaHealthService {
       return { ownerId: undefined };
     }
     return { ownerId: dto.ownerId ?? auth.user.id };
+  }
+
+  /**
+   * A run left open by a job that ended without its worker (FL-69): cancelled while still queued or
+   * paused, or failed by the lease sweep. With no Library Care job running for the account, an open
+   * run is settled to how its job ended, so the scan bar never shows a scan running for ever.
+   */
+  private async settleStaleRuns(
+    latest: MediaOperation | undefined,
+    runs: Array<MediaHealthRun | undefined>,
+  ): Promise<Array<MediaHealthRun | undefined>> {
+    if (latest && ACTIVE_MEDIA_OPERATION_STATUSES.includes(latest.status as MediaOperationStatus)) {
+      return runs;
+    }
+    const cancelled = latest?.status === MediaOperationStatus.Cancelled;
+    return Promise.all(
+      runs.map(async (run) => {
+        if (!run || !OPEN_RUN_STATES.includes(run.status)) {
+          return run;
+        }
+        const settled = await this.mediaHealthRepository.finishRun(run.id, {
+          status: cancelled ? 'cancelled' : 'failed',
+          error: cancelled ? null : (latest?.error ?? 'The job stopped before it finished'),
+        });
+        return settled ?? run;
+      }),
+    );
+  }
+
+  /** Release findings a trash job no longer holds (FL-69); see `releaseTrashQueued`. */
+  private async releaseStaleTrashQueue() {
+    const held = await this.mediaHealthRepository.getActiveTrashFindingIds();
+    await this.mediaHealthRepository.releaseTrashQueued({
+      keep: held,
+      olderThan: new Date(Date.now() - TRASH_QUEUE_GRACE_MS),
+    });
   }
 
   /**
@@ -566,23 +622,29 @@ export class MediaHealthService {
     );
     const anyOwner = owners.some(({ ownerId }) => ownerId !== auth.user.id);
 
-    await this.requireNoActiveJob(auth.user.id);
-    const run = await this.mediaHealthRepository.createRun(MediaHealthCategory.Missing, auth.user.id);
-    const snapshot: MediaHealthOperationSnapshot = {
-      mode: 'locate',
-      userId: auth.user.id,
-      runId: run.id,
-      findingIds: searchable.map(({ id }) => id),
-      rootIds,
-      anyOwner,
-    };
-    try {
-      const operation = await this.createHealthOperation(auth.user.id, snapshot, searchable.length);
-      return { runId: run.id, operationId: operation.id };
-    } catch (error) {
-      await this.mediaHealthRepository.finishRun(run.id, { status: 'failed', error: getErrorMessage(error) });
-      throw error;
-    }
+    // A search of damaged media is recorded on the damaged-media runs, a search of missing on missing.
+    const category = searchable.every(({ category }) => category === MediaHealthCategory.Corrupt)
+      ? MediaHealthCategory.Corrupt
+      : MediaHealthCategory.Missing;
+    return this.mediaHealthRepository.withLibraryCareLock(auth.user.id, async () => {
+      await this.requireNoActiveJob(auth.user.id);
+      const run = await this.mediaHealthRepository.createRun(category, auth.user.id);
+      const snapshot: MediaHealthOperationSnapshot = {
+        mode: 'locate',
+        userId: auth.user.id,
+        runId: run.id,
+        findingIds: searchable.map(({ id }) => id),
+        rootIds,
+        anyOwner,
+      };
+      try {
+        const operation = await this.createHealthOperation(auth.user.id, snapshot, searchable.length);
+        return { runId: run.id, operationId: operation.id };
+      } catch (error) {
+        await this.mediaHealthRepository.finishRun(run.id, { status: 'failed', error: getErrorMessage(error) });
+        throw error;
+      }
+    });
   }
 
   async dismiss(auth: AuthDto, dto: MediaHealthBulkActionDto): Promise<void> {
@@ -618,7 +680,7 @@ export class MediaHealthService {
         results.push({ id, success: false, error: 'Finding is not available' });
         continue;
       }
-      const candidate = this.relinkCandidate(finding, candidates.get(finding.id) ?? []);
+      const candidate = this.relinkCandidate(finding, candidates.get(finding.id) ?? [], auth);
       if (!candidate) {
         results.push({
           id,
@@ -916,6 +978,9 @@ export class MediaHealthService {
       ? await this.mediaHealthRepository.relinkExternalAsset({ ...input, expectedLibraryId: asset.libraryId! })
       : await this.mediaHealthRepository.relinkManagedAsset(input);
     if (!relinked) {
+      if (await this.alreadySettledWith(finding.id, candidate.id)) {
+        return outcome(id, MediaOperationItemStatus.Ok);
+      }
       return changed(id, 'Asset or finding changed during relink');
     }
     await this.queueRelinkJobs(asset.id);
@@ -931,6 +996,8 @@ export class MediaHealthService {
     const id = entry.assetId;
 
     if (finding.status === MediaHealthStatus.Resolved && this.resolvedWith(finding, entry)) {
+      // Finish what a lost worker may have left: the damaged file goes to its retained place.
+      await this.retainDamagedOriginal(finding.id);
       return outcome(id, MediaOperationItemStatus.Ok);
     }
     if (finding.status !== MediaHealthStatus.CorruptConfirmed) {
@@ -1092,12 +1159,20 @@ export class MediaHealthService {
       verifyCandidate: () => this.cryptoRepository.hashFileDigests(destination).catch((): undefined => {}),
     });
     if (!committed) {
+      // A replayed batch may find its own earlier commit: that is this entry done, not a change.
+      if (await this.alreadySettledWith(finding.id, candidate.id)) {
+        await this.retainDamagedOriginal(finding.id);
+        return outcome(id, MediaOperationItemStatus.Ok);
+      }
       // The published copy is left in the hidden folder, unreferenced: deleting it here could race a
       // concurrent attempt that did commit it. A retry of this finding reuses it.
       this.logger.warn(`Library Care recovery of ${finding.id} did not commit; ${destination} was kept`);
       return changed(id, 'Asset or finding changed during recovery');
     }
 
+    if (category === MediaHealthCategory.Corrupt) {
+      await this.retainDamagedOriginal(finding.id);
+    }
     await this.queueRelinkJobs(asset.id);
     return outcome(id, MediaOperationItemStatus.Ok);
   }
@@ -1139,18 +1214,69 @@ export class MediaHealthService {
     return !!entry.candidateId && resolution.candidateId === entry.candidateId;
   }
 
+  /** Read the finding again after a refused commit: was it settled by this very candidate? */
+  private async alreadySettledWith(findingId: string, candidateId: string) {
+    const [current] = await this.mediaHealthRepository.getByIds([findingId]);
+    return (
+      !!current &&
+      (current.status === MediaHealthStatus.Relinked || current.status === MediaHealthStatus.Resolved) &&
+      this.resolvedWith(current, { assetId: current.assetId, findingId, candidateId })
+    );
+  }
+
+  /**
+   * Keep a replaced damaged original, out of the way (FL-69).
+   *
+   * After a recovery the damaged file is no longer any asset's original. Left where it was, the
+   * untracked-file crawler would bring the damage back as a new item the next time the library is
+   * scanned — and a record on the finding cannot prevent that for ever, because findings are replaced
+   * and deleted with their asset. So the file moves into the hidden Library Care folder next to the
+   * recovered copy, which the crawler never enters. It is moved, never copied over anything: the move
+   * is a hard link to a new name followed by removing the old name, and an existing name is never
+   * replaced. A file some other asset still uses as its original is left exactly where it is.
+   * Safe to repeat: a file already retained, or already gone, is left alone.
+   */
+  private async retainDamagedOriginal(findingId: string): Promise<void> {
+    const [finding] = await this.mediaHealthRepository.getByIds([findingId]);
+    const evidence = (finding?.evidence ?? {}) as Record<string, unknown>;
+    const retained = typeof evidence.retainedPath === 'string' ? evidence.retainedPath : undefined;
+    if (!finding || !retained || retained.split(path.sep).includes(RECOVERY_FOLDER)) {
+      return;
+    }
+
+    if (await this.mediaHealthRepository.isOriginalPathInUse(retained)) {
+      return;
+    }
+
+    // Next to the recovered copy, which already lives in the Library Care folder.
+    const recovered = path.dirname(finding.originalPath);
+    const folder = path.basename(recovered) === RECOVERY_FOLDER ? recovered : path.join(recovered, RECOVERY_FOLDER);
+    const extension = path.extname(retained).toLowerCase();
+    const suffix = /^\.[a-z0-9]{1,12}$/.test(extension) ? extension : '';
+    const destination = path.join(folder, `${finding.assetId}-${finding.id}.damaged${suffix}`);
+    try {
+      await retainFile(retained, destination);
+    } catch (error) {
+      // Still recorded on the finding, and still not overwritten or lost: only its place is unchanged.
+      this.logger.warn(`Could not move retained damaged file ${retained}: ${getErrorMessage(error)}`);
+      return;
+    }
+    await this.mediaHealthRepository.setRetainedPath(finding.id, destination);
+  }
+
   /**
    * The candidate a relink uses: the only verified copy, or the one the reviewer chose among several.
    * A search that is still incomplete verifies nothing (`autoRelinkable` stays false until it ends).
    */
-  private relinkCandidate(finding: MediaHealthFinding, candidates: MediaHealthCandidate[]) {
+  private relinkCandidate(finding: MediaHealthFinding, candidates: MediaHealthCandidate[], auth: AuthDto) {
     if (finding.status !== MediaHealthStatus.Found) {
       return undefined;
     }
     const verified = candidates.filter(
       (candidate) =>
         candidate.status === MediaHealthStatus.Found &&
-        (candidate.resolution as Record<string, unknown> | null)?.autoRelinkable === true,
+        (candidate.resolution as Record<string, unknown> | null)?.autoRelinkable === true &&
+        (auth.user.isAdmin || this.candidateRootKind(candidate) !== 'recovery'),
     );
     const chosenId = (finding.resolution as Record<string, unknown> | null)?.chosenCandidateId;
     const chosen = verified.find(({ id }) => id === chosenId);
@@ -1195,9 +1321,11 @@ export class MediaHealthService {
   /* ------------------------------------------------------------------ */
 
   /** A scan already under way answers with itself; a search under way has to finish first. */
-  private async startDurableScan(
-    auth: AuthDto,
-  ): Promise<{ missingRunId: string; corruptRunId: string; operationId: string }> {
+  private startDurableScan(auth: AuthDto): Promise<DurableScan> {
+    return this.mediaHealthRepository.withLibraryCareLock(auth.user.id, () => this.admitDurableScan(auth));
+  }
+
+  private async admitDurableScan(auth: AuthDto): Promise<DurableScan> {
     const active = await this.activeJob(auth.user.id);
     if (active) {
       const snapshot = parseMediaHealthSnapshot(active.snapshot);
@@ -2440,6 +2568,27 @@ export class MediaHealthService {
       decodeValid: typeof evidence.decodeValid === 'boolean' ? evidence.decodeValid : null,
       chosen,
     };
+  }
+
+  /**
+   * A finding's evidence as its reader may see it (FL-69). An administrator sees all of it. Anyone
+   * else sees paths only inside the finding owner's own storage (or external library): a copy taken
+   * from a recovery location or another account's folder is described, and who recovered it from
+   * which operator location is left out.
+   */
+  private findingEvidenceFor(evidence: unknown, ownerRoots: string[] | null, auth: AuthDto) {
+    const source = { ...((evidence ?? {}) as Record<string, unknown>) };
+    if (auth.user.isAdmin) {
+      return source;
+    }
+    delete source.provenance;
+    for (const key of ['candidatePath', 'previousPath', 'retainedPath']) {
+      const value = source[key];
+      if (typeof value === 'string' && ownerRoots && !this.isPathWithinRoots(value, ownerRoots)) {
+        delete source[key];
+      }
+    }
+    return source;
   }
 
   private isPathWithinRoots(candidatePath: string, roots: string[]) {
