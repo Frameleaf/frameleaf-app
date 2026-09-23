@@ -1,4 +1,10 @@
-import type { ImageEnrichmentFilter, MetadataSearchDto, SearchFilter, SmartSearchDto } from '@immich/sdk';
+import {
+  AssetVisibility,
+  type ImageEnrichmentFilter,
+  type MetadataSearchDto,
+  type SearchFilter,
+  type SmartSearchDto,
+} from '@immich/sdk';
 
 /**
  * The one library query every Frameleaf view shares. It is portable: it travels in a URL, it is
@@ -22,7 +28,6 @@ export type DiscoveryQuery = {
   grouping: DiscoveryGrouping;
   view: DiscoveryView;
   spaceId?: string;
-  petIds?: string[];
   /**
    * Image-enrichment facet (FL-49). It is a search *DTO* field rather than a `SearchFilter`
    * condition — the server exposes enrichment state as the single `imageEnrichment` enum on
@@ -72,9 +77,14 @@ export const contextDiscoveryQuery = (url: URL): DiscoveryQuery => {
   }
   const result = emptyDiscoveryQuery();
   const albumId = url.pathname.match(/^\/albums\/([\da-f-]{36})(?:\/|$)/i)?.[1];
+  const petId = url.pathname.match(/^\/pets\/([\da-f-]{36})(?:\/|$)/i)?.[1];
   const spaceId = url.pathname.match(/^\/spaces\/([\da-f-]{36})(?:\/|$)/i)?.[1];
   if (albumId) {
     result.filter = { albumIds: { any: [albumId] } };
+  }
+  // FL-58: searching from a pet's page searches that pet's confirmed photos
+  if (petId) {
+    result.filter = { petIds: { any: [petId] } };
   }
   if (spaceId) {
     result.spaceId = spaceId;
@@ -110,7 +120,7 @@ export const fromLegacySearch = (dto: MetadataSearchDto & Pick<SmartSearchDto, '
         Object.assign(filter, { [field]: { eq: dto[field] } });
       }
     }
-    for (const field of ['personIds', 'albumIds', 'tagIds'] as const) {
+    for (const field of ['personIds', 'petIds', 'albumIds', 'tagIds'] as const) {
       if (dto[field]?.length) {
         Object.assign(filter, { [field]: { all: dto[field] } });
       }
@@ -150,8 +160,8 @@ export const fromLegacySearch = (dto: MetadataSearchDto & Pick<SmartSearchDto, '
 
 export const withDiscoveryFacet = (query: DiscoveryQuery, field: string, value: string): DiscoveryQuery => {
   const result = structuredClone(query);
-  if (['personIds', 'tagIds', 'albumIds'].includes(field)) {
-    const key = field as 'personIds' | 'tagIds' | 'albumIds';
+  if (['personIds', 'petIds', 'tagIds', 'albumIds'].includes(field)) {
+    const key = field as 'personIds' | 'petIds' | 'tagIds' | 'albumIds';
     const selected = result.filter[key]?.any ?? [];
     result.filter[key] = { any: [...new Set([...selected, value])] };
   } else {
@@ -205,10 +215,11 @@ export const formatMomentTime = (milliseconds: number) => {
  * of the filter panel. `all` is the catch-all section; it also owns every field no other section
  * claims, so a filter arriving from a URL or a saved preset always has a home to open into.
  */
-export type DiscoveryFilterSection = 'people' | 'date' | 'places' | 'media' | 'tags' | 'all';
+export type DiscoveryFilterSection = 'people' | 'pets' | 'date' | 'places' | 'media' | 'tags' | 'all';
 
 export const DISCOVERY_FILTER_SECTIONS: readonly DiscoveryFilterSection[] = [
   'people',
+  'pets',
   'date',
   'places',
   'media',
@@ -218,6 +229,8 @@ export const DISCOVERY_FILTER_SECTIONS: readonly DiscoveryFilterSection[] = [
 
 const SECTION_FIELDS: Record<Exclude<DiscoveryFilterSection, 'all'>, readonly string[]> = {
   people: ['personIds', 'hasPeople'],
+  // FL-58: the owner's own pets, matched on confirmed observations only
+  pets: ['petIds'],
   date: ['takenAt', 'createdAt', 'updatedAt', 'trashedAt'],
   places: ['city', 'state', 'country'],
   media: [
@@ -289,7 +302,18 @@ export const activeFilterSections = (query: DiscoveryQuery): DiscoveryFilterSect
  * drawn: a person page does not need a "People: Ada" chip, Favorites does not need a favourite chip.
  */
 export type DiscoveryDestination = {
-  kind: 'library' | 'album' | 'space' | 'person' | 'tag' | 'place' | 'favorites' | 'archive' | 'trash' | 'search';
+  kind:
+    | 'library'
+    | 'album'
+    | 'space'
+    | 'person'
+    | 'pet'
+    | 'tag'
+    | 'place'
+    | 'favorites'
+    | 'archive'
+    | 'trash'
+    | 'search';
   id?: string;
 };
 
@@ -298,6 +322,7 @@ const DESTINATION_FIELDS: Record<DiscoveryDestination['kind'], readonly string[]
   album: ['albumIds'],
   space: [],
   person: ['personIds'],
+  pet: ['petIds'],
   tag: ['tagIds'],
   place: ['city', 'state', 'country'],
   favorites: ['isFavorite'],
@@ -353,6 +378,44 @@ export const toSearchDto = (query: DiscoveryQuery, textField: keyof DiscoverySea
     Object.assign(dto, { [query.mode === 'smart' ? 'query' : textField]: text });
   }
   return dto;
+};
+
+/**
+ * The results-page request for a search that carries a structured `filter` (FL-58, so a pet picked in
+ * the search dialog reaches the results). The server refuses every deprecated flat field next to
+ * `filter`, so nothing flat may ride along: the dialog's text modes (file name, description, OCR,
+ * path) are folded into the filter the same way `fromLegacySearch` maps them, and the results page's
+ * flat defaults become filter defaults — timeline visibility and nothing from the trash, which a
+ * structured search would otherwise include — applied only where the filter says nothing itself.
+ * Paging is by `cursor`; smart search keeps its free-text `query`.
+ */
+export const structuredSearchRequest = (dto: DiscoverySearchDto, cursor?: string | null): DiscoverySearchDto => {
+  const filter: SearchFilter = structuredClone(dto.filter ?? {});
+  if (dto.originalFileName && !filter.originalFileName) {
+    filter.originalFileName = { like: `%${dto.originalFileName}%` };
+  }
+  if (dto.description && !filter.description) {
+    filter.description = { like: `%${dto.description}%` };
+  }
+  if (dto.ocr && !filter.ocr) {
+    filter.ocr = { matches: dto.ocr };
+  }
+  if (dto.originalPath && !filter.originalPath) {
+    filter.originalPath = { startsWith: dto.originalPath };
+  }
+  if (!filter.visibility) {
+    filter.visibility = { eq: AssetVisibility.Timeline };
+  }
+  if (!filter.trashedAt) {
+    filter.trashedAt = { eq: null };
+  }
+  return {
+    filter,
+    withExif: true,
+    ...(dto.query ? { query: dto.query } : {}),
+    ...(dto.imageEnrichment ? { imageEnrichment: dto.imageEnrichment } : {}),
+    ...(cursor ? { cursor } : {}),
+  };
 };
 
 /* -------------------------------------------------------------------------- */

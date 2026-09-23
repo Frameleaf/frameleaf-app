@@ -45,6 +45,7 @@
   };
   const SECTION_LABELS: Record<DiscoveryFilterSection, string> = {
     people: 'people',
+    pets: 'frameleaf_pets_title',
     date: 'date_and_time',
     places: 'places',
     media: 'media',
