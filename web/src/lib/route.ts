@@ -10,6 +10,7 @@ import { omitBy } from 'lodash-es';
 import { OpenQueryParam, QueryParameter, type SharedLinkTab } from '$lib/constants';
 import { analyticsAreaUrl } from '$lib/frameleaf/settings-areas';
 import { studioHandoffQuery } from '$lib/frameleaf/studio/handoff';
+import { utilitiesUrl } from '$lib/frameleaf/utilities';
 
 const asQueueSlug = (name: QueueName) => {
   return name.replaceAll(/[A-Z]/g, (m) => '-' + m.toLowerCase());
@@ -205,22 +206,22 @@ export const Route = {
   editUser: ({ id }: { id: string }) => `/admin/users/${id}/edit`,
 
   // utilities
-  utilities: () => '/utilities',
-  duplicatesUtility: (params?: { index?: number }) => '/utilities/duplicates' + asQueryString(params),
-  largeFileUtility: () => '/utilities/large-files',
-  livePhotosUtility: () => '/utilities/live-photos',
-  geolocationUtility: () => '/utilities/geolocation',
-  icloudSyncUtility: () => '/utilities/icloud-sync',
-  /** Mobile applications from this server's signed releases (FL-82). */
-  downloadsUtility: () => '/utilities/downloads',
-  /** Obtainium setup for direct Android updates (FL-82). */
-  obtainiumUtility: () => '/utilities/obtainium',
-  missingMediaUtility: (params?: { status?: MediaHealthStatus }) => '/utilities/missing-media' + asQueryString(params),
-  corruptMediaUtility: (params?: { status?: MediaHealthStatus }) => '/utilities/corrupt-media' + asQueryString(params),
+  utilities: () => utilitiesUrl(),
+  libraryCare: () => '/user-settings?screen=care',
+  duplicatesUtility: (params?: { index?: number }) => utilitiesUrl('duplicates', params),
+  largeFileUtility: () => utilitiesUrl('large-files'),
+  livePhotosUtility: () => utilitiesUrl('live-photos'),
+  geolocationUtility: () => utilitiesUrl('geolocation'),
+  icloudSyncUtility: () => utilitiesUrl('icloud'),
+  missingMediaUtility: (params?: { status?: MediaHealthStatus }) => utilitiesUrl('missing-media', params),
+  corruptMediaUtility: (params?: { status?: MediaHealthStatus }) => utilitiesUrl('corrupt-media', params),
+
+  downloadsUtility: () => utilitiesUrl('downloads'),
+  obtainiumUtility: () => utilitiesUrl('obtainium'),
 
   // workflows
-  workflows: () => '/workflows',
-  viewWorkflow: ({ id }: { id: string }) => `/workflows/${id}`,
+  workflows: () => utilitiesUrl('workflows'),
+  viewWorkflow: ({ id }: { id: string }) => utilitiesUrl('workflows', { workflowId: id }),
 
   // render workers
   renderWorkers: () => '/admin/render-workers',

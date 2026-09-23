@@ -333,12 +333,24 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
  * child belongs to a more specific entry (an album page belongs to its tree item, not
  * to All albums).
  */
-export const isDestinationCurrent = (pathname: string, destination: RailDestination) => {
-  const href = destination.href.split('?', 1)[0].split('#', 1)[0];
-
-  if (pathname === href) {
+export const isDestinationCurrent = (current: string | URL, destination: RailDestination) => {
+  const url = new URL(current, 'https://frameleaf.local');
+  const target = new URL(destination.href, url);
+  if (url.pathname === '/user-settings') {
+    const utilities = url.searchParams.get('area') === 'utilities';
+    const care = url.searchParams.get('screen') === 'care';
+    if (destination.id === 'settings') {
+      return !utilities && !care;
+    }
+    if (destination.id === 'libraryCare') {
+      return care || (utilities && url.searchParams.get('section') !== 'workflows');
+    }
+  }
+  if ([...target.searchParams].some(([key, value]) => url.searchParams.get(key) !== value)) {
+    return false;
+  }
+  if (url.pathname === target.pathname) {
     return true;
   }
-
-  return destination.exact ? false : pathname.startsWith(`${href}/`);
+  return destination.exact ? false : url.pathname.startsWith(`${target.pathname}/`);
 };
