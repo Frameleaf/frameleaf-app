@@ -1263,6 +1263,39 @@
     },
     {
       "capability": null,
+      "deliveryPlanIds": [],
+      "description": "Tell the host the engine no longer needs the frame it last requested.",
+      "id": "preview.release",
+      "manifestIds": [],
+      "mutatesGraph": false,
+      "owner": "FL-96",
+      "payload": {},
+      "prototypeFunctions": [],
+      "prototypeSource": "Studio.jsx preview monitor",
+      "scope": "preview",
+      "undoable": false
+    },
+    {
+      "capability": "gpuWorker",
+      "deliveryPlanIds": [],
+      "description": "Ask for one frame of the current revision, rendered at an exact rational time.",
+      "id": "preview.request",
+      "manifestIds": [],
+      "mutatesGraph": false,
+      "owner": "FL-96",
+      "payload": {
+        "at": "time",
+        "quality": "string",
+        "viewportHeight": "number",
+        "viewportWidth": "number"
+      },
+      "prototypeFunctions": [],
+      "prototypeSource": "Studio.jsx preview monitor",
+      "scope": "preview",
+      "undoable": false
+    },
+    {
+      "capability": null,
       "deliveryPlanIds": ["STU-301"],
       "description": "Apply a project template, including canvas and frame rate defaults.",
       "id": "project.applyTemplate",
@@ -1714,9 +1747,9 @@
     }
   ],
   "counts": {
-    "commands": 88,
-    "commandsWithoutManifestRow": 21,
-    "commandsWithoutPrototypeFunction": 51,
+    "commands": 90,
+    "commandsWithoutManifestRow": 23,
+    "commandsWithoutPrototypeFunction": 53,
     "manifestRows": 210,
     "manifestRowsDeclaredNonCommand": 28,
     "manifestRowsMapped": 182
@@ -1889,6 +1922,7 @@
     "job",
     "keyframe",
     "media",
+    "preview",
     "project",
     "review",
     "sequence",

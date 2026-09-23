@@ -18,7 +18,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import UtilitiesArea from '$lib/components/frameleaf/settings/UtilitiesArea.svelte';
-  import { utilityToolsFor } from '$lib/frameleaf/utilities';
+  import { utilitiesUrl, utilityTool, utilityToolsFor } from '$lib/frameleaf/utilities';
   import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
   import SettingsDraftNotices from '$lib/components/frameleaf/settings/SettingsDraftNotices.svelte';
@@ -224,16 +224,18 @@
 
   const selectArea = async (next: SettingsAreaId, sectionKey?: string) => {
     query = '';
-    const url = new URL(utilityOnly && next !== 'utilities' ? Route.systemSettings() : page.url, page.url);
+    if (next === 'utilities') {
+      // Utilities live at one address for every account; the administrator's host links there.
+      await goto(utilitiesUrl(utilityTool(sectionKey ?? null)?.id), { noScroll: true, keepFocus: true });
+      return;
+    }
+    const url = new URL(utilityOnly ? Route.systemSettings() : page.url, page.url);
     for (const key of ['section', 'status', 'assetId', 'at', 'index', 'workflowId', 'selected', 'new', 'edit']) {
       url.searchParams.delete(key);
     }
     url.searchParams.set(AREA_PARAM, next);
-    if (next === 'utilities' && sectionKey) {
-      url.searchParams.set('section', sectionKey);
-    }
     await goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true, keepFocus: true });
-    if (sectionKey && next !== 'utilities') {
+    if (sectionKey) {
       scrollTo(sectionKey);
     }
   };

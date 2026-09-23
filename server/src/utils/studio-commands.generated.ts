@@ -23,6 +23,7 @@ export type StudioCommandScope =
   | 'job'
   | 'keyframe'
   | 'media'
+  | 'preview'
   | 'project'
   | 'review'
   | 'sequence'
@@ -785,6 +786,27 @@ export const studioCommandMirror = {
       duration: 'duration?',
       musicId: 'string',
       volume: 'number?',
+    },
+  },
+  'preview.release': {
+    scope: 'preview',
+    mutatesGraph: false,
+    undoable: false,
+    capability: null,
+    owner: 'FL-96',
+    payload: {},
+  },
+  'preview.request': {
+    scope: 'preview',
+    mutatesGraph: false,
+    undoable: false,
+    capability: 'gpuWorker',
+    owner: 'FL-96',
+    payload: {
+      at: 'time',
+      quality: 'string',
+      viewportHeight: 'number',
+      viewportWidth: 'number',
     },
   },
   'project.applyTemplate': {

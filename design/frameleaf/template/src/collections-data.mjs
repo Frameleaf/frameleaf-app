@@ -286,9 +286,12 @@ export const collectionIconGroups = [
 ];
 export const collectionIcons = collectionIconGroups.flatMap((group) => group.icons);
 export const collectionIconNames = collectionIcons.map((icon) => icon.name);
-/** Any Material icon name from the shared icon map is a valid collection icon. */
+/** Any name in the Material Design Icons catalogue is a valid collection icon; anything else is not. */
 export const isIconName = (value) =>
-  typeof value === "string" && Object.hasOwn(materialIcons, value);
+  typeof value === "string" &&
+  /^mdi[A-Za-z0-9]{1,60}$/.test(value) &&
+  Object.hasOwn(materialIcons, value) &&
+  typeof materialIcons[value] === "string";
 export const memberRoles = ["owner", "editor", "viewer"];
 export const displayOrders = ["newest", "oldest"];
 export const collectionKinds = ["album", "collection", "space"];
