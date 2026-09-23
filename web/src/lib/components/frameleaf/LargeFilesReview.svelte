@@ -41,18 +41,20 @@
   import { Icon } from '@immich/ui';
   import { mdiCheckCircleOutline, mdiClose, mdiDownload, mdiUndo } from '@mdi/js';
   import { onMount } from 'svelte';
-  import { SvelteSet } from 'svelte/reactivity';
+  import type { SvelteSet } from 'svelte/reactivity';
   import { t } from 'svelte-i18n';
 
   type Props = {
     assets: AssetResponseDto[];
     /** Items moved to the trash since the list loaded; the page's viewer skips them. */
     trashed: SvelteSet<string>;
+    /** Items permanently deleted since the list loaded, here or anywhere else; the viewer skips them too. */
+    removed: SvelteSet<string>;
     /** Open an item in the full viewer. */
     onOpen: (asset: AssetResponseDto) => void;
   };
 
-  let { assets, trashed, onOpen }: Props = $props();
+  let { assets, trashed, removed, onOpen }: Props = $props();
 
   type Review = TrashReviewResponseDto & { rows: AssetResponseDto[] };
 
@@ -70,9 +72,6 @@
   let reviewOpen = $state(false);
   let inspect = $state<AssetResponseDto | null>(null);
   let inspectOpen = $state(false);
-
-  /** Items permanently deleted since the list loaded, here or anywhere else. */
-  const removed = new SvelteSet<string>();
 
   const userId = $derived(authManager.user.id);
   const context = $derived({ userId, trashed });
