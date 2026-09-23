@@ -1,14 +1,65 @@
-import { AssetTypeEnum } from '@immich/sdk';
+import { AssetMediaSize, AssetTypeEnum } from '@immich/sdk';
 import '@testing-library/jest-dom';
-import { fireEvent } from '@testing-library/svelte';
+import { fireEvent, render, waitFor } from '@testing-library/svelte';
+import Hls from 'hls.js';
 import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
+import TestWrapper from '$lib/components/TestWrapper.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
+import { mediaCapabilitiesManager } from '$lib/managers/media-capabilities-manager.svelte';
+import { getAssetHlsUrl, getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
 import { renderWithTooltips } from '$tests/helpers';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
+import AssetViewerNavBar from './AssetViewerNavBar.svelte';
 import VideoNativeViewer from './VideoNativeViewer.svelte';
+
+const hlsMocks = vi.hoisted(() => ({
+  instances: [] as Array<{
+    on: ReturnType<typeof vi.fn>;
+    off: ReturnType<typeof vi.fn>;
+    stopLoad: ReturnType<typeof vi.fn>;
+    startLoad: ReturnType<typeof vi.fn>;
+    removeLevel: ReturnType<typeof vi.fn>;
+    levels: Array<{ url: string[] }>;
+  }>,
+}));
+
+vi.mock('hls-video-element', () => {
+  class MockHlsVideo extends HTMLElement {
+    api: (typeof hlsMocks.instances)[number] | undefined;
+    pause = vi.fn();
+    currentTime = 0;
+    get src() {
+      return this.getAttribute('src') ?? '';
+    }
+    set src(value: string) {
+      this.setAttribute('src', value);
+      this.load();
+    }
+    load() {
+      if (!this.src) {
+        this.api = undefined;
+        return;
+      }
+      this.api = {
+        on: vi.fn(),
+        off: vi.fn(),
+        stopLoad: vi.fn(),
+        startLoad: vi.fn(),
+        removeLevel: vi.fn(),
+        levels: [{ url: ['/video/stream/11111111-1111-1111-1111-111111111111/720p.m3u8'] }],
+      };
+      hlsMocks.instances.push(this.api);
+    }
+  }
+  if (!customElements.get('hls-video')) {
+    customElements.define('hls-video', MockHlsVideo);
+  }
+  return { default: MockHlsVideo };
+});
 
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: {
@@ -40,6 +91,7 @@ vi.mock('media-chrome/menu/media-settings-menu-item', () => ({}));
 describe('VideoNativeViewer component', () => {
   beforeAll(() => {
     vi.stubGlobal('ResizeObserver', getResizeObserverMock());
+    vi.spyOn(Element.prototype, 'animate').mockReturnValue({ cancel: () => {} } as Animation);
     vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
   });
@@ -48,6 +100,8 @@ describe('VideoNativeViewer component', () => {
     assetViewerManager.closeEditor();
     authManager.reset();
     vi.clearAllMocks();
+    featureFlagsManager.value.realtimeTranscoding = false;
+    hlsMocks.instances.length = 0;
   });
 
   afterAll(() => {
@@ -82,5 +136,147 @@ describe('VideoNativeViewer component', () => {
     await fireEvent.click(editButton);
 
     expect(assetViewerManager.isShowEditor).toBe(true);
+  });
+  const videoProps = () => {
+    const asset = assetFactory.build({ ownerId: 'owner-id', type: AssetTypeEnum.Video, duration: 10_000 });
+    authManager.setUser(userAdminFactory.build({ id: asset.ownerId }));
+    authManager.setPreferences(preferencesFactory.build());
+    return {
+      asset,
+      assetId: asset.id,
+      loopVideo: false,
+      cacheKey: null,
+      playOriginalVideo: false,
+      extendedControls: true,
+    };
+  };
+
+  it('uses the navbar source choice even when realtime transcoding is enabled', async () => {
+    featureFlagsManager.value.realtimeTranscoding = true;
+    const props = videoProps();
+    const viewer = render(TestWrapper, { component: VideoNativeViewer, componentProps: props });
+    await waitFor(() =>
+      expect(viewer.container.querySelector('hls-video')).toHaveAttribute('src', getAssetHlsUrl(props.asset.id)),
+    );
+    const api = hlsMocks.instances[0];
+    const navbar = renderWithTooltips(AssetViewerNavBar, {
+      asset: props.asset,
+      preAction: () => {},
+      onAction: () => {},
+      isPlayingOriginalVideo: false,
+      setPlayOriginalVideo: (value: boolean) =>
+        viewer.rerender({ componentProps: { ...props, playOriginalVideo: value } }),
+    });
+    await fireEvent.click(navbar.getByLabelText('more'));
+    await fireEvent.click(await navbar.findByText('play_original_video'));
+    await waitFor(() =>
+      expect(viewer.container.querySelector('video')).toHaveAttribute(
+        'src',
+        getAssetMediaUrl({ id: props.asset.id, size: AssetMediaSize.Original, cacheKey: null }),
+      ),
+    );
+    expect(viewer.container.querySelector('hls-video')).not.toBeInTheDocument();
+    expect(viewer.container.querySelector('media-rendition-menu')).not.toBeInTheDocument();
+    expect(api.stopLoad).toHaveBeenCalled();
+    expect(api.off).toHaveBeenCalledTimes(3);
+  });
+
+  it('shows an accessible failure and retries the same original without falling back to HLS', async () => {
+    featureFlagsManager.value.realtimeTranscoding = true;
+    const props = { ...videoProps(), playOriginalVideo: true };
+    const viewer = render(TestWrapper, { component: VideoNativeViewer, componentProps: props });
+    const video = viewer.container.querySelector('video')!;
+    const src = video.getAttribute('src');
+    await fireEvent.error(video);
+    expect(viewer.getByRole('alert')).toHaveTextContent('errors.failed_to_load_asset');
+    expect(viewer.queryByRole('status', { name: 'loading' })).not.toBeInTheDocument();
+    const beforeRetry = vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length;
+    await fireEvent.click(viewer.getByRole('button', { name: 'retry' }));
+    expect(viewer.queryByRole('alert')).not.toBeInTheDocument();
+    expect(viewer.getByRole('status', { name: 'loading' })).toBeInTheDocument();
+    expect(video).toHaveAttribute('src', src);
+    expect(viewer.container.querySelector('hls-video')).not.toBeInTheDocument();
+    expect(HTMLMediaElement.prototype.load).toHaveBeenCalledTimes(beforeRetry + 1);
+    await fireEvent.canPlay(video);
+    expect(viewer.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('keeps the encoded playback URL when realtime transcoding is disabled', () => {
+    const props = videoProps();
+    const viewer = render(TestWrapper, { component: VideoNativeViewer, componentProps: props });
+    expect(viewer.container.querySelector('video')).toHaveAttribute(
+      'src',
+      getAssetPlaybackUrl({ id: props.asset.id, cacheKey: null }),
+    );
+  });
+
+  it('retires the session and ignores a late capability result after switching sources', async () => {
+    featureFlagsManager.value.realtimeTranscoding = true;
+    let finishCapabilities!: (value: Set<number>) => void;
+    vi.spyOn(mediaCapabilitiesManager, 'efficientLevels').mockReturnValue(
+      new Promise((resolve) => {
+        finishCapabilities = resolve;
+      }),
+    );
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response());
+    const props = videoProps();
+    const viewer = render(TestWrapper, { component: VideoNativeViewer, componentProps: props });
+    await waitFor(() => expect(hlsMocks.instances[0]?.on).toHaveBeenCalled());
+    const api = hlsMocks.instances[0];
+    const manifestHandler = api.on.mock.calls.find(([event]) => event === Hls.Events.MANIFEST_PARSED)![1];
+    const pending = manifestHandler();
+    await viewer.rerender({ componentProps: { ...props, playOriginalVideo: true } });
+    finishCapabilities(new Set([0]));
+    await pending;
+    expect(api.startLoad).not.toHaveBeenCalled();
+    expect(api.off).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/video/stream/11111111-1111-1111-1111-111111111111'),
+      { method: 'DELETE' },
+    );
+    fetchMock.mockRestore();
+    vi.mocked(mediaCapabilitiesManager.efficientLevels).mockRestore();
+  });
+  it('ignores a pending play completion after the same video element changes assets', async () => {
+    let finishPlay!: () => void;
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishPlay = resolve;
+        }),
+    );
+    const onVideoStarted = vi.fn();
+    const props = { ...videoProps(), onVideoStarted };
+    const viewer = render(TestWrapper, { component: VideoNativeViewer, componentProps: props });
+    const video = viewer.container.querySelector('video')!;
+    Object.defineProperty(video, 'paused', { configurable: true, value: false });
+    await fireEvent.canPlay(video);
+    expect(play).toHaveBeenCalledOnce();
+    await viewer.rerender({ componentProps: { ...props, assetId: 'next-asset' } });
+    finishPlay();
+    await Promise.resolve();
+    expect(onVideoStarted).not.toHaveBeenCalled();
+    expect(viewer.getByRole('status', { name: 'loading' })).toBeInTheDocument();
+    play.mockRestore();
+  });
+
+  it('reports fatal HLS failure and retries HLS without selecting original playback', async () => {
+    featureFlagsManager.value.realtimeTranscoding = true;
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const props = videoProps();
+    const viewer = render(TestWrapper, { component: VideoNativeViewer, componentProps: props });
+    await waitFor(() => expect(hlsMocks.instances[0]?.on).toHaveBeenCalled());
+    const api = hlsMocks.instances[0];
+    const errorHandler = api.on.mock.calls.find(([event]) => event === Hls.Events.ERROR)![1];
+    errorHandler(Hls.Events.ERROR, { fatal: true, details: Hls.ErrorDetails.MANIFEST_LOAD_ERROR });
+    expect(await viewer.findByRole('alert')).toBeInTheDocument();
+    expect(viewer.queryByRole('status', { name: 'loading' })).not.toBeInTheDocument();
+    await fireEvent.click(viewer.getByRole('button', { name: 'retry' }));
+    expect(viewer.container.querySelector('hls-video')).toHaveAttribute('src', getAssetHlsUrl(props.assetId));
+    expect(viewer.container.querySelector('video')).not.toBeInTheDocument();
+    expect(hlsMocks.instances).toHaveLength(2);
+    expect(api.off).toHaveBeenCalledTimes(3);
+    expect(viewer.getByRole('status', { name: 'loading' })).toBeInTheDocument();
+    errorLog.mockRestore();
   });
 });
