@@ -39,6 +39,7 @@ import { MachineLearningRepository } from 'src/repositories/machine-learning.rep
 import { MapRepository } from 'src/repositories/map.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { MediaRecoveryRepository } from 'src/repositories/media-recovery.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
@@ -116,6 +117,7 @@ export const repositories = [
   MapRepository,
   MediaHealthRepository,
   MediaOperationRepository,
+  RenderWorkerRepository,
   MediaRepository,
   MemoryRepository,
   MetadataRepository,
