@@ -264,4 +264,354 @@ describe(SharedSpaceService.name, () => {
       await expect(sut.getInvitations(AuthFactory.create(recipient))).resolves.toEqual([]);
     });
   });
+
+  /* ---------------------------------------------------------------- */
+  /* The space page's panels (FL-55, third slice)                      */
+  /* ---------------------------------------------------------------- */
+
+  /** A space with an owner and one editor, both already members. */
+  const spaceWithEditor = () => {
+    const editorId = newUuid();
+    const space = AlbumFactory.from({ kind: AlbumKind.Space })
+      .albumUser({ userId: editorId, role: AlbumUserRole.Editor })
+      .build();
+    const owner = space.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!.user;
+    const editor = space.albumUsers.find(({ user }) => user.id === editorId)!.user;
+    return { space, owner, editor };
+  };
+
+  const asOwner = (space: ReturnType<typeof spaceWithEditor>['space']) => {
+    mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([space.id]));
+    mocks.album.getById.mockResolvedValue(getForAlbum(space));
+  };
+
+  const asEditor = (space: ReturnType<typeof spaceWithEditor>['space']) => {
+    mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+    mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([space.id]));
+    mocks.album.getById.mockResolvedValue(getForAlbum(space));
+  };
+
+  describe('getLinkedAlbums', () => {
+    it('counts only what is in both the album and the space, with sensitive and Locked media excluded', async () => {
+      const { space, owner } = spaceWithEditor();
+      const linkedAlbumId = newUuid();
+      asOwner(space);
+      mocks.albumUser.getLinkedAlbums.mockResolvedValue([
+        {
+          albumId: space.id,
+          linkedAlbumId,
+          linkedAlbumName: 'Summer',
+          linkedAlbumIcon: 'mdiBeach',
+          linkedById: owner.id,
+          createdAt: newDate(),
+        },
+      ]);
+      mocks.albumUser.getLinkedAlbumCounts.mockResolvedValue([
+        { albumId: linkedAlbumId, assetCount: 7, thumbnailAssetId: null },
+      ]);
+      mocks.user.get.mockResolvedValue(owner);
+
+      const { albums } = await sut.getLinkedAlbums(AuthFactory.create(owner), space.id);
+
+      expect(albums).toEqual([
+        expect.objectContaining({ id: linkedAlbumId, albumName: 'Summer', assetCount: 7, canUnlink: true }),
+      ]);
+      // The intersection is taken against the space, and sensitive/Locked media are dropped first.
+      expect(mocks.albumUser.getLinkedAlbumCounts).toHaveBeenCalledWith(space.id, [linkedAlbumId], {
+        excludeNsfw: true,
+      });
+    });
+
+    it('refuses somebody who is not a member, even with an invitation', async () => {
+      const { space } = spaceWithEditor();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([space.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(space));
+
+      await expect(sut.getLinkedAlbums(AuthFactory.create(), space.id)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  describe('linkAlbum', () => {
+    it('links an album the member can already read, without moving or sharing it', async () => {
+      const { space, editor } = spaceWithEditor();
+      const album = AlbumFactory.from({ kind: AlbumKind.Album }).build();
+      asEditor(space);
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([space.id, album.id]));
+      mocks.album.getById.mockResolvedValueOnce(getForAlbum(space)).mockResolvedValueOnce(getForAlbum(album));
+      mocks.albumUser.getLinkedAlbums.mockResolvedValue([]);
+      mocks.albumUser.getLinkedAlbumCounts.mockResolvedValue([]);
+
+      await sut.linkAlbum(AuthFactory.create(editor), space.id, album.id);
+
+      expect(mocks.albumUser.createLinkedAlbum).toHaveBeenCalledWith({
+        albumId: space.id,
+        linkedAlbumId: album.id,
+        linkedById: editor.id,
+      });
+      // A link is a reference: nothing about the album or its assets is touched.
+      expect(mocks.album.update).not.toHaveBeenCalled();
+      expect(mocks.albumUser.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses another shared space: spaces stay top level', async () => {
+      const { space, editor } = spaceWithEditor();
+      const other = AlbumFactory.from({ kind: AlbumKind.Space }).build();
+      asEditor(space);
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([space.id, other.id]));
+      mocks.album.getById.mockResolvedValueOnce(getForAlbum(space)).mockResolvedValueOnce(getForAlbum(other));
+
+      await expect(sut.linkAlbum(AuthFactory.create(editor), space.id, other.id)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.albumUser.createLinkedAlbum).not.toHaveBeenCalled();
+    });
+
+    it('refuses a collection: a space lists albums, one level', async () => {
+      const { space, editor } = spaceWithEditor();
+      const collection = AlbumFactory.from({ kind: AlbumKind.Collection }).build();
+      asEditor(space);
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([space.id, collection.id]));
+      mocks.album.getById.mockResolvedValueOnce(getForAlbum(space)).mockResolvedValueOnce(getForAlbum(collection));
+
+      await expect(sut.linkAlbum(AuthFactory.create(editor), space.id, collection.id)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.albumUser.createLinkedAlbum).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('unlinkAlbum', () => {
+    it('lets the space owner remove somebody else’s link, and removes only the link', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      const linkedAlbumId = newUuid();
+      asOwner(space);
+      mocks.albumUser.getLinkedAlbum.mockResolvedValue({
+        albumId: space.id,
+        linkedAlbumId,
+        linkedAlbumName: 'Summer',
+        linkedAlbumIcon: null,
+        linkedById: editor.id,
+        createdAt: newDate(),
+      });
+
+      await sut.unlinkAlbum(AuthFactory.create(owner), space.id, linkedAlbumId);
+
+      expect(mocks.albumUser.deleteLinkedAlbum).toHaveBeenCalledWith(space.id, linkedAlbumId);
+      expect(mocks.album.delete).not.toHaveBeenCalled();
+      expect(mocks.albumUser.delete).not.toHaveBeenCalled();
+    });
+
+    it('refuses a member who neither made the link nor owns the space', async () => {
+      const { space, editor } = spaceWithEditor();
+      const linkedAlbumId = newUuid();
+      asEditor(space);
+      mocks.albumUser.getLinkedAlbum.mockResolvedValue({
+        albumId: space.id,
+        linkedAlbumId,
+        linkedAlbumName: 'Summer',
+        linkedAlbumIcon: null,
+        linkedById: newUuid(),
+        createdAt: newDate(),
+      });
+
+      await expect(sut.unlinkAlbum(AuthFactory.create(editor), space.id, linkedAlbumId)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(mocks.albumUser.deleteLinkedAlbum).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getPeople', () => {
+    it('shows the space’s own identity for a linked person and never the owner’s person record', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      const personGroupId = newUuid();
+      const linkId = newUuid();
+      const coverAssetId = newUuid();
+      asOwner(space);
+      mocks.albumUser.getLinkedPeople.mockResolvedValue([
+        {
+          id: linkId,
+          albumId: space.id,
+          personOwnerId: editor.id,
+          personGroupId,
+          name: 'Gran',
+          coverAssetId,
+          createdAt: newDate(),
+        },
+      ]);
+      mocks.albumUser.getLinkedPersonCounts.mockResolvedValue([{ personGroupId, assetCount: 9 }]);
+      mocks.albumUser.getSpacePersonCandidates.mockResolvedValue([]);
+      mocks.user.get.mockResolvedValue(editor);
+
+      const { linked } = await sut.getPeople(AuthFactory.create(owner), space.id);
+
+      expect(linked).toEqual([
+        expect.objectContaining({ id: linkId, name: 'Gran', coverAssetId, assetCount: 9, canUnlink: true }),
+      ]);
+      // The person's own identity never crosses the space.
+      expect(JSON.stringify(linked)).not.toContain(personGroupId);
+    });
+
+    it('offers only the caller’s own people as candidates, and not ones they already linked', async () => {
+      const { space, editor } = spaceWithEditor();
+      const alreadyLinked = newUuid();
+      const fresh = newUuid();
+      asEditor(space);
+      mocks.albumUser.getLinkedPeople.mockResolvedValue([
+        {
+          id: newUuid(),
+          albumId: space.id,
+          personOwnerId: editor.id,
+          personGroupId: alreadyLinked,
+          name: 'Gran',
+          coverAssetId: null,
+          createdAt: newDate(),
+        },
+      ]);
+      mocks.albumUser.getLinkedPersonCounts.mockResolvedValue([]);
+      mocks.user.get.mockResolvedValue(editor);
+      mocks.albumUser.getSpacePersonCandidates.mockResolvedValue([
+        {
+          personGroupId: alreadyLinked,
+          name: 'Gran',
+          thumbnailPath: '/thumb-a',
+          isHidden: false,
+          isFavorite: false,
+          color: null,
+          birthDate: null,
+          updatedAt: newDate(),
+          assetCount: 4,
+        },
+        {
+          personGroupId: fresh,
+          name: 'Sam',
+          thumbnailPath: '/thumb-b',
+          isHidden: false,
+          isFavorite: false,
+          color: null,
+          birthDate: null,
+          updatedAt: newDate(),
+          assetCount: 2,
+        },
+      ]);
+
+      const { candidates } = await sut.getPeople(AuthFactory.create(editor), space.id);
+
+      expect(candidates).toEqual([expect.objectContaining({ id: fresh, name: 'Sam' })]);
+      // Candidates are scoped to the caller's own people, inside the space, without sensitive/Locked media.
+      expect(mocks.albumUser.getSpacePersonCandidates).toHaveBeenCalledWith(space.id, editor.id, {
+        excludeNsfw: true,
+      });
+    });
+  });
+
+  describe('linkPerson', () => {
+    it('refuses a person the caller does not own', async () => {
+      const { space, editor } = spaceWithEditor();
+      asEditor(space);
+      mocks.person.getByGroupId.mockResolvedValue(void 0);
+
+      await expect(
+        sut.linkPerson(AuthFactory.create(editor), space.id, { personId: newUuid() }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.albumUser.createLinkedPerson).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('unlinkPerson', () => {
+    it('removes only the link', async () => {
+      const { space, editor } = spaceWithEditor();
+      const linkId = newUuid();
+      asEditor(space);
+      mocks.albumUser.getLinkedPerson.mockResolvedValue({
+        id: linkId,
+        albumId: space.id,
+        personOwnerId: editor.id,
+        personGroupId: newUuid(),
+        name: 'Gran',
+        coverAssetId: null,
+        createdAt: newDate(),
+      });
+
+      await sut.unlinkPerson(AuthFactory.create(editor), space.id, linkId);
+
+      expect(mocks.albumUser.deleteLinkedPerson).toHaveBeenCalledWith(linkId);
+      expect(mocks.person.delete).not.toHaveBeenCalled();
+      expect(mocks.person.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a link belonging to another space', async () => {
+      const { space, owner } = spaceWithEditor();
+      const linkId = newUuid();
+      asOwner(space);
+      mocks.albumUser.getLinkedPerson.mockResolvedValue({
+        id: linkId,
+        albumId: newUuid(),
+        personOwnerId: owner.id,
+        personGroupId: newUuid(),
+        name: 'Gran',
+        coverAssetId: null,
+        createdAt: newDate(),
+      });
+
+      await expect(sut.unlinkPerson(AuthFactory.create(owner), space.id, linkId)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(mocks.albumUser.deleteLinkedPerson).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getNew', () => {
+    it('treats the whole space as new when the member has never marked it seen', async () => {
+      const { space, editor } = spaceWithEditor();
+      asEditor(space);
+      mocks.albumUser.getSpaceVisit.mockResolvedValue(void 0);
+      mocks.albumUser.getSpaceNewAssetCount.mockResolvedValue(12);
+      mocks.albumUser.getSpaceNewAssetIds.mockResolvedValue([]);
+
+      const result = await sut.getNew(AuthFactory.create(editor), space.id);
+
+      expect(result).toEqual({ lastVisitedAt: null, assetCount: 12, assetIds: [] });
+      // No marker means no `since`; the caller's own additions are still excluded.
+      expect(mocks.albumUser.getSpaceNewAssetCount).toHaveBeenCalledWith(
+        space.id,
+        { since: undefined, viewerId: editor.id },
+        { excludeNsfw: true },
+      );
+    });
+
+    it('counts from the member’s own marker', async () => {
+      const { space, editor } = spaceWithEditor();
+      const lastSeenAt = newDate();
+      asEditor(space);
+      mocks.albumUser.getSpaceVisit.mockResolvedValue({ albumId: space.id, userId: editor.id, lastSeenAt });
+      mocks.albumUser.getSpaceNewAssetCount.mockResolvedValue(3);
+      mocks.albumUser.getSpaceNewAssetIds.mockResolvedValue([]);
+
+      await sut.getNew(AuthFactory.create(editor), space.id);
+
+      expect(mocks.albumUser.getSpaceNewAssetCount).toHaveBeenCalledWith(
+        space.id,
+        { since: lastSeenAt, viewerId: editor.id },
+        { excludeNsfw: true },
+      );
+    });
+  });
+
+  describe('markVisited', () => {
+    it('moves only this member’s marker', async () => {
+      const { space, editor } = spaceWithEditor();
+      asEditor(space);
+      mocks.albumUser.getSpaceVisit.mockResolvedValue(void 0);
+      mocks.albumUser.getSpaceNewAssetCount.mockResolvedValue(0);
+      mocks.albumUser.getSpaceNewAssetIds.mockResolvedValue([]);
+
+      await sut.markVisited(AuthFactory.create(editor), space.id);
+
+      expect(mocks.albumUser.setSpaceVisit).toHaveBeenCalledWith(
+        { albumId: space.id, userId: editor.id },
+        expect.any(Date),
+      );
+    });
+  });
 });
