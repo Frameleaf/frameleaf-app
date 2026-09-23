@@ -803,8 +803,12 @@ export class MediaOperationRepository {
         return 'rejected';
       }
 
-      const completed = await this.complete(id, claimToken, { resultAssetId: null }, trx);
-      return completed ? 'completed' : 'lost';
+      if (!(await this.complete(id, claimToken, { resultAssetId: null }, trx))) {
+        // Unreachable while the row is held above under the same predicates; throwing rolls the
+        // publication back, so an adopted output and an unfinished job are never committed apart.
+        throw new Error(`Media operation ${id} could not complete under the claim that published it`);
+      }
+      return 'completed';
     });
   }
 
