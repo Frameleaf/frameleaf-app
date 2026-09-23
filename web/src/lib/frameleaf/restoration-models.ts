@@ -2,13 +2,13 @@
  * Presentation rules for a destination's restoration models (FL-114).
  *
  * The worker decides whether a model is available from its pinned revision, verified weights,
- * qualification evidence, licence review and GPU; the server relays that report unchanged. This
+ * qualification evidence, license review and GPU; the server relays that report unchanged. This
  * module only turns those facts into labels and tones. It never marks a model usable itself.
  */
 
 import {
+  AssetRestorationMode,
   MlWorkload,
-  RestorationMode,
   RestorationModelState,
   type MlDestinationResponseDto,
   type RestorationMeasuredThroughputDto,
@@ -23,8 +23,8 @@ export const RESTORATION_WORKLOADS: readonly MlWorkload[] = [
 export const allowsRestoration = (destination: Pick<MlDestinationResponseDto, 'workloads'>): boolean =>
   destination.workloads.some((workload) => RESTORATION_WORKLOADS.includes(workload));
 
-export const restorationModeLabelKey = (mode: RestorationMode): string =>
-  mode === RestorationMode.Creative
+export const restorationModeLabelKey = (mode: AssetRestorationMode): string =>
+  mode === AssetRestorationMode.Creative
     ? 'admin.frameleaf_restoration_models_mode_creative'
     : 'admin.frameleaf_restoration_models_mode_faithful';
 

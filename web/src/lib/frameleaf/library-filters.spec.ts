@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { emptyDiscoveryQuery, type DiscoveryQuery } from '$lib/components/discovery/query';
-import { describeFilterField, describeFilterFields, filterFieldLabelKey } from './library-filters';
+import { describeFilterField, describeFilterFields, filterFieldEntityIds, filterFieldLabelKey } from './library-filters';
 
 const withFilter = (filter: Record<string, unknown>): DiscoveryQuery =>
   ({ ...emptyDiscoveryQuery(), filter }) as DiscoveryQuery;
@@ -80,5 +80,22 @@ describe('describeFilterFields', () => {
       'personIds',
       'city',
     ]);
+  });
+});
+
+describe('filterFieldEntityIds', () => {
+  it('returns the ids of a positive "any" or "all" condition', () => {
+    expect(filterFieldEntityIds(withFilter({ personIds: { any: ['a', 'b'] } }), 'personIds')).toEqual(['a', 'b']);
+    expect(filterFieldEntityIds(withFilter({ tagIds: { all: ['c'] } }), 'tagIds')).toEqual(['c']);
+  });
+
+  it('returns null for an exclusion, so a "none" condition never names a download after who was excluded', () => {
+    expect(filterFieldEntityIds(withFilter({ personIds: { none: ['a'] } }), 'personIds')).toBeNull();
+  });
+
+  it('returns null for a field with no condition or a non-id-list condition', () => {
+    expect(filterFieldEntityIds(withFilter({}), 'personIds')).toBeNull();
+    expect(filterFieldEntityIds(withFilter({ city: { eq: 'Halifax' } }), 'city')).toBeNull();
+    expect(filterFieldEntityIds(withFilter({ or: [{ city: { eq: 'a' } }] }), 'or')).toBeNull();
   });
 });

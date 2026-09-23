@@ -21,11 +21,14 @@
   import ShortcutsHelp from '$lib/components/frameleaf/ShortcutsHelp.svelte';
   import ShowMore from '$lib/components/frameleaf/ShowMore.svelte';
   import type { DiscoveryDestination, DiscoveryFilterSection } from '$lib/components/discovery/query';
+  import { namedEntitySegments, withArchiveDetail } from '$lib/frameleaf/archive-name';
   import type { BulkAsset, BulkActionContext, BulkActionId } from '$lib/frameleaf/bulk-actions';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
+  import { type FilterEntityKind, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
   import { librarySession, type LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
   import type { LibraryGrouping, LibrarySessionAction } from '$lib/frameleaf/library-session';
+  import { describeFilterFields, filterFieldEntityIds, type FilterChipDescription } from '$lib/frameleaf/library-filters';
   import { matchLibraryShortcut, type LibraryShortcut } from '$lib/frameleaf/library-shortcuts';
   import {
     assetMultiSelectManager,
@@ -37,6 +40,7 @@
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { AssetVisibility } from '@immich/sdk';
   import { onDestroy, type Snippet } from 'svelte';
+  import { t } from 'svelte-i18n';
 
   type Props = {
     /** Timeline source options (visibility, album, person, partners). */
@@ -80,6 +84,12 @@
     toolbar?: Snippet;
     /** Album, shared-link and trash context for the bulk actions (FL-32). */
     bulkContext?: Omit<BulkActionContext, 'assets' | 'count' | 'currentUserId' | 'snapshot'>;
+    /**
+     * Base name for a selection download's archive, e.g. the album or collection name. Falls back
+     * to the generic default in `downloadArchive` when unset, matching the legacy per-route
+     * `DownloadAction` filename.
+     */
+    downloadFileName?: string;
     /**
      * A gate the page puts in front of an action. Returning `false` stops it. The suppressed
      * destination uses it to require an elevated session before items leave it for an album.
@@ -131,6 +141,7 @@
     enableRouting = false,
     multiSelect = assetMultiSelectManager,
     bulkContext,
+    downloadFileName,
     beforeAction,
     onMutated,
     tagOptions = [],
@@ -258,7 +269,64 @@
     dispatchBulk(id, payload);
   };
 
+  /** The id-list filter fields a person/pet/tag's real name can be resolved for (FL-45 owner decision). */
+  const ENTITY_FILTER_FIELDS: Partial<Record<string, FilterEntityKind>> = { personIds: 'person', tagIds: 'tag' };
+
+  /**
+   * One filter chip's contribution to the download name: a person/tag chip resolves to the actual
+   * name(s) behind it wherever it can (owner decision, September 22, 2026), falling back to the
+   * chip's translated field label ("People"/"Tags") exactly as before when nothing can be named —
+   * every id unresolvable, hidden, unnamed, or the lookup itself failed. A negated condition
+   * ("not these people") is left on the generic label on purpose: the download is everything
+   * *except* those people, so naming it after them would say the opposite.
+   */
+  const filterChipDetail = async (chip: FilterChipDescription): Promise<string[]> => {
+    const kind = ENTITY_FILTER_FIELDS[chip.field];
+    if (kind && !chip.negated) {
+      const ids = filterFieldEntityIds(session.query, chip.field);
+      if (ids && ids.length > 0) {
+        const names = await resolveEntityNames(kind, ids);
+        const segments = namedEntitySegments(names, ids.length, (remaining) =>
+          $t('frameleaf_archive_name_and_n_more', { values: { count: remaining } }),
+        );
+        if (segments.length > 0) {
+          return segments;
+        }
+      }
+    }
+    return [chip.detail ?? $t(chip.labelKey)];
+  };
+
+  /**
+   * FL-45: an active structured filter (a folder path, a city, a date range, a person or tag, ...)
+   * makes a download more specific than the destination's own name alone — most usefully for
+   * Photos, which a person/tag/folder "view in library" link narrows without a route of its own to
+   * name the download after. Reuses the same `describeFilterFields`/`chipFields` the results
+   * toolbar draws its chips from, so a download is distinguished by exactly the filters the user
+   * can see are active. Async only because a person/tag chip may need a name lookup
+   * (`filterChipDetail`); every other chip resolves synchronously and this still awaits nothing
+   * over the network for it.
+   */
+  const effectiveDownloadName = async (): Promise<string | undefined> => {
+    if (!downloadFileName) {
+      return undefined;
+    }
+    const chips = describeFilterFields(session.query, session.chipFields);
+    const detailSegments = (await Promise.all(chips.map((chip) => filterChipDetail(chip)))).flat();
+    return withArchiveDetail(downloadFileName, ...detailSegments);
+  };
+
   const dispatchBulk = (id: BulkActionId, payload?: BulkPayload) => {
+    if (id === 'download' && !payload?.fileName) {
+      // The only action whose payload needs an async name lookup; every other action stays
+      // synchronous below exactly as before.
+      void effectiveDownloadName().then((fileName) => runDispatch(id, { ...payload, fileName }));
+      return;
+    }
+    runDispatch(id, payload);
+  };
+
+  const runDispatch = (id: BulkActionId, payload?: BulkPayload) => {
     if (snapshot) {
       // Frozen at submit: editing the filter afterwards cannot change what the operation touches.
       void bulk.runMatching(id, snapshot, { payload, submittedTotal: session.total });

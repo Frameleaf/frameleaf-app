@@ -26,20 +26,22 @@ const PreviewTimeSchema = z
   .meta({ id: 'StudioPreviewTimeDto' });
 
 /**
- * Ask for one frame.
+ * Ask for one frame of a stored project revision (FL-89).
  *
- * Every field is part of the frame's identity. `revisionDigest` in particular is not advisory:
- * a request naming a revision the project has moved past is refused rather than rendered,
- * because the answer would be obsolete before it arrived.
+ * Every field is part of the frame's identity. The client names the project and the stored
+ * revision it is looking at; it never supplies a graph or a digest of its own. The server reads
+ * the graph from storage, resolves it for the acting account (FL-90) and binds the frame to that
+ * authorized resolution. `revision` is not advisory: a request naming a revision the project has
+ * moved past is refused rather than rendered, because the answer would be obsolete before it
+ * arrived.
  */
 const StudioPreviewRequestSchema = z
   .object({
-    projectId: z.string().min(1).max(255).describe('Studio project the frame belongs to'),
-    revisionDigest: z
-      .string()
+    projectId: z.uuidv7().describe('Studio project the frame belongs to'),
+    revision: z
+      .int()
       .min(1)
-      .max(255)
-      .describe('Exact graph revision digest the frame is bound to; a superseded revision is refused'),
+      .describe('Stored project revision the frame is bound to; a superseded revision is refused'),
     time: PreviewTimeSchema,
     quality: StudioPreviewQualitySchema,
     viewportWidth: z.coerce.number().int().min(PREVIEW_MIN_VIEWPORT).max(PREVIEW_MAX_VIEWPORT),
@@ -72,7 +74,12 @@ const StudioPreviewSchema = z
   .object({
     id: z.uuidv7().describe('Preview frame ID'),
     projectId: z.string(),
-    revisionDigest: z.string().describe('The exact revision this frame is bound to'),
+    revision: z.int().min(0).describe('The stored project revision this frame was rendered for'),
+    revisionDigest: z
+      .string()
+      .describe(
+        'Digest of the authorized resolution the frame is bound to; changes with the revision and whenever access is re-resolved',
+      ),
     time: PreviewTimeSchema,
     quality: StudioPreviewQualitySchema,
     viewportWidth: z.int(),
@@ -102,14 +109,14 @@ const StudioPreviewSchema = z
 /**
  * What the server did with a request.
  *
- * `currentRevisionDigest` is always reported, including on a refusal, so a client that fell
- * behind can reconcile in one round trip instead of guessing. `superseded` lists the previews
+ * `currentRevision` is always reported, including on a refusal, so a client that fell behind
+ * can reconcile in one round trip instead of guessing. `superseded` lists the previews
  * this request cancelled, which is how the client knows which cached frames to drop.
  */
 const StudioPreviewResponseSchema = z
   .object({
     preview: StudioPreviewSchema,
-    currentRevisionDigest: z.string().describe('The revision the project is on now'),
+    currentRevision: z.int().min(0).describe('The stored revision the project is on now'),
     supersededPreviewIds: z
       .array(z.uuidv7())
       .describe('Previews cancelled because the revision advanced'),

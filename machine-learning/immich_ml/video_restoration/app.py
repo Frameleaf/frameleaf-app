@@ -23,7 +23,7 @@ import secrets
 import shutil
 import tempfile
 import threading
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -57,6 +57,16 @@ BUSY_RETRY_AFTER_S = 30
 DEFAULT_REFRESH_S = 300
 
 
+def _int_env(env: Mapping[str, str], name: str, default: int) -> int:
+    value = env.get(name, "").strip()
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        raise ValueError(f"{name} must be a whole number, got {value!r}") from None
+
+
 @dataclass(frozen=True)
 class WorkerSettings:
     manifest: Path
@@ -81,8 +91,8 @@ class WorkerSettings:
             auth_token=env.get("IMMICH_ML_AUTH_TOKEN", "").strip() or None,
             image_revision=env.get("FRAMELEAF_RESTORATION_IMAGE_REVISION", "").strip() or None,
             host=env.get("FRAMELEAF_RESTORATION_HOST", "0.0.0.0"),
-            port=int(env.get("FRAMELEAF_RESTORATION_PORT", "3004")),
-            refresh_s=int(env.get("FRAMELEAF_RESTORATION_REFRESH_S", str(DEFAULT_REFRESH_S))),
+            port=_int_env(env, "FRAMELEAF_RESTORATION_PORT", 3004),
+            refresh_s=_int_env(env, "FRAMELEAF_RESTORATION_REFRESH_S", DEFAULT_REFRESH_S),
         )
 
 

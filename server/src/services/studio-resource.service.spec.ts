@@ -194,6 +194,30 @@ describe(StudioResourceService.name, () => {
       expect(mocks.access.asset.checkOwnerAccess).not.toHaveBeenCalled();
     });
 
+    it('resolves Locked media for a background runner acting as the owner, and only then', async () => {
+      const locked = ownedVideo({ visibility: AssetVisibility.Locked });
+      mocks.asset.getByIds.mockResolvedValue([locked]);
+      allowOwned(locked.id);
+      const runner: AuthDto = {
+        ...auth,
+        session: { id: 'worker-session', hasElevatedPermission: true } as AuthSession,
+      };
+
+      const { manifest, refused } = await sut.resolveProjectResources(
+        runner,
+        context(sequenceWith({ assetId: locked.id }), { backgroundRunner: true }),
+      );
+
+      expect(refused).toEqual([]);
+      expect(manifest.complete).toBe(true);
+      expect(manifest.entries).toEqual([
+        expect.objectContaining({ id: locked.id, kind: StudioResourceKind.LibraryAsset, sourceAccess: 'owner' }),
+      ]);
+      // The same runner auth without the explicit flag is the interactive rule: Locked is refused.
+      const interactive = await sut.resolveProjectResources(runner, context(sequenceWith({ assetId: locked.id })));
+      expect(interactive.refused.map((item) => item.reason)).toEqual([StudioRefusalReason.Locked]);
+    });
+
     it('refuses trashed, offline, non-media and unknown assets with distinct reasons', async () => {
       const trashed = ownedVideo({ deletedAt: new Date() });
       const offline = ownedVideo({ isOffline: true });
@@ -780,6 +804,21 @@ describe(StudioResourceService.name, () => {
           path: manifest.entries[0].path,
         });
         expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledTimes(2);
+      });
+
+      it('lets a background runner reopen a Locked source that the interactive path refuses', async () => {
+        mocks.crypto.verifyJwt.mockReturnValue(payload());
+        mocks.asset.getByIds.mockResolvedValue([
+          ownedVideo({ id: assetId, checksum: Buffer.from(checksum, 'base64'), visibility: AssetVisibility.Locked }),
+        ]);
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+
+        await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth })).resolves.toEqual(
+          expect.objectContaining({ valid: false, reason: StudioRefusalReason.Locked }),
+        );
+        await expect(
+          sut.verifyReadGrant('token', { workerId: 'worker-1', auth, backgroundRunner: true }),
+        ).resolves.toEqual(expect.objectContaining({ valid: true }));
       });
 
       it('rejects a bad or expired token', async () => {

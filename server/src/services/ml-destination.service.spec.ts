@@ -1,12 +1,8 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaults } from 'src/config.js';
-import {
-  RESTORATION_PROTOCOL,
-  RestorationDynamicRange,
-  RestorationMode,
-  RestorationModelState,
-} from 'src/dtos/restoration-inference.dto.js';
+import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
+import { RESTORATION_PROTOCOL, RestorationDynamicRange, RestorationModelState } from 'src/dtos/restoration-inference.dto.js';
 import { ImmichWorker, MlAdmissionRefusal, MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { MlDestinationService } from 'src/services/ml-destination.service.js';
 import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
@@ -342,7 +338,7 @@ describe(MlDestinationService.name, () => {
         {
           id: 'realbasicvsr-x4',
           family: 'realbasicvsr',
-          mode: RestorationMode.Faithful,
+          mode: AssetRestorationMode.Faithful,
           displayName: 'RealBasicVSR x4',
           revision: 'REPLACE',
           fingerprint: null,

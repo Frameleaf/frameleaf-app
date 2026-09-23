@@ -105,17 +105,20 @@ These cannot be done in this repository's CI and remain open on FL-114:
 ## Wire contract
 
 `POST /restoration/restore` takes a multipart form with `request` (JSON) and `media` (the
-file). The request names the mode, optionally a model id and a model fingerprint (a full
-render passes the fingerprint its preview reported and is refused with `model-changed` if
-anything moved), the scale (1 or 2), the long-edge cap (at most 3840), an optional segment,
-a seed and what the server measured about the source. The worker re-probes the upload and
-refuses a mismatch.
+file). The request names the mode, the kind (`image` or `video`), optionally a model id and
+a model fingerprint (a render that passes the fingerprint its preview reported is refused
+with `model-changed` if anything moved), the scale (1, 2 or 4), the box the output must fit
+(`maxWidth`, `maxHeight`, each at most 3840), whether grain should be kept, a seed and what
+the server measured about the source (size, and duration for a video). The worker re-probes
+the upload and refuses a mismatch.
 
-The restored file is H.264 in MP4 at the source's exact frame rate, converted with the
-source's own YCbCr matrix. Source audio is copied when MP4 can carry it and otherwise
-transcoded to AAC, which the result reports (`audio: "transcoded"`) with a warning.
+A video comes back as H.264 in MP4 at the source's exact frame rate, converted with the
+source's own YCbCr matrix; source audio is copied when MP4 can carry it and otherwise
+transcoded to AAC, which the result reports (`audio: "transcoded"`) with a warning. A still
+comes back as a PNG. Neither pinned model has a grain control, so `keepGrain` is answered
+with a warning rather than a pretend effect.
 
-On success the body is the restored MP4 and the `x-restoration-result` header carries the
+On success the body is the restored file and the `x-restoration-result` header carries the
 base64url JSON result: model identity with weight hashes and qualification id, output
 description with sha256, timing and measured frames per second, peak VRAM and warnings. On
 failure the body is `{ "code", "message", "modelId" }` with a code from `invalid-request`,
@@ -123,10 +126,30 @@ failure the body is `{ "code", "message", "modelId" }` with a code from `invalid
 `out-of-memory`, `invalid-output`, `runtime-failed` or `timeout`.
 
 The worker only reads the upload and writes the restored file as a new file in a private
-working directory that is deleted after the response. The server writes it as a new
-derivative; originals are never overwritten. The server refuses to send a segment request
-to a cloud destination: it must cut the segment first, so a remote worker never receives
-more of the original than the job needs.
+working directory that is deleted after the response. It keeps the upload twice while a
+request runs (the web server's spooled copy and its own working copy), so the working
+directory needs room for two copies of the largest clip plus its frames.
+
+## Server integration
+
+The server reaches this worker only through `MachineLearningRepository.restore`, which
+implements the `RestorationInference` seam FL-115's restoration jobs call for every still,
+five-second preview clip and video chunk. FL-115 cuts the crop, clip or chunk locally before
+upload, so a remote worker never receives more of the original than the job needs.
+
+- The selection must come from `selectRestorationDestination` in
+  `server/src/utils/restoration.ts`; the repository refuses anything else, including a copy
+  of an admitted selection. That admission uses the destination the owner named on the
+  request (or an administrator route), never another one, and needs the destination's
+  recorded consent, budget, health and a qualified model.
+- A cloud destination is additionally refused unless the person confirmed it for this
+  request. FL-115 treats the destination the owner named on their own request, shown with a
+  "leaves your network" warning, as that confirmation; a routed cloud destination nobody
+  chose is refused.
+- The restored file is created exclusively at the path the job gives and kept only when its
+  size and sha256 match the result; originals and existing files are never replaced.
+- Administrators can read each destination's model report under Processing destinations
+  (`GET /ml-destinations/{id}/restoration-models`); nothing sends media to answer it.
 
 ## Environment
 

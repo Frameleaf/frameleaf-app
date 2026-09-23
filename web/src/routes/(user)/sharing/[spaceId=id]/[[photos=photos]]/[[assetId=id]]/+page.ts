@@ -3,11 +3,14 @@ import {
   AlbumKind,
   getAlbumInfo,
   getAlbumTree,
+  getSharedSpaceActivity,
   getSharedSpaceAlbums,
   getSharedSpaceMembers,
   getSharedSpaceNew,
   getSharedSpacePeople,
+  isHttpError,
 } from '@immich/sdk';
+import { isSpaceUnavailableStatus } from '$lib/frameleaf/error-page';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';
 import type { PageLoad } from './$types';
@@ -23,24 +26,44 @@ import type { PageLoad } from './$types';
  * member's last visit — comes from the shared space endpoints, each of which
  * checks membership again. The timeline and the map fetch their own items
  * when they are opened, so a member who never opens them does not pay for them.
+ *
+ * The same page is the space's viewer (`/sharing/{spaceId}/photos/{assetId}`); the item itself is
+ * loaded by the (user) layout, and nothing here depends on it, so moving through the viewer never
+ * re-runs this loader.
+ *
+ * An address that is not a shared space this person is in — an album, somebody else's space, one
+ * they have left or one that was deleted — is refused by the server (400/403/404). That becomes a
+ * plain 404 for the space's own error page, which explains it in words instead of showing the
+ * server's message. Anything else (the server is down, a timeout) is left as it is, so the page can
+ * offer to try again.
  */
+const SPACE_UNAVAILABLE = { message: 'Shared space not available', code: 404 };
+
 export const load = (async ({ params, url, depends }) => {
   await authenticate(url);
   depends('space:data');
 
-  const [space, { members }, tree, { albums: linkedAlbums }, people, newSince] = await Promise.all([
+  // The activity feed's first page rides along so the Activity segment can carry its unread count
+  // from the first paint; the panel itself pages older events on demand.
+  const [space, { members }, tree, { albums: linkedAlbums }, people, newSince, activity] = await Promise.all([
     getAlbumInfo({ id: params.spaceId }),
     getSharedSpaceMembers({ id: params.spaceId }),
     getAlbumTree(),
     getSharedSpaceAlbums({ id: params.spaceId }),
     getSharedSpacePeople({ id: params.spaceId }),
     getSharedSpaceNew({ id: params.spaceId }),
-  ]);
+    getSharedSpaceActivity({ id: params.spaceId }),
+  ]).catch((failure: unknown) => {
+    if (isHttpError(failure) && isSpaceUnavailableStatus(failure.status)) {
+      error(404, SPACE_UNAVAILABLE);
+    }
+    throw failure;
+  });
 
   if (space.kind !== AlbumKind.Space) {
     // A URL contract is not a licence to render the wrong thing: an album or a
     // collection has its own page.
-    error(404, 'Shared space not found');
+    error(404, SPACE_UNAVAILABLE);
   }
 
   const $t = await getFormatter();
@@ -53,6 +76,7 @@ export const load = (async ({ params, url, depends }) => {
     linkedAlbums,
     people,
     newSince,
+    activity,
     meta: {
       title: space.albumName || $t('frameleaf_spaces_title'),
     },

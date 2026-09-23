@@ -39,7 +39,7 @@
 <section class="my-4">
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" {onsubmit}>
-      <div class="flex flex-col gap-6 sm:ms-8">
+      <div class="flex flex-col gap-6">
         <Field label={$t('enable')} description={$t('notification_toggle_setting_description')}>
           <Switch bind:checked={emailNotificationsEnabled} />
         </Field>

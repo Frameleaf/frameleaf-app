@@ -4,10 +4,12 @@ import {
   AssetJobName,
   AssetVisibility,
   bulkTagAssets,
+  createBulkMediaOperation,
   createSharedLink,
   createStack,
   deleteAssets,
   deleteStacks,
+  MediaOperationBulkAction,
   removeAssetFromAlbum,
   removeSharedLinkAssets,
   restoreAssets,
@@ -23,6 +25,8 @@ import {
   updateAssets,
   upsertTags,
   type BulkIdResponseDto,
+  type MediaOperationBulkPayloadDto,
+  type MediaOperationDto,
   type MetadataSearchDto,
   type SearchFilter,
   type SmartSearchDto,
@@ -157,6 +161,8 @@ export type BulkGateway = {
   searchAssets: typeof searchAssets;
   searchSmart: typeof searchSmart;
   searchAssetStatistics: typeof searchAssetStatistics;
+  /** Queues a durable server-side bulk operation (FL-32). */
+  createBulkMediaOperation: typeof createBulkMediaOperation;
   /** The web client's archive download flow, which already handles splitting and the manager. */
   downloadArchive: (fileName: string, options: { assetIds: string[] }) => Promise<unknown>;
 };
@@ -184,6 +190,7 @@ export const createBulkGateway = (
   searchAssets,
   searchSmart,
   searchAssetStatistics,
+  createBulkMediaOperation,
   downloadArchive,
 });
 
@@ -868,4 +875,155 @@ export const bulkResultSummary = (
     return { key: 'frameleaf_bulk_summary_none', values };
   }
   return { key: 'frameleaf_bulk_summary_partial', values };
+};
+
+/* -------------------------------------------------------------------------- */
+/* Durable operations                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Above this many items an explicit selection is handed to the server as a durable job instead of
+ * being run from this tab. At or below it the action runs immediately and offers undo, which is
+ * what a person expects from a handful of photos. "Select everything matching" is always durable.
+ */
+export const DURABLE_BULK_THRESHOLD = 500;
+
+/** The largest frozen set one durable job accepts; a larger selection is split into several. */
+export const DURABLE_BULK_MAX_ITEMS = 50_000;
+
+/**
+ * The actions the server runs durably, and their server name.
+ *
+ * Anything missing stays in this tab by design: a download or a shared link only makes sense to
+ * the person waiting for it, and moves into or out of the Locked folder are confirmed in the
+ * unlocked session the person is looking at.
+ */
+export const DURABLE_BULK_ACTIONS: Readonly<Partial<Record<BulkActionId, MediaOperationBulkAction>>> = {
+  favorite: MediaOperationBulkAction.Favorite,
+  unfavorite: MediaOperationBulkAction.Unfavorite,
+  archive: MediaOperationBulkAction.Archive,
+  unarchive: MediaOperationBulkAction.Unarchive,
+  'add-to-album': MediaOperationBulkAction.AddToAlbum,
+  'remove-from-album': MediaOperationBulkAction.RemoveFromAlbum,
+  tag: MediaOperationBulkAction.Tag,
+  untag: MediaOperationBulkAction.Untag,
+  'change-date': MediaOperationBulkAction.ChangeDate,
+  'change-description': MediaOperationBulkAction.ChangeDescription,
+  'change-location': MediaOperationBulkAction.ChangeLocation,
+  'mark-sensitive': MediaOperationBulkAction.MarkSensitive,
+  'unmark-sensitive': MediaOperationBulkAction.UnmarkSensitive,
+  delete: MediaOperationBulkAction.Delete,
+  'delete-permanently': MediaOperationBulkAction.DeletePermanently,
+  restore: MediaOperationBulkAction.Restore,
+  'refresh-thumbnails': MediaOperationBulkAction.RefreshThumbnails,
+  'refresh-metadata': MediaOperationBulkAction.RefreshMetadata,
+  'refresh-encoded': MediaOperationBulkAction.RefreshEncoded,
+  'refresh-faces': MediaOperationBulkAction.RefreshFaces,
+};
+
+export const durableBulkAction = (action: BulkActionId): MediaOperationBulkAction | null =>
+  DURABLE_BULK_ACTIONS[action] ?? null;
+
+/** Whether an explicit selection of this size goes to the server as a durable job. */
+export const shouldRunDurably = (action: BulkActionId, count: number): boolean =>
+  !!durableBulkAction(action) && count > DURABLE_BULK_THRESHOLD;
+
+/** The server's payload for an action. Only the fields it knows are sent; nothing is defaulted. */
+export const toDurablePayload = (payload: BulkPayload | undefined, tagIds?: string[]): MediaOperationBulkPayloadDto => {
+  const source = payload ?? {};
+  const result: MediaOperationBulkPayloadDto = {};
+  if (source.albumId) {
+    result.albumId = source.albumId;
+  }
+  if (tagIds && tagIds.length > 0) {
+    result.tagIds = tagIds;
+  }
+  if (source.dateMode) {
+    result.dateMode = source.dateMode as MediaOperationBulkPayloadDto['dateMode'];
+  }
+  if (source.dateTimeOriginal) {
+    result.dateTimeOriginal = source.dateTimeOriginal;
+  }
+  if (source.timeZone) {
+    result.timeZone = source.timeZone;
+  }
+  if (typeof source.minutes === 'number') {
+    result.minutes = source.minutes;
+  }
+  if (typeof source.description === 'string') {
+    result.description = source.description;
+  }
+  if (typeof source.latitude === 'number') {
+    result.latitude = source.latitude;
+  }
+  if (typeof source.longitude === 'number') {
+    result.longitude = source.longitude;
+  }
+  if (source.primaryId) {
+    result.primaryId = source.primaryId;
+  }
+  if (source.stackIds && source.stackIds.length > 0) {
+    result.stackIds = source.stackIds;
+  }
+  return result;
+};
+
+const UUID_V4 = /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i;
+
+export type DurableBulkRequest = {
+  payload?: BulkPayload;
+  /** The count the person saw when they submitted, for the audit trail. */
+  submittedTotal?: number | null;
+  /** The matching set was cut short by the client's own bound. */
+  truncated?: boolean;
+  /** The view the set came from. Recorded, never re-resolved. */
+  scope?: LibraryViewState;
+  /** Idempotency key. Sent only when it is a v4 uuid, which is what the server accepts. */
+  requestId?: string;
+};
+
+/**
+ * Hand a frozen set to the server as one or more durable jobs.
+ *
+ * The ids are the whole contract: the server applies the action to exactly these, checking access
+ * on each as it goes, and nothing about the view they came from is resolved again. A set larger
+ * than one job accepts is split in order; only the first part carries the idempotency key, so a
+ * repeated submit cannot quietly queue the tail twice.
+ */
+export const submitDurableBulk = async (
+  action: BulkActionId,
+  requestedIds: readonly string[],
+  request: DurableBulkRequest,
+  gateway: Pick<BulkGateway, 'createBulkMediaOperation' | 'upsertTags'>,
+): Promise<MediaOperationDto[]> => {
+  const serverAction = durableBulkAction(action);
+  if (!serverAction) {
+    throw new Error('frameleaf_bulk_reason_not_durable');
+  }
+  const ids = distinct(requestedIds);
+  if (ids.length === 0) {
+    return [];
+  }
+  const tagIds =
+    action === 'tag' || action === 'untag' ? await resolveTagIds(request.payload, gateway as BulkGateway) : undefined;
+  const payload = toDurablePayload(request.payload, tagIds);
+  const requestId = request.requestId && UUID_V4.test(request.requestId) ? request.requestId : undefined;
+
+  const created: MediaOperationDto[] = [];
+  for (const [index, part] of chunk(ids, DURABLE_BULK_MAX_ITEMS).entries()) {
+    created.push(
+      await gateway.createBulkMediaOperation({
+        mediaOperationBulkCreateDto: {
+          action: serverAction,
+          assetIds: part,
+          payload,
+          ...(index === 0 && requestId ? { requestId } : {}),
+          submittedTotal: request.submittedTotal ?? null,
+          truncated: request.truncated ?? false,
+          ...(request.scope ? { scope: structuredClone(request.scope) as unknown as Record<string, unknown> } : {}),
+        },
+      }),
+    );
+  }
+  return created;
 };

@@ -8,6 +8,7 @@ import { AssetDevelopRepository } from 'src/repositories/asset-develop.repositor
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
@@ -40,6 +41,7 @@ import { MachineLearningRepository } from 'src/repositories/machine-learning.rep
 import { MapRepository } from 'src/repositories/map.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { MediaRecoveryRepository } from 'src/repositories/media-recovery.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
@@ -62,6 +64,7 @@ import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -96,6 +99,7 @@ export const repositories = [
   AssetEditRepository,
   AssetFileRepository,
   AssetJobRepository,
+  AssetRestorationRepository,
   ConfigRepository,
   CronRepository,
   CryptoRepository,
@@ -120,6 +124,7 @@ export const repositories = [
   MapRepository,
   MediaHealthRepository,
   MediaOperationRepository,
+  RenderWorkerRepository,
   MediaRepository,
   MemoryRepository,
   MetadataRepository,
@@ -139,6 +144,7 @@ export const repositories = [
   SearchRepository,
   ServerInfoRepository,
   SmartAlbumRepository,
+  StudioProjectRepository,
   SessionRepository,
   SharedLinkRepository,
   SharedLinkAssetRepository,

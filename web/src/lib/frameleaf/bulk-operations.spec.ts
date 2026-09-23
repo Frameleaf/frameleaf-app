@@ -1,13 +1,25 @@
-import { AssetImageEnrichmentAction, AssetJobName, AssetVisibility, SharedLinkType } from '@immich/sdk';
+import {
+  AssetImageEnrichmentAction,
+  AssetJobName,
+  AssetVisibility,
+  MediaOperationBulkAction,
+  SharedLinkType,
+} from '@immich/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import {
+  DURABLE_BULK_MAX_ITEMS,
+  DURABLE_BULK_THRESHOLD,
   bulkResultSummary,
   countMatching,
+  durableBulkAction,
   resolveMatchingIds,
   runBulkAction,
   runBulkOperation,
+  shouldRunDurably,
   snapshotSearch,
+  submitDurableBulk,
+  toDurablePayload,
   type BulkGateway,
 } from '$lib/frameleaf/bulk-operations';
 import { createLibrarySession, type LibraryViewState } from '$lib/frameleaf/library-session';
@@ -33,6 +45,7 @@ const gateway = () =>
     searchAssets: vi.fn(),
     searchSmart: vi.fn(),
     searchAssetStatistics: vi.fn().mockResolvedValue({ total: 0 }),
+    createBulkMediaOperation: vi.fn().mockImplementation(() => Promise.resolve({ id: 'job' })),
     downloadArchive: vi.fn().mockResolvedValue(undefined),
   }) as unknown as BulkGateway;
 
@@ -378,5 +391,67 @@ describe('a matching set is bound to the scope it was taken from', () => {
     );
     expect(outcome.cancelled).toBe(true);
     expect(api.deleteAssets).not.toHaveBeenCalled();
+  });
+});
+
+describe('durable bulk operations', () => {
+  let api: BulkGateway;
+
+  beforeEach(() => {
+    api = gateway();
+  });
+
+  it('keeps small selections, downloads, shared links and Locked moves in this tab', () => {
+    expect(shouldRunDurably('favorite', DURABLE_BULK_THRESHOLD)).toBe(false);
+    expect(shouldRunDurably('favorite', DURABLE_BULK_THRESHOLD + 1)).toBe(true);
+    expect(durableBulkAction('download')).toBeNull();
+    expect(durableBulkAction('create-shared-link')).toBeNull();
+    expect(durableBulkAction('move-to-locked')).toBeNull();
+    expect(durableBulkAction('remove-from-locked')).toBeNull();
+    expect(durableBulkAction('mark-sensitive')).toBe(MediaOperationBulkAction.MarkSensitive);
+  });
+
+  it('sends only the payload fields the server knows, and keeps an empty description', () => {
+    expect(toDurablePayload({ description: '', fileName: 'x', force: true })).toEqual({ description: '' });
+    expect(toDurablePayload({ dateMode: 'shift', minutes: -30 })).toEqual({ dateMode: 'shift', minutes: -30 });
+  });
+
+  it('creates typed tags first and sends their ids', async () => {
+    vi.mocked(api.upsertTags).mockResolvedValue([{ id: 'tag-new' }] as never);
+
+    await submitDurableBulk('tag', ['a'], { payload: { tagIds: ['tag-1'], newTagNames: ['Summer'] } }, api);
+
+    expect(api.upsertTags).toHaveBeenCalledWith({ tagUpsertDto: { tags: ['Summer'] } });
+    expect(api.createBulkMediaOperation).toHaveBeenCalledWith({
+      mediaOperationBulkCreateDto: expect.objectContaining({
+        action: MediaOperationBulkAction.Tag,
+        payload: { tagIds: ['tag-1', 'tag-new'] },
+      }),
+    });
+  });
+
+  it('splits a set larger than one job accepts, keeping the idempotency key on the first part only', async () => {
+    const ids = Array.from({ length: DURABLE_BULK_MAX_ITEMS + 2 }, (_, index) => `id-${index}`);
+    const requestId = '6f1c1b0e-8d7a-4c2e-9b1a-0d3e5f7a9b2c';
+
+    const created = await submitDurableBulk('archive', ids, { requestId }, api);
+
+    expect(created).toHaveLength(2);
+    const calls = vi.mocked(api.createBulkMediaOperation).mock.calls.map(([args]) => args.mediaOperationBulkCreateDto);
+    expect(calls[0].assetIds).toHaveLength(DURABLE_BULK_MAX_ITEMS);
+    expect(calls[0].requestId).toBe(requestId);
+    expect(calls[1].assetIds).toEqual(ids.slice(DURABLE_BULK_MAX_ITEMS));
+    expect(calls[1].requestId).toBeUndefined();
+  });
+
+  it('does not send a request key the server would reject', async () => {
+    await submitDurableBulk('archive', ['a'], { requestId: 'fl-legacy-key' }, api);
+
+    const [[{ mediaOperationBulkCreateDto }]] = vi.mocked(api.createBulkMediaOperation).mock.calls;
+    expect(mediaOperationBulkCreateDto.requestId).toBeUndefined();
+  });
+
+  it('refuses an action the server does not run', async () => {
+    await expect(submitDurableBulk('download', ['a'], {}, api)).rejects.toThrow('frameleaf_bulk_reason_not_durable');
   });
 });

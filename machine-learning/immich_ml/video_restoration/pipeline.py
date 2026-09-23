@@ -13,6 +13,7 @@ import time
 from collections.abc import Callable
 from fractions import Fraction
 from pathlib import Path
+from typing import Literal
 
 from . import media
 from .models import (
@@ -69,24 +70,28 @@ def check_source(
     """
     model_id = selected.spec.id
     declared = request.source
-    frame_rate = Fraction(declared.frameRate)
-    if (source.width, source.height) != (declared.width, declared.height) or source.frame_rate != frame_rate:
-        raise RestorationFailure(
-            RestorationErrorCode.SOURCE_MISMATCH,
-            f"the upload is {source.width}x{source.height} at {source.frame_rate_text}; the request described "
-            f"{declared.width}x{declared.height} at {declared.frameRate}",
-            model_id=model_id,
+    still = request.kind == "image"
+
+    def mismatch(detail: str) -> RestorationFailure:
+        return RestorationFailure(RestorationErrorCode.SOURCE_MISMATCH, detail, model_id=model_id)
+
+    if (source.width, source.height) != (declared.width, declared.height):
+        raise mismatch(
+            f"the upload is {source.width}x{source.height}; the request described {declared.width}x{declared.height}"
         )
     frame_ms = 1000 / float(source.frame_rate)
-    if abs(source.duration_ms - declared.durationMs) > max(DURATION_TOLERANCE_MS, frame_ms):
-        raise RestorationFailure(
-            RestorationErrorCode.SOURCE_MISMATCH,
-            f"the upload lasts {source.duration_ms} ms; the request described {declared.durationMs} ms",
-            model_id=model_id,
-        )
+    if not still:
+        if declared.frameRate is not None and source.frame_rate != Fraction(declared.frameRate):
+            raise mismatch(f"the upload runs at {source.frame_rate_text}; the request described {declared.frameRate}")
+        if declared.durationMs is not None and abs(source.duration_ms - declared.durationMs) > max(
+            DURATION_TOLERANCE_MS, frame_ms
+        ):
+            raise mismatch(f"the upload lasts {source.duration_ms} ms; the request described {declared.durationMs} ms")
+    if declared.dynamicRange is not None and declared.dynamicRange != source.dynamic_range:
+        raise mismatch(f"the upload is {source.dynamic_range}; the request described {declared.dynamicRange}")
 
     allowed = selected.capability.dynamicRanges
-    if source.dynamic_range not in allowed or declared.dynamicRange not in allowed:
+    if source.dynamic_range not in allowed:
         raise _unsupported(
             f"{source.dynamic_range.upper()} sources are not qualified for {model_id}; restoration is SDR-only",
             model_id,
@@ -103,6 +108,9 @@ def check_source(
             f"{selected.spec.limits.maxInputLongEdge} px",
             model_id,
         )
+
+    if still:
+        return None, None, 1
 
     start_ms: int | None = None
     end_ms: int | None = None
@@ -140,13 +148,14 @@ def restore(
     selected = registry.select(request.mode, request.modelId, request.modelFingerprint)
     model_id = selected.spec.id
 
+    still = request.kind == "image"
     try:
-        source = media.probe(media_path)
+        source = media.probe(media_path, still=still)
     except media.MediaError as error:
         code = RestorationErrorCode.UNSUPPORTED_INPUT if error.unsupported else RestorationErrorCode.RUNTIME_FAILED
         raise RestorationFailure(code, str(error), model_id=model_id)
     start_ms, end_ms, _ = check_source(request, source, selected)
-    target = media.target_geometry(source.width, source.height, request.scale, request.maxLongEdge)
+    target = media.target_geometry(source.width, source.height, request.scale, request.maxWidth, request.maxHeight)
 
     decode_started = time.monotonic()
     source_frames = work_dir / "source-frames"
@@ -164,6 +173,8 @@ def restore(
     decode_ms = _elapsed_ms(decode_started)
     if frame_count == 0:
         raise _unsupported("the segment contains no frames", model_id)
+    if still and frame_count != 1:
+        raise _unsupported(f"a still decoded to {frame_count} frames; send animated images as video", model_id)
     if frame_count > selected.spec.limits.maxFrames:
         raise _unsupported(f"{frame_count} frames exceed the qualified {selected.spec.limits.maxFrames}", model_id)
 
@@ -187,6 +198,8 @@ def restore(
     except media.MediaError as error:
         raise RestorationFailure(RestorationErrorCode.INVALID_OUTPUT, str(error), model_id=model_id)
     warnings = list(run.warnings)
+    if request.keepGrain:
+        warnings.append(f"{model_id} has no grain control; fine grain may be smoothed")
     if run.expected_size is None and restored_size != target:
         warnings.append(
             f"the model returned {restored_size[0]}x{restored_size[1]}; "
@@ -194,29 +207,34 @@ def restore(
         )
 
     encode_started = time.monotonic()
-    output_path = work_dir / "restored.mp4"
+    output_path = work_dir / ("restored.png" if still else "restored.mp4")
+    audio: Literal["copied", "transcoded", "none"] = "none"
     try:
-        audio = media.encode_output(
-            run.frames_dir,
-            output_path,
-            source=media_path,
-            source_probe=source,
-            target=target,
-            start_ms=start_ms,
-            end_ms=end_ms,
-            timeout=MEDIA_TIMEOUT_S,
-        )
-        restored = media.probe(output_path)
+        if still:
+            media.encode_still_output(run.frames_dir, output_path, target=target, timeout=MEDIA_TIMEOUT_S)
+        else:
+            audio = media.encode_output(
+                run.frames_dir,
+                output_path,
+                source=media_path,
+                source_probe=source,
+                target=target,
+                start_ms=start_ms,
+                end_ms=end_ms,
+                timeout=MEDIA_TIMEOUT_S,
+            )
+        restored = media.probe(output_path, still=still)
     except media.MediaError as error:
         raise RestorationFailure(RestorationErrorCode.RUNTIME_FAILED, str(error), model_id=model_id)
     encode_ms = _elapsed_ms(encode_started)
     if audio == "transcoded":
         warnings.append(f"audio ({', '.join(source.audio_codecs)}) was transcoded to AAC because MP4 cannot carry it")
 
-    expected_ms = frame_count * 1000 / float(source.frame_rate)
-    if (restored.width, restored.height) != target or abs(restored.duration_ms - expected_ms) > max(
+    expected_ms = 0.0 if still else frame_count * 1000 / float(source.frame_rate)
+    duration_off = not still and abs(restored.duration_ms - expected_ms) > max(
         DURATION_TOLERANCE_MS, 1000 / float(source.frame_rate)
-    ):
+    )
+    if (restored.width, restored.height) != target or duration_off:
         raise RestorationFailure(
             RestorationErrorCode.INVALID_OUTPUT,
             f"the encoded file is {restored.width}x{restored.height}, {restored.duration_ms} ms; expected "
@@ -243,11 +261,11 @@ def restore(
         output=OutputDescription(
             width=restored.width,
             height=restored.height,
-            frameRate=source.frame_rate_text,
+            frameRate=None if still else source.frame_rate_text,
             frameCount=frame_count,
-            durationMs=restored.duration_ms,
-            container="mp4",
-            videoCodec="h264",
+            durationMs=None if still else restored.duration_ms,
+            container="png" if still else "mp4",
+            codec="png" if still else "h264",
             dynamicRange=DynamicRange.SDR,
             bitDepth=8,
             audio=audio,

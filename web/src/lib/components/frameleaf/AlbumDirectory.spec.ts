@@ -140,6 +140,28 @@ describe('AlbumDirectory', () => {
     expect(screen.getByRole('status')).toHaveTextContent('“Summer in the Rockies” is now on its own');
   });
 
+  it('keeps shared spaces top level, opening on their own page, with a way to Sharing and its invitations', () => {
+    render(AlbumDirectory, { tree, spaceInvitations: 2, onRefresh: vi.fn() });
+
+    const shelf = screen.getByRole('region', { name: 'Shared spaces' });
+    const tile = shelf.querySelector('article[aria-label="Family Space"]') as HTMLElement;
+    expect(tile).toHaveAttribute('draggable', 'false');
+    expect(tile.querySelector('a[href="/sharing/space"]')).not.toBeNull();
+    expect(screen.getByRole('region', { name: 'Family' }).querySelector('article[aria-label="Family Space"]')).toBeNull();
+
+    expect(screen.getByRole('link', { name: '2 invitations waiting' })).toHaveAttribute('href', '/sharing');
+    expect(screen.getByRole('link', { name: 'Open Sharing' })).toHaveAttribute('href', '/sharing');
+  });
+
+  it('offers to make the first shared space when there are albums but no spaces', () => {
+    render(AlbumDirectory, { tree: { ...tree, spaces: [] }, onRefresh: vi.fn() });
+
+    const shelf = screen.getByRole('region', { name: 'Shared spaces' });
+    expect(shelf).toHaveTextContent('No shared spaces yet');
+    expect(screen.getByRole('button', { name: 'New shared space' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /invitations? waiting/ })).toBeNull();
+  });
+
   it('never lets a viewer drag someone else’s album', () => {
     render(AlbumDirectory, { tree, onRefresh: vi.fn() });
     expect(screen.getByRole('article', { name: 'Trail camera' })).toHaveAttribute('draggable', 'false');

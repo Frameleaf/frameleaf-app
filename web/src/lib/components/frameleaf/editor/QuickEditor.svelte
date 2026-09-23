@@ -29,6 +29,10 @@
   import EditorSlider from '$lib/components/frameleaf/editor/EditorSlider.svelte';
   import Histogram from '$lib/components/frameleaf/editor/Histogram.svelte';
   import PresetStrip from '$lib/components/frameleaf/editor/PresetStrip.svelte';
+  import RestorationCompare from '$lib/components/frameleaf/editor/RestorationCompare.svelte';
+  import RestorationPanel, {
+    type RestorationCompareRequest,
+  } from '$lib/components/frameleaf/editor/RestorationPanel.svelte';
   import {
     ASPECTS,
     AUTO_TONE,
@@ -116,7 +120,7 @@
   import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
-  type Tool = 'adjust' | 'crop' | 'presets' | 'versions';
+  type Tool = 'adjust' | 'crop' | 'presets' | 'restore' | 'versions';
 
   let {
     asset,
@@ -146,6 +150,7 @@
     { id: 'adjust', label: 'frameleaf_editor_tool_adjust', icon: mdiTune },
     { id: 'crop', label: 'frameleaf_editor_tool_crop', icon: mdiCropRotate },
     { id: 'presets', label: 'frameleaf_editor_tool_presets', icon: mdiImageFilterVintage },
+    { id: 'restore', label: 'frameleaf_editor_tool_restore', icon: mdiAutoFix },
     { id: 'versions', label: 'frameleaf_editor_tool_versions', icon: mdiHistory },
   ];
 
@@ -279,6 +284,18 @@
 
   /* Stage ---------------------------------------------------------------- */
   let tool = $state<Tool>('adjust');
+  /* Restoration (FL-115) ------------------------------------------------- */
+  // Videos have no adjust rail; the top bar swaps the video editor for the restoration panel.
+  let videoTool = $state<'edit' | 'restore'>('edit');
+  // The before-and-after the restoration panel asked the stage to show. Cleared with the tool.
+  let restorationCompare = $state<RestorationCompareRequest | null>(null);
+  const restoring = $derived(isVideo ? videoTool === 'restore' : tool === 'restore');
+  $effect(() => {
+    if (!restoring) {
+      restorationCompare = null;
+    }
+  });
+
   let before = $state(false);
   let split = $state(false);
   let splitAt = $state(0.5);
@@ -629,25 +646,42 @@
   onkeydown={onKeyDown}
   onkeyup={onKeyUp}
 >
-  <div class={['ed-shell', isVideo && 'video']}>
+  <div class={['ed-shell', isVideo && 'video', isVideo && videoTool === 'restore' && 'restoring']}>
     <header class="ed-top">
-      {#if !isVideo}
+      {#if isVideo}
+        <button type="button" class="ed-tool labelled" onclick={() => onClose(saveChangedCurrent)} title={$t('frameleaf_editor_cancel_title')}>
+          <Icon icon={mdiClose} size="20" />
+          <span>{$t('close')}</span>
+        </button>
+        <div class="ed-title">
+          <strong>{asset.originalFileName}</strong>
+          <span>{$t('frameleaf_editor_kind_video')}{dimensions ? ` · ${dimensions}` : ''}</span>
+        </div>
+        <button
+          type="button"
+          class="ed-tool labelled"
+          aria-pressed={videoTool === 'restore'}
+          title={$t('frameleaf_editor_tool_restore')}
+          onclick={() => (videoTool = videoTool === 'restore' ? 'edit' : 'restore')}
+        >
+          <Icon icon={mdiAutoFix} size="20" />
+          <span>{$t('frameleaf_editor_tool_restore')}</span>
+        </button>
+      {:else}
         <button type="button" class="ed-tool labelled" onclick={cancel} title={$t('frameleaf_editor_cancel_title')}>
           <Icon icon={mdiClose} size="20" />
           <span>{$t('cancel')}</span>
         </button>
-      {/if}
-      <div class="ed-title">
-        <strong>{asset.originalFileName}</strong>
-        <span>
-          {isVideo ? $t('frameleaf_editor_kind_video') : $t('frameleaf_editor_kind_photo')}{dimensions ? ` · ${dimensions}` : ''}{dirty
-            ? ` · ${$t('frameleaf_editor_edited')}`
-            : ''}{currentRevision
-            ? ` · ${$t('frameleaf_editor_showing_version', { values: { revision: currentRevision.revision } })}`
-            : ''}
-        </span>
-      </div>
-      {#if !isVideo}
+        <div class="ed-title">
+          <strong>{asset.originalFileName}</strong>
+          <span>
+            {$t('frameleaf_editor_kind_photo')}{dimensions ? ` · ${dimensions}` : ''}{dirty
+              ? ` · ${$t('frameleaf_editor_edited')}`
+              : ''}{currentRevision
+              ? ` · ${$t('frameleaf_editor_showing_version', { values: { revision: currentRevision.revision } })}`
+              : ''}
+          </span>
+        </div>
         <button
           type="button"
           class="ed-tool"
@@ -770,15 +804,38 @@
       {/if}
     </header>
 
-    {#if isVideo}
+    {#if isVideo && videoTool === 'edit'}
       <div class="ed-video-host">
         <VideoEditorPanel {asset} {onClose} />
       </div>
+    {:else if isVideo}
+      <div class="ed-stage-wrap">
+        <div class="ed-stage" aria-label={$t('frameleaf_restoration_compare_stage')}>
+          {#if restorationCompare}
+            <div class="ed-restore-stage">
+              <RestorationCompare {...restorationCompare} alt={asset.originalFileName} />
+            </div>
+          {:else}
+            <div class="ed-unavailable"><strong>{$t('frameleaf_restoration_compare_empty')}</strong></div>
+          {/if}
+        </div>
+      </div>
+      <section class="ed-panel" aria-label={$t('frameleaf_editor_tool_restore')}>
+        <RestorationPanel
+          {asset}
+          onCompare={(compare) => (restorationCompare = compare)}
+          onCurrentChanged={() => (saveChangedCurrent = true)}
+        />
+      </section>
     {:else}
       <div class="ed-stage-wrap">
         <div class={['ed-stage', cropping && 'cropping', dragging && 'dragging']} aria-label={$t('frameleaf_editor_preview')}>
           <div class="ed-canvas" bind:this={canvasEl}>
-            {#if frame}
+            {#if restoring && restorationCompare}
+              <div class="ed-restore-stage">
+                <RestorationCompare {...restorationCompare} alt={asset.originalFileName} />
+              </div>
+            {:else if frame}
               {#if split}
                 <div class="ed-frame before" style={frameStyle('before')} aria-hidden="true">
                   <div class="ed-media" style={straightenStyle}>
@@ -981,6 +1038,13 @@
             </div>
             <p class="ed-note">{$t('frameleaf_editor_crop_help')}</p>
           </div>
+        {:else if tool === 'restore'}
+          <RestorationPanel
+            {asset}
+            crop={recipe.crop}
+            onCompare={(compare) => (restorationCompare = compare)}
+            onCurrentChanged={() => (saveChangedCurrent = true)}
+          />
         {:else if tool === 'presets'}
           <div class="ed-panel-body">
             <div class="ed-panel-head">

@@ -1,0 +1,417 @@
+import { BadRequestException } from '@nestjs/common';
+import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto.js';
+import {
+  AssetVisibility,
+  MediaOperationBulkAction,
+  MediaOperationItemStatus,
+  MediaOperationKind,
+  MediaOperationStatus,
+} from 'src/enum.js';
+import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { BulkOperationService } from 'src/services/bulk-operation.service.js';
+import { BulkOperationSnapshot } from 'src/utils/bulk-operation.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
+import { newUuid } from 'test/small.factory.js';
+import { ServiceMocks, getMocks } from 'test/utils.js';
+
+const ownerId = authStub.user1.user.id;
+
+const snapshotOf = (overrides: Partial<BulkOperationSnapshot> = {}): BulkOperationSnapshot => ({
+  action: MediaOperationBulkAction.Favorite,
+  assetIds: [newUuid(), newUuid(), newUuid()],
+  payload: {},
+  submittedTotal: null,
+  truncated: false,
+  requestId: null,
+  apiKeyId: null,
+  ...overrides,
+});
+
+const operationOf = (snapshot: BulkOperationSnapshot, overrides: Partial<MediaOperation> = {}): MediaOperation =>
+  ({
+    id: '0195e2a0-0000-7000-8000-0000000000b1',
+    ownerId,
+    kind: MediaOperationKind.Bulk,
+    status: MediaOperationStatus.Preparing,
+    snapshot,
+    result: null,
+    processedUnits: '0',
+    totalUnits: String(snapshot.assetIds.length),
+    ...overrides,
+  }) as unknown as MediaOperation;
+
+describe(BulkOperationService.name, () => {
+  let sut: BulkOperationService;
+  let mocks: ServiceMocks;
+  let operations: MediaOperationRepository;
+  let assets: { updateAll: any; run: any; deleteAll: any };
+  let albums: { addAssets: any; removeAssets: any };
+  let tags: { bulkTagAssets: any; removeAssets: any };
+  let trash: { restoreAssets: any };
+  let stacks: { create: any; deleteAll: any };
+  let enrichment: { updateAssetEnrichment: any };
+  let users: { get: any; getMetadata: any };
+  let apiKeys: { getById: any };
+
+  const running = { status: MediaOperationStatus.Rendering, cancelRequestedAt: null };
+
+  beforeEach(() => {
+    mocks = getMocks();
+    operations = {
+      claimNext: vi.fn().mockResolvedValue(undefined),
+      recoverExpiredClaims: vi.fn().mockResolvedValue({ requeued: 0, failed: 0, abandonedCancels: 0 }),
+      setBulkResult: vi.fn().mockResolvedValue(running),
+      reportProgress: vi.fn().mockResolvedValue(true),
+      beginValidation: vi.fn().mockResolvedValue(true),
+      complete: vi.fn().mockResolvedValue(true),
+      fail: vi.fn().mockResolvedValue(true),
+      acknowledgeCancel: vi.fn().mockResolvedValue(true),
+    } as unknown as MediaOperationRepository;
+    assets = {
+      updateAll: vi.fn().mockResolvedValue(undefined),
+      run: vi.fn().mockResolvedValue(undefined),
+      deleteAll: vi.fn().mockResolvedValue(undefined),
+    };
+    albums = { addAssets: vi.fn(), removeAssets: vi.fn() };
+    tags = { bulkTagAssets: vi.fn().mockResolvedValue({ count: 0 }), removeAssets: vi.fn() };
+    trash = { restoreAssets: vi.fn().mockResolvedValue({ count: 0 }) };
+    stacks = { create: vi.fn(), deleteAll: vi.fn() };
+    enrichment = { updateAssetEnrichment: vi.fn().mockResolvedValue({}) };
+    users = { get: vi.fn().mockResolvedValue({ ...authStub.user1.user }), getMetadata: vi.fn().mockResolvedValue([]) };
+    apiKeys = { getById: vi.fn() };
+
+    sut = new BulkOperationService(
+      mocks.logger as never,
+      operations,
+      mocks.access as never,
+      users as never,
+      apiKeys as never,
+      assets as never,
+      albums as never,
+      tags as never,
+      trash as never,
+      stacks as never,
+      enrichment as never,
+    );
+  });
+
+  describe('authFor', () => {
+    it('acts as the owner through an elevated system session, so Locked items are reachable', async () => {
+      const auth = await sut.authFor(ownerId);
+
+      expect(auth?.user.id).toBe(ownerId);
+      expect(auth?.session?.hasElevatedPermission).toBe(true);
+      expect(auth?.apiKey).toBeUndefined();
+      expect(auth?.sharedLink).toBeUndefined();
+    });
+
+    it('does not filter out the owner’s sensitive or hidden items', async () => {
+      const auth = await sut.authFor(ownerId);
+
+      expect(auth?.hiddenContent).toBeUndefined();
+      expect(auth?.hideNsfwAssets).toBeUndefined();
+    });
+
+    it('answers null for an account that no longer exists', async () => {
+      users.get.mockResolvedValue(undefined);
+
+      await expect(sut.authFor(ownerId)).resolves.toBeNull();
+    });
+  });
+
+  describe('applyBatch', () => {
+    it('skips items the owner may not change and sends only the rest', async () => {
+      const snapshot = snapshotOf();
+      const [mine, theirs, gone] = snapshot.assetIds;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([mine]));
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
+
+      expect(assets.updateAll).toHaveBeenCalledWith(authStub.user1, { ids: [mine], isFavorite: true });
+      expect(outcomes).toEqual(
+        expect.arrayContaining([
+          { id: mine, status: MediaOperationItemStatus.Ok },
+          expect.objectContaining({
+            id: theirs,
+            status: MediaOperationItemStatus.Skipped,
+            reasonKey: 'frameleaf_bulk_reason_no_permission',
+          }),
+          expect.objectContaining({ id: gone, status: MediaOperationItemStatus.Skipped }),
+        ]),
+      );
+    });
+
+    it('checks ownership with the elevated flag, so Locked items are not skipped', async () => {
+      const auth = (await sut.authFor(ownerId))!;
+      const snapshot = snapshotOf();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+
+      await sut.applyBatch(auth, snapshot, snapshot.assetIds);
+
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(ownerId, new Set(snapshot.assetIds), true);
+      expect(assets.updateAll).toHaveBeenCalledWith(auth, { ids: snapshot.assetIds, isFavorite: true });
+    });
+
+    it('names the items a rejected batch actually failed on', async () => {
+      const snapshot = snapshotOf({ action: MediaOperationBulkAction.Archive });
+      const [first, second] = snapshot.assetIds;
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+      assets.updateAll.mockImplementation((_auth: unknown, { ids }: { ids: string[] }) =>
+        ids.length > 1 || ids[0] === second ? Promise.reject(new Error('database said no')) : Promise.resolve(),
+      );
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
+
+      expect(assets.updateAll).toHaveBeenCalledWith(
+        authStub.user1,
+        expect.objectContaining({ visibility: AssetVisibility.Archive }),
+      );
+      expect(outcomes.find((outcome) => outcome.id === first)?.status).toBe(MediaOperationItemStatus.Ok);
+      expect(outcomes.find((outcome) => outcome.id === second)).toEqual(
+        expect.objectContaining({ status: MediaOperationItemStatus.Failed, message: 'database said no' }),
+      );
+    });
+
+    it('reports a per-item access refusal as skipped, not as a retryable failure', async () => {
+      const snapshot = snapshotOf({ assetIds: [newUuid()] });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+      assets.updateAll.mockRejectedValue(new BadRequestException('Not found or no asset.update access'));
+
+      const [outcome] = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
+
+      expect(outcome).toEqual(
+        expect.objectContaining({
+          status: MediaOperationItemStatus.Skipped,
+          reasonKey: 'frameleaf_bulk_reason_no_permission',
+        }),
+      );
+    });
+
+    it('marks sensitive as metadata only, never through visibility or albums', async () => {
+      const snapshot = snapshotOf({ action: MediaOperationBulkAction.MarkSensitive });
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
+
+      for (const id of snapshot.assetIds) {
+        expect(enrichment.updateAssetEnrichment).toHaveBeenCalledWith(authStub.user1, id, {
+          action: AssetImageEnrichmentAction.MarkNsfw,
+        });
+      }
+      expect(assets.updateAll).not.toHaveBeenCalled();
+      expect(albums.addAssets).not.toHaveBeenCalled();
+      expect(albums.removeAssets).not.toHaveBeenCalled();
+      expect(outcomes.every((outcome) => outcome.status === MediaOperationItemStatus.Ok)).toBe(true);
+    });
+
+    it('reports an item already in the album as skipped', async () => {
+      const albumId = newUuid();
+      const snapshot = snapshotOf({ action: MediaOperationBulkAction.AddToAlbum, payload: { albumId } });
+      const [added, duplicate, denied] = snapshot.assetIds;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
+      albums.addAssets.mockResolvedValue([
+        { id: added, success: true },
+        { id: duplicate, success: false, error: 'duplicate' },
+        { id: denied, success: false, error: 'no_permission' },
+      ]);
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
+
+      expect(albums.addAssets).toHaveBeenCalledWith(authStub.user1, albumId, { ids: snapshot.assetIds });
+      expect(outcomes.map((outcome) => outcome.status)).toEqual([
+        MediaOperationItemStatus.Ok,
+        MediaOperationItemStatus.Skipped,
+        MediaOperationItemStatus.Skipped,
+      ]);
+    });
+
+    it('checks the tagged items itself, because bulk tagging drops refusals silently', async () => {
+      const tagId = newUuid();
+      const snapshot = snapshotOf({ action: MediaOperationBulkAction.Tag, payload: { tagIds: [tagId] } });
+      const [allowed] = snapshot.assetIds;
+      mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set([tagId]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([allowed]));
+
+      const outcomes = await sut.applyBatch(authStub.user1, snapshot, snapshot.assetIds);
+
+      expect(tags.bulkTagAssets).toHaveBeenCalledWith(authStub.user1, { assetIds: [allowed], tagIds: [tagId] });
+      expect(outcomes.filter((outcome) => outcome.status === MediaOperationItemStatus.Skipped)).toHaveLength(2);
+    });
+  });
+
+  describe('run', () => {
+    it('works through the frozen set and completes', async () => {
+      const snapshot = snapshotOf();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+
+      await sut.run(operationOf(snapshot), 'claim');
+
+      expect(assets.updateAll).toHaveBeenCalledWith(expect.anything(), { ids: snapshot.assetIds, isFavorite: true });
+      expect(operations.setBulkResult).toHaveBeenLastCalledWith(
+        expect.any(String),
+        'claim',
+        expect.objectContaining({
+          processedUnits: 3,
+          totalUnits: 3,
+          progress: 100,
+          result: expect.objectContaining({ succeeded: 3, inFlight: null }),
+        }),
+      );
+      expect(operations.complete).toHaveBeenCalledWith(expect.any(String), 'claim', { resultAssetId: null });
+    });
+
+    it('resumes from the durable cursor rather than starting again', async () => {
+      const snapshot = snapshotOf();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+
+      await sut.run(operationOf(snapshot, { processedUnits: '2' } as never), 'claim');
+
+      expect(assets.updateAll).toHaveBeenCalledTimes(1);
+      expect(assets.updateAll).toHaveBeenCalledWith(expect.anything(), {
+        ids: [snapshot.assetIds[2]],
+        isFavorite: true,
+      });
+    });
+
+    it('stops at a cancel and records what was already changed', async () => {
+      const snapshot = snapshotOf();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+      vi.mocked(operations.setBulkResult)
+        .mockResolvedValueOnce(running)
+        .mockResolvedValueOnce(running)
+        .mockResolvedValueOnce({ status: MediaOperationStatus.Cancelling, cancelRequestedAt: new Date() });
+
+      await sut.run(operationOf(snapshot), 'claim');
+
+      expect(operations.setBulkResult).toHaveBeenLastCalledWith(
+        expect.any(String),
+        'claim',
+        expect.objectContaining({ processedUnits: 3, result: expect.objectContaining({ succeeded: 3 }) }),
+      );
+      expect(operations.acknowledgeCancel).toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('stops writing the moment its claim is taken away', async () => {
+      const snapshot = snapshotOf();
+      vi.mocked(operations.setBulkResult).mockResolvedValue(undefined);
+
+      await sut.run(operationOf(snapshot), 'stale');
+
+      expect(assets.updateAll).not.toHaveBeenCalled();
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    it('does not shift an interrupted batch twice', async () => {
+      const snapshot = snapshotOf({
+        action: MediaOperationBulkAction.ChangeDate,
+        payload: { dateMode: 'shift', minutes: 60 },
+      });
+      const operation = operationOf(snapshot, {
+        result: {
+          requested: 3,
+          succeeded: 0,
+          failed: 0,
+          skipped: 0,
+          items: [],
+          itemsTruncated: false,
+          inFlight: { start: 0, size: 3 },
+        },
+      } as never);
+
+      await sut.run(operation, 'claim');
+
+      expect(assets.updateAll).not.toHaveBeenCalled();
+      expect(operations.setBulkResult).toHaveBeenCalledWith(
+        expect.any(String),
+        'claim',
+        expect.objectContaining({
+          processedUnits: 3,
+          result: expect.objectContaining({
+            skipped: 3,
+            items: expect.arrayContaining([
+              expect.objectContaining({ reasonKey: 'frameleaf_bulk_reason_interrupted' }),
+            ]),
+          }),
+        }),
+      );
+    });
+
+    it('replays an interrupted batch when repeating it is harmless', async () => {
+      const snapshot = snapshotOf();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(snapshot.assetIds));
+      const operation = operationOf(snapshot, {
+        result: {
+          requested: 3,
+          succeeded: 0,
+          failed: 0,
+          skipped: 0,
+          items: [],
+          itemsTruncated: false,
+          inFlight: { start: 0, size: 3 },
+        },
+      } as never);
+
+      await sut.run(operation, 'claim');
+
+      expect(assets.updateAll).toHaveBeenCalledWith(expect.anything(), { ids: snapshot.assetIds, isFavorite: true });
+    });
+
+    it('fails the job, leaving the batch unreached, when the album is no longer writable', async () => {
+      const snapshot = snapshotOf({ action: MediaOperationBulkAction.AddToAlbum, payload: { albumId: newUuid() } });
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set());
+
+      await sut.run(operationOf(snapshot), 'claim');
+
+      expect(albums.addAssets).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalledWith(
+        expect.any(String),
+        'claim',
+        expect.objectContaining({ errorCode: 'bulk_target_unavailable' }),
+      );
+      expect(operations.setBulkResult).toHaveBeenLastCalledWith(
+        expect.any(String),
+        'claim',
+        expect.objectContaining({ processedUnits: 0, result: expect.objectContaining({ inFlight: null }) }),
+      );
+    });
+
+    it('stops a job whose API key was revoked', async () => {
+      const snapshot = snapshotOf({ apiKeyId: newUuid() });
+      apiKeys.getById.mockResolvedValue(undefined);
+
+      await sut.run(operationOf(snapshot), 'claim');
+
+      expect(assets.updateAll).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalledWith(
+        expect.any(String),
+        'claim',
+        expect.objectContaining({ errorCode: 'bulk_credentials_revoked' }),
+      );
+    });
+
+    it('fails a job it cannot read rather than guessing', async () => {
+      const unreadable = { ...operationOf(snapshotOf()), snapshot: { action: 'rename-everything' } } as MediaOperation;
+
+      await sut.run(unreadable, 'claim');
+
+      expect(operations.fail).toHaveBeenCalledWith(
+        expect.any(String),
+        'claim',
+        expect.objectContaining({ errorCode: 'bulk_snapshot_invalid' }),
+      );
+    });
+  });
+
+  describe('drain', () => {
+    it('only claims bulk jobs and only recovers bulk claims', async () => {
+      await sut.drain();
+
+      expect(operations.recoverExpiredClaims).toHaveBeenCalledWith(
+        expect.objectContaining({ kinds: [MediaOperationKind.Bulk] }),
+      );
+      expect(operations.claimNext).toHaveBeenCalledWith(expect.objectContaining({ kinds: [MediaOperationKind.Bulk] }));
+    });
+  });
+});

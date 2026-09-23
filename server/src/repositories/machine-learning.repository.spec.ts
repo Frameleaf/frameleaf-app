@@ -5,13 +5,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaults } from 'src/config.js';
+import { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
 import {
   RESTORATION_PROTOCOL,
   RESTORATION_RESULT_HEADER,
   RestorationDynamicRange,
-  RestorationErrorCode,
-  RestorationInferenceRequest,
-  RestorationMode,
+  RestorationWorkerErrorCode,
 } from 'src/dtos/restoration-inference.dto.js';
 import { MachineLearningHardwareAcceleration, MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -21,9 +20,16 @@ import {
   MlUsage,
   ModelTask,
   ModelType,
-  RestorationSelection,
   RestorationWorkerError,
 } from 'src/repositories/machine-learning.repository.js';
+import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
+import {
+  RestorationInferenceInput,
+  RestorationInferenceOptions,
+  RestorationSelection,
+  selectRestorationDestination,
+} from 'src/utils/restoration.js';
+import { mlDestinationStub, mlProbeStub } from 'test/fixtures/ml-destination.stub.js';
 
 const qwenModelName = 'Qwen/Qwen2.5-VL-3B-Instruct';
 const florenceModelName = 'microsoft/Florence-2-base-ft';
@@ -305,33 +311,16 @@ describe(MachineLearningRepository.name, () => {
     let directory: string;
     let sourcePath: string;
     let outputPath: string;
-
-    const request = (overrides: Partial<RestorationInferenceRequest> = {}): RestorationInferenceRequest => ({
-      protocol: RESTORATION_PROTOCOL,
-      requestId: 'operation-1',
-      mode: RestorationMode.Faithful,
-      scale: 2,
-      maxLongEdge: 3840,
-      seed: 0,
-      source: {
-        width: 640,
-        height: 360,
-        frameRate: '30/1',
-        durationMs: 5000,
-        dynamicRange: RestorationDynamicRange.Sdr,
-        bitDepth: 8,
-      },
-      ...overrides,
-    });
+    let recordAccounting: ReturnType<typeof vi.fn>;
 
     const result = (overrides: Record<string, unknown> = {}) => ({
       protocol: RESTORATION_PROTOCOL,
-      requestId: 'operation-1',
-      mode: RestorationMode.Faithful,
+      requestId: 'operation-1:restored.mp4',
+      mode: AssetRestorationMode.Faithful,
       model: {
         id: 'realbasicvsr-x4',
         family: 'realbasicvsr',
-        mode: RestorationMode.Faithful,
+        mode: AssetRestorationMode.Faithful,
         revision: '0123456789abcdef0123456789abcdef01234567',
         fingerprint: 'a'.repeat(64),
         weights: [{ role: 'generator', sha256: 'b'.repeat(64) }],
@@ -344,7 +333,7 @@ describe(MachineLearningRepository.name, () => {
         frameCount: 150,
         durationMs: 5000,
         container: 'mp4',
-        videoCodec: 'h264',
+        codec: 'h264',
         dynamicRange: RestorationDynamicRange.Sdr,
         bitDepth: 8,
         audio: 'copied',
@@ -367,20 +356,48 @@ describe(MachineLearningRepository.name, () => {
         },
       });
 
-    const restorationSelection = (record: (usage: MlUsage) => void = () => {}): RestorationSelection => ({
-      ...selection(MlDestinationKind.Lan, lanUrl, record, 'lan-token'),
-      workload: MlWorkload.RestorationFaithful,
-      cloudUploadAcknowledged: false,
+    /** A selection admitted the only way restore accepts: through selectRestorationDestination. */
+    const admit = async (destination: MlDestinationRow = mlDestinationStub.lan, confirmed = false) => {
+      recordAccounting = vi.fn().mockResolvedValue(undefined);
+      const mlDestinationRepository = {
+        getById: vi.fn().mockResolvedValue(destination),
+        getSpend: vi.fn().mockResolvedValue(0),
+        recordProbe: vi.fn().mockResolvedValue(undefined),
+        recordAccounting,
+        getRoute: vi.fn(),
+      } as unknown as MlDestinationRepository;
+      const machineLearningRepository = {
+        probe: vi.fn().mockResolvedValue(mlProbeStub.restoration),
+        getRunPodEndpoint: vi.fn().mockReturnValue({ url: runPodUrl, authToken: 'rpa_test_key' }),
+      } as unknown as MachineLearningRepository;
+      return selectRestorationDestination(
+        { mlDestinationRepository, machineLearningRepository },
+        { mode: AssetRestorationMode.Faithful, destinationId: destination.id, acknowledgeCloudUpload: confirmed },
+      );
+    };
+
+    const input = (): RestorationInferenceInput => ({
+      kind: 'video',
+      path: sourcePath,
+      width: 640,
+      height: 360,
+      durationSeconds: 5,
     });
 
-    const cloudSelection = (cloudUploadAcknowledged: boolean): RestorationSelection => ({
-      ...selection(MlDestinationKind.RunPod, runPodUrl, () => {}, 'rpa_test_key'),
-      workload: MlWorkload.RestorationFaithful,
-      cloudUploadAcknowledged,
+    const options = (overrides: Partial<RestorationInferenceOptions> = {}): RestorationInferenceOptions => ({
+      mode: AssetRestorationMode.Faithful,
+      upscale: 2,
+      keepGrain: false,
+      maxWidth: 1280,
+      maxHeight: 720,
+      outputPath,
+      jobId: 'operation-1',
+      signal: new AbortController().signal,
+      ...overrides,
     });
 
-    const restore = (overrides: Partial<RestorationInferenceRequest> = {}, record?: (usage: MlUsage) => void) =>
-      sut.restore(restorationSelection(record), { sourcePath, outputPath, request: request(overrides) });
+    const restore = async (overrides: Partial<RestorationInferenceOptions> = {}, selection?: RestorationSelection) =>
+      sut.restore(selection ?? (await admit()), input(), options(overrides));
 
     beforeEach(async () => {
       directory = await mkdtemp(join(tmpdir(), 'immich-restoration-'));
@@ -393,32 +410,60 @@ describe(MachineLearningRepository.name, () => {
       await rm(directory, { recursive: true, force: true });
     });
 
-    it('writes the restored file as a new derivative and leaves the original untouched', async () => {
+    it('writes the restored file as a new file and leaves the original untouched', async () => {
       const fetch = vi.fn().mockResolvedValue(answer(result()));
       vi.stubGlobal('fetch', fetch);
-      const record = vi.fn();
 
-      const response = await restore({}, record);
+      const response = await restore();
 
-      expect(response.model.qualificationId).toBe('realbasicvsr-x4-2026-09');
+      expect(response).toEqual({
+        outputPath,
+        width: 1280,
+        height: 720,
+        modelName: 'realbasicvsr-x4',
+        modelVersion: '0123456789ab+aaaaaaaaaaaa',
+      });
       expect(await readFile(outputPath)).toEqual(restored);
       expect(await readFile(sourcePath)).toEqual(original);
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(String(fetch.mock.calls[0][0])).toBe(`${lanUrl}/restoration/restore`);
       expect(fetch.mock.calls[0][1].headers).toEqual({ Authorization: 'Bearer lan-token' });
       const form = fetch.mock.calls[0][1].body as FormData;
-      expect(JSON.parse(String(form.get('request')))).toMatchObject({ requestId: 'operation-1', mode: 'faithful' });
+      expect(JSON.parse(String(form.get('request')))).toMatchObject({
+        requestId: 'operation-1:restored.mp4',
+        mode: 'faithful',
+        kind: 'video',
+        scale: 2,
+        maxWidth: 1280,
+        maxHeight: 720,
+        source: { width: 640, height: 360, durationMs: 5000 },
+      });
       expect(form.get('media')).toBeInstanceOf(Blob);
-      expect(record).toHaveBeenCalledTimes(1);
-      expect(record).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success', bytesReceived: 20 }));
+      expect(recordAccounting).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success', bytesReceived: 20 }));
+    });
+
+    it('sends a still as an image request with no duration', async () => {
+      const fetch = vi.fn().mockResolvedValue(answer(result()));
+      vi.stubGlobal('fetch', fetch);
+      const still: RestorationInferenceInput = { kind: 'image', path: sourcePath, width: 1024, height: 768 };
+
+      await sut.restore(await admit(), still, options({ upscale: 4, maxWidth: 3840, maxHeight: 2880 }));
+
+      const form = fetch.mock.calls[0][1].body as FormData;
+      expect(JSON.parse(String(form.get('request')))).toMatchObject({
+        kind: 'image',
+        scale: 4,
+        maxWidth: 3840,
+        maxHeight: 2880,
+        source: { width: 1024, height: 768, durationMs: null },
+      });
     });
 
     it('never writes over an existing file, the original included', async () => {
       const fetch = vi.fn();
       vi.stubGlobal('fetch', fetch);
-      const intoSource = { sourcePath, outputPath: sourcePath, request: request() };
 
-      await expect(sut.restore(restorationSelection(), intoSource)).rejects.toThrow('never writes over its source');
+      await expect(restore({ outputPath: sourcePath })).rejects.toThrow('never writes over its source');
       await writeFile(outputPath, 'an earlier derivative');
       await expect(restore()).rejects.toThrow(/EEXIST/);
 
@@ -427,30 +472,25 @@ describe(MachineLearningRepository.name, () => {
       expect(await readFile(outputPath, 'utf8')).toBe('an earlier derivative');
     });
 
-    it('never uploads to a cloud destination the person did not confirm for this request', async () => {
+    it('refuses a selection that did not come from selectRestorationDestination', async () => {
       const fetch = vi.fn();
       vi.stubGlobal('fetch', fetch);
-      const input = { sourcePath, outputPath, request: request() };
+      const plainCloud = {
+        ...selection(MlDestinationKind.RunPod, runPodUrl, () => {}, 'rpa_test_key'),
+        workload: MlWorkload.RestorationFaithful,
+      } as MlSelection as RestorationSelection;
 
-      await expect(sut.restore(cloudSelection(false), input)).rejects.toThrow(/confirmation that media leaves/);
+      await expect(restore({}, plainCloud)).rejects.toThrow(/admitted by selectRestorationDestination/);
+      await expect(restore({}, { ...(await admit()) })).rejects.toThrow(/admitted by selectRestorationDestination/);
       expect(fetch).not.toHaveBeenCalled();
       expect(existsSync(outputPath)).toBe(false);
     });
 
-    it('sends a cloud destination only a segment that was cut beforehand', async () => {
-      const fetch = vi.fn();
-      vi.stubGlobal('fetch', fetch);
-      const input = { sourcePath, outputPath, request: request({ segment: { startMs: 0, endMs: 5000 } }) };
-
-      await expect(sut.restore(cloudSelection(true), input)).rejects.toThrow(/Cut the segment/);
-      expect(fetch).not.toHaveBeenCalled();
-    });
-
-    it('uploads to a confirmed cloud destination', async () => {
+    it('uploads to a consented cloud destination the person chose for this request', async () => {
       const fetch = vi.fn().mockResolvedValue(answer(result()));
       vi.stubGlobal('fetch', fetch);
 
-      await sut.restore(cloudSelection(true), { sourcePath, outputPath, request: request() });
+      await restore({}, await admit(mlDestinationStub.runPodConsented, true));
 
       expect(String(fetch.mock.calls[0][0])).toBe(`${runPodUrl}restoration/restore`);
       expect(await readFile(outputPath)).toEqual(restored);
@@ -460,21 +500,20 @@ describe(MachineLearningRepository.name, () => {
       const fetch = vi.fn();
       vi.stubGlobal('fetch', fetch);
 
-      await expect(restore({ mode: RestorationMode.Creative })).rejects.toThrow(/needs a restoration-creative/);
+      await expect(restore({ mode: AssetRestorationMode.Creative })).rejects.toThrow(/needs a restoration-creative/);
       expect(fetch).not.toHaveBeenCalled();
     });
 
-    it('reports the worker refusal by code and removes the partial derivative', async () => {
+    it('reports the worker refusal by code and removes the partial file', async () => {
       const refusal = { code: 'model-unavailable', message: 'no faithful model is available' };
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(refusal), { status: 409 })));
-      const record = vi.fn();
 
-      const error = await restore({}, record).catch((error_: unknown) => error_);
+      const error = await restore().catch((error_: unknown) => error_);
 
       expect(error).toBeInstanceOf(RestorationWorkerError);
-      expect((error as RestorationWorkerError).code).toBe(RestorationErrorCode.ModelUnavailable);
+      expect((error as RestorationWorkerError).code).toBe(RestorationWorkerErrorCode.ModelUnavailable);
       expect(existsSync(outputPath)).toBe(false);
-      expect(record).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failure' }));
+      expect(recordAccounting).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failure' }));
     });
 
     it('discards a file that does not match the reported hash', async () => {
@@ -485,16 +524,9 @@ describe(MachineLearningRepository.name, () => {
     });
 
     it('discards an answer for another request', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(answer(result({ requestId: 'operation-2' }))));
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(answer(result({ requestId: 'operation-2:restored.mp4' }))));
 
       await expect(restore()).rejects.toMatchObject({ code: 'protocol-error' });
-      expect(existsSync(outputPath)).toBe(false);
-    });
-
-    it('discards an answer from another model than the preview used', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(answer(result())));
-
-      await expect(restore({ modelFingerprint: 'c'.repeat(64) })).rejects.toMatchObject({ code: 'protocol-error' });
       expect(existsSync(outputPath)).toBe(false);
     });
 
