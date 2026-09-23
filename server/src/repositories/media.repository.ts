@@ -13,6 +13,7 @@ import type {
   GenerateThumbnailOptions,
   ImageDimensions,
   ProbeOptions,
+  RawImageInfo,
   TranscodeCommand,
   VideoInfo,
   VideoPacketInfo,
@@ -31,12 +32,14 @@ import {
   DvSignalCompatibility,
   H264Profile,
   HevcProfile,
+  ImageFormat,
   LogLevel,
   RawExtractedFormat,
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 import { tryParseRational } from 'src/utils/rational-time.js';
+import type { DevelopDetailPlan, DevelopGeometryPlan } from 'src/utils/develop-recipe.js';
 import { createAffineMatrix } from 'src/utils/transform.js';
 
 const probe = (input: string, options: string[]): Promise<FfprobeData> =>
@@ -257,6 +260,124 @@ export class MediaRepository {
       pipeline = pipeline.resize(options.size, options.size, { fit: 'outside', withoutEnlargement: true });
     }
     return pipeline;
+  }
+
+  /**
+   * Still-image develop geometry (FL-113): quarter turns and flips, then an arbitrary
+   * straighten with the frame scaled back to cover its own bounds, then the recipe crop.
+   * Runs as staged pipelines because sharp allows one rotation and two extracts per pipeline.
+   * Input and output are 8-bit interleaved raw buffers; the original file is only ever read.
+   */
+  async renderDevelopGeometry(
+    input: Buffer,
+    raw: RawImageInfo,
+    plan: DevelopGeometryPlan,
+  ): Promise<{ data: Buffer; info: RawImageInfo }> {
+    let current = await sharp(input, { raw, limitInputPixels: false, unlimited: true })
+      .rotate(plan.rotation)
+      .flop(plan.flipHorizontal)
+      .flip(plan.flipVertical)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const { width, height } = plan.oriented;
+    if (plan.straighten !== 0) {
+      const theta = (Math.abs(plan.straighten) * Math.PI) / 180;
+      const cos = Math.cos(theta);
+      const sin = Math.sin(theta);
+      // The rotated bitmap grows to these bounds; the centre window of the original size divided
+      // by the cover scale, resized back up, is the straightened frame the client previews.
+      const scale = Math.max((width * cos + height * sin) / width, (width * sin + height * cos) / height);
+      const windowWidth = Math.max(1, Math.round(width / scale));
+      const windowHeight = Math.max(1, Math.round(height / scale));
+      const rotated = await sharp(current.data, { raw: this.toRawInfo(current.info), limitInputPixels: false, unlimited: true })
+        .rotate(plan.straighten, { background: { r: 0, g: 0, b: 0, alpha: 1 } })
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      current = await sharp(rotated.data, { raw: this.toRawInfo(rotated.info), limitInputPixels: false, unlimited: true })
+        .extract({
+          left: Math.max(0, Math.round((rotated.info.width - windowWidth) / 2)),
+          top: Math.max(0, Math.round((rotated.info.height - windowHeight) / 2)),
+          width: Math.min(windowWidth, rotated.info.width),
+          height: Math.min(windowHeight, rotated.info.height),
+        })
+        .resize(width, height, { fit: 'fill' })
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+    }
+
+    const { extract } = plan;
+    if (extract.left !== 0 || extract.top !== 0 || extract.width !== width || extract.height !== height) {
+      current = await sharp(current.data, { raw: this.toRawInfo(current.info), limitInputPixels: false, unlimited: true })
+        .extract({
+          left: Math.min(extract.left, Math.max(0, current.info.width - 1)),
+          top: Math.min(extract.top, Math.max(0, current.info.height - 1)),
+          width: Math.min(extract.width, current.info.width - extract.left),
+          height: Math.min(extract.height, current.info.height - extract.top),
+        })
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+    }
+
+    return { data: current.data, info: this.toRawInfo(current.info) };
+  }
+
+  /**
+   * Detail stages after the tone pass (noise reduction, clarity, sharpening) and encoding of
+   * one develop output. `size` bounds the longest edge for a preview and is omitted for the
+   * edited master, which keeps the source resolution. Writes to `output` when given, otherwise
+   * returns the encoded bytes.
+   */
+  async encodeDevelopOutput(
+    input: Buffer,
+    raw: RawImageInfo,
+    options: {
+      detail: DevelopDetailPlan;
+      colorspace: string;
+      format: ImageFormat;
+      quality: number;
+      progressive?: boolean;
+      size?: number;
+    },
+    output?: string,
+  ): Promise<Buffer | undefined> {
+    let data = input;
+    let info = raw;
+    const open = () => sharp(data, { raw: info, limitInputPixels: false, unlimited: true });
+    const { detail } = options;
+    if (detail.median > 0 || detail.clarity) {
+      let pipeline = open();
+      if (detail.median > 0) {
+        pipeline = pipeline.median(detail.median);
+      }
+      if (detail.clarity) {
+        pipeline = pipeline.sharpen(detail.clarity);
+      }
+      const result = await pipeline.raw().toBuffer({ resolveWithObject: true });
+      data = result.data;
+      info = this.toRawInfo(result.info);
+    }
+    let pipeline = open();
+    if (detail.sharpen) {
+      pipeline = pipeline.sharpen(detail.sharpen);
+    }
+    if (options.size !== undefined) {
+      pipeline = pipeline.resize(options.size, options.size, { fit: 'inside', withoutEnlargement: true });
+    }
+    pipeline = pipeline.withIccProfile(options.colorspace).toFormat(options.format, {
+      quality: options.quality,
+      chromaSubsampling: options.quality >= 80 ? '4:4:4' : '4:2:0',
+      progressive: options.progressive ?? false,
+    });
+    if (output) {
+      await pipeline.toFile(output);
+      return;
+    }
+    return pipeline.toBuffer();
+  }
+
+  private toRawInfo(info: { width: number; height: number; channels: number }): RawImageInfo {
+    return { width: info.width, height: info.height, channels: info.channels as RawImageInfo['channels'] };
   }
 
   async generateThumbhash(input: string | Buffer, options: GenerateThumbhashOptions): Promise<Buffer> {

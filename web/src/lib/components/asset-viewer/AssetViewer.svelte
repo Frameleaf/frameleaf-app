@@ -7,6 +7,7 @@
   import PreviousAssetAction from '$lib/components/asset-viewer/actions/PreviousAssetAction.svelte';
   import AssetViewerNavBar from '$lib/components/asset-viewer/AssetViewerNavBar.svelte';
   import { preloadManager } from '$lib/components/asset-viewer/PreloadManager.svelte';
+  import QuickEditor from '$lib/components/frameleaf/editor/QuickEditor.svelte';
   import ViewerFilmstrip from '$lib/components/frameleaf/ViewerFilmstrip.svelte';
   import ViewerOfflineBanner from '$lib/components/frameleaf/ViewerOfflineBanner.svelte';
   import ViewerStackStrip from '$lib/components/frameleaf/ViewerStackStrip.svelte';
@@ -17,7 +18,6 @@
   import { activityManager } from '$lib/managers/activity-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { editManager, EditToolType } from '$lib/managers/edit/edit-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { getAssetActions } from '$lib/services/asset.service';
@@ -50,8 +50,6 @@
   import ActivityStatus from './ActivityStatus.svelte';
   import ActivityViewer from './ActivityViewer.svelte';
   import DetailPanel from './DetailPanel.svelte';
-  import EditorPanel from './editor/EditorPanel.svelte';
-  import CropArea from './editor/transform-tool/CropArea.svelte';
   import ImagePanoramaViewer from './ImagePanoramaViewer.svelte';
   import OcrButton from './OcrButton.svelte';
   import PhotoViewer from './PhotoViewer.svelte';
@@ -212,7 +210,8 @@
     onClose?.(asset.id);
   };
 
-  const closeEditor = async (refreshAsset = editManager.hasAppliedEdits) => {
+  // FL-113: the quick editor says whether a saved version changed what the viewer should show.
+  const closeEditor = async (refreshAsset = false) => {
     if (refreshAsset) {
       const refreshedAsset = await getAssetInfo({ id: asset.id });
       onAssetChange?.(refreshedAsset);
@@ -456,9 +455,6 @@
     if (isPanorama(asset) && !assetViewerManager.isPanoramaFlattened) {
       return 'ImagePanaramaViewer';
     }
-    if (assetViewerManager.isShowEditor && editManager.selectedTool?.type === EditToolType.Transform) {
-      return 'CropArea';
-    }
     return 'PhotoViewer';
   });
 
@@ -598,8 +594,6 @@
       />
     {:else if viewerKind === 'ImagePanaramaViewer'}
       <ImagePanoramaViewer {asset} />
-    {:else if viewerKind === 'CropArea'}
-      <CropArea {asset} />
     {:else if viewerKind === 'PhotoViewer'}
       <PhotoViewer cursor={{ ...cursor, current: asset }} {sharedLink} {onSwipe} />
     {:else if viewerKind === 'VideoViewer'}
@@ -654,29 +648,31 @@
     </div>
   {/if}
 
-  {#if showDetailPanel || assetViewerManager.isShowEditor}
+  {#if showDetailPanel}
     <div
       transition:fly={{ duration: 150 }}
       id="detail-panel"
-      class={[
-        'row-span-4 row-start-1 overflow-y-auto bg-light transition-all dark:border-l dark:border-s-immich-dark-gray',
-        showDetailPanel ? 'w-90' : 'w-100',
-      ]}
+      class="row-span-4 row-start-1 w-90 overflow-y-auto bg-light transition-all dark:border-l dark:border-s-immich-dark-gray"
       translate="yes"
     >
-      {#if showDetailPanel}
-        <!--
+      <!--
           FL-35 stops at the viewer's media sources, navigation and actions. FL-36 rebuilt
           the panel itself — the inline description, date and timezone, location, tag and
           rating edits, the enrichment card and the file, path and checksum details — in
           place, so there is no second panel and no opt-in switch between them. The people
           and face edits are FL-38 and continue to live inside DetailPanel.
         -->
-        <DetailPanel {asset} currentAlbum={album} {onAssetUpdate} {onAssetSuppressed} />
-      {:else if assetViewerManager.isShowEditor}
-        <EditorPanel {asset} onClose={closeEditor} />
-      {/if}
+      <DetailPanel {asset} currentAlbum={album} {onAssetUpdate} {onAssetSuppressed} />
     </div>
+  {/if}
+
+  <!--
+    FL-113: the quick editor is a full-screen, media-aware surface layered over the viewer,
+    not a side panel. Photos edit through the server develop recipe pipeline; videos keep the
+    production video editor's commands inside the same frame.
+  -->
+  {#if assetViewerManager.isShowEditor}
+    <QuickEditor {asset} onClose={closeEditor} />
   {/if}
 
   <!-- FL-35: the stack strip carries keep-this and set-primary beside the members. -->

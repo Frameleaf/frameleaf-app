@@ -4652,7 +4652,8 @@
     "0000000000070-ResetAssetSyncChecksums",
     "0000000000080-MediaHealthRunOwner",
     "0000000000090-ICloudSync",
-    "0000000000100-AlbumKind"
+    "0000000000100-AlbumKind",
+    "0000000000110-AssetDevelopRevision"
   ],
   "functions": [
     {

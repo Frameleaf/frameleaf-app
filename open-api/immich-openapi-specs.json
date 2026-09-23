@@ -4075,6 +4075,463 @@
         ],
         "type": "object"
       },
+      "AssetDevelopCrop": {
+        "properties": {
+          "h": {
+            "description": "Crop height as a fraction of the frame",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0.05,
+            "type": "number"
+          },
+          "w": {
+            "description": "Crop width as a fraction of the frame",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0.05,
+            "type": "number"
+          },
+          "x": {
+            "description": "Left edge of the crop as a fraction of the oriented frame width",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "y": {
+            "description": "Top edge of the crop as a fraction of the oriented frame height",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "h",
+          "w",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopFileKind": {
+        "description": "Which rendered file of a revision to fetch",
+        "enum": [
+          "master",
+          "preview"
+        ],
+        "type": "string"
+      },
+      "AssetDevelopPreset": {
+        "description": "Named look applied on top of the develop sliders",
+        "enum": [
+          "Original",
+          "Vivid",
+          "Natural",
+          "Warm",
+          "Cool",
+          "Mono",
+          "Silvertone",
+          "Noir",
+          "Fade"
+        ],
+        "type": "string"
+      },
+      "AssetDevelopPreviewDto": {
+        "properties": {
+          "recipe": {
+            "$ref": "#/components/schemas/AssetDevelopRecipeDto"
+          },
+          "size": {
+            "default": 1280,
+            "description": "Longest edge of the preview in pixels; the original is never upscaled",
+            "maximum": 2048,
+            "minimum": 256,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "recipe"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopRecipeDto": {
+        "properties": {
+          "blacks": {
+            "default": 0,
+            "description": "Black point",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "clarity": {
+            "default": 0,
+            "description": "Local contrast in the midtones",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "contrast": {
+            "default": 0,
+            "description": "Contrast around middle grey",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "crop": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetDevelopCrop"
+              }
+            ],
+            "default": {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 1
+            }
+          },
+          "dehaze": {
+            "default": 0,
+            "description": "Haze removal (positive) or addition (negative)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "exposure": {
+            "default": 0,
+            "description": "Exposure in EV; each whole stop doubles the light",
+            "format": "double",
+            "maximum": 2,
+            "minimum": -2,
+            "type": "number"
+          },
+          "flipHorizontal": {
+            "default": false,
+            "description": "Mirror left to right",
+            "type": "boolean"
+          },
+          "flipVertical": {
+            "default": false,
+            "description": "Mirror top to bottom",
+            "type": "boolean"
+          },
+          "grain": {
+            "default": 0,
+            "description": "Film grain amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "highlights": {
+            "default": 0,
+            "description": "Highlight recovery (negative) or lift (positive)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "noiseReduction": {
+            "default": 0,
+            "description": "Luminance noise reduction amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "preset": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetDevelopPreset"
+              }
+            ],
+            "default": "Original"
+          },
+          "presetStrength": {
+            "default": 100,
+            "description": "How much of the preset is applied, as a percentage",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rotation": {
+            "default": 0,
+            "description": "Quarter-turn rotation in degrees, clockwise",
+            "maximum": 270,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "saturation": {
+            "default": 0,
+            "description": "Global saturation",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "shadows": {
+            "default": 0,
+            "description": "Shadow lift (positive) or deepening (negative)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "sharpen": {
+            "default": 0,
+            "description": "Detail sharpening amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "straighten": {
+            "default": 0,
+            "description": "Straighten angle in degrees, applied before the crop",
+            "format": "double",
+            "maximum": 45,
+            "minimum": -45,
+            "type": "number"
+          },
+          "temperature": {
+            "default": 0,
+            "description": "Warm (positive) or cool (negative) white balance shift",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "tint": {
+            "default": 0,
+            "description": "Magenta (positive) or green (negative) tint",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "version": {
+            "description": "Recipe contract version",
+            "enum": [
+              1
+            ],
+            "type": "integer"
+          },
+          "vibrance": {
+            "default": 0,
+            "description": "Saturation weighted towards muted colours",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "vignette": {
+            "default": 0,
+            "description": "Darkened (positive) or lightened (negative) edges",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "whites": {
+            "default": 0,
+            "description": "White point",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset ID these revisions belong to",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "currentRevisionId": {
+            "description": "The revision the asset currently shows; null means the original",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "revisions": {
+            "description": "Every saved version of the recipe, newest first",
+            "items": {
+              "$ref": "#/components/schemas/AssetDevelopRevisionResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetId",
+          "currentRevisionId",
+          "revisions"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopRevertDto": {
+        "properties": {
+          "revisionId": {
+            "description": "Rendered revision to make current again; omitted, the original becomes current",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AssetDevelopRevisionResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset this revision belongs to",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When the version was saved",
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "description": "Why the last render failed, when it did",
+            "nullable": true,
+            "type": "string"
+          },
+          "hasMaster": {
+            "description": "True once the edited master file exists",
+            "type": "boolean"
+          },
+          "hasPreview": {
+            "description": "True once the preview file exists",
+            "type": "boolean"
+          },
+          "height": {
+            "description": "Height of the edited master in pixels",
+            "nullable": true,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Develop revision ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isCurrent": {
+            "description": "True for the version the asset currently shows",
+            "type": "boolean"
+          },
+          "label": {
+            "description": "Name given when the version was saved",
+            "nullable": true,
+            "type": "string"
+          },
+          "progress": {
+            "description": "Render progress as a percentage",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recipe": {
+            "$ref": "#/components/schemas/AssetDevelopRecipeDto"
+          },
+          "renderedAt": {
+            "description": "When the render finished",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "rendererVersion": {
+            "description": "Identity of the renderer that produced the files, for lineage",
+            "nullable": true,
+            "type": "string"
+          },
+          "revision": {
+            "description": "Per-asset sequence number, 1 for the first saved version",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AssetDevelopRevisionStatus"
+          },
+          "updatedAt": {
+            "description": "When the revision last changed",
+            "format": "date-time",
+            "type": "string"
+          },
+          "width": {
+            "description": "Width of the edited master in pixels",
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetId",
+          "createdAt",
+          "error",
+          "hasMaster",
+          "hasPreview",
+          "height",
+          "id",
+          "isCurrent",
+          "label",
+          "progress",
+          "recipe",
+          "renderedAt",
+          "rendererVersion",
+          "revision",
+          "status",
+          "updatedAt",
+          "width"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopRevisionStatus": {
+        "description": "Render state of a develop revision",
+        "enum": [
+          "saved",
+          "queued",
+          "rendering",
+          "rendered",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "AssetDevelopSaveDto": {
+        "properties": {
+          "label": {
+            "description": "Optional name for the saved version",
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "recipe": {
+            "$ref": "#/components/schemas/AssetDevelopRecipeDto"
+          },
+          "render": {
+            "default": true,
+            "description": "Queue the edited master render immediately after saving the recipe",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "recipe"
+        ],
+        "type": "object"
+      },
       "AssetEditAction": {
         "description": "Type of edit action to perform",
         "enum": [
@@ -26201,6 +26658,476 @@
         ],
         "x-immich-permission": "asset.update",
         "x-immich-state": "Deprecated"
+      }
+    },
+    "/assets/{id}/develop": {
+      "get": {
+        "description": "Every saved still-image edit recipe for the asset, newest first, with its render state and which one is current.",
+        "operationId": "getAssetDevelop",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDevelopResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List develop versions of an asset",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Stores the recipe as the next revision of the asset and, by default, queues the edited master render. The original file is never changed.",
+        "operationId": "saveAssetDevelop",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetDevelopSaveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDevelopRevisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Save a develop recipe as a new version",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/develop/preview": {
+      "post": {
+        "description": "Renders the recipe from the original at preview size and returns the image; nothing is stored.",
+        "operationId": "previewAssetDevelop",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetDevelopPreviewDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Render a develop preview",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/develop/revert": {
+      "post": {
+        "description": "Makes the named rendered version current, or the original when no version is named. History and files are kept.",
+        "operationId": "revertAssetDevelop",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetDevelopRevertDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDevelopResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Revert to the original or an earlier develop version",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/develop/revisions/{revisionId}/file": {
+      "get": {
+        "description": "Streams the edited master or the preview rendered for the version.",
+        "operationId": "viewAssetDevelopFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/AssetDevelopFileKind"
+                }
+              ],
+              "default": "preview"
+            }
+          },
+          {
+            "name": "revisionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "View a rendered develop file",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/develop/revisions/{revisionId}/render": {
+      "delete": {
+        "description": "Stops a queued or running render of the version. Files already rendered for other versions are untouched.",
+        "operationId": "cancelAssetDevelopRender",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "revisionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDevelopRevisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel a develop render",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Queues (or re-queues after a failure or cancellation) the edited master render of a saved version.",
+        "operationId": "renderAssetDevelopRevision",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "revisionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDevelopRevisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Render a develop version",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
       }
     },
     "/assets/{id}/edits": {
