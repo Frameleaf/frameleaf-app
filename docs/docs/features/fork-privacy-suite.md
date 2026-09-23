@@ -77,7 +77,7 @@ Admins can review each result, rerun detection, mark an asset safe, mark an asse
 
 ### PIN-Gated Hiding
 
-When `Hide detected NSFW assets` is enabled, privately flagged assets are hidden from normal browsing until the current session is unlocked with the locked-folder PIN.
+Sensitive marks, detections (when `Hide detected NSFW assets` is enabled) and the upstream Locked folder are one lock per asset; see [Locked](./locked.md). Locked assets are hidden from normal browsing until the current session is unlocked with the PIN, and **Locked** lists them all.
 
 Hidden assets are filtered from timelines, search, albums, map markers, downloads, shared-link payloads, sync streams, people, tags, memories, duplicate groups, stacks, and related derived views. Album membership is preserved; the asset is hidden from responses, not removed from the album.
 

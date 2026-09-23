@@ -2,7 +2,7 @@
 
 Image enrichment adds optional machine learning jobs that can generate searchable descriptions and tags for image assets, detect NSFW images, or do both. These jobs are disabled by default and can be enabled independently in `Administration > Settings > Machine Learning Settings`.
 
-Image enrichment processes image assets only. It skips deleted, hidden, and locked assets, and it does not change album membership.
+Image enrichment processes image assets only. It skips deleted and hidden assets, processes locked ones like any other (background work always reaches them), and it does not change album membership. A detection locks an asset only while `Hide detected NSFW assets` is enabled; see [Locked](./locked.md).
 
 ## Recommended Rollout
 
@@ -39,7 +39,7 @@ Use this checklist when validating image enrichment against a real library or lo
 1. Enable `Generate AI descriptions and tags` only, upload a new image, and confirm an `ImageDescription` job is queued after thumbnail generation.
 2. Enable `Detect NSFW images` only, upload a new image, and confirm an `NsfwDetection` job is queued after thumbnail generation.
 3. Enable both settings, upload a new image, and confirm only `ImageDescription` is queued directly after thumbnail generation. The description job runs NSFW detection first and passes that result to the description model.
-4. Run `NSFW Detection > All` and `Image descriptions and tags > All` from `Administration > Jobs`, then confirm video, hidden, locked, deleted, and already-successful images are skipped unless the run is forced.
+4. Run `NSFW Detection > All` and `Image descriptions and tags > All` from `Administration > Jobs`, then confirm video, hidden, deleted, and already-successful images are skipped unless the run is forced.
 5. Open an enriched image's detail panel and verify the private status, model name, labels, score, review state, and errors are visible to admins.
 6. Use the search filter modal to review `NSFW`, `NSFW review`, `NSFW reviewed`, `NSFW overridden`, failed, and missing-result states.
 7. Confirm generated descriptions append only one `AI description:` block and never remove user-written text.
@@ -69,7 +69,7 @@ The default NSFW model is `onnx-community/nsfw_image_detection-ONNX`, with a def
 
 The private NSFW flag is the source of truth for privacy features. Tags are searchable metadata, not a security boundary.
 
-When `Hide detected NSFW assets` is enabled, privately flagged NSFW assets are hidden from library views such as the timeline, search results, albums, album thumbnails and counts, maps, shared-link payloads, downloads, and direct asset access unless the current session has been unlocked with the locked-folder PIN.
+When `Hide detected NSFW assets` is enabled, a detection locks the asset (see [Locked](./locked.md)): it is hidden from library views such as the timeline, search results, albums, album thumbnails and counts, maps, shared-link payloads, downloads, and direct asset access unless the current session has been unlocked with the PIN, and it is listed in Locked.
 
 Sync streams apply the same private NSFW filter to asset payloads, album asset payloads, album-to-asset relations, exif, edit, face, memory, partner, and stack payloads, album thumbnails, person face thumbnails, and generic asset metadata. Private `ml-enrichment` metadata is never exposed through generic asset metadata sync.
 
@@ -89,7 +89,7 @@ To process existing libraries, go to `Administration > Jobs` and run the `All` a
 
 Backfills skip images that already have a successful result for the selected task unless the job is forced. A forced run recalculates the selected task, but visible descriptions and tags are still protected by stored applied hashes so generated metadata is not appended repeatedly.
 
-Single-asset jobs also re-check eligibility before calling machine learning. If an asset is deleted, trashed, hidden, locked, missing a preview, or no longer an image, the job is skipped or failed without applying metadata.
+Single-asset jobs also re-check eligibility before calling machine learning. If an asset is deleted, trashed, hidden, missing a preview, or no longer an image, the job is skipped or failed without applying metadata.
 
 ## Visible Metadata
 
