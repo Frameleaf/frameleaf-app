@@ -45,7 +45,8 @@ const bodyOf = (error: unknown): Record<string, unknown> => {
  * Turn a transport error into a reason the client can act on.
  *
  * `409` with the stale code is the one that matters: it is the server refusing to serve a frame
- * for a revision the project has moved past, and it carries the digest the client must move to.
+ * for a revision the project has moved past, and it carries the stored revision the client must
+ * move to.
  * Anything it cannot classify becomes `failed`, never `stale-revision` — guessing "stale" would
  * make the client silently drop a cache it should have kept.
  */
@@ -62,13 +63,17 @@ export const classifyPreviewError = (error: unknown): StudioPreviewTransportFail
       case 'studio_preview_stale_revision': {
         return {
           kind: 'stale-revision',
-          currentRevisionDigest:
-            typeof body.currentRevisionDigest === 'string' ? body.currentRevisionDigest : null,
+          currentRevision:
+            typeof body.currentRevision === 'number' && Number.isInteger(body.currentRevision)
+              ? body.currentRevision
+              : null,
         };
       }
-      case 'studio_preview_grant_revoked': {
-        // The server dropped the frame because its grant no longer verifies. The client must
-        // drop everything it cached, not keep polling a frame it may no longer see.
+      case 'studio_preview_grant_revoked':
+      case 'studio_preview_sources_refused': {
+        // The grant no longer verifies, or a source the project uses is no longer available to
+        // this account (relocked, trashed, unshared). The client must drop everything it
+        // cached, not keep polling or painting a frame it may no longer see.
         return { kind: 'forbidden' };
       }
       case 'studio_preview_not_ready': {
@@ -94,7 +99,7 @@ export const classifyPreviewError = (error: unknown): StudioPreviewTransportFail
 
 const toRecord = (dto: {
   id: string;
-  revisionDigest: string;
+  revision: number;
   status: string;
   etag: string;
   framePts: string | null;
@@ -103,7 +108,7 @@ const toRecord = (dto: {
   errorCode: string | null;
 }): StudioPreviewRecord => ({
   id: dto.id,
-  revisionDigest: dto.revisionDigest,
+  revision: dto.revision,
   status: dto.status as StudioPreviewStatus,
   etag: dto.etag,
   framePts: dto.framePts,
@@ -118,7 +123,7 @@ export const createStudioPreviewTransport = (): StudioPreviewTransport => ({
       const response = await requestStudioPreview({
         studioPreviewRequestDto: {
           projectId: intent.projectId,
-          revisionDigest: intent.revisionDigest,
+          revision: intent.revision,
           time: toPreviewTimeWire(intent.time),
           quality: intent.quality as StudioPreviewQuality,
           viewportWidth: intent.viewportWidth,
@@ -129,7 +134,7 @@ export const createStudioPreviewTransport = (): StudioPreviewTransport => ({
 
       return {
         preview: toRecord(response.preview),
-        currentRevisionDigest: response.currentRevisionDigest,
+        currentRevision: response.currentRevision,
         supersededPreviewIds: response.supersededPreviewIds,
       };
     } catch (error) {

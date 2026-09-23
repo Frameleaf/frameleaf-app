@@ -10,7 +10,7 @@
    * SDK, never a token, never the API base URL.
    */
   import { beforeNavigate, goto, replaceState } from '$app/navigation';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import { toastManager } from '@immich/ui';
   import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
@@ -32,6 +32,8 @@
   import {
     createStudioPreviewClient,
     idleStudioPreviewView,
+    unsavedStudioPreviewView,
+    type StudioPreviewClient,
     type StudioPreviewView,
   } from '$lib/frameleaf/studio/preview';
   import { createStudioPreviewTransport } from '$lib/frameleaf/studio/preview-transport';
@@ -113,18 +115,57 @@
    * the revision binding, and hands the engine only the resulting view. The engine asks for a
    * frame with a `preview.request` envelope and never touches the API.
    *
-   * The revision digest is the *graph* revision, which FL-89/FL-91 own. Until durable project
-   * storage lands, the draft's numeric revision stands in for it, which keeps the binding real:
-   * a request naming an older one is still refused and its frames are still dropped.
+   * Preview is bound to the project session's *stored* revision (FL-89): the request names the
+   * project and that revision number, and the server reads the graph from storage and resolves
+   * it for this account. Nothing the host invents, and no graph, travels with it. An unsaved
+   * draft has no stored revision, so it has nothing to preview.
    */
-  // TODO(FL-89/FL-96): use the stored revision digest once preview is bound to project storage.
-  const revisionDigest = $derived(`draft-${project.id}-${project.revision}`);
+  const storedRevision = $derived(
+    project.id !== STUDIO_DRAFT_PROJECT_ID && project.revision > 0 ? project.revision : null,
+  );
 
-  const previewClient = createStudioPreviewClient({
-    transport: createStudioPreviewTransport(),
-    onChange: (next) => {
-      preview = next;
-    },
+  const createPreviewClient = (): StudioPreviewClient => {
+    const client = createStudioPreviewClient({
+      transport: createStudioPreviewTransport(),
+      onChange: (next) => {
+        // A client retired for another project may still be settling; only the live one paints.
+        if (client === previewClient) {
+          preview = next;
+        }
+      },
+    });
+    return client;
+  };
+
+  let previewClient = createPreviewClient();
+
+  /** Retire the client and everything it cached, and start a fresh one. */
+  const resetPreview = (): Promise<void> => {
+    const outgoing = previewClient;
+    previewClient = createPreviewClient();
+    preview = idleStudioPreviewView();
+    return outgoing.dispose();
+  };
+
+  /**
+   * Keep the preview on the session's stored revision. When autosave, a restore or a reload
+   * moves the head, every cached frame of the previous revision is released and the one on
+   * screen is labelled stale; when the project itself changes (save as copy), nothing cached
+   * for the old project survives.
+   */
+  let previewProjectId: string | null = null;
+  $effect(() => {
+    const projectId = project.id;
+    const revision = storedRevision;
+    untrack(() => {
+      if (previewProjectId !== null && previewProjectId !== projectId) {
+        void resetPreview();
+      }
+      previewProjectId = projectId;
+      if (revision !== null) {
+        previewClient.revisionAdvanced(revision);
+      }
+    });
   });
 
   const bridge = createStudioBridge({
@@ -141,9 +182,23 @@
     handlers: {
       'preview.request': async (envelope) => {
         const payload = envelope.payload as StudioCommandPayloads['preview.request'];
+
+        // The server renders stored revisions only. Edits still waiting for the autosave
+        // debounce are stored first, so the frame shows what the person is looking at rather
+        // than the revision before their last change. A failed save leaves its own status.
+        if (sessionState?.hasDraft && writable) {
+          await session.flush().catch(() => {});
+        }
+
+        const revision = storedRevision;
+        if (revision === null) {
+          preview = unsavedStudioPreviewView();
+          return project.revision;
+        }
+
         previewClient.request({
           projectId: project.id,
-          revisionDigest,
+          revision,
           time: payload.at,
           quality: payload.quality,
           viewportWidth: payload.viewportWidth,
@@ -154,8 +209,8 @@
         return project.revision;
       },
       'preview.release': async () => {
-        await previewClient.dispose();
-        preview = idleStudioPreviewView();
+        // Retired and replaced rather than only disposed, so a later request still renders.
+        await resetPreview();
         return project.revision;
       },
     },
