@@ -94,7 +94,7 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
     font-family: inherit;
-    font-size: var(--fl-font-body);
+    font-size: var(--fl-font-size);
   }
   .actions {
     display: flex;

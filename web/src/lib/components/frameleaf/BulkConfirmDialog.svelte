@@ -10,18 +10,23 @@
   let {
     count,
     open = $bindable(true),
+    /** The action being confirmed. Defaults to the permanent delete this dialog was written for. */
+    labelKey = 'frameleaf_bulk_delete_permanently',
+    messageKey = 'frameleaf_bulk_delete_permanently_confirm',
+    danger = true,
     onConfirm,
-  }: { count: number; open?: boolean; onConfirm: () => void } = $props();
+  }: {
+    count: number;
+    open?: boolean;
+    labelKey?: string;
+    messageKey?: string;
+    danger?: boolean;
+    onConfirm: () => void;
+  } = $props();
 </script>
 
-<BulkFormDialog
-  bind:open
-  danger
-  title={$t('frameleaf_bulk_delete_permanently')}
-  submitLabel={$t('frameleaf_bulk_delete_permanently')}
-  onSubmit={onConfirm}
->
-  <p>{$t('frameleaf_bulk_delete_permanently_confirm', { values: { count } })}</p>
+<BulkFormDialog bind:open {danger} title={$t(labelKey)} submitLabel={$t(labelKey)} onSubmit={onConfirm}>
+  <p>{$t(messageKey, { values: { count } })}</p>
 </BulkFormDialog>
 
 <style>

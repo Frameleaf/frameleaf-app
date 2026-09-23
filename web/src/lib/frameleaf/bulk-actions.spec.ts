@@ -60,6 +60,36 @@ describe('bulk action descriptors', () => {
     expect(ids).not.toContain('archive');
   });
 
+  it('narrows the Locked folder to its own actions', () => {
+    // FL-33: the Locked destination replaces the legacy select bar, which offered moving items
+    // back out, the download, date and location, and the permanent delete — nothing else.
+    const ids = available({ assets: [photo('a')], locked: true });
+    expect(ids).toEqual(
+      expect.arrayContaining(['remove-from-locked', 'download', 'change-date', 'change-location', 'delete-permanently']),
+    );
+    for (const id of ['favorite', 'add-to-album', 'create-shared-link', 'delete', 'archive', 'move-to-locked', 'tag']) {
+      expect(ids).not.toContain(id);
+    }
+  });
+
+  it('offers the move into the Locked folder from the ordinary destinations only', () => {
+    expect(available({ assets: [photo('a')] })).toContain('move-to-locked');
+    expect(available({ assets: [photo('a')], trash: true })).not.toContain('move-to-locked');
+    expect(available({ assets: [photo('a')], locked: true })).not.toContain('move-to-locked');
+  });
+
+  it('leaves a read-only shared link with the download alone', () => {
+    const ids = available({ assets: [photo('a')], readOnly: true });
+    expect(ids).toEqual(['download']);
+  });
+
+  it("lets a shared link's owner prune it even though the link is read-only", () => {
+    const ids = available({ assets: [photo('a')], readOnly: true, sharedLinkId: 'link-1' });
+    expect(ids).toEqual(expect.arrayContaining(['download', 'remove-from-shared-link']));
+    expect(ids).not.toContain('delete');
+    expect(ids).not.toContain('favorite');
+  });
+
   it('offers only the direction that applies for favorite and archive', () => {
     const favorited = bulkActionById(bulkActions({ assets: [photo('a', { isFavorite: true })] }));
     expect(favorited.favorite?.available).toBe(false);

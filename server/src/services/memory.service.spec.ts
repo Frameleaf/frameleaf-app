@@ -1,5 +1,7 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { PassThrough } from 'node:stream';
 import type { OnThisDayData } from 'src/types.js';
+import { JobName, JobStatus, MemoryExportFormat, MemoryExportStatus } from 'src/enum.js';
 import { MemoryService } from 'src/services/memory.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { MemoryFactory } from 'test/factories/memory.factory.js';
@@ -319,6 +321,291 @@ describe(MemoryService.name, () => {
       ]);
 
       expect(mocks.memory.removeAssetIds).toHaveBeenCalledWith(memory.id, [asset.id]);
+    });
+  });
+
+  // ---------------------------------------------------------------------------------------
+  // Private highlight export (FL-62)
+  // ---------------------------------------------------------------------------------------
+
+  const exportRun = (overrides: Record<string, unknown> = {}) => ({
+    id: newUuid(),
+    ownerId: newUuid(),
+    memoryId: newUuid(),
+    title: '2026',
+    format: MemoryExportFormat.Archive,
+    status: MemoryExportStatus.Pending,
+    assetIds: [] as string[],
+    assetCount: 0,
+    processedAssets: 0,
+    path: null,
+    sizeInBytes: null,
+    error: null,
+    cancelRequestedAt: null,
+    startedAt: null,
+    finishedAt: null,
+    expiresAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  });
+
+  describe('createExport', () => {
+    it('should refuse a memory with no assets', async () => {
+      const userId = newUuid();
+      const memory = MemoryFactory.create({ ownerId: userId });
+
+      mocks.access.memory.checkOwnerAccess.mockResolvedValue(new Set([memory.id]));
+      mocks.memory.get.mockResolvedValue(getForMemory(memory));
+
+      await expect(sut.createExport(factory.auth({ user: { id: userId } }), memory.id, {})).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('should recheck the download permission and queue a durable job', async () => {
+      const userId = newUuid();
+      const asset = AssetFactory.create({ ownerId: userId });
+      const memory = MemoryFactory.from({ ownerId: userId }).asset(asset).build();
+      const run = exportRun({ ownerId: userId, memoryId: memory.id, assetIds: [asset.id], assetCount: 1 });
+
+      mocks.access.memory.checkOwnerAccess.mockResolvedValue(new Set([memory.id]));
+      mocks.memory.get.mockResolvedValue(getForMemory(memory));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.memory.searchExports.mockResolvedValue([]);
+      mocks.memory.createExport.mockResolvedValue(run as never);
+
+      await expect(sut.createExport(factory.auth({ user: { id: userId } }), memory.id, {})).resolves.toMatchObject({
+        id: run.id,
+        status: MemoryExportStatus.Pending,
+        isDownloadable: false,
+      });
+
+      // the asset access check is what stops a memory read standing in for a download right
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.MemoryExport, data: { id: run.id } });
+    });
+
+    it('should return the export already in flight instead of starting a second one', async () => {
+      const userId = newUuid();
+      const asset = AssetFactory.create({ ownerId: userId });
+      const memory = MemoryFactory.from({ ownerId: userId }).asset(asset).build();
+      const running = exportRun({ ownerId: userId, memoryId: memory.id, status: MemoryExportStatus.Running });
+
+      mocks.access.memory.checkOwnerAccess.mockResolvedValue(new Set([memory.id]));
+      mocks.memory.get.mockResolvedValue(getForMemory(memory));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.memory.searchExports.mockResolvedValue([running] as never);
+
+      await expect(sut.createExport(factory.auth({ user: { id: userId } }), memory.id, {})).resolves.toMatchObject({
+        id: running.id,
+      });
+
+      expect(mocks.memory.createExport).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getExport', () => {
+    it('should read an export scoped to the caller', async () => {
+      const userId = newUuid();
+      const run = exportRun({ ownerId: userId });
+
+      mocks.memory.getExport.mockResolvedValue(run as never);
+
+      await expect(sut.getExport(factory.auth({ user: { id: userId } }), run.id)).resolves.toMatchObject({
+        id: run.id,
+      });
+      // owner scoping is the query, not a post-filter: another user simply gets nothing back
+      expect(mocks.memory.getExport).toHaveBeenCalledWith(run.id, userId);
+    });
+
+    it("should not find another user's export", async () => {
+      mocks.memory.getExport.mockResolvedValue(void 0);
+
+      await expect(sut.getExport(factory.auth(), newUuid())).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('cancelExport', () => {
+    it('should finish a queued export immediately', async () => {
+      const userId = newUuid();
+      const run = exportRun({ ownerId: userId, status: MemoryExportStatus.Pending });
+
+      mocks.memory.getExport.mockResolvedValue(run as never);
+      mocks.memory.requestExportCancel.mockResolvedValue({ ...run, cancelRequestedAt: new Date() } as never);
+      mocks.memory.updateExport.mockResolvedValue({
+        ...run,
+        status: MemoryExportStatus.Cancelled,
+        finishedAt: new Date(),
+      } as never);
+
+      await expect(sut.cancelExport(factory.auth({ user: { id: userId } }), run.id)).resolves.toMatchObject({
+        status: MemoryExportStatus.Cancelled,
+      });
+    });
+
+    it('should mark a running export as cancelling and leave the worker to finish it', async () => {
+      const userId = newUuid();
+      const run = exportRun({ ownerId: userId, status: MemoryExportStatus.Running });
+
+      mocks.memory.getExport.mockResolvedValue(run as never);
+      mocks.memory.requestExportCancel.mockResolvedValue({ ...run, cancelRequestedAt: new Date() } as never);
+      mocks.memory.updateExport.mockResolvedValue({ ...run, status: MemoryExportStatus.Cancelling } as never);
+
+      await expect(sut.cancelExport(factory.auth({ user: { id: userId } }), run.id)).resolves.toMatchObject({
+        status: MemoryExportStatus.Cancelling,
+      });
+      expect(mocks.memory.updateExport).toHaveBeenCalledWith(run.id, { status: MemoryExportStatus.Cancelling });
+    });
+
+    it('should leave a finished export alone', async () => {
+      const userId = newUuid();
+      const run = exportRun({ ownerId: userId, status: MemoryExportStatus.Ready, path: '/data/exports/a.zip' });
+
+      mocks.memory.getExport.mockResolvedValue(run as never);
+
+      await expect(sut.cancelExport(factory.auth({ user: { id: userId } }), run.id)).resolves.toMatchObject({
+        status: MemoryExportStatus.Ready,
+      });
+      expect(mocks.memory.requestExportCancel).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('downloadExport', () => {
+    it('should refuse an export that is not ready', async () => {
+      const userId = newUuid();
+      mocks.memory.getExport.mockResolvedValue(
+        exportRun({ ownerId: userId, status: MemoryExportStatus.Running }) as never,
+      );
+
+      await expect(sut.downloadExport(factory.auth({ user: { id: userId } }), newUuid())).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('should refuse an expired export rather than serving it late', async () => {
+      const userId = newUuid();
+      mocks.memory.getExport.mockResolvedValue(
+        exportRun({
+          ownerId: userId,
+          status: MemoryExportStatus.Ready,
+          path: '/data/exports/a.zip',
+          expiresAt: new Date(Date.now() - 1000),
+        }) as never,
+      );
+
+      await expect(sut.downloadExport(factory.auth({ user: { id: userId } }), newUuid())).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(mocks.storage.createReadStream).not.toHaveBeenCalled();
+    });
+
+    it('should stream a ready export', async () => {
+      const userId = newUuid();
+      mocks.memory.getExport.mockResolvedValue(
+        exportRun({
+          ownerId: userId,
+          status: MemoryExportStatus.Ready,
+          path: '/data/exports/a.zip',
+          expiresAt: new Date(Date.now() + 60_000),
+          title: 'Lisbon, Portugal',
+        }) as never,
+      );
+      mocks.storage.createReadStream.mockResolvedValue({ stream: new PassThrough(), length: 10 });
+
+      await expect(sut.downloadExport(factory.auth({ user: { id: userId } }), newUuid())).resolves.toMatchObject({
+        disposition: expect.stringContaining('Lisbon'),
+      });
+      expect(mocks.storage.createReadStream).toHaveBeenCalledWith('/data/exports/a.zip', 'application/zip');
+    });
+  });
+
+  describe('handleMemoryExport', () => {
+    const givenZip = () => {
+      const stream = new PassThrough();
+      const addFile = vitest.fn();
+      mocks.storage.createZipStream.mockReturnValue({
+        stream,
+        addFile,
+        finalize: vitest.fn().mockImplementation(async () => stream.end()),
+      } as never);
+      mocks.storage.createWriteStream.mockReturnValue(new PassThrough());
+      return { addFile };
+    };
+
+    it('should skip a run it cannot claim', async () => {
+      mocks.memory.claimExport.mockResolvedValue(void 0);
+
+      await expect(sut.handleMemoryExport({ id: newUuid() })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.storage.createZipStream).not.toHaveBeenCalled();
+    });
+
+    it('should cancel without writing when the owner asked before the worker started', async () => {
+      const run = exportRun({ status: MemoryExportStatus.Running, cancelRequestedAt: new Date() });
+      mocks.memory.claimExport.mockResolvedValue(run as never);
+
+      await expect(sut.handleMemoryExport({ id: run.id })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.storage.createZipStream).not.toHaveBeenCalled();
+      expect(mocks.memory.updateExport).toHaveBeenCalledWith(
+        run.id,
+        expect.objectContaining({ status: MemoryExportStatus.Cancelled }),
+      );
+    });
+
+    it("should never write another user's asset into the archive", async () => {
+      const ownerId = newUuid();
+      const mine = AssetFactory.create({ ownerId });
+      const theirs = AssetFactory.create({ ownerId: newUuid() });
+      const run = exportRun({ ownerId, assetIds: [mine.id, theirs.id], assetCount: 2 });
+
+      mocks.memory.claimExport.mockResolvedValue({ ...run, status: MemoryExportStatus.Running } as never);
+      mocks.memory.getExportForJob.mockResolvedValue({ ...run, cancelRequestedAt: null } as never);
+      mocks.asset.getByIds.mockResolvedValue([mine, theirs] as never);
+      mocks.storage.stat.mockResolvedValue({ size: 42 } as never);
+      const { addFile } = givenZip();
+
+      await expect(sut.handleMemoryExport({ id: run.id })).resolves.toBe(JobStatus.Success);
+
+      expect(addFile).toHaveBeenCalledTimes(1);
+      expect(addFile).toHaveBeenCalledWith(mine.originalPath, expect.any(String));
+      expect(mocks.memory.updateExport).toHaveBeenCalledWith(
+        run.id,
+        expect.objectContaining({ status: MemoryExportStatus.Ready, sizeInBytes: 42 }),
+      );
+    });
+
+    it('should rename the archive into place only once it is complete', async () => {
+      const ownerId = newUuid();
+      const asset = AssetFactory.create({ ownerId });
+      const run = exportRun({ ownerId, assetIds: [asset.id], assetCount: 1 });
+
+      mocks.memory.claimExport.mockResolvedValue({ ...run, status: MemoryExportStatus.Running } as never);
+      mocks.memory.getExportForJob.mockResolvedValue({ ...run, cancelRequestedAt: null } as never);
+      mocks.asset.getByIds.mockResolvedValue([asset] as never);
+      mocks.storage.stat.mockResolvedValue({ size: 1 } as never);
+      givenZip();
+
+      await expect(sut.handleMemoryExport({ id: run.id })).resolves.toBe(JobStatus.Success);
+
+      const [partial, target] = mocks.storage.rename.mock.calls[0];
+      expect(partial).toBe(`${target}.partial`);
+    });
+
+    it('should fail the run and remove the partial file when writing throws', async () => {
+      const ownerId = newUuid();
+      const run = exportRun({ ownerId, assetIds: [newUuid()], assetCount: 1 });
+
+      mocks.memory.claimExport.mockResolvedValue({ ...run, status: MemoryExportStatus.Running } as never);
+      mocks.asset.getByIds.mockRejectedValue(new Error('database is gone'));
+
+      await expect(sut.handleMemoryExport({ id: run.id })).resolves.toBe(JobStatus.Failed);
+      expect(mocks.storage.unlink).toHaveBeenCalled();
+      expect(mocks.memory.updateExport).toHaveBeenCalledWith(
+        run.id,
+        expect.objectContaining({ status: MemoryExportStatus.Failed, error: 'database is gone' }),
+      );
     });
   });
 });

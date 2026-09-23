@@ -1297,6 +1297,14 @@
       "identity": "public.asset_audio.bitrate"
     },
     {
+      "definition": "text|nullable|||",
+      "identity": "public.asset_audio.channelLayout"
+    },
+    {
+      "definition": "smallint|nullable|||",
+      "identity": "public.asset_audio.channels"
+    },
+    {
       "definition": "text|not null|||",
       "identity": "public.asset_audio.codecName"
     },
@@ -1307,6 +1315,10 @@
     {
       "definition": "smallint|nullable|||",
       "identity": "public.asset_audio.profile"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.asset_audio.sampleRate"
     },
     {
       "definition": "uuid|not null|||",
@@ -4640,7 +4652,8 @@
     "0000000000070-ResetAssetSyncChecksums",
     "0000000000080-MediaHealthRunOwner",
     "0000000000090-ICloudSync",
-    "0000000000100-AlbumKind"
+    "0000000000100-AlbumKind",
+    "0000000000110-AssetDevelopRevision"
   ],
   "functions": [
     {

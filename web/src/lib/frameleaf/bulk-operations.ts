@@ -647,6 +647,15 @@ export const runBulkAction = async (
       }
     }
 
+    /* PUT /assets — the Locked folder is a visibility, exactly as the legacy action set it. */
+    case 'move-to-locked':
+    case 'remove-from-locked': {
+      const visibility = action === 'move-to-locked' ? AssetVisibility.Locked : AssetVisibility.Timeline;
+      return finish(
+        await runInChunks(runner, (batch) => gateway.updateAssets({ assetBulkUpdateDto: { ids: batch, visibility } })),
+      );
+    }
+
     /* PUT /assets/:id — the Live Photo link lives on the still, one asset at a time. */
     case 'link-live-photo': {
       const photoId = String(requirePayload(payload, 'photoId'));

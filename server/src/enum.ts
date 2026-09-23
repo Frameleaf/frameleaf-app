@@ -145,9 +145,42 @@ export const MachineLearningHardwareAccelerationSchema = z
 export enum MemoryType {
   /** pictures taken on this day X years ago */
   OnThisDay = 'on_this_day',
+  /** a multi-day trip or occasion, grouped by the owner's local capture time and place */
+  EventStory = 'event_story',
+  /** a recap of one calendar year of the owner's library */
+  YearInReview = 'year_in_review',
 }
 
 export const MemoryTypeSchema = z.enum(MemoryType).describe('Memory type').meta({ id: 'MemoryType' });
+
+/**
+ * Lifecycle of a private highlight export (FL-62). `Cancelling` is a request recorded by
+ * the owner that the running worker observes between assets; the worker is what moves the
+ * run to `Cancelled`, so a cancel is durable across a worker restart.
+ */
+export enum MemoryExportStatus {
+  Pending = 'pending',
+  Running = 'running',
+  Ready = 'ready',
+  Failed = 'failed',
+  Cancelling = 'cancelling',
+  Cancelled = 'cancelled',
+}
+
+export const MemoryExportStatusSchema = z
+  .enum(MemoryExportStatus)
+  .describe('Memory export status')
+  .meta({ id: 'MemoryExportStatus' });
+
+export enum MemoryExportFormat {
+  /** a zip of the memory's original files */
+  Archive = 'archive',
+}
+
+export const MemoryExportFormatSchema = z
+  .enum(MemoryExportFormat)
+  .describe('Memory export format')
+  .meta({ id: 'MemoryExportFormat' });
 
 export enum AssetOrderWithRandom {
   // Include existing values
@@ -403,6 +436,8 @@ export enum StorageFolder {
   Profile = 'profile',
   Thumbnails = 'thumbs',
   Backups = 'backups',
+  /** owner-private, expiring artefacts produced by a user-requested export job (FL-62) */
+  Exports = 'exports',
 }
 
 export const StorageFolderSchema = z.enum(StorageFolder).describe('Storage folder').meta({ id: 'StorageFolder' });
@@ -779,6 +814,129 @@ export const MlAdmissionRefusalSchema = z
   .describe('Reason a destination refused a workload')
   .meta({ id: 'MlAdmissionRefusal' });
 
+/**
+ * Pet identity model (FL-58).
+ *
+ * `PetSpecies` is what the owner says the animal is. A detector may guess a species on
+ * a `pet_detection` row, but that guess never becomes the identity's species.
+ */
+export enum PetSpecies {
+  Cat = 'cat',
+  Dog = 'dog',
+  Bird = 'bird',
+  Rabbit = 'rabbit',
+  Horse = 'horse',
+  Reptile = 'reptile',
+  Fish = 'fish',
+  SmallMammal = 'small_mammal',
+  Other = 'other',
+}
+
+export const PetSpeciesSchema = z.enum(PetSpecies).describe('Pet species').meta({ id: 'PetSpecies' });
+
+/** Whether the owner said the pet is in an asset, or said it is not. Both are durable. */
+export enum PetObservationState {
+  Confirmed = 'confirmed',
+  Rejected = 'rejected',
+}
+
+export const PetObservationStateSchema = z
+  .enum(PetObservationState)
+  .describe('Pet observation state')
+  .meta({ id: 'PetObservationState' });
+
+/** How the durable decision was made. Neither value makes it less durable. */
+export enum PetObservationSource {
+  /** The owner drew or named it directly. */
+  Manual = 'manual',
+  /** The owner accepted, reassigned or rejected a recognition proposal. */
+  Review = 'review',
+}
+
+export const PetObservationSourceSchema = z
+  .enum(PetObservationSource)
+  .describe('How a pet observation was recorded')
+  .meta({ id: 'PetObservationSource' });
+
+/**
+ * Durable, user-visible media operations (FL-43, FL-104).
+ *
+ * One persistent job contract covers every long-running workload a person can see in Activity.
+ * The kind selects the workload; the immutable `snapshot` on the row carries whatever that
+ * workload needs to reproduce the work exactly.
+ */
+export enum MediaOperationKind {
+  /** A Studio project render to a finished file. */
+  StudioExport = 'studio_export',
+  /** A short Studio preview render; same graph, bounded range. */
+  StudioPreview = 'studio_preview',
+  /** A video restoration render. */
+  Restoration = 'restoration',
+  /** The five-second restoration motion preview a full render must inherit from. */
+  RestorationPreview = 'restoration_preview',
+  /** A still-image edit recipe render. */
+  QuickEdit = 'quick_edit',
+}
+
+export const MediaOperationKindSchema = z
+  .enum(MediaOperationKind)
+  .describe('Media operation kind')
+  .meta({ id: 'MediaOperationKind' });
+
+/**
+ * The durable state machine. `cancelling` is a real persisted state: the request is recorded
+ * before the worker answers, so a cancel survives a restart and the remote acknowledgement is
+ * still expected afterwards.
+ */
+export enum MediaOperationStatus {
+  Queued = 'queued',
+  Preparing = 'preparing',
+  Rendering = 'rendering',
+  Validating = 'validating',
+  Completed = 'completed',
+  Cancelling = 'cancelling',
+  Cancelled = 'cancelled',
+  Failed = 'failed',
+}
+
+export const MediaOperationStatusSchema = z
+  .enum(MediaOperationStatus)
+  .describe('Media operation status')
+  .meta({ id: 'MediaOperationStatus' });
+
+/**
+ * Where the work runs. Always explicit and immutable for the life of a job: losing a local GPU
+ * never promotes a job to the cloud, and changing the destination means a new job.
+ */
+export enum MediaOperationDestination {
+  /** This server's own hardware. */
+  Local = 'local',
+  /** A qualified worker on the home network. */
+  Lan = 'lan',
+  /** The configured RunPod workload. Chosen by the person, never as a fallback. */
+  RunPod = 'runpod',
+}
+
+export const MediaOperationDestinationSchema = z
+  .enum(MediaOperationDestination)
+  .describe('Media operation destination')
+  .meta({ id: 'MediaOperationDestination' });
+
+/** The state of one checkpointed chunk of a render. */
+export enum MediaOperationCheckpointState {
+  /** Claimed or planned, not yet proven. */
+  Pending = 'pending',
+  /** Rendered and validated; reusable when every digest still matches. */
+  Complete = 'complete',
+  /** Known not to describe the current inputs; never reusable. */
+  Invalid = 'invalid',
+}
+
+export const MediaOperationCheckpointStateSchema = z
+  .enum(MediaOperationCheckpointState)
+  .describe('Media operation checkpoint state')
+  .meta({ id: 'MediaOperationCheckpointState' });
+
 export enum LogLevel {
   Verbose = 'verbose',
   Debug = 'debug',
@@ -1060,6 +1218,7 @@ export enum JobName {
   AssetGenerateVideoDuplicateFramesQueueAll = 'AssetGenerateVideoDuplicateFramesQueueAll',
   AssetGenerateVideoDuplicateFrames = 'AssetGenerateVideoDuplicateFrames',
   AssetEditThumbnailGeneration = 'AssetEditThumbnailGeneration',
+  AssetDevelopRender = 'AssetDevelopRender',
   AssetVideoEditGeneration = 'AssetVideoEditGeneration',
   AssetEncodeVideoQueueAll = 'AssetEncodeVideoQueueAll',
   AssetEncodeVideo = 'AssetEncodeVideo',
@@ -1100,6 +1259,7 @@ export enum JobName {
 
   MemoryCleanup = 'MemoryCleanup',
   MemoryGenerate = 'MemoryGenerate',
+  MemoryExport = 'MemoryExport',
 
   NotificationsCleanup = 'NotificationsCleanup',
 
@@ -1231,6 +1391,39 @@ export const MaintenanceActionSchema = z
   .enum(MaintenanceAction)
   .describe('Maintenance action')
   .meta({ id: 'MaintenanceAction' });
+
+export enum PhysicalDeduplicationDecision {
+  Share = 'share',
+  Skip = 'skip',
+}
+
+export const PhysicalDeduplicationDecisionSchema = z
+  .enum(PhysicalDeduplicationDecision)
+  .describe('Physical deduplication plan decision for a duplicate copy')
+  .meta({ id: 'PhysicalDeduplicationDecision' });
+
+export enum PhysicalDeduplicationSkipReason {
+  ExternalLibrary = 'external-library',
+  MissingSize = 'missing-size',
+  NoRetainedMatch = 'no-retained-match',
+  AlreadyShared = 'already-shared',
+  RetainedFileMissing = 'retained-file-missing',
+}
+
+export const PhysicalDeduplicationSkipReasonSchema = z
+  .enum(PhysicalDeduplicationSkipReason)
+  .describe('Why a duplicate copy is skipped by the physical deduplication plan')
+  .meta({ id: 'PhysicalDeduplicationSkipReason' });
+
+export enum PhysicalDeduplicationPlanMode {
+  DryRun = 'dry-run',
+  Apply = 'apply',
+}
+
+export const PhysicalDeduplicationPlanModeSchema = z
+  .enum(PhysicalDeduplicationPlanMode)
+  .describe('Whether the physical deduplication plan was a preview or an applied run')
+  .meta({ id: 'PhysicalDeduplicationPlanMode' });
 
 export enum ExitCode {
   AppRestart = 7,
@@ -1462,6 +1655,7 @@ export enum ApiTag {
   Maintenance = 'Maintenance (admin)',
   Map = 'Map',
   MediaHealth = 'Media Health',
+  MediaOperations = 'Media operations',
   Memories = 'Memories',
   MlDestinations = 'ML destinations',
   Notifications = 'Notifications',
@@ -1469,6 +1663,7 @@ export enum ApiTag {
   ClusterGroups = 'Cluster groups',
   Partners = 'Partners',
   People = 'People',
+  Pets = 'Pets',
   Plugins = 'Plugins',
   Queues = 'Queues',
   RunPod = 'RunPod (admin)',
@@ -1476,6 +1671,7 @@ export enum ApiTag {
   Server = 'Server',
   Sessions = 'Sessions',
   SharedLinks = 'Shared links',
+  SharedSpaces = 'Shared spaces',
   Stacks = 'Stacks',
   Sync = 'Sync',
   SystemConfig = 'System config',

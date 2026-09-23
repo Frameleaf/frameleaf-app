@@ -1,0 +1,262 @@
+import { Column, CreateDateColumn, ForeignKeyColumn, Index, Table, Unique, UpdateDateColumn } from '@immich/sql-tools';
+import type { Generated, Int8, Timestamp } from '@immich/sql-tools';
+import { PrimaryGeneratedUuidV7Column, UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import {
+  MediaOperationCheckpointState,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+} from 'src/enum.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
+
+/**
+ * A durable, user-visible media operation (FL-43 `FN-303`, FL-104 `STU-403`).
+ *
+ * The row is the job. Nothing about a running job lives in a browser tab, a timer or local
+ * storage: closing the browser, restarting the server and losing the network all leave the same
+ * row, and the Activity page is a view of these rows.
+ *
+ * Three groups of columns matter and they are deliberately separate:
+ *
+ * - **The immutable snapshot.** `kind`, `destination`, `snapshot`, `settings` and the revision
+ *   references are written once at submit and never updated. A different destination, revision or
+ *   output profile is a different job, which is why retry copies them into a new row instead of
+ *   editing this one.
+ * - **The claim.** `claimToken`, `claimedBy` and `claimExpiresAt` are the lease. Every worker
+ *   write is conditioned on the token it was handed, so a worker that was presumed dead and then
+ *   wakes up cannot publish over the job its replacement is running.
+ * - **Cancellation and lineage.** `cancelRequestedAt` records the intent, `cancelAcknowledgedAt`
+ *   the remote's answer and `remoteReleasedAt` the confirmed cleanup. A remote job handle is kept
+ *   until it is acknowledged, including after owner deletion, so nothing is left running and
+ *   billing on a cloud destination that we stopped watching.
+ */
+@Index({ columns: ['ownerId', 'createdAt'] })
+@Index({ columns: ['status', 'claimExpiresAt'] })
+@Index({ columns: ['kind', 'status'] })
+@Table('media_operation')
+@UpdatedAtTrigger('media_operation_updatedAt')
+export class MediaOperationTable {
+  @PrimaryGeneratedUuidV7Column()
+  id!: Generated<string>;
+
+  /** The only account allowed to see or act on this job. */
+  @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', nullable: false })
+  ownerId!: string;
+
+  @Column()
+  kind!: MediaOperationKind;
+
+  @Column({ default: MediaOperationStatus.Queued })
+  status!: Generated<MediaOperationStatus>;
+
+  /** Immutable. Chosen by the person at submit; never inferred and never changed by a failure. */
+  @Column()
+  destination!: MediaOperationDestination;
+
+  /** Which worker or endpoint the destination resolved to, so "LAN" is never ambiguous later. */
+  @Column({ nullable: true })
+  destinationDetail!: string | null;
+
+  /** What the person sees in Activity. Not a path and not an identifier. */
+  @Column()
+  label!: string;
+
+  /** The source asset, when the workload has exactly one. */
+  @ForeignKeyColumn(() => AssetTable, { onDelete: 'SET NULL', onUpdate: 'CASCADE', nullable: true })
+  assetId!: string | null;
+
+  /** Lineage: the asset a completed job published. Null until a validated output is adopted. */
+  @ForeignKeyColumn(() => AssetTable, { onDelete: 'SET NULL', onUpdate: 'CASCADE', nullable: true })
+  resultAssetId!: string | null;
+
+  /** Lineage: the job this one retries. Retries are new rows, so the history stays readable. */
+  @ForeignKeyColumn(() => MediaOperationTable, { onDelete: 'SET NULL', onUpdate: 'CASCADE', nullable: true })
+  retryOfId!: string | null;
+
+  /** The Studio project and the exact revision of it this job rendered. Both immutable. */
+  @Column({ nullable: true })
+  projectId!: string | null;
+
+  @Column({ nullable: true })
+  revisionId!: string | null;
+
+  /**
+   * The immutable binding: graph and resource checksums, source PTS maps, engine and patch
+   * digest, colour policy, output profile, model identity and seed. Written once.
+   */
+  @Column({ type: 'jsonb' })
+  snapshot!: Record<string, unknown>;
+
+  /** The user-visible settings Activity shows: resolution, format, mode, upscale, preview. */
+  @Column({ type: 'jsonb' })
+  settings!: Record<string, unknown>;
+
+  /** Measured estimate at submit: `{ seconds, sizeBytes, cloudCost }`. Never invented. */
+  @Column({ type: 'jsonb', nullable: true })
+  estimate!: Record<string, unknown> | null;
+
+  /** 0 to 100. Derived from completed units, persisted so a reconnect shows the real figure. */
+  @Column({ type: 'double precision', default: 0 })
+  progress!: Generated<number>;
+
+  @Column({ type: 'bigint', default: 0 })
+  processedUnits!: Generated<Int8>;
+
+  @Column({ type: 'bigint', nullable: true })
+  totalUnits!: Int8 | null;
+
+  /** Increments on every claim. A job that exhausts `maxAttempts` fails instead of requeuing. */
+  @Column({ type: 'integer', default: 0 })
+  attempt!: Generated<number>;
+
+  @Column({ type: 'integer', default: 3 })
+  maxAttempts!: Generated<number>;
+
+  /** The lease. A write carrying any other token is stale and must be rejected. */
+  @Column({ type: 'uuid', nullable: true })
+  claimToken!: string | null;
+
+  /** The authenticated worker identity admission handed out (FL-95). */
+  @Column({ nullable: true })
+  claimedBy!: string | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  claimExpiresAt!: Timestamp | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  heartbeatAt!: Timestamp | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  cancelRequestedAt!: Timestamp | null;
+
+  /** The remote's answer. Until it arrives the job stays `cancelling`, not `cancelled`. */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  cancelAcknowledgedAt!: Timestamp | null;
+
+  /** The remote handle, retained until cleanup is acknowledged even if the owner deletes the job. */
+  @Column({ nullable: true })
+  remoteJobId!: string | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  remoteReleasedAt!: Timestamp | null;
+
+  @Column({ type: 'text', nullable: true })
+  error!: string | null;
+
+  /** A stable code the client turns into a translated message; `error` stays operator detail. */
+  @Column({ nullable: true })
+  errorCode!: string | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  startedAt!: Timestamp | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  finishedAt!: Timestamp | null;
+
+  /** The owner cleared a finished job from their list. The row survives for lineage and cleanup. */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  dismissedAt!: Timestamp | null;
+
+  @CreateDateColumn()
+  createdAt!: Generated<Timestamp>;
+
+  @UpdateDateColumn()
+  updatedAt!: Generated<Timestamp>;
+
+  @UpdateIdColumn()
+  updateId!: Generated<string>;
+}
+
+/**
+ * One checkpointed chunk of a render.
+ *
+ * A chunk is reusable only when every digest that went into it still matches: the inputs, the
+ * complete effect and audio history that precedes it, the configuration and the seed. Matching
+ * chunk numbers prove nothing, which is why `chunkKey` — not `sequence` — is the reuse key.
+ *
+ * `requiresSequentialContext` marks chunks whose filters carry serialized state across the
+ * boundary. Resuming into one of those is not allowed: the resume boundary walks back to the last
+ * chunk that can legitimately start a render, and the region after it is rendered again.
+ */
+@Index({ columns: ['operationId', 'chunkKey'] })
+@Unique({ columns: ['operationId', 'sequence'] })
+@Table('media_operation_checkpoint')
+@UpdatedAtTrigger('media_operation_checkpoint_updatedAt')
+export class MediaOperationCheckpointTable {
+  @PrimaryGeneratedUuidV7Column()
+  id!: Generated<string>;
+
+  @ForeignKeyColumn(() => MediaOperationTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', nullable: false })
+  operationId!: string;
+
+  /** Chunk order within the render. Ordering only; never a reuse key on its own. */
+  @Column({ type: 'integer' })
+  sequence!: number;
+
+  @Column({ default: MediaOperationCheckpointState.Pending })
+  state!: Generated<MediaOperationCheckpointState>;
+
+  /** The full digest over every input below. Two chunks are the same work only if this matches. */
+  @Column()
+  chunkKey!: string;
+
+  /** Source media, trims and resource checksums feeding this chunk. */
+  @Column()
+  inputDigest!: string;
+
+  /** The effect and audio history up to this chunk's start, including preroll. */
+  @Column()
+  historyDigest!: string;
+
+  /** Engine, codec, colour policy and output profile. */
+  @Column()
+  configDigest!: string;
+
+  /** Model seed, when the workload has one. A different seed is different work. */
+  @Column({ nullable: true })
+  seed!: string | null;
+
+  /** Rational timebase, e.g. `30000/1001`. Ticks below are in it; no float seconds anywhere. */
+  @Column()
+  timebase!: string;
+
+  @Column({ type: 'bigint' })
+  startTicks!: Int8;
+
+  @Column({ type: 'bigint' })
+  endTicks!: Int8;
+
+  /** Ticks of preroll this chunk needs before its start to reproduce filter and audio state. */
+  @Column({ type: 'bigint', default: 0 })
+  prerollTicks!: Generated<Int8>;
+
+  /** True when a filter in this chunk carries serialized state; a render may not start here. */
+  @Column({ type: 'boolean', default: false })
+  requiresSequentialContext!: Generated<boolean>;
+
+  @Column({ nullable: true })
+  outputPath!: string | null;
+
+  @Column({ type: 'bytea', nullable: true })
+  outputChecksum!: Buffer | null;
+
+  @Column({ type: 'bigint', nullable: true })
+  sizeInBytes!: Int8 | null;
+
+  @Column({ type: 'integer', default: 0 })
+  attempt!: Generated<number>;
+
+  /** The claim that produced this chunk. A stale token may not mark a chunk complete. */
+  @Column({ type: 'uuid', nullable: true })
+  claimToken!: string | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  completedAt!: Timestamp | null;
+
+  @CreateDateColumn()
+  createdAt!: Generated<Timestamp>;
+
+  @UpdateDateColumn()
+  updatedAt!: Generated<Timestamp>;
+}
