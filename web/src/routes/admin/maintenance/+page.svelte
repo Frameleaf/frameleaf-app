@@ -3,7 +3,6 @@
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import MaintenanceBackupsPanel from '$lib/components/frameleaf/MaintenanceBackupsPanel.svelte';
   import MaintenanceIntegrityPanel from '$lib/components/frameleaf/MaintenanceIntegrityPanel.svelte';
-  import MaintenanceMigrationPanel from '$lib/components/frameleaf/MaintenanceMigrationPanel.svelte';
   import MaintenanceModeCard from '$lib/components/frameleaf/MaintenanceModeCard.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { handleCreateJob } from '$lib/services/job.service';
@@ -113,8 +112,7 @@
   Maintenance (FL-81): the integrityReport/jobs/activeJobs state and the
   handleCreateJob/getQueuesLegacy polling above drive these panels. The page header has no
   Start-maintenance action because MaintenanceModeCard owns that flow, with its own
-  confirmation dialog. Server migration (FL-75) sits beside the integrity reports: it shows
-  the command-line steps and opens the migration audit report read-only in the browser.
+  confirmation dialog.
 -->
 <AdminPageLayout breadcrumbs={[{ title: data.meta.title }]}>
   <Container size="large" center class="my-4">
@@ -142,7 +140,6 @@
             }
           }}
         />
-        <MaintenanceMigrationPanel />
         <MaintenanceBackupsPanel backups={data.backups} expectedVersion={data.expectedVersion} />
       </div>
     </Theme>
