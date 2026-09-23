@@ -334,7 +334,8 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       icon: 'mdiArchiveOutline',
       group: 'visibility',
       undoable: true,
-      available: live && has && (unknown || any((asset) => !asset.isArchived)),
+      // storing another visibility would unlock a revealed sensitive item (FL-34); unmark it first
+      available: live && has && !any((asset) => !!asset.isLocked) && (unknown || any((asset) => !asset.isArchived)),
     },
     {
       id: 'unarchive',
@@ -342,7 +343,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       icon: 'mdiArchiveArrowUpOutline',
       group: 'visibility',
       undoable: true,
-      available: live && has && (unknown || any((asset) => !!asset.isArchived)),
+      available: live && has && !any((asset) => !!asset.isLocked) && (unknown || any((asset) => !!asset.isArchived)),
     },
     {
       // Mark Sensitive is the lock (FL-34, the prototype's `lock`): one lock record per item, metadata
