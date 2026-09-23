@@ -1,14 +1,12 @@
+import { modalManager } from '@immich/ui';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
-import {
-  sessionAccess,
-  setSessionLockPending,
-  trackSessionLockRefresh,
-  trackSessionProtectedModal,
-} from '$lib/frameleaf/session-access.svelte';
+import { sessionAccess, setSessionLockPending, trackSessionLockRefresh } from '$lib/frameleaf/session-access.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
+import AssetDeleteConfirmModal from '$lib/modals/AssetDeleteConfirmModal.svelte';
+import CreateFaceModal from '$lib/modals/CreateFaceModal.svelte';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import en from '../../../../../i18n/en.json';
 import TopBarTestHarness from './TopBarTestHarness.svelte';
@@ -104,6 +102,12 @@ describe('TopBar session privacy', () => {
     sdkMock.lockAuthSession.mockReturnValueOnce(lock.promise as never).mockResolvedValueOnce(undefined as never);
     const view = render(TopBarTestHarness);
     await screen.findByRole('button', { name: en.frameleaf_locked_hide_content });
+    const deletion = modalManager.open(AssetDeleteConfirmModal, {
+      size: 1,
+      suppressible: false,
+      assetName: 'draft-private.jpg',
+    });
+    await waitFor(() => expect(document.body).toHaveTextContent('draft-private.jpg'));
 
     void sessionAccess.retryLock?.();
     expect(sessionAccess.lockPending).toBe(true);
@@ -111,9 +115,12 @@ describe('TopBar session privacy', () => {
     await waitFor(() => expect(sdkMock.lockAuthSession).toHaveBeenCalledOnce());
     await waitFor(() => expect(sessionAccess.retryLock).toBeDefined());
     expect(sessionAccess.lockPending).toBe(true);
+    expect(document.body).toHaveTextContent('draft-private.jpg');
 
     await sessionAccess.retryLock?.();
     await waitFor(() => expect(sessionAccess.lockPending).toBe(false));
+    expect(document.body).not.toHaveTextContent('draft-private.jpg');
+    expect(await deletion.onClose).toBeUndefined();
     expect(sdkMock.lockAuthSession).toHaveBeenCalledTimes(2);
     expect(sdkMock.getAuthStatus).toHaveBeenCalledOnce();
     view.unmount();
@@ -134,27 +141,61 @@ describe('TopBar session privacy', () => {
   it('unmounts body-mounted private dialogs before exposing the refreshed app', async () => {
     sdkMock.getAuthStatus.mockResolvedValue(authStatus(true) as never);
     sdkMock.lockAuthSession.mockResolvedValue(undefined as never);
-    const closeGate = deferred<void>();
-    const modalResult = deferred<boolean>();
-    const portal = document.createElement('div');
-    portal.textContent = 'Private asset date and timezone';
-    document.body.append(portal);
-    const close = vi.fn(async () => {
-      await closeGate.promise;
-      portal.remove();
-      modalResult.resolve(false);
-    });
-    void trackSessionProtectedModal(modalResult.promise, close);
+    const refreshed = deferred<void>();
+    app.invalidateAll.mockReturnValue(refreshed.promise);
     const view = render(TopBarTestHarness);
     await screen.findByRole('button', { name: en.frameleaf_locked_hide_content });
+    const deletion = modalManager.open(AssetDeleteConfirmModal, {
+      size: 1,
+      suppressible: false,
+      assetName: 'locked-private.jpg',
+    });
+    await waitFor(() => expect(document.body).toHaveTextContent('locked-private.jpg'));
 
     void sessionAccess.retryLock?.();
-    await waitFor(() => expect(close).toHaveBeenCalledOnce());
+    await waitFor(() => expect(app.invalidateAll).toHaveBeenCalledOnce());
     expect(sessionAccess.lockPending).toBe(true);
-    expect(portal).toBeInTheDocument();
-    closeGate.resolve();
+    expect(document.body).not.toHaveTextContent('locked-private.jpg');
+    const late = modalManager.open(CreateFaceModal, {
+      assetId: 'late-private-asset',
+      imageWidth: 100,
+      imageHeight: 100,
+      x: 1,
+      y: 1,
+      width: 10,
+      height: 10,
+      previewUrl: 'data:image/png;base64,cHJpdmF0ZQ==',
+    });
+    await late.onClose;
+    expect(document.querySelector('img[src^="data:image/png"]')).not.toBeInTheDocument();
+    expect(sessionAccess.lockPending).toBe(true);
+    refreshed.resolve();
     await waitFor(() => expect(sessionAccess.lockPending).toBe(false));
-    expect(portal).not.toBeInTheDocument();
+    expect(await deletion.onClose).toBeUndefined();
+    view.unmount();
+  });
+
+  it('clears a cached face preview mounted by the shared modal manager', async () => {
+    sdkMock.getAuthStatus.mockResolvedValue(authStatus(true) as never);
+    sdkMock.lockAuthSession.mockResolvedValue(undefined as never);
+    const view = render(TopBarTestHarness);
+    await screen.findByRole('button', { name: en.frameleaf_locked_hide_content });
+    const face = modalManager.open(CreateFaceModal, {
+      assetId: 'private-asset',
+      imageWidth: 100,
+      imageHeight: 100,
+      x: 1,
+      y: 1,
+      width: 10,
+      height: 10,
+      previewUrl: 'data:image/png;base64,cHJpdmF0ZQ==',
+    });
+    await waitFor(() => expect(document.querySelector('img[src^="data:image/png"]')).toBeInTheDocument());
+
+    void sessionAccess.retryLock?.();
+    await waitFor(() => expect(sessionAccess.lockPending).toBe(false));
+    expect(document.querySelector('img[src^="data:image/png"]')).not.toBeInTheDocument();
+    expect(await face.onClose).toBeUndefined();
     view.unmount();
   });
 });

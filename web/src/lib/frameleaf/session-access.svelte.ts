@@ -27,6 +27,9 @@ export const setSessionLockPending = (value: boolean) => {
     sessionAccess.revision++;
   }
   sessionAccess.lockPending = value;
+  if (!value) {
+    dismissNewModals = false;
+  }
   try {
     if (value) {
       sessionStorage.setItem(pendingKey, 'true');
@@ -41,22 +44,58 @@ export const setSessionLockPending = (value: boolean) => {
 /** Invalidate responses started before the server confirmed the lock. */
 export const markSessionLockSucceeded = () => {
   sessionAccess.revision++;
+  dismissNewModals = true;
 };
 
 const refreshes = new Set<Promise<unknown>>();
-const protectedModals = new Set<() => Promise<void>>();
+const activeModals = new Set<() => Promise<void>>();
+const trackedManagers = new WeakSet<object>();
+let dismissNewModals = false;
 
-/** A body-mounted modal outlives its viewer; retain its lifecycle close handle until it settles. */
-export const trackSessionProtectedModal = <T>(result: Promise<T>, close: () => Promise<void>): Promise<T> => {
-  protectedModals.add(close);
-  return result.finally(() => protectedModals.delete(close));
+/** All @immich/ui show/showDialog calls pass through open; track them once, before viewer actions can run. */
+export const trackSessionModals = (manager: typeof import('@immich/ui').modalManager) => {
+  if (trackedManagers.has(manager)) {
+    return;
+  }
+  trackedManagers.add(manager);
+  const originalOpen = manager.open;
+  manager.open = ((...args: unknown[]) => {
+    const modal = Reflect.apply(originalOpen, manager, args) as {
+      onClose: Promise<unknown>;
+      close: () => Promise<void>;
+    };
+    let closing: Promise<void> | undefined;
+    const close = () => {
+      closing ??= modal.close().then(() => {
+        activeModals.delete(close);
+      });
+      return closing;
+    };
+    activeModals.add(close);
+    void modal.onClose.then(() => activeModals.delete(close)).catch(() => activeModals.delete(close));
+    if (dismissNewModals) {
+      void close().catch(() => {});
+    }
+    return modal;
+  }) as typeof manager.open;
 };
 
-/** Unmount protected body portals before the app becomes visible after a successful lock. */
-export const closeSessionProtectedModals = async () => {
-  while (protectedModals.size > 0) {
-    await Promise.all([...protectedModals].map((close) => close()));
+/** Unmount every manager portal, including dialogs created while lock refreshes are pending. */
+export const closeSessionModals = async () => {
+  while (activeModals.size > 0) {
+    await Promise.all([...activeModals].map((close) => close()));
   }
+};
+
+/** Release the shield in the same turn as the final modal/native-dialog sweep. */
+export const releaseSessionLock = async () => {
+  do {
+    await closeSessionModals();
+    for (const dialog of document.querySelectorAll<HTMLDialogElement>('dialog[open]:not(.session-lock-shield)')) {
+      dialog.close();
+    }
+  } while (activeModals.size > 0);
+  setSessionLockPending(false);
 };
 
 /** Keep the root shield up while mounted media views replace their cached elevated results. */
