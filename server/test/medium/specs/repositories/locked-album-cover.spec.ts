@@ -3,6 +3,7 @@ import { AssetVisibility } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
+import { up as clearLockedAlbumCovers } from 'src/schema/migrations/2100000000290-ClearLockedAlbumCovers.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -142,6 +143,31 @@ describe('Locked album covers (FL-53)', () => {
       await sut.updateAll([cover.id], { visibility: AssetVisibility.Archive, isFavorite: true });
 
       await expect(coverOf(ctx.database, ownAlbum.id)).resolves.toBe(cover.id);
+    });
+  });
+
+  describe('migration 2100000000290-ClearLockedAlbumCovers', () => {
+    it('repairs albums whose saved cover is already Locked and leaves the others alone', async () => {
+      const context = setup();
+      const { ctx } = context;
+      const { cover, fallback, ownAlbum, otherAlbum } = await seed(context);
+      const { asset: plain } = await ctx.newAsset({ ownerId: cover.ownerId });
+      const { album: untouched } = await ctx.newAlbum({ ownerId: cover.ownerId, albumThumbnailAssetId: plain.id }, [
+        plain.id,
+      ]);
+      // data written before FL-53: the cover moved into the Locked folder and kept its albums' covers
+      await ctx.database
+        .updateTable('asset')
+        .set({ visibility: AssetVisibility.Locked })
+        .where('id', '=', cover.id)
+        .execute();
+      await expect(coverOf(ctx.database, ownAlbum.id)).resolves.toBe(cover.id);
+
+      await clearLockedAlbumCovers(ctx.database);
+
+      await expect(coverOf(ctx.database, ownAlbum.id)).resolves.toBe(fallback.id);
+      await expect(coverOf(ctx.database, otherAlbum.id)).resolves.toBeNull();
+      await expect(coverOf(ctx.database, untouched.id)).resolves.toBe(plain.id);
     });
   });
 });
