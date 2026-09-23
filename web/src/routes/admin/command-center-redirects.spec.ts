@@ -11,7 +11,8 @@ import { load as newUser } from './users/(list)/new/+page';
 import { load as user } from './users/[id]/+page';
 import { load as editUser } from './users/[id]/edit/+page';
 
-vi.mock('$lib/utils/auth', () => ({ authenticate: vi.fn() }));
+const auth = vi.hoisted(() => ({ authenticate: vi.fn() }));
+vi.mock('$lib/utils/auth', () => auth);
 
 const id = '0b9f7a3e-5c1d-4e8a-9f2b-1a2b3c4d5e6f';
 const at = (path: string) => new URL(`https://example.test${path}`);
@@ -82,5 +83,12 @@ describe('old addresses of Command Center sections', () => {
     ],
   ])('redirects %s', async (_path, load, location) => {
     await expect(load()).rejects.toMatchObject({ status: 307, location });
+  });
+
+  it('refuses an account without administration before redirecting', async () => {
+    const refused = Object.assign(new Error('redirect'), { status: 307, location: '/photos' });
+    auth.authenticate.mockRejectedValueOnce(refused);
+    await expect(users({ url: at('/admin/users') } as never)).rejects.toBe(refused);
+    expect(auth.authenticate).toHaveBeenLastCalledWith(expect.any(URL), { admin: true });
   });
 });
