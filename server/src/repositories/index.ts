@@ -61,6 +61,7 @@ import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
+import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SyncCheckpointRepository } from 'src/repositories/sync-checkpoint.repository.js';
@@ -136,6 +137,7 @@ export const repositories = [
   SearchRepository,
   ServerInfoRepository,
   SmartAlbumRepository,
+  StudioProjectRepository,
   SessionRepository,
   SharedLinkRepository,
   SharedLinkAssetRepository,
