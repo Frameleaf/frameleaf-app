@@ -347,26 +347,9 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       available: live && has && (unknown || any((asset) => !!asset.isArchived)),
     },
     {
-      // Marking is metadata on the asset; album membership and organization are untouched and no
-      // asset is relocated. "Locked" remains the name of the filtered destination, never this action.
-      id: 'mark-sensitive',
-      labelKey: 'frameleaf_bulk_mark_sensitive',
-      icon: 'mdiShieldLockOutline',
-      group: 'visibility',
-      undoable: true,
-      available: live && has,
-    },
-    {
-      id: 'unmark-sensitive',
-      labelKey: 'frameleaf_bulk_unmark_sensitive',
-      icon: 'mdiShieldOutline',
-      group: 'visibility',
-      undoable: true,
-      available: live && has,
-    },
-    {
-      // Moving into the Locked folder is a visibility change on the asset, and the only way back
-      // out is the matching action on the Locked destination itself.
+      // Lock (FL-34): one lock, metadata on the asset. Album membership and organization are
+      // untouched; the items leave every view but the owner's Locked view after the PIN, and the way
+      // back is Unlock there. It replaces both Mark Sensitive and the upstream Locked folder move.
       id: 'move-to-locked',
       labelKey: 'frameleaf_bulk_move_to_locked',
       icon: 'mdiLockOutline',

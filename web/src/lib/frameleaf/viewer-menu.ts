@@ -19,8 +19,11 @@
  * the More menu rather than in the panel.
  *
  * FL-36 has landed and adds no id: the design keeps accept, clear and rerun inside the
- * enrichment card, where the score and the review state they act on are visible. The menu's
- * existing `mark-sensitive` and `unmark-sensitive` remain the only sensitivity entries here.
+ * enrichment card, where the score and the review state they act on are visible.
+ *
+ * FL-34: Locked is one lock, so the menu has one entry for it, `set-visibility-locked`, labelled
+ * Lock or Unlock. The separate Mark Sensitive and Unmark Sensitive entries are gone: marking was the
+ * same lock under another name.
  */
 
 /** Every action the Frameleaf viewer menu can offer. Mirrors the prototype's `VIEWER_ACTIONS`. */
@@ -33,8 +36,6 @@ export const VIEWER_ACTIONS = [
   'remove-from-album',
   'archive',
   'unarchive',
-  'mark-sensitive',
-  'unmark-sensitive',
   'set-visibility-locked',
   'add-tag',
   'add-to-stack',
@@ -183,10 +184,7 @@ export function viewerMenuGroups(context: ViewerMenuContext): ViewerMenuGroup[] 
           'add-to-album',
           hasAlbumContext && canEditAlbum && 'remove-from-album',
           isOwner && !isLocked && (isArchived ? 'unarchive' : 'archive'),
-          // Sensitive marking is metadata and never relocates the asset.
-          isOwner && 'mark-sensitive',
-          isOwner && 'unmark-sensitive',
-          // The production Locked-visibility action is preserved for parity.
+          // Lock or Unlock (FL-34): metadata on the asset, which keeps its albums and organisation.
           isOwner && 'set-visibility-locked',
           tagsEnabled && 'add-tag',
         ]),

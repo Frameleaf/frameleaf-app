@@ -668,6 +668,21 @@ describe('TimelineManager', () => {
       timelineManager.upsertAssets([asset]);
       expect(timelineManager.assetCount).toEqual(0);
     });
+
+    it('keeps a newly locked asset in the Locked view, where it now lives (FL-34)', async () => {
+      await timelineManager.updateOptions({ visibility: AssetVisibility.Locked });
+      const asset = deriveLocalDateTimeFromFileCreatedAt(
+        timelineAssetFactory.build({
+          fileCreatedAt: fromISODateTimeUTCToObject('2024-01-20T12:00:00.000Z'),
+          visibility: AssetVisibility.Locked,
+        }),
+      );
+      timelineManager.upsertAssets([asset]);
+      expect(timelineManager.assetCount).toEqual(1);
+
+      eventManager.emit('AssetsMarkNsfw', [asset.id]);
+      expect(timelineManager.assetCount).toEqual(1);
+    });
   });
 
   describe('firstAsset', () => {
