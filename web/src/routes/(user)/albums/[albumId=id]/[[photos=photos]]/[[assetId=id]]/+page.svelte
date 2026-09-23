@@ -6,6 +6,7 @@
   import AlbumHeader from '$lib/components/frameleaf/AlbumHeader.svelte';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
+  import SpaceMediaComments from '$lib/components/frameleaf/SpaceMediaComments.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import HeaderActionButton from '$lib/components/HeaderActionButton.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
@@ -26,6 +27,7 @@
   import { getGlobalActions } from '$lib/services/app.service';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
+  import { handleError } from '$lib/utils/handle-error';
   import { isAlbumsRoute, navigate, type AssetGridRouteSearchParams } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import {
@@ -87,6 +89,8 @@
   const currentUserId = $derived(authManager.user.id);
   const albumId = $derived(album.id);
   const isCollection = $derived(album.kind === AlbumKind.Collection);
+  // FL-55: a shared space has one comment system, the threaded one, here as on the space's own page.
+  const isSpace = $derived(album.kind === AlbumKind.Space);
   // FL-45: the kind-aware fallback only matters if `album.albumName` itself sanitizes away.
   const albumDownloadFileName = $derived(
     namedArchiveName(
@@ -330,6 +334,15 @@
 
   onDestroy(() => activityManager.reset());
 
+  // A like on the space itself; the space's comment panel offers it beside the conversation.
+  const toggleSpaceLike = async () => {
+    try {
+      await activityManager.toggleLike();
+    } catch (error) {
+      handleError(error, $t('errors.cant_change_asset_favorite'));
+    }
+  };
+
   const onAlbumDelete = async ({ id }: AlbumResponseDto) => {
     if (id !== albumId) {
       return;
@@ -483,6 +496,7 @@
                   {album}
                   {isShared}
                   withStacked
+                  activityPanel={isSpace ? spaceAssetComments : undefined}
                 />
               {/if}
             </Portal>
@@ -520,7 +534,33 @@
 
   {#if activityOpen && isShared && authManager.authenticated && !assetViewerManager.isViewing}
     <Theme theme={appTheme}>
-      <ActivityPanel {album} onClose={() => (activityOpen = false)} />
+      {#if isSpace}
+        <!-- FL-55: the conversation on the space itself, threaded, with the space's own like. -->
+        <div class="h-full w-[min(22rem,100vw)] border-s border-(--fl-border)">
+          <SpaceMediaComments
+            spaceId={album.id}
+            canComment={album.isActivityEnabled}
+            likes={{ count: activityManager.likeCount, liked: !!activityManager.isLiked, onToggle: toggleSpaceLike }}
+            onClose={() => (activityOpen = false)}
+          />
+        </div>
+      {:else}
+        <ActivityPanel {album} onClose={() => (activityOpen = false)} />
+      {/if}
     </Theme>
   {/if}
 </div>
+
+{#snippet spaceAssetComments(asset: AssetResponseDto)}
+  <!-- FL-55: an item in a shared space is discussed in the space's threaded comments, not the album activity. -->
+  <div class="h-full *:h-full">
+    <Theme theme={appTheme}>
+      <SpaceMediaComments
+        spaceId={album.id}
+        assetId={asset.id}
+        canComment={album.isActivityEnabled}
+        onClose={() => assetViewerManager.closeActivityPanel()}
+      />
+    </Theme>
+  </div>
+{/snippet}

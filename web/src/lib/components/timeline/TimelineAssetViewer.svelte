@@ -16,7 +16,7 @@
   import { navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { type AlbumResponseDto, type AssetResponseDto, type PersonResponseDto, getAssetInfo } from '@immich/sdk';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -27,6 +27,8 @@
     album?: AlbumResponseDto;
     person?: PersonResponseDto;
     removeAction?: AssetAction.UNARCHIVE | AssetAction.ARCHIVE | AssetAction.SET_VISIBILITY_TIMELINE | null;
+    /** Replaces the viewer's activity side panel; a shared space mounts its own threaded comments here. */
+    activityPanel?: Snippet<[AssetResponseDto]>;
   }
 
   let {
@@ -38,6 +40,7 @@
     isShared = false,
     album,
     person,
+    activityPanel,
   }: Props = $props();
 
   const getAsset = (id: string) => {
@@ -274,6 +277,7 @@
     {isShared}
     {album}
     {person}
+    {activityPanel}
     onAssetChange={(asset) => {
       timelineManager?.upsertAssets([toTimelineAsset(asset)]);
     }}
