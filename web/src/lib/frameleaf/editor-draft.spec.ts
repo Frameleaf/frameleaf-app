@@ -13,6 +13,7 @@ import {
   sameRecipe,
   toServerRecipe,
   undoDraft,
+  rebaseDraft,
 } from '$lib/frameleaf/editor-draft';
 
 const revision = (overrides: Partial<AssetDevelopRevisionResponseDto> = {}): AssetDevelopRevisionResponseDto => ({
@@ -98,5 +99,24 @@ describe('editor draft', () => {
   it('knows when a render is still in flight', () => {
     expect(anyRevisionBusy([revision()])).toBe(false);
     expect(anyRevisionBusy([revision({ status: AssetDevelopRevisionStatus.Rendering, progress: 40 })])).toBe(true);
+  });
+});
+
+describe('rebaseDraft', () => {
+  it('opens on the loaded recipe when nothing was touched', () => {
+    const loaded = { ...initialRecipe(), contrast: 40 };
+    const draft = rebaseDraft(createDraft(), loaded);
+    expect(draft.recipe.contrast).toBe(40);
+    expect(draft.undo).toEqual([]);
+  });
+
+  it('keeps an adjustment made while the recipe was loading, one undo away from the loaded recipe', () => {
+    const early = changeDraft(createDraft(), { exposure: 0.5 });
+    const draft = rebaseDraft(early, { ...initialRecipe(), contrast: 40 });
+    expect(draft.recipe.exposure).toBe(0.5);
+    expect(draft.recipe.contrast).toBe(40);
+    expect(draft.undo).toHaveLength(1);
+    expect(draft.undo[0].exposure).toBe(0);
+    expect(draft.undo[0].contrast).toBe(40);
   });
 });
