@@ -120,6 +120,8 @@ export const PAUSABLE_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [
   MediaOperationKind.Bulk,
   MediaOperationKind.StudioExport,
   MediaOperationKind.Restoration,
+  // A Library Care scan or search records its asset or directory cursor after every batch (FL-69).
+  MediaOperationKind.MediaHealth,
 ];
 
 export const isPausableMediaOperationKind = (kind: MediaOperationKind) => PAUSABLE_MEDIA_OPERATION_KINDS.includes(kind);

@@ -896,6 +896,12 @@ export enum MediaOperationKind {
   StudioBundleExport = 'studio_bundle_export',
   /** A portable Studio project bundle read back into a new project of the importer's (FL-91). */
   StudioBundleImport = 'studio_bundle_import',
+  /**
+   * Library Care (FL-69): an owner's media health scan, or a search of chosen locations for the
+   * originals of missing or damaged media. It records a resume cursor after every batch, so it can
+   * pause, survive a restart and carry on where it stopped.
+   */
+  MediaHealth = 'media_health',
 }
 
 export const MediaOperationKindSchema = z
@@ -936,6 +942,12 @@ export enum MediaOperationBulkAction {
   RefreshFaces = 'refresh-faces',
   /** Reassemble a separated Live Photo still + motion video pair (FL-70). */
   RelinkLivePhoto = 'relink-live-photo',
+  /** Library Care (FL-69): point missing originals at a verified exact copy. */
+  RelinkMissingMedia = 'relink-missing-media',
+  /** Library Care (FL-69): replace confirmed damage with a verified copy, keeping the damaged file. */
+  RecoverDamagedMedia = 'recover-damaged-media',
+  /** Library Care (FL-69): move confirmed damage to the trash after revalidating it. */
+  TrashDamagedMedia = 'trash-damaged-media',
 }
 
 export const MediaOperationBulkActionSchema = z
