@@ -96,6 +96,17 @@ export class MediaOperationTable {
   @Column({ type: 'jsonb', nullable: true })
   estimate!: Record<string, unknown> | null;
 
+  /**
+   * What actually happened, as it happens. The one deliberately mutable JSON column (FL-32).
+   *
+   * `snapshot` above says what was asked for and never changes; this says what the server has done
+   * about it so far. A bulk operation records its counts and its per-item refusals here after every
+   * batch, so a browser that closed, a worker that died and a server that restarted all come back
+   * to the same answer — including which items still need retrying.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  result!: Record<string, unknown> | null;
+
   /** 0 to 100. Derived from completed units, persisted so a reconnect shows the real figure. */
   @Column({ type: 'double precision', default: 0 })
   progress!: Generated<number>;
