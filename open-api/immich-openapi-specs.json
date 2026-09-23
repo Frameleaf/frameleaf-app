@@ -43013,6 +43013,10 @@
     {
       "name": "Workflows",
       "description": "A workflow is a set of actions that run whenever a triggering event occurs. Workflows also can include filters to further limit execution."
+    },
+    {
+      "name": "Shared spaces",
+      "description": "A shared space is a top-level album that a group of people share. Its members hold the album roles - owner, editor or viewer - and somebody joins only by accepting an invitation, which they can preview first."
     }
   ]
 }
