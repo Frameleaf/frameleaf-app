@@ -279,6 +279,7 @@ export function Button({
 }) {
   return (
     <button
+      type="button"
       className={`button ${primary ? "primary" : ""} ${active ? "active" : ""} ${className}`}
       {...props}
     >

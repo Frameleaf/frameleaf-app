@@ -257,7 +257,7 @@ test("information panel edits description, tags, and people faces through the ca
   await flush();
   assert.equal($(".mv-badge").textContent, "Manual");
 
-  assert.match($(".mv-enrichment").textContent, /Local model · 90% confidence/);
+  assert.match($(".mv-enrichment").textContent, /DescriptionManual/);
   assert.match($(".mv-enrichment").textContent, /Reviewed/);
   await click($$(".mv-enrich-actions button").find((b) => b.textContent === "Mark sensitive"));
   assert.deepEqual(actions().at(-1), ["lock", "a", undefined]);
