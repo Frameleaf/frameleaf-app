@@ -7,7 +7,7 @@ import { Kysely, sql } from 'kysely';
  * the graph revision digest otherwise. `grantToken` is the FL-90 preview read grant that frame
  * delivery verifies on every request.
  *
- * One row per (project, revision digest, exact rational time, quality, viewport). `cacheKey` is
+ * One row per (owner, project, revision digest, exact rational time, quality, viewport). `cacheKey` is
  * the digest over exactly those and carries the unique constraint, so the store can never hold
  * two rows claiming to be the same frame. `projectId` and `revisionDigest` are plain columns:
  * Studio project storage is a private sidecar owned by a story in flight, and the Studio plan

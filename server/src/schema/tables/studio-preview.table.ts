@@ -10,13 +10,14 @@ import { UserTable } from 'src/schema/tables/user.table.js';
  *
  * The row is the cache entry *and* the request. There is no separate queue: a preview request
  * is a durable media operation of kind `studio_preview` (FL-104's model), and this row is the
- * revision-bound key that operation renders for. Two people asking for the same frame of the
- * same revision share the row and the operation rather than each heating up a GPU.
+ * revision-bound key that operation renders for. Two requests from the same account for the
+ * same frame of the same revision share the row and the operation rather than each heating up a
+ * GPU. Two accounts never share a row: the owner is part of the key.
  *
  * Three things make it safe:
  *
- * - **`cacheKey` is the identity.** It is a digest over project, revision digest, canonical
- *   rational time, quality and viewport. It is unique, so the store cannot hold two rows that
+ * - **`cacheKey` is the identity.** It is a digest over owner, project, revision digest,
+ *   canonical rational time, quality and viewport. It is unique, so the store cannot hold two rows that
  *   claim to be the same frame, and it cannot be forged by a project id containing a separator.
  * - **`revisionDigest` is never ordered or compared for recency.** It is matched for equality
  *   against the revision the project is on now. A frame whose digest no longer matches is
@@ -80,7 +81,7 @@ export class StudioPreviewFrameTable {
   @Column({ nullable: true })
   grantSessionId!: string | null;
 
-  /** Digest over project, revision, canonical time, quality and viewport. The store key. */
+  /** Digest over owner, project, revision, canonical time, quality and viewport. The store key. */
   @Column()
   cacheKey!: string;
 

@@ -48,7 +48,13 @@ const StudioPreviewRequestSchema = z
      * The client's monotonic seek counter. Echoed back on the result so a frame answering an
      * older seek is discarded by the client rather than painted over the current one.
      */
-    seekGeneration: z.coerce.number().int().min(0).default(0).optional(),
+    seekGeneration: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .default(0)
+      .optional()
+      .describe("The client's monotonic seek counter, echoed back on the result"),
   })
   .meta({ id: 'StudioPreviewRequestDto' });
 
@@ -72,8 +78,10 @@ const StudioPreviewSchema = z
     viewportWidth: z.int(),
     viewportHeight: z.int(),
     status: StudioPreviewStatusSchema,
-    /** The durable job rendering this frame, when one has been created. */
-    operationId: z.uuidv7().nullable(),
+    operationId: z
+      .uuidv7()
+      .nullable()
+      .describe('The durable job rendering this frame, when one has been created'),
     seekGeneration: z.string().describe('The seek this frame answers'),
     etag: z.string().describe('Revision-bound entity tag for the frame endpoint'),
     /** Frame identity: the delivered picture's own PTS in its timebase. */
@@ -81,8 +89,9 @@ const StudioPreviewSchema = z
     framePtsTimebase: z.string().nullable(),
     sizeInBytes: z.string().nullable(),
     contentType: z.string().nullable(),
-    /** The frame is an explicitly tone-mapped SDR rendering; never the colour authority. */
-    toneMapped: z.boolean(),
+    toneMapped: z
+      .boolean()
+      .describe('The frame is an explicitly tone-mapped SDR rendering; never the colour authority'),
     errorCode: z.string().nullable().describe('Stable code the client turns into a message'),
     requestedAt: z.string().meta({ format: 'date-time' }),
     readyAt: z.string().meta({ format: 'date-time' }).nullable(),

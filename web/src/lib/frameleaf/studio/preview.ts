@@ -462,6 +462,18 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
   };
 
   const failure = (code: string) => {
+    if (code === 'forbidden') {
+      /**
+       * Access went away: a source was relocked, unshared or trashed, the grant stopped
+       * verifying, or the session ended. Nothing this client holds may stay on screen or in
+       * memory, so the view is cleared first (nothing can paint a revoked URL) and then every
+       * cached frame of every revision, and the retained stale frame, is released.
+       */
+      setPhase('unavailable', { frame: null, staleFrame: null, errorCode: code });
+      releaseRetained();
+      cache.clear();
+      return;
+    }
     setPhase('unavailable', { frame: null, errorCode: code });
   };
 

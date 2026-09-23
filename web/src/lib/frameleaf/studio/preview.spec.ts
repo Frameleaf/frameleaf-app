@@ -417,6 +417,37 @@ describe('createStudioPreviewClient', () => {
     expect(client.view().errorCode).toBe('worker_lost');
   });
 
+  it('drops every cached frame, of every revision, when access is revoked', async () => {
+    const release = vi.fn();
+    let revoked = false;
+    const transport = stubTransport({
+      fetchFrame: vi.fn(async (previewId: string, etag: string) => {
+        if (revoked) {
+          throw transportError({ kind: 'forbidden' });
+        }
+        return { objectUrl: `blob:${previewId}`, etag };
+      }),
+    });
+    const client = createStudioPreviewClient(clientOptions(transport, release));
+
+    client.request(intent());
+    await client.idle();
+    revoked = true;
+    client.request(intent({ time: rational(2, 1) }));
+    await client.idle();
+
+    expect(client.view().phase).toBe('unavailable');
+    expect(client.view().errorCode).toBe('forbidden');
+    expect(client.view().frame).toBeNull();
+    expect(client.view().staleFrame).toBeNull();
+    expect(release).toHaveBeenCalledWith('blob:preview-1');
+
+    // Nothing is served from the cache afterwards, not even the frame that was on screen.
+    client.request(intent());
+    await client.idle();
+    expect(transport.request).toHaveBeenCalledTimes(3);
+  });
+
   it('releases every frame and cancels open previews on dispose', async () => {
     const release = vi.fn();
     const transport = stubTransport();
