@@ -94,7 +94,10 @@ export class RenderWorkerAdminController {
       'Creates a worker identity and returns its enrolment secret once. The server stores only a hash; the secret cannot be recovered later.',
     history: history(),
   })
-  createRenderWorker(@Auth() auth: AuthDto, @Body() dto: RenderWorkerCreateDto): Promise<RenderWorkerCreateResponseDto> {
+  createRenderWorker(
+    @Auth() auth: AuthDto,
+    @Body() dto: RenderWorkerCreateDto,
+  ): Promise<RenderWorkerCreateResponseDto> {
     return this.service.create(auth, dto);
   }
 
@@ -116,7 +119,10 @@ export class RenderWorkerAdminController {
     description: 'Sets the instance default when `userId` is omitted, otherwise the ceiling for one account.',
     history: history(),
   })
-  updateRenderWorkerLimits(@Auth() auth: AuthDto, @Body() dto: RenderWorkerLimitUpdateDto): Promise<RenderWorkerLimitDto> {
+  updateRenderWorkerLimits(
+    @Auth() auth: AuthDto,
+    @Body() dto: RenderWorkerLimitUpdateDto,
+  ): Promise<RenderWorkerLimitDto> {
     return this.service.updateLimits(auth, dto);
   }
 
@@ -145,7 +151,11 @@ export class RenderWorkerAdminController {
 
   @Get(':id')
   @Authenticated({ admin: true })
-  @Endpoint({ summary: 'Get a render worker', description: 'One worker identity with its current load.', history: history() })
+  @Endpoint({
+    summary: 'Get a render worker',
+    description: 'One worker identity with its current load.',
+    history: history(),
+  })
   getRenderWorker(@Param() { id }: UUIDv7ParamDto): Promise<RenderWorkerDto> {
     return this.service.get(id);
   }
