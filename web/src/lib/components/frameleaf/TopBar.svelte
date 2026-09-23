@@ -51,6 +51,15 @@
   let { onUploadClick, noBorder = false }: Props = $props();
 
   let showNotifications = $state(false);
+  let bellButton = $state<HTMLButtonElement>();
+
+  /** Close the panel; from the keyboard (Escape, its close button) focus goes back to the bell. */
+  const closeNotifications = (returnFocus = false) => {
+    showNotifications = false;
+    if (returnFocus) {
+      bellButton?.focus();
+    }
+  };
   let isElevated = $state(false);
   let isSessionLoading = $state(true);
 
@@ -236,12 +245,13 @@
 
         <div
           use:clickOutside={{
-            onOutclick: () => (showNotifications = false),
-            onEscape: () => (showNotifications = false),
+            onOutclick: () => closeNotifications(),
+            onEscape: () => closeNotifications(true),
           }}
         >
           <!-- The prototype's NotificationsBell (SystemPanels.jsx): outline bell, unread count capped at 9+. -->
           <button
+            bind:this={bellButton}
             type="button"
             class="fl-notif-bell"
             aria-label={bellLabel}
@@ -260,7 +270,7 @@
           </button>
 
           {#if showNotifications}
-            <NotificationPanel onClose={() => (showNotifications = false)} />
+            <NotificationPanel onClose={() => closeNotifications(true)} onNavigate={() => closeNotifications()} />
           {/if}
         </div>
 

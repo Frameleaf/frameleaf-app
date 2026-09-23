@@ -24,7 +24,8 @@
    * notification manager's and is unchanged: opening one marks it read and goes to its target.
    */
 
-  let { onClose }: { onClose?: () => void } = $props();
+  /** `onClose` is the close button; `onNavigate` is a row taking the person somewhere else. */
+  let { onClose, onNavigate }: { onClose?: () => void; onNavigate?: () => void } = $props();
 
   const titleId = 'fl-notifications-title';
   let panel = $state<HTMLElement>();
@@ -130,7 +131,7 @@
   </header>
 
   <div class="fl-notif-body">
-    <RunningJobsSection onNavigate={onClose} />
+    <RunningJobsSection onNavigate={onNavigate ?? onClose} />
 
     {#if noUnreadNotifications}
       <div class="fl-notif-empty" class:compact={!nothingRunning}>
