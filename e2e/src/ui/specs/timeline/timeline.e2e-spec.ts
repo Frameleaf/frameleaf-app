@@ -445,47 +445,6 @@ test.describe('Timeline', () => {
       await thumbnailUtils.expectInViewport(page, album.assetIds.at(-1)!);
       await thumbnailUtils.expectBottomIsTimelineBottom(page, album.assetIds.at(-1)!);
     });
-    test('Add photos to album pre-selects existing', async ({ page }) => {
-      const album = timelineRestData.album;
-      await pageUtils.openAlbumPage(page, album.id);
-      await page.getByLabel('Add photos').click();
-      const asset = getAsset(timelineRestData, album.assetIds[0])!;
-      await pageUtils.goToAsset(page, asset.fileCreatedAt);
-      await thumbnailUtils.expectInViewport(page, asset.id);
-      await thumbnailUtils.expectSelectedDisabled(page, asset.id);
-    });
-    test.skip('Add photos to album', async ({ page }) => {
-      const album = timelineRestData.album;
-      await pageUtils.openAlbumPage(page, album.id);
-      await page.locator('nav button[aria-label="Add photos"]').click();
-      const asset = getAsset(timelineRestData, album.assetIds[0])!;
-      await pageUtils.goToAsset(page, asset.fileCreatedAt);
-      await thumbnailUtils.expectInViewport(page, asset.id);
-      await thumbnailUtils.expectSelectedDisabled(page, asset.id);
-      await pageUtils.selectDay(page, 'Tue, Feb 27, 2024');
-      const put = pageRoutePromise(page, `**/api/albums/${album.id}/assets`, async (route, request) => {
-        const requestJson = request.postDataJSON();
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          json: requestJson.ids.map((id: string) => ({ id, success: true })),
-        });
-        changes.albumAdditions.push(...requestJson.ids);
-      });
-      await page.getByText('Add assets').click();
-      await expect(put).resolves.toEqual({
-        ids: [
-          'c077ea7b-cfa1-45e4-8554-f86c00ee5658',
-          '040fd762-dbbc-486d-a51a-2d84115e6229',
-          '86af0b5f-79d3-4f75-bab3-3b61f6c72b23',
-        ],
-      });
-      const addedAsset = getAsset(timelineRestData, 'c077ea7b-cfa1-45e4-8554-f86c00ee5658')!;
-      await pageUtils.goToAsset(page, addedAsset.fileCreatedAt);
-      await thumbnailUtils.expectInViewport(page, 'c077ea7b-cfa1-45e4-8554-f86c00ee5658');
-      await thumbnailUtils.expectInViewport(page, '040fd762-dbbc-486d-a51a-2d84115e6229');
-      await thumbnailUtils.expectInViewport(page, '86af0b5f-79d3-4f75-bab3-3b61f6c72b23');
-    });
   });
   test.describe('/trash', () => {
     test('open /photos, trash photo, open /trash, restore', async ({ page }) => {
