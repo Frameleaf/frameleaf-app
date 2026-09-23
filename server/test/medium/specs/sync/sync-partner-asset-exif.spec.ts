@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { AssetVisibility, SyncEntityType, SyncRequestType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { SyncTestContext } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
@@ -60,6 +60,28 @@ describe(SyncRequestType.PartnerAssetExifsV1, () => {
       },
       expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
     ]);
+
+    await ctx.syncAckAll(auth, response);
+    await ctx.assertSyncIsComplete(auth, [SyncRequestType.PartnerAssetExifsV1]);
+  });
+
+  it('should sync only the asset id for a locked partner asset', async () => {
+    const { auth, ctx } = await setup();
+    const { user: user2 } = await ctx.newUser();
+    await ctx.newPartner({ sharedById: user2.id, sharedWithId: auth.user.id });
+    const { asset } = await ctx.newAsset({ ownerId: user2.id, visibility: AssetVisibility.Locked });
+    await ctx.newExif({ assetId: asset.id, make: 'Canon', city: 'Paris', description: 'private' });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.PartnerAssetExifsV1]);
+    expect(response).toEqual([
+      {
+        ack: expect.any(String),
+        data: expect.objectContaining({ assetId: asset.id, make: null, city: null, description: null }),
+        type: SyncEntityType.PartnerAssetExifV1,
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+    expect(response[0].data).not.toHaveProperty('isLocked');
 
     await ctx.syncAckAll(auth, response);
     await ctx.assertSyncIsComplete(auth, [SyncRequestType.PartnerAssetExifsV1]);
