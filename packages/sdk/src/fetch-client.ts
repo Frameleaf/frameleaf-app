@@ -3168,6 +3168,63 @@ export type MlDestinationConsentRequestDto = {
     /** The administrator confirms that media sent to this destination leaves the network */
     acknowledgeMediaLeavesNetwork: true;
 };
+export type RestorationGpuDto = {
+    driverVersion: string;
+    memoryTotalBytes: number;
+    name: string;
+};
+export type RestorationMeasuredThroughputDto = {
+    frames: number;
+    /** Measured frames restored per second */
+    framesPerSecond: number;
+    /** GPU the measurement was made on, as nvidia-smi names it */
+    gpu: string;
+    inputHeight: number;
+    inputWidth: number;
+    /** Measured peak GPU memory */
+    peakVramBytes: number;
+};
+export type RestorationModelCapabilityDto = {
+    displayName: string;
+    /** Source dynamic ranges the model accepts */
+    dynamicRanges: RestorationDynamicRange[];
+    /** Model family, for example realbasicvsr or seedvr2 */
+    family: string;
+    /** Identity of the model and its verified weights, or null until the weights are verified */
+    fingerprint: string | null;
+    id: string;
+    /** Largest number of frames one inference may restore */
+    maxFrames: number;
+    /** Largest source long edge the model is qualified for */
+    maxInputLongEdge: number;
+    /** Throughput measured during qualification; estimates come from these */
+    measured: RestorationMeasuredThroughputDto[];
+    mode: RestorationMode;
+    /** Fixed enlargement the model restores at, or null */
+    nativeScale: number | null;
+    /** Qualification record covering this model, or null */
+    qualificationId: string | null;
+    /** Every reason the model is not available; empty when it is */
+    reasons: string[];
+    /** Pinned upstream commit */
+    revision: string;
+    state: RestorationModelState;
+};
+export type MlRestorationModelsResponseDto = {
+    /** When the destination last verified its models, or null */
+    checkedAt: string | null;
+    /** Problems reading the model manifest or qualification evidence on the destination */
+    configurationProblems: string[];
+    destinationId: string;
+    /** Why no report could be read, or null */
+    error: string | null;
+    gpus: RestorationGpuDto[];
+    models: RestorationModelCapabilityDto[];
+    /** Whether the destination answered with a restoration report */
+    reachable: boolean;
+    /** Restoration workloads the destination serves now; empty unless a model is available */
+    workloads: MlWorkload[];
+};
 export type NotificationDeleteAllDto = {
     /** Notification IDs to delete */
     ids: string[];
@@ -8347,6 +8404,19 @@ export function probeMlDestination({ id }: {
     }));
 }
 /**
+ * Get restoration models of a destination
+ */
+export function getMlDestinationRestorationModels({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MlRestorationModelsResponseDto;
+    }>(`/ml-destinations/${encodeURIComponent(id)}/restoration-models`, {
+        ...opts
+    }));
+}
+/**
  * Delete notifications
  */
 export function deleteNotifications({ notificationDeleteAllDto }: {
@@ -11638,6 +11708,28 @@ export enum MlAdmissionRefusal {
     BudgetExceeded = "budget-exceeded",
     EndpointUnresolved = "endpoint-unresolved",
     DestinationUnhealthy = "destination-unhealthy"
+}
+export enum RestorationDynamicRange {
+    Sdr = "sdr",
+    Hdr = "hdr"
+}
+export enum RestorationMode {
+    Faithful = "faithful",
+    Creative = "creative"
+}
+export enum RestorationModelState {
+    Available = "available",
+    Verifying = "verifying",
+    NotPinned = "not-pinned",
+    RuntimeMissing = "runtime-missing",
+    RuntimeDirty = "runtime-dirty",
+    WeightsMissing = "weights-missing",
+    WeightsMismatch = "weights-mismatch",
+    Unqualified = "unqualified",
+    LicenseUnreviewed = "license-unreviewed",
+    NoGpu = "no-gpu",
+    GpuUnqualified = "gpu-unqualified",
+    InsufficientVram = "insufficient-vram"
 }
 export enum MemorySearchOrder {
     Asc = "asc",
