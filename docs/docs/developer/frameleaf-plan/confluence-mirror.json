@@ -703,17 +703,17 @@
       "version": 5
     },
     {
-      "bytes": 8167,
+      "bytes": 9079,
       "category": "development",
       "id": "61440673",
       "source": "AGENTS.md",
-      "sourceSha256": "c55dcca5ffa612fd0fbc2eca870054bacee97ba33416e65a0b3e10eaabbfdd11",
+      "sourceSha256": "68f40f4a1de2791641ab09e386f8d5922b9d6f44498b187fd10ab0bf3e43cf42",
       "title": "Frameleaf Repository Agent Instructions",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440673",
-      "verification": "Version 6 records the hosted-only builds and test suites rule committed as caefcdd0cf4267347f769f77e96a483a615adc2f on branch claude/frameleaf-ui-review-157143 (fork/main 0116d4778); banner states not merged, no PR and keeps the PR #112 merge history; links resolve to committed files at that fork/main commit; full page read back after update.",
+      "verification": "Version 7 records the September 23, 2026 rules committed as 7e982c2a93ddbbefc12d06d5892fda87bce42903 on branch claude/frameleaf-design-rules-sep23, a follow-up to PR #135 (claude/frameleaf-ui-review-157143 at 8e10c853984c764364ad2e1c6cc08116036cc027): do not touch the iOS or Android apps, the September 22 prototype is authoritative for product design, and the design-adaptation rule names production Svelte only; banner states not merged and not yet pushed or opened as a pull request, keeps the PR #135 Review and CI rule note and the PR #112 merge history; links resolve to committed files at fork/main 0116d4778; full page read back after update and its body matches the committed source.",
       "verified": true,
-      "verifiedAt": "2026-09-22T22:08:44.734Z",
-      "version": 6
+      "verifiedAt": "2026-09-23T06:40:17.312Z",
+      "version": 7
     },
     {
       "bytes": 11072,
@@ -763,10 +763,10 @@
       "sourceSha256": "1d64dcbf499b84a94a20744c50fdbbc5227a25e997a1030a38fe3fa4707be69d",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 7: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble; banners now record the September 22, 2026 revision committed as caefcdd0cf4267347f769f77e96a483a615adc2f on branch claude/frameleaf-ui-review-157143, not merged, no PR; design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md carry the Albums page, vocabulary, icon catalogue and deduplication preview decisions with per-section SHA-256 and byte counts, the other three sections are unchanged PR #112 content; full page read back after update.",
+      "verification": "Shared six-source page version 8: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble and the September 22 mirror status (now naming open PR #135); added a September 23, 2026 mirror status for the design/frameleaf/INTERACTION-REQUIREMENTS.md Locked decision (one privacy lock; the old Locked folder migrates into it) committed as c1a7021416d73f75058b456165461fa167069f61 on branch claude/frameleaf-design-rules-sep23, not merged, not yet pushed or opened as a pull request; that section carries the new SHA-256 and byte count, the other five sections are unchanged; full page read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-22T22:08:44.734Z",
-      "version": 7
+      "verifiedAt": "2026-09-23T06:42:17.259Z",
+      "version": 8
     },
     {
       "bytes": 1449,
@@ -776,10 +776,10 @@
       "sourceSha256": "1aee3224386aed5ce97f80493d41d6fb6492c792e7d49ca54e08a35674051ecb",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 7: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble; banners now record the September 22, 2026 revision committed as caefcdd0cf4267347f769f77e96a483a615adc2f on branch claude/frameleaf-ui-review-157143, not merged, no PR; design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md carry the Albums page, vocabulary, icon catalogue and deduplication preview decisions with per-section SHA-256 and byte counts, the other three sections are unchanged PR #112 content; full page read back after update.",
+      "verification": "Shared six-source page version 8: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble and the September 22 mirror status (now naming open PR #135); added a September 23, 2026 mirror status for the design/frameleaf/INTERACTION-REQUIREMENTS.md Locked decision (one privacy lock; the old Locked folder migrates into it) committed as c1a7021416d73f75058b456165461fa167069f61 on branch claude/frameleaf-design-rules-sep23, not merged, not yet pushed or opened as a pull request; that section carries the new SHA-256 and byte count, the other five sections are unchanged; full page read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-22T22:08:44.734Z",
-      "version": 7
+      "verifiedAt": "2026-09-23T06:42:17.259Z",
+      "version": 8
     },
     {
       "bytes": 5242,
@@ -789,23 +789,23 @@
       "sourceSha256": "936f26b7c0b50e95f7c8ecca35664c8ab4d753283f942a76a3bf918427d59401",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 7: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble; banners now record the September 22, 2026 revision committed as caefcdd0cf4267347f769f77e96a483a615adc2f on branch claude/frameleaf-ui-review-157143, not merged, no PR; design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md carry the Albums page, vocabulary, icon catalogue and deduplication preview decisions with per-section SHA-256 and byte counts, the other three sections are unchanged PR #112 content; full page read back after update.",
+      "verification": "Shared six-source page version 8: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble and the September 22 mirror status (now naming open PR #135); added a September 23, 2026 mirror status for the design/frameleaf/INTERACTION-REQUIREMENTS.md Locked decision (one privacy lock; the old Locked folder migrates into it) committed as c1a7021416d73f75058b456165461fa167069f61 on branch claude/frameleaf-design-rules-sep23, not merged, not yet pushed or opened as a pull request; that section carries the new SHA-256 and byte count, the other five sections are unchanged; full page read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-22T22:08:44.734Z",
-      "version": 7
+      "verifiedAt": "2026-09-23T06:42:17.259Z",
+      "version": 8
     },
     {
-      "bytes": 13439,
+      "bytes": 13640,
       "category": "design-template",
       "id": "61539021",
       "source": "design/frameleaf/INTERACTION-REQUIREMENTS.md",
-      "sourceSha256": "cbd184ac0c5ef1a6ec9c519306370e82e901227c5c17f3e2c6b2d8af62d66f6c",
+      "sourceSha256": "5c0e1385563ae9286aeba5a7b5e2f02acfb77012f4edc60639eeadf4f98924a5",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 7: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble; banners now record the September 22, 2026 revision committed as caefcdd0cf4267347f769f77e96a483a615adc2f on branch claude/frameleaf-ui-review-157143, not merged, no PR; design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md carry the Albums page, vocabulary, icon catalogue and deduplication preview decisions with per-section SHA-256 and byte counts, the other three sections are unchanged PR #112 content; full page read back after update.",
+      "verification": "Shared six-source page version 8: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble and the September 22 mirror status (now naming open PR #135); added a September 23, 2026 mirror status for the design/frameleaf/INTERACTION-REQUIREMENTS.md Locked decision (one privacy lock; the old Locked folder migrates into it) committed as c1a7021416d73f75058b456165461fa167069f61 on branch claude/frameleaf-design-rules-sep23, not merged, not yet pushed or opened as a pull request; that section carries the new SHA-256 and byte count, the other five sections are unchanged; full page read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-22T22:08:44.734Z",
-      "version": 7
+      "verifiedAt": "2026-09-23T06:42:17.259Z",
+      "version": 8
     },
     {
       "bytes": 5051,
@@ -815,10 +815,10 @@
       "sourceSha256": "5e9bde384f4c89f98e86977e25117394736e392dc7cd6691d62c5bff7fe840de",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 7: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble; banners now record the September 22, 2026 revision committed as caefcdd0cf4267347f769f77e96a483a615adc2f on branch claude/frameleaf-ui-review-157143, not merged, no PR; design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md carry the Albums page, vocabulary, icon catalogue and deduplication preview decisions with per-section SHA-256 and byte counts, the other three sections are unchanged PR #112 content; full page read back after update.",
+      "verification": "Shared six-source page version 8: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble and the September 22 mirror status (now naming open PR #135); added a September 23, 2026 mirror status for the design/frameleaf/INTERACTION-REQUIREMENTS.md Locked decision (one privacy lock; the old Locked folder migrates into it) committed as c1a7021416d73f75058b456165461fa167069f61 on branch claude/frameleaf-design-rules-sep23, not merged, not yet pushed or opened as a pull request; that section carries the new SHA-256 and byte count, the other five sections are unchanged; full page read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-22T22:08:44.734Z",
-      "version": 7
+      "verifiedAt": "2026-09-23T06:42:17.259Z",
+      "version": 8
     },
     {
       "bytes": 1547,
@@ -828,10 +828,10 @@
       "sourceSha256": "d8fb86f6284408e6a843f41a7ba8047e1c68f55e8cc8eb0006c198b2ed988744",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 7: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble; banners now record the September 22, 2026 revision committed as caefcdd0cf4267347f769f77e96a483a615adc2f on branch claude/frameleaf-ui-review-157143, not merged, no PR; design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md carry the Albums page, vocabulary, icon catalogue and deduplication preview decisions with per-section SHA-256 and byte counts, the other three sections are unchanged PR #112 content; full page read back after update.",
+      "verification": "Shared six-source page version 8: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble and the September 22 mirror status (now naming open PR #135); added a September 23, 2026 mirror status for the design/frameleaf/INTERACTION-REQUIREMENTS.md Locked decision (one privacy lock; the old Locked folder migrates into it) committed as c1a7021416d73f75058b456165461fa167069f61 on branch claude/frameleaf-design-rules-sep23, not merged, not yet pushed or opened as a pull request; that section carries the new SHA-256 and byte count, the other five sections are unchanged; full page read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-22T22:08:44.734Z",
-      "version": 7
+      "verifiedAt": "2026-09-23T06:42:17.259Z",
+      "version": 8
     },
     {
       "bytes": 9820,
