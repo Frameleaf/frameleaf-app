@@ -1,14 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
+import { rational, FRAME_RATE_NTSC_30 } from './rational-time';
 import {
   StudioPreviewCache,
   createStudioPreviewClient,
   isStudioPreviewAnswerCurrent,
-  normalizeStudioPreviewTime,
+  parseStudioPreviewTime,
   sameStudioPreviewIntent,
   studioPreviewKey,
   studioPreviewMessageKey,
-  studioPreviewTimeFromFrame,
+  studioPreviewTimeAtFrame,
   studioPreviewTimeKey,
+  toPreviewTimeWire,
   type StudioPreviewFrameView,
   type StudioPreviewIntent,
   type StudioPreviewRecord,
@@ -19,7 +21,7 @@ import {
 const intent = (overrides: Partial<StudioPreviewIntent> = {}): StudioPreviewIntent => ({
   projectId: 'project-1',
   revisionDigest: 'rev-a',
-  time: { numerator: '1001', denominator: '30000' },
+  time: rational(1001, 30_000),
   quality: 'standard',
   viewportWidth: 1920,
   viewportHeight: 1080,
@@ -43,7 +45,7 @@ const transportError = (failure: StudioPreviewTransportFailure) => Object.assign
 const frameView = (overrides: Partial<StudioPreviewFrameView> = {}): StudioPreviewFrameView => ({
   previewId: 'preview-1',
   revisionDigest: 'rev-a',
-  time: { numerator: '1001', denominator: '30000' },
+  time: rational(1001, 30_000),
   quality: 'standard',
   objectUrl: 'blob:a',
   framePts: null,
@@ -69,45 +71,35 @@ const stubTransport = (overrides: Partial<StudioPreviewTransport> = {}): StudioP
 };
 
 describe('rational preview time', () => {
-  it('reduces to lowest terms so the same instant is one key', () => {
-    expect(normalizeStudioPreviewTime({ numerator: '2002', denominator: '60000' })).toEqual({
-      numerator: '1001',
-      denominator: '30000',
-    });
+  it('gives the same key to the same instant written differently', () => {
+    // FL-93's `rational` reduces, so 2002/60000 and 1001/30000 are one cache entry, not two.
+    expect(studioPreviewTimeKey(rational(2002, 60_000))).toBe(studioPreviewTimeKey(rational(1001, 30_000)));
   });
 
-  it('moves a negative denominator onto the numerator', () => {
-    expect(normalizeStudioPreviewTime({ numerator: '1', denominator: '-2' })).toEqual({
-      numerator: '-1',
-      denominator: '2',
-    });
+  it('round-trips through the stored spelling', () => {
+    expect(parseStudioPreviewTime('1001/30000')).toEqual(rational(1001, 30_000));
+    expect(parseStudioPreviewTime('0.5')).toBeNull();
   });
 
-  it('refuses a zero denominator rather than guessing', () => {
-    expect(() => normalizeStudioPreviewTime({ numerator: '1', denominator: '0' })).toThrow(TypeError);
+  it('builds an exact time from a frame at an NTSC cadence', () => {
+    // Frame 30 at 30000/1001 is exactly 1001/1000 seconds; no float expresses that.
+    expect(studioPreviewTimeAtFrame(30, FRAME_RATE_NTSC_30)).toEqual(rational(1001, 1000));
   });
 
-  it('survives a tick count a double cannot hold exactly', () => {
-    expect(studioPreviewTimeKey({ numerator: '9007199254740993', denominator: '90000' })).toBe(
-      '9007199254740993/90000',
-    );
-  });
-
-  it('builds an exact time from a frame at a fractional rate', () => {
-    // Frame 30 at 30000/1001 is exactly 30030/30000 seconds, which no float can express.
-    expect(studioPreviewTimeFromFrame(30, 30_000, 1001)).toEqual({ numerator: '1001', denominator: '1000' });
+  it('puts the rational on the wire as decimal strings, not as a float', () => {
+    expect(toPreviewTimeWire(rational(1001, 30_000))).toEqual({ numerator: '1001', denominator: '30000' });
   });
 });
 
 describe('preview identity', () => {
   it('treats the same instant written differently as one frame', () => {
-    expect(sameStudioPreviewIntent(intent(), intent({ time: { numerator: '2002', denominator: '60000' } }))).toBe(true);
+    expect(sameStudioPreviewIntent(intent(), intent({ time: rational(2002, 60_000) }))).toBe(true);
   });
 
   it.each([
     ['project', intent({ projectId: 'project-2' })],
     ['revision', intent({ revisionDigest: 'rev-b' })],
-    ['time', intent({ time: { numerator: '1002', denominator: '30000' } })],
+    ['time', intent({ time: rational(1002, 30_000) })],
     ['quality', intent({ quality: 'full' as const })],
     ['viewport', intent({ viewportWidth: 1280 })],
   ])('treats a different %s as a different frame', (_name, other) => {
@@ -154,7 +146,7 @@ describe('StudioPreviewCache', () => {
     const cache = new StudioPreviewCache({ release: vi.fn() });
     cache.set(intent(), frameView());
 
-    expect(cache.get(intent({ time: { numerator: '2002', denominator: '60000' } }))).toBeDefined();
+    expect(cache.get(intent({ time: rational(2002, 60_000) }))).toBeDefined();
   });
 
   it('never returns a frame across revisions', () => {
@@ -168,7 +160,7 @@ describe('StudioPreviewCache', () => {
     const release = vi.fn();
     const cache = new StudioPreviewCache({ release });
     cache.set(intent(), frameView({ objectUrl: 'blob:a' }));
-    cache.set(intent({ time: { numerator: '2', denominator: '1' } }), frameView({ objectUrl: 'blob:b' }));
+    cache.set(intent({ time: rational(2) }), frameView({ objectUrl: 'blob:b' }));
 
     cache.dropRevision('rev-a');
 
@@ -190,9 +182,9 @@ describe('StudioPreviewCache', () => {
   it('evicts the least recently used frame past the cap', () => {
     const release = vi.fn();
     const cache = new StudioPreviewCache({ maxFramesPerRevision: 2, release });
-    const first = intent({ time: { numerator: '1', denominator: '1' } });
-    const second = intent({ time: { numerator: '2', denominator: '1' } });
-    const third = intent({ time: { numerator: '3', denominator: '1' } });
+    const first = intent({ time: rational(1) });
+    const second = intent({ time: rational(2) });
+    const third = intent({ time: rational(3) });
 
     cache.set(first, frameView({ objectUrl: 'blob:1' }));
     cache.set(second, frameView({ objectUrl: 'blob:2' }));
@@ -247,7 +239,7 @@ describe('createStudioPreviewClient', () => {
 
     client.request(intent());
     await client.idle();
-    client.request(intent({ time: { numerator: '2002', denominator: '60000' } }));
+    client.request(intent({ time: rational(2002, 60_000) }));
     await client.idle();
 
     expect(transport.request).toHaveBeenCalledTimes(1);
@@ -264,7 +256,7 @@ describe('createStudioPreviewClient', () => {
           });
         }
         return {
-          preview: record({ id: `preview-${asked.time.numerator}`, revisionDigest: asked.revisionDigest }),
+          preview: record({ id: `preview-${asked.time.num}`, revisionDigest: asked.revisionDigest }),
           currentRevisionDigest: asked.revisionDigest,
           supersededPreviewIds: [],
         };
@@ -272,11 +264,11 @@ describe('createStudioPreviewClient', () => {
     });
     const client = createStudioPreviewClient(clientOptions(transport));
 
-    client.request(intent({ time: { numerator: '1', denominator: '1' } }));
+    client.request(intent({ time: rational(1) }));
     // Three more seeks while the first is still running: only the last survives.
-    client.request(intent({ time: { numerator: '2', denominator: '1' } }));
-    client.request(intent({ time: { numerator: '3', denominator: '1' } }));
-    client.request(intent({ time: { numerator: '4', denominator: '1' } }));
+    client.request(intent({ time: rational(2) }));
+    client.request(intent({ time: rational(3) }));
+    client.request(intent({ time: rational(4) }));
     resolveFirst?.();
     await client.idle();
 

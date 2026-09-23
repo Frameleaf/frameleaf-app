@@ -26,6 +26,8 @@
     onDragStart?: (album: AlbumResponseDto) => void;
     onDragEnd?: () => void;
     actions?: Snippet;
+    /** Where the tile opens. Defaults to the album view; a shared space opens its own page. */
+    href?: string;
   }
 
   let {
@@ -37,10 +39,11 @@
     onDragStart,
     onDragEnd,
     actions,
+    href: hrefOverride,
   }: Props = $props();
 
   const name = $derived(album.albumName || $t('unnamed_album'));
-  const href = $derived(Route.viewAlbum({ id: album.id }));
+  const href = $derived(hrefOverride ?? Route.viewAlbum({ id: album.id }));
   const cover = $derived(
     album.albumThumbnailAssetId
       ? getAssetMediaUrl({ id: album.albumThumbnailAssetId, size: AssetMediaSize.Thumbnail })

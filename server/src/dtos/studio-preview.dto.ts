@@ -4,27 +4,24 @@ import { StudioPreviewQualitySchema, StudioPreviewStatusSchema } from 'src/enum.
 import { PREVIEW_MAX_VIEWPORT, PREVIEW_MIN_VIEWPORT } from 'src/utils/studio-preview.js';
 
 /**
- * Exact time on the sequence timeline (FL-96, `STU-402`).
+ * Exact time on the sequence timeline (FL-93's `Rational`, on the wire).
  *
- * A rational, never a float. Minimal local shape standing in for FL-93 (`VID-102`), which owns
- * the production rational-time model on another branch: when it lands this schema is replaced
- * by its own, and because every consumer goes through the canonicalising helpers in
- * `src/utils/studio-preview.ts` the swap does not reach a call site.
- *
- * Carried as strings because the values are 64-bit: a tick count at a 1/90000 timebase over a
- * long project is not exactly representable as a JSON number, and "close enough" is exactly the
- * failure this story exists to prevent.
+ * A rational, never a float: a preview must address the same frame the export does, and
+ * `1/30000` is already wrong in the 17th digit as a double. Carried as decimal strings so JSON
+ * cannot quietly widen them, and validated to the safe-integer range `rational()` requires.
  */
+const safeIntegerString = (label: string) =>
+  z
+    .string()
+    .regex(/^-?\d{1,16}$/)
+    .refine((value) => Number.isSafeInteger(Number(value)), { message: `${label} must be a safe integer` });
+
 const PreviewTimeSchema = z
   .object({
-    numerator: z
-      .string()
-      .regex(/^-?\d{1,19}$/)
-      .describe('Time numerator, in seconds over the denominator'),
-    denominator: z
-      .string()
-      .regex(/^\d{1,19}$/)
-      .describe('Time denominator; must not be zero'),
+    numerator: safeIntegerString('numerator').describe('Time numerator, in seconds over the denominator'),
+    denominator: safeIntegerString('denominator')
+      .refine((value) => Number(value) > 0, { message: 'denominator must be positive' })
+      .describe('Time denominator; must be positive'),
   })
   .meta({ id: 'StudioPreviewTimeDto' });
 

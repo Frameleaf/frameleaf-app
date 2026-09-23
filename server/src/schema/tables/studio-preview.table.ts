@@ -49,9 +49,36 @@ export class StudioPreviewFrameTable {
   @Column()
   projectId!: string;
 
-  /** The exact graph revision digest this frame is bound to. Matched for equality only. */
+  /**
+   * What this frame is bound to: FL-90's authorized manifest digest when the request carried
+   * one, and otherwise the graph revision digest the client named. Matched for equality only —
+   * never parsed, never ordered.
+   *
+   * Binding to the manifest digest is strictly stronger than binding to the graph alone: the
+   * digest changes when the revision changes *and* when the project is re-resolved, so a frame
+   * also stops being deliverable when a source is untrashed, unshared, relocked or replaced.
+   */
   @Column()
   revisionDigest!: string;
+
+  /**
+   * The numeric project revision the manifest was resolved at, when a manifest was supplied.
+   * Recorded for lineage and for the render snapshot; the equality check uses the digest.
+   */
+  @Column({ type: 'integer', nullable: true })
+  projectRevision!: number | null;
+
+  /**
+   * The FL-90 preview read grant, signed for this viewer session. Frame delivery verifies it on
+   * every request, so a grant that has expired, or whose manifest was re-resolved, stops the
+   * frame rather than merely stopping the next render.
+   */
+  @Column({ type: 'text', nullable: true })
+  grantToken!: string | null;
+
+  /** The viewer session the grant was issued to. A grant is worthless in another session. */
+  @Column({ nullable: true })
+  grantSessionId!: string | null;
 
   /** Digest over project, revision, canonical time, quality and viewport. The store key. */
   @Column()

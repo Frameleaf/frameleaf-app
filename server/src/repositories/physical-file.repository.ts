@@ -111,6 +111,8 @@ export class PhysicalFileRepository {
       .select([
         'asset.id',
         'asset.originalPath',
+        'asset.originalFileName',
+        'asset.type',
         'asset.physicalOriginalFileId',
         'asset.checksum',
         'asset_exif.fileSizeInByte as sizeInBytes',
@@ -126,6 +128,20 @@ export class PhysicalFileRepository {
       .orderBy('asset.id', 'asc')
       .limit(1)
       .executeTakeFirst();
+  }
+
+  /**
+   * Active assets whose original is backed by this physical file, including the canonical
+   * asset itself. Used by the deduplication preview for its reference counts.
+   */
+  async countOriginalReferences(physicalFileId: string): Promise<number> {
+    const { count } = await this.db
+      .selectFrom('asset')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('asset.physicalOriginalFileId', '=', asUuid(physicalFileId))
+      .where('asset.deletedAt', 'is', null)
+      .executeTakeFirstOrThrow();
+    return Number(count);
   }
 
   getPhysicalFile(id: string): Promise<PhysicalFile | undefined> {
@@ -859,6 +875,8 @@ export class PhysicalFileRepository {
         'asset.id',
         'asset.ownerId',
         'asset.originalPath',
+        'asset.originalFileName',
+        'asset.type',
         'asset.checksum',
         'asset.isExternal',
         'asset.isOffline',

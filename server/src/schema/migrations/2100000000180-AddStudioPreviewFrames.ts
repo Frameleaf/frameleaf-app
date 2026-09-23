@@ -3,6 +3,10 @@ import { Kysely, sql } from 'kysely';
 /**
  * Revision-bound Studio preview frames (FL-96, `STU-402`).
  *
+ * `revisionDigest` holds FL-90's authorized manifest digest when the request carried one, and
+ * the graph revision digest otherwise. `grantToken` is the FL-90 preview read grant that frame
+ * delivery verifies on every request.
+ *
  * One row per (project, revision digest, exact rational time, quality, viewport). `cacheKey` is
  * the digest over exactly those and carries the unique constraint, so the store can never hold
  * two rows claiming to be the same frame. `projectId` and `revisionDigest` are plain columns:
@@ -15,6 +19,9 @@ export async function up(db: Kysely<any>): Promise<void> {
   "ownerId" uuid NOT NULL,
   "projectId" character varying NOT NULL,
   "revisionDigest" character varying NOT NULL,
+  "projectRevision" integer,
+  "grantToken" text,
+  "grantSessionId" character varying,
   "cacheKey" character varying NOT NULL,
   "timeNumerator" bigint NOT NULL,
   "timeDenominator" bigint NOT NULL,

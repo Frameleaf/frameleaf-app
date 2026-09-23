@@ -1,30 +1,24 @@
 <script lang="ts">
+  import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
-  import ArchiveAction from '$lib/components/timeline/actions/ArchiveAction.svelte';
-  import ChangeDate from '$lib/components/timeline/actions/ChangeDateAction.svelte';
-  import ChangeDescription from '$lib/components/timeline/actions/ChangeDescriptionAction.svelte';
-  import ChangeLocation from '$lib/components/timeline/actions/ChangeLocationAction.svelte';
-  import CreateSharedLink from '$lib/components/timeline/actions/CreateSharedLinkAction.svelte';
-  import DeleteAssets from '$lib/components/timeline/actions/DeleteAssetsAction.svelte';
-  import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
-  import FavoriteAction from '$lib/components/timeline/actions/FavoriteAction.svelte';
-  import MarkNsfwAction from '$lib/components/timeline/actions/MarkNsfwAction.svelte';
-  import SelectAllAssets from '$lib/components/timeline/actions/SelectAllAction.svelte';
-  import SetVisibilityAction from '$lib/components/timeline/actions/SetVisibilityAction.svelte';
-  import TagAction from '$lib/components/timeline/actions/TagAction.svelte';
-  import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
-  import Timeline from '$lib/components/timeline/Timeline.svelte';
-  import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
-  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
+  import Portal from '$lib/elements/Portal.svelte';
+  import { librarySession } from '$lib/frameleaf/library-session.svelte';
+  import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
-  import { getAssetBulkActions } from '$lib/services/asset.service';
-  import { ActionButton, CommandPaletteDefaultProvider } from '@immich/ui';
-  import { mdiDotsVertical } from '@mdi/js';
+  import { navigate } from '$lib/utils/navigation';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
+  /**
+   * Favorites (FL-33 cleanup): the Frameleaf library bound to the favourites scope.
+   *
+   * The legacy timeline and its select bar are gone. The Frameleaf selection bar carries the whole
+   * bulk set, so the actions this page used to list one by one — unfavorite, share link, select
+   * all, add to album, download, change date, description and location, archive, mark sensitive,
+   * tag, move to the Locked folder and delete — are the same actions the bar offers everywhere.
+   */
   interface Props {
     data: PageData;
   }
@@ -32,70 +26,30 @@
   let { data }: Props = $props();
 
   let timelineManager = $state<TimelineManager>() as TimelineManager;
+  let viewerInvisible = $state(false);
   const options = { isFavorite: true, withStacked: true };
-
-  const handleEscape = () => {
-    if (!assetMultiSelectManager.selectionActive) {
-      return;
-    }
-
-    assetMultiSelectManager.clear();
-    return;
-  };
-
-  const handleSetVisibility = (assetIds: string[]) => {
-    timelineManager.removeAssets(assetIds);
-    assetMultiSelectManager.clear();
-  };
 </script>
 
-<UserPageLayout hideNavbar={assetMultiSelectManager.selectionActive} title={data.meta.title} scrollbar={false}>
-  <Timeline
-    enableRouting={true}
-    withStacked={true}
+<UserPageLayout hideNavbar={librarySession.selection.length > 0} title={data.meta.title} scrollbar={false}>
+  <LibraryView
     bind:timelineManager
     {options}
-    assetInteraction={assetMultiSelectManager}
-    onEscape={handleEscape}
+    destination={{ kind: 'favorites' }}
+    enableRouting
+    syncUrl={false}
+    selectAll="loaded"
+    onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >
     {#snippet empty()}
       <EmptyPlaceholder text={$t('no_favorites_message')} class="mx-auto mt-10" />
     {/snippet}
-  </Timeline>
-</UserPageLayout>
 
-<!-- Multiselection mode app bar -->
-{#if assetMultiSelectManager.selectionActive}
-  <AssetSelectControlBar>
-    {@const Actions = getAssetBulkActions($t)}
-    <CommandPaletteDefaultProvider name={$t('assets')} actions={Object.values(Actions)} />
-    <FavoriteAction removeFavorite onFavorite={(assetIds) => timelineManager.removeAssets(assetIds)} />
-    <CreateSharedLink />
-    <SelectAllAssets {timelineManager} assetInteraction={assetMultiSelectManager} />
-    <ActionButton action={Actions.AddToAlbum} />
-    <ButtonContextMenu icon={mdiDotsVertical} title={$t('menu')}>
-      <DownloadAction menuItem />
-      <ChangeDate menuItem />
-      <ChangeDescription menuItem />
-      <ChangeLocation menuItem />
-      <ArchiveAction
-        menuItem
-        unarchive={assetMultiSelectManager.isAllArchived}
-        onArchive={(ids, visibility) => timelineManager.update(ids, (asset) => (asset.visibility = visibility))}
-      />
-      {#if authManager.preferences.tags.enabled}
-        <TagAction menuItem />
-      {/if}
-      {#if assetMultiSelectManager.ownedAssets.length > 0}
-        <MarkNsfwAction menuItem />
-        <MarkNsfwAction menuItem markSafe />
-      {/if}
-      <SetVisibilityAction menuItem onVisibilitySet={handleSetVisibility} />
-      <DeleteAssets
-        menuItem
-        onAssetDelete={(assetIds) => timelineManager.removeAssets(assetIds)}
-        onUndoDelete={(assets) => timelineManager.upsertAssets(assets)}
-      />
-    </ButtonContextMenu>
-  </AssetSelectControlBar>
-{/if}
+    {#snippet viewer()}
+      <Portal target="body">
+        {#if assetViewerManager.isViewing}
+          <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} withStacked />
+        {/if}
+      </Portal>
+    {/snippet}
+  </LibraryView>
+</UserPageLayout>

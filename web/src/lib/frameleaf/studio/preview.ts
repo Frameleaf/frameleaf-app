@@ -29,63 +29,44 @@
  * {@link StudioPreviewTransport} without the engine or this cache changing.
  */
 
+import { formatRational, frameStartTime, tryParseRational } from './rational-time';
+import type { StudioTime } from './commands';
+
 /* ------------------------------------------------------------------ */
 /* Time                                                                 */
 /* ------------------------------------------------------------------ */
 
 /**
- * Exact time on the sequence timeline, as `numerator / denominator` seconds.
+ * Exact time on the sequence timeline, in seconds (FL-93's `StudioTime`).
  *
- * Minimal local shape standing in for FL-93 (`VID-102`), which owns the production
- * rational-time model on another branch. Strings, not numbers: a tick count at a 1/90000
- * timebase over a long project is not exactly representable as a double, and a preview that
- * addresses a different frame than the export does is the failure this story exists to prevent.
+ * Rational, never float seconds: a preview at 1001/30000 must address the same frame the
+ * export does, and `1/30000` is already wrong in the 17th digit as a double. All the
+ * arithmetic below is FL-93's, so the host, the engine and the transcode services agree on
+ * what "this frame" means rather than each rounding their own way.
  */
-export interface StudioPreviewTime {
-  numerator: string;
-  denominator: string;
-}
-
-const gcd = (a: bigint, b: bigint): bigint => {
-  let x = a < 0n ? -a : a;
-  let y = b < 0n ? -b : b;
-  while (y !== 0n) {
-    [x, y] = [y, x % y];
-  }
-  return x;
-};
+export type StudioPreviewTime = StudioTime;
 
 /**
- * Canonical form: lowest terms, non-negative denominator.
+ * Canonical text form, e.g. `1001/30000`.
  *
- * Canonicalisation is what makes the cache key honest. `2002/60000` and `1001/30000` are the
- * same instant, so they must hit the same entry rather than each triggering a render.
+ * `rational()` already reduces and puts the sign on the numerator, so two spellings of the
+ * same instant — `2002/60000` and `1001/30000` — produce the same key rather than each
+ * triggering a render.
  */
-export const normalizeStudioPreviewTime = (time: StudioPreviewTime): StudioPreviewTime => {
-  const denominator = BigInt(time.denominator);
-  if (denominator === 0n) {
-    throw new TypeError('Preview time denominator must not be zero');
-  }
+export const studioPreviewTimeKey = (time: StudioPreviewTime): string => formatRational(time);
 
-  const sign = denominator < 0n ? -1n : 1n;
-  const n = BigInt(time.numerator) * sign;
-  const d = denominator * sign;
-  const divisor = gcd(n, d) || 1n;
+/** Parse the stored `num/den` spelling. Returns null rather than guessing. */
+export const parseStudioPreviewTime = (value: string): StudioPreviewTime | null => tryParseRational(value);
 
-  return { numerator: String(n / divisor), denominator: String(d / divisor) };
-};
+/** The exact start time of a frame at a rational cadence. No float seconds anywhere. */
+export const studioPreviewTimeAtFrame = (index: number, frameRate: StudioTime): StudioPreviewTime =>
+  frameStartTime(index, frameRate);
 
-export const studioPreviewTimeKey = (time: StudioPreviewTime): string => {
-  const normalized = normalizeStudioPreviewTime(time);
-  return `${normalized.numerator}/${normalized.denominator}`;
-};
-
-/** Build a rational time from a frame number at a rational rate. No float seconds anywhere. */
-export const studioPreviewTimeFromFrame = (frame: number, rateNumerator: number, rateDenominator: number) =>
-  normalizeStudioPreviewTime({
-    numerator: String(BigInt(Math.trunc(frame)) * BigInt(rateDenominator)),
-    denominator: String(BigInt(rateNumerator)),
-  });
+/** The wire form: FL-93's rationals travel as `{ numerator, denominator }` decimal strings. */
+export const toPreviewTimeWire = (time: StudioPreviewTime) => ({
+  numerator: String(time.num),
+  denominator: String(time.den),
+});
 
 /* ------------------------------------------------------------------ */
 /* Identity                                                             */
@@ -579,7 +560,7 @@ export const createStudioPreviewClient = (options: StudioPreviewClientOptions): 
     const frame: StudioPreviewFrameView = {
       previewId: record.id,
       revisionDigest: record.revisionDigest,
-      time: normalizeStudioPreviewTime(intent.time),
+      time: intent.time,
       quality: intent.quality,
       objectUrl: frameBytes.objectUrl,
       framePts: record.framePts,

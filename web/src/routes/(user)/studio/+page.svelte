@@ -18,6 +18,7 @@
   import { Route } from '$lib/route';
   import { toStudioAssets } from '$lib/frameleaf/studio/assets';
   import { createStudioBridge } from '$lib/frameleaf/studio/bridge';
+  import type { StudioCommandPayloads } from '$lib/frameleaf/studio/commands';
   import { probeStudioCapabilities } from '$lib/frameleaf/studio/capabilities';
   import {
     emptyStudioCapabilities,
@@ -103,16 +104,11 @@
     // `not-implemented` rather than silently no-oped.
     handlers: {
       'preview.request': async (envelope) => {
-        const payload = envelope.payload as {
-          time: { numerator: string; denominator: string };
-          quality: 'draft' | 'standard' | 'full';
-          viewportWidth: number;
-          viewportHeight: number;
-        };
+        const payload = envelope.payload as StudioCommandPayloads['preview.request'];
         previewClient.request({
           projectId: project.id,
           revisionDigest,
-          time: payload.time,
+          time: payload.at,
           quality: payload.quality,
           viewportWidth: payload.viewportWidth,
           viewportHeight: payload.viewportHeight,

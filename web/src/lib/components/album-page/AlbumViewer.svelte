@@ -3,22 +3,22 @@
   import AlbumMap from '$lib/components/album-page/AlbumMap.svelte';
   import Brand from '$lib/components/frameleaf/Brand.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
-  import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
-  import SelectAllAssets from '$lib/components/timeline/actions/SelectAllAction.svelte';
-  import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
-  import Timeline from '$lib/components/timeline/Timeline.svelte';
+  import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
+  import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
+  import Portal from '$lib/elements/Portal.svelte';
   import '$lib/frameleaf/tokens.css';
-  import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
+  import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
   import { handleDownloadAlbum } from '$lib/services/album.service';
+  import { getGlobalActions } from '$lib/services/app.service';
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import type { AlbumResponseDto, SharedLinkResponseDto } from '@immich/sdk';
-  import { Icon, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { ActionButton, Icon, Theme as AppTheme, themeManager } from '@immich/ui';
   import { mdiDownload, mdiFileImagePlusOutline, mdiPresentationPlay } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
@@ -34,6 +34,14 @@
 
   const options = $derived({ albumId: album.id, order: album.order });
   let timelineManager = $state<TimelineManager>() as TimelineManager;
+  let viewerInvisible = $state(false);
+
+  /**
+   * A shared link is not a library: the only bulk action its recipients get is the download, and
+   * only when the link allows it. `bulkActions` already refuses everything else without an owned,
+   * live asset context, and the shared-link id is what scopes what remains.
+   */
+  const bulkContext = $derived({ sharedLinkId: sharedLink.id, readOnly: true });
 
   dragAndDropFilesStore.subscribe((value) => {
     if (!(value.isDragging && value.files.length > 0)) {
@@ -58,14 +66,18 @@
 
   // FL-56: own layout, no LibraryRail/TopBar/account menu.
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
+
+  // FL-33 cleanup: Cast belongs on this header. It was dropped when the public viewer was
+  // redesigned; it is a global action, so it is the same one the album detail page mounts.
+  const { Cast } = $derived(getGlobalActions($t));
 </script>
 
 <svelte:document
   use:shortcut={{
     shortcut: { key: 'Escape' },
     onShortcut: () => {
-      if (!assetViewerManager.isViewing && assetMultiSelectManager.selectionActive) {
-        assetMultiSelectManager.clear();
+      if (!assetViewerManager.isViewing && librarySession.selection.length > 0) {
+        librarySession.clearSelection();
       }
     },
   }}
@@ -75,7 +87,16 @@
   class="frameleaf relative h-dvh overflow-hidden px-2 pt-(--navbar-height) max-md:pt-(--navbar-height-md) md:px-6"
   data-theme={appTheme}
 >
-  <Timeline enableRouting={true} {album} bind:timelineManager {options} assetInteraction={assetMultiSelectManager}>
+  <LibraryView
+    enableRouting
+    syncUrl={false}
+    selectAll="loaded"
+    bind:timelineManager
+    {options}
+    destination={{ kind: 'album', id: album.id }}
+    {bulkContext}
+    noSelectionBar={!sharedLink.allowDownload}
+  >
     <section class="px-2 pt-8 md:px-0 md:pt-24">
       <!-- FL-56: the public album's own title block, ported from the design template's
            PublicViewer.jsx `pv-title`. -->
@@ -89,43 +110,46 @@
         <p class="pv-album-description">{album.description}</p>
       {/if}
     </section>
-  </Timeline>
+
+    {#snippet viewer()}
+      <Portal target="body">
+        {#if assetViewerManager.isViewing}
+          <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} {album} />
+        {/if}
+      </Portal>
+    {/snippet}
+  </LibraryView>
 </main>
 
 <header>
-  {#if assetMultiSelectManager.selectionActive}
-    <AssetSelectControlBar>
-      <SelectAllAssets {timelineManager} assetInteraction={assetMultiSelectManager} />
-      {#if sharedLink.allowDownload}
-        <DownloadAction filename={album.albumName} />
+  <!-- FL-56: the public viewer has its own brand, no LibraryRail/TopBar/account menu. The
+       Frameleaf selection bar floats over the results rather than replacing this header, so the
+       header's own actions stay reachable while a selection is being made. -->
+  <div class="frameleaf pv-header" data-theme={appTheme}>
+    <a class="pv-brand" href="/" data-sveltekit-preload-data="hover">
+      <Brand />
+    </a>
+    <div class="pv-actions">
+      {#if sharedLink.allowUpload}
+        <IconButton label={$t('add_photos')} onclick={() => openFileUploadDialog({ albumId: album.id })}>
+          <Icon icon={mdiFileImagePlusOutline} size="1.25em" aria-hidden={true} />
+        </IconButton>
       {/if}
-    </AssetSelectControlBar>
-  {:else}
-    <!-- FL-56: the public viewer has its own brand, no LibraryRail/TopBar/account menu. -->
-    <div class="frameleaf pv-header" data-theme={appTheme}>
-      <a class="pv-brand" href="/" data-sveltekit-preload-data="hover">
-        <Brand />
-      </a>
-      <div class="pv-actions">
-        {#if sharedLink.allowUpload}
-          <IconButton label={$t('add_photos')} onclick={() => openFileUploadDialog({ albumId: album.id })}>
-            <Icon icon={mdiFileImagePlusOutline} size="1.25em" aria-hidden={true} />
-          </IconButton>
-        {/if}
-        {#if album.assetCount > 0 && sharedLink.allowDownload}
-          <IconButton label={$t('slideshow')} onclick={handleStartSlideshow}>
-            <Icon icon={mdiPresentationPlay} size="1.25em" aria-hidden={true} />
-          </IconButton>
-          <IconButton label={$t('download')} onclick={() => handleDownloadAlbum(album)}>
-            <Icon icon={mdiDownload} size="1.25em" aria-hidden={true} />
-          </IconButton>
-        {/if}
-        {#if sharedLink.showMetadata && featureFlagsManager.value.map}
-          <AlbumMap {album} />
-        {/if}
-      </div>
+      {#if album.assetCount > 0 && sharedLink.allowDownload}
+        <IconButton label={$t('slideshow')} onclick={handleStartSlideshow}>
+          <Icon icon={mdiPresentationPlay} size="1.25em" aria-hidden={true} />
+        </IconButton>
+        <IconButton label={$t('download')} onclick={() => handleDownloadAlbum(album)}>
+          <Icon icon={mdiDownload} size="1.25em" aria-hidden={true} />
+        </IconButton>
+      {/if}
+      <!-- FL-33: Cast, restored. It draws nothing when no cast destination is available. -->
+      <ActionButton action={Cast} />
+      {#if sharedLink.showMetadata && featureFlagsManager.value.map}
+        <AlbumMap {album} />
+      {/if}
     </div>
-  {/if}
+  </div>
 </header>
 
 <style>

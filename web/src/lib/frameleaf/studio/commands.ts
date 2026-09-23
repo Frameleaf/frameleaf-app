@@ -23,6 +23,8 @@
  * until that story lands. Nothing here silently no-ops.
  */
 
+import type { Rational } from './rational-time';
+
 /* ------------------------------------------------------------------ */
 /* Identifiers                                                          */
 /* ------------------------------------------------------------------ */
@@ -77,8 +79,23 @@ export const isStudioCommandId = (value: unknown): value is StudioCommandId =>
 /* Payloads                                                             */
 /* ------------------------------------------------------------------ */
 
-/** Seconds on the sequence timeline. Rational timing extensions stay in the graph. */
-export type StudioTime = number;
+/**
+ * An instant on the sequence timeline, in seconds, as an exact rational (FL-93).
+ *
+ * It was a float. A float cannot hold 1001/30000, so an in point typed on an NTSC clip, a
+ * split, a transition boundary and the frame the encoder is asked for all drifted apart by a
+ * little, and the preview, the audio and the encoder each rounded that drift differently. A
+ * rational is the same number everywhere, so a boundary the person set is the boundary that
+ * gets rendered.
+ *
+ * Zero is the start of the sequence. A *source* in or out point is expressed the same way and
+ * is relative to the source's own origin, which the server's timing map resolves — a container
+ * whose first frame is not at timestamp zero is not the editor's problem.
+ */
+export type StudioTime = Rational;
+
+/** A length on the timeline, in seconds, as an exact rational. Same reasoning as StudioTime. */
+export type StudioDuration = Rational;
 
 export interface StudioRippleOption {
   /** When true later clips on the track follow the edit. */
@@ -94,7 +111,7 @@ export interface StudioRect {
 
 export interface StudioTransitionIntent {
   type: string;
-  durationSeconds: number;
+  duration: StudioDuration;
 }
 
 export interface StudioColorWheel {
@@ -120,7 +137,7 @@ export interface StudioCaptionLine {
 }
 
 export interface StudioCommandPayloads {
-  'clip.add': { trackId: string; assetId: string; at: StudioTime; kind?: string; durationSeconds?: number };
+  'clip.add': { trackId: string; assetId: string; at: StudioTime; kind?: string; duration?: StudioDuration };
   'clip.move': { clipId: string; start: StudioTime; trackId?: string };
   'clip.trimStart': { clipId: string; start: StudioTime } & StudioRippleOption;
   'clip.trimEnd': { clipId: string; end: StudioTime } & StudioRippleOption;
@@ -145,9 +162,9 @@ export interface StudioCommandPayloads {
   'clip.setKenBurns': { clipId: string; kenBurns: { from: StudioRect; to: StudioRect } | null };
   'clip.setGrade': { clipId: string; grade: StudioGradeIntent | null };
   'track.set': { trackId: string; patch: { name?: string; muted?: boolean; locked?: boolean; solo?: boolean; gain?: number } };
-  'title.add': { at: StudioTime; text: string; durationSeconds?: number; style?: string; position?: string; animation?: string };
-  'music.add': { musicId: string; at: StudioTime; durationSeconds?: number; volume?: number };
-  'voiceover.add': { at: StudioTime; durationSeconds: number; uploadId: string };
+  'title.add': { at: StudioTime; text: string; duration?: StudioDuration; style?: string; position?: string; animation?: string };
+  'music.add': { musicId: string; at: StudioTime; duration?: StudioDuration; volume?: number };
+  'voiceover.add': { at: StudioTime; duration: StudioDuration; uploadId: string };
   'captions.set': { captions: StudioCaptionLine[] };
   'sequence.setFields': { name?: string; captionLanguage?: string; captionsBurnIn?: boolean };
   'sequence.setActive': { sequenceId: string };
@@ -172,13 +189,12 @@ export interface StudioCommandPayloads {
   /**
    * Ask for one frame of the current revision (FL-96).
    *
-   * Time is a rational pair of decimal strings, never float seconds: a preview must address
-   * exactly the frame the export does. Minimal local shape standing in for FL-93's model.
-   * The viewport is part of the frame's identity, not a hint; the engine reports the size of
-   * the surface it will paint into.
+   * `at` is a `StudioTime` — FL-93's exact rational — never float seconds: a preview must
+   * address the same frame the export does. The viewport is part of the frame's identity, not
+   * a hint; the engine reports the size of the surface it will paint into.
    */
   'preview.request': {
-    time: { numerator: string; denominator: string };
+    at: StudioTime;
     quality: 'draft' | 'standard' | 'full';
     viewportWidth: number;
     viewportHeight: number;

@@ -16,6 +16,7 @@ import {
   type StudioProjectHandle,
 } from '$lib/frameleaf/studio/host-contract';
 import { idleStudioPreviewView, type StudioPreviewView } from '$lib/frameleaf/studio/preview';
+import { rational } from '$lib/frameleaf/studio/rational-time';
 
 /**
  * The Studio route's own contract (FL-88, source anchor `web/src/lib/frameleaf/StudioPage.spec.ts`).
@@ -247,7 +248,7 @@ describe('Studio preview area', () => {
         staleFrame: {
           previewId: 'preview-1',
           revisionDigest: 'rev-a',
-          time: { numerator: '1001', denominator: '30000' },
+          time: rational(1001, 30_000),
           quality: 'standard',
           objectUrl: 'blob:a',
           framePts: null,
@@ -280,7 +281,7 @@ describe('Studio preview area', () => {
         frame: {
           previewId: 'preview-1',
           revisionDigest: 'rev-a',
-          time: { numerator: '1001', denominator: '30000' },
+          time: rational(1001, 30_000),
           quality: 'standard',
           objectUrl: 'blob:a',
           framePts: '3003',
