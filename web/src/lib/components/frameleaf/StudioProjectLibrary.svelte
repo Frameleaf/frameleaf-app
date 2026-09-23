@@ -265,22 +265,26 @@
 
   /** Follow one bundle job until it settles, backing off while it runs. */
   const follow = (operationId: string, onUpdate: (operation: StudioBundleOperationDto) => void, attempt = 0) => {
-    const timer = setTimeout(async () => {
-      timers.delete(timer);
-      if (disposed) {
-        return;
-      }
-      try {
-        const operation = await getStudioBundleOperation({ id: operationId });
-        onUpdate(operation);
-        if (!isStudioBundleSettled(operation)) {
-          follow(operationId, onUpdate, attempt + 1);
-        }
-      } catch {
-        // A lost poll is retried; the job itself carries on regardless on the server.
-        follow(operationId, onUpdate, attempt + 1);
-      }
-    }, studioBundlePollMs(attempt));
+    const timer = setTimeout(
+      () =>
+        void (async () => {
+          timers.delete(timer);
+          if (disposed) {
+            return;
+          }
+          try {
+            const operation = await getStudioBundleOperation({ id: operationId });
+            onUpdate(operation);
+            if (!isStudioBundleSettled(operation)) {
+              follow(operationId, onUpdate, attempt + 1);
+            }
+          } catch {
+            // A lost poll is retried; the job itself carries on regardless on the server.
+            follow(operationId, onUpdate, attempt + 1);
+          }
+        })(),
+      studioBundlePollMs(attempt),
+    );
     timers.add(timer);
   };
 

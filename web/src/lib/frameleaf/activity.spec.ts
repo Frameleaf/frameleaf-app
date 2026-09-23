@@ -146,6 +146,15 @@ describe('fromMediaOperation', () => {
     expect(item.canDismiss).toBe(true);
   });
 
+  it('titles a job about a withheld Locked item with words of its own, never an empty name (FL-43)', () => {
+    const item = fromMediaOperation(
+      operation({ kind: MediaOperationKind.Restoration, label: '', withheld: true, assetId: null }),
+    );
+
+    expect(item.titleKey).toBe('frameleaf_activity_title_locked_item');
+    expect(item.assetId).toBeUndefined();
+  });
+
   it('keeps cancelling as running until the server settles it', () => {
     const item = fromMediaOperation(operation({ status: MediaOperationStatus.Cancelling }));
 

@@ -22,7 +22,6 @@
   // Albums that cannot be the parent: the album itself + every descendant
   // (otherwise we'd create a cycle).
   const computeForbiddenIds = (rootId: string, list: AlbumResponseDto[]) => {
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const blocked = new Set<string>([rootId]);
     let added = true;
     while (added) {

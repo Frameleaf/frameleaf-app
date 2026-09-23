@@ -118,7 +118,16 @@ program
       .env('IMMICH_MIGRATE_CONCURRENCY')
       .default(defaultConcurrency),
   )
+  .addOption(
+    new Option(
+      '--preflight',
+      'Check both connections, key permissions, owners and ledger state; change nothing',
+    ).default(false),
+  )
   .addOption(new Option('-n, --dry-run', 'Enumerate + dedup-check + audit preview only; no writes to B').default(false))
+  .addOption(
+    new Option('--verify', 'Re-audit an existing ledger against the destination only; transfer nothing').default(false),
+  )
   .addOption(new Option('--include-trashed', 'Also migrate trashed assets').default(false))
   .addOption(new Option('--retry-failed', 'Requeue assets that errored on a previous run').default(false))
   .addOption(new Option('--no-faces', "Skip person/face migration (faces are best-effort and depend on B's ML)"))

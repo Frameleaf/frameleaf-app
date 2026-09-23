@@ -179,6 +179,9 @@ export class RenderWorkerLimitTable {
 
   @UpdateDateColumn()
   updatedAt!: Generated<Timestamp>;
+
+  @UpdateIdColumn()
+  updateId!: Generated<string>;
 }
 
 @Index({ columns: ['workerId', 'createdAt'] })

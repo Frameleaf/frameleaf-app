@@ -30,7 +30,8 @@
   type Target = { id: string; name: string };
 
   let targets: Target[] = $state([]);
-  let target = $state(defaultAlbumId ?? '');
+  // Follows the page's album; a pick in the menu overrides it until the page's album changes.
+  let target = $derived(defaultAlbumId ?? '');
   let open = $state(false);
 
   onMount(async () => {
@@ -44,10 +45,6 @@
     } catch (error) {
       handleError(error, $t('errors.frameleaf_unable_to_load_albums'));
     }
-  });
-
-  $effect(() => {
-    target = defaultAlbumId ?? '';
   });
 
   const targetLabel = $derived(targets.find((entry) => entry.id === target)?.name);

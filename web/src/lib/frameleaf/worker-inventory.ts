@@ -111,7 +111,9 @@ export const applyWorkerUrlChange = (current: readonly string[], change: WorkerU
       if (next < 0 || next >= urls.length) {
         throw new WorkerUrlChangeError('cannot-move');
       }
-      [urls[index], urls[next]] = [urls[next], urls[index]];
+      const moved = urls[index];
+      urls[index] = urls[next];
+      urls[next] = moved;
       return urls;
     }
     case 'add':

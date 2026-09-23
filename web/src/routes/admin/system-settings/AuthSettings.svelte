@@ -5,9 +5,8 @@
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
-  import AuthDisableLoginConfirmModal from '$lib/modals/AuthDisableLoginConfirmModal.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import CredentialRow from '$lib/components/frameleaf/settings/CredentialRow.svelte';
   import { ConfigCredential, OAuthTokenEndpointAuthMethod, unlinkAllOAuthAccountsAdmin } from '@immich/sdk';
@@ -18,8 +17,9 @@
   import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
 
   const disabled = $derived(featureFlagsManager.value.configFile);
-  const config = $derived(systemConfigManager.value);
-  let configToEdit = $state(systemConfigManager.cloneValue());
+  const settingsDraft = requireSystemConfigDraft();
+  const configToEdit = $derived(settingsDraft.draft);
+  const config = $derived(settingsDraft.baseline);
 
   const handleToggleOverride = () => {
     // click runs before bind
@@ -27,19 +27,6 @@
     if (!previouslyEnabled && !configToEdit.oauth.mobileRedirectUri) {
       configToEdit.oauth.mobileRedirectUri = location.origin + '/api/oauth/mobile-redirect';
     }
-  };
-
-  const onBeforeSave = async () => {
-    const allMethodsDisabled = !configToEdit.oauth.enabled && !configToEdit.passwordLogin.enabled;
-
-    if (allMethodsDisabled) {
-      const confirmed = await modalManager.show(AuthDisableLoginConfirmModal);
-      if (!confirmed) {
-        return false;
-      }
-    }
-
-    return true;
   };
 
   const handleUnlinkAllOAuthAccounts = async () => {
@@ -310,7 +297,7 @@
           </div>
         </SettingGroup>
 
-        <SettingActions bind:configToEdit keys={['passwordLogin', 'oauth']} {onBeforeSave} {disabled} />
+        <SettingActions keys={['passwordLogin', 'oauth']} {disabled} />
       </div>
     </form>
   </div>
