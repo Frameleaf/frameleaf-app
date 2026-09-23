@@ -29,8 +29,8 @@ describe('studio asset projection', () => {
       id: 'asset-1',
       kind: 'video',
       name: 'summit.jpg',
-      // The DTO is in milliseconds; a timeline works in seconds.
-      durationSeconds: 12.5,
+      // FL-93: the DTO is in milliseconds, the timeline is in exact rational seconds.
+      duration: { num: 25, den: 2 },
       thumbnailUrl: '/api/assets/asset-1/thumbnail?size=thumbnail',
       previewUrl: '/api/assets/asset-1/thumbnail?size=preview',
       playbackUrl: '/api/assets/asset-1/video/playback',
@@ -42,8 +42,30 @@ describe('studio asset projection', () => {
   it('gives a still no duration and no playback source', () => {
     const projected = toStudioAsset(asset());
 
-    expect(projected.durationSeconds).toBeNull();
+    expect(projected.duration).toBeNull();
     expect(projected.playbackUrl).toBeNull();
+  });
+
+  // FL-93
+  it('converts every duration exactly, including the ones a float cannot hold', () => {
+    expect(toStudioAsset(asset({ type: AssetTypeEnum.Video, duration: 1 })).duration).toEqual({
+      num: 1,
+      den: 1000,
+    });
+    // One hour: 3600000 ms is exactly 3600 s, with no denominator left over.
+    expect(toStudioAsset(asset({ type: AssetTypeEnum.Video, duration: 3_600_000 })).duration).toEqual({
+      num: 3600,
+      den: 1,
+    });
+    expect(toStudioAsset(asset({ type: AssetTypeEnum.Video, duration: 0 })).duration).toEqual({
+      num: 0,
+      den: 1,
+    });
+    // 33367 ms is not a round number of seconds; it stays exact rather than becoming 33.367.
+    expect(toStudioAsset(asset({ type: AssetTypeEnum.Video, duration: 33_367 })).duration).toEqual({
+      num: 33_367,
+      den: 1000,
+    });
   });
 
   it('never lets a Locked asset cross the boundary', () => {
