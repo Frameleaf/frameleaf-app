@@ -130,7 +130,8 @@ const inBatchOrder = (batch: readonly string[], outcomes: readonly Outcome[]): O
  *   sensitive items the owner submitted are changed, not skipped. Ownership, album and tag access
  *   are still checked for every item and every batch. The Locked folder's PIN is enforced where it
  *   belongs, at submit: a job that includes Locked items can only be queued from an unlocked
- *   session (see `MediaOperationService.createBulk`).
+ *   session (see `MediaOperationService.createBulk`). A job queued without the PIN skips any item
+ *   that was locked after it was queued; nothing but Unmark Sensitive ever removes a lock.
  * - **Sensitive marking is the lock** (FL-34). Mark Sensitive writes a lock record and Unmark
  *   Sensitive removes it: no visibility change, no album write, no enrichment tags.
  * - **Cancel is honoured between batches** and the items already changed are reported, not hidden.
@@ -598,6 +599,20 @@ export class BulkOperationService {
             reasonKey: 'frameleaf_bulk_reason_no_permission',
           });
         }
+      }
+    }
+
+    // FL-34: the PIN is checked at submit. An item locked after that (by a detection, or by joining a
+    // locked stack or live photo) is only changed by a job submitted from an unlocked session.
+    if (!snapshot.elevated && allowed.length > 0) {
+      const locked = await this.operations.getLockedAssetIds(allowed);
+      if (locked.size > 0) {
+        for (const id of allowed) {
+          if (locked.has(id)) {
+            outcomes.push({ id, status: MediaOperationItemStatus.Skipped, reasonKey: 'frameleaf_bulk_reason_locked' });
+          }
+        }
+        allowed = allowed.filter((id) => !locked.has(id));
       }
     }
 

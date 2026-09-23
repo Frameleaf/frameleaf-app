@@ -572,13 +572,13 @@ describe(AssetService.name, () => {
       expect(mocks.album.removeAssetsFromAll).not.toHaveBeenCalled();
     });
 
-    it('should take locked assets out of the Locked state before storing another visibility (FL-34)', async () => {
+    it('should never unlock when storing another visibility (FL-34)', async () => {
       const auth = authStub.adminWithElevatedPermission;
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
 
       await sut.updateAll(auth, { ids: ['asset-1'], visibility: AssetVisibility.Timeline });
 
-      expect(mocks.asset.unlock).toHaveBeenCalledWith(['asset-1']);
+      expect(mocks.asset.unlock).not.toHaveBeenCalled();
       expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1'], { visibility: AssetVisibility.Timeline });
       expect(mocks.asset.lock).not.toHaveBeenCalled();
     });

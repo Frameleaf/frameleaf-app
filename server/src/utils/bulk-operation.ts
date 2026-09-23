@@ -68,6 +68,12 @@ export type BulkOperationSnapshot = {
    * exists and still grants the action before every batch, so revoking a key stops its jobs.
    */
   apiKeyId: string | null;
+  /**
+   * True when the job was submitted from an unlocked (PIN-elevated) session (FL-34). The worker only
+   * changes an item locked at the time of change when this is set; a job submitted without the PIN
+   * skips anything locked since, whatever locked it.
+   */
+  elevated?: boolean;
 };
 
 export type BulkOperationItem = {
@@ -205,6 +211,7 @@ export const parseBulkSnapshot = (snapshot: unknown): BulkOperationSnapshot => {
     scope: isRecord(snapshot.scope) ? snapshot.scope : undefined,
     requestId: typeof snapshot.requestId === 'string' ? snapshot.requestId : null,
     apiKeyId: typeof snapshot.apiKeyId === 'string' ? snapshot.apiKeyId : null,
+    elevated: snapshot.elevated === true,
   };
 };
 
