@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+  "node": "24.21.0",
+  "npm": "11.8.0",
+  "lockfileSha256": "5efddf7c35a2600f0228f0b973991838af8996fba8d5591dd7460dc3690a36dc",
+  "patches": [
+    {
+      "path": "patches/0001-isolated-package.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "ffe6b9980e37480d13fc83c217a2742dfe611eaedc67f41114e6a126664e92d3"
+    },
+    {
+      "path": "patches/0002-stable-worker-sourcemaps.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "d61d6cdf8c235c762c8648a4f9de45e887faa7cb05403b08363e636d68f6cf23"
+    },
+    {
+      "path": "patches/0003-deferred-profiler-dom-guard.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "b70496aa09a662ea2c321f2b0ea90bfd450d2411b239cc9924bcf56169adc973"
+    },
+    {
+      "path": "patches/0004-resource-admission.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "841e56682551ad05ab52d092d69c65b3b57be3e45c31791d46ce11a27512a3df"
+    }
+  ],
+  "sourceSha256": "3d889096898ce322599190e34193d9a4fd4ec62cf1227f1fb773d4cd57bd73c3"
+}
