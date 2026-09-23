@@ -113,6 +113,7 @@
     total = null,
     /** The selected assets, when the view has them loaded. */
     assets = [],
+    selectedIds = assets.map((asset) => asset.id),
     context = {},
     tagOptions = [],
     operations = [],
@@ -129,6 +130,8 @@
     count?: number;
     total?: number | null;
     assets?: BulkAsset[];
+    /** Explicit selection, including items outside the loaded timeline window. */
+    selectedIds?: readonly string[];
     context?: Omit<BulkActionContext, 'assets' | 'count'>;
     tagOptions?: { id: string; name: string }[];
     operations?: BulkOperationRecord[];
@@ -373,7 +376,15 @@
           </button>
 
           {#if menuOpen}
-            <div bind:this={menu} id={menuId} class="menu" role="menu" aria-label={$t('more')} onkeydown={menuKeydown}>
+            <div
+              bind:this={menu}
+              id={menuId}
+              class="menu"
+              role="menu"
+              tabindex="-1"
+              aria-label={$t('more')}
+              onkeydown={menuKeydown}
+            >
               {#each menuGroups as group (group.id)}
                 <div role="group" aria-labelledby={`${menuId}-${group.id}`}>
                   <p class="menu-title" id={`${menuId}-${group.id}`}>{$t(group.titleKey)}</p>
@@ -426,7 +437,7 @@
     bind:open={dialogOpen}
     target={{
       type: SharedLinkType.Individual,
-      assetIds: assets.map((asset) => asset.id),
+      assetIds: [...selectedIds],
       name: $t('frameleaf_sharing.individual_items', { values: { count } }),
     }}
   />
