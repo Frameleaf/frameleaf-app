@@ -19,7 +19,7 @@
   import type { LibraryLayout } from '$lib/frameleaf/library-session';
   import { Icon } from '@immich/ui';
   import { mdiCheck, mdiFilterOutline, mdiViewComfyOutline, mdiViewDashboardOutline, mdiViewDayOutline } from '@mdi/js';
-  import { t } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
 
   type Props = {
     session: LibrarySessionStore;
@@ -33,7 +33,7 @@
 
   // Timeline precedes Browse and Work.
   const LAYOUT_ORDER: LibraryLayout[] = ['timeline', 'browse', 'work'];
-  const LAYOUT_LABELS: Record<LibraryLayout, string> = {
+  const LAYOUT_LABELS: Record<LibraryLayout, Translations> = {
     timeline: 'frameleaf_library_layout_timeline',
     browse: 'frameleaf_library_layout_browse',
     work: 'frameleaf_library_layout_work',
@@ -43,7 +43,7 @@
     browse: mdiViewComfyOutline,
     work: mdiViewDashboardOutline,
   };
-  const SECTION_LABELS: Record<DiscoveryFilterSection, string> = {
+  const SECTION_LABELS: Record<DiscoveryFilterSection, Translations> = {
     people: 'people',
     pets: 'frameleaf_pets_title',
     date: 'date_and_time',

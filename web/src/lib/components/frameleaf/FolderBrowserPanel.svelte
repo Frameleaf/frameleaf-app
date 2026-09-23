@@ -100,13 +100,13 @@
         </p>
         <div class="folder-browser-cta">
           <Button variant="primary" onclick={viewInLibrary}>
-            <Icon icon={mdiImageMultipleOutline} size={16} aria-hidden="true" />
+            <Icon icon={mdiImageMultipleOutline} size="16" aria-hidden="true" />
             {$t('frameleaf_folders_show_in_timeline')}
           </Button>
         </div>
       {:else if tree.children.length === 0}
         <p class="folder-browser-empty" role="status">
-          <Icon icon={mdiFolderOutline} size={28} aria-hidden="true" />
+          <Icon icon={mdiFolderOutline} size="28" aria-hidden="true" />
           <strong>{$t('frameleaf_folders_no_files_title')}</strong>
           <span>{$t('frameleaf_folders_no_files_description')}</span>
         </p>

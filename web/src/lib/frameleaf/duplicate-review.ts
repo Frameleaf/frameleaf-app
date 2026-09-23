@@ -7,6 +7,7 @@ import {
   type MediaOperationDetailDto,
   type MediaOperationDuplicateGroupDto,
 } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 import { durableItemStates } from '$lib/frameleaf/bulk-operations';
 
 /**
@@ -37,7 +38,7 @@ export type ReviewDecision = 'suggested' | 'keeper' | 'keepers' | 'keep-all' | '
 export type ReviewFilter = 'open' | 'all';
 
 /** A group's tile while a job works on it, and after. Absent means nothing is happening to it. */
-export type GroupProgress = { state: 'pending' } | { state: 'failed'; reasonKey: string } | { state: 'done' };
+export type GroupProgress = { state: 'pending' } | { state: 'failed'; reasonKey: Translations } | { state: 'done' };
 
 export type ReviewGroup = DuplicateReviewGroupDto;
 type Asset = ReviewGroup['assets'][number];
@@ -98,7 +99,7 @@ export const filterReviewGroups = (
 };
 
 export class DuplicateDecisionError extends Error {
-  constructor(readonly key: string) {
+  constructor(readonly key: Translations) {
     super(key);
   }
 }
@@ -384,3 +385,7 @@ export const dimensionsOf = (asset: Asset): { width: number; height: number } | 
   const height = asset.exifInfo?.exifImageHeight ?? asset.height ?? null;
   return width && height ? { width, height } : null;
 };
+
+/** The label of one quality reason the server gives for a suggested keeper. */
+export const qualityReasonKey = (reason: string): Translations =>
+  `frameleaf_duplicates_quality_${reason.replaceAll('-', '_')}` as Translations;

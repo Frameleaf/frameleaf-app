@@ -10,6 +10,7 @@ import {
 } from '@immich/sdk';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import type { Translations } from 'svelte-i18n';
 
 /**
  * The Google Photos import wizard's rules (FL-65), kept apart from the page so they can be read and
@@ -115,10 +116,12 @@ export const takeoutImportOptions = (
   selectedAlbums: albums.filter((album) => album.selected).map((album) => album.folder),
 });
 
-export const takeoutStateKey = (state: TakeoutState) => `frameleaf_takeout_state_${state}`;
-export const takeoutItemStateKey = (state: TakeoutItemResponseDto['state']) => `frameleaf_takeout_item_${state}`;
-export const takeoutPairStateKey = (state: TakeoutPairResponseDto['state']) => `frameleaf_takeout_pair_${state}`;
-export const takeoutWarningKey = (warning: TakeoutItemResponseDto['warnings'][number]) =>
+export const takeoutStateKey = (state: TakeoutState): Translations => `frameleaf_takeout_state_${state}`;
+export const takeoutItemStateKey = (state: TakeoutItemResponseDto['state']): Translations =>
+  `frameleaf_takeout_item_${state}`;
+export const takeoutPairStateKey = (state: TakeoutPairResponseDto['state']): Translations =>
+  `frameleaf_takeout_pair_${state}`;
+export const takeoutWarningKey = (warning: TakeoutItemResponseDto['warnings'][number]): Translations =>
   `frameleaf_takeout_warning_${warning}`;
 
 /* ------------------------------------------------------------------ */
@@ -135,7 +138,11 @@ type ArchiveApi = {
   upload: (offset: number, bytes: Blob) => Promise<TakeoutSourceResponseDto>;
 };
 
-export class TakeoutUploadError extends Error {}
+export class TakeoutUploadError extends Error {
+  constructor(readonly key: Translations) {
+    super(key);
+  }
+}
 
 /**
  * Upload an archive from where the server has it. Name and size only suggest that the chosen file is

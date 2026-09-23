@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Translations } from 'svelte-i18n';
   /**
    * Library Care: the Utilities directory the rail's Library Care entry opens (FL-69).
    *
@@ -40,8 +41,8 @@
     id: string;
     group: CareToolGroup;
     icon: string;
-    titleKey: string;
-    descriptionKey: string;
+    titleKey: Translations;
+    descriptionKey: Translations;
     href?: string;
     onclick?: () => void;
     adminOnly?: boolean;

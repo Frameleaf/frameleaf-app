@@ -205,7 +205,7 @@
                 available: getByteUnitString(availableBytes ?? 0, $locale, 1),
               },
             })}
-          />
+          ></progress>
         </div>
       {:else}
         <p class="unlimited">{$t('unlimited')}</p>

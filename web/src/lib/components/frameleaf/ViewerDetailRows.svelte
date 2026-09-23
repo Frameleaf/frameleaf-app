@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Translations } from 'svelte-i18n';
   /**
    * The information panel's Details list (FL-36): file name, path, image, camera, lens,
    * exposure, video and checksum, ported from `DetailsSection` in
@@ -51,7 +52,7 @@
     checksum: mdiHarddisk,
   };
 
-  const LABEL_KEYS: Record<InfoDetailRowId, string> = {
+  const LABEL_KEYS: Record<InfoDetailRowId, Translations> = {
     filename: 'frameleaf_info_detail_filename',
     path: 'frameleaf_info_detail_path',
     image: 'frameleaf_info_detail_image',
