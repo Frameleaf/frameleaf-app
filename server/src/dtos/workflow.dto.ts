@@ -190,6 +190,9 @@ type Workflow = {
   logging: boolean;
 };
 
+/** Unknown fields are kept as written, but a credential-shaped value in them is never returned. */
+const redactExtra = (extra: Record<string, unknown>): Record<string, unknown> => redactCredentials(extra).config ?? {};
+
 export const mapWorkflow = (
   workflow: Workflow,
   definition: WorkflowDefinitionDocument,
@@ -203,11 +206,18 @@ export const mapWorkflow = (
   description: workflow.description,
   createdAt: workflow.createdAt.toISOString(),
   updatedAt: workflow.updatedAt.toISOString(),
-  extra: definition.extra,
+  extra: redactExtra(definition.extra),
   issues,
   steps: definition.steps.map((step) => {
     const { config, storedSecrets } = redactCredentials(step.config);
-    return { id: step.id, method: step.method, config, enabled: step.enabled, extra: step.extra, storedSecrets };
+    return {
+      id: step.id,
+      method: step.method,
+      config,
+      enabled: step.enabled,
+      extra: redactExtra(step.extra),
+      storedSecrets,
+    };
   }),
 });
 
@@ -219,11 +229,11 @@ export const mapWorkflowShare = (
   trigger: definition.trigger,
   name: workflow.name,
   description: workflow.description,
-  extra: definition.extra,
+  extra: redactExtra(definition.extra),
   steps: definition.steps.map((step) => ({
     method: step.method,
     config: redactCredentials(step.config).config,
     enabled: step.enabled ? undefined : false,
-    extra: step.extra,
+    extra: redactExtra(step.extra),
   })),
 });
