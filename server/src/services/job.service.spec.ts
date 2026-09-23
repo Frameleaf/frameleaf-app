@@ -1,5 +1,6 @@
+import { BadRequestException } from '@nestjs/common';
 import type { JobItem } from 'src/types.js';
-import { AssetType, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { AssetType, ImmichWorker, JobName, JobStatus, ManualJobName, QueueName } from 'src/enum.js';
 import { JobService } from 'src/services/job.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { newUuid } from 'test/small.factory.js';
@@ -17,6 +18,20 @@ describe(JobService.name, () => {
 
   it('should work', () => {
     expect(sut).toBeDefined();
+  });
+
+  describe('create', () => {
+    it('never applies physical deduplication from a queue button; that needs a reviewed plan (FL-73)', async () => {
+      await expect(sut.create({ name: ManualJobName.PhysicalDeduplicationApply })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('still queues a physical deduplication preview', async () => {
+      await sut.create({ name: ManualJobName.PhysicalDeduplicationDryRun });
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.PhysicalDeduplicationMigrationDryRun });
+    });
   });
 
   describe('onJobRun', () => {

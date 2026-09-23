@@ -1,22 +1,30 @@
 import request from 'supertest';
 import { PhysicalDeduplicationController } from 'src/controllers/physical-deduplication.controller.js';
+import { Permission } from 'src/enum.js';
+import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
 import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
 import { errorDto } from 'test/medium/responses.js';
-import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
+import { ControllerContext, automock, controllerSetup, mockBaseService } from 'test/utils.js';
+
+const fingerprint = 'ab'.repeat(32);
+const reviewToken = 'cd'.repeat(32);
 
 describe(PhysicalDeduplicationController.name, () => {
   let ctx: ControllerContext;
   const service = mockBaseService(PhysicalDeduplicationService);
+  const plans = automock(PhysicalDeduplicationPlanService, { args: [{ setContext: () => {} }], strict: false });
 
   beforeAll(async () => {
     ctx = await controllerSetup(PhysicalDeduplicationController, [
       { provide: PhysicalDeduplicationService, useValue: service },
+      { provide: PhysicalDeduplicationPlanService, useValue: plans },
     ]);
     return () => ctx.close();
   });
 
   beforeEach(() => {
     service.resetAllMocks();
+    plans.resetAllMocks();
     ctx.reset();
   });
 
@@ -24,6 +32,11 @@ describe(PhysicalDeduplicationController.name, () => {
     it('should be an authenticated route', async () => {
       await request(ctx.getHttpServer()).get('/admin/physical-deduplication/preview');
       expect(ctx.authenticate).toHaveBeenCalled();
+    });
+
+    it('reads the preview with the applied plans (FL-73)', async () => {
+      await request(ctx.getHttpServer()).get('/admin/physical-deduplication/preview');
+      expect(plans.getPreview).toHaveBeenCalled();
     });
   });
 
@@ -48,6 +61,85 @@ describe(PhysicalDeduplicationController.name, () => {
 
       expect(status).toBe(204);
       expect(service.requestPreview).toHaveBeenCalledWith({});
+    });
+  });
+
+  describe('POST /admin/physical-deduplication/plan/review', () => {
+    it('is an administrator route that needs job create permission', async () => {
+      await request(ctx.getHttpServer()).post('/admin/physical-deduplication/plan/review').send({ fingerprint });
+
+      expect(ctx.authenticate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ permission: Permission.JobCreate, adminRoute: true }),
+        }),
+      );
+    });
+
+    it('requires the fingerprint of the plan on screen', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/admin/physical-deduplication/plan/review')
+        .send({ fingerprint: 'PD-1234' });
+
+      expect(status).toBe(400);
+      expect(plans.review).not.toHaveBeenCalled();
+    });
+
+    it('takes left-out groups as retained asset ids', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/admin/physical-deduplication/plan/review')
+        .send({ fingerprint, excludedRetainedAssetIds: ['not-a-uuid'] });
+
+      expect(status).toBe(400);
+      expect(plans.review).not.toHaveBeenCalled();
+    });
+
+    it('answers 200 with the review', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/admin/physical-deduplication/plan/review')
+        .send({ fingerprint });
+
+      expect(status).toBe(200);
+      expect(plans.review).toHaveBeenCalledWith(expect.anything(), { fingerprint });
+    });
+  });
+
+  describe('POST /admin/physical-deduplication/plan/apply', () => {
+    it('is an administrator route that needs job create permission', async () => {
+      await request(ctx.getHttpServer())
+        .post('/admin/physical-deduplication/plan/apply')
+        .send({ fingerprint, reviewToken, confirmation: 'APPLY PD-ABABABAB' });
+
+      expect(ctx.authenticate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ permission: Permission.JobCreate, adminRoute: true }),
+        }),
+      );
+    });
+
+    it('cannot be applied without a review token', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/admin/physical-deduplication/plan/apply')
+        .send({ fingerprint, confirmation: 'APPLY PD-ABABABAB' });
+
+      expect(status).toBe(400);
+      expect(plans.apply).not.toHaveBeenCalled();
+    });
+
+    it('cannot be applied without a typed confirmation', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/admin/physical-deduplication/plan/apply')
+        .send({ fingerprint, reviewToken });
+
+      expect(status).toBe(400);
+      expect(plans.apply).not.toHaveBeenCalled();
+    });
+
+    it('answers 201 with the queued job', async () => {
+      const dto = { fingerprint, reviewToken, confirmation: 'APPLY PD-ABABABAB' };
+      const { status } = await request(ctx.getHttpServer()).post('/admin/physical-deduplication/plan/apply').send(dto);
+
+      expect(status).toBe(201);
+      expect(plans.apply).toHaveBeenCalledWith(expect.anything(), dto);
     });
   });
 });
