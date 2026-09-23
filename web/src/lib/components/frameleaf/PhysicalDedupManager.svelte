@@ -333,7 +333,9 @@
           {$t('frameleaf_dedup_plan_meta', {
             values: {
               time: time(plan.ranAt),
-              scope: plan.scopeUserId ? plan.scopeUserName ?? nameOf(plan.scopeUserId) : $t('frameleaf_dedup_scope_all'),
+              scope: plan.scopeUserId
+                ? (plan.scopeUserName ?? nameOf(plan.scopeUserId))
+                : $t('frameleaf_dedup_scope_all'),
               name: plan.masterUserName,
             },
           })}
@@ -346,7 +348,8 @@
             { value: 'media', label: $t('frameleaf_dedup_view_media') },
             { value: 'table', label: $t('frameleaf_dedup_view_evidence') },
           ]}
-          bind:value={view}
+          value={view}
+          onChange={(next) => (view = next === 'table' ? 'table' : 'media')}
         />
         <Button onclick={exportReview}>
           <Icon icon={mdiDownload} size="1em" aria-hidden={true} />
@@ -538,7 +541,9 @@
                 </td>
                 <td>
                   <span>
-                    {copy.checksumMatch ? $t('frameleaf_dedup_evidence_match') : $t('frameleaf_dedup_evidence_no_match')}
+                    {copy.checksumMatch
+                      ? $t('frameleaf_dedup_evidence_match')
+                      : $t('frameleaf_dedup_evidence_no_match')}
                   </span>
                   <details>
                     <summary>{$t('frameleaf_dedup_evidence_sha1')}</summary>
@@ -582,7 +587,9 @@
       </div>
       <div class="queue-buttons">
         {#if plan.mode === PhysicalDeduplicationPlanMode.DryRun && !reviewed}
-          <Button disabled={!!stale || !!applyBlocked} onclick={markReviewed}>{$t('frameleaf_dedup_mark_reviewed')}</Button>
+          <Button disabled={!!stale || !!applyBlocked} onclick={markReviewed}>
+            {$t('frameleaf_dedup_mark_reviewed')}
+          </Button>
         {:else if plan.mode === PhysicalDeduplicationPlanMode.DryRun}
           <Button
             variant="primary"
@@ -608,7 +615,9 @@
         <div><dt>{$t('frameleaf_dedup_plan_preview')}</dt><dd>{label}</dd></div>
         <div>
           <dt>{$t('frameleaf_dedup_scan_scope')}</dt>
-          <dd>{plan.scopeUserId ? plan.scopeUserName ?? nameOf(plan.scopeUserId) : $t('frameleaf_dedup_scope_all')}</dd>
+          <dd>
+            {plan.scopeUserId ? (plan.scopeUserName ?? nameOf(plan.scopeUserId)) : $t('frameleaf_dedup_scope_all')}
+          </dd>
         </div>
         <div><dt>{$t('frameleaf_dedup_retain_in')}</dt><dd>{plan.masterUserName}</dd></div>
         <div><dt>{$t('frameleaf_dedup_metric_copies')}</dt><dd>{plan.eligibleAssets}</dd></div>

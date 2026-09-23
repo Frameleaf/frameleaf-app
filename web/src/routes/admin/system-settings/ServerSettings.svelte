@@ -1,7 +1,7 @@
 <script lang="ts">
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
@@ -17,7 +17,7 @@
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
       <div class="ms-4 mt-4">
-        <SettingInputField
+        <SettingField
           inputType={SettingInputFieldType.TEXT}
           label={$t('admin.server_external_domain_settings')}
           description={$t('admin.server_external_domain_settings_description')}
@@ -25,7 +25,7 @@
           isEdited={configToEdit.server.externalDomain !== config.server.externalDomain}
         />
 
-        <SettingInputField
+        <SettingField
           inputType={SettingInputFieldType.TEXT}
           label={$t('admin.server_welcome_message')}
           description={$t('admin.server_welcome_message_description')}
@@ -33,7 +33,7 @@
           isEdited={configToEdit.server.loginPageMessage !== config.server.loginPageMessage}
         />
 
-        <SettingSwitch
+        <SettingToggle
           title={$t('admin.server_public_users')}
           subtitle={$t('admin.server_public_users_description')}
           {disabled}
@@ -41,7 +41,7 @@
         />
 
         <div class="ms-4">
-          <SettingButtonsRow bind:configToEdit keys={['server']} {disabled} />
+          <SettingActions bind:configToEdit keys={['server']} {disabled} />
         </div>
       </div>
     </form>

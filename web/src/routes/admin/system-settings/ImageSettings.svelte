@@ -1,12 +1,12 @@
 <script lang="ts">
-  import SettingSelect from './SettingSelect.svelte';
+  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
   import { Colorspace, ImageFormat } from '@immich/sdk';
   import { fade } from 'svelte/transition';
 
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
@@ -21,7 +21,7 @@
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(event) => event.preventDefault()}>
       <div class="ms-4 mt-4">
-        <SettingAccordion
+        <SettingGroup
           key="thumbnail-settings"
           title={$t('admin.image_thumbnail_title')}
           subtitle={$t('admin.image_thumbnail_description')}
@@ -61,7 +61,7 @@
             {disabled}
           />
 
-          <SettingInputField
+          <SettingField
             inputType={SettingInputFieldType.NUMBER}
             label={$t('admin.image_quality')}
             description={$t('admin.image_thumbnail_quality_description')}
@@ -70,7 +70,7 @@
             {disabled}
           />
 
-          <SettingSwitch
+          <SettingToggle
             title={$t('admin.image_progressive')}
             subtitle={$t('admin.image_progressive_description')}
             checked={configToEdit.image.thumbnail.progressive}
@@ -78,9 +78,9 @@
             isEdited={configToEdit.image.thumbnail.progressive !== config.image.thumbnail.progressive}
             disabled={disabled || configToEdit.image.thumbnail.format === ImageFormat.Webp}
           />
-        </SettingAccordion>
+        </SettingGroup>
 
-        <SettingAccordion
+        <SettingGroup
           key="preview-settings"
           title={$t('admin.image_preview_title')}
           subtitle={$t('admin.image_preview_description')}
@@ -119,7 +119,7 @@
             {disabled}
           />
 
-          <SettingInputField
+          <SettingField
             inputType={SettingInputFieldType.NUMBER}
             label={$t('admin.image_quality')}
             description={$t('admin.image_preview_quality_description')}
@@ -128,7 +128,7 @@
             {disabled}
           />
 
-          <SettingSwitch
+          <SettingToggle
             title={$t('admin.image_progressive')}
             subtitle={$t('admin.image_progressive_description')}
             checked={configToEdit.image.preview.progressive}
@@ -136,14 +136,14 @@
             isEdited={configToEdit.image.preview.progressive !== config.image.preview.progressive}
             disabled={disabled || configToEdit.image.preview.format === ImageFormat.Webp}
           />
-        </SettingAccordion>
+        </SettingGroup>
 
-        <SettingAccordion
+        <SettingGroup
           key="fullsize-settings"
           title={$t('admin.image_fullsize_title')}
           subtitle={$t('admin.image_fullsize_description')}
         >
-          <SettingSwitch
+          <SettingToggle
             title={$t('admin.image_fullsize_enabled')}
             subtitle={$t('admin.image_fullsize_enabled_description')}
             checked={configToEdit.image.fullsize.enabled}
@@ -172,7 +172,7 @@
             }}
           />
 
-          <SettingInputField
+          <SettingField
             inputType={SettingInputFieldType.NUMBER}
             label={$t('admin.image_quality')}
             description={$t('admin.image_fullsize_quality_description')}
@@ -181,7 +181,7 @@
             disabled={disabled || !configToEdit.image.fullsize.enabled}
           />
 
-          <SettingSwitch
+          <SettingToggle
             title={$t('admin.image_progressive')}
             subtitle={$t('admin.image_progressive_description')}
             checked={configToEdit.image.fullsize.progressive}
@@ -191,10 +191,10 @@
               !configToEdit.image.fullsize.enabled ||
               configToEdit.image.fullsize.format === ImageFormat.Webp}
           />
-        </SettingAccordion>
+        </SettingGroup>
 
         <div class="mt-4">
-          <SettingSwitch
+          <SettingToggle
             title={$t('admin.image_prefer_wide_gamut')}
             subtitle={$t('admin.image_prefer_wide_gamut_setting_description')}
             checked={configToEdit.image.colorspace === Colorspace.P3}
@@ -205,7 +205,7 @@
         </div>
 
         <div class="mt-4">
-          <SettingSwitch
+          <SettingToggle
             title={$t('admin.image_prefer_embedded_preview')}
             subtitle={$t('admin.image_prefer_embedded_preview_setting_description')}
             checked={configToEdit.image.extractEmbedded}
@@ -216,7 +216,7 @@
         </div>
 
         <div class="mt-4">
-          <SettingSwitch
+          <SettingToggle
             title={$t('admin.image_enhanced_raw_rendering')}
             subtitle={$t('admin.image_enhanced_raw_rendering_description')}
             checked={configToEdit.image.enhancedRaw?.enabled !== false}
@@ -229,7 +229,7 @@
       </div>
 
       <div class="ms-4 mt-4">
-        <SettingButtonsRow bind:configToEdit keys={['image']} {disabled} />
+        <SettingActions bind:configToEdit keys={['image']} {disabled} />
       </div>
     </form>
   </div>

@@ -123,7 +123,11 @@ describe('Frameleaf physical deduplication helpers', () => {
       const groups = groupPlanCopies(
         plan({
           copies: [
-            copy({ assetId: 'only-shared', decision: PhysicalDeduplicationDecision.Skip, reason: PhysicalDeduplicationSkipReason.AlreadyShared }),
+            copy({
+              assetId: 'only-shared',
+              decision: PhysicalDeduplicationDecision.Skip,
+              reason: PhysicalDeduplicationSkipReason.AlreadyShared,
+            }),
             copy({
               assetId: 'other',
               retainedAssetId: 'master-2',
@@ -205,7 +209,12 @@ describe('Frameleaf physical deduplication helpers', () => {
     it('never lets a page-chosen retained account stand in for the saved one', () => {
       // The preview was prepared against Jamie on the page; nothing is saved.
       expect(
-        applyBlockedReason({ plan: plan({ masterUserId: 'jamie' }), enabled: true, savedMasterUserId: null, running: false }),
+        applyBlockedReason({
+          plan: plan({ masterUserId: 'jamie' }),
+          enabled: true,
+          savedMasterUserId: null,
+          running: false,
+        }),
       ).toBe('no-saved-master');
     });
   });
