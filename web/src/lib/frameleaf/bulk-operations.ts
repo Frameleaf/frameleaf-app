@@ -1152,6 +1152,8 @@ const REMOVES_FROM_VIEW: ReadonlySet<BulkActionId> = new Set<BulkActionId>([
   'delete-permanently',
   'restore',
   'remove-from-album',
+  // A link's owner pruning it: the item is no longer part of the shared view they are looking at.
+  'remove-from-shared-link',
 ]);
 
 /**

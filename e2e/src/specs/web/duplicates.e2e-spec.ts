@@ -41,10 +41,13 @@ test.describe('Duplicate review', () => {
       .getByRole('button', { name: /^Open / })
       .first()
       .click();
-    await page.waitForSelector('#immich-asset-viewer');
+    const viewer = page.locator('#immich-asset-viewer');
+    await viewer.waitFor();
 
-    const getViewedAssetId = () => new URL(page.url()).pathname.split('/').at(-1) ?? '';
-    const initialAssetId = getViewedAssetId();
+    // The review lives in Settings -> Utilities (UtilitiesManager.jsx), so the viewer opens over it
+    // without an asset URL of its own; it names the item it shows.
+    const getViewedAssetId = async () => (await viewer.getAttribute('data-asset-id')) ?? '';
+    const initialAssetId = await getViewedAssetId();
     expect([firstAsset.id, secondAsset.id]).toContain(initialAssetId);
 
     await page.keyboard.press('ArrowRight');
