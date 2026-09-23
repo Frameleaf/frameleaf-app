@@ -45,6 +45,12 @@ export const PROTOTYPE_PATH = 'design/frameleaf/template/src/studio-project.mjs'
 export const WEB_VOCABULARY_PATH = 'web/src/lib/frameleaf/studio/commands.ts';
 
 /** Scopes a command may act on. Ordered for the generated enums. */
+/**
+ * The only commands allowed to carry no payload: signals that change nothing in the project.
+ * Listed by name so a new command cannot become payload-less by accident.
+ */
+export const EMPTY_PAYLOAD_COMMANDS = ['preview.release'];
+
 export const SCOPES = [
   'clip',
   'composition',
@@ -53,6 +59,7 @@ export const SCOPES = [
   'job',
   'keyframe',
   'media',
+  'preview',
   'project',
   'review',
   'sequence',
@@ -1174,6 +1181,37 @@ export const catalogue = [
     description: 'Place a music bed on the music track.',
   },
   {
+    id: 'preview.release',
+    scope: 'preview',
+    mutatesGraph: false,
+    undoable: false,
+    capability: null,
+    owner: 'FL-96',
+    prototypeFunctions: [],
+    prototypeSource: 'Studio.jsx preview monitor',
+    manifestIds: [],
+    payload: {},
+    description: 'Tell the host the engine no longer needs the frame it last requested.',
+  },
+  {
+    id: 'preview.request',
+    scope: 'preview',
+    mutatesGraph: false,
+    undoable: false,
+    capability: 'gpuWorker',
+    owner: 'FL-96',
+    prototypeFunctions: [],
+    prototypeSource: 'Studio.jsx preview monitor',
+    manifestIds: [],
+    payload: {
+      at: 'time',
+      quality: 'string',
+      viewportWidth: 'number',
+      viewportHeight: 'number',
+    },
+    description: 'Ask for one frame of the current revision, rendered at an exact rational time.',
+  },
+  {
     id: 'project.applyTemplate',
     scope: 'project',
     mutatesGraph: true,
@@ -1763,28 +1801,40 @@ const TS_HEADER = `/**
  */
 `;
 
+/**
+ * A string-literal union in the form Prettier gives it under the server's 120 column budget:
+ * on the declaration line when it fits, on one indented line after `=` when that fits, and
+ * one member per line otherwise. The mirror is checked byte for byte, so the generator has
+ * to agree with the formatter rather than be rewritten by it.
+ */
+const SERVER_PRINT_WIDTH = 120;
+const unionType = (name, values) => {
+  const members = values.map((value) => `'${value}'`).join(' | ');
+  const inline = `export type ${name} = ${members};`;
+  if (inline.length <= SERVER_PRINT_WIDTH) {
+    return [inline];
+  }
+  const indented = `  ${members};`;
+  if (indented.length <= SERVER_PRINT_WIDTH) {
+    return [`export type ${name} =`, indented];
+  }
+  return [
+    `export type ${name} =`,
+    ...values.map((value, index) => (index === values.length - 1 ? `  | '${value}';` : `  | '${value}'`)),
+  ];
+};
+
 export function buildServerMirror(document) {
   const lines = [TS_HEADER];
   lines.push(
     `export const STUDIO_COMMAND_SCHEMA_VERSION = ${document.schemaVersion};`,
     `export const STUDIO_ENGINE_REVISION = '${document.engineRevision}';`,
     '',
-    // Both unions are longer than the server's 120 column budget, so they are emitted in
-    // the broken form Prettier would produce; the field type union fits on one line.
-    `export type StudioCommandScope =`,
-    ...document.scopes.map((scope, index) =>
-      index === document.scopes.length - 1 ? `  | '${scope}';` : `  | '${scope}'`,
-    ),
+    ...unionType('StudioCommandScope', document.scopes),
     '',
-    `export type StudioCommandCapability =`,
-    ...document.capabilities.map((capability, index) =>
-      index === document.capabilities.length - 1 ? `  | '${capability}';` : `  | '${capability}'`,
-    ),
+    ...unionType('StudioCommandCapability', document.capabilities),
     '',
-    `export type StudioPayloadFieldType =`,
-    ...document.fieldTypes.map((type, index) =>
-      index === document.fieldTypes.length - 1 ? `  | '${type}';` : `  | '${type}'`,
-    ),
+    ...unionType('StudioPayloadFieldType', document.fieldTypes),
     '',
     'export type StudioPayloadField = StudioPayloadFieldType | `${StudioPayloadFieldType}?`;',
     '',
@@ -1807,9 +1857,13 @@ export function buildServerMirror(document) {
       `    undoable: ${command.undoable},`,
       `    capability: ${command.capability === null ? 'null' : `'${command.capability}'`},`,
       `    owner: '${command.owner}',`,
-      '    payload: {',
-      ...sortedPayload(command.payload).map(([name, type]) => `      ${name}: '${type}',`),
-      '    },',
+      ...(Object.keys(command.payload).length === 0
+        ? ['    payload: {},']
+        : [
+            '    payload: {',
+            ...sortedPayload(command.payload).map(([name, type]) => `      ${name}: '${type}',`),
+            '    },',
+          ]),
       '  },',
     );
   }
@@ -2030,7 +2084,12 @@ export function validate({ document, manifest, issueMap, prototypeSource, webSou
         `${command.id}: prototypeSource must name ${name}`,
       );
     }
-    assert.ok(Object.keys(command.payload).length > 0, `${command.id}: payload must declare a field`);
+    // A graph change always carries intent. Only a lease-free signal (`preview.release`) may
+    // have nothing to say beyond its id; the server mirror then admits no fields at all.
+    assert.ok(
+      Object.keys(command.payload).length > 0 || (!command.mutatesGraph && EMPTY_PAYLOAD_COMMANDS.includes(command.id)),
+      `${command.id}: payload must declare a field`,
+    );
     for (const [name, declared] of Object.entries(command.payload)) {
       assert.ok(FIELD_TYPES.includes(fieldType(declared)), `${command.id}.${name}: unknown field type ${declared}`);
     }

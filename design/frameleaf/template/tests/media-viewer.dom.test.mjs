@@ -69,7 +69,7 @@ const base = {
   },
 };
 const assets = [
-  { ...base, id: "a", name: "Lake.jpg", image: "/media/lake.png", description: "A quiet lake", personIds: ["emma"], stackId: "s", stackPrimary: true, ocr: "LAKE AGNES 3.4 km" },
+  { ...base, id: "a", name: "Lake.jpg", image: "/media/lake.png", description: "A quiet lake", personIds: ["emma", "ghost"], stackId: "s", stackPrimary: true, ocr: "LAKE AGNES 3.4 km" },
   { ...base, id: "b", name: "Lake 2.jpg", image: "/media/lake2.png", stackId: "s", description: "" },
   { ...base, id: "c", name: "Live.jpg", image: "/media/live.png", isLivePhoto: true, livePhotoVideo: "/media/live.mp4", isOffline: true },
   { ...base, id: "v", name: "Clip.mov", type: "video", image: "/media/clip.png", mediaSrc: "/media/clip.mp4", duration: 24, frameRate: 29.97 },
@@ -248,6 +248,8 @@ test("information panel edits description, tags, and people faces through the ca
   const panel = $(".mv-info");
   assert.ok(panel);
   assert.equal($(".mv-badge").textContent, "Generated");
+  assert.match($(".mv-enrichment").textContent, /Generated · Local model · 90% confidence/);
+  assert.ok($$(".mv-enrich-actions button").some((b) => b.textContent === "Accept"));
   const area = $(".mv-description-input");
   assert.equal(area.value, "A quiet lake");
   await act(async () => area.focus());
@@ -258,7 +260,10 @@ test("information panel edits description, tags, and people faces through the ca
   await flush();
   assert.equal($(".mv-badge").textContent, "Manual");
 
+  // A manual description replaces the generated one, so its model evidence and Accept go away.
   assert.match($(".mv-enrichment").textContent, /DescriptionManual/);
+  assert.doesNotMatch($(".mv-enrichment").textContent, /Local model|confidence/);
+  assert.ok(!$$(".mv-enrich-actions button").some((b) => b.textContent === "Accept"));
   assert.match($(".mv-enrichment").textContent, /Reviewed/);
   await click($$(".mv-enrich-actions button").find((b) => b.textContent === "Mark sensitive"));
   assert.deepEqual(actions().at(-1), ["lock", "a", undefined]);

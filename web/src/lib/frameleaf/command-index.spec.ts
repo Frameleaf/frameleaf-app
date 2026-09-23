@@ -90,12 +90,12 @@ describe('settings areas', () => {
     }
   });
 
-  it('deep-links each area through the accordion query parameter', () => {
+  it('deep-links each account section by its key and each server section by its Command Center area', () => {
     const commands = buildSettingsCommands($t, context({ isAdmin: true }));
     const appSettings = commands.find((command) => command.id === 'user:app-settings');
     const adminTheme = commands.find((command) => command.id === 'admin:theme');
     expect(appSettings?.href).toBe('/user-settings?isOpen=app-settings');
-    expect(adminTheme?.href).toBe('/admin/system-settings?isOpen=theme');
+    expect(adminTheme?.href).toBe('/user-settings?area=server&section=theme');
   });
 
   it('withholds the system settings areas from a non-administrator', () => {

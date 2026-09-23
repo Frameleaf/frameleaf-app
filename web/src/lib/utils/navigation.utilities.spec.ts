@@ -20,7 +20,7 @@ vi.mock('$lib/managers/AssetCacheManager.svelte', () => ({ assetCacheManager: {}
 
 describe('utility photo links', () => {
   beforeEach(() => state.goto.mockReset().mockResolvedValue(undefined));
-  it.each(['/user-settings', '/admin/system-settings'])('preserves the tool and filters in %s', async (path) => {
+  it.each(['/user-settings'])('preserves the tool and filters in %s', async (path) => {
     state.url = new URL(`http://localhost${path}?area=utilities&section=duplicates&status=open&at=old`);
     expect(currentUrlReplaceAssetId('photo')).toBe(
       `${path}?area=utilities&section=duplicates&status=open&assetId=photo`,

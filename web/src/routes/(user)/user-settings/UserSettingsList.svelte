@@ -1,11 +1,11 @@
 <script lang="ts">
   /**
-   * The signed-in account's settings. FL-67: profile, password, PIN, API keys, sign-in provider,
-   * signed-in devices, Locked tags and people, and supporter status are the design template's
-   * `PersonalAccess` and `ProtectedContent` sections (`$lib/components/frameleaf/access`). Each
-   * keeps its group key, so existing `?isOpen=` and `?open=oauth` links still land on it.
+   * The signed-in account's settings, one Command Center section at a time (FL-71). FL-67: profile,
+   * password, PIN, API keys, sign-in provider, signed-in devices, Locked tags and people, and
+   * supporter status are the design template's `PersonalAccess` and `ProtectedContent` sections
+   * (`$lib/components/frameleaf/access`). Each keeps its old group key as its section key, so
+   * existing `?isOpen=` and `?open=oauth` links still land on it.
    */
-  import { page } from '$app/stores';
   import ApiKeysSection from '$lib/components/frameleaf/access/ApiKeysSection.svelte';
   import DevicesSection from '$lib/components/frameleaf/access/DevicesSection.svelte';
   import LockedRulesPanel from '$lib/components/frameleaf/access/LockedRulesPanel.svelte';
@@ -14,32 +14,9 @@
   import ProfileSection from '$lib/components/frameleaf/access/ProfileSection.svelte';
   import SignInProviderSection from '$lib/components/frameleaf/access/SignInProviderSection.svelte';
   import SupporterSection from '$lib/components/frameleaf/access/SupporterSection.svelte';
-  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
   import TakeoutSettingsSection from '$lib/components/frameleaf/settings/TakeoutSettingsSection.svelte';
-  import { OpenQueryParam, QueryParameter } from '$lib/constants';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { oauth } from '$lib/utils';
-  import { getSessions, type ApiKeyResponseDto, type SessionResponseDto } from '@immich/sdk';
-  import {
-    mdiAccountGroupOutline,
-    mdiAccountOutline,
-    mdiApi,
-    mdiArchiveLockOutline,
-    mdiBellOutline,
-    mdiCogOutline,
-    mdiDevices,
-    mdiDownload,
-    mdiFeatureSearchOutline,
-    mdiFormTextboxPassword,
-    mdiImport,
-    mdiKeyOutline,
-    mdiLockSmart,
-    mdiServerOutline,
-    mdiShieldLockOutline,
-    mdiTwoFactorAuthentication,
-  } from '@mdi/js';
-  import { t } from 'svelte-i18n';
+  import { getApiKeys, getSessions, type ApiKeyResponseDto, type SessionResponseDto } from '@immich/sdk';
   import PreservationPanel from '$lib/components/frameleaf/PreservationPanel.svelte';
   import AppSettings from './AppSettings.svelte';
   import DownloadSettings from './DownloadSettings.svelte';
@@ -49,14 +26,24 @@
   import UserUsageStatistic from './UserUsageStatistic.svelte';
 
   interface Props {
+    /** The account section to show (its old accordion key). */
+    section: string;
     keys?: ApiKeyResponseDto[];
     sessions?: SessionResponseDto[];
   }
 
-  let { keys = $bindable([]), sessions = $bindable([]) }: Props = $props();
+  let { section, keys = $bindable([]), sessions = $bindable([]) }: Props = $props();
 
-  let oauthOpen =
-    oauth.isCallback(location) || $page.url.searchParams.get(QueryParameter.OPEN_SETTING) === OpenQueryParam.OAUTH;
+  // The key and device lists load when their section opens, not with every Command Center page.
+  $effect(() => {
+    if (section === 'api-keys') {
+      void getApiKeys()
+        .then((result) => (keys = result))
+        .catch(() => {});
+    } else if (section === 'authorized-devices') {
+      void refreshSessions();
+    }
+  });
 
   /** After a password change signed out the other devices. */
   const refreshSessions = async () => {
@@ -68,154 +55,37 @@
   };
 </script>
 
-<SettingGroup
-  icon={mdiCogOutline}
-  key="app-settings"
-  title={$t('app_settings')}
-  subtitle={$t('manage_the_app_settings')}
->
+{#if section === 'app-settings'}
   <AppSettings />
-</SettingGroup>
-
-<SettingGroup
-  icon={mdiAccountOutline}
-  key="account"
-  title={$t('frameleaf_access_profile_title')}
-  subtitle={$t('frameleaf_access_profile_description')}
->
+{:else if section === 'account'}
   <ProfileSection />
-</SettingGroup>
-
-<SettingGroup
-  icon={mdiServerOutline}
-  key="user-usage-info"
-  title={$t('user_usage_stats')}
-  subtitle={$t('user_usage_stats_description')}
->
+{:else if section === 'user-usage-info'}
   <UserUsageStatistic />
-</SettingGroup>
-
-<SettingGroup
-  icon={mdiApi}
-  key="api-keys"
-  title={$t('frameleaf_access_keys_title')}
-  subtitle={$t('frameleaf_access_keys_description')}
->
+{:else if section === 'api-keys'}
   <ApiKeysSection bind:keys />
-</SettingGroup>
-
-<SettingGroup
-  icon={mdiDevices}
-  key="authorized-devices"
-  title={$t('frameleaf_access_devices_title')}
-  subtitle={$t('frameleaf_access_devices_description')}
->
+{:else if section === 'authorized-devices'}
   <DevicesSection bind:sessions />
-</SettingGroup>
-
-<SettingGroup
-  icon={mdiDownload}
-  key="download-settings"
-  title={$t('download_settings')}
-  subtitle={$t('download_settings_description')}
->
+{:else if section === 'download-settings'}
   <DownloadSettings />
-</SettingGroup>
-
-<!-- FL-74: every account preserves and restores its own originals, not only administrators. -->
-<SettingGroup
-  icon={mdiArchiveLockOutline}
-  key={OpenQueryParam.PRESERVATION}
-  title={$t('frameleaf_preservation_section_title')}
-  subtitle={$t('frameleaf_preservation_section_description')}
-  autoScrollTo={true}
->
+{:else if section === 'preservation'}
+  <!-- FL-74: every account preserves and restores its own originals, not only administrators. -->
   <PreservationPanel />
-</SettingGroup>
-
-<SettingGroup
-  icon={mdiImport}
-  key="takeout"
-  title={$t('frameleaf_takeout_settings_title')}
-  subtitle={$t('frameleaf_takeout_settings_subtitle')}
->
+{:else if section === 'takeout'}
   <TakeoutSettingsSection showRoots={authManager.user.isAdmin} />
-</SettingGroup>
-
-<SettingGroup
-  icon={mdiFeatureSearchOutline}
-  key="feature"
-  title={$t('features')}
-  subtitle={$t('features_setting_description')}
->
+{:else if section === 'feature'}
   <FeatureSettings />
-</SettingGroup>
-
-<SettingGroup
-  icon={mdiBellOutline}
-  key={OpenQueryParam.NOTIFICATIONS}
-  title={$t('notifications')}
-  subtitle={$t('notifications_setting_description')}
->
+{:else if section === 'email-preferences'}
   <NotificationsSettings />
-</SettingGroup>
-
-{#if featureFlagsManager.value.oauth}
-  <SettingGroup
-    icon={mdiTwoFactorAuthentication}
-    key={OpenQueryParam.OAUTH}
-    title={$t('frameleaf_access_provider_title')}
-    subtitle={$t('frameleaf_access_provider_description')}
-    isOpen={oauthOpen || undefined}
-  >
-    <SignInProviderSection />
-  </SettingGroup>
-{/if}
-
-<SettingGroup
-  icon={mdiFormTextboxPassword}
-  key="password"
-  title={$t('frameleaf_access_password_title')}
-  subtitle={$t('frameleaf_access_password_group_description')}
->
+{:else if section === 'oauth'}
+  <SignInProviderSection />
+{:else if section === 'password'}
   <PasswordSection onSessionsChanged={refreshSessions} />
-</SettingGroup>
-
-<SettingGroup
-  icon={mdiLockSmart}
-  key="user-pin-code-settings"
-  title={$t('frameleaf_access_pin_title')}
-  subtitle={$t('frameleaf_access_pin_group_description')}
-  autoScrollTo={true}
->
+{:else if section === 'user-pin-code-settings'}
   <PinSection />
-</SettingGroup>
-
-<SettingGroup
-  icon={mdiShieldLockOutline}
-  key="suppressed-content"
-  title={$t('frameleaf_locked_rules_section_title')}
-  subtitle={$t('frameleaf_locked_rules_section_description')}
-  autoScrollTo={true}
->
+{:else if section === 'suppressed-content'}
   <LockedRulesPanel />
-</SettingGroup>
-
-<SettingGroup
-  icon={mdiKeyOutline}
-  key={OpenQueryParam.PURCHASE_SETTINGS}
-  title={$t('frameleaf_access_supporter_title')}
-  subtitle={$t('frameleaf_access_supporter_group_description')}
-  autoScrollTo={true}
->
+{:else if section === 'user-purchase-settings'}
   <SupporterSection />
-</SettingGroup>
-
-<SettingGroup
-  icon={mdiAccountGroupOutline}
-  key={OpenQueryParam.SHARING}
-  title={$t('sharing')}
-  subtitle={$t('manage_sharing_with_other_users')}
->
+{:else if section === 'sharing'}
   <SharingSettings />
-</SettingGroup>
+{/if}
