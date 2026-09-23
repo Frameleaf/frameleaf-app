@@ -18,6 +18,7 @@ import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { DocumentRepository } from 'src/repositories/document.repository.js';
 import { DownloadRepository } from 'src/repositories/download.repository.js';
+import { DuplicateDecisionRepository } from 'src/repositories/duplicate-decision.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -107,6 +108,7 @@ export const repositories = [
   DatabaseRepository,
   DocumentRepository,
   DownloadRepository,
+  DuplicateDecisionRepository,
   DuplicateRepository,
   EmailRepository,
   EventRepository,

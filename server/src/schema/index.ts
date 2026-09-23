@@ -62,6 +62,7 @@ import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-dup
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
+import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
@@ -184,6 +185,7 @@ export class ImmichDatabase {
     AssetVideoDuplicateFrameTable,
     ClusterGroupTable,
     ClusterGroupRequestTable,
+    DuplicateDecisionTable,
     FaceSearchTable,
     GeodataPlacesTable,
     IntegrityReportTable,
@@ -330,6 +332,8 @@ export interface DB {
   asset_keyframe: AssetKeyframeTable;
   asset_video_duplicate_frame: AssetVideoDuplicateFrameTable;
   ocr_search: OcrSearchTable;
+
+  duplicate_decision: DuplicateDecisionTable;
 
   face_search: FaceSearchTable;
 

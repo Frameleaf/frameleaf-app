@@ -17,6 +17,7 @@ import { ConfigUserController } from 'src/controllers/config-user.controller.js'
 import { DatabaseBackupController } from 'src/controllers/database-backup.controller.js';
 import { DocumentController } from 'src/controllers/document.controller.js';
 import { DownloadController } from 'src/controllers/download.controller.js';
+import { DuplicateReviewController } from 'src/controllers/duplicate-review.controller.js';
 import { DuplicateController } from 'src/controllers/duplicate.controller.js';
 import { FaceController } from 'src/controllers/face.controller.js';
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
@@ -87,6 +88,7 @@ export const controllers = [
   DocumentController,
   DownloadController,
   DuplicateController,
+  DuplicateReviewController,
   FaceController,
   IntegrityAdminController,
   JobController,
