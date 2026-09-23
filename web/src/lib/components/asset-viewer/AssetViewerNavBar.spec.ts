@@ -53,7 +53,7 @@ describe('AssetViewerNavBar component', () => {
 
     const asset = assetFactory.build({ isTrashed: false });
     const { getByLabelText } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
-    expect(getByLabelText('go_back')).toBeInTheDocument();
+    expect(getByLabelText('frameleaf_viewer_close')).toBeInTheDocument();
   });
 
   describe('if the current user owns the asset', () => {

@@ -61,7 +61,7 @@
   const { Cast } = $derived(getGlobalActions($t));
 
   const Close: ActionItem = $derived({
-    title: $t('go_back'),
+    title: $t('frameleaf_viewer_close'),
     icon: languageManager.rtl ? mdiArrowRight : mdiArrowLeft,
     $if: () => !!onClose && !assetViewerManager.isFaceEditMode && !assetViewerManager.isEditFacesPanelOpen,
     onAction: () => onClose?.(),
@@ -133,7 +133,13 @@
     {/if}
 
     {#if !sharedLink}
-      <ButtonContextMenu direction="left" align="top-right" color="secondary" title={$t('more')} icon={mdiDotsVertical}>
+      <ButtonContextMenu
+        direction="left"
+        align="top-right"
+        color="secondary"
+        title={$t('frameleaf_viewer_more_actions')}
+        icon={mdiDotsVertical}
+      >
         <!--
           FL-35: the complete grouped menu (Download, Organize, Stack, Set as, Go to, Jobs,
           Viewer). Every entry maps to an existing asset action and a group that has no

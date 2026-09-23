@@ -8,7 +8,7 @@
   import { locale } from '$lib/stores/preferences.store';
   import { getPeopleThumbnailUrl } from '$lib/utils';
   import { type AssetResponseDto } from '@immich/sdk';
-  import { IconButton, Text } from '@immich/ui';
+  import { Button, IconButton, Text } from '@immich/ui';
   import { mdiEye, mdiEyeOff, mdiPencil, mdiPlus } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
@@ -28,6 +28,7 @@
   const { asset, isOwner, previousRoute, onFacesChanged }: Props = $props();
 
   const people = $derived(Array.from(faceManager.people));
+  const hiddenCount = $derived(people.filter((person) => person.isHidden).length);
   const visiblePeople = $derived(
     people
       .filter((p) => assetViewerManager.isShowingHiddenPeople || !p.isHidden)
@@ -71,26 +72,30 @@
         <Text size="small" color="muted">{$t('people')}</Text>
         <div class="flex items-center gap-2">
           {#if isOwner}
-            {#if people.some((person) => person.isHidden)}
-              <IconButton
-                aria-label={$t('show_hidden_people')}
-                icon={assetViewerManager.isShowingHiddenPeople ? mdiEyeOff : mdiEye}
-                size="medium"
-                shape="round"
+            {#if hiddenCount > 0}
+              <Button
+                size="small"
                 color="secondary"
                 variant="ghost"
+                leadingIcon={assetViewerManager.isShowingHiddenPeople ? mdiEyeOff : mdiEye}
+                aria-pressed={assetViewerManager.isShowingHiddenPeople}
                 onclick={() => assetViewerManager.toggleHiddenPeople()}
-              />
+              >
+                {assetViewerManager.isShowingHiddenPeople
+                  ? $t('frameleaf_viewer_hide_hidden_people')
+                  : $t('frameleaf_viewer_show_hidden_people', { values: { count: hiddenCount } })}
+              </Button>
             {/if}
-            <IconButton
-              aria-label={$t('tag_people')}
-              icon={mdiPlus}
-              size="medium"
-              shape="round"
+            <Button
+              size="small"
               color="secondary"
               variant="ghost"
+              leadingIcon={mdiPlus}
+              aria-label={$t('frameleaf_viewer_add_person_label')}
               onclick={() => assetViewerManager.toggleFaceEditMode()}
-            />
+            >
+              {$t('frameleaf_viewer_add_person')}
+            </Button>
 
             {#if faceManager.data.length > 0}
               <IconButton
@@ -106,6 +111,9 @@
           {/if}
         </div>
       </div>
+      {#if visiblePeople.length === 0}
+        <Text size="small" color="muted">{$t('frameleaf_viewer_no_people')}</Text>
+      {/if}
     {/if}
 
     <div class="mt-2 grid {visiblePeople.length <= 6 ? 'grid-cols-3 gap-3' : 'grid-cols-4 gap-2'}">

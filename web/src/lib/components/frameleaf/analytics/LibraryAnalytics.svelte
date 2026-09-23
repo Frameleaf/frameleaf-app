@@ -35,6 +35,7 @@
     type GrowthMetric,
     type Translate,
   } from '$lib/frameleaf/analytics';
+  import { commandCenterUrl, type SettingsAreaId } from '$lib/frameleaf/settings-areas';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
   import { downloadBlob } from '$lib/utils';
@@ -91,7 +92,7 @@
   const addedVideos = $derived(report.series.reduce((sum, row) => sum + row.videos, 0));
   const weeks = $derived(calendarWeeks(report.days, calendar));
   const calendarTotal = $derived(report.days.reduce((sum, row) => sum + row[calendar], 0));
-  const settingsArea = (area: string) => `${Route.systemSettings()}?area=${area}`;
+  const settingsArea = (area: SettingsAreaId) => commandCenterUrl(area);
 
   /** The route's load reads the report for the new address; this page never fetches on its own. */
   const load = async (next: { scope?: string; range?: AnalyticsRange }) => {
