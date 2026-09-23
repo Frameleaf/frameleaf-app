@@ -133,6 +133,23 @@ export function withAlbumVisibility<O>(qb: SelectQueryBuilder<DB, 'asset', O>, l
   );
 }
 
+/**
+ * Keeps Locked media owner-private in a read that may span several owners (partners, shared albums):
+ * only `lockedOwnerId`'s own Locked media can match — the viewer, when their session is elevated. A
+ * partner's or another member's Locked media never does, whatever the viewer's own session, and
+ * without an owner no Locked media matches at all.
+ */
+export function withLockedOwnerScope<O>(qb: SelectQueryBuilder<DB, 'asset', O>, lockedOwnerId?: string) {
+  return qb.where((eb) =>
+    lockedOwnerId
+      ? eb.or([
+          eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
+          eb('asset.ownerId', '=', lockedOwnerId),
+        ])
+      : eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
+  );
+}
+
 const selectExifInfo = (eb: AssetExpressionBuilder) =>
   eb.fn
     .toJson(eb.table('asset_exif'))
@@ -464,6 +481,11 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
       options.visibility === 'not-locked'
         ? qb.where('asset.visibility', '!=', AssetVisibility.Locked)
         : qb.where('asset.visibility', '=', options.visibility!),
+    )
+    // any read that could still match Locked media (no visibility asked, or Locked itself) is narrowed
+    // to the viewer's own Locked media: partners and album members never contribute theirs
+    .$if(options.visibility === undefined || options.visibility === AssetVisibility.Locked, (qb) =>
+      withLockedOwnerScope(qb, options.lockedOwnerId),
     )
     .$if(!!options.albumIds && options.albumIds.length > 0, (qb) => inAlbums(qb, options.albumIds!))
     .$if(!!options.tagIds && options.tagIds.length > 0, (qb) => hasTags(qb, options.tagIds!))
