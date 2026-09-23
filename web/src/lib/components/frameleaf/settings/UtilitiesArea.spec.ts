@@ -49,15 +49,11 @@ describe('Utilities area', () => {
     await userEvent.click(screen.getByRole('button', { name: /Duplicate review/ }));
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=utilities&section=duplicates', expect.any(Object));
   });
-  it('keeps an admin in the current Command Center namespace', async () => {
+  it('keeps an admin on the single utilities host', async () => {
     state.user.isAdmin = true;
-    state.url = new SvelteURL('http://localhost/admin/system-settings?area=utilities');
     render(UtilitiesArea);
     await userEvent.click(screen.getByRole('button', { name: /Missing media/ }));
-    expect(state.goto).toHaveBeenCalledWith(
-      '/admin/system-settings?area=utilities&section=missing-media',
-      expect.any(Object),
-    );
+    expect(state.goto).toHaveBeenCalledWith('/user-settings?area=utilities&section=missing-media', expect.any(Object));
   });
   it('rejects a direct non-admin health tool selection without loading it', () => {
     state.url.searchParams.set('section', 'corrupt-media');

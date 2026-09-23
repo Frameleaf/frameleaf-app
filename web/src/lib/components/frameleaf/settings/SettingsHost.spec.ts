@@ -67,4 +67,18 @@ describe('Command Center area navigation', () => {
     expect(screen.getByRole('button', { name: 'Watch library' })).toHaveAttribute('aria-expanded', 'true');
     expect(state.goto).toHaveBeenCalledOnce();
   });
+  it('lists the library areas in the prototype order and opens utilities on their single host', async () => {
+    state.url = new SvelteURL('http://localhost/admin/system-settings?area=storage');
+    state.goto.mockReset().mockResolvedValue(undefined);
+    render(SettingsHost, { sections: [] });
+    const nav = screen.getByRole('navigation', { name: 'Settings navigation' });
+    const names = [...nav.querySelectorAll('button.area')].map((button) => button.textContent?.trim());
+    expect(names.slice(names.indexOf('Library care'), names.indexOf('Utilities') + 1)).toEqual([
+      'Library care',
+      'Libraries',
+      'Utilities',
+    ]);
+    await userEvent.click(screen.getByRole('button', { name: 'Utilities' }));
+    expect(state.goto).toHaveBeenCalledWith('/user-settings?area=utilities', expect.any(Object));
+  });
 });
