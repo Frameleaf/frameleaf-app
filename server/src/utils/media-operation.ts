@@ -136,6 +136,31 @@ export const PAUSABLE_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [
 export const isPausableMediaOperationKind = (kind: MediaOperationKind) => PAUSABLE_MEDIA_OPERATION_KINDS.includes(kind);
 
 /**
+ * The kinds that resume where they stopped when a claim is lost (FL-43). The same set that can
+ * pause, for the same reason: each records where it has got to, so a new claim carries on rather
+ * than starting again. Every other kind starts from nothing on a new claim, so for them a lost
+ * claim is simply a failure and gets the one automatic retry every failure gets.
+ */
+export const RESUMABLE_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = PAUSABLE_MEDIA_OPERATION_KINDS;
+
+/**
+ * Lost claims a resumable job may resume from before a lapse counts as its failure (owner decision,
+ * September 22, 2026: "resumable jobs may resume a lost claim up to twice first"). After that the
+ * lapse is a failure like any other: one automatic retry, then it is reported. Claims a runner
+ * hands back on purpose — a pause, a shutdown, a deliberate requeue — give their attempt back and
+ * are not counted.
+ */
+export const MEDIA_OPERATION_LOST_CLAIM_RESUMES = 2;
+
+/**
+ * Whether a job whose claim lapsed on attempt `attempt` goes back to the queue to resume, rather
+ * than being treated as failed. `maxAttempts` may only lower the allowance, never raise it.
+ */
+export const canResumeLostClaim = (operation: { kind: MediaOperationKind; attempt: number; maxAttempts: number }) =>
+  RESUMABLE_MEDIA_OPERATION_KINDS.includes(operation.kind) &&
+  operation.attempt < Math.min(operation.maxAttempts, 1 + MEDIA_OPERATION_LOST_CLAIM_RESUMES);
+
+/**
  * The kinds a remote render worker may ever claim (FL-73): the renders. Bulk jobs (duplicate
  * decisions included), project bundles, enrichment plans, Library Care, iCloud and Google Photos
  * imports and physical deduplication run on this server's own workers, and their snapshots can name

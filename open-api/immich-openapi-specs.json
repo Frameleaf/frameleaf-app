@@ -43653,7 +43653,7 @@
             "$ref": "#/components/schemas/MediaOperationKind"
           },
           "label": {
-            "description": "What the person sees in Activity",
+            "description": "What the person sees in Activity; empty when withheld",
             "type": "string"
           },
           "maxAttempts": {
@@ -43731,6 +43731,10 @@
           "updatedAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "withheld": {
+            "description": "The job is about a Locked item this session has not unlocked; its label and snapshot are withheld",
+            "type": "boolean"
           }
         },
         "required": [
@@ -43768,7 +43772,8 @@
           "startedAt",
           "status",
           "totalUnits",
-          "updatedAt"
+          "updatedAt",
+          "withheld"
         ],
         "type": "object"
       },
@@ -43855,7 +43860,7 @@
             "$ref": "#/components/schemas/MediaOperationKind"
           },
           "label": {
-            "description": "What the person sees in Activity",
+            "description": "What the person sees in Activity; empty when withheld",
             "type": "string"
           },
           "maxAttempts": {
@@ -43929,6 +43934,10 @@
           "updatedAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "withheld": {
+            "description": "The job is about a Locked item this session has not unlocked; its label and snapshot are withheld",
+            "type": "boolean"
           }
         },
         "required": [
@@ -43962,7 +43971,8 @@
           "startedAt",
           "status",
           "totalUnits",
-          "updatedAt"
+          "updatedAt",
+          "withheld"
         ],
         "type": "object"
       },
