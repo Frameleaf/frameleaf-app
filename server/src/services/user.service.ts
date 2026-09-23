@@ -375,6 +375,8 @@ export class UserService extends BaseService {
       StorageCore.getFolderLocation(StorageFolder.Profile, user.id),
       StorageCore.getFolderLocation(StorageFolder.Thumbnails, user.id),
       StorageCore.getFolderLocation(StorageFolder.EncodedVideo, user.id),
+      // Owner-private export artefacts: bundles, uploads and staged Studio renders (FL-62, FL-91, FL-106).
+      StorageCore.getFolderLocation(StorageFolder.Exports, user.id),
     ];
 
     for (const folder of folders) {

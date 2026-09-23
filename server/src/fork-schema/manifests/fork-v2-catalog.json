@@ -4893,6 +4893,202 @@
       "identity": "public.studio_bundle_upload.sizeBytes"
     },
     {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.studio_export_remote_reference.acknowledgedAt"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_export_remote_reference.destination"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.studio_export_remote_reference.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.studio_export_remote_reference.operationId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.studio_export_remote_reference.ownerId"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_export_remote_reference.reason"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_export_remote_reference.remoteRef"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.studio_export_remote_reference.requestedAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.studio_export_remote_reference.versionId"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_export_remote_reference.workerId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.studio_export_version_source.assetId"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_export_version_source.checksum"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_export_version_source.key"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_export_version_source.kind"
+    },
+    {
+      "definition": "boolean|nullable|||",
+      "identity": "public.studio_export_version_source.locked"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_export_version_source.lockReason"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.studio_export_version_source.ownerId"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_export_version_source.resourceId"
+    },
+    {
+      "definition": "boolean|nullable|||",
+      "identity": "public.studio_export_version_source.sensitive"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_export_version_source.sourceAccess"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.studio_export_version_source.versionId"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.studio_export_version.cancelledAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.studio_export_version.createdAt"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_export_version.destination"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_export_version.engineDigest"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.studio_export_version.error"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_export_version.errorCode"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.studio_export_version.id"
+    },
+    {
+      "definition": "bytea|nullable|||",
+      "identity": "public.studio_export_version.outputChecksum"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_export_version.outputContentType"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_export_version.outputPath"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_export_version.outputRemoteRef"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.studio_export_version.outputRemovedAt"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.studio_export_version.outputSizeInBytes"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.studio_export_version.ownerId"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "public.studio_export_version.privacy"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.studio_export_version.projectId"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.studio_export_version.publishedAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.studio_export_version.publishOperationId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.studio_export_version.renderOperationId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.studio_export_version.resultAssetId"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.studio_export_version.revision"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.studio_export_version.revisionDigest"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_export_version.scope"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.studio_export_version.settings"
+    },
+    {
+      "definition": "character varying|not null|'rendering'::character varying||",
+      "identity": "public.studio_export_version.state"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.studio_export_version.updatedAt"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "public.studio_export_version.version"
+    },
+    {
+      "definition": "character varying|nullable|||",
+      "identity": "public.studio_export_version.workerId"
+    },
+    {
       "definition": "character varying|not null|||",
       "identity": "public.studio_preview_frame.cacheKey"
     },
@@ -7425,6 +7621,58 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.studio_bundle_upload.studio_bundle_upload_pkey"
+    },
+    {
+      "definition": "UNIQUE (\"operationId\", \"workerId\", reason)",
+      "identity": "public.studio_export_remote_reference.studio_export_remote_reference_operationId_workerId_reason_uq"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.studio_export_remote_reference.studio_export_remote_reference_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"versionId\") REFERENCES studio_export_version(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.studio_export_remote_reference.studio_export_remote_reference_versionId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"versionId\", key)",
+      "identity": "public.studio_export_version_source.studio_export_version_source_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"versionId\") REFERENCES studio_export_version(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.studio_export_version_source.studio_export_version_source_versionId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.studio_export_version.studio_export_version_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.studio_export_version.studio_export_version_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"projectId\") REFERENCES studio_project(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.studio_export_version.studio_export_version_projectId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"projectId\", version)",
+      "identity": "public.studio_export_version.studio_export_version_projectId_version_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"publishOperationId\") REFERENCES media_operation(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.studio_export_version.studio_export_version_publishOperationId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"renderOperationId\") REFERENCES media_operation(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.studio_export_version.studio_export_version_renderOperationId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"renderOperationId\")",
+      "identity": "public.studio_export_version.studio_export_version_renderOperationId_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"resultAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.studio_export_version.studio_export_version_resultAssetId_fkey"
     },
     {
       "definition": "UNIQUE (\"cacheKey\")",
@@ -10835,6 +11083,74 @@
       "identity": "public.studio_bundle_upload.studio_bundle_upload_pkey"
     },
     {
+      "definition": "CREATE UNIQUE INDEX \"studio_export_remote_reference_operationId_workerId_reason_uq\" ON public.studio_export_remote_reference USING btree (\"operationId\", \"workerId\", reason)",
+      "identity": "public.studio_export_remote_reference.studio_export_remote_reference_operationId_workerId_reason_uq"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX studio_export_remote_reference_pkey ON public.studio_export_remote_reference USING btree (id)",
+      "identity": "public.studio_export_remote_reference.studio_export_remote_reference_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_export_remote_reference_versionId_idx\" ON public.studio_export_remote_reference USING btree (\"versionId\")",
+      "identity": "public.studio_export_remote_reference.studio_export_remote_reference_versionId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_export_remote_reference_workerId_acknowledgedAt_idx\" ON public.studio_export_remote_reference USING btree (\"workerId\", \"acknowledgedAt\")",
+      "identity": "public.studio_export_remote_reference.studio_export_remote_reference_workerId_acknowledgedAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_export_version_source_assetId_idx\" ON public.studio_export_version_source USING btree (\"assetId\")",
+      "identity": "public.studio_export_version_source.studio_export_version_source_assetId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX studio_export_version_source_pkey ON public.studio_export_version_source USING btree (\"versionId\", key)",
+      "identity": "public.studio_export_version_source.studio_export_version_source_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_export_version_source_versionId_idx\" ON public.studio_export_version_source USING btree (\"versionId\")",
+      "identity": "public.studio_export_version_source.studio_export_version_source_versionId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_export_version_ownerId_idx\" ON public.studio_export_version USING btree (\"ownerId\")",
+      "identity": "public.studio_export_version.studio_export_version_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX studio_export_version_pkey ON public.studio_export_version USING btree (id)",
+      "identity": "public.studio_export_version.studio_export_version_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_export_version_projectId_createdAt_idx\" ON public.studio_export_version USING btree (\"projectId\", \"createdAt\")",
+      "identity": "public.studio_export_version.studio_export_version_projectId_createdAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_export_version_projectId_idx\" ON public.studio_export_version USING btree (\"projectId\")",
+      "identity": "public.studio_export_version.studio_export_version_projectId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"studio_export_version_projectId_version_uq\" ON public.studio_export_version USING btree (\"projectId\", version)",
+      "identity": "public.studio_export_version.studio_export_version_projectId_version_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_export_version_publishOperationId_idx\" ON public.studio_export_version USING btree (\"publishOperationId\")",
+      "identity": "public.studio_export_version.studio_export_version_publishOperationId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_export_version_renderOperationId_idx\" ON public.studio_export_version USING btree (\"renderOperationId\")",
+      "identity": "public.studio_export_version.studio_export_version_renderOperationId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"studio_export_version_renderOperationId_uq\" ON public.studio_export_version USING btree (\"renderOperationId\")",
+      "identity": "public.studio_export_version.studio_export_version_renderOperationId_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_export_version_resultAssetId_idx\" ON public.studio_export_version USING btree (\"resultAssetId\")",
+      "identity": "public.studio_export_version.studio_export_version_resultAssetId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"studio_export_version_state_updatedAt_idx\" ON public.studio_export_version USING btree (state, \"updatedAt\")",
+      "identity": "public.studio_export_version.studio_export_version_state_updatedAt_idx"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX \"studio_preview_frame_cacheKey_uq\" ON public.studio_preview_frame USING btree (\"cacheKey\")",
       "identity": "public.studio_preview_frame.studio_preview_frame_cacheKey_uq"
     },
@@ -11916,6 +12232,18 @@
     {
       "definition": "table",
       "identity": "public.studio_bundle_upload"
+    },
+    {
+      "definition": "table",
+      "identity": "public.studio_export_remote_reference"
+    },
+    {
+      "definition": "table",
+      "identity": "public.studio_export_version"
+    },
+    {
+      "definition": "table",
+      "identity": "public.studio_export_version_source"
     },
     {
       "definition": "table",

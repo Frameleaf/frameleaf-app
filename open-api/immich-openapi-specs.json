@@ -20860,6 +20860,107 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/render-workers/remote-references": {
+      "get": {
+        "description": "Studio export renders that were cancelled or abandoned and copies of outputs this worker kept. Each stays listed until the worker acknowledges it.",
+        "operationId": "getRenderRemoteReferences",
+        "parameters": [
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RenderWorkerRemoteReferenceDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "List what this worker must stop or delete",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/render-workers/remote-references/{id}/acknowledge": {
+      "post": {
+        "description": "The worker confirms the render is stopped, or the copy deleted, and nothing of it remains.",
+        "operationId": "acknowledgeRenderRemoteReference",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Acknowledge a remote reference",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/runpod/backfill": {
       "post": {
         "description": "Queues smart-search, face detection, duplicates, OCR, image description, and NSFW detection.",
@@ -26286,6 +26387,119 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/exports/{id}": {
+      "get": {
+        "description": "One export version, with where its result lives and what it inherited.",
+        "operationId": "getStudioExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioExportVersionDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Studio export",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/exports/{id}/download": {
+      "get": {
+        "description": "The file of a published export that uses media shared with you. Available only while every source is still available to you; a result in your library is downloaded like any other photo or video.",
+        "operationId": "downloadStudioExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download a Studio export kept with its project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/previews": {
       "post": {
         "description": "Asks for one frame of a project's current stored revision at an exact rational time, quality and viewport. The server reads the graph from project storage and resolves its sources for the caller; a request naming a superseded revision is refused with the current one. An identical request shares the render rather than starting a second one, and previews of superseded revisions are cancelled.",
@@ -27268,6 +27482,148 @@
           }
         ],
         "summary": "Duplicate a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/studio/projects/{id}/exports": {
+      "get": {
+        "description": "Every export of the project, newest first: published versions and exports still on their way.",
+        "operationId": "getStudioExports",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "skip",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "default": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioExportListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List a Studio project’s exports",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Queues a render of the current version to a finished file. Every source is checked for you now, again when the render starts and again before the result is published; the result inherits every source’s Locked and sensitive status. A result that uses media shared with you stays with the project. Follow it in Activity. Owner only.",
+        "operationId": "createStudioExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioExportCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioExportCreateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Export a Studio project",
         "tags": [
           "Studio projects"
         ],
@@ -46312,7 +46668,8 @@
           "preservation_export",
           "preservation_verify",
           "preservation_review",
-          "preservation_restore"
+          "preservation_restore",
+          "studio_export_publish"
         ],
         "type": "string"
       },
@@ -51688,7 +52045,12 @@
             "type": "boolean"
           },
           "match": {
-            "$ref": "#/components/schemas/PreservationRestoreMatch"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PreservationRestoreMatch"
+              }
+            ],
+            "nullable": true
           },
           "name": {
             "nullable": true,
@@ -51768,10 +52130,8 @@
         "enum": [
           "new",
           "existing",
-          "trashed",
-          null
+          "trashed"
         ],
-        "nullable": true,
         "type": "string"
       },
       "PreservationRestoreStatus": {
@@ -53635,7 +53995,12 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
+          "output": {
+            "$ref": "#/components/schemas/RenderWorkerOutputDto",
+            "description": "Required for a Studio export"
+          },
           "resultAssetId": {
+            "description": "Must be null for a Studio export: its result is adopted by publication, never named by a worker",
             "format": "uuid",
             "nullable": true,
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -54039,6 +54404,45 @@
         ],
         "type": "object"
       },
+      "RenderWorkerOutputDto": {
+        "properties": {
+          "checksum": {
+            "description": "SHA-256 of the whole file",
+            "pattern": "^[\\da-f]{64}$",
+            "type": "string"
+          },
+          "contentType": {
+            "description": "`video/mp4`, `video/webm` or `video/quicktime`",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "description": "Absolute path inside the render directory the claim named",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "remoteRef": {
+            "description": "What the worker calls a copy it kept; it is asked to delete it until it acknowledges",
+            "maxLength": 512,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          },
+          "sizeInBytes": {
+            "pattern": "^\\d+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checksum",
+          "contentType",
+          "path",
+          "sizeInBytes"
+        ],
+        "type": "object"
+      },
       "RenderWorkerProgressDto": {
         "properties": {
           "claimToken": {
@@ -54100,6 +54504,41 @@
           "manifest_incomplete"
         ],
         "type": "string"
+      },
+      "RenderWorkerRemoteReferenceDto": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "operationId": {
+            "description": "The render job",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/StudioExportRemoteReason"
+          },
+          "remoteRef": {
+            "description": "The copy to delete, for a `delete` reference",
+            "nullable": true,
+            "type": "string"
+          },
+          "requestedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "operationId",
+          "reason",
+          "remoteRef",
+          "requestedAt"
+        ],
+        "type": "object"
       },
       "RenderWorkerSessionDto": {
         "properties": {
@@ -58934,6 +59373,297 @@
           }
         },
         "type": "object"
+      },
+      "StudioExportColor": {
+        "description": "Colour handling; Dolby Vision needs a qualified worker",
+        "enum": [
+          "preserve",
+          "hdr10",
+          "dolby-vision"
+        ],
+        "type": "string"
+      },
+      "StudioExportCreateDto": {
+        "properties": {
+          "cloudConsent": {
+            "description": "You agree to the media leaving your network for this export",
+            "type": "boolean"
+          },
+          "color": {
+            "$ref": "#/components/schemas/StudioExportColor"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/MediaOperationDestination",
+            "description": "Where it renders. A cloud destination needs `cloudConsent`"
+          },
+          "expectedRevision": {
+            "description": "The revision you are looking at; a newer head refuses the export with `409` instead of rendering it",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "format": {
+            "$ref": "#/components/schemas/StudioExportFormat"
+          },
+          "requestKey": {
+            "description": "Idempotency key; a repeated submit answers with the first export",
+            "pattern": "^[\\w.:-]{1,128}$",
+            "type": "string"
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/StudioExportResolution"
+          }
+        },
+        "required": [
+          "color",
+          "destination",
+          "format",
+          "resolution"
+        ],
+        "type": "object"
+      },
+      "StudioExportCreateResponseDto": {
+        "properties": {
+          "operation": {
+            "$ref": "#/components/schemas/MediaOperationDto",
+            "description": "The render job; follow it in Activity"
+          },
+          "version": {
+            "$ref": "#/components/schemas/StudioExportVersionDto"
+          }
+        },
+        "required": [
+          "operation",
+          "version"
+        ],
+        "type": "object"
+      },
+      "StudioExportFormat": {
+        "description": "Container and codec",
+        "enum": [
+          "mp4-hevc-main10",
+          "mp4-h264",
+          "webm-av1",
+          "prores-422-hq"
+        ],
+        "type": "string"
+      },
+      "StudioExportListResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StudioExportVersionDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Matching versions, before paging",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "StudioExportRemoteReason": {
+        "description": "Why a remote destination is asked to drop Studio export data",
+        "enum": [
+          "cancel",
+          "delete"
+        ],
+        "type": "string"
+      },
+      "StudioExportResolution": {
+        "description": "Output resolution",
+        "enum": [
+          "720p",
+          "1080p",
+          "1440p",
+          "2160p"
+        ],
+        "type": "string"
+      },
+      "StudioExportScope": {
+        "description": "Where a published Studio export lives",
+        "enum": [
+          "library",
+          "project"
+        ],
+        "type": "string"
+      },
+      "StudioExportSettingsDto": {
+        "properties": {
+          "color": {
+            "$ref": "#/components/schemas/StudioExportColor"
+          },
+          "format": {
+            "$ref": "#/components/schemas/StudioExportFormat"
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/StudioExportResolution"
+          }
+        },
+        "required": [
+          "color",
+          "format",
+          "resolution"
+        ],
+        "type": "object"
+      },
+      "StudioExportVersionDto": {
+        "properties": {
+          "cancelledAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "contentType": {
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/MediaOperationDestination"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "errorCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Export version ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "includesSharedSources": {
+            "description": "At least one source is shared with you rather than yours",
+            "type": "boolean"
+          },
+          "locked": {
+            "description": "The result inherited a lock from a Locked or sensitive source",
+            "type": "boolean"
+          },
+          "projectId": {
+            "description": "Null once the project was deleted for good",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "publishOperationId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "renderOperationId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "resultAssetId": {
+            "description": "The asset a `library` result became",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The project revision that was rendered",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "scope": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioExportScope"
+              }
+            ],
+            "description": "Where the published result lives",
+            "nullable": true
+          },
+          "sensitive": {
+            "description": "The result inherited sensitive evidence from a source",
+            "type": "boolean"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/StudioExportSettingsDto"
+          },
+          "sizeInBytes": {
+            "nullable": true,
+            "type": "string"
+          },
+          "sourceCount": {
+            "description": "Library sources the result was made from",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/StudioExportVersionState"
+          },
+          "version": {
+            "description": "The version number, once published",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cancelledAt",
+          "contentType",
+          "createdAt",
+          "destination",
+          "error",
+          "errorCode",
+          "id",
+          "includesSharedSources",
+          "locked",
+          "projectId",
+          "publishOperationId",
+          "publishedAt",
+          "renderOperationId",
+          "resultAssetId",
+          "revision",
+          "scope",
+          "sensitive",
+          "settings",
+          "sizeInBytes",
+          "sourceCount",
+          "state",
+          "version"
+        ],
+        "type": "object"
+      },
+      "StudioExportVersionState": {
+        "description": "Studio export version state",
+        "enum": [
+          "rendering",
+          "staged",
+          "published",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
       },
       "StudioPreviewDto": {
         "properties": {
