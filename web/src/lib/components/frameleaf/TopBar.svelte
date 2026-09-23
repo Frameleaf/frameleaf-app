@@ -23,9 +23,8 @@
   import { handleError } from '$lib/utils/handle-error';
   import { isAlbumsRoute, isAssetViewerRoute, isLockedFolderRoute, navigate } from '$lib/utils/navigation';
   import { getAuthStatus, lockAuthSession } from '@immich/sdk';
-  import { ActionButton, IconButton, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { ActionButton, Icon, IconButton, Theme as AppTheme, themeManager } from '@immich/ui';
   import {
-    mdiBellBadge,
     mdiBellOutline,
     mdiLockOpenVariantOutline,
     mdiLockOutline,
@@ -55,11 +54,19 @@
   let isElevated = $state(false);
   let isSessionLoading = $state(true);
 
-  const hasUnreadNotifications = $derived(notificationManager.notifications.length > 0);
+  const unreadCount = $derived(notificationManager.notifications.length);
   // FL-104: background jobs the viewer may see (queues too, for administrators) are in the panel.
   const runningCount = $derived(runningJobsSession.activeCount);
+  // The prototype's bell: "Notifications, 3 unread", plus what is running when anything is.
   const bellLabel = $derived(
-    runningCount > 0 ? $t('frameleaf_running_bell', { values: { count: runningCount } }) : $t('notifications'),
+    [
+      unreadCount > 0
+        ? $t('frameleaf_notifications_bell_unread', { values: { count: unreadCount } })
+        : $t('notifications'),
+      runningCount > 0 ? $t('frameleaf_running_bell', { values: { count: runningCount } }) : null,
+    ]
+      .filter(Boolean)
+      .join(', '),
   );
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   const isAdminRoute = $derived(page.url.pathname.startsWith('/admin'));
@@ -233,30 +240,24 @@
             onEscape: () => (showNotifications = false),
           }}
         >
-          <div class="relative">
-            <IconButton
-              shape="round"
-              color={hasUnreadNotifications ? 'primary' : 'secondary'}
-              variant="ghost"
-              size="medium"
-              icon={hasUnreadNotifications ? mdiBellBadge : mdiBellOutline}
-              onclick={() => (showNotifications = !showNotifications)}
-              aria-label={bellLabel}
-              aria-haspopup="dialog"
-              aria-expanded={showNotifications}
-            />
+          <!-- The prototype's NotificationsBell (SystemPanels.jsx): outline bell, unread count capped at 9+. -->
+          <button
+            type="button"
+            class="fl-notif-bell"
+            aria-label={bellLabel}
+            aria-haspopup="dialog"
+            aria-expanded={showNotifications}
+            onclick={() => (showNotifications = !showNotifications)}
+          >
+            <Icon icon={mdiBellOutline} size={20} aria-hidden="true" />
+            {#if unreadCount > 0}
+              <span class="fl-notif-count" aria-hidden="true">{unreadCount > 9 ? '9+' : unreadCount}</span>
+            {/if}
             {#if runningCount > 0}
               <!-- Jobs are running: a small turning ring at the bell's foot, still for reduced motion. -->
               <span class="fl-bell-running" aria-hidden="true"></span>
             {/if}
-            {#if hasUnreadNotifications}
-              <div
-                class="pointer-events-none absolute top-0 right-1 flex size-5 items-center justify-center rounded-full border bg-primary text-[10px] font-bold text-light"
-              >
-                {notificationManager.notifications.length}
-              </div>
-            {/if}
-          </div>
+          </button>
 
           {#if showNotifications}
             <NotificationPanel onClose={() => (showNotifications = false)} />
@@ -297,6 +298,37 @@
   }
   .fl-no-border {
     border-bottom: 0;
+  }
+  .fl-notif-bell {
+    position: relative;
+    display: grid;
+    flex-shrink: 0;
+    place-items: center;
+    width: 36px;
+    height: 34px;
+    border-radius: var(--fl-radius-control);
+    color: var(--fl-text);
+  }
+  .fl-notif-bell:hover,
+  .fl-notif-bell[aria-expanded='true'] {
+    background: var(--fl-raised);
+  }
+  .fl-notif-count {
+    position: absolute;
+    top: 3px;
+    right: 2px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-accent);
+    color: var(--fl-accent-text);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    box-shadow: 0 0 0 2px var(--fl-panel);
+    pointer-events: none;
   }
   .fl-bell-running {
     position: absolute;

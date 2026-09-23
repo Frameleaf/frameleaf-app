@@ -157,6 +157,23 @@ describe('operationRow', () => {
   });
 });
 
+describe('row tone, as on the prototype’s Activity chips', () => {
+  it('reads working as info with a live dot, held or pausing as warning, waiting as neutral', () => {
+    expect(operationRow(operation())).toMatchObject({ tone: 'info', live: true });
+    expect(operationRow(operation({ status: MediaOperationStatus.Paused }))).toMatchObject({
+      tone: 'warning',
+      live: false,
+    });
+    expect(operationRow(operation({ pauseRequestedAt: '2026-09-23T10:00:00.000Z' }))).toMatchObject({
+      tone: 'warning',
+      live: false,
+    });
+    expect(queueRow(queue({ active: 0 }))).toMatchObject({ tone: 'neutral', live: false });
+    expect(queueRow(queue({ isPaused: true }))).toMatchObject({ tone: 'warning', live: false });
+    expect(memoryExportRow(exportRun())).toMatchObject({ tone: 'info', live: true });
+  });
+});
+
 describe('memoryExportRow', () => {
   it('counts assets written of assets in the export and cannot pause', () => {
     const row = memoryExportRow(exportRun());

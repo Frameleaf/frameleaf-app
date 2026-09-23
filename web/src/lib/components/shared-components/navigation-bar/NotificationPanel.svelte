@@ -11,9 +11,9 @@
   import { NotificationType, type NotificationDto } from '@immich/sdk';
   import { Icon, toastManager } from '@immich/ui';
   import { mdiBellOutline, mdiClose } from '@mdi/js';
+  import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { flip } from 'svelte/animate';
-  import { fade } from 'svelte/transition';
 
   /**
    * The notifications panel, in the prototype's design (`SystemPanels.jsx` NotificationsPanel).
@@ -27,7 +27,12 @@
   let { onClose }: { onClose?: () => void } = $props();
 
   const titleId = 'fl-notifications-title';
-  const noUnreadNotifications = $derived(notificationManager.notifications.length === 0);
+  let panel = $state<HTMLElement>();
+  const unreadCount = $derived(notificationManager.notifications.length);
+  const noUnreadNotifications = $derived(unreadCount === 0);
+
+  // As in the prototype, the panel takes focus when it opens so the keyboard starts inside it.
+  onMount(() => panel?.focus());
   const nothingRunning = $derived(runningJobsSession.rows.length === 0);
 
   const markAsRead = async (id: string) => {
@@ -104,12 +109,12 @@
 </script>
 
 <section
-  in:fade={{ duration: 100 }}
-  out:fade={{ duration: 100 }}
+  bind:this={panel}
   id="notification-panel"
   class="fl-notif-panel"
   role="dialog"
   aria-labelledby={titleId}
+  tabindex="-1"
   use:focusTrap
 >
   <header class="fl-notif-head">
@@ -147,6 +152,12 @@
       </ul>
     {/if}
   </div>
+
+  <footer class="fl-notif-foot">
+    {unreadCount > 0
+      ? $t('frameleaf_notifications_unread_count', { values: { count: unreadCount } })
+      : $t('frameleaf_notifications_nothing_unread')}
+  </footer>
 </section>
 
 <style>
@@ -167,6 +178,28 @@
     font-size: var(--fl-font-size);
     line-height: 1.45;
     transform-origin: top right;
+    animation: fl-notif-in var(--fl-motion) var(--fl-ease);
+  }
+  .fl-notif-panel:focus {
+    outline: none;
+  }
+  @keyframes fl-notif-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px) scale(0.98);
+    }
+  }
+  @keyframes fl-notif-sheet-in {
+    from {
+      opacity: 0;
+      transform: translateY(24px);
+    }
+  }
+  .fl-notif-foot {
+    padding: 0.5rem 1rem;
+    border-top: 1px solid var(--fl-border);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-micro);
   }
   .fl-notif-head {
     display: flex;
@@ -249,6 +282,12 @@
       border-bottom: 0;
       border-radius: 14px 14px 0 0;
       transform-origin: bottom center;
+      animation-name: fl-notif-sheet-in;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fl-notif-panel {
+      animation: none;
     }
   }
 </style>
