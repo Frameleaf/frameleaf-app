@@ -122,6 +122,7 @@ const SmartAlbumReevaluateRequestSchema = z
   .object({
     kind: z
       .enum(SMART_ALBUM_BUILT_IN_KINDS)
+      .meta({ id: 'SmartAlbumBuiltInKind' })
       .optional()
       .describe('Optional built-in kind to scope the re-evaluation to. Omit to re-evaluate every enabled kind.'),
   })
