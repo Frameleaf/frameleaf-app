@@ -372,7 +372,7 @@ export class JobRepository {
   }
 
   private queueRunClient(name: QueueName) {
-    return this.getQueue(name).client as Promise<Redis>;
+    return this.getQueue(name).client as unknown as Promise<Redis>;
   }
 
   watchWorkers() {

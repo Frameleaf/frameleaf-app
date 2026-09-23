@@ -142,6 +142,18 @@ jobs:
       - name: Run linter
         run: pnpm lint
         if: ${{ !cancelled() }}
+      - name: Capture automatic lint fixes
+        if: failure()
+        run: |
+          pnpm lint:fix || true
+          git diff --binary > "$RUNNER_TEMP/web-lint.patch"
+      - name: Archive automatic lint fixes
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: web-lint-autofix
+          path: ${{ runner.temp }}/web-lint.patch
+          retention-days: 7
     timeout-minutes: 60
   web-unit-tests:
     name: Test Web
@@ -546,6 +558,15 @@ jobs:
           echo "ERROR: Generated files not up to date!"
           echo "Changed files: ${CHANGED_FILES}"
           exit 1
+      - name: Archive generated API files
+        if: failure() && steps.verify-changed-files.outputs.files_changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frameleaf-generated-api
+          path: |
+            packages/sdk/src/fetch-client.ts
+            open-api/immich-openapi-specs.json
+          retention-days: 7
     timeout-minutes: 60
   sql-schema-up-to-date:
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
@@ -629,6 +650,13 @@ jobs:
           echo "Changed files: ${CHANGED_FILES}"
           git diff
           exit 1
+      - name: Archive generated SQL files
+        if: failure() && steps.verify-changed-sql-files.outputs.files_changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frameleaf-generated-sql
+          path: server/src/queries
+          retention-days: 7
     timeout-minutes: 60
     env:
       DB_URL: postgres://postgres:postgres@localhost:5432/immich

@@ -219,17 +219,15 @@ describe(RestorationWorkerService.name, () => {
     mocks.storage.checkFileExists.mockResolvedValue(true);
 
     // MachineLearningRepository.restore (FL-114): `restore(selection, input, options)`, mocked here.
-    restore = vi
-      .fn()
-      .mockImplementation((_selection, _input, options) =>
-        Promise.resolve({
-          outputPath: options.outputPath,
-          width: 2048,
-          height: 1536,
-          modelName: 'faithful-v1',
-          modelVersion: '1.0',
-        }),
-      );
+    restore = vi.fn().mockImplementation((_selection, _input, options) =>
+      Promise.resolve({
+        outputPath: options.outputPath,
+        width: 2048,
+        height: 1536,
+        modelName: 'faithful-v1',
+        modelVersion: '1.0',
+      }),
+    );
     (mocks.machineLearning as unknown as { restore: unknown }).restore = restore;
 
     sut = new RestorationWorkerService(
