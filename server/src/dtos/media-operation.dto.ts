@@ -20,6 +20,15 @@ const MediaOperationLivePhotoPairSchema = z
   })
   .meta({ id: 'MediaOperationLivePhotoPairDto' });
 
+/** One reviewed Library Care finding (FL-69): the item, the finding and the chosen candidate. */
+const MediaOperationMediaHealthEntrySchema = z
+  .object({
+    assetId: z.uuidv4().describe('Asset ID'),
+    findingId: z.uuidv4().describe('Media health finding ID'),
+    candidateId: z.uuidv4().optional().describe('Reviewed candidate ID, for a relink or a recovery'),
+  })
+  .meta({ id: 'MediaOperationMediaHealthEntryDto' });
+
 /**
  * What a checkpoint shows the owner.
  *
@@ -103,6 +112,7 @@ const MediaOperationBulkPayloadSchema = z
     primaryId: z.uuidv4().optional(),
     stackIds: z.array(z.uuidv4()).max(1000).optional(),
     pairs: z.array(MediaOperationLivePhotoPairSchema).max(BULK_MAX_ITEMS).optional(),
+    mediaHealth: z.array(MediaOperationMediaHealthEntrySchema).max(1000).optional(),
   })
   .meta({ id: 'MediaOperationBulkPayloadDto' });
 
