@@ -11,7 +11,13 @@ import {
 } from '$lib/frameleaf/activity';
 import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
 import { UploadState } from '$lib/types';
-import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus, type MediaOperationDto } from '@immich/sdk';
+import {
+  MediaOperationBulkAction,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+  type MediaOperationDto,
+} from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 
 const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDto =>
@@ -29,6 +35,7 @@ const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDt
     revisionId: null,
     settings: { resolution: '3840×2160', format: 'MP4' },
     estimate: null,
+    bulk: null,
     progress: 42,
     processedUnits: '420',
     totalUnits: '1000',
@@ -116,6 +123,94 @@ describe('fromMediaOperation', () => {
 
     expect(item.error).toBe('The worker stopped responding');
     expect(item.errorCode).toBe('worker_lost');
+  });
+});
+
+describe('durable bulk jobs', () => {
+  const bulkJob = (overrides: Partial<MediaOperationDto> = {}) =>
+    operation({
+      kind: MediaOperationKind.Bulk,
+      label: 'favorite (1200 items)',
+      settings: {},
+      processedUnits: '600',
+      totalUnits: '1200',
+      progress: 50,
+      bulk: {
+        action: MediaOperationBulkAction.Favorite,
+        requested: 1200,
+        succeeded: 590,
+        failed: 0,
+        skipped: 10,
+        snapshotTruncated: false,
+        itemsTruncated: false,
+      },
+      ...overrides,
+    });
+
+  it('is titled by its action and reads as running, not rendering', () => {
+    const item = fromMediaOperation(bulkJob());
+
+    expect(item.titleKey).toBe('frameleaf_bulk_favorite');
+    expect(item.statusKey).toBe('frameleaf_activity_bulk_running');
+    expect(item.kindKey).toBe('frameleaf_activity_kind_bulk');
+    expect(item.progress).toBe(50);
+    expect(item.canCancel).toBe(true);
+    expect(item.canRetry).toBe(false);
+  });
+
+  it('shows counts only, never the items themselves', () => {
+    const item = fromMediaOperation(bulkJob());
+
+    expect(item.bulk).toEqual({ requested: 1200, succeeded: 590, failed: 0, skipped: 10 });
+    expect(item.assetId).toBeUndefined();
+    expect(item.details).toEqual([]);
+  });
+
+  it('offers retry for a completed job with failures inside it', () => {
+    const item = fromMediaOperation(
+      bulkJob({
+        status: MediaOperationStatus.Completed,
+        processedUnits: '1200',
+        bulk: {
+          action: MediaOperationBulkAction.Favorite,
+          requested: 1200,
+          succeeded: 1100,
+          failed: 90,
+          skipped: 10,
+          snapshotTruncated: false,
+          itemsTruncated: false,
+        },
+      }),
+    );
+
+    expect(item.failed).toBe(true);
+    expect(item.tone).toBe('danger');
+    expect(item.canRetry).toBe(true);
+    expect(item.canDismiss).toBe(true);
+  });
+
+  it('offers retry for a cancelled job and not for a clean one', () => {
+    expect(fromMediaOperation(bulkJob({ status: MediaOperationStatus.Cancelled })).canRetry).toBe(true);
+    expect(
+      fromMediaOperation(
+        bulkJob({
+          status: MediaOperationStatus.Completed,
+          bulk: {
+            action: MediaOperationBulkAction.Favorite,
+            requested: 1200,
+            succeeded: 1190,
+            failed: 0,
+            skipped: 10,
+            snapshotTruncated: false,
+            itemsTruncated: false,
+          },
+        }),
+      ).canRetry,
+    ).toBe(false);
+  });
+
+  it('does not offer a second cancel while one is being settled', () => {
+    expect(fromMediaOperation(bulkJob({ status: MediaOperationStatus.Cancelling })).canCancel).toBe(false);
   });
 });
 
