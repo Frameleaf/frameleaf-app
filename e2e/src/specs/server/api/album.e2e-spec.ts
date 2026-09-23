@@ -137,6 +137,8 @@ describe('/albums', () => {
       expect(status).toEqual(200);
       expect(body).toEqual({
         ...user1Albums[0],
+        isSmart: false,
+        smartRuleId: null,
         contributorCounts: [{ userId: user1.userId, assetCount: 1 }],
         lastModifiedAssetTimestamp: expect.any(String),
         startDate: expect.any(String),
@@ -405,6 +407,8 @@ describe('/albums', () => {
       expect(status).toBe(200);
       expect(body).toEqual({
         ...user1Albums[0],
+        isSmart: false,
+        smartRuleId: null,
         contributorCounts: [{ userId: user1.userId, assetCount: 1 }],
         lastModifiedAssetTimestamp: expect.any(String),
         startDate: expect.any(String),
@@ -440,6 +444,8 @@ describe('/albums', () => {
       expect(status).toBe(200);
       expect(body).toEqual({
         ...user1Albums[0],
+        isSmart: false,
+        smartRuleId: null,
         contributorCounts: [{ userId: user1.userId, assetCount: 1 }],
         assetCount: 1,
         lastModifiedAssetTimestamp: expect.any(String),
