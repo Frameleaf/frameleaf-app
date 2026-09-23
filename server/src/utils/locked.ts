@@ -54,6 +54,27 @@ export const notLockedOrOwnedBy = (lockedOwnerId: string | undefined, assetAlias
     ? sql<boolean>`(${isNotLocked(assetAlias)} or ${assetRef(assetAlias, 'ownerId')} = ${lockedOwnerId}::uuid)`
     : isNotLocked(assetAlias);
 
+/**
+ * The locks an ordinary view (the timeline) reveals to the owner's elevated session: their sensitive
+ * marks and detections ("Revealed for this session"). Items moved over from the old Locked folder
+ * stay in the Locked view only, as the upstream folder kept them out of the timeline.
+ */
+export const REVEALED_LOCK_REASONS: readonly AssetLockReason[] = [AssetLockReason.Marked, AssetLockReason.Detected];
+
+/**
+ * Locked media an ordinary view shows: none, except `revealOwnerId`'s own items locked for a revealed
+ * reason. Pass the viewer only when their session is elevated (`getLockedOwnerId`).
+ */
+export const revealedLockScope = (revealOwnerId: string | undefined, assetAlias = 'asset') => {
+  if (!revealOwnerId) {
+    return isNotLocked(assetAlias);
+  }
+
+  const owned = sql<boolean>`${assetRef(assetAlias, 'ownerId')} = ${revealOwnerId}::uuid`;
+  const revealed = lockedForReason([...REVEALED_LOCK_REASONS], assetAlias);
+  return sql<boolean>`(${isNotLocked(assetAlias)} or (${owned} and ${revealed}))`;
+};
+
 /** Timeline or Archive, and not locked: what an ordinary read shows. */
 export const isDefaultVisible = (assetAlias = 'asset') =>
   sql<boolean>`(${assetRef(assetAlias, 'visibility')} in (${sql.lit(AssetVisibility.Archive)}, ${sql.lit(AssetVisibility.Timeline)}) and ${isNotLocked(assetAlias)})`;
@@ -64,12 +85,13 @@ export const isTimelineVisible = (assetAlias = 'asset') => visibilityIs(AssetVis
 /**
  * A requested visibility as an API caller means it: `locked` is a locked asset that is not the hidden
  * video part of a live photo (that part locks with its photo but never lists on its own, as before);
- * any other value is that stored visibility on an asset that is not locked.
+ * any other value is that stored visibility on an asset that is not locked, or, with `revealOwnerId`,
+ * one of that owner's own revealed locks (`revealedLockScope`).
  */
-export const visibilityIs = (visibility: AssetVisibility, assetAlias = 'asset') =>
+export const visibilityIs = (visibility: AssetVisibility, assetAlias = 'asset', revealOwnerId?: string) =>
   visibility === AssetVisibility.Locked
     ? sql<boolean>`(${assetRef(assetAlias, 'visibility')} != ${sql.lit(AssetVisibility.Hidden)} and ${isLocked(assetAlias)})`
-    : sql<boolean>`(${assetRef(assetAlias, 'visibility')} = ${sql.lit(visibility)} and ${isNotLocked(assetAlias)})`;
+    : sql<boolean>`(${assetRef(assetAlias, 'visibility')} = ${sql.lit(visibility)} and ${revealedLockScope(revealOwnerId, assetAlias)})`;
 
 /** True when the asset matches any of the requested visibilities (see `visibilityIs`). */
 export const visibilityIn = (visibilities: AssetVisibility[], assetAlias = 'asset') =>
