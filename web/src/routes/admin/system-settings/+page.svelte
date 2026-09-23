@@ -31,6 +31,7 @@
   import ThemeSettings from './ThemeSettings.svelte';
   import TrashSettings from './TrashSettings.svelte';
   import UserSettings from './UserSettings.svelte';
+  import PreservationPanel from '$lib/components/frameleaf/PreservationPanel.svelte';
   import SettingsHost from '$lib/components/frameleaf/settings/SettingsHost.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import { forConfigSave } from '$lib/frameleaf/credentials';
@@ -60,6 +61,7 @@
   } from '@immich/ui';
   import {
     mdiAccountOutline,
+    mdiArchiveLockOutline,
     mdiBackupRestore,
     mdiBellOutline,
     mdiBookshelf,
@@ -239,6 +241,14 @@
       subtitle: $t('admin.notification_settings_description'),
       key: 'notifications',
       icon: mdiBellOutline,
+    },
+    {
+      // FL-74: the design's "Originals & preservation" section of Import & protection.
+      component: PreservationPanel,
+      title: $t('frameleaf_preservation_section_title'),
+      subtitle: $t('frameleaf_preservation_section_description'),
+      key: 'preservation',
+      icon: mdiArchiveLockOutline,
     },
     {
       component: ServerSettings,
