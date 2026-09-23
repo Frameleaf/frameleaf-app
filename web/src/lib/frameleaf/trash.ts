@@ -1,4 +1,5 @@
 import { AssetTypeEnum, type TrashItemResponseDto, type TrashReviewResponseDto } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 
 /**
  * The Trash page and the large-file review (FL-47), ported from the design template's
@@ -52,7 +53,10 @@ export const trashAgeDays = (trashedAt: string | null | undefined, now = Date.no
 };
 
 /** The age label's i18n key and values. */
-export const trashAgeLabel = (trashedAt: string | null | undefined, now = Date.now()) => {
+export const trashAgeLabel = (
+  trashedAt: string | null | undefined,
+  now = Date.now(),
+): { key: Translations; values: Record<string, number> } => {
   const days = trashAgeDays(trashedAt, now);
   if (days === null) {
     return { key: 'frameleaf_trash_age_unknown', values: {} };

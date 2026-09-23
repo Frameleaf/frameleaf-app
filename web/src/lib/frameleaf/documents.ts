@@ -6,6 +6,7 @@ import {
   type DocumentLineDto,
   type DocumentResponseDto,
 } from '@immich/sdk';
+import type { Translations } from 'svelte-i18n';
 
 /**
  * Documents (FL-63): the rules the Documents page and the information panel's "Text in this photo"
@@ -23,11 +24,12 @@ export const DOCUMENT_SEARCH_DEBOUNCE_MS = 250;
 export const DOCUMENT_REREAD_POLL_MS = 5000;
 export const DOCUMENT_REREAD_POLL_LIMIT = 12;
 
-export const documentFieldLabelKey = (field: DocumentField) => `frameleaf_documents_field_${field}`;
+export const documentFieldLabelKey = (field: DocumentField): Translations => `frameleaf_documents_field_${field}`;
 
-export const documentLineStatusKey = (status: DocumentLineStatus) => `frameleaf_documents_line_${status}`;
+export const documentLineStatusKey = (status: DocumentLineStatus): Translations => `frameleaf_documents_line_${status}`;
 
-export const documentFieldStatusKey = (status: DocumentFieldStatus) => `frameleaf_documents_field_status_${status}`;
+export const documentFieldStatusKey = (status: DocumentFieldStatus): Translations =>
+  `frameleaf_documents_field_status_${status}`;
 
 export type ConfidenceLevel = 'high' | 'medium' | 'low';
 

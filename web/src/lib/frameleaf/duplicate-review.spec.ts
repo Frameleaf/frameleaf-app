@@ -92,7 +92,7 @@ describe('duplicate review', () => {
     it('stops offering a group while a job works on it', () => {
       const g = group('g', ['a', 'b']);
       expect(isActionable(g, { state: 'pending' })).toBe(false);
-      expect(isActionable(g, { state: 'failed', reasonKey: 'x' })).toBe(true);
+      expect(isActionable(g, { state: 'failed', reasonKey: 'frameleaf_bulk_reason_failed' })).toBe(true);
       expect(canSuggest(g, { state: 'done' })).toBe(false);
     });
 
