@@ -1762,6 +1762,187 @@ export type AddUsersDto = {
     /** Album users to add */
     albumUsers: AlbumUserAddDto[];
 };
+export type AnalyticsAlbumDto = {
+    id: string;
+    name: string;
+    owned: boolean;
+    ownerName: string;
+    shared: boolean;
+};
+export type AnalyticsAlbumsDto = {
+    /** Albums the viewer owns or belongs to */
+    albums: AnalyticsAlbumDto[];
+    notShared: number;
+    owned: number;
+    ownedShared: number;
+    shared: number;
+    total: number;
+    /** Albums counted but not listed, because the viewer neither owns nor belongs to them */
+    unlisted: number;
+};
+export type AnalyticsCameraDto = {
+    count: number;
+    kind: AnalyticsCameraKind;
+    /** Camera model; null for the other and unknown rows */
+    name: string | null;
+};
+export type AnalyticsDayDto = {
+    /** Items taken on this local date */
+    captured: number;
+    date: string;
+    /** Items added on this UTC date */
+    uploaded: number;
+};
+export type AnalyticsSeriesDefinitionDto = {
+    /** Whether this report carries the series for the selected scope */
+    available: boolean;
+    /** Written by the local nightly collector rather than read live */
+    collected: boolean;
+    /** An estimate, never a charge */
+    estimate: boolean;
+    grain: AnalyticsGrain;
+    id: AnalyticsSeriesId;
+    measurementScope: AnalyticsMeasurementScope;
+    owner: AnalyticsSeriesOwner;
+    /** Selections the series can be read for */
+    scopes: AnalyticsScopeKind[];
+    /** Where the number comes from */
+    source: string;
+    unit: AnalyticsUnit;
+};
+export type AnalyticsHistoryDto = {
+    dayRetentionDays: number;
+    lastObservedAt: string | null;
+    staleAfterHours: number;
+    /** unknown: never collected; stale: last collection is too old */
+    state: AnalyticsState;
+    weekRetentionDays: number;
+};
+export type AnalyticsHostDto = {
+    /** Bytes */
+    capacityBytes: number | null;
+    /** Bytes */
+    freeBytes: number | null;
+    observedAt: string | null;
+    state: AnalyticsState;
+    /** Bytes */
+    volumeUsedBytes: number | null;
+};
+export type AnalyticsMetadataDto = {
+    field: AnalyticsMetadataField;
+    missing: number;
+    present: number;
+    total: number;
+};
+export type AnalyticsProcessingDto = {
+    attempts: number;
+    /** Processing is recorded for the whole server only */
+    available: boolean;
+    completed: number;
+    costedAttempts: number;
+    durationMs: number;
+    /** Estimate from configured hourly rates; never a bill. Null when no attempt had a rate */
+    estimatedCostUsd: number | null;
+    failed: number;
+    /** Attempts without a configured rate; not included in the estimate */
+    uncostedAttempts: number;
+};
+export type AnalyticsBucketDto = {
+    /** Completed processing attempts; null when not available for this scope */
+    completed: number | null;
+    /** Failed processing attempts; null when not available for this scope */
+    failed: number | null;
+    "from": string;
+    /** Library items at the last observation in this period; null when none */
+    items: number | null;
+    /** YYYY-MM for a month, the Monday for a week */
+    key: string;
+    /** Bytes */
+    logicalBytes: number | null;
+    /** When the growth values were read; null for a gap */
+    observedAt: string | null;
+    /** Cut short by the edge of the selected dates */
+    partial: boolean;
+    /** Photos added in this period and still in the library */
+    photos: number;
+    /** Bytes */
+    physicalBytes: number | null;
+    through: string;
+    /** Videos added in this period and still in the library */
+    videos: number;
+};
+export type AnalyticsSummaryDto = {
+    /** Items sharing an original file with another item in this selection */
+    duplicateReferences: number;
+    /** Originals in external libraries, usually outside the library volume */
+    externalLogicalBytes: number;
+    /** Bytes */
+    externalPhysicalBytes: number;
+    /** Original files, Live Photo motion parts included */
+    files: number;
+    /** Photos and videos, Trash included, Locked media and Live Photo motion parts excluded */
+    items: number;
+    /** Every original reference, before physical deduplication */
+    logicalBytes: number;
+    photos: number;
+    /** Original files, each shared file counted once within this selection */
+    physicalBytes: number;
+    /** RAW photos; a subset of photos */
+    raw: number;
+    /** logicalBytes minus physicalBytes of this same selection */
+    savedBytes: number;
+    /** Original files whose size has not been read; excluded from byte totals */
+    unmeasuredFiles: number;
+    /** Bytes */
+    uploadedLogicalBytes: number;
+    /** Bytes */
+    uploadedPhysicalBytes: number;
+    videos: number;
+};
+export type AnalyticsViewDto = {
+    /** Also counted in another view */
+    overlaps: boolean;
+    photos: number;
+    total: number;
+    videos: number;
+    view: AnalyticsView;
+};
+export type AnalyticsReportResponseDto = {
+    albums: AnalyticsAlbumsDto;
+    cameras: AnalyticsCameraDto[];
+    days: AnalyticsDayDto[];
+    definitions: AnalyticsSeriesDefinitionDto[];
+    "from": string;
+    generatedAt: string;
+    history: AnalyticsHistoryDto;
+    host: AnalyticsHostDto;
+    metadata: AnalyticsMetadataDto[];
+    processing: AnalyticsProcessingDto;
+    range: AnalyticsRange;
+    scope: string;
+    scopeKind: AnalyticsScopeKind;
+    /** Account or library name; empty for the whole server */
+    scopeLabel: string;
+    series: AnalyticsBucketDto[];
+    summary: AnalyticsSummaryDto;
+    through: string;
+    views: AnalyticsViewDto[];
+};
+export type AnalyticsScopeOptionDto = {
+    kind: AnalyticsScopeKind;
+    /** Account or library name; empty for the whole server */
+    label: string;
+    libraryId: string | null;
+    /** The account or library has been removed; its items may still count until deleted */
+    removed: boolean;
+    /** The account, or the library owner */
+    userId: string | null;
+    /** The value to pass as `scope` */
+    value: string;
+};
+export type AnalyticsScopesResponseDto = {
+    scopes: AnalyticsScopeOptionDto[];
+};
 export type ApiKeyResponseDto = {
     /** Creation date */
     createdAt: string;
@@ -9115,6 +9296,34 @@ export function addUsersToAlbum({ id, addUsersDto }: {
     })));
 }
 /**
+ * Retrieve library analytics
+ */
+export function getAnalyticsReport({ range, scope }: {
+    range?: AnalyticsRange;
+    scope?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AnalyticsReportResponseDto;
+    }>(`/analytics${QS.query(QS.explode({
+        range,
+        scope
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * List analytics scopes
+ */
+export function getAnalyticsScopes(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AnalyticsScopesResponseDto;
+    }>("/analytics/scopes", {
+        ...opts
+    }));
+}
+/**
  * List all API keys
  */
 export function getApiKeys(opts?: Oazapfts.RequestOpts) {
@@ -16233,6 +16442,71 @@ export enum BulkIdErrorReason {
     Unknown = "unknown",
     Validation = "validation"
 }
+export enum AnalyticsRange {
+    $90Days = "90days",
+    Year = "year"
+}
+export enum AnalyticsCameraKind {
+    Model = "model",
+    Other = "other",
+    Unknown = "unknown"
+}
+export enum AnalyticsGrain {
+    Snapshot = "snapshot",
+    Day = "day"
+}
+export enum AnalyticsSeriesId {
+    LibraryItems = "library.items",
+    LibraryPhotos = "library.photos",
+    LibraryVideos = "library.videos",
+    LibraryLogicalBytes = "library.logicalBytes",
+    LibraryPhysicalBytes = "library.physicalBytes",
+    HostVolumeUsedBytes = "host.volumeUsedBytes",
+    HostCapacityBytes = "host.capacityBytes",
+    LibraryArrivals = "library.arrivals",
+    LibraryCaptures = "library.captures",
+    ProcessingCompleted = "processing.completed",
+    ProcessingFailed = "processing.failed",
+    ProcessingEstimatedCostUsd = "processing.estimatedCostUsd"
+}
+export enum AnalyticsMeasurementScope {
+    Selection = "selection",
+    Host = "host"
+}
+export enum AnalyticsSeriesOwner {
+    Library = "library",
+    Host = "host",
+    Processing = "processing"
+}
+export enum AnalyticsScopeKind {
+    Host = "host",
+    Account = "account",
+    Library = "library"
+}
+export enum AnalyticsUnit {
+    Items = "items",
+    Bytes = "bytes",
+    Attempts = "attempts",
+    Usd = "usd"
+}
+export enum AnalyticsState {
+    Measured = "measured",
+    Stale = "stale",
+    Unknown = "unknown"
+}
+export enum AnalyticsMetadataField {
+    CaptureDate = "captureDate",
+    Location = "location",
+    CameraModel = "cameraModel",
+    AiDescription = "aiDescription",
+    Checksum = "checksum"
+}
+export enum AnalyticsView {
+    Timeline = "timeline",
+    Favorites = "favorites",
+    Archive = "archive",
+    Trash = "trash"
+}
 export enum Permission {
     All = "all",
     ActivityCreate = "activity.create",
@@ -16686,7 +16960,8 @@ export enum ManualJobName {
     IntegrityChecksumMismatchRefresh = "integrity-checksum-mismatch-refresh",
     IntegrityMissingFilesDeleteAll = "integrity-missing-files-delete-all",
     IntegrityUntrackedFilesDeleteAll = "integrity-untracked-files-delete-all",
-    IntegrityChecksumMismatchDeleteAll = "integrity-checksum-mismatch-delete-all"
+    IntegrityChecksumMismatchDeleteAll = "integrity-checksum-mismatch-delete-all",
+    AnalyticsCollect = "analytics-collect"
 }
 export enum MemoryExportFormat {
     Archive = "archive"
@@ -16942,6 +17217,7 @@ export enum QueueJobStatus {
 }
 export enum JobName {
     ICloudSync = "ICloudSync",
+    AnalyticsCollect = "AnalyticsCollect",
     ForkSchemaBackfill = "ForkSchemaBackfill",
     AssetDelete = "AssetDelete",
     AssetDeleteCheck = "AssetDeleteCheck",

@@ -153,7 +153,12 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
         href: Route.systemWorkers(),
       },
       { id: 'admin:libraries', title: $t('external_libraries'), icon: mdiBookshelf, href: Route.libraries() },
-      { id: 'admin:status', title: $t('server_stats'), icon: mdiServerOutline, href: Route.systemStatistics() },
+      {
+        id: 'admin:status',
+        title: $t('frameleaf_analytics_title'),
+        icon: mdiServerOutline,
+        href: Route.libraryAnalytics(),
+      },
       {
         id: 'admin:maintenance',
         title: $t('admin.maintenance_settings'),

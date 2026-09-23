@@ -1,5 +1,6 @@
 import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumService } from 'src/services/album.service.js';
+import { AnalyticsService } from 'src/services/analytics.service.js';
 import { ApiKeyService } from 'src/services/api-key.service.js';
 import { ApiService } from 'src/services/api.service.js';
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
@@ -117,6 +118,7 @@ export const services = [
   AssetService,
   AuthService,
   AuthAdminService,
+  AnalyticsService,
   BestPhotosService,
   BulkOperationService,
   CliService,
