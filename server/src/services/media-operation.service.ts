@@ -1,19 +1,39 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
+  MediaOperationBulkCreateDto,
   MediaOperationDetailDto,
   MediaOperationDto,
   MediaOperationListResponseDto,
   MediaOperationSearchDto,
   MediaOperationStatisticsDto,
 } from 'src/dtos/media-operation.dto.js';
-import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import {
+  MediaOperationBulkAction,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+  Permission,
+} from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   MediaOperation,
   MediaOperationCheckpoint,
   MediaOperationRepository,
 } from 'src/repositories/media-operation.repository.js';
+import { isGranted, requireAccess } from 'src/utils/access.js';
+import {
+  BULK_ACTION_PERMISSIONS,
+  bulkOperationLabel,
+  bulkPayloadProblem,
+  bulkResumeIds,
+  emptyBulkResult,
+  isBulkAction,
+  parseBulkResult,
+  parseBulkSnapshot,
+  type BulkOperationSnapshot,
+} from 'src/utils/bulk-operation.js';
 import { canDismissMediaOperation, canRetryMediaOperation, isActiveMediaOperation } from 'src/utils/media-operation.js';
 
 const DEFAULT_TAKE = 100;
@@ -47,6 +67,63 @@ const mapEstimate = (value: unknown) => {
   };
 };
 
+/**
+ * A bulk job's running totals, read leniently.
+ *
+ * The list query trims the asset ids out of the snapshot, so this must not need them: the action
+ * and the truncation flag come from the snapshot, everything else from the accumulated result.
+ */
+const mapBulkSummary = (operation: MediaOperation): MediaOperationDto['bulk'] => {
+  if (operation.kind !== MediaOperationKind.Bulk) {
+    return null;
+  }
+
+  const snapshot = asObject(operation.snapshot);
+  if (!isBulkAction(snapshot.action)) {
+    return null;
+  }
+
+  const requested = Number(operation.totalUnits ?? 0);
+  const result = parseBulkResult(operation.result, requested);
+
+  return {
+    action: snapshot.action,
+    requested: result.requested,
+    succeeded: result.succeeded,
+    failed: result.failed,
+    skipped: result.skipped,
+    snapshotTruncated: snapshot.truncated === true,
+    itemsTruncated: result.itemsTruncated,
+  };
+};
+
+/**
+ * The detail view's snapshot. A bulk job's frozen id list can run to fifty thousand entries; the
+ * count is what a person auditing the job needs, and the ids themselves stay on the row.
+ */
+const mapSnapshot = (operation: MediaOperation): Record<string, unknown> => {
+  const snapshot = asObject(operation.snapshot);
+  if (operation.kind !== MediaOperationKind.Bulk) {
+    return snapshot;
+  }
+
+  const { assetIds, apiKeyId: _apiKeyId, ...rest } = snapshot;
+  return { ...rest, assetCount: Array.isArray(assetIds) ? assetIds.length : 0 };
+};
+
+const mapBulkItems = (operation: MediaOperation) => {
+  if (operation.kind !== MediaOperationKind.Bulk) {
+    return [];
+  }
+
+  return parseBulkResult(operation.result, Number(operation.totalUnits ?? 0)).items.map((item) => ({
+    id: item.id,
+    status: item.status,
+    reasonKey: item.reasonKey ?? null,
+    message: item.message ?? null,
+  }));
+};
+
 const mapOperation = (operation: MediaOperation): MediaOperationDto => ({
   id: operation.id,
   kind: operation.kind as MediaOperationKind,
@@ -61,6 +138,7 @@ const mapOperation = (operation: MediaOperation): MediaOperationDto => ({
   revisionId: operation.revisionId,
   settings: asObject(operation.settings),
   estimate: mapEstimate(operation.estimate),
+  bulk: mapBulkSummary(operation),
   progress: operation.progress,
   processedUnits: String(operation.processedUnits ?? 0),
   totalUnits: operation.totalUnits === null || operation.totalUnits === undefined ? null : String(operation.totalUnits),
@@ -105,6 +183,7 @@ export class MediaOperationService {
   constructor(
     private logger: LoggingRepository,
     private repository: MediaOperationRepository,
+    private access: AccessRepository,
   ) {
     this.logger.setContext(MediaOperationService.name);
   }
@@ -128,9 +207,86 @@ export class MediaOperationService {
 
     return {
       ...mapOperation(operation),
-      snapshot: asObject(operation.snapshot),
+      snapshot: mapSnapshot(operation),
       checkpoints: checkpoints.map((checkpoint) => mapCheckpoint(checkpoint)),
+      bulkItems: mapBulkItems(operation),
     };
+  }
+
+  /**
+   * Queue a bulk operation over a frozen set of assets (FL-32).
+   *
+   * What this checks now, so the person hears about it while they are still looking:
+   *
+   * - A scoped API key must grant everything the action does. The worker acts as the account, so
+   *   without this a read-only key could queue a delete.
+   * - The action's payload is complete and well formed.
+   * - The album or tags the action writes to are ones this account may write to.
+   *
+   * What it deliberately does not check is access to each asset. That is the worker's job, item by
+   * item, at the moment it applies the change — access can be revoked between now and then, and a
+   * check made here would be stale by the time it mattered.
+   *
+   * Duplicate ids are removed and order is kept; the order is the resume cursor.
+   */
+  async createBulk(auth: AuthDto, dto: MediaOperationBulkCreateDto): Promise<MediaOperationDto> {
+    if (auth.sharedLink) {
+      throw new ForbiddenException('Bulk operations are not available on a shared link');
+    }
+
+    const requested = BULK_ACTION_PERMISSIONS[dto.action];
+    if (auth.apiKey && !isGranted({ requested: [...requested], current: auth.apiKey.permissions })) {
+      throw new ForbiddenException(`Missing required permission: ${requested.join(', ')}`);
+    }
+
+    if (dto.requestId) {
+      const existing = await this.repository.getBulkByRequestId(auth.user.id, dto.requestId);
+      if (existing) {
+        return mapOperation(existing);
+      }
+    }
+
+    const assetIds = [...new Set(dto.assetIds)];
+    const payload = dto.payload ?? {};
+    const problem = bulkPayloadProblem(dto.action, payload, assetIds);
+    if (problem) {
+      throw new BadRequestException(problem);
+    }
+
+    await this.requireTargetAccess(auth, dto.action, payload);
+
+    const snapshot: BulkOperationSnapshot = {
+      action: dto.action,
+      assetIds,
+      payload,
+      submittedTotal: dto.submittedTotal ?? null,
+      truncated: dto.truncated ?? false,
+      scope: dto.scope,
+      requestId: dto.requestId ?? null,
+      apiKeyId: auth.apiKey?.id ?? null,
+    };
+
+    const created = await this.repository.create({
+      ownerId: auth.user.id,
+      kind: MediaOperationKind.Bulk,
+      // Bulk work runs on this server's own workers; there is no remote to choose.
+      destination: MediaOperationDestination.Local,
+      destinationDetail: null,
+      label: bulkOperationLabel(dto.action, assetIds.length),
+      assetId: null,
+      resultAssetId: null,
+      retryOfId: null,
+      projectId: null,
+      revisionId: null,
+      snapshot: snapshot as unknown as Record<string, unknown>,
+      settings: {},
+      estimate: null,
+      result: emptyBulkResult(assetIds.length) as unknown as Record<string, unknown>,
+      totalUnits: String(assetIds.length),
+    });
+
+    this.logger.log(`Bulk ${dto.action} queued as media operation ${created.id} (${assetIds.length} items)`);
+    return mapOperation(created);
   }
 
   /**
@@ -167,6 +323,10 @@ export class MediaOperationService {
    */
   async retry(auth: AuthDto, id: string): Promise<MediaOperationDto> {
     const operation = await this.findOwned(auth, id);
+
+    if (operation.kind === MediaOperationKind.Bulk) {
+      return this.retryBulk(auth, operation);
+    }
 
     if (!canRetryMediaOperation(operation.status as MediaOperationStatus)) {
       throw new BadRequestException('Only a failed or cancelled job can be retried');
@@ -234,6 +394,114 @@ export class MediaOperationService {
         .reduce((total, bucket) => total + bucket.count, 0),
       unreleasedRemote: unreleased.length,
     };
+  }
+
+  /**
+   * Retry a bulk operation: resume it, not repeat it.
+   *
+   * The new job covers exactly the items the old one did not finish — those that failed and those
+   * it never reached — and nothing it already applied or refused for lack of access. A completed
+   * job with failures inside it can be retried too, because "completed" there means the worker got
+   * to the end, not that every item worked.
+   *
+   * Asking twice while a retry is still running answers with that retry.
+   */
+  private async retryBulk(auth: AuthDto, operation: MediaOperation): Promise<MediaOperationDto> {
+    const status = operation.status as MediaOperationStatus;
+    if (isActiveMediaOperation(status)) {
+      throw new BadRequestException('This job is still running');
+    }
+
+    const active = await this.repository.getActiveRetry(operation.id, auth.user.id);
+    if (active) {
+      return mapOperation(active);
+    }
+
+    const snapshot = parseBulkSnapshot(operation.snapshot);
+    const result = parseBulkResult(operation.result, snapshot.assetIds.length);
+    const remaining = bulkResumeIds(snapshot, result, Number(operation.processedUnits ?? 0));
+    if (remaining.length === 0) {
+      throw new BadRequestException('Nothing in this job is left to retry');
+    }
+
+    // The submitting key may since have been narrowed; a retry is a new submission.
+    const requested = BULK_ACTION_PERMISSIONS[snapshot.action];
+    if (auth.apiKey && !isGranted({ requested: [...requested], current: auth.apiKey.permissions })) {
+      throw new ForbiddenException(`Missing required permission: ${requested.join(', ')}`);
+    }
+
+    await this.requireTargetAccess(auth, snapshot.action, snapshot.payload);
+
+    const retrySnapshot: BulkOperationSnapshot = {
+      ...snapshot,
+      assetIds: remaining,
+      // The idempotency key belongs to the original submission, not to this retry.
+      requestId: null,
+      apiKeyId: auth.apiKey?.id ?? null,
+    };
+
+    const retried = await this.repository.create({
+      ownerId: operation.ownerId,
+      kind: MediaOperationKind.Bulk,
+      destination: operation.destination,
+      destinationDetail: operation.destinationDetail,
+      label: bulkOperationLabel(snapshot.action, remaining.length),
+      assetId: null,
+      resultAssetId: null,
+      retryOfId: operation.id,
+      projectId: null,
+      revisionId: null,
+      snapshot: retrySnapshot as unknown as Record<string, unknown>,
+      settings: operation.settings,
+      estimate: null,
+      result: emptyBulkResult(remaining.length) as unknown as Record<string, unknown>,
+      totalUnits: String(remaining.length),
+      maxAttempts: operation.maxAttempts,
+    });
+
+    this.logger.log(`Bulk media operation ${operation.id} retried as ${retried.id} (${remaining.length} items)`);
+    return mapOperation(retried);
+  }
+
+  /**
+   * The album or tags a bulk action writes to must be writable by this account now. Assets are
+   * checked later, one at a time, by the worker.
+   */
+  private async requireTargetAccess(
+    auth: AuthDto,
+    action: MediaOperationBulkAction,
+    payload: BulkOperationSnapshot['payload'],
+  ): Promise<void> {
+    switch (action) {
+      case MediaOperationBulkAction.AddToAlbum: {
+        await requireAccess(this.access, {
+          auth,
+          permission: Permission.AlbumAssetCreate,
+          ids: [payload.albumId as string],
+        });
+        break;
+      }
+      case MediaOperationBulkAction.RemoveFromAlbum: {
+        await requireAccess(this.access, {
+          auth,
+          permission: Permission.AlbumAssetDelete,
+          ids: [payload.albumId as string],
+        });
+        break;
+      }
+      case MediaOperationBulkAction.Tag:
+      case MediaOperationBulkAction.Untag: {
+        await requireAccess(this.access, { auth, permission: Permission.TagAsset, ids: payload.tagIds ?? [] });
+        break;
+      }
+      case MediaOperationBulkAction.Unstack: {
+        await requireAccess(this.access, { auth, permission: Permission.StackDelete, ids: payload.stackIds ?? [] });
+        break;
+      }
+      default: {
+        break;
+      }
+    }
   }
 
   private async findOwned(auth: AuthDto, id: string): Promise<MediaOperation> {
