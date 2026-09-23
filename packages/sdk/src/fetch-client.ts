@@ -757,6 +757,8 @@ export type PhysicalDeduplicationRetainedDto = {
     canView: boolean;
     /** Hex-encoded SHA-1 checksum of the original file */
     checksum: string;
+    /** Copies this retained original would share that are Locked media of another account; counted, never named (FL-73) */
+    hiddenCopies: number;
     originalFileName: string;
     /** Path of the retained original file */
     originalPath: string;

@@ -10,7 +10,13 @@ import {
   PhysicalDeduplicationReviewRequestDto,
   PhysicalDeduplicationReviewResponseDto,
 } from 'src/dtos/physical-deduplication.dto.js';
-import { ImmichWorker, MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import {
+  DatabaseLock,
+  ImmichWorker,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+} from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   MediaOperation,
@@ -33,7 +39,6 @@ import {
   mergePhysicalDeduplicationItem,
   parsePhysicalDeduplicationResult,
   parsePhysicalDeduplicationSnapshot,
-  physicalDeduplicationLabel,
   physicalDeduplicationProgress,
   planPhysicalDeduplicationRetry,
 } from 'src/utils/physical-deduplication-plan.js';
@@ -149,22 +154,18 @@ export class PhysicalDeduplicationPlanService {
    * saved, or the typed confirmation is not the plan's.
    */
   async apply(auth: AuthDto, dto: PhysicalDeduplicationApplyRequestDto): Promise<MediaOperationDto> {
+    // Checked first so a repeated submit is answered without checking the whole plan again; the
+    // insert below checks once more under a lock, which is what actually decides a race.
     const active = await this.operations.getActiveOfKind(KIND);
     if (active) {
-      const own =
-        active.fingerprint === dto.fingerprint ? await this.operations.getForOwner(active.id, auth.user.id) : null;
-      if (own) {
-        // The same administrator submitting the same plan again: the job already running is the answer.
-        return mapOperation(own);
-      }
-      throw new ConflictException('Another plan is being applied. Wait for it to finish.');
+      return this.answerActive(auth, dto, active);
     }
 
     const plan = await this.deduplication.preparePlan(auth, dto);
     await this.deduplication.requireApplyAllowed(plan);
 
     if (dto.reviewToken !== plan.reviewToken) {
-      throw new ConflictException('The decisions changed since the plan was reviewed. Review it again.');
+      throw new ConflictException('This review is no longer valid, or the decisions changed. Review the plan again.');
     }
     if (dto.confirmation.trim() !== plan.confirmation) {
       throw new BadRequestException(`Type ${plan.confirmation} to apply this plan.`);
@@ -184,27 +185,52 @@ export class PhysicalDeduplicationPlanService {
       estimatedBytes: plan.estimatedBytes,
     };
 
-    const created = await this.operations.create({
-      ownerId: auth.user.id,
-      kind: KIND,
-      // Applied by this server's own workers; files never leave it.
-      destination: MediaOperationDestination.Local,
-      destinationDetail: null,
-      label: physicalDeduplicationLabel(plan.planId, plan.items.length),
-      assetId: null,
-      resultAssetId: null,
-      retryOfId: null,
-      projectId: null,
-      revisionId: null,
-      snapshot: snapshot as unknown as Record<string, unknown>,
-      settings: {},
-      estimate: null,
-      result: emptyPhysicalDeduplicationResult() as unknown as Record<string, unknown>,
-      totalUnits: String(plan.items.length),
-    });
+    const outcome = await this.operations.createExclusive(
+      {
+        ownerId: auth.user.id,
+        kind: KIND,
+        // Applied by this server's own workers; files never leave it.
+        destination: MediaOperationDestination.Local,
+        destinationDetail: null,
+        // The plan's name, which reads the same in every language; Activity titles the job itself.
+        label: plan.planId,
+        assetId: null,
+        resultAssetId: null,
+        retryOfId: null,
+        projectId: null,
+        revisionId: null,
+        snapshot: snapshot as unknown as Record<string, unknown>,
+        settings: { planId: plan.planId, copies: plan.items.length },
+        estimate: null,
+        result: emptyPhysicalDeduplicationResult() as unknown as Record<string, unknown>,
+        totalUnits: String(plan.items.length),
+      },
+      DatabaseLock.PhysicalDeduplicationApply,
+    );
+    if ('active' in outcome) {
+      return this.answerActive(auth, dto, outcome.active);
+    }
 
+    const { created } = outcome;
     this.logger.log(`Physical deduplication plan ${plan.planId} queued as ${created.id} (${plan.items.length} copies)`);
     return mapOperation(created);
+  }
+
+  /**
+   * A plan is already being applied. The same administrator submitting the same plan again gets the
+   * job already running; anything else is a conflict.
+   */
+  private async answerActive(
+    auth: AuthDto,
+    dto: PhysicalDeduplicationApplyRequestDto,
+    active: { id: string; fingerprint: string | null },
+  ): Promise<MediaOperationDto> {
+    const own =
+      active.fingerprint === dto.fingerprint ? await this.operations.getForOwner(active.id, auth.user.id) : undefined;
+    if (own) {
+      return mapOperation(own);
+    }
+    throw new ConflictException('Another plan is being applied. Wait for it to finish.');
   }
 
   /** One applied plan as every administrator's page shows it: counts and names, never the copies. */
@@ -337,6 +363,9 @@ export class PhysicalDeduplicationPlanService {
     if (!owner?.isAdmin) {
       throw new Error('The administrator who applied this plan no longer has administrator access');
     }
+    // The feature must still be on, and the saved retained account still the one the plan retains
+    // originals in, on every claim: a resumed or retried job never outlives a settings change.
+    await this.deduplication.requireApplyAllowed({ masterUserId: snapshot.masterUserId });
 
     let result: PhysicalDeduplicationApplyResult = {
       ...parsePhysicalDeduplicationResult(operation.result),
@@ -357,6 +386,19 @@ export class PhysicalDeduplicationPlanService {
     }
 
     const verified: PhysicalDeduplicationVerified = new Map();
+    // The stored plan is marked applied once this run changes a file, so the page reports it as
+    // applied (or partly applied) rather than as a preview whose evidence merely changed.
+    let marked = false;
+    const markApplied = async () => {
+      if (marked) {
+        return;
+      }
+      if (result.summary.applied + result.summary.alreadyApplied === 0) {
+        return;
+      }
+      marked = true;
+      await this.recordApplied(snapshot, result);
+    };
 
     while (processed < total) {
       if (this.stopping) {
@@ -371,6 +413,7 @@ export class PhysicalDeduplicationPlanService {
       const outcome = await this.applyOne(snapshot, item, verified);
       result = { ...mergePhysicalDeduplicationItem(result, outcome), inFlight: null };
       processed++;
+      await markApplied();
 
       if (!(await this.proceed(id, claimToken, await this.write(id, claimToken, result, processed, total)))) {
         return;
@@ -384,7 +427,12 @@ export class PhysicalDeduplicationPlanService {
       if (!(await this.proceed(id, claimToken, await this.write(id, claimToken, planned, processed, total)))) {
         return;
       }
-      if (await this.operations.requeue(id, claimToken, { delayMs: MEDIA_OPERATION_AUTO_RETRY_DELAY_MS })) {
+      // Handing the job back for its retry pass is not a failed attempt, so the attempt is returned.
+      const requeued = await this.operations.requeue(id, claimToken, {
+        delayMs: MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
+        returnAttempt: true,
+      });
+      if (requeued) {
         this.logger.log(`Physical deduplication job ${id}: retrying ${planned.retry?.ids.length ?? 0} copies once`);
         return;
       }
@@ -404,6 +452,7 @@ export class PhysicalDeduplicationPlanService {
           return;
         }
         result = mergePhysicalDeduplicationItem(result, await this.applyOne(snapshot, item, verified));
+        await markApplied();
       }
       result = { ...result, inFlight: null, retry: { ...pass, processed: pass.processed + 1 } };
 
@@ -413,6 +462,9 @@ export class PhysicalDeduplicationPlanService {
     }
 
     if (await this.operations.beginValidation(id, claimToken)) {
+      if (result.summary.applied + result.summary.alreadyApplied > 0) {
+        await this.recordApplied(snapshot, result);
+      }
       await this.operations.complete(id, claimToken, { resultAssetId: null });
       const { applied, alreadyApplied, skipped, failed, reclaimedBytes } = result.summary;
       this.logger.log(
@@ -423,6 +475,13 @@ export class PhysicalDeduplicationPlanService {
     }
 
     await this.operations.acknowledgeCancel(id, { released: false });
+  }
+
+  private recordApplied(snapshot: PhysicalDeduplicationApplySnapshot, result: PhysicalDeduplicationApplyResult) {
+    return this.deduplication.recordPlanApplied(snapshot.fingerprint, {
+      linkedAssets: result.summary.applied + result.summary.alreadyApplied,
+      deletedBytes: result.summary.reclaimedBytes,
+    });
   }
 
   /** One copy, answered whatever happens: an unexpected error fails the copy, not the job. */
