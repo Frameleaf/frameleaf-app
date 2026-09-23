@@ -702,17 +702,17 @@
       "version": 10
     },
     {
-      "bytes": 7458,
+      "bytes": 11216,
       "category": "plan",
       "id": "61408007",
       "source": "studio/README.md",
-      "sourceSha256": "b3c72dcd99eb939b4c6e60274e31e3e0f91fc9e02a7196a9381265fa70ece2fe",
+      "sourceSha256": "0927fa3594b744a0e42cdc3cb78397e7ca91f116975cc6792049f326132e4030",
       "title": "Studio and Freecut Source Inventory",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61408007/Studio+and+Freecut+Source+Inventory",
-      "verification": "Version 5 adds, above the retained FL-84/FL-86 engine-workspace candidate mirror, the integration-branch studio/README.md (FL-88 host boundary, FL-90 resource inventory, FL-92 command catalogue) with its SHA-256 and byte count, mirrored by FL-44 from branch codex/FL-44-inventory-ledger-sync (not merged, no PR); the two candidate lines are labelled as not yet reconciled, every earlier section and receipt is preserved unchanged; full page read back after update.",
+      "verification": "Decoded full HTML source readback matches reconciled Studio README; historical candidate bodies and links retained. PR133 isolated engine recovery remains unpublished and unqualified for distribution or production integration.",
       "verified": true,
-      "verifiedAt": "2026-09-23T10:36:50.135Z",
-      "version": 5
+      "verifiedAt": "2026-09-23T19:41:15Z",
+      "version": 6
     },
     {
       "bytes": 9292,
@@ -880,9 +880,17 @@
       "sourceSha256": "c47ebe3406312cc11564f6c94140d5883b1b4e03f73d86a65def4e41623cac72",
       "title": "FL-29 web production primitives",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539380/FL-29+web+production+primitives",
-      "version": 8,
-      "verified": true,
-      "verifiedAt": "2026-09-23T19:38:44Z"
+      "version": 8
+    },
+    {
+      "bytes": 33014,
+      "category": "development",
+      "id": "61997196",
+      "source": "docs/docs/developer/frameleaf-plan/fl86-distribution-rights.md",
+      "sourceSha256": "1ccec63b8b5baabcfd769f5516ce458a156a863b5a38db0fbac23a7b1f655dab",
+      "title": "FL-86 Studio artifact attribution and resource rights",
+      "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61997196/FL-86+Studio+artifact+attribution+and+resource+rights",
+      "version": 6
     }
   ],
   "spaceId": "61374475",
