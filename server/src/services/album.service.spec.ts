@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { CreateAlbumDto } from 'src/dtos/album.dto.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AlbumKind, AlbumUserRole, AssetOrder, UserMetadataKey } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, AssetOrder, AssetVisibility, UserMetadataKey } from 'src/enum.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AlbumUserFactory } from 'test/factories/album-user.factory.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
@@ -476,6 +476,37 @@ describe(AlbumService.name, () => {
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(mocks.album.getAssetIds).not.toHaveBeenCalled();
+      expect(mocks.album.update).not.toHaveBeenCalled();
+    });
+
+    it("should refuse the caller's own Locked photo as the cover with a clear error (FL-53)", async () => {
+      const album = AlbumFactory.create();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const locked = AssetFactory.create({ ownerId: owner.id, visibility: AssetVisibility.Locked });
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.asset.getById.mockResolvedValue(locked as never);
+
+      await expect(
+        sut.update(AuthFactory.create(owner), album.id, { albumThumbnailAssetId: locked.id }),
+      ).rejects.toThrow('A Locked photo cannot be an album cover');
+
+      expect(mocks.asset.getById).toHaveBeenCalledWith(locked.id);
+      expect(mocks.album.update).not.toHaveBeenCalled();
+    });
+
+    it("should not reveal that another person's photo is Locked when it is refused as the cover", async () => {
+      const album = AlbumFactory.create();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const othersLocked = AssetFactory.create({ visibility: AssetVisibility.Locked });
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.asset.getById.mockResolvedValue(othersLocked as never);
+
+      await expect(
+        sut.update(AuthFactory.create(owner), album.id, { albumThumbnailAssetId: othersLocked.id }),
+      ).rejects.toThrow('Invalid album thumbnail');
+
       expect(mocks.album.update).not.toHaveBeenCalled();
     });
 

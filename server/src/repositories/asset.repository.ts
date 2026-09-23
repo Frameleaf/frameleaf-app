@@ -41,6 +41,7 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { releaseLockedAlbumCovers } from 'src/utils/album-cover.js';
 import {
   anyUuid,
   asUuid,
@@ -932,7 +933,18 @@ export class AssetRepository {
     if (ids.length === 0) {
       return;
     }
-    await this.db.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
+
+    if (options.visibility !== AssetVisibility.Locked) {
+      await this.db.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
+      return;
+    }
+
+    // An album cover is never a Locked photo (FL-53): moving into the Locked folder releases the cover
+    // in the same transaction.
+    await this.inTransaction(async (tx) => {
+      await tx.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
+      await releaseLockedAlbumCovers(tx, ids);
+    });
   }
 
   async updateByLibraryId(libraryId: string, options: Updateable<AssetTable>): Promise<void> {
@@ -942,8 +954,12 @@ export class AssetRepository {
   async update(asset: Updateable<AssetTable> & { id: string }) {
     const value = omitBy(asset, isUndefined);
     delete value.id;
-    if (!isEmpty(value)) {
-      return this.db
+    if (isEmpty(value)) {
+      return this.getById(asset.id, { exifInfo: true, faces: {}, edits: true });
+    }
+
+    const updateAndSelect = (db: Kysely<DB>) =>
+      db
         .with('asset', (qb) => qb.updateTable('asset').set(asset).where('id', '=', asUuid(asset.id)).returningAll())
         .selectFrom('asset')
         .selectAll('asset')
@@ -951,9 +967,23 @@ export class AssetRepository {
         .$call((qb) => qb.select(withFaces))
         .$call((qb) => qb.select(withEdits))
         .executeTakeFirst();
+
+    if (asset.visibility !== AssetVisibility.Locked) {
+      return updateAndSelect(this.db);
     }
 
-    return this.getById(asset.id, { exifInfo: true, faces: {}, edits: true });
+    // An album cover is never a Locked photo (FL-53): moving into the Locked folder releases the cover
+    // in the same transaction, as a separate statement so the new visibility is visible to it.
+    return this.inTransaction(async (tx) => {
+      const updated = await updateAndSelect(tx);
+      await releaseLockedAlbumCovers(tx, [asset.id]);
+      return updated;
+    });
+  }
+
+  /** Runs `callback` in a transaction, joining the current one when this repository is bound to it. */
+  private inTransaction<T>(callback: (tx: Kysely<DB>) => Promise<T>): Promise<T> {
+    return this.db.isTransaction ? callback(this.db) : this.db.transaction().execute(callback);
   }
 
   async remove(asset: {

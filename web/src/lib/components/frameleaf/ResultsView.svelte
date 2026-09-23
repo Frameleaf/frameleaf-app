@@ -116,6 +116,7 @@
     isArchived: asset.visibility === AssetVisibility.Archive,
     isTrashed: asset.isTrashed,
     isLivePhoto: !!asset.livePhotoVideoId,
+    isLocked: asset.visibility === AssetVisibility.Locked,
     stackId: asset.stack?.id ?? null,
   });
 
