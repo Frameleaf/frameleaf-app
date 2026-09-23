@@ -341,6 +341,8 @@ export type AdminConfigNsfwDetectionDto = {
     threshold: number;
 };
 export type AdminConfigOcrDto = {
+    /** Suggest receipt and document fields (dates, totals, references) from recognized text */
+    documentFields?: boolean;
     /** Whether the task is enabled */
     enabled: boolean;
     /** Maximum resolution for OCR processing */
@@ -2473,6 +2475,120 @@ export type UserConfigDto = {
     theme: UserConfigThemeDto;
     trash: UserConfigTrashDto;
     user: UserConfigUserDto;
+};
+export type DocumentSearchResponseDto = {
+    items: AssetResponseDto[];
+    nextPage: string | null;
+    total: number;
+};
+export type DocumentRegionDto = {
+    /** Normalized x coordinate of corner 1 (0-1) */
+    x1: number;
+    /** Normalized x coordinate of corner 2 (0-1) */
+    x2: number;
+    /** Normalized x coordinate of corner 3 (0-1) */
+    x3: number;
+    /** Normalized x coordinate of corner 4 (0-1) */
+    x4: number;
+    /** Normalized y coordinate of corner 1 (0-1) */
+    y1: number;
+    /** Normalized y coordinate of corner 2 (0-1) */
+    y2: number;
+    /** Normalized y coordinate of corner 3 (0-1) */
+    y3: number;
+    /** Normalized y coordinate of corner 4 (0-1) */
+    y4: number;
+};
+export type DocumentFieldCandidateDto = {
+    /** Recognition confidence of that line; null for a corrected line */
+    confidence: number | null;
+    /** Recognized line the value was read from */
+    lineId: string;
+    region: DocumentRegionDto;
+    /** The value as the text reads it */
+    value: string;
+};
+export type DocumentFieldResponseDto = {
+    /** Values the text suggests, most likely first */
+    candidates: DocumentFieldCandidateDto[];
+    /** Recognition confidence of the supporting line (0-1) */
+    confidence: number | null;
+    /** ID of the owner’s decision about this field */
+    editId: string | null;
+    /** The supporting text has since been read differently or is gone */
+    evidenceChanged: boolean;
+    field: DocumentField;
+    /** Recognized line supporting the value */
+    lineId: string | null;
+    region: (DocumentRegionDto) | null;
+    /** Revision of the owner’s decision */
+    revision: number | null;
+    status: DocumentFieldStatus;
+    /** When the owner last decided */
+    updatedAt: string | null;
+    /** The suggested, confirmed or corrected value; null when dismissed */
+    value: string | null;
+};
+export type DocumentLineDto = {
+    /** Recognition confidence (0-1) */
+    confidence: number | null;
+    /** ID of the owner’s decision about this line */
+    editId: string | null;
+    /** The decision was made against text that has since been read differently */
+    evidenceChanged: boolean;
+    /** Recognized line ID, or the decision ID of a kept correction */
+    id: string;
+    /** Recognized line ID; null once the line is gone */
+    ocrId: string | null;
+    /** The recognized text, while the recognized line exists */
+    recognizedText: string | null;
+    region: (DocumentRegionDto) | null;
+    /** Revision of the owner’s decision */
+    revision: number | null;
+    status: DocumentLineStatus;
+    /** What the line reads: the owner’s correction or the recognized text */
+    text: string;
+};
+export type DocumentRecognitionDto = {
+    /** Text recognition is switched on */
+    enabled: boolean;
+    /** A processing destination is chosen for text recognition */
+    routed: boolean;
+};
+export type DocumentResponseDto = {
+    assetId: string;
+    /** The caller owns the photo and may correct its text */
+    canEdit: boolean;
+    fields: DocumentFieldResponseDto[];
+    /** Field suggestions are switched on */
+    fieldsEnabled: boolean;
+    lines: DocumentLineDto[];
+    /** Whether the photo can be read again; owner only */
+    recognition: (DocumentRecognitionDto) | null;
+    /** When the text was last read */
+    recognizedAt: string | null;
+};
+export type DocumentFieldEditDto = {
+    action: DocumentEditAction;
+    /** Recognized line supporting the value */
+    lineId?: string | null;
+    /** The recognized text of that line the caller read */
+    recognizedText?: string;
+    /** Revision of the existing decision, if there is one */
+    revision?: number | null;
+    /** The value, for confirm and correct */
+    value?: string;
+};
+export type DocumentLineEditDto = {
+    action: DocumentEditAction;
+    /** Recognized line the decision is about */
+    ocrId: string;
+    /** The recognized text the caller read; refused when it changed */
+    recognizedText: string;
+    /** Revision of the existing decision, if there is one */
+    revision?: number | null;
+    /** The corrected text, for correct */
+    value?: string;
 };
 export type DownloadArchiveDto = {
     /** The name of the archive to download, without extension */
@@ -8518,6 +8634,107 @@ export function getUserConfigDefaults(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Search documents
+ */
+export function searchDocuments({ page, query, size }: {
+    page?: number;
+    query?: string;
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentSearchResponseDto;
+    }>(`/documents${QS.query(QS.explode({
+        page,
+        query,
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve a document
+ */
+export function getDocument({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentResponseDto;
+    }>(`/documents/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Clear a document field decision
+ */
+export function deleteDocumentField({ field, id, revision }: {
+    field: DocumentField;
+    id: string;
+    revision: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentResponseDto;
+    }>(`/documents/${encodeURIComponent(id)}/fields/${encodeURIComponent(field)}${QS.query(QS.explode({
+        revision
+    }))}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Decide a document field
+ */
+export function updateDocumentField({ field, id, documentFieldEditDto }: {
+    field: DocumentField;
+    id: string;
+    documentFieldEditDto: DocumentFieldEditDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentResponseDto;
+    }>(`/documents/${encodeURIComponent(id)}/fields/${encodeURIComponent(field)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: documentFieldEditDto
+    })));
+}
+/**
+ * Correct or dismiss a line of text
+ */
+export function updateDocumentLine({ id, documentLineEditDto }: {
+    id: string;
+    documentLineEditDto: DocumentLineEditDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentResponseDto;
+    }>(`/documents/${encodeURIComponent(id)}/lines`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: documentLineEditDto
+    })));
+}
+/**
+ * Restore a line of text
+ */
+export function deleteDocumentLine({ editId, id, revision }: {
+    editId: string;
+    id: string;
+    revision: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DocumentResponseDto;
+    }>(`/documents/${encodeURIComponent(id)}/lines/${encodeURIComponent(editId)}${QS.query(QS.explode({
+        revision
+    }))}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Download asset archive
  */
 export function downloadArchive({ key, slug, downloadArchiveDto }: {
@@ -13378,8 +13595,33 @@ export enum AssetRejectReason {
 export enum AssetJobName {
     RefreshFaces = "refresh-faces",
     RefreshMetadata = "refresh-metadata",
+    RefreshOcr = "refresh-ocr",
     RegenerateThumbnail = "regenerate-thumbnail",
     TranscodeVideo = "transcode-video"
+}
+export enum DocumentLineStatus {
+    Recognized = "recognized",
+    Corrected = "corrected",
+    Dismissed = "dismissed",
+    Kept = "kept"
+}
+export enum DocumentField {
+    Date = "date",
+    Total = "total",
+    Reference = "reference",
+    Email = "email",
+    Phone = "phone"
+}
+export enum DocumentFieldStatus {
+    Suggested = "suggested",
+    Confirmed = "confirmed",
+    Corrected = "corrected",
+    Dismissed = "dismissed"
+}
+export enum DocumentEditAction {
+    Confirm = "confirm",
+    Correct = "correct",
+    Dismiss = "dismiss"
 }
 export enum AssetTypeEnum {
     Image = "IMAGE",
