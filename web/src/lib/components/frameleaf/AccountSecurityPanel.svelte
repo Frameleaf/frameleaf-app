@@ -34,7 +34,8 @@
   let { user, sessions }: { user: UserAdminResponseDto; sessions: SessionResponseDto[] } = $props();
 
   const live = $derived(canChangeSecrets(user));
-  // The server refuses a self password reset through the admin path, matching the legacy action.
+  // An administrator resets their own password in their account settings, not from here. The
+  // server does not refuse it on this path, so this is a courtesy that matches the legacy action.
   const canResetPassword = $derived(live && authManager.user.id !== user.id);
 
   const lastSeen = (session: SessionResponseDto) =>
