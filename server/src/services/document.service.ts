@@ -8,7 +8,6 @@ import {
   DocumentSearchDto,
   DocumentSearchResponseDto,
 } from 'src/dtos/document.dto.js';
-import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { AssetVisibility, DocumentEditAction, DocumentField, MlWorkload, Permission } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -24,22 +23,21 @@ import { asDateTimeString } from 'src/utils/date.js';
 import {
   assembleDocument,
   AssembledDocument,
+  cropBoxOf,
   DocumentOcrLine,
   DocumentRegion,
   fieldKey,
+  isRegionInsideCrop,
   LINE_KEY_PREFIX,
   lineKey,
   regionOf,
 } from 'src/utils/documents.js';
-import { boundingBoxOverlap } from 'src/utils/editor.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { isOcrEnabled } from 'src/utils/misc.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 
 type DocumentAsset = NonNullable<Awaited<ReturnType<DocumentRepository['getAsset']>>>;
-
-type CropBox = { x1: number; y1: number; x2: number; y2: number };
 
 type DocumentContext = {
   asset: DocumentAsset;
@@ -50,23 +48,6 @@ type DocumentContext = {
   edits: DocumentEdit[];
   document: AssembledDocument;
   display: (region: DocumentRegion) => DocumentRegion;
-};
-
-/** A crop keeps a region when at least half of it is inside, the rule `checkOcrVisibility` applies. */
-export const isRegionInsideCrop = (
-  region: DocumentRegion,
-  dimensions: { width: number; height: number },
-  crop?: CropBox,
-): boolean => {
-  if (!crop) {
-    return true;
-  }
-
-  const xs = [region.x1, region.x2, region.x3, region.x4].map((value) => value * dimensions.width);
-  const ys = [region.y1, region.y2, region.y3, region.y4].map((value) => value * dimensions.height);
-  const box = { x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) };
-  // a zero-sized box or image divides by zero; NaN fails the test, so unknown geometry stays hidden
-  return boundingBoxOverlap(box, crop) >= 0.5;
 };
 
 const CONFLICT_MESSAGE = 'The text or the decision changed since it was read; reload and try again';
@@ -191,8 +172,13 @@ export class DocumentService {
       throw new BadRequestException('Field suggestions are switched off');
     }
 
-    const existing = context.edits.find((edit) => edit.key === fieldKey(field));
-    this.assertRevision(existing, dto.revision);
+    // The revision a change names is the one the owner could see. A stored decision a crop hides is
+    // not shown, so a change made without it replaces it at its own revision instead of being refused.
+    const stored = context.edits.find((edit) => edit.key === fieldKey(field));
+    const shown = context.document.fields.find((item) => item.field === field && item.editId !== null);
+    if ((dto.revision ?? null) !== (shown?.revision ?? null)) {
+      throw new ConflictException(CONFLICT_MESSAGE);
+    }
 
     let values: { value: string | null; sourceText: string | null; region: DocumentRegion | null };
     switch (dto.action) {
@@ -246,8 +232,8 @@ export class DocumentService {
     };
 
     await this.write(() =>
-      existing
-        ? this.documentRepository.update(existing.id, existing.revision, row)
+      stored
+        ? this.documentRepository.update(stored.id, stored.revision, row)
         : this.documentRepository.create({ ...row, assetId: id }),
     );
 
@@ -303,26 +289,21 @@ export class DocumentService {
     );
 
     const isOwner = asset.ownerId === auth.user.id;
-    // the hidden video part of a live photo is never read and never a document, like every hidden source
-    const lines = asset.visibility === AssetVisibility.Hidden ? [] : await this.ocrRepository.getByAssetId(id);
-    const edits = await this.documentRepository.getEdits(id);
-
     const dimensions = getDimensions(asset);
-    const crop = asset.edits.find((edit) => edit.action === AssetEditAction.Crop);
-    const cropBox = crop
-      ? {
-          x1: crop.parameters.x,
-          y1: crop.parameters.y,
-          x2: crop.parameters.x + crop.parameters.width,
-          y2: crop.parameters.y + crop.parameters.height,
-        }
-      : undefined;
+    const cropBox = cropBoxOf(asset.edits);
+    const isRegionVisible = (region: DocumentRegion) => isRegionInsideCrop(region, dimensions, cropBox);
+
+    // The hidden video part of a live photo is never read and never a document, like every hidden
+    // source. A line the crop removes is left out even if its stored visibility says otherwise.
+    const recognized = asset.visibility === AssetVisibility.Hidden ? [] : await this.ocrRepository.getByAssetId(id);
+    const lines = recognized.filter((line) => isRegionVisible(line));
+    const edits = await this.documentRepository.getEdits(id);
 
     const fieldsEnabled = config.machineLearning.ocr.documentFields;
     const document = assembleDocument({
       lines,
       edits,
-      isRegionVisible: (region) => isRegionInsideCrop(region, dimensions, cropBox),
+      isRegionVisible,
       isOwner,
       fieldsEnabled,
     });

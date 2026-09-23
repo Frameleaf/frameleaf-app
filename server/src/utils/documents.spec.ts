@@ -5,6 +5,7 @@ import {
   DocumentOcrLine,
   DocumentRegion,
   fieldKey,
+  isRegionInsideCrop,
   lineKey,
   matchLineEdits,
   regionOverlap,
@@ -145,7 +146,7 @@ describe('assembleDocument lines', () => {
     expect(JSON.stringify(document)).not.toContain('private words');
   });
 
-  it('never shows a kept correction, a dismissal or edit metadata to anyone but the owner', () => {
+  it('never shows a kept correction, recognized text under a correction or edit metadata to anyone else', () => {
     const document = assemble(
       [line('a', 'Public', box(0.1, 0.1)), line('b', 'Set aside', box(0.1, 0.3)), line('c', 'Fixd', box(0.1, 0.5))],
       [
@@ -156,8 +157,21 @@ describe('assembleDocument lines', () => {
       { isOwner: false, fieldsEnabled: true },
     );
 
-    expect(document.lines.map((item) => item.text)).toEqual(['Public', 'Fixed']);
+    // the dismissed line keeps only its id, so a viewer's overlay can stop drawing it
+    expect(document.lines.map((item) => [item.id, item.text])).toEqual([
+      ['a', 'Public'],
+      ['b', ''],
+      ['c', 'Fixed'],
+    ]);
+    expect(document.lines[1]).toMatchObject({
+      status: DocumentLineStatus.Dismissed,
+      region: null,
+      recognizedText: null,
+    });
+    expect(document.lines[2]).toMatchObject({ recognizedText: null, confidence: null });
     expect(document.lines.every((item) => item.editId === null && item.revision === null)).toBe(true);
+    expect(JSON.stringify(document)).not.toContain('Set aside');
+    expect(JSON.stringify(document)).not.toContain('Fixd');
     expect(document.fields).toEqual([]);
   });
 
@@ -174,6 +188,27 @@ describe('assembleDocument lines', () => {
 
   it('drops a dismissal with no line left to dismiss', () => {
     expect(assemble([], [dismissal(lineKey('gone'), box(0.1, 0.1))]).lines).toEqual([]);
+  });
+});
+
+describe('isRegionInsideCrop', () => {
+  const dimensions = { width: 1000, height: 1000 };
+
+  it('keeps every region without a crop', () => {
+    expect(isRegionInsideCrop(box(0.1, 0.9), dimensions)).toBe(true);
+  });
+
+  it('keeps a region that is at least half inside the crop and drops the rest', () => {
+    const crop = { x1: 0, y1: 0, x2: 1000, y2: 400 };
+
+    expect(isRegionInsideCrop(box(0.1, 0.1), dimensions, crop)).toBe(true);
+    expect(isRegionInsideCrop(box(0.1, 0.8), dimensions, crop)).toBe(false);
+  });
+
+  it('drops every region when the photo’s size is unknown', () => {
+    const unknownSize = { width: 0, height: 0 };
+
+    expect(isRegionInsideCrop(box(0.1, 0.1), unknownSize, { x1: 0, y1: 0, x2: 10, y2: 10 })).toBe(false);
   });
 });
 

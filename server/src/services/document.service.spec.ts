@@ -10,7 +10,7 @@ import {
   DocumentLineStatus,
 } from 'src/enum.js';
 import { DocumentEditConflictError, DocumentRepository } from 'src/repositories/document.repository.js';
-import { DocumentService, isRegionInsideCrop } from 'src/services/document.service.js';
+import { DocumentService } from 'src/services/document.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { fieldKey, lineKey } from 'src/utils/documents.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -188,7 +188,7 @@ describe(DocumentService.name, () => {
       expect(mocks.ocr.getByAssetId).not.toHaveBeenCalled();
     });
 
-    it('shows another viewer the corrected text only, without dismissed lines or the owner’s tools', async () => {
+    it('shows another viewer the corrected text only, without dismissed text or the owner’s tools', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
       mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([assetId]));
       documentRepository.getAsset.mockResolvedValue(documentAsset({ ownerId: 'someone-else' }));
@@ -205,10 +205,32 @@ describe(DocumentService.name, () => {
       const response = await sut.get(authStub.user1, assetId);
 
       expect(response.canEdit).toBe(false);
-      expect(response.lines.map((line) => line.text)).toEqual(['Lake Agnes']);
+      expect(response.lines.map((line) => [line.ocrId, line.text])).toEqual([
+        [lineId, 'Lake Agnes'],
+        [totalLineId, ''],
+      ]);
+      expect(response.lines[0]).toMatchObject({ recognizedText: null, confidence: null });
       expect(response.fields).toEqual([]);
       expect(response.recognition).toBeNull();
       expect(JSON.stringify(response)).not.toContain('private note');
+      expect(JSON.stringify(response)).not.toContain('LAKE AGNES');
+    });
+
+    it('never reads a line a crop removes, whatever its stored visibility says', async () => {
+      documentRepository.getAsset.mockResolvedValue(
+        documentAsset({
+          edits: [{ action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 1000, height: 400 } }],
+        }),
+      );
+      mocks.ocr.getByAssetId.mockResolvedValue([
+        ocrLine(lineId, 'LAKE AGNES', 0.1),
+        ocrLine(totalLineId, 'card 4111', 0.8),
+      ]);
+
+      const response = await sut.get(authStub.user1, assetId);
+
+      expect(response.lines.map((line) => line.ocrId)).toEqual([lineId]);
+      expect(JSON.stringify(response)).not.toContain('card 4111');
     });
 
     it('hides a correction whose text a crop removed', async () => {
@@ -409,6 +431,37 @@ describe(DocumentService.name, () => {
       );
     });
 
+    it('replaces a decision a crop hides at its own revision instead of refusing forever', async () => {
+      withFieldSuggestions();
+      documentRepository.getAsset.mockResolvedValue(
+        documentAsset({
+          edits: [{ action: AssetEditAction.Crop, parameters: { x: 0, y: 0, width: 1000, height: 700 } }],
+        }),
+      );
+      documentRepository.getEdits.mockResolvedValue([
+        storedEdit({
+          key: fieldKey(DocumentField.Total),
+          action: DocumentEditAction.Confirm,
+          value: '99.99',
+          sourceText: 'TOTAL 99.99',
+          revision: 4,
+          ...region(0.1, 0.9),
+        }),
+      ]);
+
+      await sut.editField(authStub.user1, assetId, DocumentField.Total, {
+        action: DocumentEditAction.Confirm,
+        value: '12.50',
+        lineId: totalLineId,
+      });
+
+      expect(documentRepository.update).toHaveBeenCalledWith(
+        editId,
+        4,
+        expect.objectContaining({ value: '12.50', sourceText: 'TOTAL 12.50' }),
+      );
+    });
+
     it('shows the suggestion again once the decision is cleared at its revision', async () => {
       withFieldSuggestions();
       documentRepository.getEdits.mockResolvedValue([
@@ -433,26 +486,5 @@ describe(DocumentService.name, () => {
         region: region(0.1, 0.6),
       });
     });
-  });
-});
-
-describe(isRegionInsideCrop.name, () => {
-  const dimensions = { width: 1000, height: 1000 };
-
-  it('keeps every region without a crop', () => {
-    expect(isRegionInsideCrop(region(0.1, 0.9), dimensions)).toBe(true);
-  });
-
-  it('keeps a region that is at least half inside the crop and drops the rest', () => {
-    const crop = { x1: 0, y1: 0, x2: 1000, y2: 400 };
-
-    expect(isRegionInsideCrop(region(0.1, 0.1), dimensions, crop)).toBe(true);
-    expect(isRegionInsideCrop(region(0.1, 0.8), dimensions, crop)).toBe(false);
-  });
-
-  it('drops every region when the photo’s size is unknown', () => {
-    const unknownSize = { width: 0, height: 0 };
-
-    expect(isRegionInsideCrop(region(0.1, 0.1), unknownSize, { x1: 0, y1: 0, x2: 10, y2: 10 })).toBe(false);
   });
 });

@@ -1,4 +1,6 @@
+import { AssetEditAction, type AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { DocumentEditAction, DocumentField, DocumentFieldStatus, DocumentLineStatus } from 'src/enum.js';
+import { boundingBoxOverlap } from 'src/utils/editor.js';
 
 /**
  * Documents: the text read from a photo, with the owner's decisions applied (FL-63).
@@ -170,6 +172,41 @@ export const regionOverlap = (a: DocumentRegion, b: DocumentRegion): number => {
   const areaB = (boxB.right - boxB.left) * (boxB.bottom - boxB.top);
   const union = areaA + areaB - intersection;
   return union > 0 ? intersection / union : 0;
+};
+
+export type CropBox = { x1: number; y1: number; x2: number; y2: number };
+
+/** The crop of an edited photo, in the original image's pixels, or undefined when it is not cropped. */
+export const cropBoxOf = (edits: AssetEditActionItem[]): CropBox | undefined => {
+  const crop = edits.find((edit) => edit.action === AssetEditAction.Crop);
+  return crop
+    ? {
+        x1: crop.parameters.x,
+        y1: crop.parameters.y,
+        x2: crop.parameters.x + crop.parameters.width,
+        y2: crop.parameters.y + crop.parameters.height,
+      }
+    : undefined;
+};
+
+/**
+ * A crop keeps a region when at least half of it is inside, the rule `checkOcrVisibility` applies to
+ * recognized lines. `region` is normalized to the original image of `dimensions`.
+ */
+export const isRegionInsideCrop = (
+  region: DocumentRegion,
+  dimensions: { width: number; height: number },
+  crop?: CropBox,
+): boolean => {
+  if (!crop) {
+    return true;
+  }
+
+  const xs = [region.x1, region.x2, region.x3, region.x4].map((value) => value * dimensions.width);
+  const ys = [region.y1, region.y2, region.y3, region.y4].map((value) => value * dimensions.height);
+  const box = { x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) };
+  // a zero-sized box or image divides by zero; NaN fails the test, so unknown geometry stays hidden
+  return boundingBoxOverlap(box, crop) >= 0.5;
 };
 
 export const lineConfidence = (line: Pick<DocumentOcrLine, 'boxScore' | 'textScore'>) =>
@@ -413,6 +450,22 @@ export const matchLineEdits = (lines: DocumentOcrLine[], edits: DocumentEditRow[
   return { byLine, orphans };
 };
 
+/** A line as someone who is not the owner may read it. */
+const withoutReview = (line: AssembledLine): AssembledLine => {
+  const reviewed = line.status !== DocumentLineStatus.Recognized;
+  const dismissed = line.status === DocumentLineStatus.Dismissed;
+  return {
+    ...line,
+    text: dismissed ? '' : line.text,
+    recognizedText: reviewed ? null : line.recognizedText,
+    confidence: reviewed ? null : line.confidence,
+    region: dismissed ? null : line.region,
+    editId: null,
+    revision: null,
+    evidenceChanged: false,
+  };
+};
+
 const isAwake = (edit: DocumentEditRow, isRegionVisible: (region: DocumentRegion) => boolean) => {
   const region = editRegion(edit);
   return region === null || isRegionVisible(region);
@@ -484,10 +537,11 @@ export const assembleDocument = ({
   assembled.sort((a, b) => (a.region && b.region ? compareReadingOrder(a.region, b.region) : 0));
 
   if (!isOwner) {
+    // Everyone else reads the text as the owner left it. A corrected line carries only the owner's
+    // text, and a dismissed line only its id, so a client can stop drawing its box; neither carries
+    // the recognized text or its confidence, and the owner's own kept text is not shown at all.
     return {
-      lines: assembled
-        .filter((line) => line.status === DocumentLineStatus.Recognized || line.status === DocumentLineStatus.Corrected)
-        .map((line) => ({ ...line, editId: null, revision: null, evidenceChanged: false })),
+      lines: assembled.filter((line) => line.status !== DocumentLineStatus.Kept).map((line) => withoutReview(line)),
       fields: [],
     };
   }
