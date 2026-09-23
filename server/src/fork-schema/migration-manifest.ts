@@ -70,6 +70,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000280-AddSharedSpaceCommentThread',
   '2100000000290-ClearLockedAlbumCovers',
   '2100000000300-ClearLockedCoverReferences',
+  '2100000000310-LockWholeStacksAndRecordProfileImageSource',
   '2100000000320-AddAssetLock',
 ]);
 

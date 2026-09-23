@@ -43,7 +43,6 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
-import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import {
   anyUuid,
   asUuid,
@@ -83,6 +82,7 @@ import {
   lockedForReason,
   visibilityIs,
 } from 'src/utils/locked.js';
+import { onStacksJoined } from 'src/utils/locked-stacks.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
 
@@ -1121,7 +1121,16 @@ export class AssetRepository {
         .$call((qb) => qb.select(withEdits))
         .executeTakeFirst();
 
-    return updateAndSelect(this.db);
+    if (!asset.stackId) {
+      return updateAndSelect(this.db);
+    }
+
+    // a stack that holds a locked photo is locked as a whole (FL-53, FL-34): joining one locks the rest
+    return this.inTransaction(async (tx) => {
+      const updated = await updateAndSelect(tx);
+      await onStacksJoined(tx, [asset.stackId!]);
+      return updated;
+    });
   }
 
   /** Runs `callback` in a transaction, joining the current one when this repository is bound to it. */

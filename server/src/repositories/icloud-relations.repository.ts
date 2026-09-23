@@ -7,6 +7,7 @@ import { isForkWriteEnabled } from 'src/fork-schema/authority.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { DB } from 'src/schema/index.js';
 import { linkLivePhotoAssets } from 'src/utils/asset.util.js';
+import { onStacksJoined } from 'src/utils/locked-stacks.js';
 
 export type ICloudRelationEvent =
   | { name: 'AssetHide'; assetId: string; userId: string }
@@ -312,6 +313,8 @@ export class ICloudRelationsRepository {
         .execute(db)
         .then(({ rows }) => rows[0].id);
       await db.updateTable('asset').set({ stackId }).where('id', 'in', ids).where('ownerId', '=', ownerId).execute();
+      // a stack that holds a Locked photo is Locked as a whole (FL-53)
+      await onStacksJoined(db, [stackId]);
       state.stackId = stackId;
       state.memberAssetIds = ids;
       state.appliedPrimaryAssetId = primary;
@@ -335,6 +338,7 @@ export class ICloudRelationsRepository {
       .where('ownerId', '=', ownerId)
       .where('stackId', 'is', null)
       .execute();
+    await onStacksJoined(db, [state.stackId]);
     if (stack.primaryAssetId === state.appliedPrimaryAssetId) {
       await sql`UPDATE stack SET "primaryAssetId"=${primary}::uuid WHERE id=${state.stackId}::uuid AND "ownerId"=${ownerId}::uuid`.execute(
         db,

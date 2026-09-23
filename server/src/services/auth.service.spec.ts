@@ -1183,6 +1183,7 @@ describe(AuthService.name, () => {
 
       expect(mocks.user.update).toHaveBeenCalledWith(user.id, {
         profileImagePath: expect.stringContaining(`/data/profile/${user.id}/${fileId}.webp`),
+        profileImageAssetId: null,
         profileChangedAt: expect.any(Date),
       });
       expect(mocks.oauth.getProfilePicture).toHaveBeenCalledWith(profile.picture);
