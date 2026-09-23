@@ -94,6 +94,9 @@ export const describeAdminEvent = (
     case AdminAuditAction.LibraryScanQueued: {
       return $t('frameleaf_account_history_library_scan_queued');
     }
+    case AdminAuditAction.LibraryScanCancelled: {
+      return $t('frameleaf_account_history_library_scan_cancelled');
+    }
     case AdminAuditAction.LibraryDeleted: {
       return $t('frameleaf_account_history_library_deleted');
     }
