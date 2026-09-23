@@ -34,7 +34,13 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
 }));
 
 const user = (id: string, name: string): UserResponseDto =>
-  ({ id, name, email: `${id}@example.com`, profileImagePath: '', avatarColor: 'primary' }) as unknown as UserResponseDto;
+  ({
+    id,
+    name,
+    email: `${id}@example.com`,
+    profileImagePath: '',
+    avatarColor: 'primary',
+  }) as unknown as UserResponseDto;
 
 const ada = user('ada', 'Ada');
 const bo = user('bo', 'Bo');
