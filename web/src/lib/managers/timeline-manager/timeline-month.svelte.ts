@@ -311,6 +311,32 @@ export class TimelineMonth {
     return this.#height;
   }
 
+  /**
+   * Whether this month opens a display group: every month when grouping by month, the newest loaded
+   * month of each year when grouping by year (in the display order), the first month for "all".
+   * Day grouping draws a header per day instead.
+   */
+  get startsGroup(): boolean {
+    const { grouping, months } = this.timelineManager;
+    if (grouping === 'days' || grouping === 'months') {
+      return true;
+    }
+    const index = months.indexOf(this);
+    if (index <= 0) {
+      return true;
+    }
+    return grouping === 'years' && months[index - 1].yearMonth.year !== this.yearMonth.year;
+  }
+
+  /** The space above this month's rows: a group header, or the gap between months of one group. */
+  get groupHeaderHeight(): number {
+    const manager = this.timelineManager;
+    if (manager.grouping === 'days') {
+      return manager.headerHeight;
+    }
+    return this.startsGroup ? manager.headerHeight : manager.gap;
+  }
+
   get top(): number {
     return this.#top + this.timelineManager.topSectionHeight;
   }
@@ -342,7 +368,7 @@ export class TimelineMonth {
           return;
         }
         return {
-          top: this.top + group.top + viewerAsset.position.top + this.timelineManager.headerHeight,
+          top: this.top + group.top + viewerAsset.position.top + this.groupHeaderHeight,
           height: viewerAsset.position.height,
         };
       }
