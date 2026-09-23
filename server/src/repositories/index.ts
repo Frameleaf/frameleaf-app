@@ -1,5 +1,6 @@
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
+import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
@@ -89,6 +90,7 @@ export const repositories = [
   ICloudSyncRepository,
   AccessRepository,
   ActivityRepository,
+  AdminAuditRepository,
   AlbumRepository,
   AlbumUserRepository,
   ApiKeyRepository,

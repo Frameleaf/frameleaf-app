@@ -10,6 +10,7 @@ import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
+import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
@@ -67,6 +68,7 @@ import { VideoStreamRepository } from 'src/repositories/video-stream.repository.
 import { ViewRepository } from 'src/repositories/view-repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
+import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access.js';
 import { getConfig, updateConfig } from 'src/utils/config.js';
@@ -82,6 +84,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   LoggingRepository,
   AccessRepository,
   ActivityRepository,
+  AdminAuditRepository,
   AlbumRepository,
   AlbumUserRepository,
   ApiKeyRepository,
@@ -148,6 +151,7 @@ export class BaseService {
     protected logger: LoggingRepository,
     protected accessRepository: AccessRepository,
     protected activityRepository: ActivityRepository,
+    protected adminAuditRepository: AdminAuditRepository,
     protected albumRepository: AlbumRepository,
     protected albumUserRepository: AlbumUserRepository,
     protected apiKeyRepository: ApiKeyRepository,
@@ -223,6 +227,7 @@ export class BaseService {
       LoggingRepository.create(),
       ctx.accessRepository,
       ctx.activityRepository,
+      ctx.adminAuditRepository,
       ctx.albumRepository,
       ctx.albumUserRepository,
       ctx.apiKeyRepository,
@@ -375,6 +380,24 @@ export class BaseService {
       },
       () => this.getConfig({ withCache: true }),
     );
+  }
+
+  /**
+   * FL-76: add to the administrator audit trail behind the account detail's Activity tab. Called by
+   * the service that made the change, after it succeeded. Recording never undoes or fails the change
+   * it records: if the insert fails, the change stands and the failure is logged.
+   */
+  protected async recordAdminEvents(events: Insertable<AdminAuditEventTable>[]): Promise<void> {
+    if (events.length === 0) {
+      return;
+    }
+
+    try {
+      await this.adminAuditRepository.create(events);
+    } catch (error) {
+      const actions = events.map(({ action }) => action).join(', ');
+      this.logger.error(`Unable to record administrator activity (${actions}): ${error}`);
+    }
   }
 
   requireAccess(request: AccessRequest) {

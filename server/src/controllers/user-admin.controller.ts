@@ -9,6 +9,8 @@ import { UserPreferencesResponseDto, UserPreferencesUpdateDto } from 'src/dtos/u
 import {
   UserAdminCreateDto,
   UserAdminDeleteDto,
+  UserAdminHistoryResponseDto,
+  UserAdminHistorySearchDto,
   UserAdminResponseDto,
   UserAdminSearchDto,
   UserAdminSessionParamDto,
@@ -42,8 +44,8 @@ export class UserAdminController {
     description: 'Create a new user.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  createUserAdmin(@Body() createUserDto: UserAdminCreateDto): Promise<UserAdminResponseDto> {
-    return this.service.create(createUserDto);
+  createUserAdmin(@Auth() auth: AuthDto, @Body() createUserDto: UserAdminCreateDto): Promise<UserAdminResponseDto> {
+    return this.service.create(auth, createUserDto);
   }
 
   @Get(':id')
@@ -115,6 +117,26 @@ export class UserAdminController {
     @Query() dto: CalendarHeatmapDto,
   ): Promise<CalendarHeatmapResponseDto> {
     return this.service.getCalendarHeatmap(auth, id, dto);
+  }
+
+  /**
+   * FL-76: the account detail's Activity tab. What administrators did to this account and its
+   * libraries, newest first, recorded by the services that made each change.
+   */
+  @Get(':id/history')
+  @Authenticated({ permission: Permission.AdminUserRead, admin: true })
+  @Endpoint({
+    summary: 'Retrieve user history',
+    description:
+      'What administrators did to a specific user and their libraries, newest first: account creation, profile, role, quota and storage label changes, password and PIN resets, signed-out devices, preference changes, deletion and restore, and library changes and scans. Page with `before` and `take`.',
+    history: new HistoryBuilder().added('v3').stable('v3'),
+  })
+  getUserHistoryAdmin(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() dto: UserAdminHistorySearchDto,
+  ): Promise<UserAdminHistoryResponseDto> {
+    return this.service.getHistory(auth, id, dto);
   }
 
   @Get(':id/sessions')
