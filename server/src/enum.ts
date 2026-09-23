@@ -1136,6 +1136,39 @@ export const MaintenanceActionSchema = z
   .describe('Maintenance action')
   .meta({ id: 'MaintenanceAction' });
 
+export enum PhysicalDeduplicationDecision {
+  Share = 'share',
+  Skip = 'skip',
+}
+
+export const PhysicalDeduplicationDecisionSchema = z
+  .enum(PhysicalDeduplicationDecision)
+  .describe('Physical deduplication plan decision for a duplicate copy')
+  .meta({ id: 'PhysicalDeduplicationDecision' });
+
+export enum PhysicalDeduplicationSkipReason {
+  ExternalLibrary = 'external-library',
+  MissingSize = 'missing-size',
+  NoRetainedMatch = 'no-retained-match',
+  AlreadyShared = 'already-shared',
+  RetainedFileMissing = 'retained-file-missing',
+}
+
+export const PhysicalDeduplicationSkipReasonSchema = z
+  .enum(PhysicalDeduplicationSkipReason)
+  .describe('Why a duplicate copy is skipped by the physical deduplication plan')
+  .meta({ id: 'PhysicalDeduplicationSkipReason' });
+
+export enum PhysicalDeduplicationPlanMode {
+  DryRun = 'dry-run',
+  Apply = 'apply',
+}
+
+export const PhysicalDeduplicationPlanModeSchema = z
+  .enum(PhysicalDeduplicationPlanMode)
+  .describe('Whether the physical deduplication plan was a preview or an applied run')
+  .meta({ id: 'PhysicalDeduplicationPlanMode' });
+
 export enum ExitCode {
   AppRestart = 7,
 }

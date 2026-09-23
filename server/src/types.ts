@@ -10,6 +10,10 @@ import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { SetMaintenanceModeDto } from 'src/dtos/maintenance.dto.js';
 import {
+  PhysicalDeduplicationCopyState,
+  PhysicalDeduplicationRetainedState,
+} from 'src/dtos/physical-deduplication.dto.js';
+import {
   AacProfile,
   AssetOrder,
   AssetType,
@@ -211,6 +215,12 @@ export interface IBaseJob {
   force?: boolean;
 }
 
+/** FL-71: a preview may retain originals in an account chosen on the page and review one account's copies. */
+export interface IPhysicalDeduplicationDryRunJob extends IBaseJob {
+  masterUserId?: string;
+  scopeUserId?: string;
+}
+
 export interface IForkSchemaBackfillJob {
   kind: BackfillKind;
   batchSize: number;
@@ -399,7 +409,7 @@ export type JobItem =
   // Storage Template
   | { name: JobName.StorageTemplateMigration; data?: IBaseJob }
   | { name: JobName.StorageTemplateMigrationSingle; data: IEntityJob }
-  | { name: JobName.PhysicalDeduplicationMigrationDryRun; data?: IBaseJob }
+  | { name: JobName.PhysicalDeduplicationMigrationDryRun; data?: IPhysicalDeduplicationDryRunJob }
   | { name: JobName.PhysicalDeduplicationMigrationApply; data?: IBaseJob }
 
   // Migration
@@ -603,6 +613,11 @@ export type PhysicalDeduplicationMigrationState = {
   reclaimableBytes: number;
   deletedBytes: number;
   samples: string[];
+  /** FL-71 preview evidence; absent on records written before the preview contract existed. */
+  scopeUserId?: string | null;
+  retained?: PhysicalDeduplicationRetainedState[];
+  copies?: PhysicalDeduplicationCopyState[];
+  copiesTruncated?: boolean;
 };
 export type MaintenanceModeState =
   { isMaintenanceMode: true; secret: string; action?: SetMaintenanceModeDto } | { isMaintenanceMode: false };
