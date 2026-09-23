@@ -90,6 +90,22 @@
     }
   };
 
+  /**
+   * Pause and resume (FL-104). A running job answers "Pausing" until its worker reaches a
+   * checkpoint; the row changes when the server says so, never before.
+   */
+  const pause = (item: ActivityItem) => {
+    if (item.operationId) {
+      void run(item, () => activitySession.pause(item.operationId as string), 'frameleaf_activity_pause_requested');
+    }
+  };
+
+  const resume = (item: ActivityItem) => {
+    if (item.operationId) {
+      void run(item, () => activitySession.resume(item.operationId as string), 'frameleaf_activity_resumed');
+    }
+  };
+
   const retry = (item: ActivityItem) => {
     if (item.operationId) {
       void run(item, () => activitySession.retry(item.operationId as string), 'frameleaf_activity_retry_queued');
@@ -235,7 +251,7 @@
             {/if}
           {/if}
 
-          {#if item.running || item.progress !== null}
+          {#if item.running || item.paused || item.progress !== null}
             <progress
               class="progress"
               max="100"
@@ -250,6 +266,23 @@
         </div>
 
         <div class="actions">
+          {#if item.canPause && item.source === 'job'}
+            <Button
+              disabled={busyId === item.id}
+              label={$t('frameleaf_running_pause', { values: { name: item.title } })}
+              onclick={() => pause(item)}
+            >
+              {$t('pause')}
+            </Button>
+          {:else if item.canResume && item.source === 'job'}
+            <Button
+              disabled={busyId === item.id}
+              label={$t('frameleaf_running_resume', { values: { name: item.title } })}
+              onclick={() => resume(item)}
+            >
+              {$t('resume')}
+            </Button>
+          {/if}
           {#if item.canCancel && item.source === 'job'}
             <Button disabled={busyId === item.id} onclick={() => cancel(item)}>{$t('cancel')}</Button>
           {/if}

@@ -173,6 +173,7 @@ describe(RestorationWorkerService.name, () => {
       getDateTimeOriginals: vi.fn().mockResolvedValue(new Map()),
       requestCancel: vi.fn(),
       acknowledgeCancel: vi.fn().mockResolvedValue(true),
+      settlePause: vi.fn().mockResolvedValue(true),
       getUnreleasedRemoteOperations: vi.fn(),
       markRemoteReleased: vi.fn(),
       recoverExpiredClaims: vi.fn().mockResolvedValue({ requeued: 0, retried: 0, failed: 0, abandonedCancels: 0 }),
@@ -376,9 +377,36 @@ describe(RestorationWorkerService.name, () => {
       expect(operations.complete).not.toHaveBeenCalled();
     });
 
+    it('hands a paused job back at the interruption and leaves the row running for the resume (FL-104)', async () => {
+      operations.reportProgress.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+      operations.getForOwner.mockResolvedValue(
+        operation({ status: MediaOperationStatus.Rendering, pauseRequestedAt: new Date() } as never),
+      );
+
+      await sut.run(operation(), CLAIM);
+
+      expect(operations.settlePause).toHaveBeenCalledWith(OPERATION_ID, CLAIM);
+      expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(restorations.transition).not.toHaveBeenCalled();
+    });
+
+    it('requeues at once when the owner resumed before the pause landed (FL-104)', async () => {
+      operations.reportProgress.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+      operations.getForOwner.mockResolvedValue(operation({ status: MediaOperationStatus.Rendering }));
+
+      await sut.run(operation(), CLAIM);
+
+      expect(operations.settlePause).not.toHaveBeenCalled();
+      expect(operations.requeue).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { delayMs: 0 });
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
+
     it('leaves a lost lease to recovery: no failure, no cancel, the row stays running', async () => {
       operations.reportProgress.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
       operations.getForOwner.mockResolvedValue(operation({ status: MediaOperationStatus.Queued, claimToken: null }));
+      // The claim is gone, so handing it back matches nothing.
+      operations.requeue.mockResolvedValueOnce(false);
 
       await sut.run(operation(), CLAIM);
 

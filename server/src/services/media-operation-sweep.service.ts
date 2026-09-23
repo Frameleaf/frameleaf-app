@@ -70,10 +70,10 @@ export class MediaOperationSweepService {
 
   async sweep(): Promise<MediaOperationRecovery> {
     const recovered = await this.operations.recoverExpiredClaims(MEDIA_OPERATION_LEASE_EXPIRED);
-    const { requeued, retried, failed, abandonedCancels } = recovered;
-    if (requeued || retried || failed || abandonedCancels) {
+    const { requeued, retried, failed, abandonedCancels, paused } = recovered;
+    if (requeued || retried || failed || abandonedCancels || paused) {
       this.logger.log(
-        `Recovered media operations: ${requeued} requeued, ${retried} retrying, ${failed} failed, ${abandonedCancels} cancelled`,
+        `Recovered media operations: ${requeued} requeued, ${retried} retrying, ${failed} failed, ${abandonedCancels} cancelled, ${paused} paused`,
       );
     }
     return recovered;

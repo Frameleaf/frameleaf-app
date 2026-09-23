@@ -55,6 +55,77 @@ const STATUS_TONE: Record<MediaOperationStatus, ActivityTone> = {
   [MediaOperationStatus.Completed]: 'success',
   [MediaOperationStatus.Cancelled]: 'neutral',
   [MediaOperationStatus.Failed]: 'danger',
+  // Held by its owner (FL-104). The prototype's Activity reads a pause in the warning tone: nothing
+  // is wrong, but nothing will happen until somebody resumes it.
+  [MediaOperationStatus.Paused]: 'warning',
+};
+
+/** Statuses a pause may be asked for from; the server refuses the rest (FL-104). */
+const PAUSABLE_STATUSES: readonly MediaOperationStatus[] = [
+  MediaOperationStatus.Queued,
+  MediaOperationStatus.Preparing,
+  MediaOperationStatus.Rendering,
+];
+
+/** Statuses a worker is on the job in; a pause asked for here lands at its next checkpoint. */
+const WORKING_STATUSES: readonly MediaOperationStatus[] = [
+  MediaOperationStatus.Preparing,
+  MediaOperationStatus.Rendering,
+  MediaOperationStatus.Validating,
+];
+
+/**
+ * What a job's pause control does (FL-104, owner request September 23, 2026).
+ *
+ * - `paused`: the job is held; the control resumes it.
+ * - `pausePending`: the owner asked, and the worker has not reached its checkpoint yet. The row
+ *   says "Pausing" and the control resumes, which withdraws the request.
+ * - `canPause`: a pausable kind in a state the server will pause from.
+ * - `pauseBlockedKey`: why the control is shown disabled — a one-shot kind, a job validating its
+ *   output, a job stopping. Absent when the job is finished and there is no control at all.
+ *
+ * These only mirror the server's rules so the control is not offered pointlessly; the server
+ * decides, and the row changes when it answers.
+ */
+export type ActivityPauseState = {
+  paused: boolean;
+  pausePending: boolean;
+  canPause: boolean;
+  canResume: boolean;
+  pauseBlockedKey?: string;
+};
+
+export const mediaOperationPauseState = (
+  operation: Pick<MediaOperationDto, 'status' | 'pausable' | 'pauseRequestedAt' | 'cancelRequestedAt'>,
+): ActivityPauseState => {
+  const status = operation.status;
+  const paused = status === MediaOperationStatus.Paused;
+  const pausePending = !paused && !!operation.pauseRequestedAt && WORKING_STATUSES.includes(status);
+  const canResume = paused || pausePending;
+  const canPause =
+    !canResume && !!operation.pausable && PAUSABLE_STATUSES.includes(status) && !operation.cancelRequestedAt;
+
+  let pauseBlockedKey: string | undefined;
+  if (!canPause && !canResume && RUNNING_STATUSES.includes(status)) {
+    if (!operation.pausable) {
+      pauseBlockedKey = 'frameleaf_running_pause_unavailable_kind';
+    } else if (status === MediaOperationStatus.Cancelling || operation.cancelRequestedAt) {
+      pauseBlockedKey = 'frameleaf_running_pause_unavailable_stopping';
+    } else {
+      pauseBlockedKey = 'frameleaf_running_pause_unavailable_finishing';
+    }
+  }
+
+  return { paused, pausePending, canPause, canResume, ...(pauseBlockedKey ? { pauseBlockedKey } : {}) };
+};
+
+/** A count the server sends as a string; null when absent or not a real number. */
+const asCount = (value: string | number | null | undefined): number | null => {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
 };
 
 export type ActivityItem = {
@@ -76,6 +147,19 @@ export type ActivityItem = {
   progress: number | null;
   /** Still working. Drives the indicator's count and the presence of Cancel. */
   running: boolean;
+  /** Held by its owner (FL-104). Neither running nor finished: it can be resumed or cancelled. */
+  paused: boolean;
+  /** Asked to pause, but its worker has not reached a checkpoint yet (FL-104). */
+  pausePending: boolean;
+  /** The server will pause it now. */
+  canPause: boolean;
+  /** Paused, or pausing: the control resumes it. */
+  canResume: boolean;
+  /** i18n key for why pausing is not possible right now, when the job is unfinished. */
+  pauseBlockedKey?: string;
+  /** Units of work done and in total, when the server counts them; null when it does not. */
+  done: number | null;
+  total: number | null;
   /** Finished one way or another. */
   finished: boolean;
   /** Finished badly, or finished with failures inside it. */
@@ -173,7 +257,8 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
 
   const status = operation.status;
   const running = RUNNING_STATUSES.includes(status);
-  const finished = !running;
+  const pause = mediaOperationPauseState(operation);
+  const finished = !running && !pause.paused;
   const failed = status === MediaOperationStatus.Failed;
   const counted = Number(operation.totalUnits ?? 0) > 0 || operation.progress > 0;
   const retrying = isRetryingMediaOperation(operation);
@@ -183,11 +268,18 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     source: 'job',
     operationId: operation.id,
     kindKey: `frameleaf_activity_kind_${operation.kind}`,
-    statusKey: retrying ? 'frameleaf_activity_status_retrying' : `frameleaf_activity_status_${status}`,
-    tone: retrying ? 'warning' : STATUS_TONE[status],
+    statusKey: pause.pausePending
+      ? 'frameleaf_activity_status_pausing'
+      : retrying
+        ? 'frameleaf_activity_status_retrying'
+        : `frameleaf_activity_status_${status}`,
+    tone: retrying || pause.pausePending ? 'warning' : STATUS_TONE[status],
     title: operation.label,
     progress: status === MediaOperationStatus.Completed ? 100 : counted ? clampPercent(operation.progress) : null,
     running,
+    ...pause,
+    done: asCount(operation.processedUnits),
+    total: asCount(operation.totalUnits) || null,
     finished,
     failed,
     destinationKey: DESTINATION_KEY[operation.destination],
@@ -197,7 +289,7 @@ export const fromMediaOperation = (operation: MediaOperationDto): ActivityItem =
     startedAt: Date.parse(operation.startedAt ?? operation.createdAt),
     assetId: operation.resultAssetId ?? operation.assetId ?? undefined,
     // The server decides; these only mirror its rules so the buttons are not offered pointlessly.
-    canCancel: running,
+    canCancel: running || pause.paused,
     canRetry: status === MediaOperationStatus.Failed || status === MediaOperationStatus.Cancelled,
     canDismiss: finished,
     browserLocal: false,
@@ -234,10 +326,11 @@ const BULK_WORKING: readonly MediaOperationStatus[] = [
 export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityItem => {
   const status = operation.status;
   const running = RUNNING_STATUSES.includes(status);
+  const pause = mediaOperationPauseState(operation);
   const bulk = operation.bulk;
   const requested = bulk?.requested ?? Number(operation.totalUnits ?? 0);
   const answered = bulk ? bulk.succeeded + bulk.failed + bulk.skipped : Number(operation.processedUnits ?? 0);
-  const unfinished = !running && answered < requested;
+  const unfinished = !running && !pause.paused && answered < requested;
   const failed = status === MediaOperationStatus.Failed || (!running && (bulk?.failed ?? 0) > 0);
   const retrying = isRetryingMediaOperation(operation);
 
@@ -246,12 +339,14 @@ export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityIt
     source: 'job',
     operationId: operation.id,
     kindKey: 'frameleaf_activity_kind_bulk',
-    statusKey: retrying
-      ? 'frameleaf_activity_status_retrying'
-      : BULK_WORKING.includes(status)
-        ? 'frameleaf_activity_bulk_running'
-        : `frameleaf_activity_status_${status}`,
-    tone: failed ? 'danger' : retrying ? 'warning' : STATUS_TONE[status],
+    statusKey: pause.pausePending
+      ? 'frameleaf_activity_status_pausing'
+      : retrying
+        ? 'frameleaf_activity_status_retrying'
+        : BULK_WORKING.includes(status)
+          ? 'frameleaf_activity_bulk_running'
+          : `frameleaf_activity_status_${status}`,
+    tone: failed ? 'danger' : retrying || pause.pausePending ? 'warning' : STATUS_TONE[status],
     title: operation.label,
     ...(bulk ? { titleKey: `frameleaf_bulk_${bulk.action.replaceAll('-', '_')}` } : {}),
     progress:
@@ -261,16 +356,20 @@ export const fromBulkMediaOperation = (operation: MediaOperationDto): ActivityIt
           ? clampPercent((answered / requested) * 100)
           : null,
     running,
-    finished: !running,
+    ...pause,
+    // Items answered of items requested: the count a person reads as "120 of 400".
+    done: requested > 0 ? Math.min(answered, requested) : null,
+    total: requested > 0 ? requested : null,
+    finished: !running && !pause.paused,
     failed,
     // Bulk work runs on this server; the destination adds nothing a person needs to read.
     details: [],
     error: operation.error ?? undefined,
     errorCode: operation.errorCode ?? undefined,
     startedAt: Date.parse(operation.startedAt ?? operation.createdAt),
-    canCancel: running && status !== MediaOperationStatus.Cancelling,
-    canRetry: !running && (failed || unfinished || status === MediaOperationStatus.Cancelled),
-    canDismiss: !running,
+    canCancel: (running && status !== MediaOperationStatus.Cancelling) || pause.paused,
+    canRetry: !running && !pause.paused && (failed || unfinished || status === MediaOperationStatus.Cancelled),
+    canDismiss: !running && !pause.paused,
     browserLocal: false,
     ...(bulk
       ? {
@@ -323,6 +422,12 @@ export const fromUpload = (upload: UploadAsset): ActivityItem => {
     title: upload.file?.name ?? upload.id,
     progress: running ? clampPercent(upload.progress ?? 0) : state === UploadState.DONE ? 100 : null,
     running,
+    paused: false,
+    pausePending: false,
+    canPause: false,
+    canResume: false,
+    done: null,
+    total: null,
     finished: !running,
     failed: state === UploadState.ERROR,
     details: [],
@@ -347,6 +452,12 @@ export const fromDownload = (key: string, download: DownloadState): ActivityItem
   title: download.archiveName || key,
   progress: download.downloaded ? 100 : null,
   running: !download.downloaded,
+  paused: false,
+  pausePending: false,
+  canPause: false,
+  canResume: false,
+  done: null,
+  total: null,
   finished: download.downloaded,
   failed: false,
   details: [],
@@ -385,6 +496,12 @@ export const fromBulkOperation = (operation: BulkOperationRecord): ActivityItem 
     titleKey: `frameleaf_bulk_${operation.action.replaceAll('-', '_')}`,
     progress: operation.total && operation.total > 0 ? clampPercent((operation.processed / operation.total) * 100) : null,
     running,
+    paused: false,
+    pausePending: false,
+    canPause: false,
+    canResume: false,
+    done: operation.total && operation.total > 0 ? operation.processed : null,
+    total: operation.total && operation.total > 0 ? operation.total : null,
     finished: !running,
     failed: operation.status === 'failed' || operation.failed > 0,
     details: [],
@@ -415,9 +532,10 @@ export const buildActivityList = (sources: {
     ...(sources.bulk ?? []).map((operation) => fromBulkOperation(operation)),
   ];
 
+  // A paused job is unfinished too, so it stays up with the running ones (FL-104).
   return items.sort((a, b) => {
-    if (a.running !== b.running) {
-      return a.running ? -1 : 1;
+    if (a.finished !== b.finished) {
+      return a.finished ? 1 : -1;
     }
     return b.startedAt - a.startedAt;
   });
@@ -429,7 +547,8 @@ export const matchesActivityFilter = (item: ActivityItem, filter: ActivityFilter
       return true;
     }
     case 'running': {
-      return item.running;
+      // Paused work is still in hand: it has not finished and it is not a failure (FL-104).
+      return item.running || item.paused;
     }
     case 'done': {
       return item.finished && !item.failed;

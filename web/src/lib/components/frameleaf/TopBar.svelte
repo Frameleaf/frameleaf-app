@@ -10,6 +10,7 @@
   import SearchEntry from '$lib/components/frameleaf/SearchEntry.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
   import { buildPrimaryDestinations, currentPrimaryDestination, isSettingsRoute } from '$lib/frameleaf/navigation';
+  import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
   import '$lib/frameleaf/tokens.css';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -22,9 +23,8 @@
   import { handleError } from '$lib/utils/handle-error';
   import { isAlbumsRoute, isAssetViewerRoute, isLockedFolderRoute, navigate } from '$lib/utils/navigation';
   import { getAuthStatus, lockAuthSession } from '@immich/sdk';
-  import { ActionButton, IconButton, Theme as AppTheme, themeManager } from '@immich/ui';
+  import { ActionButton, Icon, IconButton, Theme as AppTheme, themeManager } from '@immich/ui';
   import {
-    mdiBellBadge,
     mdiBellOutline,
     mdiLockOpenVariantOutline,
     mdiLockOutline,
@@ -32,7 +32,7 @@
     mdiMoonWaningCrescent,
     mdiWhiteBalanceSunny,
   } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
@@ -66,10 +66,32 @@
   const currentPrimary = $derived(currentPrimaryDestination(page.url.pathname));
 
   let showNotifications = $state(false);
+  let bellButton = $state<HTMLButtonElement>();
+
+  /** Close the panel; from the keyboard (Escape, its close button) focus goes back to the bell. */
+  const closeNotifications = (returnFocus = false) => {
+    showNotifications = false;
+    if (returnFocus) {
+      bellButton?.focus();
+    }
+  };
   let isElevated = $state(false);
   let isSessionLoading = $state(true);
 
-  const hasUnreadNotifications = $derived(notificationManager.notifications.length > 0);
+  const unreadCount = $derived(notificationManager.notifications.length);
+  // FL-104: background jobs the viewer may see (queues too, for administrators) are in the panel.
+  const runningCount = $derived(runningJobsSession.activeCount);
+  // The prototype's bell: "Notifications, 3 unread", plus what is running when anything is.
+  const bellLabel = $derived(
+    [
+      unreadCount > 0
+        ? $t('frameleaf_notifications_bell_unread', { values: { count: unreadCount } })
+        : $t('notifications'),
+      runningCount > 0 ? $t('frameleaf_running_bell', { values: { count: runningCount } }) : null,
+    ]
+      .filter(Boolean)
+      .join(', '),
+  );
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   // The prototype's theme control is always present and names the theme it switches to.
   const themeLabel = $derived(appTheme === 'dark' ? $t('light_theme') : $t('dark_theme'));
@@ -90,10 +112,23 @@
     void refreshNotifications();
     void refreshAuthStatus();
 
-    return eventManager.on({
+    // One poll for everything running; fast only while the panel is open or something runs.
+    const stopRunningJobs = runningJobsSession.watch();
+    const stopEvents = eventManager.on({
       SessionLocked: () => (isElevated = false),
       SessionAccessChanged: ({ isElevated: elevated }) => (isElevated = elevated),
     });
+
+    return () => {
+      stopRunningJobs();
+      stopEvents();
+    };
+  });
+
+  // Open panel: poll at the fast pace so its bars keep up; closed: back to following the work.
+  $effect(() => {
+    const open = showNotifications;
+    untrack(() => runningJobsSession.setPanelOpen(open));
   });
 
   const refreshNotifications = async () => {
@@ -244,33 +279,34 @@
 
       <div
         use:clickOutside={{
-          onOutclick: () => (showNotifications = false),
-          onEscape: () => (showNotifications = false),
+          onOutclick: () => closeNotifications(),
+          onEscape: () => closeNotifications(true),
         }}
       >
-        <div class="relative">
-          <IconButton
-            shape="round"
-            color={hasUnreadNotifications ? 'primary' : 'secondary'}
-            variant="ghost"
-            size="medium"
-            icon={hasUnreadNotifications ? mdiBellBadge : mdiBellOutline}
-            onclick={() => (showNotifications = !showNotifications)}
-            aria-label={$t('notifications')}
-          />
-          {#if hasUnreadNotifications}
-            <div
-              class="pointer-events-none absolute top-0 right-1 flex size-5 items-center justify-center rounded-full border bg-primary text-[10px] font-bold text-light"
-            >
-              {notificationManager.notifications.length}
-            </div>
+        <!-- The prototype's NotificationsBell (SystemPanels.jsx): outline bell, unread count capped at 9+. -->
+        <button
+          bind:this={bellButton}
+          type="button"
+          class="fl-notif-bell"
+          aria-label={bellLabel}
+          aria-haspopup="dialog"
+          aria-expanded={showNotifications}
+          onclick={() => (showNotifications = !showNotifications)}
+        >
+          <Icon icon={mdiBellOutline} size={20} aria-hidden="true" />
+          {#if unreadCount > 0}
+            <span class="fl-notif-count" aria-hidden="true">{unreadCount > 9 ? '9+' : unreadCount}</span>
           {/if}
-        </div>
+          {#if runningCount > 0}
+            <!-- Jobs are running: a small turning ring at the bell's foot, still for reduced motion. -->
+            <span class="fl-bell-running" aria-hidden="true"></span>
+          {/if}
+        </button>
 
         {#if showNotifications}
           <!-- Anchored to the bar's bottom edge, whatever height the bar has at this width. -->
           <div class="fl-notifications-panel">
-            <NotificationPanel />
+            <NotificationPanel onClose={() => closeNotifications(true)} onNavigate={() => closeNotifications()} />
           </div>
         {/if}
       </div>
@@ -387,16 +423,13 @@
     justify-content: flex-end;
     gap: 0.5rem;
   }
+  /* The prototype's popover sits just under the bar at its right edge; the panel keeps no offsets. */
   .fl-notifications-panel {
     position: absolute;
     top: 100%;
     right: 0.5rem;
-    z-index: 1;
-  }
-  /* NotificationPanel places itself for the legacy bar's height; here the anchor above does. */
-  .fl-notifications-panel > :global(*) {
-    position: static;
-    margin-top: 0.5rem;
+    z-index: 40;
+    padding-top: 0.5rem;
   }
   @media (max-width: 80rem) {
     .fl-topbar-grid {
@@ -448,6 +481,61 @@
     .fl-topbar-actions {
       grid-area: actions;
       gap: 0.125rem;
+    }
+  }
+  .fl-notif-bell {
+    position: relative;
+    display: grid;
+    flex-shrink: 0;
+    place-items: center;
+    width: 36px;
+    height: 34px;
+    border-radius: var(--fl-radius-control);
+    color: var(--fl-text);
+  }
+  .fl-notif-bell:hover,
+  .fl-notif-bell[aria-expanded='true'] {
+    background: var(--fl-raised);
+  }
+  .fl-notif-count {
+    position: absolute;
+    top: 3px;
+    right: 2px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: var(--fl-radius-pill);
+    background: var(--fl-accent);
+    color: var(--fl-accent-text);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    box-shadow: 0 0 0 2px var(--fl-panel);
+    pointer-events: none;
+  }
+  .fl-bell-running {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--fl-border);
+    border-top-color: var(--fl-accent);
+    border-radius: 50%;
+    background: var(--fl-panel);
+    pointer-events: none;
+    animation: fl-bell-spin 900ms linear infinite;
+  }
+  @keyframes fl-bell-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fl-bell-running {
+      border-color: var(--fl-accent);
+      animation: none;
     }
   }
 </style>
