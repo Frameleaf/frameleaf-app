@@ -249,7 +249,7 @@ export const newRequestKey = (): string => {
     return native;
   }
   const bytes = new Uint8Array(16);
-  if (globalThis.crypto?.getRandomValues) {
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
     crypto.getRandomValues(bytes);
   } else {
     for (let index = 0; index < bytes.length; index++) {

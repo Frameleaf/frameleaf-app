@@ -37,6 +37,7 @@ export class MlDestinationController {
   @Get('capabilities')
   @Authenticated()
   @Endpoint({
+    operationId: 'getMlCapabilities',
     summary: 'Get machine-learning capabilities',
     description:
       'What this deployment can run right now, per workload and destination, from the last health probes. Includes the Studio capability row the Studio host reads.',
@@ -49,6 +50,7 @@ export class MlDestinationController {
   @Get('routes')
   @Authenticated({ permission: Permission.SystemConfigRead, admin: true })
   @Endpoint({
+    operationId: 'getMlWorkloadRoutes',
     summary: 'List workload routes',
     description:
       'The destination each workload is routed to. A workload without a route is refused, never sent anywhere.',
@@ -61,6 +63,7 @@ export class MlDestinationController {
   @Put('routes/:workload')
   @Authenticated({ permission: Permission.SystemConfigUpdate, admin: true })
   @Endpoint({
+    operationId: 'setMlWorkloadRoute',
     summary: 'Route a workload',
     description:
       'Route a workload to one destination, or remove its route with a null destination. Routing to a cloud destination requires its consent to be recorded first.',
@@ -76,6 +79,7 @@ export class MlDestinationController {
   @Get()
   @Authenticated({ permission: Permission.SystemConfigRead, admin: true })
   @Endpoint({
+    operationId: 'listMlDestinations',
     summary: 'List machine-learning destinations',
     description: 'Every configured destination with its consent state, cost controls and last probe.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
@@ -87,6 +91,7 @@ export class MlDestinationController {
   @Post()
   @Authenticated({ permission: Permission.SystemConfigUpdate, admin: true })
   @Endpoint({
+    operationId: 'createMlDestination',
     summary: 'Create a machine-learning destination',
     description:
       'Add a LAN worker or the RunPod destination. A RunPod destination is created without consent and cannot serve anything until consent is recorded.',
@@ -99,6 +104,7 @@ export class MlDestinationController {
   @Get(':id')
   @Authenticated({ permission: Permission.SystemConfigRead, admin: true })
   @Endpoint({
+    operationId: 'getMlDestination',
     summary: 'Get a machine-learning destination',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
@@ -109,6 +115,7 @@ export class MlDestinationController {
   @Put(':id')
   @Authenticated({ permission: Permission.SystemConfigUpdate, admin: true })
   @Endpoint({
+    operationId: 'updateMlDestination',
     summary: 'Update a machine-learning destination',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
@@ -119,6 +126,7 @@ export class MlDestinationController {
   @Delete(':id')
   @Authenticated({ permission: Permission.SystemConfigUpdate, admin: true })
   @Endpoint({
+    operationId: 'deleteMlDestination',
     summary: 'Delete a machine-learning destination',
     description:
       'Removes the destination and every route to it; the affected workloads are refused until routed again.',
@@ -132,6 +140,7 @@ export class MlDestinationController {
   @HttpCode(HttpStatus.OK)
   @Authenticated({ permission: Permission.SystemConfigUpdate, admin: true })
   @Endpoint({
+    operationId: 'probeMlDestination',
     summary: 'Probe a machine-learning destination',
     description: 'Check reachability, served workloads and hardware now, and record the result.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
@@ -155,6 +164,7 @@ export class MlDestinationController {
   @Put(':id/consent')
   @Authenticated({ permission: Permission.SystemConfigUpdate, admin: true })
   @Endpoint({
+    operationId: 'grantMlDestinationConsent',
     summary: 'Record consent for a cloud destination',
     description: 'Records that an administrator accepts media leaving the network for this destination.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
@@ -170,6 +180,7 @@ export class MlDestinationController {
   @Delete(':id/consent')
   @Authenticated({ permission: Permission.SystemConfigUpdate, admin: true })
   @Endpoint({
+    operationId: 'revokeMlDestinationConsent',
     summary: 'Revoke consent for a cloud destination',
     description: 'Every workload routed to the destination is refused from the next request on.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
@@ -182,6 +193,7 @@ export class MlDestinationController {
   @HttpCode(HttpStatus.OK)
   @Authenticated()
   @Endpoint({
+    operationId: 'admitMlDestination',
     summary: 'Admit a workload on a destination',
     description:
       'Per-request selection: checks that exactly this destination can run the workload now (enabled, allowed, consented, within budget, healthy, serving it) and returns the measured estimate. A refusal is a 4xx error naming the reason; the server never answers with a different destination.',

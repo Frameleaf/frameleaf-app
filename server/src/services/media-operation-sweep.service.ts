@@ -60,7 +60,7 @@ export class MediaOperationSweepService {
     return (this.active ??= this.sweep()
       .catch((error) => {
         this.logger.warn(`Media operation recovery failed: ${error}`);
-        return undefined;
+        return;
       })
       .finally(() => {
         this.active = undefined;
