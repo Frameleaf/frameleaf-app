@@ -38,7 +38,7 @@ export type SettingsAreaDefinition = {
 
 export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   { id: 'storage', group: 'library', sections: ['storage-template', 'trash', 'user-settings'] },
-  { id: 'backup', group: 'library', sections: ['external-library', 'backup'] },
+  { id: 'backup', group: 'library', sections: ['external-library', 'takeout', 'backup'] },
   { id: 'intelligence', group: 'library', sections: ['machine-learning', 'smart-albums', 'metadata'] },
   { id: 'editing', group: 'library', sections: ['image', 'video-transcoding'] },
   { id: 'care', group: 'library', sections: ['integrity-checks'] },

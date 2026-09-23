@@ -5,9 +5,11 @@
   import FeatureSettings from './FeatureSettings.svelte';
   import NotificationsSettings from './NotificationsSettings.svelte';
   import SuppressedContentSettings from './SuppressedContentSettings.svelte';
+  import TakeoutSettingsSection from '$lib/components/frameleaf/settings/TakeoutSettingsSection.svelte';
   import UserPurchaseSettings from './UserPurchaseSettings.svelte';
   import UserUsageStatistic from './UserUsageStatistic.svelte';
   import { OpenQueryParam, QueryParameter } from '$lib/constants';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { oauth } from '$lib/utils';
   import { type ApiKeyResponseDto, type SessionResponseDto } from '@immich/sdk';
@@ -21,6 +23,7 @@
     mdiDownload,
     mdiFeatureSearchOutline,
     mdiFormTextboxPassword,
+    mdiImport,
     mdiKeyOutline,
     mdiLockSmart,
     mdiServerOutline,
@@ -90,6 +93,15 @@
   subtitle={$t('download_settings_description')}
 >
   <DownloadSettings />
+</SettingGroup>
+
+<SettingGroup
+  icon={mdiImport}
+  key="takeout"
+  title={$t('frameleaf_takeout_settings_title')}
+  subtitle={$t('frameleaf_takeout_settings_subtitle')}
+>
+  <TakeoutSettingsSection showRoots={authManager.user.isAdmin} />
 </SettingGroup>
 
 <SettingGroup
