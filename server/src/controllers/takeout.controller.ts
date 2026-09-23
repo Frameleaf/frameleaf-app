@@ -63,6 +63,7 @@ export class TakeoutController {
   }
 
   @Post()
+  @HttpCode(HttpStatus.CREATED)
   @Authenticated({ permission: Permission.AssetUpload })
   @Endpoint({
     summary: 'Start a Google Photos import',
@@ -101,6 +102,7 @@ export class TakeoutController {
   }
 
   @Post(':id/archives')
+  @HttpCode(HttpStatus.CREATED)
   @Authenticated({ permission: Permission.AssetUpload })
   @Endpoint({ summary: 'Stage a Takeout archive', history: history() })
   createTakeoutArchive(
@@ -170,6 +172,7 @@ export class TakeoutController {
   }
 
   @Post(':id/scan')
+  @HttpCode(HttpStatus.OK)
   @Authenticated({ permission: Permission.AssetUpload })
   @Endpoint({
     summary: 'Scan a Google Photos import',
@@ -181,6 +184,7 @@ export class TakeoutController {
   }
 
   @Post(':id/import')
+  @HttpCode(HttpStatus.OK)
   @Authenticated({ permission: Permission.AssetUpload })
   @Endpoint({
     summary: 'Import the reviewed items',
@@ -197,6 +201,7 @@ export class TakeoutController {
   }
 
   @Post(':id/control')
+  @HttpCode(HttpStatus.OK)
   @Authenticated({ permission: Permission.AssetUpload })
   @Endpoint({ summary: 'Pause, resume or cancel a Google Photos import', history: history() })
   controlTakeoutImport(
