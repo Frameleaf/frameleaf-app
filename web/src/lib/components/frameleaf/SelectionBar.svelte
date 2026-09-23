@@ -112,7 +112,6 @@
     assets = [],
     context = {},
     tagOptions = [],
-    albumOptions = [],
     operations = [],
     /** The last completed action that can be reversed. */
     undoLabel,
@@ -129,7 +128,6 @@
     assets?: BulkAsset[];
     context?: Omit<BulkActionContext, 'assets' | 'count'>;
     tagOptions?: { id: string; name: string }[];
-    albumOptions?: { id: string; name: string; count?: number }[];
     operations?: BulkOperationRecord[];
     undoLabel?: string;
     onAction: (id: BulkActionId, payload?: BulkPayload) => void;
@@ -414,7 +412,6 @@
 {:else if dialog === 'add-to-album'}
   <BulkAlbumDialog
     {count}
-    albums={albumOptions}
     bind:open={dialogOpen}
     onSubmit={(payload) => submitDialog('add-to-album', payload)}
   />
