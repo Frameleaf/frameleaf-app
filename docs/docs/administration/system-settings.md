@@ -2,9 +2,16 @@
 
 The admin user can manage settings for the Immich instance here.
 
-:::tip
-You can always return to the default settings by clicking the `Reset to default` button.
-:::
+## Saving changes
+
+Every settings page edits one draft. Changes you make on one page are kept while you visit another, and pages with unsaved changes are marked in the settings list.
+
+- **Review changes** lists every change with its page, the saved value and the new value. Passwords, client secrets and API keys are shown only as changed. **Save changes** saves them all at once.
+- **Discard** returns every page to the saved settings. **Reset this page** puts that page's defaults into the draft; they are applied when you save.
+- If another administrator saves settings while you are editing, your draft is kept. Changes to different settings are carried onto theirs and you save again. When you both changed the same setting, the page lists each one with the saved value and yours: keep your changes on the latest settings, or discard your draft and load the latest.
+- Leaving the settings page with unsaved changes asks you to keep editing or discard them. Reloading the tab brings the draft back, except passwords, keys and addresses that contain credentials, which are never stored in the browser.
+- **Export as JSON** and **Copy to clipboard** leave out passwords, secrets and keys. **Import from JSON** puts the file's settings into the draft for you to review; settings this server does not have are listed and ignored, and empty secrets keep their saved values.
+- Actions that start or change something on the server, such as sending a test email, launching a RunPod GPU or unlinking OAuth accounts, run on their own. Sending a test email also saves the email settings, and nothing else. RunPod actions use the saved RunPod settings, so save or discard RunPod changes first.
 
 ## Server credentials
 
