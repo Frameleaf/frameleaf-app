@@ -11,6 +11,7 @@ import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -37,6 +38,8 @@ class WorkflowTestContext extends MediumTestContext<typeof WorkflowExecutionServ
         CryptoRepository,
         DatabaseRepository,
         LoggingRepository,
+        // assetLock moves an asset into the Locked folder, which re-picks face thumbnails (FL-53)
+        PersonRepository,
         PluginRepository,
         StorageRepository,
         UserRepository,

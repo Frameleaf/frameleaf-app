@@ -68,6 +68,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000270-AddMediaOperationAutoRetry',
   '2100000000280-AddSharedSpaceCommentThread',
   '2100000000290-ClearLockedAlbumCovers',
+  '2100000000300-ClearLockedCoverReferences',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(

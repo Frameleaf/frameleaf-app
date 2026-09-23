@@ -291,6 +291,10 @@ export class PetService {
   /**
    * A featured photo must be one this account owns, or nothing. Callers that mean "leave
    * it alone" must not call this at all; a missing value here means "clear it".
+   *
+   * A Locked photo is never a featured photo (FL-53): the pet's thumbnail shows on the pets
+   * page and in search whatever the session. Only the owner's own asset gets this far, so
+   * the refusal can say why.
    */
   private async resolveFeaturedAsset(auth: AuthDto, assetId: string | null | undefined) {
     if (assetId === null || assetId === undefined) {
@@ -298,6 +302,10 @@ export class PetService {
     }
 
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetUpdate, ids: [assetId] });
+    if (await this.petRepository.isOwnLockedAsset(auth.user.id, assetId)) {
+      throw new BadRequestException('A Locked photo cannot be a featured photo');
+    }
+
     return assetId;
   }
 

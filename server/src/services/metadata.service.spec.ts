@@ -1491,6 +1491,30 @@ describe(MetadataService.name, () => {
       ]);
     });
 
+    it('should not make a face tag on a Locked photo the thumbnail of a person it creates (FL-53)', async () => {
+      const asset = AssetFactory.create({ visibility: AssetVisibility.Locked });
+      const person = PersonFactory.create();
+
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.systemMetadata.get.mockResolvedValue({ metadata: { faces: { import: true } } });
+      mockReadTags(makeFaceTags({ Name: person.name }));
+      mocks.person.getDistinctNames.mockResolvedValue([]);
+      mocks.person.createGroups.mockResolvedValue([PersonGroupFactory.create({ id: person.personGroupId })]);
+      mocks.person.createAll.mockResolvedValue([person]);
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      // the person and the face are still created; the face is simply not their thumbnail
+      expect(mocks.person.createAll).toHaveBeenCalledWith([expect.objectContaining({ name: person.name })]);
+      expect(mocks.person.refreshFaces).toHaveBeenCalledWith(
+        [expect.objectContaining({ assetId: asset.id, sourceType: SourceType.Exif })],
+        [],
+      );
+      expect(mocks.person.updateAll).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ name: JobName.PersonGenerateThumbnail })]),
+      );
+    });
+
     it('should assign metadata face tags to existing persons', async () => {
       const asset = AssetFactory.create();
       const person = PersonFactory.create();
