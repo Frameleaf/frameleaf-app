@@ -94,6 +94,32 @@ describe(UserService.name, () => {
     });
   });
 
+  describe('getCalendarHeatmap', () => {
+    it('should leave Locked media out of an ordinary session', async () => {
+      const auth = AuthFactory.create();
+      mocks.asset.getCalendarHeatmap.mockResolvedValue([]);
+
+      await sut.getCalendarHeatmap(auth, {});
+
+      expect(mocks.asset.getCalendarHeatmap).toHaveBeenCalledWith(
+        auth.user.id,
+        expect.not.objectContaining({ lockedOwnerId: expect.anything() }),
+      );
+    });
+
+    it("should count the caller's own Locked media only in an elevated session", async () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+      mocks.asset.getCalendarHeatmap.mockResolvedValue([]);
+
+      await sut.getCalendarHeatmap(auth, {});
+
+      expect(mocks.asset.getCalendarHeatmap).toHaveBeenCalledWith(
+        auth.user.id,
+        expect.objectContaining({ lockedOwnerId: auth.user.id }),
+      );
+    });
+  });
+
   describe('createProfileImage', () => {
     it('should throw an error if the user does not exist', async () => {
       const file = { path: '/profile/path' } as Express.Multer.File;

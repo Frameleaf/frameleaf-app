@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { sql, type Insertable, type Kysely, type Selectable, type Updateable } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AssetVisibility, PetObservationState } from 'src/enum.js';
+import { PetObservationState } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -10,8 +10,15 @@ import {
   PetObservationTable,
   PetTable,
 } from 'src/schema/tables/pet.table.js';
-import { anyUuid, getHiddenContentFilter, hiddenContentAssetIdExists } from 'src/utils/database.js';
+import {
+  anyUuid,
+  getHiddenContentFilter,
+  hiddenContentAssetIdExists,
+  isLockedAsset,
+  lockedOwnerScope,
+} from 'src/utils/database.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 
 export type Pet = Selectable<PetTable>;
 export type PetObservation = Selectable<PetObservationTable>;
@@ -21,6 +28,15 @@ export interface PetWithCounts extends Pet {
   /** Durable `confirmed` observations. Never a count of detections. */
   assetCount: number;
 }
+
+/**
+ * `lockedOwnerId`: the owner, when their session is elevated. Only then do counts, observations and
+ * proposals include their Locked media (FL-34). `withLocked` is for writes that must see every
+ * observation (merging), never for a response.
+ */
+type PetListOptions = { withHidden: boolean } & HiddenContentQueryOptions & LockedVisibilityOptions;
+
+export type PetLockedOptions = LockedVisibilityOptions & { withLocked?: boolean };
 
 export interface PetReviewCandidate {
   id: string;
@@ -66,12 +82,10 @@ export class PetRepository {
    * suppresses content, FL-58) a pet behaves like a suppressed person or tag: a pet the owner
    * suppressed is left out, so is a pet whose every confirmed photo is hidden, and the count covers
    * only the photos that session may see. A pet with no confirmed photo yet stays listed, as an
-   * empty tag does.
+   * empty tag does. The count includes the owner's Locked photos only in their elevated session
+   * (`lockedOwnerId`, FL-34).
    */
-  getAll(
-    ownerId: string,
-    { withHidden, ...privacy }: { withHidden: boolean } & HiddenContentQueryOptions,
-  ): Promise<PetWithCounts[]> {
+  getAll(ownerId: string, { withHidden, lockedOwnerId, ...privacy }: PetListOptions): Promise<PetWithCounts[]> {
     const hiddenContent = getHiddenContentFilter(privacy);
     const visiblePhoto = hiddenContent
       ? sql<boolean>`not ${hiddenContentAssetIdExists(sql.ref('pet_observation.assetId'), hiddenContent)}`
@@ -83,8 +97,10 @@ export class PetRepository {
       .select((eb) =>
         eb
           .selectFrom('pet_observation')
+          .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
           .whereRef('pet_observation.petId', '=', 'pet.id')
           .where('pet_observation.state', '=', PetObservationState.Confirmed)
+          .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
           .$if(!!visiblePhoto, (qb) => qb.where(visiblePhoto!))
           .select((inner) => inner.fn.countAll<number>().as('count'))
           .as('assetCount'),
@@ -114,15 +130,21 @@ export class PetRepository {
   }
 
   /** Owner-scoped by construction: a wrong owner gets `undefined`, never another's pet. */
-  getById(ownerId: string, id: string): Promise<PetWithCounts | undefined> {
+  getById(
+    ownerId: string,
+    id: string,
+    { lockedOwnerId }: LockedVisibilityOptions = {},
+  ): Promise<PetWithCounts | undefined> {
     return this.db
       .selectFrom('pet')
       .selectAll('pet')
       .select((eb) =>
         eb
           .selectFrom('pet_observation')
+          .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
           .whereRef('pet_observation.petId', '=', 'pet.id')
           .where('pet_observation.state', '=', PetObservationState.Confirmed)
+          .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
           .select((inner) => inner.fn.countAll<number>().as('count'))
           .as('assetCount'),
       )
@@ -182,31 +204,39 @@ export class PetRepository {
       .select('asset.id')
       .where('asset.id', '=', assetId)
       .where('asset.ownerId', '=', ownerId)
-      .where('asset.visibility', '=', AssetVisibility.Locked)
+      .where((eb) => isLockedAsset(eb))
       .executeTakeFirst();
     return !!row;
   }
 
   // ------------------------------------------------------------- durable: observations
 
-  getObservations(ownerId: string, petId: string): Promise<PetObservation[]> {
+  getObservations(ownerId: string, petId: string, options: PetLockedOptions = {}): Promise<PetObservation[]> {
     return this.db
       .selectFrom('pet_observation')
       .innerJoin('pet', 'pet.id', 'pet_observation.petId')
+      .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
       .selectAll('pet_observation')
       .where('pet_observation.petId', '=', petId)
       .where('pet.ownerId', '=', ownerId)
+      .$if(!options.withLocked, (qb) => qb.where((eb) => lockedOwnerScope(eb, options.lockedOwnerId)))
       .orderBy('pet_observation.createdAt', 'desc')
       .execute();
   }
 
-  getObservationById(ownerId: string, id: string): Promise<PetObservation | undefined> {
+  getObservationById(
+    ownerId: string,
+    id: string,
+    { lockedOwnerId }: LockedVisibilityOptions = {},
+  ): Promise<PetObservation | undefined> {
     return this.db
       .selectFrom('pet_observation')
       .innerJoin('pet', 'pet.id', 'pet_observation.petId')
+      .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
       .selectAll('pet_observation')
       .where('pet_observation.id', '=', id)
       .where('pet.ownerId', '=', ownerId)
+      .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
       .executeTakeFirst();
   }
 
@@ -338,7 +368,11 @@ export class PetRepository {
    * `filterReviewedCandidates`, so the rule that a rejection survives reprocessing is a
    * tested pure function rather than a join nobody reads.
    */
-  getCandidates(ownerId: string, limit: number): Promise<PetReviewCandidate[]> {
+  getCandidates(
+    ownerId: string,
+    limit: number,
+    { lockedOwnerId }: LockedVisibilityOptions = {},
+  ): Promise<PetReviewCandidate[]> {
     return this.db
       .selectFrom('pet_candidate')
       .innerJoin('pet_detection', 'pet_detection.id', 'pet_candidate.detectionId')
@@ -363,12 +397,17 @@ export class PetRepository {
       .where('pet.ownerId', '=', ownerId)
       .where('asset.ownerId', '=', ownerId)
       .where('asset.deletedAt', 'is', null)
+      .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
       .limit(limit)
       .execute()
       .then((rows) => rows.map((row) => ({ ...row, score: Number(row.score ?? 0) })));
   }
 
-  getCandidateById(ownerId: string, id: string): Promise<PetReviewCandidate | undefined> {
+  getCandidateById(
+    ownerId: string,
+    id: string,
+    { lockedOwnerId }: LockedVisibilityOptions = {},
+  ): Promise<PetReviewCandidate | undefined> {
     return this.db
       .selectFrom('pet_candidate')
       .innerJoin('pet_detection', 'pet_detection.id', 'pet_candidate.detectionId')
@@ -393,6 +432,7 @@ export class PetRepository {
       .where('pet_candidate.id', '=', id)
       .where('pet.ownerId', '=', ownerId)
       .where('asset.ownerId', '=', ownerId)
+      .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
       .executeTakeFirst()
       .then((row) => (row ? { ...row, score: Number(row.score ?? 0) } : undefined));
   }

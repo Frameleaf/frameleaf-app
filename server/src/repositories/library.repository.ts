@@ -6,6 +6,7 @@ import { LibraryStatsResponseDto } from 'src/dtos/library.dto.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
+import { isNotLockedAsset } from 'src/utils/database.js';
 
 export enum AssetSyncResult {
   DO_NOTHING,
@@ -79,7 +80,12 @@ export class LibraryRepository {
         eb.fn
           .countAll<number>()
           .filterWhere((eb) =>
-            eb.and([eb('asset.type', '=', AssetType.Image), eb('asset.visibility', '!=', AssetVisibility.Hidden)]),
+            eb.and([
+              eb('asset.type', '=', AssetType.Image),
+              eb('asset.visibility', '!=', AssetVisibility.Hidden),
+              // an administrator's library counts never include Locked media (FL-34)
+              isNotLockedAsset(eb),
+            ]),
           )
           .as('photos'),
       )
@@ -87,7 +93,11 @@ export class LibraryRepository {
         eb.fn
           .countAll<number>()
           .filterWhere((eb) =>
-            eb.and([eb('asset.type', '=', AssetType.Video), eb('asset.visibility', '!=', AssetVisibility.Hidden)]),
+            eb.and([
+              eb('asset.type', '=', AssetType.Video),
+              eb('asset.visibility', '!=', AssetVisibility.Hidden),
+              isNotLockedAsset(eb),
+            ]),
           )
           .as('videos'),
       )

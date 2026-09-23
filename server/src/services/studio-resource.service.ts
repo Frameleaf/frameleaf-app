@@ -19,6 +19,9 @@
  *   with `backgroundRunner` and reads the Locked sources that job references. Trashed and offline originals
  *   are refused. The acting user's sensitive and suppressed content settings apply through the
  *   same `checkAccess` the library uses.
+ * - Nothing about an asset is reported before its access check. An asset the acting user cannot
+ *   read is refused exactly like a missing one, and `locked` is reported only to the asset's owner
+ *   in an elevated session (FL-34).
  * - Cloud is never a fallback. A RunPod destination without explicit consent fails before a single
  *   reference is enumerated, and nothing is uploaded.
  * - The graph is bounded before it is walked, and URLs, blob strings, host paths and traversal
@@ -38,9 +41,10 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Selectable } from 'kysely';
 import { createHmac } from 'node:crypto';
 import { AuthDto } from 'src/dtos/auth.dto.js';
-import { AssetFileType, AssetType, AssetVisibility, Permission } from 'src/enum.js';
+import { AssetFileType, AssetType, Permission } from 'src/enum.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import { getLockedOwnerId, isLockedAssetRow } from 'src/utils/locked-visibility.js';
 import {
   StudioAudioSource,
   StudioDestination,
@@ -1021,20 +1025,47 @@ export class StudioResourceService extends BaseService {
 
     const rows: AssetRow[] = await this.assetRepository.getByIds([...ids]);
     const byId = new Map(rows.map((row) => [row.id, row]));
-    const candidates = new Set<string>();
+
+    // Access is decided before anything about an asset is reported (FL-34). An id the acting user
+    // cannot read is refused exactly like one that does not exist, so a graph can never probe whether
+    // someone else's asset exists, is trashed, offline or Locked. Owner, shared album and partner
+    // access apply with the acting user's sensitive and suppressed content filters. A Locked asset
+    // exists only for its owner's elevated session; a background runner's owner auth carries one.
+    const allowed = await this.checkAccess({ auth, permission: Permission.AssetRead, ids: new Set(byId.keys()) });
+    const elevatedOwnerId = getLockedOwnerId(auth);
+    const notFound: AssetDecision = { ok: false, reason: StudioRefusalReason.NotFound, detail: 'No such asset.' };
 
     for (const id of ids) {
       const asset = byId.get(id);
+      const isOwner = asset?.ownerId === auth.user.id;
+      const isLocked = !!asset && isLockedAssetRow(asset);
       if (!asset) {
-        decisions.set(id, { ok: false, reason: StudioRefusalReason.NotFound, detail: 'No such asset.' });
-      } else if (asset.deletedAt) {
-        decisions.set(id, { ok: false, reason: StudioRefusalReason.Trashed, detail: 'The asset is in the trash.' });
-      } else if (asset.visibility === AssetVisibility.Locked && !backgroundRunner) {
+        decisions.set(id, notFound);
+      } else if (isLocked && !(isOwner && (backgroundRunner || elevatedOwnerId === auth.user.id))) {
+        // someone else's Locked asset, or the owner's own in an ordinary session: indistinguishable
+        // from a missing one, whatever the access query answered
+        decisions.set(id, notFound);
+      } else if (!allowed.has(id)) {
+        decisions.set(
+          id,
+          isOwner
+            ? {
+                ok: false,
+                reason: StudioRefusalReason.HiddenContent,
+                detail: 'Your sensitive or suppressed content settings exclude this asset.',
+              }
+            : notFound,
+        );
+      } else if (isLocked && !backgroundRunner) {
+        // only the owner's elevated session reaches this: Locked media never enters Studio interactively
         decisions.set(id, {
           ok: false,
           reason: StudioRefusalReason.Locked,
           detail: 'Locked media never enters Studio.',
         });
+      } else if (asset.deletedAt) {
+        // only the owner reaches a trashed asset: album and partner access never include the trash
+        decisions.set(id, { ok: false, reason: StudioRefusalReason.Trashed, detail: 'The asset is in the trash.' });
       } else if (asset.isOffline) {
         decisions.set(id, {
           ok: false,
@@ -1048,27 +1079,7 @@ export class StudioResourceService extends BaseService {
           detail: 'Only images and video can be placed on a timeline.',
         });
       } else {
-        candidates.add(id);
-      }
-    }
-
-    // Owner, shared album and partner access with the acting user's sensitive and suppressed
-    // content filters. Locked is already refused above regardless of session elevation, except
-    // for a background runner, whose owner auth carries the elevation the access query needs.
-    const allowed = await this.checkAccess({ auth, permission: Permission.AssetRead, ids: candidates });
-
-    for (const id of candidates) {
-      const asset = byId.get(id)!;
-      if (allowed.has(id)) {
-        decisions.set(id, { ok: true, asset, sourceAccess: asset.ownerId === auth.user.id ? 'owner' : 'shared' });
-      } else if (asset.ownerId === auth.user.id) {
-        decisions.set(id, {
-          ok: false,
-          reason: StudioRefusalReason.HiddenContent,
-          detail: 'Your sensitive or suppressed content settings exclude this asset.',
-        });
-      } else {
-        decisions.set(id, { ok: false, reason: StudioRefusalReason.NoAccess, detail: 'No read access to this asset.' });
+        decisions.set(id, { ok: true, asset, sourceAccess: isOwner ? 'owner' : 'shared' });
       }
     }
 

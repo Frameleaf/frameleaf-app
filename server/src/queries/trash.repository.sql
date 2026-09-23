@@ -8,6 +8,7 @@ set
 where
   "ownerId" = $3
   and "status" = $4
+  and "asset"."visibility" != 'locked'
 
 -- TrashRepository.empty
 update "asset"
@@ -16,6 +17,7 @@ set
 where
   "ownerId" = $2
   and "status" = $3
+  and "asset"."visibility" != 'locked'
 
 -- TrashRepository.restoreAll
 update "asset"
