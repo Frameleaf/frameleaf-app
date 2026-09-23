@@ -1,9 +1,11 @@
 <script lang="ts" module>
-  import type { PersonResponseDto } from '@immich/sdk';
+  import type { PersonResponseDto, PetResponseDto } from '@immich/sdk';
 
   /** Option lists for the panel's controls, loaded by the caller from the production APIs. */
   export type FilterPanelOptions = {
     people: PersonResponseDto[];
+    /** FL-58: the account's own visible pets. */
+    pets: PetResponseDto[];
     tags: { value: string; label: string }[];
     albums: { value: string; label: string }[];
     cities: string[];
@@ -233,6 +235,18 @@
       people={options.people}
       onChange={setCondition}
     />
+
+    <!-- FL-58: shown once the account has a pet, or while a link carries a pet condition to remove -->
+    {#if options.pets.length > 0 || filter.petIds}
+      <FilterMultiSelect
+        field="petIds"
+        anchor="pets"
+        label={$t('frameleaf_pets_title')}
+        options={options.pets.map((pet) => ({ value: pet.id, label: pet.name || $t('frameleaf_pets_unnamed') }))}
+        condition={filter.petIds as SetCondition}
+        onChange={setCondition}
+      />
+    {/if}
 
     <section class="filter-section" data-section="media">
       <h3>{$t('media_type')}</h3>

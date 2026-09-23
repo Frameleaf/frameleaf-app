@@ -1,3 +1,4 @@
+import { AssetVisibility } from '@immich/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   activeFilterCount,
@@ -16,6 +17,7 @@ import {
   fromLegacySearch,
   isDiscoveryFilterActive,
   readDiscoveryQuery,
+  structuredSearchRequest,
   withDiscoveryFacet,
   withoutDiscoveryFilter,
   withoutDiscoveryFilters,
@@ -258,5 +260,106 @@ describe('cumulative paging', () => {
       values: { shown: 0, total: 0 },
       hasMore: false,
     });
+  });
+});
+
+describe('pets as a filter (FL-58)', () => {
+  const petId = '99999999-8888-4777-8666-555555555555';
+
+  it('searches a pet page by that pet', () => {
+    expect(contextDiscoveryQuery(new URL(`http://localhost/pets/${petId}`)).filter).toEqual({
+      petIds: { any: [petId] },
+    });
+    expect(contextDiscoveryQuery(new URL(`http://localhost/pets/${petId}/photos/${albumId}`)).filter).toEqual({
+      petIds: { any: [petId] },
+    });
+    expect(contextDiscoveryQuery(new URL('http://localhost/pets'))).toEqual(emptyDiscoveryQuery());
+  });
+
+  it('adds pet facets like people facets, keeping earlier picks', () => {
+    const one = withDiscoveryFacet(emptyDiscoveryQuery(), 'petIds', 'a');
+    expect(withDiscoveryFacet(one, 'petIds', 'b').filter.petIds).toEqual({ any: ['a', 'b'] });
+    expect(one.filter.petIds).toEqual({ any: ['a'] });
+  });
+
+  it('migrates a flat petIds search to an all-of condition, like personIds', () => {
+    expect(fromLegacySearch({ petIds: ['a', 'b'], personIds: ['p'] }).filter).toEqual({
+      petIds: { all: ['a', 'b'] },
+      personIds: { all: ['p'] },
+    });
+    expect(fromLegacySearch({ petIds: [] }).filter).toEqual({});
+  });
+
+  it('has its own filter panel section, after People', () => {
+    expect(filterSectionForField('petIds')).toBe('pets');
+    expect(activeFilterSections(query({ petIds: { any: ['a'] }, personIds: { any: ['p'] } }))).toEqual([
+      'people',
+      'pets',
+    ]);
+    expect(fieldsInFilterSection(query({ petIds: { none: ['a'] } }), 'pets')).toEqual(['petIds']);
+  });
+
+  it('counts, chips and removes a pet condition like any other', () => {
+    const withPet = query({ petIds: { any: ['a'] }, rating: { gte: 4 } });
+    expect(activeFilterCount(withPet)).toBe(2);
+    expect(discoveryChipFields(withPet)).toEqual(['petIds', 'rating']);
+    expect(withoutDiscoveryFilter(withPet, 'petIds').filter).toEqual({ rating: { gte: 4 } });
+  });
+
+  it('does not restate the pet on its own page', () => {
+    const onPetPage = query({ petIds: { any: ['a'] }, rating: { gte: 4 } });
+    expect(discoveryChipFields(onPetPage, { kind: 'pet', id: 'a' })).toEqual(['rating']);
+    expect(destinationFilterFields({ kind: 'pet', id: 'a' })).toEqual(['petIds']);
+  });
+});
+
+describe('structured search results request (FL-58)', () => {
+  it('sends a dialog filter without any flat field the server refuses beside it', () => {
+    const request = structuredSearchRequest({ filter: { petIds: { any: ['a'] } } });
+    expect(request).toEqual({
+      filter: {
+        petIds: { any: ['a'] },
+        visibility: { eq: AssetVisibility.Timeline },
+        trashedAt: { eq: null },
+      },
+      withExif: true,
+    });
+    expect(request).not.toHaveProperty('page');
+    expect(request).not.toHaveProperty('visibility');
+  });
+
+  it('folds the text modes into the filter the way a legacy search is migrated', () => {
+    const filter = { petIds: { any: ['a'] } };
+    expect(structuredSearchRequest({ filter, originalFileName: 'IMG' }).filter?.originalFileName).toEqual({
+      like: '%IMG%',
+    });
+    expect(structuredSearchRequest({ filter, description: 'lake' }).filter?.description).toEqual({ like: '%lake%' });
+    expect(structuredSearchRequest({ filter, ocr: 'exit' }).filter?.ocr).toEqual({ matches: 'exit' });
+    expect(structuredSearchRequest({ filter, originalPath: '/2026' }).filter?.originalPath).toEqual({
+      startsWith: '/2026',
+    });
+    expect(structuredSearchRequest({ filter, originalFileName: 'IMG' })).not.toHaveProperty('originalFileName');
+  });
+
+  it('keeps smart text and the cursor, and an explicit visibility or trash condition', () => {
+    const request = structuredSearchRequest(
+      {
+        filter: { visibility: { eq: AssetVisibility.Archive }, trashedAt: { gte: '2026-01-01' } },
+        query: 'dog on the beach',
+      },
+      'cursor-2',
+    );
+    expect(request).toEqual({
+      filter: { visibility: { eq: AssetVisibility.Archive }, trashedAt: { gte: '2026-01-01' } },
+      withExif: true,
+      query: 'dog on the beach',
+      cursor: 'cursor-2',
+    });
+  });
+
+  it('does not alias the filter it is given', () => {
+    const filter = { petIds: { any: ['a'] } };
+    structuredSearchRequest({ filter });
+    expect(filter).toEqual({ petIds: { any: ['a'] } });
   });
 });

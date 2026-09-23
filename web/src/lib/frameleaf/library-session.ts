@@ -544,7 +544,7 @@ const booleanFields = new Set([
   'favorite',
 ]);
 const numberFields = new Set(['rating', 'fileSizeInBytes']);
-const listFields = new Set(['personIds', 'tagIds', 'albumIds']);
+const listFields = new Set(['personIds', 'petIds', 'tagIds', 'albumIds']);
 const stringFields = new Set([
   'id',
   'libraryId',
@@ -656,6 +656,15 @@ export const readLibraryView = (url: URL): LibraryViewState | null => {
     }
     const q = value.query;
     const filter = object(q.filter) ? structuredClone(q.filter) : q.filter;
+    // FL-58: earlier links carried pets beside the filter as a top-level `petIds` list the search API
+    // never read. Pets are now an ordinary `filter.petIds` condition, so such a list is folded into it
+    // (as `any`, which is what the prototype meant) unless the filter already says something about pets.
+    if (q.petIds !== undefined && (!Array.isArray(q.petIds) || q.petIds.some((id) => typeof id !== 'string'))) {
+      return null;
+    }
+    if (Array.isArray(q.petIds) && q.petIds.length > 0 && object(filter) && filter.petIds === undefined) {
+      filter.petIds = { any: [...new Set(q.petIds as string[])] };
+    }
     // Earlier prototype URLs stored the rating select's DOM string value.
     if (
       object(filter) &&
@@ -679,9 +688,6 @@ export const readLibraryView = (url: URL): LibraryViewState | null => {
     if (q.spaceId !== undefined && typeof q.spaceId !== 'string') {
       return null;
     }
-    if (q.petIds !== undefined && (!Array.isArray(q.petIds) || q.petIds.some((id) => typeof id !== 'string'))) {
-      return null;
-    }
     // FL-49: the enrichment facet is a closed server enum, so an unknown value is rejected here
     // rather than forwarded to the API.
     if (
@@ -701,7 +707,6 @@ export const readLibraryView = (url: URL): LibraryViewState | null => {
         grouping: q.grouping,
         view: q.view,
         ...(q.spaceId && { spaceId: q.spaceId }),
-        ...(q.petIds && { petIds: q.petIds }),
         ...(q.imageEnrichment && { imageEnrichment: q.imageEnrichment }),
       },
       sort: value.sort,

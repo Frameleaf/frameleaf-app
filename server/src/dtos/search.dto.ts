@@ -23,6 +23,16 @@ const DEPRECATED_FLAT_FIELD = {
   deprecated: true,
 };
 
+/**
+ * FL-58: the flat `petIds` twin of `personIds`. It arrives after the structured filter, so it is born
+ * deprecated in favour of `filter.petIds`; being marked deprecated is also what makes
+ * `withShapeExclusivity` reject it next to `filter`, exactly as it rejects `personIds`.
+ */
+const FLAT_PET_IDS_FIELD = {
+  ...new HistoryBuilder().added('v3.2.0').deprecated('v3.2.0').getExtensions(),
+  deprecated: true,
+};
+
 const BaseSearchSchema = z.object({
   imageEnrichment: ImageEnrichmentFilterSchema.optional(),
   suppressedOnly: z.boolean().optional().describe('Return only suppressed content. Requires an elevated session.'),
@@ -49,6 +59,11 @@ const BaseSearchSchema = z.object({
   lensModel: z.string().nullable().optional().describe('Filter by lens model').meta(DEPRECATED_FLAT_FIELD),
   isNotInAlbum: z.boolean().optional().describe('Filter assets not in any album').meta(DEPRECATED_FLAT_FIELD),
   personIds: z.array(z.uuidv4()).optional().describe('Filter by person IDs').meta(DEPRECATED_FLAT_FIELD),
+  petIds: z
+    .array(z.uuidv4())
+    .optional()
+    .describe("Filter by the caller's own pet IDs (confirmed pet observations only)")
+    .meta(FLAT_PET_IDS_FIELD),
   tagIds: z.array(z.uuidv4()).nullish().describe('Filter by tag IDs').meta(DEPRECATED_FLAT_FIELD),
   albumIds: z.array(z.uuidv4()).optional().describe('Filter by album IDs').meta(DEPRECATED_FLAT_FIELD),
   rating: z
@@ -276,6 +291,8 @@ const searchFilterBranchShape = {
   updatedAt: DateFilterSchema,
   trashedAt: DateFilterNullableSchema,
   personIds: IdsFilterSchema,
+  // FL-58: matches the caller's own confirmed pet observations; another account's pet id matches nothing
+  petIds: IdsFilterSchema,
   tagIds: IdsFilterSchema,
   albumIds: IdsFilterSchema,
   checksum: StringFilterSchema,

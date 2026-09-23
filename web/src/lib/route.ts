@@ -105,6 +105,7 @@ export const Route = {
 
   // pets
   pets: () => '/pets',
+  viewPet: ({ id }: { id: string }) => `/pets/${id}`,
 
   // photos
   photos: (params?: { at?: string }) => '/photos' + asQueryString(params),

@@ -376,6 +376,33 @@ describe('portable URL state', () => {
     expect(isLibraryFilter({ or: [{ or: [{ city: { eq: 'Banff' } }] }] })).toBe(false);
     expect(isLibraryFilter({ city: { eq: 'x'.repeat(4097) } })).toBe(false);
   });
+
+  it('carries pets as an ordinary id-list condition (FL-58)', () => {
+    expect(isLibraryFilter({ petIds: { any: ['pet-1'] } })).toBe(true);
+    expect(isLibraryFilter({ petIds: { all: ['pet-1', 'pet-2'], none: ['pet-3'] } })).toBe(true);
+    expect(isLibraryFilter({ or: [{ petIds: { any: ['pet-1'] } }, { personIds: { any: ['p1'] } }] })).toBe(true);
+    expect(isLibraryFilter({ petIds: { eq: 'pet-1' } })).toBe(false);
+    expect(isLibraryFilter({ petIds: { any: [] } })).toBe(false);
+
+    const state = viewState({ query: withFilter({ petIds: { any: ['pet-1'] } }) });
+    expect(readLibraryView(writeLibraryView(new URL('http://localhost/photos'), state))).toEqual(state);
+  });
+
+  it('folds the prototype top-level pet list into the filter it never reached', () => {
+    const legacy = { ...emptyDiscoveryQuery(), petIds: ['pet-1', 'pet-1', 'pet-2'] } as unknown as DiscoveryQuery;
+    const restored = readLibraryViewValue(viewState({ query: legacy }));
+    expect(restored?.query.filter.petIds).toEqual({ any: ['pet-1', 'pet-2'] });
+    expect(restored?.query).not.toHaveProperty('petIds');
+
+    const explicit = {
+      ...withFilter({ petIds: { none: ['pet-3'] } }),
+      petIds: ['pet-1'],
+    } as unknown as DiscoveryQuery;
+    expect(readLibraryViewValue(viewState({ query: explicit }))?.query.filter.petIds).toEqual({ none: ['pet-3'] });
+
+    const malformed = { ...emptyDiscoveryQuery(), petIds: [1] } as unknown as DiscoveryQuery;
+    expect(readLibraryViewValue(viewState({ query: malformed }))).toBeNull();
+  });
 });
 
 describe('what survives a reload', () => {
