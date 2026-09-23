@@ -157,6 +157,7 @@
   };
 
   const isSensitiveRoute = (pathname: string) => {
+    // /suppressed is unlinked but still PIN-guarded until the Locked union lands (FL-34).
     const roots = [Route.locked(), Route.suppressed()];
     return roots.some((root) => pathname === root || pathname.startsWith(`${root}/`));
   };
