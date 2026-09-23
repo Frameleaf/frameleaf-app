@@ -2,6 +2,7 @@ import { Column, CreateDateColumn, ForeignKeyColumn, Index, Table, Unique, Updat
 import type { Generated, Int8, Timestamp } from '@immich/sql-tools';
 import { PrimaryGeneratedUuidV7Column, UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 /**
@@ -23,8 +24,17 @@ import { UserTable } from 'src/schema/tables/user.table.js';
  *   `leaseClientId` distinguishes two tabs of the same account; the lease is owner-only, so the
  *   holder column exists for the audit trail and for the `SET NULL` on account deletion rather
  *   than for authorization.
+ * - **The lifecycle (FL-91, `STU-204`).** `archivedAt` puts a project away without touching its
+ *   history; `deletedAt` moves it to the trash and `purgeAfter` says when the sweep may delete the
+ *   row for good, so a trashed project is restorable until then and never a moment longer than the
+ *   configured retention. Neither state touches any library original: a project only ever
+ *   references media, so deleting it, even permanently, deletes references and nothing else.
+ *   `thumbnailAssetId`, `duplicatedFromId` and `importedFromDigest` are lineage for the project
+ *   library, all nullable and all `SET NULL` on the other side's deletion.
  */
 @Index({ columns: ['ownerId', 'updatedAt'] })
+@Index({ columns: ['purgeAfter'] })
+@Unique({ columns: ['importOperationId'] })
 @Table('studio_project')
 @UpdatedAtTrigger('studio_project_updatedAt')
 export class StudioProjectTable {
@@ -56,6 +66,38 @@ export class StudioProjectTable {
   @Column({ type: 'timestamp with time zone', nullable: true })
   leaseExpiresAt!: Timestamp | null;
 
+  /** In the trash since. Null for a live project; restoring clears it. */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  deletedAt!: Timestamp | null;
+
+  /** When the retention sweep may delete a trashed project for good. Null while it is not trashed. */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  purgeAfter!: Timestamp | null;
+
+  /** Put away by the owner. Read-only until unarchived; hidden from the active list. */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  archivedAt!: Timestamp | null;
+
+  /** The last time an editor instance took the lease, for the project library's recents. */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  lastOpenedAt!: Timestamp | null;
+
+  /** A library asset the owner chose as the project's poster. Never copied; a reference only. */
+  @ForeignKeyColumn(() => AssetTable, { onDelete: 'SET NULL', onUpdate: 'CASCADE', nullable: true })
+  thumbnailAssetId!: string | null;
+
+  /** The project this one was duplicated from, while that project still exists. */
+  @ForeignKeyColumn(() => StudioProjectTable, { onDelete: 'SET NULL', onUpdate: 'CASCADE', nullable: true })
+  duplicatedFromId!: string | null;
+
+  /** SHA-256, hex, of the portable bundle file this project was imported from. */
+  @Column({ nullable: true })
+  importedFromDigest!: string | null;
+
+  /** The import job that created this project; unique, so a retried import finds it again. */
+  @Column({ type: 'uuid', nullable: true })
+  importOperationId!: string | null;
+
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;
 
@@ -64,6 +106,54 @@ export class StudioProjectTable {
 
   @UpdateIdColumn()
   updateId!: Generated<string>;
+}
+
+/**
+ * A portable bundle file an account uploaded for import (FL-91, `STU-204`).
+ *
+ * The upload is registered before anything is read out of it, so the import job works from a
+ * file the server already measured and digested rather than from a request body. `manifest` is
+ * the validated summary the interface shows before the import starts (name, sources, what will
+ * relink); the file itself stays where the upload put it until `expiresAt`, or until the sweep
+ * finds it consumed, so a second import with a corrected mapping does not need a second upload.
+ * Retention is bounded by design: nothing here outlives its expiry.
+ */
+@Index({ columns: ['ownerId', 'expiresAt'] })
+@Table('studio_bundle_upload')
+export class StudioBundleUploadTable {
+  @PrimaryGeneratedUuidV7Column()
+  id!: Generated<string>;
+
+  @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', nullable: false })
+  ownerId!: string;
+
+  /** Server-side path of the uploaded file. Never returned to a client. */
+  @Column()
+  path!: string;
+
+  @Column({ type: 'bigint' })
+  sizeBytes!: Int8;
+
+  /** SHA-256, hex, of the whole file as uploaded. */
+  @Column()
+  digest!: string;
+
+  @Column()
+  originalFileName!: string;
+
+  /** The validated manifest summary. */
+  @Column({ type: 'jsonb' })
+  manifest!: Record<string, unknown>;
+
+  @Column({ type: 'timestamp with time zone' })
+  expiresAt!: Timestamp;
+
+  /** Set by the first import that read it; the file is kept until expiry for a re-import. */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  consumedAt!: Timestamp | null;
+
+  @CreateDateColumn()
+  createdAt!: Generated<Timestamp>;
 }
 
 /**

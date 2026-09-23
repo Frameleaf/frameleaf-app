@@ -9,24 +9,31 @@ import {
   StudioCommentParamDto,
   StudioCommentUpdateDto,
   StudioProjectCreateDto,
+  StudioProjectDeleteQueryDto,
   StudioProjectDetailDto,
   StudioProjectDiffDto,
   StudioProjectDiffQueryDto,
   StudioProjectDto,
+  StudioProjectDuplicateDto,
   StudioProjectHistoryResponseDto,
   StudioProjectLeaseDto,
   StudioProjectLeaseRequestDto,
+  StudioProjectLibrarySearchDto,
   StudioProjectListResponseDto,
   StudioProjectRestoreDto,
   StudioProjectRevisionDetailDto,
   StudioProjectSaveDto,
   StudioProjectSaveResponseDto,
   StudioProjectSearchDto,
+  StudioProjectTrashEmptyResponseDto,
   StudioProjectUpdateDto,
   StudioRevisionParamDto,
 } from 'src/dtos/studio-project.dto.js';
+import { MediaOperationDto } from 'src/dtos/media-operation.dto.js';
+import { StudioBundleExportCreateDto } from 'src/dtos/studio-bundle.dto.js';
 import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { StudioBundleService } from 'src/services/studio-bundle.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { UUIDv7ParamDto } from 'src/validation.js';
 
@@ -44,17 +51,37 @@ import { UUIDv7ParamDto } from 'src/validation.js';
 @ApiTags(ApiTag.StudioProjects)
 @Controller('studio/projects')
 export class StudioProjectController {
-  constructor(private service: StudioProjectService) {}
+  constructor(
+    private service: StudioProjectService,
+    private bundles: StudioBundleService,
+  ) {}
 
   @Get()
   @Authenticated()
   @Endpoint({
     summary: 'List Studio projects',
-    description: 'Projects you own and projects shared with a space you belong to, most recently changed first.',
+    description:
+      'One shelf of the project library. The active shelf holds projects you own and projects shared with a space you belong to; the archive and the trash hold your own only.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  searchStudioProjects(@Auth() auth: AuthDto, @Query() dto: StudioProjectSearchDto): Promise<StudioProjectListResponseDto> {
+  searchStudioProjects(
+    @Auth() auth: AuthDto,
+    @Query() dto: StudioProjectLibrarySearchDto,
+  ): Promise<StudioProjectListResponseDto> {
     return this.service.search(auth, dto);
+  }
+
+  @Post('trash/empty')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated()
+  @Endpoint({
+    summary: 'Empty the Studio trash',
+    description:
+      'Deletes every project in your Studio trash for good, with its history and comments. Media in your library is never touched.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  emptyStudioProjectTrash(@Auth() auth: AuthDto): Promise<StudioProjectTrashEmptyResponseDto> {
+    return this.service.emptyTrash(auth);
   }
 
   @Post()
@@ -86,7 +113,8 @@ export class StudioProjectController {
   @Authenticated()
   @Endpoint({
     summary: 'Update a Studio project',
-    description: 'Rename the project or set the shared space whose members may review it. Owner only.',
+    description:
+      'Rename the project, set the shared space whose members may review it, archive it or bring it back, or choose a library item as its poster. Owner only.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
   updateStudioProject(
@@ -102,11 +130,62 @@ export class StudioProjectController {
   @Authenticated()
   @Endpoint({
     summary: 'Delete a Studio project',
-    description: 'Removes the project, its history and its comments. Owner only. Finished jobs keep their lineage.',
+    description:
+      'Moves the project to the trash, where it can be restored until its retention runs out; with `permanent`, deletes it, its history and its comments now. Owner only. Media in your library is never touched, and finished jobs keep their lineage.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  deleteStudioProject(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<void> {
-    return this.service.remove(auth, id);
+  deleteStudioProject(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Query() dto: StudioProjectDeleteQueryDto,
+  ): Promise<void> {
+    return this.service.remove(auth, id, dto);
+  }
+
+  @Post(':id/trash/restore')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated()
+  @Endpoint({
+    summary: 'Restore a Studio project from the trash',
+    description: 'Brings a trashed project back to the shelf it was on. Owner only.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  restoreStudioProjectFromTrash(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<StudioProjectDto> {
+    return this.service.restoreFromTrash(auth, id);
+  }
+
+  @Post(':id/duplicate')
+  @HttpCode(HttpStatus.CREATED)
+  @Authenticated()
+  @Endpoint({
+    summary: 'Duplicate a Studio project',
+    description:
+      'Creates a new project of yours whose first version is this project as it is now. The copy is not shared for review. Owner only.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  duplicateStudioProject(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Body() dto: StudioProjectDuplicateDto,
+  ): Promise<StudioProjectDto> {
+    return this.service.duplicate(auth, id, dto);
+  }
+
+  @Post(':id/bundle')
+  @HttpCode(HttpStatus.CREATED)
+  @Authenticated()
+  @Endpoint({
+    summary: 'Export a Studio project as a bundle',
+    description:
+      'Queues a portable bundle of the current version: the project document, a manifest with digests, and references to its media or, when asked, copies of the media you own. Follow it in Activity. Owner only.',
+    history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
+  })
+  exportStudioProjectBundle(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Body() dto: StudioBundleExportCreateDto,
+  ): Promise<MediaOperationDto> {
+    return this.bundles.createExport(auth, id, dto);
   }
 
   @Post(':id/lease')

@@ -35,6 +35,7 @@ import {
   releaseStudioProjectLease,
   restoreStudioProjectRevision,
   saveStudioProjectRevision,
+  StudioProjectShelf,
   updateStudioProjectComment,
   type StudioCommentCreateDto,
   type StudioCommentDto,
@@ -77,7 +78,11 @@ export type StudioConflictReason =
   | 'lease-lost'
   | 'lease-held'
   | 'request-key-reused'
-  | 'revision-missing';
+  | 'revision-missing'
+  /** FL-91: the owner archived the project; it is read-only until brought back. */
+  | 'project-archived'
+  /** FL-91: the owner moved the project to the trash. */
+  | 'project-trashed';
 
 export interface StudioConflict {
   reason: StudioConflictReason;
@@ -92,7 +97,13 @@ const conflictReasons = new Set<string>([
   'lease-held',
   'request-key-reused',
   'revision-missing',
+  'project-archived',
+  'project-trashed',
 ]);
+
+/** The project was put away (archived or trashed): nothing may be written until it is back. */
+export const isShelvedConflict = (conflict: StudioConflict): boolean =>
+  conflict.reason === 'project-archived' || conflict.reason === 'project-trashed';
 
 /**
  * The status and body of a failed request, read structurally: the SDK's `HttpError` carries
@@ -380,12 +391,30 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       }
       const conflict = readStudioConflict(error);
       if (conflict) {
-        loseLease(conflict);
+        if (isShelvedConflict(conflict)) {
+          shelve(conflict);
+        } else {
+          loseLease(conflict);
+        }
         return;
       }
       // A transport failure proves nothing about the lease; the next save will say.
       scheduleRenewal(gen);
     }
+  };
+
+  /**
+   * The owner archived or trashed the project while it was open (FL-91). It turns read-only; an
+   * unsaved draft is kept in this tab, and the navigation guard still asks before it is lost.
+   */
+  const shelve = (conflict: StudioConflict) => {
+    cancel(renew);
+    renew = null;
+    cancel(debounce);
+    debounce = null;
+    cancel(retry);
+    retry = null;
+    emit({ status: 'review', project: { ...state.project, hasLease: false }, conflict });
   };
 
   const loseLease = (conflict: StudioConflict) => {
@@ -455,7 +484,9 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       return;
     }
 
-    if (detail.access !== 'owner') {
+    // An archived or trashed project opens read-only, for its owner too: it takes no lease (FL-91).
+    const shelved = detail.shelf === StudioProjectShelf.Archived || detail.shelf === StudioProjectShelf.Trashed;
+    if (detail.access !== 'owner' || shelved) {
       applyDetail(detail, gen, false);
       emit({ status: 'review', conflict: null });
       return;
@@ -479,9 +510,10 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       }
       const conflict = readStudioConflict(error);
       if (conflict) {
-        // Another instance is editing. Open for review; the person may take over explicitly.
+        // Another instance is editing, or the project was put away in the meantime. Open for
+        // review; for a live project the person may take over explicitly.
         applyDetail(detail, gen, false);
-        emit({ status: 'lease-lost', conflict });
+        emit({ status: isShelvedConflict(conflict) ? 'review' : 'lease-lost', conflict });
         return;
       }
       fail(error, gen);
@@ -597,6 +629,8 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
             // Same key, different document: a client bug. Take a fresh key rather than loop.
             current.requestKey = null;
             emit({ status: 'error', conflict, error: 'The save request key was reused for a different document' });
+          } else if (isShelvedConflict(conflict)) {
+            shelve(conflict);
           } else {
             loseLease(conflict);
           }
@@ -813,6 +847,8 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
         if (conflict) {
           if (conflict.reason === 'lease-lost' || conflict.reason === 'lease-held') {
             loseLease(conflict);
+          } else if (isShelvedConflict(conflict)) {
+            shelve(conflict);
           } else {
             emit({ status: 'conflict', conflict });
           }

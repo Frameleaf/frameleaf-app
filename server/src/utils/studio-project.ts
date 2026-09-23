@@ -394,3 +394,41 @@ export const mergeCommandSummaries = (summaries: readonly unknown[]): StudioComm
   }
   return { counts, total };
 };
+
+/* ------------------------------------------------------------------ */
+/* Lifecycle (FL-91)                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * How long a trashed project stays restorable. The explicit retention policy `STU-204` asks for:
+ * the sweep deletes a trashed project, with its history and comments, once this has passed, and
+ * never earlier. Library media the project referenced is never touched at any point.
+ */
+export const STUDIO_TRASH_RETENTION_DAYS = 30;
+
+/** How often the sweep looks for trashed projects, expired uploads and expired bundle files. */
+export const STUDIO_LIFECYCLE_SWEEP_MS = 15 * 60_000;
+
+/** The moment a project trashed at `now` may be deleted for good. */
+export const studioPurgeAfter = (now: Date = new Date(), days = STUDIO_TRASH_RETENTION_DAYS): Date =>
+  new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+
+/**
+ * Where a project sits in its owner's library. Trash wins over archive: a project archived and
+ * then trashed is in the trash, and restoring it brings it back to the archive it came from.
+ */
+export type StudioProjectShelf = 'active' | 'archived' | 'trashed';
+
+export const studioProjectShelf = (project: {
+  deletedAt: Date | string | null;
+  archivedAt: Date | string | null;
+}): StudioProjectShelf => (project.deletedAt ? 'trashed' : project.archivedAt ? 'archived' : 'active');
+
+/** Whole days left before a trashed project is purged, never negative; null when not trashed. */
+export const studioDaysUntilPurge = (purgeAfter: Date | string | null, now: Date = new Date()): number | null => {
+  if (!purgeAfter) {
+    return null;
+  }
+  const at = purgeAfter instanceof Date ? purgeAfter.getTime() : Date.parse(purgeAfter);
+  return Math.max(0, Math.ceil((at - now.getTime()) / (24 * 60 * 60 * 1000)));
+};
