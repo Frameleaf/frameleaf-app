@@ -266,6 +266,8 @@
     };
     const dispose = () => {
       disposed = true;
+      // off only compares callback identity; it never invokes the async listener.
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises
       api.off(Hls.Events.MANIFEST_PARSED, onManifestParsed);
       api.off(Hls.Events.FRAG_LOADED, onFragmentLoaded);
       api.off(Hls.Events.ERROR, onError);
