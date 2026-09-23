@@ -171,7 +171,7 @@ describe(TrashService.name, () => {
     });
 
     it('should never widen an ordinary session to Locked media', async () => {
-      mocks.trash.getSummary.mockResolvedValue({ count: 0, bytes: 0, pendingDeletion: 0 });
+      mocks.trash.getSummary.mockResolvedValue({ count: 0, offline: 0, bytes: 0, pendingDeletion: 0 });
 
       await sut.getSummary(authStub.user1);
 
@@ -182,7 +182,7 @@ describe(TrashService.name, () => {
   describe('privacy filters (FL-47)', () => {
     it('should keep hidden sensitive media out of an ordinary session', async () => {
       const auth = { ...authStub.user1, hideNsfwAssets: true };
-      mocks.trash.getSummary.mockResolvedValue({ count: 0, bytes: 0, pendingDeletion: 0 });
+      mocks.trash.getSummary.mockResolvedValue({ count: 0, offline: 0, bytes: 0, pendingDeletion: 0 });
 
       await sut.getSummary(auth);
 

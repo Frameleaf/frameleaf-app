@@ -234,12 +234,46 @@ describe(TrashService.name, () => {
 
       await expect(sut.getSummary(factory.auth({ user }))).resolves.toEqual({
         count: 0,
+        offline: 0,
         bytes: 0,
         pendingDeletion: 0,
       });
       await expect(sut.review(factory.auth({ user }), { action: TrashReviewAction.Empty })).rejects.toThrow(
         'Your trash is already empty',
       );
+    });
+  });
+
+  describe('missing external originals', () => {
+    it('should list them without restoring or emptying them', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      // what a library scan does to a file that disappeared: a deletion date, still active
+      const { asset: offline } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: own(),
+        isExternal: true,
+        isOffline: true,
+        deletedAt: new Date(),
+      });
+      const { asset: trashed } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: own(),
+        status: AssetStatus.Trashed,
+        deletedAt: new Date(),
+      });
+
+      await expect(sut.getSummary(auth)).resolves.toMatchObject({ count: 2, offline: 1 });
+      const { items } = await sut.getItems(auth, {});
+      expect(items.find(({ id }) => id === offline.id)).toMatchObject({ isOffline: true });
+
+      const review = await sut.review(auth, { action: TrashReviewAction.Empty });
+      expect(review.count).toBe(1);
+      await sut.apply(auth, { action: TrashReviewAction.Empty, token: review.token });
+
+      await expect(statusOf(ctx.database, offline.id)).resolves.toBe(AssetStatus.Active);
+      await expect(statusOf(ctx.database, trashed.id)).resolves.toBe(AssetStatus.Deleted);
     });
   });
 

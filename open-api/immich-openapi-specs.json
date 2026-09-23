@@ -24173,6 +24173,12 @@
             "minimum": 0,
             "type": "integer"
           },
+          "offline": {
+            "description": "Of those, external-library originals that went missing; the library scan manages them",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "pendingDeletion": {
             "description": "Items already permanently deleted whose files are still being removed from storage",
             "maximum": 9007199254740991,
@@ -24183,6 +24189,7 @@
         "required": [
           "bytes",
           "count",
+          "offline",
           "pendingDeletion"
         ],
         "type": "object"
