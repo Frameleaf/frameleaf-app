@@ -89,7 +89,7 @@ test("library and administration preservation contracts match source and canonic
     personalSettingsCount: 16,
     productionRouteCount: 83,
     sourceCitationCount: 42,
-    systemSettingsCount: 23,
+    systemSettingsCount: 22,
   });
 });
 
