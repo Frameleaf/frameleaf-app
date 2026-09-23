@@ -95,10 +95,13 @@ export async function migrateAlbums(
     try {
       const memberAIds = await collectAssetIds(from, { albumIds: [album.aId] }, options.includeTrashed);
       const bAssetIds: string[] = [];
+      let pending = 0;
       for (const aId of memberAIds) {
         const bId = ledger.bId(aId);
         if (bId) {
           bAssetIds.push(bId);
+        } else if (ledger.hasAsset(aId)) {
+          pending++; // enumerated but not on B yet (failed or still to transfer)
         }
       }
       for (const part of chunk(bAssetIds, 500)) {
@@ -109,6 +112,12 @@ export async function migrateAlbums(
         if (thumbBId) {
           await to.updateAlbum(bAlbumId, { albumThumbnailAssetId: thumbBId });
         }
+      }
+      if (pending > 0) {
+        // Adding members is idempotent, so leave the album pending: a later run (for example
+        // with --retry-failed) adds the late assets, and the audit lists it until then.
+        controller.log(`album ${album.name}: ${pending} member(s) not on destination yet`);
+        continue;
       }
       ledger.setAlbumLinked(album.aId);
       controller.log(`album linked: ${album.name}`);

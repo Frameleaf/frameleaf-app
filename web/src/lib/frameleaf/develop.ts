@@ -524,9 +524,7 @@ export function resizeCropRect(
     const verticalOnly = handle === 'n' || handle === 's';
     if (horizontalOnly) {
       h = w / k;
-    } else if (verticalOnly) {
-      w = h * k;
-    } else if (w / k > h) {
+    } else if (verticalOnly || w / k > h) {
       w = h * k;
     } else {
       h = w / k;
@@ -628,10 +626,15 @@ export const toneOnlyRecipe = (recipe: AssetDevelopRecipeDto): AssetDevelopRecip
 /** Stable key of everything that changes the server preview, so stale previews are never shown. */
 export const toneKey = (recipe: AssetDevelopRecipeDto): string => {
   const tone = toneOnlyRecipe(recipe);
+  // Masks are sent in the source frame, so their preview also depends on the turns and flips (FL-64).
+  const masks = recipe.masks?.length
+    ? [recipe.masks, recipe.rotation ?? 0, !!recipe.flipHorizontal, !!recipe.flipVertical]
+    : [];
   return JSON.stringify([
     ...DEVELOP_KEYS.map((key) => tone[key] ?? 0),
     tone.preset ?? AssetDevelopPreset.Original,
     tone.presetStrength ?? 100,
+    ...masks,
   ]);
 };
 

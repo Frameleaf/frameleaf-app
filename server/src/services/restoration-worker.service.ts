@@ -852,9 +852,16 @@ export class RestorationWorkerService {
   /* ------------------------------------------------------------------ */
 
   /**
-   * Atomic publish: validation is recorded on the job, every file is moved into place, and only
-   * then does the row change — guarded by the running status, so an owner who discarded the
-   * restoration meanwhile wins and the files are removed again.
+   * Atomic publish (FL-43). Validation is recorded on the job; then, with the job's row locked under
+   * this claim, every file is moved into place, the restoration row changes — guarded by the running
+   * status, so an owner who discarded the restoration meanwhile wins — and the job completes, all in
+   * one transaction.
+   *
+   * Nothing is moved into place unless the claim still holds the job at that moment. A cancel that
+   * arrived while the output was being checked, or a lease that lapsed and was handed to another
+   * worker, leaves the files where they are as scratch: the cancel is settled and nothing is
+   * published, and a replacement worker's output (or the previous valid one) is never overwritten or
+   * removed by a stale one.
    */
   private async publish(
     ctx: RunContext,
@@ -864,17 +871,6 @@ export class RestorationWorkerService {
     const { operation, claimToken, snapshot, stage, restoration } = ctx;
     if (!(await this.operationRepository.beginValidation(operation.id, claimToken))) {
       throw new RestorationInterrupted();
-    }
-
-    const columns: Partial<Record<PublishedFile['column'], string>> = {};
-    for (const file of output.files) {
-      this.storageRepository.mkdirSync(path.dirname(file.final));
-      await this.storageRepository.rename(file.tmp, file.final);
-      const index = ctx.scratch.indexOf(file.tmp);
-      if (index !== -1) {
-        ctx.scratch.splice(index, 1);
-      }
-      columns[file.column] = file.final;
     }
 
     const now = new Date();
@@ -894,21 +890,55 @@ export class RestorationWorkerService {
         finishedAt: now.toISOString(),
       },
     };
-    const updated = await this.restorationRepository.transition(restoration.id, [statuses.running], {
-      status: statuses.done,
-      ...columns,
-      modelName: output.modelName,
-      modelVersion: output.modelVersion,
-      provenance,
-      error: null,
-      ...(stage === 'preview'
-        ? { previewReadyAt: now, previewExpiresAt: previewExpiryAfterReady(now) }
-        : { restoredAt: now, outputWidth: output.width, outputHeight: output.height }),
-    });
 
-    if (!updated) {
+    const columns: Partial<Record<PublishedFile['column'], string>> = {};
+    const placed: string[] = [];
+    let outcome: Awaited<ReturnType<MediaOperationRepository['publishValidated']>>;
+    try {
+      outcome = await this.operationRepository.publishValidated(operation.id, claimToken, async (trx) => {
+        for (const file of output.files) {
+          this.storageRepository.mkdirSync(path.dirname(file.final));
+          await this.storageRepository.rename(file.tmp, file.final);
+          placed.push(file.final);
+          const index = ctx.scratch.indexOf(file.tmp);
+          if (index !== -1) {
+            ctx.scratch.splice(index, 1);
+          }
+          columns[file.column] = file.final;
+        }
+
+        const updated = await this.restorationRepository.transition(
+          restoration.id,
+          [statuses.running],
+          {
+            status: statuses.done,
+            ...columns,
+            modelName: output.modelName,
+            modelVersion: output.modelVersion,
+            provenance,
+            error: null,
+            ...(stage === 'preview'
+              ? { previewReadyAt: now, previewExpiresAt: previewExpiryAfterReady(now) }
+              : { restoredAt: now, outputWidth: output.width, outputHeight: output.height }),
+          },
+          trx,
+        );
+        return !!updated;
+      });
+    } catch (error) {
+      // Nothing was recorded; the files this attempt moved into place belong to no row.
+      await this.discard(placed);
+      throw error;
+    }
+
+    if (outcome === 'lost') {
+      // Cancelled while the output was checked, or the claim is gone: `settle` decides which.
+      throw new RestorationInterrupted();
+    }
+
+    if (outcome === 'rejected') {
       // Discarded while rendering. The result has no owner decision behind it any more.
-      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: Object.values(columns) } });
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: placed } });
       await this.operationRepository.fail(operation.id, claimToken, {
         error: 'The restoration was discarded while the render was running',
         errorCode: RestorationErrorCode.StageNotRunnable,
@@ -916,12 +946,6 @@ export class RestorationWorkerService {
       return;
     }
 
-    const completed = await this.operationRepository.complete(operation.id, claimToken, { resultAssetId: null });
-    if (!completed) {
-      this.logger.warn(
-        `Restoration ${restoration.id} published its ${stage} but job ${operation.id} was no longer ours`,
-      );
-    }
     if (stage === 'full') {
       await this.storageRepository.unlinkDir(ctx.workDir, { recursive: true, force: true }).catch(() => {});
     }
@@ -947,14 +971,16 @@ export class RestorationWorkerService {
     if (error instanceof RestorationInterrupted || ctx.signal.aborted) {
       const current = await this.operationRepository.getForOwner(operation.id, operation.ownerId);
       if (current?.status === MediaOperationStatus.Cancelling) {
-        await this.operationRepository.acknowledgeCancel(operation.id, { released: true });
+        await this.operationRepository.acknowledgeCancel(operation.id, claimToken, { released: true });
         await this.restorationRepository.transition(restoration.id, [statuses.running], { status: statuses.cancelled });
         this.logger.log(`Restoration ${restoration.id} cancelled by its owner`);
       } else if (current?.pauseRequestedAt && (await this.operationRepository.settlePause(operation.id, claimToken))) {
         // The owner paused it (FL-104). The restoration row stays running: resuming requeues the
         // job, and the next claim carries on from the chunks already checkpointed.
         this.logger.log(`Restoration ${restoration.id} paused by its owner`);
-      } else if (await this.operationRepository.requeue(operation.id, claimToken, { delayMs: 0 })) {
+      } else if (
+        await this.operationRepository.requeue(operation.id, claimToken, { delayMs: 0, returnAttempt: true })
+      ) {
         // Stopped for a pause the owner withdrew before it landed: the claim is still ours, so the
         // job goes straight back to the queue instead of waiting for its lease to lapse.
         this.logger.log(`Restoration ${restoration.id} resumed before its pause landed; requeued`);

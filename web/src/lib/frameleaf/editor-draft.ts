@@ -24,13 +24,16 @@ import {
   type AspectId,
   type DevelopValues,
 } from '$lib/frameleaf/develop';
+import { normalizeMasks, type EditorMask } from '$lib/frameleaf/photo-tools';
 
 export const RECIPE_VERSION = 1 as const;
 
-export type EditorRecipe = Required<Omit<AssetDevelopRecipeDto, 'crop' | 'version'>> &
+export type EditorRecipe = Required<Omit<AssetDevelopRecipeDto, 'crop' | 'version' | 'masks'>> &
   DevelopValues & {
     version: typeof RECIPE_VERSION;
     crop: { x: number; y: number; w: number; h: number };
+    /** Selective adjustments (FL-64), in the oriented frame like the crop. */
+    masks: EditorMask[];
     /** Client-only: which aspect chip framed the crop. Not sent to the server. */
     aspect: AspectId;
   };
@@ -59,6 +62,7 @@ export const initialRecipe = (): EditorRecipe => ({
   flipVertical: false,
   preset: AssetDevelopPreset.Original,
   presetStrength: 100,
+  masks: [],
 });
 
 /** Every field clamped into the contract, defaults filled; safe for storage and for the wire. */
@@ -77,12 +81,13 @@ export function normalizeRecipe(candidate: unknown): EditorRecipe {
     flipVertical: value.flipVertical === true,
     preset: choice(value.preset, PRESET_IDS, AssetDevelopPreset.Original),
     presetStrength: Math.round(number(value.presetStrength, 100, 0, 100)),
+    masks: normalizeMasks(value.masks),
   };
 }
 
 /** The wire shape: the recipe without the client-only aspect. */
 export function toServerRecipe(recipe: EditorRecipe): AssetDevelopRecipeDto {
-  const { aspect: _aspect, ...rest } = normalizeRecipe(recipe);
+  const { aspect: _, ...rest } = normalizeRecipe(recipe);
   return rest;
 }
 
@@ -108,6 +113,25 @@ export function changeDraft(draft: EditorDraft, patch: Partial<EditorRecipe>): E
   };
 }
 
+/**
+ * Opens the draft on the recipe the server returned. Adjustments made while that request was in
+ * flight were made against the defaults; they are replayed on top of the loaded recipe (one undo
+ * step back to it) rather than silently discarded.
+ */
+export function rebaseDraft(draft: EditorDraft, loaded: unknown): EditorDraft {
+  const base = createDraft(loaded);
+  if (draft.undo.length === 0 && draft.redo.length === 0) {
+    return base;
+  }
+  const defaults = initialRecipe();
+  const edits = Object.fromEntries(
+    (Object.keys(draft.recipe) as (keyof EditorRecipe)[])
+      .filter((key) => JSON.stringify(draft.recipe[key]) !== JSON.stringify(defaults[key]))
+      .map((key) => [key, draft.recipe[key]]),
+  ) as Partial<EditorRecipe>;
+  return changeDraft(base, edits);
+}
+
 const travel = (draft: EditorDraft, source: 'undo' | 'redo'): EditorDraft => {
   const target = source === 'undo' ? 'redo' : 'undo';
   if (draft[source].length === 0) {
@@ -123,8 +147,8 @@ const travel = (draft: EditorDraft, source: 'undo' | 'redo'): EditorDraft => {
 export const undoDraft = (draft: EditorDraft) => travel(draft, 'undo');
 export const redoDraft = (draft: EditorDraft) => travel(draft, 'redo');
 
-/** Keys copied by Copy settings / Paste settings. Geometry stays put. */
-export const SETTINGS_KEYS = [...DEVELOP_KEYS, 'preset', 'presetStrength'] as const;
+/** Keys copied by Copy settings / Paste settings, and kept by a saved preset. Geometry stays put. */
+export const SETTINGS_KEYS = [...DEVELOP_KEYS, 'preset', 'presetStrength', 'masks'] as const;
 export type EditorSettings = Partial<Pick<EditorRecipe, (typeof SETTINGS_KEYS)[number]>>;
 
 export const pickSettings = (recipe: EditorRecipe): EditorSettings =>

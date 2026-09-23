@@ -25,6 +25,7 @@ import {
   MediaOperationCheckpoint,
   MediaOperationRepository,
 } from 'src/repositories/media-operation.repository.js';
+import { PreservationRepository } from 'src/repositories/preservation.repository.js';
 import { isGranted, requireAccess } from 'src/utils/access.js';
 import {
   BULK_ACTION_PERMISSIONS,
@@ -58,6 +59,7 @@ import {
   isActiveMediaOperation,
   isPausableMediaOperationKind,
 } from 'src/utils/media-operation.js';
+import { PreservationPackageError, isPreservationKind, parsePreservationSnapshot } from 'src/utils/preservation.js';
 
 const DEFAULT_TAKE = 100;
 
@@ -201,6 +203,14 @@ const UUID_PATTERN = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/
 
 const unlessHidden = (id: string | null, hidden: ReadonlySet<string>) => (id && hidden.has(id) ? null : id);
 
+/**
+ * Whether a job is about one of the caller's Locked items that this session may not see (FL-43,
+ * FL-34). Its label is that item's file name and its snapshot names the item, so both are withheld;
+ * the row itself stays, so the owner still sees that something is running and can stop it.
+ */
+const isWithheld = (operation: Pick<MediaOperation, 'assetId'>, hidden: ReadonlySet<string>) =>
+  !!operation.assetId && hidden.has(operation.assetId);
+
 /** `hidden`: the caller's Locked media, never named to a session that has not unlocked it (FL-34). */
 export const mapOperation = (
   operation: MediaOperation,
@@ -211,7 +221,8 @@ export const mapOperation = (
   status: operation.status as MediaOperationStatus,
   destination: operation.destination as MediaOperationDestination,
   destinationDetail: operation.destinationDetail,
-  label: operation.label,
+  label: isWithheld(operation, hidden) ? '' : operation.label,
+  withheld: isWithheld(operation, hidden),
   assetId: unlessHidden(operation.assetId, hidden),
   resultAssetId: unlessHidden(operation.resultAssetId, hidden),
   retryOfId: operation.retryOfId,
@@ -271,6 +282,7 @@ export class MediaOperationService {
     private access: AccessRepository,
     private icloud: ICloudSyncRepository,
     private jobs: JobRepository,
+    private preservation: PreservationRepository,
   ) {
     this.logger.setContext(MediaOperationService.name);
   }
@@ -314,7 +326,8 @@ export class MediaOperationService {
 
     return {
       ...mapOperation(operation, hidden),
-      snapshot: mapSnapshot(operation),
+      // A job about a Locked item names it throughout its snapshot; a locked session sees none of it.
+      snapshot: isWithheld(operation, hidden) ? {} : mapSnapshot(operation),
       checkpoints: checkpoints.map((checkpoint) => mapCheckpoint(checkpoint)),
       bulkItems: mapBulkItems(operation, hidden),
       bulkRetryPending: mapBulkRetryPending(operation, hidden),
@@ -537,20 +550,30 @@ export class MediaOperationService {
       return this.retryICloudSync(auth, operation);
     }
 
+    if (isPreservationKind(operation.kind)) {
+      return this.retryPreservation(auth, operation);
+    }
+
     if (!canRetryMediaOperation(operation.status as MediaOperationStatus)) {
       throw new BadRequestException('Only a failed or cancelled job can be retried');
     }
 
-    // A Google Photos import step (FL-65) resumes from its import's rows, so asking twice must not
-    // queue two runs of the same step: the retry already waiting answers instead.
-    if (operation.kind === MediaOperationKind.TakeoutImport) {
-      const active = await this.repository.getActiveRetry(operation.id, auth.user.id);
-      if (active) {
-        return this.present(auth, active);
-      }
+    // Asking twice answers with the retry already waiting (FL-43; FL-65 for Google Photos import
+    // steps, which resume from their import's rows): a double click, a second tab or a resent
+    // request never queues the same work twice.
+    const active = await this.repository.getActiveRetry(operation.id, auth.user.id);
+    if (active) {
+      return this.present(auth, active);
     }
 
-    const retried = await this.repository.create({
+    // A retry is a new submission and is checked like one (FL-43): access to the item may have
+    // changed since the job was first queued, and a job over an item that is Locked now needs the
+    // unlocked session, exactly as queueing it afresh would.
+    if (operation.assetId) {
+      await this.requireUnlockedFor(auth, [operation.assetId]);
+    }
+
+    const { operation: retried } = await this.repository.createRetry({
       ownerId: operation.ownerId,
       kind: operation.kind,
       destination: operation.destination,
@@ -668,7 +691,7 @@ export class MediaOperationService {
       elevated: auth.session?.hasElevatedPermission === true,
     };
 
-    const retried = await this.repository.create({
+    const { operation: retried } = await this.repository.createRetry({
       ownerId: operation.ownerId,
       kind: MediaOperationKind.Bulk,
       destination: operation.destination,
@@ -725,7 +748,7 @@ export class MediaOperationService {
     const record = enrichmentRetryRecord(snapshot, result, remaining);
     // The retry acts with the retrying session's PIN, which was just checked above.
     const retrySnapshot = { ...record.snapshot, elevated: auth.session?.hasElevatedPermission === true };
-    const retried = await this.repository.create({
+    const { operation: retried } = await this.repository.createRetry({
       ownerId: operation.ownerId,
       kind: MediaOperationKind.EnrichmentPlan,
       destination: operation.destination,
@@ -872,6 +895,80 @@ export class MediaOperationService {
         break;
       }
     }
+  }
+
+  /**
+   * Retry a preservation job (FL-74) from Activity the way the preservation page does: it carries on
+   * from its package's or restoration's own rows. One job per package or restoration (asking while
+   * one runs answers with it), failed items get their automatic retry back, and an export holding
+   * Locked items is retried only from an unlocked session, as it could only be asked for from one.
+   */
+  private async retryPreservation(auth: AuthDto, operation: MediaOperation): Promise<MediaOperationDto> {
+    if (!canRetryMediaOperation(operation.status as MediaOperationStatus)) {
+      throw new BadRequestException('Only a failed or cancelled job can be retried');
+    }
+
+    let snapshot: ReturnType<typeof parsePreservationSnapshot>;
+    try {
+      snapshot = parsePreservationSnapshot(operation.kind, operation.snapshot);
+    } catch (error) {
+      if (error instanceof PreservationPackageError) {
+        throw new BadRequestException('This job can no longer be retried');
+      }
+      throw error;
+    }
+    const restoreId = 'restoreId' in snapshot ? snapshot.restoreId : null;
+    const active = restoreId
+      ? await this.preservation.activeOperation(auth.user.id, 'restoreId', restoreId)
+      : await this.preservation.activeOperation(auth.user.id, 'packageId', snapshot.packageId);
+    if (active) {
+      return this.present(auth, active);
+    }
+
+    const found = await this.preservation.getPackage(snapshot.packageId, auth.user.id);
+    if (!found || found.removedAt) {
+      throw new BadRequestException('The package this job worked on has been removed');
+    }
+    if (restoreId) {
+      const restore = await this.preservation.getRestore(restoreId, auth.user.id);
+      if (!restore) {
+        throw new BadRequestException('The restoration this job worked on is gone');
+      }
+      if (operation.kind === MediaOperationKind.PreservationRestore) {
+        if (!['ready', 'restoring', 'completed'].includes(restore.status)) {
+          throw new BadRequestException('Review the package before restoring it');
+        }
+        await this.preservation.resetFailedRestoreItems(restore.id);
+      }
+    } else if (operation.kind === MediaOperationKind.PreservationExport) {
+      if (found.includeLocked && !getLockedOwnerId(auth)) {
+        throw new ForbiddenException('Unlock the Locked view to retry a package that includes Locked items');
+      }
+      await this.preservation.resetFailedItems(found.id);
+    }
+
+    // Two requests racing past the check above meet at the one-active-retry index (FL-43): one
+    // inserts, the other is answered with the winner instead of a unique violation.
+    const { operation: retried, created } = await this.repository.createRetry({
+      ownerId: operation.ownerId,
+      kind: operation.kind,
+      destination: operation.destination,
+      destinationDetail: operation.destinationDetail,
+      label: operation.label,
+      assetId: null,
+      resultAssetId: null,
+      retryOfId: operation.id,
+      projectId: null,
+      revisionId: null,
+      snapshot: { ...(operation.snapshot as Record<string, unknown>), requestKey: null },
+      settings: operation.settings,
+      estimate: null,
+      maxAttempts: operation.maxAttempts,
+    });
+    if (created) {
+      this.logger.log(`Preservation job ${operation.id} retried as ${retried.id}`);
+    }
+    return this.present(auth, retried);
   }
 
   private async findOwned(auth: AuthDto, id: string): Promise<MediaOperation> {
