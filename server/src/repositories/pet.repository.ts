@@ -10,6 +10,8 @@ import {
   PetObservationTable,
   PetTable,
 } from 'src/schema/tables/pet.table.js';
+import { lockedOwnerScope } from 'src/utils/database.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 
 export type Pet = Selectable<PetTable>;
 export type PetObservation = Selectable<PetObservationTable>;
@@ -19,6 +21,13 @@ export interface PetWithCounts extends Pet {
   /** Durable `confirmed` observations. Never a count of detections. */
   assetCount: number;
 }
+
+/**
+ * `lockedOwnerId`: the owner, when their session is elevated. Only then do counts, observations and
+ * proposals include their Locked media (FL-34). `withLocked` is for writes that must see every
+ * observation (merging), never for a response.
+ */
+export type PetLockedOptions = LockedVisibilityOptions & { withLocked?: boolean };
 
 export interface PetReviewCandidate {
   id: string;
@@ -59,15 +68,20 @@ export class PetRepository {
 
   // ---------------------------------------------------------------- durable: identity
 
-  getAll(ownerId: string, { withHidden }: { withHidden: boolean }): Promise<PetWithCounts[]> {
+  getAll(
+    ownerId: string,
+    { withHidden, lockedOwnerId }: { withHidden: boolean } & LockedVisibilityOptions,
+  ): Promise<PetWithCounts[]> {
     return this.db
       .selectFrom('pet')
       .selectAll('pet')
       .select((eb) =>
         eb
           .selectFrom('pet_observation')
+          .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
           .whereRef('pet_observation.petId', '=', 'pet.id')
           .where('pet_observation.state', '=', PetObservationState.Confirmed)
+          .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
           .select((inner) => inner.fn.countAll<number>().as('count'))
           .as('assetCount'),
       )
@@ -84,15 +98,21 @@ export class PetRepository {
   }
 
   /** Owner-scoped by construction: a wrong owner gets `undefined`, never another's pet. */
-  getById(ownerId: string, id: string): Promise<PetWithCounts | undefined> {
+  getById(
+    ownerId: string,
+    id: string,
+    { lockedOwnerId }: LockedVisibilityOptions = {},
+  ): Promise<PetWithCounts | undefined> {
     return this.db
       .selectFrom('pet')
       .selectAll('pet')
       .select((eb) =>
         eb
           .selectFrom('pet_observation')
+          .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
           .whereRef('pet_observation.petId', '=', 'pet.id')
           .where('pet_observation.state', '=', PetObservationState.Confirmed)
+          .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
           .select((inner) => inner.fn.countAll<number>().as('count'))
           .as('assetCount'),
       )
@@ -147,24 +167,32 @@ export class PetRepository {
 
   // ------------------------------------------------------------- durable: observations
 
-  getObservations(ownerId: string, petId: string): Promise<PetObservation[]> {
+  getObservations(ownerId: string, petId: string, options: PetLockedOptions = {}): Promise<PetObservation[]> {
     return this.db
       .selectFrom('pet_observation')
       .innerJoin('pet', 'pet.id', 'pet_observation.petId')
+      .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
       .selectAll('pet_observation')
       .where('pet_observation.petId', '=', petId)
       .where('pet.ownerId', '=', ownerId)
+      .$if(!options.withLocked, (qb) => qb.where((eb) => lockedOwnerScope(eb, options.lockedOwnerId)))
       .orderBy('pet_observation.createdAt', 'desc')
       .execute();
   }
 
-  getObservationById(ownerId: string, id: string): Promise<PetObservation | undefined> {
+  getObservationById(
+    ownerId: string,
+    id: string,
+    { lockedOwnerId }: LockedVisibilityOptions = {},
+  ): Promise<PetObservation | undefined> {
     return this.db
       .selectFrom('pet_observation')
       .innerJoin('pet', 'pet.id', 'pet_observation.petId')
+      .innerJoin('asset', 'asset.id', 'pet_observation.assetId')
       .selectAll('pet_observation')
       .where('pet_observation.id', '=', id)
       .where('pet.ownerId', '=', ownerId)
+      .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
       .executeTakeFirst();
   }
 
@@ -296,7 +324,11 @@ export class PetRepository {
    * `filterReviewedCandidates`, so the rule that a rejection survives reprocessing is a
    * tested pure function rather than a join nobody reads.
    */
-  getCandidates(ownerId: string, limit: number): Promise<PetReviewCandidate[]> {
+  getCandidates(
+    ownerId: string,
+    limit: number,
+    { lockedOwnerId }: LockedVisibilityOptions = {},
+  ): Promise<PetReviewCandidate[]> {
     return this.db
       .selectFrom('pet_candidate')
       .innerJoin('pet_detection', 'pet_detection.id', 'pet_candidate.detectionId')
@@ -321,12 +353,17 @@ export class PetRepository {
       .where('pet.ownerId', '=', ownerId)
       .where('asset.ownerId', '=', ownerId)
       .where('asset.deletedAt', 'is', null)
+      .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
       .limit(limit)
       .execute()
       .then((rows) => rows.map((row) => ({ ...row, score: Number(row.score ?? 0) })));
   }
 
-  getCandidateById(ownerId: string, id: string): Promise<PetReviewCandidate | undefined> {
+  getCandidateById(
+    ownerId: string,
+    id: string,
+    { lockedOwnerId }: LockedVisibilityOptions = {},
+  ): Promise<PetReviewCandidate | undefined> {
     return this.db
       .selectFrom('pet_candidate')
       .innerJoin('pet_detection', 'pet_detection.id', 'pet_candidate.detectionId')
@@ -351,6 +388,7 @@ export class PetRepository {
       .where('pet_candidate.id', '=', id)
       .where('pet.ownerId', '=', ownerId)
       .where('asset.ownerId', '=', ownerId)
+      .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
       .executeTakeFirst()
       .then((row) => (row ? { ...row, score: Number(row.score ?? 0) } : undefined));
   }

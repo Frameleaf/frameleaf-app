@@ -20,6 +20,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
 import { requireAccess } from 'src/utils/access.js';
+import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import {
   filterReviewedCandidates,
   normalizePetName,
@@ -51,7 +52,11 @@ export class PetService {
   // ------------------------------------------------------------------------- identity
 
   async getAll(auth: AuthDto, dto: PetSearchDto): Promise<PetResponseDto[]> {
-    const pets = await this.petRepository.getAll(auth.user.id, { withHidden: dto.withHidden ?? false });
+    // photo counts include the caller's Locked media only in their elevated session (FL-34)
+    const pets = await this.petRepository.getAll(auth.user.id, {
+      withHidden: dto.withHidden ?? false,
+      ...getLockedVisibilityOptions(auth),
+    });
     return pets.map((pet) => mapPet(pet));
   }
 
@@ -122,8 +127,9 @@ export class PetService {
 
     for (const source of sources) {
       const [sourceObservations, targetObservations] = await Promise.all([
-        this.petRepository.getObservations(auth.user.id, source.id),
-        this.petRepository.getObservations(auth.user.id, target.id),
+        // a merge moves every observation, Locked ones included; nothing here is returned
+        this.petRepository.getObservations(auth.user.id, source.id, { withLocked: true }),
+        this.petRepository.getObservations(auth.user.id, target.id, { withLocked: true }),
       ]);
 
       const plan = planObservationMerge(sourceObservations, targetObservations);
@@ -141,7 +147,7 @@ export class PetService {
 
   async getObservations(auth: AuthDto, id: string): Promise<PetObservationResponseDto[]> {
     await this.findOrFail(auth, id);
-    const observations = await this.petRepository.getObservations(auth.user.id, id);
+    const observations = await this.petRepository.getObservations(auth.user.id, id, getLockedVisibilityOptions(auth));
     return observations.map((observation) => mapPetObservation(observation));
   }
 
@@ -174,7 +180,11 @@ export class PetService {
 
   /** Undo a durable decision. Nothing else removes one. */
   async removeObservation(auth: AuthDto, observationId: string): Promise<void> {
-    const observation = await this.petRepository.getObservationById(auth.user.id, observationId);
+    const observation = await this.petRepository.getObservationById(
+      auth.user.id,
+      observationId,
+      getLockedVisibilityOptions(auth),
+    );
     if (!observation) {
       throw new NotFoundException('Pet observation not found');
     }
@@ -186,7 +196,7 @@ export class PetService {
 
   async getCandidates(auth: AuthDto, dto: PetCandidateSearchDto): Promise<PetCandidateListResponseDto> {
     const [candidates, decisions] = await Promise.all([
-      this.petRepository.getCandidates(auth.user.id, dto.size),
+      this.petRepository.getCandidates(auth.user.id, dto.size, getLockedVisibilityOptions(auth)),
       this.petRepository.getDecisions(auth.user.id),
     ]);
 
@@ -268,7 +278,7 @@ export class PetService {
   // ---------------------------------------------------------------------------- helpers
 
   private async findOrFail(auth: AuthDto, id: string) {
-    const pet = await this.petRepository.getById(auth.user.id, id);
+    const pet = await this.petRepository.getById(auth.user.id, id, getLockedVisibilityOptions(auth));
     if (!pet) {
       throw new NotFoundException('Pet not found');
     }
@@ -276,7 +286,7 @@ export class PetService {
   }
 
   private async findCandidateOrFail(auth: AuthDto, id: string) {
-    const candidate = await this.petRepository.getCandidateById(auth.user.id, id);
+    const candidate = await this.petRepository.getCandidateById(auth.user.id, id, getLockedVisibilityOptions(auth));
     if (!candidate) {
       throw new NotFoundException('Pet recognition candidate not found');
     }
