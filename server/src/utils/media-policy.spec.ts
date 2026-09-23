@@ -11,6 +11,7 @@ import {
   VideoCodec,
 } from 'src/enum.js';
 import {
+  AudioChannelPolicy,
   EDITED_MASTER_HIGH_BIT_DEPTH_FORMAT,
   EDITED_MASTER_MAX_CRF,
   EditedMasterColorPolicy,
@@ -26,12 +27,16 @@ import {
   getEditedMasterColorArgs,
   getEditedMasterFfmpegConfig,
   getEditedMasterLineagePath,
+  getDeliveryAudioChannelArgs,
   getEditedMasterTimingArgs,
+  getFfmpegColorMatrixName,
   isHighBitDepth,
   isPlaybackProxyFileType,
   qualifyMetadataOnlyRotation,
   resolveEditedMasterColorPolicy,
 } from 'src/utils/media-policy.js';
+import { FRAME_RATE_NTSC_30 } from 'src/utils/rational-time.js';
+import { OutputCadenceMode } from 'src/utils/video-timing.js';
 import { probeStub } from 'test/fixtures/media.stub.js';
 
 const ffmpeg = defaults.ffmpeg;
@@ -240,8 +245,57 @@ describe('getEditedMasterTimingArgs', () => {
     expect(getEditedMasterTimingArgs({ timeBase: null })).toEqual(['-fps_mode', 'passthrough']);
   });
 
-  it('never emits a constant-frame-rate mode', () => {
+  it('never emits a constant-frame-rate mode on its own', () => {
     expect(getEditedMasterTimingArgs(sdrStream)).not.toContain('cfr');
+  });
+
+  // FL-93
+  it('takes the timescale from the exact time base rather than the persisted denominator', () => {
+    expect(getEditedMasterTimingArgs({ timeBase: 30_000, timeBaseRational: { num: 1, den: 30_000 } })).toEqual([
+      '-fps_mode',
+      'passthrough',
+      '-video_track_timescale',
+      '30000',
+    ]);
+    // A time base that carries a numerator still gets a grid every tick lands on exactly.
+    expect(getEditedMasterTimingArgs({ timeBase: 30_000, timeBaseRational: { num: 1001, den: 30_000 } })).toEqual([
+      '-fps_mode',
+      'passthrough',
+      '-video_track_timescale',
+      '30000',
+    ]);
+  });
+
+  it('passes the source timing through when a declared cadence is the one it already has', () => {
+    const decision = {
+      mode: OutputCadenceMode.Passthrough,
+      cadence: null,
+      reason: 'test',
+    };
+
+    expect(getEditedMasterTimingArgs({ timeBase: 600 }, decision)).toEqual([
+      '-fps_mode',
+      'passthrough',
+      '-video_track_timescale',
+      '600',
+    ]);
+  });
+
+  it('writes a requested cadence conversion as an exact rational, never as 29.97', () => {
+    const decision = {
+      mode: OutputCadenceMode.Convert,
+      cadence: FRAME_RATE_NTSC_30,
+      reason: 'test',
+    };
+
+    expect(getEditedMasterTimingArgs({ timeBase: 30_000 }, decision)).toEqual([
+      '-fps_mode',
+      'cfr',
+      '-r',
+      '30000/1001',
+      '-video_track_timescale',
+      '30000',
+    ]);
   });
 });
 
@@ -474,5 +528,76 @@ describe('buildEditedMasterLineage', () => {
 describe('getEditedMasterLineagePath', () => {
   it('sits beside the master it describes', () => {
     expect(getEditedMasterLineagePath('/encoded/a_edited.mp4')).toBe('/encoded/a_edited.mp4.lineage.json');
+  });
+});
+
+describe('getDeliveryAudioChannelArgs', () => {
+  const surround = { channels: 6, channelLayout: '5.1', sampleRate: 48_000 };
+
+  it('emits exactly one stereo downmix when the target asks for one', () => {
+    expect(getDeliveryAudioChannelArgs(surround, AudioChannelPolicy.DownmixStereo)).toEqual(['-ac', '2']);
+  });
+
+  it('downmixes on request even when nothing is known about the source', () => {
+    expect(getDeliveryAudioChannelArgs(undefined, AudioChannelPolicy.DownmixStereo)).toEqual(['-ac', '2']);
+  });
+
+  it('pins the probed channel count, layout and sample rate when preserving', () => {
+    expect(getDeliveryAudioChannelArgs(surround, AudioChannelPolicy.Preserve)).toEqual([
+      '-ac',
+      '6',
+      '-channel_layout',
+      '5.1',
+      '-ar',
+      '48000',
+    ]);
+  });
+
+  it('preserves a 7.1 layout', () => {
+    const track = { channels: 8, channelLayout: '7.1', sampleRate: 96_000 };
+    expect(getDeliveryAudioChannelArgs(track, AudioChannelPolicy.Preserve)).toEqual([
+      '-ac',
+      '8',
+      '-channel_layout',
+      '7.1',
+      '-ar',
+      '96000',
+    ]);
+  });
+
+  it('preserves a mono track', () => {
+    const track = { channels: 1, channelLayout: 'mono', sampleRate: 44_100 };
+    expect(getDeliveryAudioChannelArgs(track, AudioChannelPolicy.Preserve)).toEqual([
+      '-ac',
+      '1',
+      '-channel_layout',
+      'mono',
+      '-ar',
+      '44100',
+    ]);
+  });
+
+  it('emits nothing at all for facts it does not know, rather than a silent downmix', () => {
+    const unknown = { channels: null, channelLayout: null, sampleRate: null };
+    expect(getDeliveryAudioChannelArgs(unknown, AudioChannelPolicy.Preserve)).toEqual([]);
+    expect(getDeliveryAudioChannelArgs({}, AudioChannelPolicy.Preserve)).toEqual([]);
+    expect(getDeliveryAudioChannelArgs(undefined, AudioChannelPolicy.Preserve)).toEqual([]);
+  });
+
+  it('skips a zero channel count or sample rate', () => {
+    const zeroed = { channels: 0, channelLayout: '5.1', sampleRate: 0 };
+    expect(getDeliveryAudioChannelArgs(zeroed, AudioChannelPolicy.Preserve)).toEqual(['-channel_layout', '5.1']);
+  });
+});
+
+describe('getFfmpegColorMatrixName', () => {
+  it('names the matrices ffmpeg accepts', () => {
+    expect(getFfmpegColorMatrixName(ColorMatrix.Bt709)).toBe('bt709');
+    expect(getFfmpegColorMatrixName(ColorMatrix.Bt2020Nc)).toBe('bt2020nc');
+  });
+
+  it('returns null rather than a guess for a code point with no name', () => {
+    expect(getFfmpegColorMatrixName(ColorMatrix.Unknown)).toBeNull();
+    expect(getFfmpegColorMatrixName(ColorMatrix.Reserved)).toBeNull();
   });
 });

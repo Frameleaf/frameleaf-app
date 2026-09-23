@@ -1,5 +1,6 @@
 <script lang="ts">
   import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
+  import Theme from '$lib/components/frameleaf/Theme.svelte';
   import MaintenanceBackupsPanel from '$lib/components/frameleaf/MaintenanceBackupsPanel.svelte';
   import MaintenanceIntegrityPanel from '$lib/components/frameleaf/MaintenanceIntegrityPanel.svelte';
   import MaintenanceModeCard from '$lib/components/frameleaf/MaintenanceModeCard.svelte';
@@ -14,7 +15,7 @@
     type JobCreateDto,
     type QueuesResponseLegacyDto,
   } from '@immich/sdk';
-  import { Container } from '@immich/ui';
+  import { Container, Theme as AppTheme, themeManager } from '@immich/ui';
   import { onMount } from 'svelte';
   import { type Translations } from 'svelte-i18n';
   import type { PageData } from './$types';
@@ -25,6 +26,8 @@
   };
 
   const { data }: Props = $props();
+
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 
   let integrityReport: IntegrityReportSummaryResponseDto = $state(data.integrityReport);
 
@@ -112,29 +115,33 @@
   confirmation dialog.
 -->
 <AdminPageLayout breadcrumbs={[{ title: data.meta.title }]}>
-  <Container size="large" center class="my-4 flex flex-col gap-6">
-    <MaintenanceModeCard />
-    <MaintenanceIntegrityPanel
-      {reportTypes}
-      {integrityReport}
-      {jobNames}
-      {refreshJobNames}
-      {activeJobs}
-      {getReportTypeTranslation}
-      {getReportTypeDescriptionKey}
-      onCheck={(type) => void handleCreateJob({ name: jobNames[type] })}
-      onRefresh={(type) => void handleCreateJob({ name: refreshJobNames[type] })}
-      onCheckAll={() => {
-        for (const name of Object.values(jobNames)) {
-          void handleCreateJob({ name });
-        }
-      }}
-      onRefreshAll={() => {
-        for (const name of Object.values(refreshJobNames)) {
-          void handleCreateJob({ name });
-        }
-      }}
-    />
-    <MaintenanceBackupsPanel backups={data.backups} expectedVersion={data.expectedVersion} />
+  <Container size="large" center class="my-4">
+    <Theme theme={appTheme}>
+      <div class="flex flex-col gap-6">
+        <MaintenanceModeCard />
+        <MaintenanceIntegrityPanel
+          {reportTypes}
+          {integrityReport}
+          {jobNames}
+          {refreshJobNames}
+          {activeJobs}
+          {getReportTypeTranslation}
+          {getReportTypeDescriptionKey}
+          onCheck={(type) => void handleCreateJob({ name: jobNames[type] })}
+          onRefresh={(type) => void handleCreateJob({ name: refreshJobNames[type] })}
+          onCheckAll={() => {
+            for (const name of Object.values(jobNames)) {
+              void handleCreateJob({ name });
+            }
+          }}
+          onRefreshAll={() => {
+            for (const name of Object.values(refreshJobNames)) {
+              void handleCreateJob({ name });
+            }
+          }}
+        />
+        <MaintenanceBackupsPanel backups={data.backups} expectedVersion={data.expectedVersion} />
+      </div>
+    </Theme>
   </Container>
 </AdminPageLayout>

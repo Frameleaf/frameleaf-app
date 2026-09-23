@@ -65,13 +65,13 @@
 <div>
   <div in:fade={{ duration: 500 }}>
     <form autocomplete="off" onsubmit={(e) => e.preventDefault()}>
-      <div class="ms-4 mt-4 flex flex-col">
+      <div class="flex flex-col">
         <SettingGroup
           key="oauth"
           title={$t('admin.oauth_settings')}
           subtitle={$t('admin.oauth_settings_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
+          <div class="flex flex-col gap-4">
             <Text size="small">
               <FormatMessage key="admin.oauth_settings_more_details">
                 {#snippet children({ message })}
@@ -304,8 +304,8 @@
           title={$t('admin.password_settings')}
           subtitle={$t('admin.password_settings_description')}
         >
-          <div class="ms-4 mt-4 flex flex-col gap-4">
-            <div class="ms-4 mt-4 flex flex-col">
+          <div class="flex flex-col gap-4">
+            <div class="flex flex-col">
               <SettingToggle
                 title={$t('admin.password_enable_description')}
                 {disabled}

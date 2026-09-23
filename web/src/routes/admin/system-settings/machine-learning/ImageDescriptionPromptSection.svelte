@@ -36,7 +36,7 @@
   title={$t('admin.machine_learning_image_description_prompt')}
   subtitle={$t('admin.machine_learning_image_description_prompt_description')}
 >
-  <div class="ms-4 mt-4 flex flex-col gap-4">
+  <div class="flex flex-col gap-4">
     <SettingSelect
       label={$t('admin.machine_learning_image_description_style')}
       desc={$t('admin.machine_learning_image_description_style_description')}
@@ -108,16 +108,14 @@
       title={$t('admin.machine_learning_image_description_nsfw_indicators')}
       subtitle={$t('admin.machine_learning_image_description_nsfw_indicators_description')}
     >
-      <div class="ms-4 mt-4">
-        <SettingTextarea
-          label={$t('admin.machine_learning_image_description_nsfw_indicators')}
-          value={nsfwIndicatorsText}
-          onChange={(text) => (imageDescription.prompt!.nsfwIndicators = parseLines(text))}
-          disabled={disabled || !workingMlEnabled || !imageDescription.enabled}
-          isEdited={JSON.stringify(imageDescription.prompt?.nsfwIndicators) !==
-            JSON.stringify(savedImageDescription.prompt?.nsfwIndicators)}
-        />
-      </div>
+      <SettingTextarea
+        label={$t('admin.machine_learning_image_description_nsfw_indicators')}
+        value={nsfwIndicatorsText}
+        onChange={(text) => (imageDescription.prompt!.nsfwIndicators = parseLines(text))}
+        disabled={disabled || !workingMlEnabled || !imageDescription.enabled}
+        isEdited={JSON.stringify(imageDescription.prompt?.nsfwIndicators) !==
+          JSON.stringify(savedImageDescription.prompt?.nsfwIndicators)}
+      />
     </SettingGroup>
 
     <SettingGroup
@@ -125,16 +123,14 @@
       title={$t('admin.machine_learning_image_description_medical_indicators')}
       subtitle={$t('admin.machine_learning_image_description_medical_indicators_description')}
     >
-      <div class="ms-4 mt-4">
-        <SettingTextarea
-          label={$t('admin.machine_learning_image_description_medical_indicators')}
-          value={medicalIndicatorsText}
-          onChange={(text) => (imageDescription.prompt!.medicalIndicators = parseLines(text))}
-          disabled={disabled || !workingMlEnabled || !imageDescription.enabled}
-          isEdited={JSON.stringify(imageDescription.prompt?.medicalIndicators) !==
-            JSON.stringify(savedImageDescription.prompt?.medicalIndicators)}
-        />
-      </div>
+      <SettingTextarea
+        label={$t('admin.machine_learning_image_description_medical_indicators')}
+        value={medicalIndicatorsText}
+        onChange={(text) => (imageDescription.prompt!.medicalIndicators = parseLines(text))}
+        disabled={disabled || !workingMlEnabled || !imageDescription.enabled}
+        isEdited={JSON.stringify(imageDescription.prompt?.medicalIndicators) !==
+          JSON.stringify(savedImageDescription.prompt?.medicalIndicators)}
+      />
     </SettingGroup>
 
     <SettingGroup
@@ -142,7 +138,7 @@
       title={$t('admin.machine_learning_image_description_identity_injection')}
       subtitle={$t('admin.machine_learning_image_description_identity_injection_description')}
     >
-      <div class="ms-4 mt-4 flex flex-col gap-4">
+      <div class="flex flex-col gap-4">
         <SettingToggle
           title={$t('admin.machine_learning_image_description_identity_injection_enabled')}
           bind:checked={imageDescription.prompt!.identityInjection!.enabled}
@@ -190,7 +186,7 @@
       title={$t('admin.machine_learning_image_description_advanced')}
       subtitle={$t('admin.machine_learning_image_description_advanced_description')}
     >
-      <div class="ms-4 mt-4 flex flex-col gap-4">
+      <div class="flex flex-col gap-4">
         <SettingToggle
           title={$t('admin.machine_learning_image_description_advanced_enabled')}
           checked={imageDescription.prompt?.advanced?.enabled ?? false}

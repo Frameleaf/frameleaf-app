@@ -41,6 +41,22 @@
     /** Restore the scroll position from the URL's asset and from the session's scroll anchor. */
     enableRouting?: boolean;
     onOpen?: (asset: TimelineAsset) => void;
+    /**
+     * Picking mode: a plain click selects instead of opening the viewer. The album "add photos"
+     * step, the person feature-photo picker and the geolocation utility all work this way.
+     */
+    selectionMode?: boolean;
+    /** With `selectionMode`, a pick replaces the selection instead of adding to it. */
+    singleSelect?: boolean;
+    /** Called after a pick in `selectionMode`, with the asset that was picked. */
+    onSelect?: (asset: TimelineAsset) => void;
+    /**
+     * Intercept a plain click on a tile. Return `true` when the page handled it, and the timeline
+     * does nothing further; the geolocation utility reads an item's coordinates this way.
+     */
+    onTileClick?: (asset: TimelineAsset) => boolean;
+    /** Extra chrome drawn over every tile by the page that mounts the timeline. */
+    tileOverlay?: Snippet<[TimelineAsset]>;
     /** Rendered above the timeline; the results toolbar and any page header go here. */
     header?: Snippet;
     empty?: Snippet;
@@ -54,6 +70,11 @@
     captionFor,
     enableRouting = false,
     onOpen,
+    selectionMode = false,
+    singleSelect = false,
+    onSelect,
+    onTileClick,
+    tileOverlay,
     header,
     empty,
   }: Props = $props();
@@ -69,7 +90,8 @@
   const coarsePointer = $derived(mediaQueryManager.pointerCoarse);
   const isEmpty = $derived(timelineManager.isInitialized && timelineManager.months.length === 0);
   const selection = $derived(session.selection);
-  const selecting = $derived(selection.length > 0);
+  // In picking mode the tiles show their checkboxes from the start, as the legacy grid did.
+  const selecting = $derived(selection.length > 0 || (selectionMode && !singleSelect));
 
   $effect(() => {
     // The filling justified layout is what makes a short day group span the timeline.
@@ -310,15 +332,40 @@
     }
   };
 
+  /** A pick in single-select mode is the whole selection, so the previous one is replaced. */
+  const pick = (asset: TimelineAsset) => {
+    if (singleSelect) {
+      session.dispatch({ type: 'selection', ids: [asset.id] });
+    } else {
+      session.select(asset.id);
+    }
+    session.setScrollAnchor(asset.id);
+    onSelect?.(asset);
+  };
+
   const onToggleSelect = (asset: TimelineAsset, event: MouseEvent | KeyboardEvent) => {
-    if ('shiftKey' in event && event.shiftKey) {
+    if (!singleSelect && 'shiftKey' in event && event.shiftKey) {
       void selectRange(asset);
+      return;
+    }
+    if (singleSelect) {
+      pick(asset);
       return;
     }
     session.select(asset.id);
   };
 
   const handleOpen = (asset: TimelineAsset) => {
+    // The page may claim a plain click for itself before anything else happens.
+    if (onTileClick?.(asset)) {
+      session.setScrollAnchor(asset.id);
+      return;
+    }
+    // While picking, a plain click selects rather than opening the viewer.
+    if (selectionMode) {
+      pick(asset);
+      return;
+    }
     // Opening an item is not selecting it; the viewer (FL-35) reads the session's open asset.
     session.open(asset.id);
     session.setScrollAnchor(asset.id);
@@ -372,6 +419,7 @@
                 {onToggleSelect}
                 onSelectGroup={(ids, checked) => session.selectGroup(ids, checked)}
                 onFocusAsset={(asset) => session.setScrollAnchor(asset.id)}
+                {tileOverlay}
               />
             {/each}
           </div>

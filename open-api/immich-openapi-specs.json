@@ -4075,6 +4075,463 @@
         ],
         "type": "object"
       },
+      "AssetDevelopCrop": {
+        "properties": {
+          "h": {
+            "description": "Crop height as a fraction of the frame",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0.05,
+            "type": "number"
+          },
+          "w": {
+            "description": "Crop width as a fraction of the frame",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0.05,
+            "type": "number"
+          },
+          "x": {
+            "description": "Left edge of the crop as a fraction of the oriented frame width",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "y": {
+            "description": "Top edge of the crop as a fraction of the oriented frame height",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "h",
+          "w",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopFileKind": {
+        "description": "Which rendered file of a revision to fetch",
+        "enum": [
+          "master",
+          "preview"
+        ],
+        "type": "string"
+      },
+      "AssetDevelopPreset": {
+        "description": "Named look applied on top of the develop sliders",
+        "enum": [
+          "Original",
+          "Vivid",
+          "Natural",
+          "Warm",
+          "Cool",
+          "Mono",
+          "Silvertone",
+          "Noir",
+          "Fade"
+        ],
+        "type": "string"
+      },
+      "AssetDevelopPreviewDto": {
+        "properties": {
+          "recipe": {
+            "$ref": "#/components/schemas/AssetDevelopRecipeDto"
+          },
+          "size": {
+            "default": 1280,
+            "description": "Longest edge of the preview in pixels; the original is never upscaled",
+            "maximum": 2048,
+            "minimum": 256,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "recipe"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopRecipeDto": {
+        "properties": {
+          "blacks": {
+            "default": 0,
+            "description": "Black point",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "clarity": {
+            "default": 0,
+            "description": "Local contrast in the midtones",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "contrast": {
+            "default": 0,
+            "description": "Contrast around middle grey",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "crop": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetDevelopCrop"
+              }
+            ],
+            "default": {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 1
+            }
+          },
+          "dehaze": {
+            "default": 0,
+            "description": "Haze removal (positive) or addition (negative)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "exposure": {
+            "default": 0,
+            "description": "Exposure in EV; each whole stop doubles the light",
+            "format": "double",
+            "maximum": 2,
+            "minimum": -2,
+            "type": "number"
+          },
+          "flipHorizontal": {
+            "default": false,
+            "description": "Mirror left to right",
+            "type": "boolean"
+          },
+          "flipVertical": {
+            "default": false,
+            "description": "Mirror top to bottom",
+            "type": "boolean"
+          },
+          "grain": {
+            "default": 0,
+            "description": "Film grain amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "highlights": {
+            "default": 0,
+            "description": "Highlight recovery (negative) or lift (positive)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "noiseReduction": {
+            "default": 0,
+            "description": "Luminance noise reduction amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "preset": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetDevelopPreset"
+              }
+            ],
+            "default": "Original"
+          },
+          "presetStrength": {
+            "default": 100,
+            "description": "How much of the preset is applied, as a percentage",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rotation": {
+            "default": 0,
+            "description": "Quarter-turn rotation in degrees, clockwise",
+            "maximum": 270,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "saturation": {
+            "default": 0,
+            "description": "Global saturation",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "shadows": {
+            "default": 0,
+            "description": "Shadow lift (positive) or deepening (negative)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "sharpen": {
+            "default": 0,
+            "description": "Detail sharpening amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "straighten": {
+            "default": 0,
+            "description": "Straighten angle in degrees, applied before the crop",
+            "format": "double",
+            "maximum": 45,
+            "minimum": -45,
+            "type": "number"
+          },
+          "temperature": {
+            "default": 0,
+            "description": "Warm (positive) or cool (negative) white balance shift",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "tint": {
+            "default": 0,
+            "description": "Magenta (positive) or green (negative) tint",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "version": {
+            "description": "Recipe contract version",
+            "enum": [
+              1
+            ],
+            "type": "integer"
+          },
+          "vibrance": {
+            "default": 0,
+            "description": "Saturation weighted towards muted colours",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "vignette": {
+            "default": 0,
+            "description": "Darkened (positive) or lightened (negative) edges",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "whites": {
+            "default": 0,
+            "description": "White point",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset ID these revisions belong to",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "currentRevisionId": {
+            "description": "The revision the asset currently shows; null means the original",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "revisions": {
+            "description": "Every saved version of the recipe, newest first",
+            "items": {
+              "$ref": "#/components/schemas/AssetDevelopRevisionResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetId",
+          "currentRevisionId",
+          "revisions"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopRevertDto": {
+        "properties": {
+          "revisionId": {
+            "description": "Rendered revision to make current again; omitted, the original becomes current",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AssetDevelopRevisionResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "Asset this revision belongs to",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When the version was saved",
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "description": "Why the last render failed, when it did",
+            "nullable": true,
+            "type": "string"
+          },
+          "hasMaster": {
+            "description": "True once the edited master file exists",
+            "type": "boolean"
+          },
+          "hasPreview": {
+            "description": "True once the preview file exists",
+            "type": "boolean"
+          },
+          "height": {
+            "description": "Height of the edited master in pixels",
+            "nullable": true,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Develop revision ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isCurrent": {
+            "description": "True for the version the asset currently shows",
+            "type": "boolean"
+          },
+          "label": {
+            "description": "Name given when the version was saved",
+            "nullable": true,
+            "type": "string"
+          },
+          "progress": {
+            "description": "Render progress as a percentage",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recipe": {
+            "$ref": "#/components/schemas/AssetDevelopRecipeDto"
+          },
+          "renderedAt": {
+            "description": "When the render finished",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "rendererVersion": {
+            "description": "Identity of the renderer that produced the files, for lineage",
+            "nullable": true,
+            "type": "string"
+          },
+          "revision": {
+            "description": "Per-asset sequence number, 1 for the first saved version",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AssetDevelopRevisionStatus"
+          },
+          "updatedAt": {
+            "description": "When the revision last changed",
+            "format": "date-time",
+            "type": "string"
+          },
+          "width": {
+            "description": "Width of the edited master in pixels",
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetId",
+          "createdAt",
+          "error",
+          "hasMaster",
+          "hasPreview",
+          "height",
+          "id",
+          "isCurrent",
+          "label",
+          "progress",
+          "recipe",
+          "renderedAt",
+          "rendererVersion",
+          "revision",
+          "status",
+          "updatedAt",
+          "width"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopRevisionStatus": {
+        "description": "Render state of a develop revision",
+        "enum": [
+          "saved",
+          "queued",
+          "rendering",
+          "rendered",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "AssetDevelopSaveDto": {
+        "properties": {
+          "label": {
+            "description": "Optional name for the saved version",
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "recipe": {
+            "$ref": "#/components/schemas/AssetDevelopRecipeDto"
+          },
+          "render": {
+            "default": true,
+            "description": "Queue the edited master render immediately after saving the recipe",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "recipe"
+        ],
+        "type": "object"
+      },
       "AssetEditAction": {
         "description": "Type of edit action to perform",
         "enum": [
@@ -6566,6 +7023,59 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "EventStoryDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Number of assets the event held before the diversity pass",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "dayCount": {
+            "description": "Number of distinct local days the event covers",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "endDate": {
+            "description": "Last local day of the event, 'yyyy-MM-dd'",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Discriminator for an event story",
+            "enum": [
+              "event_story"
+            ],
+            "type": "string"
+          },
+          "place": {
+            "$ref": "#/components/schemas/MemoryStoryPlaceDto"
+          },
+          "startDate": {
+            "description": "First local day of the event, 'yyyy-MM-dd'",
+            "type": "string"
+          },
+          "title": {
+            "description": "Place label for the event, when it has one",
+            "type": "string"
+          },
+          "year": {
+            "description": "Year the event started",
+            "maximum": 9999,
+            "minimum": 1000,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetCount",
+          "dayCount",
+          "endDate",
+          "kind",
+          "startDate",
+          "year"
+        ],
         "type": "object"
       },
       "ExifResponseDto": {
@@ -9220,7 +9730,7 @@
             "type": "array"
           },
           "data": {
-            "$ref": "#/components/schemas/OnThisDayDto"
+            "$ref": "#/components/schemas/MemoryData"
           },
           "hideAt": {
             "description": "Date when memory should be hidden",
@@ -9287,6 +9797,164 @@
         ],
         "type": "object"
       },
+      "MemoryData": {
+        "description": "Memory data",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/EventStoryDto"
+          },
+          {
+            "$ref": "#/components/schemas/YearInReviewDto"
+          },
+          {
+            "$ref": "#/components/schemas/OnThisDayDto"
+          }
+        ]
+      },
+      "MemoryExportCreateDto": {
+        "properties": {
+          "format": {
+            "$ref": "#/components/schemas/MemoryExportFormat"
+          }
+        },
+        "type": "object"
+      },
+      "MemoryExportFormat": {
+        "description": "Memory export format",
+        "enum": [
+          "archive"
+        ],
+        "type": "string"
+      },
+      "MemoryExportResponseDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Number of assets in the export",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "createdAt": {
+            "description": "When the export was requested",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "error": {
+            "description": "Failure reason, when the export failed",
+            "nullable": true,
+            "type": "string"
+          },
+          "expiresAt": {
+            "description": "When the archive is deleted",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "nullable": true
+          },
+          "finishedAt": {
+            "description": "When the export reached a terminal state",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "nullable": true
+          },
+          "format": {
+            "$ref": "#/components/schemas/MemoryExportFormat"
+          },
+          "id": {
+            "description": "Export ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isDownloadable": {
+            "description": "Whether the archive can be downloaded right now",
+            "type": "boolean"
+          },
+          "memoryId": {
+            "description": "Memory the export was requested for",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "Owner user ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "processedAssets": {
+            "description": "Number of assets written so far",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "sizeInBytes": {
+            "description": "Size of the finished archive",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "startedAt": {
+            "description": "When the worker picked the export up",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/MemoryExportStatus"
+          },
+          "title": {
+            "description": "The memory's title when the export was requested",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Last update date",
+            "example": "2024-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetCount",
+          "createdAt",
+          "error",
+          "expiresAt",
+          "finishedAt",
+          "format",
+          "id",
+          "isDownloadable",
+          "memoryId",
+          "ownerId",
+          "processedAssets",
+          "sizeInBytes",
+          "startedAt",
+          "status",
+          "title",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "MemoryExportStatus": {
+        "description": "Memory export status",
+        "enum": [
+          "pending",
+          "running",
+          "ready",
+          "failed",
+          "cancelling",
+          "cancelled"
+        ],
+        "type": "string"
+      },
       "MemoryResponseDto": {
         "properties": {
           "assets": {
@@ -9303,7 +9971,7 @@
             "type": "string"
           },
           "data": {
-            "$ref": "#/components/schemas/OnThisDayDto"
+            "$ref": "#/components/schemas/MemoryData"
           },
           "deletedAt": {
             "description": "Deletion date",
@@ -9403,10 +10071,37 @@
         ],
         "type": "object"
       },
+      "MemoryStoryPlaceDto": {
+        "properties": {
+          "city": {
+            "description": "City",
+            "nullable": true,
+            "type": "string"
+          },
+          "country": {
+            "description": "Country",
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "description": "State or region",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "city",
+          "country",
+          "state"
+        ],
+        "type": "object"
+      },
       "MemoryType": {
         "description": "Memory type",
         "enum": [
-          "on_this_day"
+          "on_this_day",
+          "event_story",
+          "year_in_review"
         ],
         "type": "string"
       },
@@ -17183,7 +17878,8 @@
           "upload",
           "profile",
           "thumbs",
-          "backups"
+          "backups",
+          "exports"
         ],
         "type": "string"
       },
@@ -21359,6 +22055,42 @@
             "description": "Workflow trigger type"
           }
         },
+        "type": "object"
+      },
+      "YearInReviewDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Number of assets captured that year",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "kind": {
+            "description": "Discriminator for a year in review recap",
+            "enum": [
+              "year_in_review"
+            ],
+            "type": "string"
+          },
+          "monthCount": {
+            "description": "Number of distinct months represented",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "year": {
+            "description": "Calendar year being recapped",
+            "maximum": 9999,
+            "minimum": 1000,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetCount",
+          "kind",
+          "monthCount",
+          "year"
+        ],
         "type": "object"
       }
     },
@@ -26126,6 +26858,476 @@
         ],
         "x-immich-permission": "asset.update",
         "x-immich-state": "Deprecated"
+      }
+    },
+    "/assets/{id}/develop": {
+      "get": {
+        "description": "Every saved still-image edit recipe for the asset, newest first, with its render state and which one is current.",
+        "operationId": "getAssetDevelop",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDevelopResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List develop versions of an asset",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Stores the recipe as the next revision of the asset and, by default, queues the edited master render. The original file is never changed.",
+        "operationId": "saveAssetDevelop",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetDevelopSaveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDevelopRevisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Save a develop recipe as a new version",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/develop/preview": {
+      "post": {
+        "description": "Renders the recipe from the original at preview size and returns the image; nothing is stored.",
+        "operationId": "previewAssetDevelop",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetDevelopPreviewDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Render a develop preview",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/develop/revert": {
+      "post": {
+        "description": "Makes the named rendered version current, or the original when no version is named. History and files are kept.",
+        "operationId": "revertAssetDevelop",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetDevelopRevertDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDevelopResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Revert to the original or an earlier develop version",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/develop/revisions/{revisionId}/file": {
+      "get": {
+        "description": "Streams the edited master or the preview rendered for the version.",
+        "operationId": "viewAssetDevelopFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/AssetDevelopFileKind"
+                }
+              ],
+              "default": "preview"
+            }
+          },
+          {
+            "name": "revisionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "View a rendered develop file",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/develop/revisions/{revisionId}/render": {
+      "delete": {
+        "description": "Stops a queued or running render of the version. Files already rendered for other versions are untouched.",
+        "operationId": "cancelAssetDevelopRender",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "revisionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDevelopRevisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel a develop render",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Queues (or re-queues after a failure or cancellation) the edited master render of a saved version.",
+        "operationId": "renderAssetDevelopRevision",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "revisionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDevelopRevisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Render a develop version",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
       }
     },
     "/assets/{id}/edits": {
@@ -31413,6 +32615,257 @@
         "x-immich-state": "Stable"
       }
     },
+    "/memories/exports": {
+      "get": {
+        "description": "Retrieve the caller's own private highlight exports, newest first, optionally limited to a single memory. This is the durable job state the Activity page reads.",
+        "operationId": "getMemoryExports",
+        "parameters": [
+          {
+            "name": "memoryId",
+            "required": false,
+            "in": "query",
+            "description": "Only return exports of this memory",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryExportResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve memory exports",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/memories/exports/{id}": {
+      "delete": {
+        "description": "Cancel the export if it is still running, then delete the run and its archive.",
+        "operationId": "deleteMemoryExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a memory export",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      },
+      "get": {
+        "description": "Retrieve the current state of one of the caller's own private highlight exports.",
+        "operationId": "getMemoryExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryExportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve a memory export",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/memories/exports/{id}/cancel": {
+      "post": {
+        "description": "Ask for a running export to stop. A queued export is cancelled immediately; a running one stops at its next asset. Cancelling a finished export returns its final state unchanged.",
+        "operationId": "cancelMemoryExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryExportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel a memory export",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/memories/exports/{id}/download": {
+      "get": {
+        "description": "Download the finished archive for one of the caller's own exports. The archive is not reachable by any other route and is deleted when it expires.",
+        "operationId": "downloadMemoryExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download a memory export",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
+      }
+    },
     "/memories/statistics": {
       "get": {
         "description": "Retrieve statistics about memories, such as total count and other relevant metrics.",
@@ -31885,6 +33338,67 @@
         ],
         "x-immich-permission": "memoryAsset.create",
         "x-immich-state": "Stable"
+      }
+    },
+    "/memories/{id}/exports": {
+      "post": {
+        "description": "Start a private highlight export of a memory's assets as a durable, cancellable background job. The asset list is snapshotted when the export starts, and a second request while one is already running returns the export in flight.",
+        "operationId": "createMemoryExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryExportCreateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryExportResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Export a memory",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ]
       }
     },
     "/notifications": {

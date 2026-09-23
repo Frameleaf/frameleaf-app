@@ -60,6 +60,8 @@ export type BulkActionId =
   | 'unarchive'
   | 'mark-sensitive'
   | 'unmark-sensitive'
+  | 'move-to-locked'
+  | 'remove-from-locked'
   | 'remove-from-album'
   | 'set-album-cover'
   | 'remove-from-shared-link'
@@ -105,6 +107,17 @@ export type BulkActionContext = {
   sharedLinkId?: string | null;
   /** True on the trash destination: the live actions are replaced by restore and permanent delete. */
   trash?: boolean;
+  /**
+   * True on the Locked destination. Locked browsing is its own, elevated context: the items are
+   * deliberately out of the library, so the sharing and organizing actions are not offered and the
+   * only removal is the permanent one, exactly as the legacy locked select bar behaved.
+   */
+  locked?: boolean;
+  /**
+   * True where the viewer may look and download but not change anything — a shared link opened by
+   * someone who is not signed in. Only the download survives; nothing that mutates is offered.
+   */
+  readOnly?: boolean;
   /** The authenticated user. Assets owned by anyone else cannot be mutated. */
   currentUserId?: string;
   /**
@@ -167,7 +180,10 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
   const sharedLinkId =
     typeof context.sharedLinkId === 'string' && context.sharedLinkId ? context.sharedLinkId : null;
   const trash = !!context.trash;
-  const live = !trash;
+  const locked = !!context.locked;
+  const readOnly = !!context.readOnly;
+  /** The ordinary library destinations: neither trash nor the Locked folder. */
+  const live = !trash && !locked && !readOnly;
   const snapshot = !!context.snapshot;
   /** True when no asset is loaded: the descriptor cannot inspect the selection, so it offers. */
   const unknown = assets.length === 0;
@@ -230,7 +246,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       labelKey: 'frameleaf_bulk_restore',
       icon: 'mdiDeleteRestore',
       group: 'primary',
-      available: trash && has,
+      available: !readOnly && trash && has,
     },
     {
       id: 'delete-permanently',
@@ -239,7 +255,8 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       group: 'primary',
       danger: true,
       confirm: true,
-      available: trash && has,
+      // The Locked folder has no trash step of its own: a delete there is the permanent one.
+      available: !readOnly && (trash || locked) && has,
     },
     {
       id: 'stack',
@@ -287,7 +304,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       icon: 'mdiCalendarEdit',
       group: 'organize',
       dialog: true,
-      available: live && has,
+      available: !readOnly && (live || locked) && has,
     },
     {
       id: 'change-description',
@@ -303,7 +320,7 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       icon: 'mdiMapMarkerOutline',
       group: 'organize',
       dialog: true,
-      available: live && has,
+      available: !readOnly && (live || locked) && has,
     },
     {
       id: 'archive',
@@ -340,6 +357,24 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       available: live && has,
     },
     {
+      // Moving into the Locked folder is a visibility change on the asset, and the only way back
+      // out is the matching action on the Locked destination itself.
+      id: 'move-to-locked',
+      labelKey: 'frameleaf_bulk_move_to_locked',
+      icon: 'mdiLockOutline',
+      group: 'visibility',
+      confirm: true,
+      available: live && has,
+    },
+    {
+      id: 'remove-from-locked',
+      labelKey: 'frameleaf_bulk_remove_from_locked',
+      icon: 'mdiLockOpenVariantOutline',
+      group: 'visibility',
+      confirm: true,
+      available: !readOnly && locked && has,
+    },
+    {
       id: 'remove-from-album',
       labelKey: 'frameleaf_bulk_remove_from_album',
       icon: 'mdiPlaylistRemove',
@@ -359,35 +394,37 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       labelKey: 'frameleaf_bulk_remove_from_shared_link',
       icon: 'mdiLinkOff',
       group: 'album',
-      available: live && has && !!sharedLinkId,
+      // The link's own owner may prune it even from a read-only viewer, which is the only
+      // mutation that viewer ever offered. The caller passes the id only when they own it.
+      available: !trash && !locked && has && !!sharedLinkId,
     },
     {
       id: 'refresh-thumbnails',
       labelKey: 'frameleaf_bulk_refresh_thumbnails',
       icon: 'mdiImageMultipleOutline',
       group: 'jobs',
-      available: has,
+      available: !readOnly && !locked && has,
     },
     {
       id: 'refresh-metadata',
       labelKey: 'frameleaf_bulk_refresh_metadata',
       icon: 'mdiDatabaseRefreshOutline',
       group: 'jobs',
-      available: has,
+      available: !readOnly && !locked && has,
     },
     {
       id: 'refresh-faces',
       labelKey: 'frameleaf_bulk_refresh_faces',
       icon: 'mdiFaceRecognition',
       group: 'jobs',
-      available: has,
+      available: !readOnly && !locked && has,
     },
     {
       id: 'refresh-encoded',
       labelKey: 'frameleaf_bulk_refresh_encoded',
       icon: 'mdiMovieEditOutline',
       group: 'jobs',
-      available: has && (unknown || assets.some((asset) => asset.isVideo)),
+      available: !readOnly && !locked && has && (unknown || assets.some((asset) => asset.isVideo)),
     },
   ];
 
@@ -415,15 +452,21 @@ export const PRIMARY_BULK_ACTIONS: readonly BulkActionId[] = [
   'delete',
 ];
 export const TRASH_PRIMARY_BULK_ACTIONS: readonly BulkActionId[] = ['restore', 'download', 'delete-permanently'];
+export const LOCKED_PRIMARY_BULK_ACTIONS: readonly BulkActionId[] = [
+  'remove-from-locked',
+  'download',
+  'delete-permanently',
+];
 export const MENU_BULK_ACTION_GROUPS: readonly BulkActionGroupId[] = ['organize', 'visibility', 'album', 'jobs'];
 
 /**
  * The bar's buttons. Favorite collapses to whichever direction applies so a selection that is
  * already favorited offers the removal in the same slot, exactly as the prototype does.
  */
-export const primaryBulkActions = (actions: BulkAction[], trash: boolean): BulkAction[] => {
+export const primaryBulkActions = (actions: BulkAction[], trash: boolean, locked = false): BulkAction[] => {
   const byId = bulkActionById(actions);
-  return (trash ? TRASH_PRIMARY_BULK_ACTIONS : PRIMARY_BULK_ACTIONS)
+  const order = trash ? TRASH_PRIMARY_BULK_ACTIONS : locked ? LOCKED_PRIMARY_BULK_ACTIONS : PRIMARY_BULK_ACTIONS;
+  return order
     .map((id) =>
       id === 'favorite' && !byId.favorite?.available && byId.unfavorite?.available ? byId.unfavorite : byId[id],
     )
@@ -433,8 +476,8 @@ export const primaryBulkActions = (actions: BulkAction[], trash: boolean): BulkA
 export type BulkActionMenuGroup = BulkActionGroup & { items: BulkAction[] };
 
 /** The More menu, grouped, without repeating anything already drawn as a button. */
-export const menuBulkActions = (actions: BulkAction[], trash: boolean): BulkActionMenuGroup[] => {
-  const primary = new Set(primaryBulkActions(actions, trash).map((action) => action.id));
+export const menuBulkActions = (actions: BulkAction[], trash: boolean, locked = false): BulkActionMenuGroup[] => {
+  const primary = new Set(primaryBulkActions(actions, trash, locked).map((action) => action.id));
   return bulkActionGroups
     .filter((group) => MENU_BULK_ACTION_GROUPS.includes(group.id))
     .map((group) => ({
