@@ -15,6 +15,7 @@
   import FrameleafPersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import CorrectionHistoryPanel from '$lib/components/frameleaf/people/CorrectionHistoryPanel.svelte';
   import Portal from '$lib/elements/Portal.svelte';
+  import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
@@ -329,7 +330,7 @@
       bind:timelineManager
       {options}
       destination={{ kind: 'person', id: person.id }}
-      downloadFileName={person.name}
+      downloadFileName={namedArchiveName(person.name, $t('frameleaf_archive_name_person'))}
       selectionMode={viewMode === PersonPageViewMode.SELECT_PERSON}
       singleSelect={viewMode === PersonPageViewMode.SELECT_PERSON}
       noSelectionBar={viewMode === PersonPageViewMode.SELECT_PERSON}
