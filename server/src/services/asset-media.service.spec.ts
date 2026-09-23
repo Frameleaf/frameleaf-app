@@ -358,10 +358,10 @@ describe(AssetMediaService.name, () => {
       ).resolves.toEqual({ id: 'id_1', status: AssetMediaStatus.CREATED });
 
       // the lock is written in the asset's own transaction, never as a second step
-      expect(mocks.asset.create).toHaveBeenCalledWith(expect.objectContaining({ visibility: AssetVisibility.Timeline }), {
-        reason: AssetLockReason.Marked,
-        lockedBy: authStub.user1.user.id,
-      });
+      expect(mocks.asset.create).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility: AssetVisibility.Timeline }),
+        { reason: AssetLockReason.Marked, lockedBy: authStub.user1.user.id },
+      );
       expect(mocks.asset.lock).not.toHaveBeenCalled();
     });
 
