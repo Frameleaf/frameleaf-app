@@ -46,6 +46,7 @@ import {
   anyUuid,
   asUuid,
   getHiddenContentFilter,
+  hasHiddenLockedPrimary,
   hasPeople,
   hasPets,
   hiddenContentAssetIdExists,
@@ -169,7 +170,11 @@ interface GetByIdsRelations {
   library?: boolean;
   owner?: boolean;
   smartSearch?: boolean;
-  stack?: { assets?: boolean };
+  /**
+   * `lockedOwnerId`: the viewer, when their session is elevated. A stack whose primary is Locked media
+   * someone else owns, or that the viewer has not unlocked, is left off the asset (FL-34).
+   */
+  stack?: { assets?: boolean; lockedOwnerId?: string };
   tags?: boolean;
   edits?: boolean;
 }
@@ -894,7 +899,11 @@ export class AssetRepository {
       .$if(!!smartSearch, withSmartSearch)
       .$if(!!stack, (qb) =>
         qb
-          .leftJoin('stack', 'stack.id', 'asset.stackId')
+          .leftJoin('stack', (join) =>
+            join
+              .onRef('stack.id', '=', 'asset.stackId')
+              .on((eb) => eb.not(hasHiddenLockedPrimary(eb, stack!.lockedOwnerId))),
+          )
           .$if(!stack!.assets, (qb) =>
             qb.select((eb) => eb.fn.toJson(eb.table('stack')).$castTo<Stack | null>().as('stack')),
           )

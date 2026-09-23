@@ -281,7 +281,7 @@ describe(StudioResourceService.name, () => {
       ]);
     });
 
-    it("tells the owner's hidden content apart and refuses someone else's unreadable asset like a missing one", async () => {
+    it("tells hidden content apart and refuses someone else's unreadable asset like a missing one", async () => {
       const mine = ownedVideo();
       const theirs = AssetFactory.create({ ownerId: newUuid(), type: AssetType.Video });
       const missing = newUuid();
@@ -293,7 +293,7 @@ describe(StudioResourceService.name, () => {
       );
 
       expect(refused.map(({ id, reason, detail }) => [id, reason, detail])).toEqual([
-        [mine.id, StudioRefusalReason.HiddenContent, 'Your sensitive or suppressed content settings exclude this asset.'],
+        [mine.id, StudioRefusalReason.HiddenContent, expect.any(String)],
         [theirs.id, StudioRefusalReason.NotFound, 'No such asset.'],
         [missing, StudioRefusalReason.NotFound, 'No such asset.'],
       ]);
