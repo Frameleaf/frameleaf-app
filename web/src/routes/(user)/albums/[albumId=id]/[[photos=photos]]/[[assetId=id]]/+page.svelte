@@ -8,17 +8,14 @@
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import SpaceMediaComments from '$lib/components/frameleaf/SpaceMediaComments.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
-  import HeaderActionButton from '$lib/components/HeaderActionButton.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import ControlAppBar from '$lib/components/shared-components/ControlAppBar.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
-  import { AlbumPageViewMode } from '$lib/constants';
   import Portal from '$lib/elements/Portal.svelte';
   import { canEdit } from '$lib/frameleaf/album-directory';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
-  import { librarySession, LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
+  import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { activityManager } from '$lib/managers/activity-manager.svelte';
-  import { AssetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
@@ -28,12 +25,11 @@
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { isAlbumsRoute, navigate, type AssetGridRouteSearchParams } from '$lib/utils/navigation';
+  import { isAlbumsRoute, navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import {
     AlbumKind,
     AlbumUserRole,
-    AssetVisibility,
     getAllTags,
     getAlbumInfo,
     searchAssets,
@@ -41,7 +37,13 @@
     type AssetResponseDto,
     type TagResponseDto,
   } from '@immich/sdk';
-  import { ActionButton, CommandPaletteDefaultProvider, Theme as AppTheme, themeManager } from '@immich/ui';
+  import {
+    ActionButton,
+    CommandPaletteDefaultProvider,
+    Theme as AppTheme,
+    themeManager,
+    toastManager,
+  } from '@immich/ui';
   import { mdiArrowLeft } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -55,8 +57,8 @@
    * (`LibraryView`); a collection's photos are the union of its albums, read through the existing
    * metadata search and drawn in the flat Frameleaf grid (`ResultsView`). Both mount FL-32's
    * selection bar over the same library session, so a bulk action here behaves as it does
-   * everywhere else. Adding photos is a picking step over its own session, so the album's own
-   * selection is untouched while it runs.
+   * everywhere else. "Add photos → Select from library" goes to the Library, where the selection
+   * bar's "Add to album" does the adding (prototype App.jsx `onAddPhotos`).
    */
   interface Props {
     data: PageData;
@@ -67,16 +69,10 @@
 
   let album = $state(data.album);
   const tree = $derived(data.tree);
-  let oldAt: AssetGridRouteSearchParams | null | undefined = $state();
-  let viewMode: AlbumPageViewMode = $state(AlbumPageViewMode.VIEW);
   let timelineManager = $state<TimelineManager>() as TimelineManager;
   let viewerInvisible = $state(false);
   let activityOpen = $state(false);
   let tagOptions = $state<{ id: string; name: string }[]>([]);
-
-  const timelineMultiSelectManager = new AssetMultiSelectManager();
-  /** The "add photos" step picks over its own session, so the album's selection survives it. */
-  const addAssetsSession = new LibrarySessionStore();
 
   // The page keeps its own copy so an inline edit renders what the server returned without
   // waiting for a loader re-run; navigating to a different album replaces it outright.
@@ -102,7 +98,7 @@
   const backRoute = $derived(album.kind === AlbumKind.Space ? Route.viewSharedSpace({ id: album.id }) : Route.albums());
   const showAlbumUsers = $derived(timelineManager?.showAssetOwners ?? false);
   const containsEditors = $derived(album.shared && album.albumUsers.some(({ role }) => role === AlbumUserRole.Editor));
-  const isShared = $derived(viewMode === AlbumPageViewMode.SELECT_ASSETS ? false : album.albumUsers.length > 1);
+  const isShared = $derived(album.albumUsers.length > 1);
 
   /* ------------------------------------------------------------------ */
   /* Tree-derived context: breadcrumb, album strip, collection choices   */
@@ -247,43 +243,18 @@
     }
   };
 
-  const setModeToView = async () => {
-    if (timelineManager) {
-      timelineManager.suspendTransitions = true;
-    }
-    viewMode = AlbumPageViewMode.VIEW;
-    await navigate(
-      { targetRoute: 'current', assetId: null, assetGridRouteSearchParams: { at: oldAt?.at } },
-      { replaceState: true, forceNavigate: true },
-    );
-    oldAt = null;
-  };
-
-  const handleCloseSelectAssets = async () => {
-    addAssetsSession.clearSelection();
-    timelineMultiSelectManager.clear();
-    await setModeToView();
-  };
-
-  const startSelectAssets = async () => {
-    if (timelineManager) {
-      timelineManager.suspendTransitions = true;
-    }
-    viewMode = AlbumPageViewMode.SELECT_ASSETS;
-    oldAt = { at: assetViewerManager.gridScrollTarget?.at };
-    await navigate(
-      { targetRoute: 'current', assetId: null, assetGridRouteSearchParams: { at: null } },
-      { replaceState: true },
-    );
+  /**
+   * The prototype's "Select from library" (App.jsx `onAddPhotos`): the Library is where photos are
+   * picked, and its selection bar's "Add to album" adds them, so the album keeps no picking mode.
+   */
+  const addPhotosFromLibrary = async () => {
+    await goto(Route.photos());
+    toastManager.primary($t('frameleaf_album_add_photos_hint'));
   };
 
   const handleEscape = async () => {
     if (timelineManager) {
       timelineManager.suspendTransitions = true;
-    }
-    if (viewMode === AlbumPageViewMode.SELECT_ASSETS) {
-      await handleCloseSelectAssets();
-      return;
     }
     if (assetViewerManager.isViewing) {
       return;
@@ -312,16 +283,7 @@
     }
   });
 
-  const options = $derived.by(() => {
-    if (viewMode === AlbumPageViewMode.SELECT_ASSETS) {
-      return {
-        visibility: AssetVisibility.Timeline,
-        withPartners: true,
-        timelineAlbumId: albumId,
-      };
-    }
-    return { albumId, order: album.order };
-  });
+  const options = $derived({ albumId, order: album.order });
 
   $effect(() => {
     if (!album.isActivityEnabled && activityManager.commentCount === 0) {
@@ -352,7 +314,6 @@
       return;
     }
     await goto(Route.albums());
-    viewMode = AlbumPageViewMode.VIEW;
   };
 
   const onAlbumAddAssets = async ({ albumIds }: { albumIds: string[] }) => {
@@ -360,14 +321,6 @@
       return;
     }
     await refreshAlbum();
-    addAssetsSession.clearSelection();
-    timelineMultiSelectManager.clear();
-    await setModeToView();
-  };
-
-  const onAlbumShare = async () => {
-    await refreshEverything();
-    await setModeToView();
   };
 
   const onAlbumUserUpdate = ({
@@ -401,7 +354,7 @@
   };
 
   const { Cast } = $derived(getGlobalActions($t));
-  const { AddAssets, Upload } = $derived(getAlbumAssetsActions($t, album, timelineMultiSelectManager.assets));
+  const { Upload } = $derived(getAlbumAssetsActions($t, album));
 
   const Close = $derived({
     title: $t('go_back'),
@@ -420,12 +373,12 @@
   {onAlbumDelete}
   {onAlbumAddAssets}
   {onAlbumRemoveAssets}
-  {onAlbumShare}
+  onAlbumShare={refreshEverything}
   {onAlbumUserUpdate}
   onAlbumUserDelete={refreshEverything}
   {onAlbumUpdate}
 />
-<CommandPaletteDefaultProvider name={$t('album')} actions={[AddAssets, Upload, Close]} />
+<CommandPaletteDefaultProvider name={$t('album')} actions={[Upload, Close]} />
 
 {#snippet header()}
   <AlbumHeader
@@ -441,7 +394,7 @@
     {assetCount}
     onAlbumChange={(next) => (album = next)}
     onRefresh={refreshEverything}
-    onAddPhotos={() => handlePromiseError(startSelectAssets())}
+    onAddPhotos={() => handlePromiseError(addPhotosFromLibrary())}
     onSlideshow={() => handlePromiseError(handleStartSlideshow())}
     onToggleActivity={() => (activityOpen = !activityOpen)}
     onToggleOwnerBadges={() => timelineManager?.toggleShowAssetOwners()}
@@ -467,18 +420,6 @@
             />
           </div>
         </Theme>
-      {:else if viewMode === AlbumPageViewMode.SELECT_ASSETS}
-        <!-- Adding photos is a picking step: its own session, its own manager, no bulk bar. -->
-        <LibraryView
-          session={addAssetsSession}
-          multiSelect={timelineMultiSelectManager}
-          bind:timelineManager
-          {options}
-          destination={{ kind: 'library' }}
-          selectionMode
-          noSelectionBar
-          syncUrl={false}
-        />
       {:else}
         <LibraryView
           enableRouting
@@ -515,31 +456,11 @@
       {/if}
     </main>
 
-    {#if viewMode === AlbumPageViewMode.VIEW}
-      <ControlAppBar backIcon={mdiArrowLeft} onClose={() => goto(backRoute)}>
-        {#snippet trailing()}
-          <ActionButton action={Cast} />
-        {/snippet}
-      </ControlAppBar>
-    {/if}
-
-    {#if viewMode === AlbumPageViewMode.SELECT_ASSETS}
-      <ControlAppBar onClose={handleCloseSelectAssets}>
-        {#snippet leading()}
-          <p class="text-lg dark:text-immich-dark-fg">
-            {#if timelineMultiSelectManager.selectionActive}
-              {$t('selected_count', { values: { count: timelineMultiSelectManager.assets.length } })}
-            {:else}
-              {$t('add_to_album')}
-            {/if}
-          </p>
-        {/snippet}
-        {#snippet trailing()}
-          <HeaderActionButton action={Upload} />
-          <HeaderActionButton action={AddAssets} />
-        {/snippet}
-      </ControlAppBar>
-    {/if}
+    <ControlAppBar backIcon={mdiArrowLeft} onClose={() => goto(backRoute)}>
+      {#snippet trailing()}
+        <ActionButton action={Cast} />
+      {/snippet}
+    </ControlAppBar>
   </div>
 
   {#if activityOpen && isShared && authManager.authenticated && !assetViewerManager.isViewing}
