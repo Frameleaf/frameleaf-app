@@ -326,8 +326,8 @@
     };
     update();
     if (typeof ResizeObserver === 'undefined') {
-      globalThis.addEventListener('resize', update);
-      return () => globalThis.removeEventListener('resize', update);
+      addEventListener('resize', update);
+      return () => removeEventListener('resize', update);
     }
     const observer = new ResizeObserver(update);
     observer.observe(element);

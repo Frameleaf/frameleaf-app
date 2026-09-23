@@ -335,7 +335,7 @@ export const parseLimitForm = (form: RenderLimitForm, options: { minConcurrency:
   const concurrency = Number(form.concurrency);
   if (
     form.concurrency.trim() === '' ||
-    !Number.isInteger(concurrency) ||
+    !Number.isSafeInteger(concurrency) ||
     concurrency < options.minConcurrency ||
     concurrency > RENDER_LIMIT_MAX_CONCURRENCY
   ) {

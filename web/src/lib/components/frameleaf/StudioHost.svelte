@@ -254,14 +254,14 @@
       online = false;
       dispatch({ type: 'connectivity', online: false });
     };
-    globalThis.addEventListener('online', goOnline);
-    globalThis.addEventListener('offline', goOffline);
+    addEventListener('online', goOnline);
+    addEventListener('offline', goOffline);
 
     void mountEngine();
 
     return () => {
-      globalThis.removeEventListener('online', goOnline);
-      globalThis.removeEventListener('offline', goOffline);
+      removeEventListener('online', goOnline);
+      removeEventListener('offline', goOffline);
     };
   });
 

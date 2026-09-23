@@ -75,7 +75,7 @@ export const describeAdminEvent = (
     }
     case AdminAuditAction.AccountDeleted: {
       const days = Number(detail);
-      return Number.isInteger(days) && days > 0
+      return Number.isSafeInteger(days) && days > 0
         ? $t('frameleaf_account_history_account_deleted', { values: { days } })
         : $t('frameleaf_account_history_account_deleted_unknown');
     }

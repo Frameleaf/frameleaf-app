@@ -52,7 +52,7 @@ export const readStudioThemeTokens = (theme: 'dark' | 'light', element: Element 
   const tokens: Record<string, string> = {};
 
   if (element && typeof getComputedStyle === 'function') {
-    const computed = globalThis.getComputedStyle(element);
+    const computed = getComputedStyle(element);
     for (const name of studioThemeTokenNames) {
       const value = computed.getPropertyValue(name).trim();
       if (value) {

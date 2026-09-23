@@ -37,7 +37,7 @@ const PENALTY_N3 = 40;
 const PENALTY_N4 = 10;
 
 function assertVersion(version: number): void {
-  if (!Number.isInteger(version) || version < MIN_VERSION || version > MAX_VERSION) {
+  if (!Number.isSafeInteger(version) || version < MIN_VERSION || version > MAX_VERSION) {
     throw new RangeError(`Version must be between ${MIN_VERSION} and ${MAX_VERSION}`);
   }
 }

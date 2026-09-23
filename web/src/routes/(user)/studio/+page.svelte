@@ -377,12 +377,12 @@
       online = false;
       session.setOnline(false);
     };
-    globalThis.addEventListener('online', goOnline);
-    globalThis.addEventListener('offline', goOffline);
+    addEventListener('online', goOnline);
+    addEventListener('offline', goOffline);
 
     return () => {
-      globalThis.removeEventListener('online', goOnline);
-      globalThis.removeEventListener('offline', goOffline);
+      removeEventListener('online', goOnline);
+      removeEventListener('offline', goOffline);
     };
   });
 
@@ -428,7 +428,7 @@
     }
     // The engine, or the session's draft, holds work that is not persisted anywhere. Confirm
     // before it is lost.
-    if (!globalThis.confirm($t('frameleaf_studio_unsaved_confirm'))) {
+    if (!confirm($t('frameleaf_studio_unsaved_confirm'))) {
       navigation.cancel();
     }
   });

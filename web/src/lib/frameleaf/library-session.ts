@@ -408,7 +408,7 @@ export const reduceLibrarySession = (session: LibrarySession, action: LibrarySes
       return { ...session, page: session.page + 1 };
     }
     case 'page': {
-      const page = Number.isInteger(action.page) ? Math.max(1, action.page) : session.page;
+      const page = Number.isSafeInteger(action.page) ? Math.max(1, action.page) : session.page;
       return page === session.page ? session : { ...session, page };
     }
     case 'filter-section': {
@@ -475,7 +475,7 @@ export const reduceLibrarySession = (session: LibrarySession, action: LibrarySes
           : {
               ...operation,
               status: action.status ?? 'running',
-              processed: Number.isInteger(action.processed) ? (action.processed as number) : operation.processed,
+              processed: Number.isSafeInteger(action.processed) ? (action.processed as number) : operation.processed,
               total: action.total === undefined ? operation.total : action.total,
             },
       );
@@ -566,7 +566,7 @@ export const parseLibraryViewValue = (value: unknown): LibraryViewParse => {
     return refuseView('malformed');
   }
   if (value.version !== 1) {
-    const newer = typeof value.version === 'number' && Number.isInteger(value.version) && value.version > 1;
+    const newer = typeof value.version === 'number' && Number.isSafeInteger(value.version) && value.version > 1;
     return refuseView(newer ? 'unsupported-version' : 'malformed');
   }
   if (!object(value.scope) || !oneOf(value.scope.kind, LIBRARY_SCOPE_KINDS)) {
