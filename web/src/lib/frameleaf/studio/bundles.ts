@@ -8,6 +8,11 @@
  *
  * - An export writes the project's *stored* revision, so edits still waiting for autosave are
  *   flushed by the caller first, and the revision the editor holds is answered back unchanged.
+ *   `includeMedia` in the payload asks for copies of the media the person owns, with the same
+ *   meaning as the project library's export dialog: owned media is copied, shared media travels
+ *   as a reference and nothing Locked is ever copied (the server enforces all three). When the
+ *   payload leaves the choice open, the host asks the person in its own export dialog before
+ *   anything is queued; cancelling that dialog queues nothing.
  * - An import always creates a *new* project, never overwrites the open one, and relinks sources
  *   only to items the server authorizes for this account.
  *
@@ -46,6 +51,13 @@ export class StudioBundleCommandError extends Error {
   }
 }
 
+/** The person closed the export dialog. Nothing was queued and there is nothing to report. */
+export class StudioBundleExportCancelled extends Error {
+  constructor() {
+    super('The export was cancelled');
+  }
+}
+
 /** The server accepts this shape of idempotency key; anything else is simply not sent. */
 const requestKeyPattern = /^[\w.:-]{1,128}$/;
 const requestKeyOf = (envelope: StudioCommandEnvelope) =>
@@ -55,8 +67,12 @@ export interface StudioBundleHandlerOptions {
   api?: StudioBundleApi;
   /** The project as the host holds it now: its id and its stored head. */
   project: () => { id: string; revision: number; saved: boolean };
-  /** Copy owned media into bundles exported from the editor. */
-  includeMedia?: () => boolean;
+  /**
+   * Ask the person whether to include copies of the media they own, for an export whose payload
+   * leaves `includeMedia` open. Resolves with their choice, or `null` when they cancel. Without
+   * it an open choice means no copies, the server's own default.
+   */
+  askIncludeMedia?: () => Promise<boolean | null>;
   /** A job was queued; the host points the person at Activity. */
   onQueued: (operation: MediaOperationDto) => void;
   /** A refusal to show. The handler still throws, so the bridge reports the command as failed. */
@@ -66,13 +82,28 @@ export interface StudioBundleHandlerOptions {
 export const createStudioBundleHandlers = ({
   api = sdkStudioBundleApi,
   project,
-  includeMedia = () => false,
+  askIncludeMedia,
   onQueued,
   onRefused,
 }: StudioBundleHandlerOptions) => {
   const refuse = (messageKey: string): never => {
     onRefused(messageKey);
     throw new StudioBundleCommandError(messageKey);
+  };
+
+  /** The payload's explicit choice wins; an open one is asked, and a cancelled question stops here. */
+  const chooseIncludeMedia = async (payload: StudioCommandPayloads['project.exportBundle']): Promise<boolean> => {
+    if (typeof payload.includeMedia === 'boolean') {
+      return payload.includeMedia;
+    }
+    if (!askIncludeMedia) {
+      return false;
+    }
+    const choice = await askIncludeMedia();
+    if (choice === null) {
+      throw new StudioBundleExportCancelled();
+    }
+    return choice;
   };
 
   return {
@@ -82,15 +113,23 @@ export const createStudioBundleHandlers = ({
         refuse('frameleaf_studio_bundle_sequences_unavailable');
       }
 
-      const current = project();
-      if (!current.saved || current.revision === 0) {
+      // Refusals come before the question: never ask about copies for an export that cannot run.
+      const asked = project();
+      if (!asked.saved || asked.revision === 0) {
         refuse('frameleaf_studio_bundle_save_first');
       }
 
-      const operation = await api.exportProject(current.id, {
-        includeMedia: includeMedia(),
-        requestKey: requestKeyOf(envelope),
-      });
+      const includeMedia = await chooseIncludeMedia(payload);
+
+      // Read again after the question: the dialog may have stayed open while autosave moved on.
+      const current = project();
+      let operation: MediaOperationDto;
+      try {
+        operation = await api.exportProject(current.id, { includeMedia, requestKey: requestKeyOf(envelope) });
+      } catch (error) {
+        onRefused('frameleaf_studio_bundle_export_failed');
+        throw error;
+      }
       onQueued(operation);
       // The export reads the stored revision; the editor's graph is unchanged.
       return current.revision;
