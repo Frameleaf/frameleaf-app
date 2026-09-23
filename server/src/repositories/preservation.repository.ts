@@ -38,6 +38,23 @@ const jsonb = (value: unknown) => sql<any>`${JSON.stringify(value)}::jsonb`;
 const toNumber = (value: unknown) => Number(value ?? 0);
 
 /**
+ * A package item is Locked when it was written Locked or its original has been locked in the library
+ * since. Background work reads every item; an ordinary (not unlocked) session is never told such an
+ * item exists, not even as a count (owner decision, September 22, 2026).
+ */
+const lockedPackageItem = sql<boolean>`(preservation_item.locked or exists (
+  select 1 from asset_lock where asset_lock."assetId" = preservation_item."assetId"
+))`;
+
+/**
+ * A restoration item is Locked when the package says so or the original it matched in the library is
+ * Locked there: its current values would otherwise reach an ordinary session as a conflict.
+ */
+const lockedRestoreItem = sql<boolean>`(preservation_restore_item.locked or exists (
+  select 1 from asset_lock where asset_lock."assetId" = preservation_restore_item."assetId"
+))`;
+
+/**
  * The database side of preservation packages (FL-74).
  *
  * Every read that answers a request is scoped to the owner in the query itself; a package or a
@@ -242,8 +259,14 @@ export class PreservationRepository {
       .execute();
   }
 
-  /** Item counts by state, and how many are Locked, for each package. */
-  async countItems(packageIds: string[]): Promise<Map<string, PreservationItemCounts>> {
+  /**
+   * Item counts by state, and how many are Locked, for each package. `excludeLocked` leaves Locked
+   * items out of every count, for a session that has not unlocked.
+   */
+  async countItems(
+    packageIds: string[],
+    options: { excludeLocked?: boolean } = {},
+  ): Promise<Map<string, PreservationItemCounts>> {
     const counts = new Map<string, PreservationItemCounts>();
     if (packageIds.length === 0) {
       return counts;
@@ -254,10 +277,11 @@ export class PreservationRepository {
         'packageId',
         'state',
         sql<string>`count(*)`.as('count'),
-        sql<string>`count(*) filter (where locked)`.as('locked'),
+        sql<string>`count(*) filter (where ${lockedPackageItem})`.as('locked'),
         sql<string>`coalesce(sum(("entry"->'original'->>'bytes')::bigint), 0)`.as('bytes'),
       ])
       .where('packageId', '=', anyUuid(packageIds))
+      .$if(!!options.excludeLocked, (qb) => qb.where(sql<boolean>`not ${lockedPackageItem}`))
       .groupBy(['packageId', 'state'])
       .execute();
     for (const row of rows) {
@@ -356,9 +380,12 @@ export class PreservationRepository {
 
   async listItems(
     packageId: string,
-    options: { state?: string; verifyState?: string; take: number; skip: number },
+    options: { state?: string; verifyState?: string; take: number; skip: number; excludeLocked?: boolean },
   ): Promise<{ items: PreservationItem[]; total: number }> {
     let query = this.db.selectFrom('preservation_item').where('packageId', '=', packageId);
+    if (options.excludeLocked) {
+      query = query.where(sql<boolean>`not ${lockedPackageItem}`);
+    }
     if (options.state) {
       query = query.where('state', '=', options.state);
     }
@@ -1026,9 +1053,18 @@ export class PreservationRepository {
 
   async listRestoreItems(
     restoreId: string,
-    options: { filter?: 'conflicts' | 'failed' | 'findings'; state?: string; take: number; skip: number },
+    options: {
+      filter?: 'conflicts' | 'failed' | 'findings';
+      state?: string;
+      take: number;
+      skip: number;
+      excludeLocked?: boolean;
+    },
   ): Promise<{ items: PreservationRestoreItem[]; total: number }> {
     let query = this.db.selectFrom('preservation_restore_item').where('restoreId', '=', restoreId);
+    if (options.excludeLocked) {
+      query = query.where(sql<boolean>`not ${lockedRestoreItem}`);
+    }
     if (options.state) {
       query = query.where('state', '=', options.state);
     }
@@ -1049,8 +1085,11 @@ export class PreservationRepository {
     return { items, total };
   }
 
-  /** Counts for a restoration: by state, by what the review matched, conflicts and findings. */
-  async countRestoreItems(restoreId: string) {
+  /**
+   * Counts for a restoration: by state, by what the review matched, conflicts and findings.
+   * `excludeLocked` leaves Locked items out of every count, for a session that has not unlocked.
+   */
+  async countRestoreItems(restoreId: string, options: { excludeLocked?: boolean } = {}) {
     const row = await this.db
       .selectFrom('preservation_restore_item')
       .select([
@@ -1064,11 +1103,12 @@ export class PreservationRepository {
         sql<string>`count(*) filter (where match = 'new')`.as('new'),
         sql<string>`count(*) filter (where match = 'existing')`.as('existing'),
         sql<string>`count(*) filter (where match = 'trashed')`.as('trashed'),
-        sql<string>`count(*) filter (where locked)`.as('locked'),
+        sql<string>`count(*) filter (where ${lockedRestoreItem})`.as('locked'),
         sql<string>`count(*) filter (where jsonb_array_length(coalesce("conflicts", '[]'::jsonb)) > 0)`.as('conflicts'),
         sql<string>`count(*) filter (where jsonb_array_length(coalesce("findings", '[]'::jsonb)) > 0)`.as('findings'),
       ])
       .where('restoreId', '=', restoreId)
+      .$if(!!options.excludeLocked, (qb) => qb.where(sql<boolean>`not ${lockedRestoreItem}`))
       .executeTakeFirst();
     const count = (value: unknown) => Number(value ?? 0);
     return {
@@ -1104,7 +1144,7 @@ export class PreservationRepository {
     return Number(result.numUpdatedRows);
   }
 
-  /** Which of these restoration items are Locked in the package. */
+  /** Which of these restoration items are Locked, in the package or in the library. */
   async lockedRestoreItemIds(restoreId: string, ids: string[]): Promise<string[]> {
     if (ids.length === 0) {
       return [];
@@ -1114,7 +1154,7 @@ export class PreservationRepository {
       .select('id')
       .where('restoreId', '=', restoreId)
       .where('id', '=', anyUuid(ids))
-      .where('locked', '=', true)
+      .where(lockedRestoreItem)
       .execute();
     return rows.map((row) => row.id);
   }

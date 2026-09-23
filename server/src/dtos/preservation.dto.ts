@@ -15,8 +15,8 @@ import {
  * Writing, verifying, reviewing and restoring a package are durable media operations, so these
  * DTOs describe a request to start one and what the package, its items and a restoration look
  * like. No server path ever appears here: a package's files are reached only through its
- * owner-scoped download routes. Locked items are counted for a session that has not unlocked, but
- * never named, and their ids are withheld.
+ * owner-scoped download routes. A session that has not unlocked is never told about a Locked item:
+ * it is left out of every list and every count.
  */
 
 const IdentifierSchema = z
@@ -214,9 +214,9 @@ const PreservationItemsQuerySchema = z
 const PreservationItemSchema = z
   .object({
     id: z.uuidv7(),
-    sourceAssetId: z.uuid().nullable().describe('Withheld for a Locked item until the session is unlocked'),
+    sourceAssetId: z.uuid().nullable(),
     assetId: z.uuid().nullable(),
-    name: z.string().nullable().describe('Withheld for a Locked item until the session is unlocked'),
+    name: z.string().nullable(),
     state: PreservationItemStateSchema,
     verifyState: PreservationVerifyStateSchema.nullable(),
     locked: z.boolean(),
@@ -348,8 +348,7 @@ const PreservationRestoreItemSchema = z
     name: z.string().nullable(),
     state: PreservationRestoreItemStateSchema,
     match: z.enum(['new', 'existing', 'trashed']).nullable().meta({ id: 'PreservationRestoreMatch' }),
-    locked: z.boolean(),
-    hidden: z.boolean().describe('A Locked item this session may not see; unlock to review it'),
+    locked: z.boolean().describe('Locked in the package or in your library; listed only to an unlocked session'),
     applied: z.boolean(),
     conflicts: z.array(PreservationConflictSchema),
     findings: z.array(z.string()).describe('Translation keys for what the restore left for you to look at'),

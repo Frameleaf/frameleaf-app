@@ -64,11 +64,19 @@ describe(MediaOperationService.name, () => {
   let repository: MediaOperationRepository;
   let icloud: { queueOperation: ReturnType<typeof vi.fn>; endRun: ReturnType<typeof vi.fn> };
   let jobs: { queue: ReturnType<typeof vi.fn> };
+  let preservation: Record<string, ReturnType<typeof vi.fn>>;
 
   beforeEach(() => {
     mocks = getMocks();
     icloud = { queueOperation: vi.fn(), endRun: vi.fn() };
     jobs = { queue: vi.fn().mockResolvedValue(undefined) };
+    preservation = {
+      activeOperation: vi.fn().mockResolvedValue(undefined),
+      getPackage: vi.fn(),
+      getRestore: vi.fn(),
+      resetFailedItems: vi.fn().mockResolvedValue(0),
+      resetFailedRestoreItems: vi.fn().mockResolvedValue(0),
+    };
     repository = {
       create: vi.fn(),
       getForOwner: vi.fn(),
@@ -92,6 +100,7 @@ describe(MediaOperationService.name, () => {
       mocks.access as never,
       icloud as never,
       jobs as never,
+      preservation as never,
     );
   });
 
@@ -401,6 +410,113 @@ describe(MediaOperationService.name, () => {
   });
 
   describe('retry', () => {
+    describe('a preservation job (FL-74)', () => {
+      const packageId = '0195e2a0-0000-7000-8000-00000000a001';
+      const restoreId = '0195e2a0-0000-7000-8000-00000000b001';
+      const packageRow = (overrides: Record<string, unknown> = {}) => ({
+        id: packageId,
+        ownerId: authStub.user1.user.id,
+        includeLocked: false,
+        removedAt: null,
+        ...overrides,
+      });
+
+      beforeEach(() => {
+        vi.mocked(repository.create).mockImplementation((row) =>
+          Promise.resolve(operationStub({ ...(row as Partial<MediaOperation>), id: 'retried' })),
+        );
+      });
+
+      it('carries an export on from its package, giving failed items their retry back', async () => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({
+            kind: MediaOperationKind.PreservationExport,
+            status: MediaOperationStatus.Failed,
+            snapshot: { kind: 'preservation-export', packageId, requestKey: 'first', elevated: false },
+          }),
+        );
+        preservation.getPackage.mockResolvedValue(packageRow());
+
+        await sut.retry(authStub.user1, 'op');
+
+        expect(preservation.getPackage).toHaveBeenCalledWith(packageId, authStub.user1.user.id);
+        expect(preservation.resetFailedItems).toHaveBeenCalledWith(packageId);
+        expect(repository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            kind: MediaOperationKind.PreservationExport,
+            retryOfId: expect.any(String),
+            snapshot: expect.objectContaining({ packageId, requestKey: null }),
+          }),
+        );
+      });
+
+      it('answers with the job already working on the same package', async () => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({
+            kind: MediaOperationKind.PreservationVerify,
+            status: MediaOperationStatus.Cancelled,
+            snapshot: { kind: 'preservation-verify', packageId },
+          }),
+        );
+        const running = operationStub({ id: 'running', kind: MediaOperationKind.PreservationExport });
+        preservation.activeOperation.mockResolvedValue(running);
+
+        const result = await sut.retry(authStub.user1, 'op');
+
+        expect(result.id).toBe('running');
+        expect(repository.create).not.toHaveBeenCalled();
+      });
+
+      it('retries an export holding Locked items only from an unlocked session', async () => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({
+            kind: MediaOperationKind.PreservationExport,
+            status: MediaOperationStatus.Failed,
+            snapshot: { kind: 'preservation-export', packageId, requestKey: null, elevated: true },
+          }),
+        );
+        preservation.getPackage.mockResolvedValue(packageRow({ includeLocked: true }));
+
+        await expect(sut.retry(authStub.user1, 'op')).rejects.toBeInstanceOf(ForbiddenException);
+        expect(preservation.resetFailedItems).not.toHaveBeenCalled();
+        expect(repository.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses a job whose package was removed', async () => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({
+            kind: MediaOperationKind.PreservationVerify,
+            status: MediaOperationStatus.Failed,
+            snapshot: { kind: 'preservation-verify', packageId },
+          }),
+        );
+        preservation.getPackage.mockResolvedValue(packageRow({ removedAt: new Date() }));
+
+        await expect(sut.retry(authStub.user1, 'op')).rejects.toBeInstanceOf(BadRequestException);
+        expect(repository.create).not.toHaveBeenCalled();
+      });
+
+      it('carries a restore on and gives its failed items their retry back', async () => {
+        vi.mocked(repository.getForOwner).mockResolvedValue(
+          operationStub({
+            kind: MediaOperationKind.PreservationRestore,
+            status: MediaOperationStatus.Failed,
+            snapshot: { kind: 'preservation-restore', restoreId, packageId, requestKey: null },
+          }),
+        );
+        preservation.getPackage.mockResolvedValue(packageRow());
+        preservation.getRestore.mockResolvedValue({ id: restoreId, status: 'ready' });
+
+        await sut.retry(authStub.user1, 'op');
+
+        expect(preservation.activeOperation).toHaveBeenCalledWith(authStub.user1.user.id, 'restoreId', restoreId);
+        expect(preservation.resetFailedRestoreItems).toHaveBeenCalledWith(restoreId);
+        expect(repository.create).toHaveBeenCalledWith(
+          expect.objectContaining({ kind: MediaOperationKind.PreservationRestore }),
+        );
+      });
+    });
+
     it('refuses to retry a running job', async () => {
       vi.mocked(repository.getForOwner).mockResolvedValue(operationStub());
 
