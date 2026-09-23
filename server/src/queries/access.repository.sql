@@ -525,6 +525,7 @@ from
 where
   "asset_face"."id" in ($1)
   and "asset"."ownerId" = $2
+  and "asset"."visibility" != 'locked'
   and not (
     case
       when "asset"."id" is null then false

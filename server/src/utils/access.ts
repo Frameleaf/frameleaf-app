@@ -66,10 +66,9 @@ const checkPersonOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Se
     ? access.person.checkOwnerAccess(auth.user.id, ids, accessPrivacy(auth))
     : access.person.checkOwnerAccess(auth.user.id, ids);
 
+// a face on the caller's own Locked media needs their elevated session, like the media itself (FL-34)
 const checkPersonFaceOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
-  accessPrivacy(auth)
-    ? access.person.checkFaceOwnerAccess(auth.user.id, ids, accessPrivacy(auth))
-    : access.person.checkFaceOwnerAccess(auth.user.id, ids);
+  access.person.checkFaceOwnerAccess(auth.user.id, ids, accessPrivacy(auth), !!auth.session?.hasElevatedPermission);
 
 const checkActivityOwnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
   accessPrivacy(auth)
