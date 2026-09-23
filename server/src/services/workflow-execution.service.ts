@@ -7,6 +7,7 @@ import {
   WorkflowTrigger,
 } from '@immich/plugin-sdk';
 import { HttpException, UnauthorizedException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -49,6 +50,19 @@ type ExecuteOptions<T extends WorkflowType> = {
 type AssetTrigger = { userId: string; assetId: string; trigger: WorkflowTrigger };
 
 type RunnableWorkflow = NonNullable<Awaited<ReturnType<WorkflowRepository['getForWorkflowRun']>>>;
+
+const definitionSha256 = (workflow: RunnableWorkflow) =>
+  createHash('sha256')
+    .update(
+      JSON.stringify(
+        workflow.definition ??
+          definitionFromSteps(
+            workflow.trigger,
+            workflow.steps.map((step) => ({ ...step, enabled: true })),
+          ),
+      ),
+    )
+    .digest('hex');
 
 type HostContext = {
   allowedHosts: string[];
@@ -512,6 +526,14 @@ export class WorkflowExecutionService extends BaseService {
 
     let steps = workflow.steps;
     if (job.fromStepId) {
+      if (!job.definitionSha256 || job.definitionSha256 !== definitionSha256(workflow)) {
+        await log({
+          result: WorkflowResult.Error,
+          errorCode: WorkflowRunErrorCode.Unsupported,
+          error: 'The workflow changed before its retry, so the retry was not run.',
+        });
+        return JobStatus.Skipped;
+      }
       const index = steps.findIndex((step) => step.id === job.fromStepId);
       if (index === -1) {
         await log({
@@ -620,7 +642,14 @@ export class WorkflowExecutionService extends BaseService {
         if (attempt === 0 && !job.manual) {
           await this.jobRepository.queue({
             name: JobName.WorkflowAssetTrigger,
-            data: { workflowId, assetId, runId, attempt: 1, fromStepId: step.id },
+            data: {
+              workflowId,
+              assetId,
+              runId,
+              attempt: 1,
+              fromStepId: step.id,
+              definitionSha256: definitionSha256(workflow),
+            },
           });
         }
 

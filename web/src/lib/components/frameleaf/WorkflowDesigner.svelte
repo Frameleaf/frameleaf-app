@@ -102,6 +102,9 @@
   );
   const dirty = $derived(JSON.stringify(draft) !== saved);
   const selected = $derived<WorkflowDraftStep | undefined>(draft.steps[active]);
+  const parametersPending = $derived(
+    parameterJson !== null && parameterJson !== JSON.stringify(selected?.config ?? null, null, 2),
+  );
   const definition = $derived(selected ? findMethod(methods, selected.method) : undefined);
   const jsonPending = $derived(tab === 'json' && raw !== document);
   const knownTrigger = $derived(triggers.some((item) => item.trigger === draft.trigger));
@@ -246,7 +249,7 @@
   };
 
   const cancel = () => {
-    if (!dirty || confirm($t('frameleaf_workflows.discard_prompt'))) {
+    if ((!dirty && !jsonPending && !parametersPending) || confirm($t('frameleaf_workflows.discard_prompt'))) {
       open = false;
     }
   };
@@ -312,7 +315,13 @@
   };
 </script>
 
-<Dialog title={draft.name || $t('frameleaf_workflows.new_workflow')} closeLabel={$t('close')} wide bind:open>
+<Dialog
+  title={draft.name || $t('frameleaf_workflows.new_workflow')}
+  closeLabel={$t('close')}
+  onRequestClose={cancel}
+  wide
+  bind:open
+>
   <div class="workflow-designer">
     <div class="wd-tabs" role="group" aria-label={$t('frameleaf_workflows.tabs_label')}>
       {#each [['steps', 'tab_steps'], ['validation', 'tab_validation'], ['history', 'tab_history'], ['json', 'tab_json']] as const as [id, key] (id)}

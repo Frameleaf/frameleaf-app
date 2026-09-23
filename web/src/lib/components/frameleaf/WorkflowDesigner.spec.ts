@@ -81,6 +81,8 @@ beforeEach(() => {
   vi.resetAllMocks();
 });
 
+afterEach(() => vi.unstubAllGlobals());
+
 describe('WorkflowDesigner', () => {
   it('edits parameters from the installed method schema and follows a schema change', async () => {
     const { rerender } = setup([webhook({ url: { type: 'string', title: 'URL' } }, ['url'])]);
@@ -183,5 +185,46 @@ describe('WorkflowDesigner', () => {
     });
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(screen.getByLabelText(t.name)).toHaveValue('Renamed');
+  });
+
+  it('guards X against discarding an edited draft', async () => {
+    const confirm = vi.fn().mockReturnValue(false);
+    vi.stubGlobal('confirm', confirm);
+    setup([webhook({ url: { type: 'string', title: 'URL' } })]);
+
+    await fireEvent.input(screen.getByLabelText(t.name), { target: { value: 'Changed' } });
+    await fireEvent.click(screen.getByRole('button', { name: en.close }));
+
+    expect(confirm).toHaveBeenCalledWith(t.discard_prompt);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('guards Escape against discarding unapplied workflow JSON', async () => {
+    const confirm = vi.fn().mockReturnValue(false);
+    vi.stubGlobal('confirm', confirm);
+    setup([webhook({ url: { type: 'string', title: 'URL' } })]);
+
+    await fireEvent.click(screen.getByRole('button', { name: t.tab_json }));
+    await fireEvent.input(screen.getByLabelText(t.json_label), { target: { value: '{"draft":"pending"}' } });
+    const cancelEvent = new Event('cancel', { cancelable: true });
+    await fireEvent(screen.getByRole('dialog'), cancelEvent);
+
+    expect(cancelEvent.defaultPrevented).toBe(true);
+    expect(confirm).toHaveBeenCalledWith(t.discard_prompt);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('guards footer Cancel against discarding unapplied parameter JSON', async () => {
+    const confirm = vi.fn().mockReturnValue(false);
+    vi.stubGlobal('confirm', confirm);
+    setup([webhook({ url: { type: 'string', title: 'URL' } })]);
+
+    await fireEvent.click(screen.getByText(t.method_json));
+    await fireEvent.click(screen.getByRole('button', { name: t.edit_parameter_json }));
+    await fireEvent.input(screen.getByLabelText(t.parameter_json), { target: { value: '{"url":"https://new.test"}' } });
+    await fireEvent.click(screen.getByRole('button', { name: t.cancel }));
+
+    expect(confirm).toHaveBeenCalledWith(t.discard_prompt);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });
