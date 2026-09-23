@@ -1,4 +1,4 @@
-import type { MetadataSearchDto, SearchFilter, SmartSearchDto } from '@immich/sdk';
+import type { ImageEnrichmentFilter, MetadataSearchDto, SearchFilter, SmartSearchDto } from '@immich/sdk';
 
 /**
  * The one library query every Frameleaf view shares. It is portable: it travels in a URL, it is
@@ -23,6 +23,15 @@ export type DiscoveryQuery = {
   view: DiscoveryView;
   spaceId?: string;
   petIds?: string[];
+  /**
+   * Image-enrichment facet (FL-49). It is a search *DTO* field rather than a `SearchFilter`
+   * condition — the server exposes enrichment state as the single `imageEnrichment` enum on
+   * `MetadataSearchDto`/`SmartSearchDto`, not as a filterable column — so it rides beside the
+   * filter here and is copied straight onto the DTO in `toSearchDto`. The prototype's
+   * `descriptionStatus`/`sensitiveStatus` fields have no production column and are deliberately
+   * not invented; every value below exists in `ImageEnrichmentFilter`.
+   */
+  imageEnrichment?: ImageEnrichmentFilter;
 };
 
 export const DISCOVERY_MODES: readonly DiscoveryMode[] = ['text', 'smart'];
@@ -153,7 +162,31 @@ export const withDiscoveryFacet = (query: DiscoveryQuery, field: string, value: 
 
 export const withoutDiscoveryFilter = (query: DiscoveryQuery, field: string): DiscoveryQuery => {
   const result = structuredClone(query);
+  if (field === ENRICHMENT_FIELD) {
+    delete result.imageEnrichment;
+    return result;
+  }
   delete result.filter[field as keyof SearchFilter];
+  return result;
+};
+
+/**
+ * The enrichment facet's pseudo-field name. It is reported alongside real `SearchFilter` fields so
+ * the badge, the Filter menu and the chip row treat it like any other active condition, even though
+ * it lives on the query root rather than inside `filter`.
+ */
+export const ENRICHMENT_FIELD = 'imageEnrichment';
+
+export const withDiscoveryEnrichment = (
+  query: DiscoveryQuery,
+  value: ImageEnrichmentFilter | undefined,
+): DiscoveryQuery => {
+  const result = structuredClone(query);
+  if (value) {
+    result.imageEnrichment = value;
+  } else {
+    delete result.imageEnrichment;
+  }
   return result;
 };
 
@@ -219,18 +252,21 @@ export const filterSectionForField = (field: string): DiscoveryFilterSection => 
  */
 export const activeFilterFields = (query: DiscoveryQuery): string[] => {
   const filter = query?.filter;
-  if (!filter || typeof filter !== 'object') {
-    return [];
+  const fields =
+    filter && typeof filter === 'object'
+      ? Object.entries(filter)
+          .filter(([, condition]) => {
+            if (Array.isArray(condition)) {
+              return condition.length > 0;
+            }
+            return !!condition && typeof condition === 'object' && Object.keys(condition).length > 0;
+          })
+          .map(([field]) => field)
+      : [];
+  if (query?.imageEnrichment) {
+    fields.push(ENRICHMENT_FIELD);
   }
-  return Object.entries(filter)
-    .filter(([, condition]) => {
-      if (Array.isArray(condition)) {
-        return condition.length > 0;
-      }
-      return !!condition && typeof condition === 'object' && Object.keys(condition).length > 0;
-    })
-    .map(([field]) => field)
-    .sort();
+  return fields.sort();
 };
 
 /** The fields a section owns. `all` owns every field present in the query. */
@@ -285,10 +321,39 @@ export const discoveryChipFields = (query: DiscoveryQuery, destination?: Discove
 };
 
 /** Clear every structured filter while keeping the text query, grouping and view. */
-export const withoutDiscoveryFilters = (query: DiscoveryQuery): DiscoveryQuery => ({
-  ...structuredClone(query),
-  filter: {},
-});
+export const withoutDiscoveryFilters = (query: DiscoveryQuery): DiscoveryQuery => {
+  const result = { ...structuredClone(query), filter: {} };
+  delete result.imageEnrichment;
+  return result;
+};
+
+/* -------------------------------------------------------------------------- */
+/* Handing the query to the search API                                         */
+/* -------------------------------------------------------------------------- */
+
+export type DiscoverySearchDto = MetadataSearchDto & Pick<SmartSearchDto, 'query'>;
+
+/**
+ * The query as the search endpoints take it (FL-49). `filter` travels verbatim — the search DTOs
+ * carry a `SearchFilter` of exactly this shape — and only the two fields that live outside it are
+ * translated: free text becomes `query` in smart mode and is left to the caller's chosen text field
+ * otherwise, and the enrichment facet becomes `imageEnrichment`. Nothing is invented: every key
+ * written here exists on `MetadataSearchDto`.
+ */
+export const toSearchDto = (query: DiscoveryQuery, textField: keyof DiscoverySearchDto = 'query'): DiscoverySearchDto => {
+  const text = query.text.trim();
+  const dto: DiscoverySearchDto = {};
+  if (Object.keys(query.filter ?? {}).length > 0) {
+    dto.filter = structuredClone(query.filter);
+  }
+  if (query.imageEnrichment) {
+    dto.imageEnrichment = query.imageEnrichment;
+  }
+  if (text) {
+    Object.assign(dto, { [query.mode === 'smart' ? 'query' : textField]: text });
+  }
+  return dto;
+};
 
 /* -------------------------------------------------------------------------- */
 /* Cumulative paging                                                           */
