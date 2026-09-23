@@ -125,6 +125,39 @@ describe(ServerService.name, () => {
     });
   });
 
+  describe('app releases', () => {
+    const android = {
+      releaseUrl: 'https://releases.example.test/{version}',
+      appId: 'app.frameleaf.android',
+      signingSha256: `${'AB:'.repeat(31)}AB`,
+    };
+
+    it('reports both apps unavailable when no destination is configured', () => {
+      expect(sut.getAppReleases()).toEqual({ android: { available: false }, ios: { available: false } });
+    });
+
+    it('never links another product when no Android destination is configured', () => {
+      expect(() => sut.getApkLinks()).toThrow('No signed Android release is configured for this server');
+    });
+
+    it('offers the configured signed destinations', () => {
+      mocks.config.getEnv.mockReturnValue(
+        mockEnvData({ appReleases: { android, iosUrl: 'https://apps.apple.com/app/id000' } }),
+      );
+
+      const releases = sut.getAppReleases();
+      expect(releases).toMatchObject({
+        android: { available: true, appId: android.appId, signingCertificateSha256: android.signingSha256 },
+        ios: { available: true, url: 'https://apps.apple.com/app/id000' },
+      });
+      expect(releases.android.links?.universal).toMatch(
+        /^https:\/\/releases\.example\.test\/\d+\.\d+\.\d+\/app-release\.apk$/,
+      );
+      expect(sut.getApkLinks()).toEqual(releases.android.links);
+      expect(JSON.stringify(releases)).not.toContain('immich');
+    });
+  });
+
   describe('ping', () => {
     it('should respond with pong', () => {
       expect(sut.ping()).toEqual({ res: 'pong' });

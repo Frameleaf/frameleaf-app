@@ -15,11 +15,9 @@
   import { OpenQueryParam } from '$lib/constants';
   import { careQueues, CARE_TOOL_GROUPS, type CareQueue, type CareToolGroup } from '$lib/frameleaf/library-care';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import AppDownloadModal from '$lib/modals/AppDownloadModal.svelte';
-  import ObtainiumConfigModal from '$lib/modals/ObtainiumConfigModal.svelte';
   import { Route } from '$lib/route';
   import type { MediaHealthSummaryResponseDto } from '@immich/sdk';
-  import { Icon, modalManager } from '@immich/ui';
+  import { Icon } from '@immich/ui';
   import {
     mdiArchiveLockOutline,
     mdiChevronRight,
@@ -46,8 +44,7 @@
     icon: string;
     titleKey: Translations;
     descriptionKey: Translations;
-    href?: string;
-    onclick?: () => void;
+    href: string;
     adminOnly?: boolean;
   };
 
@@ -134,7 +131,7 @@
       icon: mdiDevices,
       titleKey: 'library_care_tool_downloads',
       descriptionKey: 'library_care_tool_downloads_description',
-      onclick: () => void modalManager.show(AppDownloadModal, {}),
+      href: Route.downloadsUtility(),
     },
     {
       id: 'obtainium',
@@ -142,7 +139,7 @@
       icon: mdiDownload,
       titleKey: 'library_care_tool_obtainium',
       descriptionKey: 'library_care_tool_obtainium_description',
-      onclick: () => void modalManager.show(ObtainiumConfigModal, {}),
+      href: Route.obtainiumUtility(),
     },
   ];
 
@@ -193,25 +190,14 @@
         <ul class="tools">
           {#each groupTools as tool (tool.id)}
             <li>
-              {#if tool.href}
-                <a class="tool" href={tool.href}>
-                  <Icon icon={tool.icon} size="1.375rem" aria-hidden={true} />
-                  <span>
-                    <strong>{$t(tool.titleKey)}</strong>
-                    <small>{$t(tool.descriptionKey)}</small>
-                  </span>
-                  <Icon icon={mdiChevronRight} size="1.125rem" aria-hidden={true} />
-                </a>
-              {:else}
-                <button type="button" class="tool" onclick={tool.onclick}>
-                  <Icon icon={tool.icon} size="1.375rem" aria-hidden={true} />
-                  <span>
-                    <strong>{$t(tool.titleKey)}</strong>
-                    <small>{$t(tool.descriptionKey)}</small>
-                  </span>
-                  <Icon icon={mdiChevronRight} size="1.125rem" aria-hidden={true} />
-                </button>
-              {/if}
+              <a class="tool" href={tool.href}>
+                <Icon icon={tool.icon} size="1.375rem" aria-hidden={true} />
+                <span>
+                  <strong>{$t(tool.titleKey)}</strong>
+                  <small>{$t(tool.descriptionKey)}</small>
+                </span>
+                <Icon icon={mdiChevronRight} size="1.125rem" aria-hidden={true} />
+              </a>
             </li>
           {/each}
         </ul>

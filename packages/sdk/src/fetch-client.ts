@@ -5249,6 +5249,8 @@ export type PetObservationCreateDto = {
     imageWidth?: number;
 };
 export type PluginMethodResponseDto = {
+    /** Hosts this method may send requests to; empty when it cannot reach other servers */
+    allowedHosts: string[];
     /** Description */
     description: string;
     hostFunctions: boolean;
@@ -6490,6 +6492,26 @@ export type ServerApkLinksDto = {
     universal: string;
     /** APK download link for x86_64 architecture */
     x86_64: string;
+};
+export type ServerAppReleasesResponseDto = {
+    /** Android application */
+    android: {
+        /** Android package id of the signed release */
+        appId?: string;
+        /** Whether a signed Android release is configured for this server */
+        available: boolean;
+        /** Signed APK downloads for this server version */
+        links?: ServerApkLinksDto;
+        /** SHA-256 fingerprint of the release signing certificate, as AA:BB:... */
+        signingCertificateSha256?: string;
+    };
+    /** iOS application */
+    ios: {
+        /** Whether an iOS release is configured for this server */
+        available: boolean;
+        /** App Store or TestFlight page */
+        url?: string;
+    };
 };
 export type ServerConfigDto = {
     /** Canonical default for the image-description advanced raw prompt template */
@@ -7915,15 +7937,30 @@ export type CreateProfileImageResponseDto = {
     /** User ID */
     userId: string;
 };
-export type WorkflowStepDto = {
-    /** Step configuration */
+export type WorkflowIssueDto = {
+    code: WorkflowIssueCode;
+    /** What prevents the workflow from running */
+    message: string;
+    /** Index of the step the issue belongs to */
+    step?: number;
+};
+export type WorkflowStepResponseDto = {
+    /** Step configuration, without stored credential values */
     config: {
         [key: string]: any;
     } | null;
     /** Step is enabled */
-    enabled?: boolean;
-    /** Step plugin method */
+    enabled: boolean;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra: {
+        [key: string]: any;
+    };
+    /** Step ID */
+    id: string;
+    /** Step plugin method, as plugin#method */
     method: string;
+    /** Configuration paths (keys joined with ".") holding a stored credential that is never returned */
+    storedSecrets: string[];
 };
 export type WorkflowResponseDto = {
     /** Creation date */
@@ -7932,31 +7969,57 @@ export type WorkflowResponseDto = {
     description: string | null;
     /** Workflow enabled */
     enabled: boolean;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra: {
+        [key: string]: any;
+    };
     /** Workflow ID */
     id: string;
+    /** What prevents this definition from running on this server; empty when it can run */
+    issues: WorkflowIssueDto[];
     /** Workflow logs run results */
     logging: boolean;
     /** Workflow name */
     name: string | null;
     /** Workflow steps */
-    steps: WorkflowStepDto[];
+    steps: WorkflowStepResponseDto[];
     /** Workflow trigger type */
-    trigger: WorkflowTrigger;
+    trigger: string;
     /** Update date */
     updatedAt: string;
+};
+export type WorkflowStepDto = {
+    /** Step configuration */
+    config: {
+        [key: string]: any;
+    } | null;
+    /** Step is enabled */
+    enabled?: boolean;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra?: {
+        [key: string]: any;
+    };
+    /** Step ID from a previous response. A credential left out of its configuration keeps its stored value */
+    id?: string;
+    /** Step plugin method, as plugin#method */
+    method: string;
 };
 export type WorkflowCreateDto = {
     /** Workflow description */
     description?: string | null;
     /** Workflow enabled */
     enabled?: boolean;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra?: {
+        [key: string]: any;
+    };
     /** Workflow logs run results */
     logging?: boolean;
     /** Workflow name */
     name?: string | null;
     steps?: WorkflowStepDto[];
-    /** Workflow trigger type */
-    trigger: WorkflowTrigger;
+    /** Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled */
+    trigger: string;
 };
 export type WorkflowTriggerResponseDto = {
     /** Trigger type */
@@ -7969,17 +8032,26 @@ export type WorkflowUpdateDto = {
     description?: string | null;
     /** Workflow enabled */
     enabled?: boolean;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra?: {
+        [key: string]: any;
+    };
     /** Workflow logs run results */
     logging?: boolean;
     /** Workflow name */
     name?: string | null;
     steps?: WorkflowStepDto[];
-    /** Workflow trigger type */
-    trigger?: WorkflowTrigger;
+    /** Workflow trigger type. An unavailable trigger is kept, but the workflow cannot be enabled */
+    trigger?: string;
 };
 export type WorkflowLogEntryDto = {
     /** Workflow run date/time */
     at: string;
+    /** 0 for the first attempt, 1 for the automatic retry, then manual retries */
+    attempt: number;
+    /** Why the run failed, without stored credentials */
+    error?: string;
+    errorCode?: WorkflowRunErrorCode;
     /** Workflow log entry ID */
     id: string;
     /** Last step ran, if the workflow ended early */
@@ -7990,28 +8062,38 @@ export type WorkflowLogEntryDto = {
         method: string;
     };
     result: WorkflowResult;
+    /** Run ID shared by every attempt of one run */
+    runId: string;
     /** Workflow trigger data ID */
     triggerDataId?: string;
 };
 export type WorkflowShareStepDto = {
-    /** Step configuration */
+    /** Step configuration, without credentials */
     config: {
         [key: string]: any;
     } | null;
     /** Step is enabled */
     enabled?: boolean;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra: {
+        [key: string]: any;
+    };
     /** Step plugin method */
     method: string;
 };
 export type WorkflowShareResponseDto = {
     /** Workflow description */
     description: string | null;
+    /** Additional fields of an imported definition, kept and exported unchanged */
+    extra: {
+        [key: string]: any;
+    };
     /** Workflow name */
     name: string | null;
     /** Workflow steps */
     steps: WorkflowShareStepDto[];
     /** Workflow trigger type */
-    trigger: WorkflowTrigger;
+    trigger: string;
 };
 export type LicenseResponseDto = UserLicense;
 export type ReleaseEventV1 = {
@@ -14184,7 +14266,20 @@ export function getApkLinks(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: ServerApkLinksDto;
+    } | {
+        status: 404;
     }>("/server/apk-links", {
+        ...opts
+    }));
+}
+/**
+ * Get app releases
+ */
+export function getAppReleases(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ServerAppReleasesResponseDto;
+    }>("/server/app-releases", {
         ...opts
     }));
 }
@@ -16534,6 +16629,18 @@ export function getWorkflowLogs({ before, id, limit, result }: {
     }));
 }
 /**
+ * Retry a workflow run
+ */
+export function retryWorkflowRun({ id, runId }: {
+    id: string;
+    runId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/workflows/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/retry`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Retrieve a workflow
  */
 export function getWorkflowForShare({ id }: {
@@ -18200,10 +18307,20 @@ export enum TrashItemSort {
     Size = "size",
     Name = "name"
 }
+export enum WorkflowIssueCode {
+    TriggerUnavailable = "trigger_unavailable",
+    MethodUnavailable = "method_unavailable",
+    MethodIncompatible = "method_incompatible",
+    ConfigInvalid = "config_invalid"
+}
 export enum WorkflowResult {
     Completed = "completed",
     Halted = "halted",
     Error = "error"
+}
+export enum WorkflowRunErrorCode {
+    Unsupported = "unsupported",
+    StepFailed = "step_failed"
 }
 export enum ReleaseType {
     Major = "major",

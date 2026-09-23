@@ -87,6 +87,11 @@ export const EnvSchema = z
     IMMICH_WORKERS_EXCLUDE: z.string().optional(),
     /** Library Care recovery locations (FL-69): `Label=/path;Label=/path`, read only, never linked in place. */
     FRAMELEAF_RECOVERY_ROOTS: z.string().optional(),
+    /** Signed app release destinations (FL-82); see `src/utils/app-releases.ts`. */
+    FRAMELEAF_ANDROID_RELEASE_URL: z.string().optional(),
+    FRAMELEAF_ANDROID_APP_ID: z.string().optional(),
+    FRAMELEAF_ANDROID_SIGNING_SHA256: z.string().optional(),
+    FRAMELEAF_IOS_APP_URL: z.string().optional(),
     DB_DATABASE_NAME: z.string().optional(),
     DB_HOSTNAME: z.string().optional(),
     DB_PASSWORD: z.string().optional(),
