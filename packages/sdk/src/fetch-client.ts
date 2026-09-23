@@ -4958,7 +4958,7 @@ export type SharedSpaceEventResponseDto = {
     assetCount: number;
     /** The items this event is about that the reader may see and that are still in the shared space. Empty for a removal. */
     assetIds: string[];
-    /** The comment text, for a comment event. Mentions are @{userId} tokens. */
+    /** The comment text, for a comment or reply event. Mentions are @{userId} tokens. */
     comment: string | null;
     /** When it happened */
     createdAt: string;
@@ -4968,7 +4968,7 @@ export type SharedSpaceEventResponseDto = {
     mentions: UserResponseDto[];
     /** A linked album's or person's name as the space knew it, or the new role; null otherwise */
     subject: string | null;
-    /** The member a member event is about; null otherwise */
+    /** The member a member event is about, or the author of the comment a reply answers; null otherwise */
     targetUser: UserResponseDto | null;
     "type": SharedSpaceEventType;
 };
@@ -5019,6 +5019,10 @@ export type SharedSpaceCommentResponseDto = {
     id: string;
     /** Members named in the comment */
     mentions: UserResponseDto[];
+    /** The top-level comment this reply answers; null for a top-level comment */
+    parentId: string | null;
+    /** How many replies this comment has that the caller can see; always 0 for a reply */
+    replyCount: number;
     /** When it was last edited */
     updatedAt: string;
     /** The author */
@@ -5033,6 +5037,8 @@ export type SharedSpaceCommentCreateDto = {
     assetId?: string;
     /** The text. Mention a member with @{userId}; every mention must name a current member. */
     comment: string;
+    /** Reply to this comment. Replying to a reply joins the same thread, under its top-level comment. A reply is on the same item as the comment it answers. */
+    parentId?: string;
 };
 export type SharedSpaceCommentUpdateDto = {
     /** The text. Mention a member with @{userId}; every mention must name a current member. */
@@ -12490,6 +12496,7 @@ export enum SharedSpaceEventType {
     MemberRemoved = "MemberRemoved",
     MemberRoleChanged = "MemberRoleChanged",
     Comment = "Comment",
+    Reply = "Reply",
     Like = "Like"
 }
 export enum UserAvatarColor {
@@ -12636,6 +12643,7 @@ export enum NotificationType {
     AlbumUpdate = "AlbumUpdate",
     ClusterGroupRequest = "ClusterGroupRequest",
     SharedSpaceMention = "SharedSpaceMention",
+    SharedSpaceReply = "SharedSpaceReply",
     Custom = "Custom"
 }
 export enum UserStatus {
