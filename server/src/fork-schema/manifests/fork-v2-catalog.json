@@ -4001,6 +4001,10 @@
       "identity": "public.render_worker_limit.updatedAt"
     },
     {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.render_worker_limit.updateId"
+    },
+    {
       "definition": "uuid|nullable|||",
       "identity": "public.render_worker_limit.userId"
     },
@@ -4721,6 +4725,10 @@
       "identity": "public.studio_project_comment.updatedAt"
     },
     {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.studio_project_comment.updateId"
+    },
+    {
       "definition": "uuid|nullable|||",
       "identity": "public.studio_project_revision.authorId"
     },
@@ -5321,6 +5329,10 @@
       "identity": "public.video_moment_frame.updatedAt"
     },
     {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.video_moment_frame.updateId"
+    },
+    {
       "definition": "integer|nullable|||",
       "identity": "public.video_moment_frame.width"
     },
@@ -5397,6 +5409,10 @@
       "identity": "public.video_moment_index.updatedAt"
     },
     {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.video_moment_index.updateId"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "public.video_moment.assetId"
     },
@@ -5443,6 +5459,10 @@
     {
       "definition": "timestamp with time zone|not null|now()||",
       "identity": "public.video_moment.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.video_moment.updateId"
     },
     {
       "definition": "integer|not null|||",
@@ -11588,7 +11608,7 @@
       "identity": "public.asset_restoration.asset_restoration_updatedAt"
     },
     {
-      "definition": "CREATE TRIGGER \"asset_video_duplicate_frame_updatedAt\" BEFORE UPDATE ON asset_video_duplicate_frame FOR EACH ROW EXECUTE FUNCTION updated_at()",
+      "definition": "CREATE TRIGGER \"asset_video_duplicate_frame_updatedAt\" BEFORE UPDATE ON asset_video_duplicate_frame FOR EACH ROW EXECUTE FUNCTION media_health_updated_at()",
       "identity": "public.asset_video_duplicate_frame.asset_video_duplicate_frame_updatedAt"
     },
     {
