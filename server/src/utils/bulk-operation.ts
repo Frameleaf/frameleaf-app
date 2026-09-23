@@ -49,7 +49,25 @@ export type BulkOperationPayload = {
   stackIds?: string[];
   /** Still + motion video pairs to relink (FL-70). Every id in this list is also in `assetIds`. */
   pairs?: { photoId: string; videoId: string }[];
+  /**
+   * Library Care findings to act on (FL-69): one per asset in `assetIds`, naming the finding and,
+   * for a relink or a recovery, the reviewed candidate. The worker re-reads and re-verifies all of
+   * it at the moment of change; this only says what the person chose.
+   */
+  mediaHealth?: BulkMediaHealthEntry[];
 };
+
+/** One reviewed Library Care finding in a bulk job (FL-69). */
+export type BulkMediaHealthEntry = { assetId: string; findingId: string; candidateId?: string };
+
+/** The Library Care bulk actions (FL-69). */
+export const MEDIA_HEALTH_BULK_ACTIONS: readonly MediaOperationBulkAction[] = [
+  MediaOperationBulkAction.RelinkMissingMedia,
+  MediaOperationBulkAction.RecoverDamagedMedia,
+  MediaOperationBulkAction.TrashDamagedMedia,
+];
+
+export const isMediaHealthBulkAction = (action: MediaOperationBulkAction) => MEDIA_HEALTH_BULK_ACTIONS.includes(action);
 
 /** The immutable request, as stored in `media_operation.snapshot`. */
 export type BulkOperationSnapshot = {
@@ -534,6 +552,9 @@ export const BULK_ACTION_PERMISSIONS: Readonly<Record<MediaOperationBulkAction, 
   [MediaOperationBulkAction.RefreshEncoded]: [Permission.AssetUpdate],
   [MediaOperationBulkAction.RefreshFaces]: [Permission.AssetUpdate],
   [MediaOperationBulkAction.RelinkLivePhoto]: [Permission.AssetUpdate],
+  [MediaOperationBulkAction.RelinkMissingMedia]: [Permission.AssetUpdate],
+  [MediaOperationBulkAction.RecoverDamagedMedia]: [Permission.AssetUpdate],
+  [MediaOperationBulkAction.TrashDamagedMedia]: [Permission.AssetDelete],
 };
 
 /**
@@ -571,6 +592,11 @@ export const BULK_ITEM_PERMISSION: Readonly<Record<MediaOperationBulkAction, Per
   [MediaOperationBulkAction.RefreshFaces]: Permission.AssetUpdate,
   // The relink service re-validates ownership of both the still and the video itself (FL-70).
   [MediaOperationBulkAction.RelinkLivePhoto]: null,
+  // Library Care (FL-69) checks each finding's owner, Locked state and evidence itself, because an
+  // administrator may repair another account's originals but never reach its Locked media.
+  [MediaOperationBulkAction.RelinkMissingMedia]: null,
+  [MediaOperationBulkAction.RecoverDamagedMedia]: null,
+  [MediaOperationBulkAction.TrashDamagedMedia]: null,
 };
 
 export const BULK_ASSET_JOBS: Readonly<Partial<Record<MediaOperationBulkAction, AssetJobName>>> = {
@@ -700,6 +726,28 @@ export const bulkPayloadProblem = (
       return photoIds.size === assetIdSet.size && [...photoIds].every((id) => assetIdSet.has(id))
         ? null
         : 'Every pair must name one of the selected still images';
+    }
+    case MediaOperationBulkAction.RelinkMissingMedia:
+    case MediaOperationBulkAction.RecoverDamagedMedia:
+    case MediaOperationBulkAction.TrashDamagedMedia: {
+      const entries = payload.mediaHealth ?? [];
+      if (entries.length === 0) {
+        return 'At least one finding is required for this action';
+      }
+      const needsCandidate = action !== MediaOperationBulkAction.TrashDamagedMedia;
+      if (needsCandidate && entries.some((entry) => !entry.candidateId)) {
+        return 'Every finding needs a reviewed candidate for this action';
+      }
+      const entryAssetIds = new Set(entries.map((entry) => entry.assetId));
+      const findingIds = new Set(entries.map((entry) => entry.findingId));
+      if (entryAssetIds.size !== entries.length || findingIds.size !== entries.length) {
+        return 'Each item and each finding may appear only once';
+      }
+      // The frozen set is the findings' asset ids, one entry each, so the cursor and payload agree.
+      const assetIdSet = new Set(assetIds);
+      return entryAssetIds.size === assetIdSet.size && [...entryAssetIds].every((id) => assetIdSet.has(id))
+        ? null
+        : 'Every finding must name one of the selected items';
     }
     default: {
       return null;
