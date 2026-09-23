@@ -16,7 +16,7 @@ restoration workload.
 | Mode     | Family                                                           | How it runs                                                                                                        |
 | -------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | Faithful | [RealBasicVSR](https://github.com/ckkelvinchan/RealBasicVSR)     | Upstream `inference_realbasicvsr.py` on a folder of frames at native x4, then a Lanczos resize to the requested size |
-| Creative | [SeedVR2](https://github.com/ByteDance-Seed/SeedVR)              | Upstream `projects/inference_seedvr2_*.py` on a lossless clip at the requested size; its encoded output is decoded   |
+| Creative | [SeedVR2](https://github.com/ByteDance-Seed/SeedVR)              | Upstream `projects/inference_seedvr2_*.py` on a near-lossless clip at the requested size; its encoded output is decoded |
 
 The mode names express intention, not a fidelity guarantee.
 
@@ -42,19 +42,26 @@ is not available. A model is `available` only when all of these hold:
    including support weights (RealBasicVSR's SPyNet flow network).
 2. The runtime checkout and its interpreter exist.
 3. The checkout is at the pinned commit with no modified tracked files.
-4. Every weight file exists and hashes to its pinned value. Hashes are cached by size and
-   modification time and re-checked before every request, so a replaced file is caught.
+4. Every weight file exists and hashes to its pinned value. A hash is reused only while the
+   file's inode, size, modification and status-change times are unchanged, and each model is
+   re-checked before every request, so a replaced or rewritten file is caught.
 5. A qualification record for the same model id, revision and exact weight hashes has been
-   reviewed, carries `pass` for every required evidence item, has measured throughput and a
-   qualified GPU, and lists this image's `FRAMELEAF_RESTORATION_IMAGE_REVISION`.
-6. The record approves the code and weight licences (`license.approved` with the licence
+   reviewed, carries `pass` with an artifact for every required evidence item (any `fail` or
+   `pending` entry for an item counts, whatever else the record says), has measured
+   throughput and a qualified GPU, and lists this image's `FRAMELEAF_RESTORATION_IMAGE_REVISION`.
+6. The record approves the code and weight licenses (`license.approved` with the license
    names, reviewer and date).
-7. An NVIDIA GPU is visible, its `nvidia-smi` name is one the record qualified, and it has
-   at least `limits.minVramBytes` of memory.
+7. An NVIDIA GPU is visible, its `nvidia-smi` name and driver branch (`550` of `550.54.14`)
+   match hardware the record qualified, and it has at least `limits.minVramBytes` of memory.
 
 `GET /capabilities` lists a restoration workload only while at least one model for that
 mode is available, so the server's admission refuses restoration work on any worker that is
-not qualified.
+not qualified. The report is rebuilt at startup and every `FRAMELEAF_RESTORATION_REFRESH_S`
+seconds.
+
+Model runtimes inherit only the environment a CUDA process needs (`PATH`, locale, CUDA and
+NVIDIA device variables) plus the manifest's `env`; the worker's bearer token never reaches
+third-party model code.
 
 HDR and sources above 8 bits are refused. Offering them needs a record with
 `hdrQualified: true` **and** an HDR output path, which this worker does not have yet.
@@ -91,7 +98,7 @@ These cannot be done in this repository's CI and remain open on FL-114:
 - Produce the comparisons above against conventional resize and the fault tests
   (out-of-memory, NaN, changed weights, dirty checkout, unsupported input) and a
   deterministic repeat.
-- Review the code and weight licences.
+- Review the code and weight licenses.
 - Fill in the manifest and qualification files with the measured values and the image
   revision the evidence covers.
 
@@ -104,6 +111,10 @@ anything moved), the scale (1 or 2), the long-edge cap (at most 3840), an option
 a seed and what the server measured about the source. The worker re-probes the upload and
 refuses a mismatch.
 
+The restored file is H.264 in MP4 at the source's exact frame rate, converted with the
+source's own YCbCr matrix. Source audio is copied when MP4 can carry it and otherwise
+transcoded to AAC, which the result reports (`audio: "transcoded"`) with a warning.
+
 On success the body is the restored MP4 and the `x-restoration-result` header carries the
 base64url JSON result: model identity with weight hashes and qualification id, output
 description with sha256, timing and measured frames per second, peak VRAM and warnings. On
@@ -113,8 +124,9 @@ failure the body is `{ "code", "message", "modelId" }` with a code from `invalid
 
 The worker only reads the upload and writes the restored file as a new file in a private
 working directory that is deleted after the response. The server writes it as a new
-derivative; originals are never overwritten. The server should cut the segment before
-upload so a remote worker never receives more of the original than the job needs.
+derivative; originals are never overwritten. The server refuses to send a segment request
+to a cloud destination: it must cut the segment first, so a remote worker never receives
+more of the original than the job needs.
 
 ## Environment
 
@@ -125,4 +137,5 @@ upload so a remote worker never receives more of the original than the job needs
 | `FRAMELEAF_RESTORATION_WORKDIR`        | system temporary directory               | Per-request working directories                          |
 | `FRAMELEAF_RESTORATION_IMAGE_REVISION` | set by the image build                   | Revision the qualification record must list              |
 | `FRAMELEAF_RESTORATION_HOST` / `_PORT` | `0.0.0.0` / `3004`                       | Listen address                                           |
+| `FRAMELEAF_RESTORATION_REFRESH_S`      | `300`                                    | How often the capability report is rebuilt; 0 for never  |
 | `IMMICH_ML_AUTH_TOKEN`                 | unset                                    | Bearer token, as for the predict container               |
