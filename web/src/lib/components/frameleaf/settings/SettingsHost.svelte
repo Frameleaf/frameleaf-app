@@ -17,6 +17,8 @@
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import UtilitiesArea from '$lib/components/frameleaf/settings/UtilitiesArea.svelte';
+  import { utilityToolsFor } from '$lib/frameleaf/utilities';
   import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
   import SettingsDraftNotices from '$lib/components/frameleaf/settings/SettingsDraftNotices.svelte';
@@ -41,6 +43,8 @@
   import { getAdminConfigHistory, type SystemConfigHistoryEntryDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
+    mdiAccountOutline,
+    mdiTools,
     mdiBackupRestore,
     mdiBellOutline,
     mdiChartTimelineVariant,
@@ -61,19 +65,21 @@
   let {
     sections,
     disabled = false,
+    utilityOnly = false,
     areaPanel,
   }: {
     sections: SettingsHostSection[];
     disabled?: boolean;
-    /**
-     * An area's own tool above its settings sections, as the template mounts managers inside the
-     * command center: the Libraries manager on the Libraries area (FL-78). Areas with a panel carry
-     * their own heading, so the host's is left out for them.
-     */
+    utilityOnly?: boolean;
+    /** An area's own manager inside the command center. */
     areaPanel?: Snippet<[SettingsAreaId]>;
   } = $props();
-
-  /** Areas whose panel draws its own heading, as the template's managers do. */
+  const visibleAreas = $derived(SETTINGS_AREAS.filter((item) => authManager.user.isAdmin || item.id === 'utilities'));
+  const utilityMatches = $derived(
+    utilityToolsFor(authManager.user.isAdmin).filter((tool) =>
+      `${$t(tool.titleKey)} ${$t(tool.descriptionKey)}`.toLowerCase().includes(query.trim().toLowerCase()),
+    ),
+  );
   const PANEL_AREAS: ReadonlySet<SettingsAreaId> = new Set(['libraries']);
 
   const settingsDraft = getSystemConfigDraft();
@@ -81,6 +87,7 @@
   const AREA_PARAM = 'area';
 
   const areaCopy: Record<SettingsAreaId, { title: string; description: string; icon: string }> = $derived({
+    utilities: { title: $t('utilities'), description: $t('frameleaf_utilities_description'), icon: mdiTools },
     analytics: {
       title: $t('frameleaf_settings_area_analytics'),
       description: $t('frameleaf_settings_area_analytics_description'),
@@ -217,10 +224,16 @@
 
   const selectArea = async (next: SettingsAreaId, sectionKey?: string) => {
     query = '';
-    const url = new URL(page.url);
+    const url = new URL(utilityOnly && next !== 'utilities' ? Route.systemSettings() : page.url, page.url);
+    for (const key of ['section', 'status', 'assetId', 'at', 'index', 'workflowId', 'selected', 'new', 'edit']) {
+      url.searchParams.delete(key);
+    }
     url.searchParams.set(AREA_PARAM, next);
+    if (next === 'utilities' && sectionKey) {
+      url.searchParams.set('section', sectionKey);
+    }
     await goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true, keepFocus: true });
-    if (sectionKey) {
+    if (sectionKey && next !== 'utilities') {
       scrollTo(sectionKey);
     }
   };
@@ -244,10 +257,10 @@
 
 <div class="host">
   <nav class="rail" aria-label={$t('frameleaf_settings_nav_label')}>
-    {#each SETTINGS_GROUP_ORDER as group (group)}
+    {#each SETTINGS_GROUP_ORDER.filter((group) => visibleAreas.some((item) => item.group === group)) as group (group)}
       <div class="rail-group">
         <p>{groupCopy[group]}</p>
-        {#each SETTINGS_AREAS.filter((item) => item.group === group) as item (item.id)}
+        {#each visibleAreas.filter((item) => item.group === group) as item (item.id)}
           <button
             type="button"
             class="area"
@@ -279,6 +292,11 @@
         {/each}
       </div>
     {/each}
+    <a class="area" href={Route.userSettings()}
+      ><Icon icon={mdiAccountOutline} size="1.125rem" aria-hidden={true} /><span
+        >{$t('frameleaf_utilities_preferences')}</span
+      ></a
+    >
   </nav>
 
   <div class="main">
@@ -297,13 +315,25 @@
       <SettingsDraftNotices store={settingsDraft} />
     {/if}
 
-    {#if searching}
+    {#if area === 'utilities'}
+      <UtilitiesArea
+        {query}
+        onNavigate={() => {
+          query = '';
+        }}
+      />
+    {:else if searching}
       <p class="results" role="status">
-        {results.length > 0
-          ? $t('frameleaf_settings_search_results', { values: { count: results.length } })
+        {results.length + utilityMatches.length > 0
+          ? $t('frameleaf_settings_search_results', { values: { count: results.length + utilityMatches.length } })
           : $t('frameleaf_settings_search_empty', { values: { query: query.trim() } })}
       </p>
       <div class="sections">
+        {#each utilityMatches as tool (tool.id)}
+          <button type="button" class="utility-result" onclick={() => selectArea('utilities', tool.id)}
+            ><strong>{$t('utilities')} › {$t(tool.titleKey)}</strong><span>{$t(tool.descriptionKey)}</span></button
+          >
+        {/each}
         {#each results as section (section.key)}
           {@const owner = areaOf(section.key)}
           <SettingsSection
@@ -366,6 +396,19 @@
 </div>
 
 <style>
+  .utility-result {
+    display: grid;
+    gap: 0.5rem;
+    padding: 1rem;
+    text-align: left;
+    background: var(--fl-panel);
+    color: var(--fl-text);
+    border: 1px solid var(--fl-border);
+    border-radius: 0.25rem;
+  }
+  .utility-result span {
+    color: var(--fl-muted);
+  }
   .host {
     display: grid;
     grid-template-columns: 14.25rem minmax(0, 1fr);
@@ -544,6 +587,19 @@
     background: color-mix(in srgb, var(--fl-raised), var(--fl-text) 8%);
   }
   @media (max-width: 56rem) {
+    .utility-result {
+      display: grid;
+      gap: 0.5rem;
+      padding: 1rem;
+      text-align: left;
+      background: var(--fl-panel);
+      color: var(--fl-text);
+      border: 1px solid var(--fl-border);
+      border-radius: 0.25rem;
+    }
+    .utility-result span {
+      color: var(--fl-muted);
+    }
     .host {
       grid-template-columns: 1fr;
     }

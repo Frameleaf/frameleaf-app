@@ -134,7 +134,7 @@
     $t(destination.labelKey),
     destination.icon,
     destination.href,
-    isDestinationCurrent(pathname, destination),
+    isDestinationCurrent(page.url, destination),
     false,
   )}
 {/snippet}

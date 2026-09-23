@@ -26,6 +26,11 @@ export function getAssetInfoFromParam({ assetId, slug, key }: { assetId?: string
 }
 
 function currentUrlWithoutAsset() {
+  if (page.url.searchParams.get('area') === 'utilities') {
+    const params = new URLSearchParams(page.url.search);
+    params.delete('assetId');
+    return `${page.url.pathname}?${params}`;
+  }
   // This contains special casing for the /photos/:assetId route, which hangs directly
   // off / instead of a subpath, unlike every other asset-containing route.
   if (isPhotosRoute(page.route.id)) {
@@ -41,6 +46,11 @@ function currentUrlWithoutAsset() {
 
 export function currentUrlReplaceAssetId(assetId: string) {
   const params = new URLSearchParams(page.url.search);
+  if (params.get('area') === 'utilities') {
+    params.delete('at');
+    params.set('assetId', assetId);
+    return `${page.url.pathname}?${params}`;
+  }
   // always remove the assetGridScrollTargetParams
   params.delete('at');
   const paramsString = params.toString();

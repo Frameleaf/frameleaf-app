@@ -43,7 +43,7 @@
       "sha256": "e47a54cab6c3010d4727eb4ca0d6f06e3bb6b313657a82fa0c4300eb9ba246c7"
     }
   },
-  "sourceEvidenceSha256": "535324eaced4bbed1cb7daacc2298d5a77a34d8d327469715f071182a85a84ab",
+  "sourceEvidenceSha256": "d5311061f03858bcfb754738a9fa255707cd2cbc24f00cf980c46e7a217e15d2",
   "securityInvariants": [
     {
       "id": "public-loader-is-not-resource-authorization",
@@ -18401,8 +18401,8 @@
       "title": "utilities route /utilities",
       "sourceRowIds": ["web-routes:/utilities"],
       "entrypoints": [
+        "web/src/lib/components/frameleaf/settings/UtilitiesArea.svelte",
         "web/src/routes/(user)/+layout.ts",
-        "web/src/routes/(user)/utilities/+page.svelte",
         "web/src/routes/(user)/utilities/+page.ts",
         "web/src/routes/+layout.ts"
       ],
@@ -18435,8 +18435,8 @@
       "title": "utilities route /utilities/corrupt-media",
       "sourceRowIds": ["web-routes:/utilities/corrupt-media"],
       "entrypoints": [
+        "web/src/lib/components/frameleaf/LibraryCareHealth.svelte",
         "web/src/routes/(user)/+layout.ts",
-        "web/src/routes/(user)/utilities/corrupt-media/+page.svelte",
         "web/src/routes/(user)/utilities/corrupt-media/+page.ts",
         "web/src/routes/+layout.ts"
       ],
@@ -18464,8 +18464,8 @@
       "title": "utilities route /utilities/downloads",
       "sourceRowIds": ["web-routes:/utilities/downloads"],
       "entrypoints": [
+        "web/src/lib/components/frameleaf/ApplicationSetup.svelte",
         "web/src/routes/(user)/+layout.ts",
-        "web/src/routes/(user)/utilities/downloads/+page.svelte",
         "web/src/routes/(user)/utilities/downloads/+page.ts",
         "web/src/routes/+layout.ts"
       ],
@@ -18493,8 +18493,8 @@
       "title": "utilities route /utilities/duplicates/[[photos=photos]]/[[assetId=id]]",
       "sourceRowIds": ["web-routes:/utilities/duplicates/[[photos=photos]]/[[assetId=id]]"],
       "entrypoints": [
+        "web/src/lib/components/frameleaf/DuplicateUtility.svelte",
         "web/src/routes/(user)/+layout.ts",
-        "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.ts",
         "web/src/routes/+layout.ts"
       ],
@@ -18523,8 +18523,8 @@
       "title": "utilities route /utilities/geolocation",
       "sourceRowIds": ["web-routes:/utilities/geolocation"],
       "entrypoints": [
+        "web/src/lib/components/frameleaf/GeolocationUtility.svelte",
         "web/src/routes/(user)/+layout.ts",
-        "web/src/routes/(user)/utilities/geolocation/+page.svelte",
         "web/src/routes/(user)/utilities/geolocation/+page.ts",
         "web/src/routes/+layout.ts"
       ],
@@ -18580,8 +18580,8 @@
       "title": "utilities route /utilities/icloud-sync",
       "sourceRowIds": ["web-routes:/utilities/icloud-sync"],
       "entrypoints": [
+        "web/src/lib/components/frameleaf/ICloudSyncPanel.svelte",
         "web/src/routes/(user)/+layout.ts",
-        "web/src/routes/(user)/utilities/icloud-sync/+page.svelte",
         "web/src/routes/(user)/utilities/icloud-sync/+page.ts",
         "web/src/routes/+layout.ts"
       ],
@@ -18609,8 +18609,8 @@
       "title": "utilities route /utilities/large-files/[[photos=photos]]/[[assetId=id]]",
       "sourceRowIds": ["web-routes:/utilities/large-files/[[photos=photos]]/[[assetId=id]]"],
       "entrypoints": [
+        "web/src/lib/components/frameleaf/LargeFilesUtility.svelte",
         "web/src/routes/(user)/+layout.ts",
-        "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.svelte",
         "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.ts",
         "web/src/routes/+layout.ts"
       ],
@@ -18639,8 +18639,8 @@
       "title": "utilities route /utilities/live-photos",
       "sourceRowIds": ["web-routes:/utilities/live-photos"],
       "entrypoints": [
+        "web/src/lib/components/frameleaf/LivePhotosUtility.svelte",
         "web/src/routes/(user)/+layout.ts",
-        "web/src/routes/(user)/utilities/live-photos/+page.svelte",
         "web/src/routes/(user)/utilities/live-photos/+page.ts",
         "web/src/routes/+layout.ts"
       ],
@@ -18668,8 +18668,8 @@
       "title": "utilities route /utilities/missing-media",
       "sourceRowIds": ["web-routes:/utilities/missing-media"],
       "entrypoints": [
+        "web/src/lib/components/frameleaf/LibraryCareHealth.svelte",
         "web/src/routes/(user)/+layout.ts",
-        "web/src/routes/(user)/utilities/missing-media/+page.svelte",
         "web/src/routes/(user)/utilities/missing-media/+page.ts",
         "web/src/routes/+layout.ts"
       ],
@@ -18706,8 +18706,8 @@
       "title": "utilities route /utilities/obtainium",
       "sourceRowIds": ["web-routes:/utilities/obtainium"],
       "entrypoints": [
+        "web/src/lib/components/frameleaf/ApplicationSetup.svelte",
         "web/src/routes/(user)/+layout.ts",
-        "web/src/routes/(user)/utilities/obtainium/+page.svelte",
         "web/src/routes/(user)/utilities/obtainium/+page.ts",
         "web/src/routes/+layout.ts"
       ],
@@ -18735,8 +18735,8 @@
       "title": "workflows route /workflows",
       "sourceRowIds": ["web-routes:/workflows"],
       "entrypoints": [
+        "web/src/lib/components/frameleaf/WorkflowsPanel.svelte",
         "web/src/routes/(user)/+layout.ts",
-        "web/src/routes/(user)/workflows/+page.svelte",
         "web/src/routes/(user)/workflows/+page.ts",
         "web/src/routes/+layout.ts"
       ],
@@ -18764,8 +18764,8 @@
       "title": "workflows route /workflows/[workflowId]",
       "sourceRowIds": ["web-routes:/workflows/[workflowId]"],
       "entrypoints": [
+        "web/src/lib/components/frameleaf/WorkflowsPanel.svelte",
         "web/src/routes/(user)/+layout.ts",
-        "web/src/routes/(user)/workflows/[workflowId]/+page.svelte",
         "web/src/routes/(user)/workflows/[workflowId]/+page.ts",
         "web/src/routes/+layout.ts"
       ],
@@ -74796,7 +74796,7 @@
       "kind": "web-route",
       "title": "utilities route /utilities",
       "entrypoints": [
-        "web/src/routes/(user)/utilities/+page.svelte",
+        "web/src/lib/components/frameleaf/settings/UtilitiesArea.svelte",
         "web/src/routes/(user)/utilities/+page.ts",
         "web/src/routes/(user)/+layout.ts",
         "web/src/routes/+layout.ts"
@@ -74805,9 +74805,15 @@
       "mappings": {
         "source": {
           "status": "committed-source",
-          "paths": ["web/src/routes/(user)/utilities/+page.svelte", "web/src/routes/(user)/utilities/+page.ts"],
+          "paths": [
+            "web/src/lib/components/frameleaf/settings/UtilitiesArea.svelte",
+            "web/src/routes/(user)/utilities/+page.ts"
+          ],
           "access": "authenticated",
-          "evidence": ["web/src/routes/(user)/utilities/+page.svelte", "web/src/routes/(user)/utilities/+page.ts"]
+          "evidence": [
+            "web/src/lib/components/frameleaf/settings/UtilitiesArea.svelte",
+            "web/src/routes/(user)/utilities/+page.ts"
+          ]
         },
         "newUi": { "status": "not-qualified", "target": "/utilities", "evidence": ["none-qualified"] },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
@@ -74826,7 +74832,7 @@
       "kind": "web-route",
       "title": "utilities route /utilities/corrupt-media",
       "entrypoints": [
-        "web/src/routes/(user)/utilities/corrupt-media/+page.svelte",
+        "web/src/lib/components/frameleaf/LibraryCareHealth.svelte",
         "web/src/routes/(user)/utilities/corrupt-media/+page.ts",
         "web/src/routes/(user)/+layout.ts",
         "web/src/routes/+layout.ts"
@@ -74836,12 +74842,12 @@
         "source": {
           "status": "committed-source",
           "paths": [
-            "web/src/routes/(user)/utilities/corrupt-media/+page.svelte",
+            "web/src/lib/components/frameleaf/LibraryCareHealth.svelte",
             "web/src/routes/(user)/utilities/corrupt-media/+page.ts"
           ],
-          "access": "authenticated",
+          "access": "admin",
           "evidence": [
-            "web/src/routes/(user)/utilities/corrupt-media/+page.svelte",
+            "web/src/lib/components/frameleaf/LibraryCareHealth.svelte",
             "web/src/routes/(user)/utilities/corrupt-media/+page.ts"
           ]
         },
@@ -74862,7 +74868,7 @@
       "kind": "web-route",
       "title": "utilities route /utilities/downloads",
       "entrypoints": [
-        "web/src/routes/(user)/utilities/downloads/+page.svelte",
+        "web/src/lib/components/frameleaf/ApplicationSetup.svelte",
         "web/src/routes/(user)/utilities/downloads/+page.ts",
         "web/src/routes/(user)/+layout.ts",
         "web/src/routes/+layout.ts"
@@ -74872,12 +74878,12 @@
         "source": {
           "status": "committed-source",
           "paths": [
-            "web/src/routes/(user)/utilities/downloads/+page.svelte",
+            "web/src/lib/components/frameleaf/ApplicationSetup.svelte",
             "web/src/routes/(user)/utilities/downloads/+page.ts"
           ],
           "access": "authenticated",
           "evidence": [
-            "web/src/routes/(user)/utilities/downloads/+page.svelte",
+            "web/src/lib/components/frameleaf/ApplicationSetup.svelte",
             "web/src/routes/(user)/utilities/downloads/+page.ts"
           ]
         },
@@ -74898,7 +74904,7 @@
       "kind": "web-route",
       "title": "utilities route /utilities/duplicates/[[photos=photos]]/[[assetId=id]]",
       "entrypoints": [
-        "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/DuplicateUtility.svelte",
         "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.ts",
         "web/src/routes/(user)/+layout.ts",
         "web/src/routes/+layout.ts"
@@ -74908,12 +74914,12 @@
         "source": {
           "status": "committed-source",
           "paths": [
-            "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+            "web/src/lib/components/frameleaf/DuplicateUtility.svelte",
             "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.ts"
           ],
           "access": "authenticated",
           "evidence": [
-            "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+            "web/src/lib/components/frameleaf/DuplicateUtility.svelte",
             "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.ts"
           ]
         },
@@ -74938,7 +74944,7 @@
       "kind": "web-route",
       "title": "utilities route /utilities/geolocation",
       "entrypoints": [
-        "web/src/routes/(user)/utilities/geolocation/+page.svelte",
+        "web/src/lib/components/frameleaf/GeolocationUtility.svelte",
         "web/src/routes/(user)/utilities/geolocation/+page.ts",
         "web/src/routes/(user)/+layout.ts",
         "web/src/routes/+layout.ts"
@@ -74948,12 +74954,12 @@
         "source": {
           "status": "committed-source",
           "paths": [
-            "web/src/routes/(user)/utilities/geolocation/+page.svelte",
+            "web/src/lib/components/frameleaf/GeolocationUtility.svelte",
             "web/src/routes/(user)/utilities/geolocation/+page.ts"
           ],
           "access": "authenticated",
           "evidence": [
-            "web/src/routes/(user)/utilities/geolocation/+page.svelte",
+            "web/src/lib/components/frameleaf/GeolocationUtility.svelte",
             "web/src/routes/(user)/utilities/geolocation/+page.ts"
           ]
         },
@@ -75007,7 +75013,7 @@
       "kind": "web-route",
       "title": "utilities route /utilities/icloud-sync",
       "entrypoints": [
-        "web/src/routes/(user)/utilities/icloud-sync/+page.svelte",
+        "web/src/lib/components/frameleaf/ICloudSyncPanel.svelte",
         "web/src/routes/(user)/utilities/icloud-sync/+page.ts",
         "web/src/routes/(user)/+layout.ts",
         "web/src/routes/+layout.ts"
@@ -75017,12 +75023,12 @@
         "source": {
           "status": "committed-source",
           "paths": [
-            "web/src/routes/(user)/utilities/icloud-sync/+page.svelte",
+            "web/src/lib/components/frameleaf/ICloudSyncPanel.svelte",
             "web/src/routes/(user)/utilities/icloud-sync/+page.ts"
           ],
           "access": "authenticated",
           "evidence": [
-            "web/src/routes/(user)/utilities/icloud-sync/+page.svelte",
+            "web/src/lib/components/frameleaf/ICloudSyncPanel.svelte",
             "web/src/routes/(user)/utilities/icloud-sync/+page.ts"
           ]
         },
@@ -75043,7 +75049,7 @@
       "kind": "web-route",
       "title": "utilities route /utilities/large-files/[[photos=photos]]/[[assetId=id]]",
       "entrypoints": [
-        "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+        "web/src/lib/components/frameleaf/LargeFilesUtility.svelte",
         "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.ts",
         "web/src/routes/(user)/+layout.ts",
         "web/src/routes/+layout.ts"
@@ -75053,12 +75059,12 @@
         "source": {
           "status": "committed-source",
           "paths": [
-            "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+            "web/src/lib/components/frameleaf/LargeFilesUtility.svelte",
             "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.ts"
           ],
           "access": "authenticated",
           "evidence": [
-            "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+            "web/src/lib/components/frameleaf/LargeFilesUtility.svelte",
             "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.ts"
           ]
         },
@@ -75083,7 +75089,7 @@
       "kind": "web-route",
       "title": "utilities route /utilities/live-photos",
       "entrypoints": [
-        "web/src/routes/(user)/utilities/live-photos/+page.svelte",
+        "web/src/lib/components/frameleaf/LivePhotosUtility.svelte",
         "web/src/routes/(user)/utilities/live-photos/+page.ts",
         "web/src/routes/(user)/+layout.ts",
         "web/src/routes/+layout.ts"
@@ -75093,12 +75099,12 @@
         "source": {
           "status": "committed-source",
           "paths": [
-            "web/src/routes/(user)/utilities/live-photos/+page.svelte",
+            "web/src/lib/components/frameleaf/LivePhotosUtility.svelte",
             "web/src/routes/(user)/utilities/live-photos/+page.ts"
           ],
           "access": "authenticated",
           "evidence": [
-            "web/src/routes/(user)/utilities/live-photos/+page.svelte",
+            "web/src/lib/components/frameleaf/LivePhotosUtility.svelte",
             "web/src/routes/(user)/utilities/live-photos/+page.ts"
           ]
         },
@@ -75119,7 +75125,7 @@
       "kind": "web-route",
       "title": "utilities route /utilities/missing-media",
       "entrypoints": [
-        "web/src/routes/(user)/utilities/missing-media/+page.svelte",
+        "web/src/lib/components/frameleaf/LibraryCareHealth.svelte",
         "web/src/routes/(user)/utilities/missing-media/+page.ts",
         "web/src/routes/(user)/+layout.ts",
         "web/src/routes/+layout.ts"
@@ -75129,12 +75135,12 @@
         "source": {
           "status": "committed-source",
           "paths": [
-            "web/src/routes/(user)/utilities/missing-media/+page.svelte",
+            "web/src/lib/components/frameleaf/LibraryCareHealth.svelte",
             "web/src/routes/(user)/utilities/missing-media/+page.ts"
           ],
-          "access": "authenticated",
+          "access": "admin",
           "evidence": [
-            "web/src/routes/(user)/utilities/missing-media/+page.svelte",
+            "web/src/lib/components/frameleaf/LibraryCareHealth.svelte",
             "web/src/routes/(user)/utilities/missing-media/+page.ts"
           ]
         },
@@ -75155,7 +75161,7 @@
       "kind": "web-route",
       "title": "utilities route /utilities/obtainium",
       "entrypoints": [
-        "web/src/routes/(user)/utilities/obtainium/+page.svelte",
+        "web/src/lib/components/frameleaf/ApplicationSetup.svelte",
         "web/src/routes/(user)/utilities/obtainium/+page.ts",
         "web/src/routes/(user)/+layout.ts",
         "web/src/routes/+layout.ts"
@@ -75165,12 +75171,12 @@
         "source": {
           "status": "committed-source",
           "paths": [
-            "web/src/routes/(user)/utilities/obtainium/+page.svelte",
+            "web/src/lib/components/frameleaf/ApplicationSetup.svelte",
             "web/src/routes/(user)/utilities/obtainium/+page.ts"
           ],
           "access": "authenticated",
           "evidence": [
-            "web/src/routes/(user)/utilities/obtainium/+page.svelte",
+            "web/src/lib/components/frameleaf/ApplicationSetup.svelte",
             "web/src/routes/(user)/utilities/obtainium/+page.ts"
           ]
         },
@@ -75191,7 +75197,7 @@
       "kind": "web-route",
       "title": "workflows route /workflows",
       "entrypoints": [
-        "web/src/routes/(user)/workflows/+page.svelte",
+        "web/src/lib/components/frameleaf/WorkflowsPanel.svelte",
         "web/src/routes/(user)/workflows/+page.ts",
         "web/src/routes/(user)/+layout.ts",
         "web/src/routes/+layout.ts"
@@ -75200,9 +75206,15 @@
       "mappings": {
         "source": {
           "status": "committed-source",
-          "paths": ["web/src/routes/(user)/workflows/+page.svelte", "web/src/routes/(user)/workflows/+page.ts"],
+          "paths": [
+            "web/src/lib/components/frameleaf/WorkflowsPanel.svelte",
+            "web/src/routes/(user)/workflows/+page.ts"
+          ],
           "access": "authenticated",
-          "evidence": ["web/src/routes/(user)/workflows/+page.svelte", "web/src/routes/(user)/workflows/+page.ts"]
+          "evidence": [
+            "web/src/lib/components/frameleaf/WorkflowsPanel.svelte",
+            "web/src/routes/(user)/workflows/+page.ts"
+          ]
         },
         "newUi": { "status": "not-qualified", "target": "/workflows", "evidence": ["none-qualified"] },
         "api": { "status": "preserve-existing-contracts", "evidence": ["none-qualified"] },
@@ -75221,7 +75233,7 @@
       "kind": "web-route",
       "title": "workflows route /workflows/[workflowId]",
       "entrypoints": [
-        "web/src/routes/(user)/workflows/[workflowId]/+page.svelte",
+        "web/src/lib/components/frameleaf/WorkflowsPanel.svelte",
         "web/src/routes/(user)/workflows/[workflowId]/+page.ts",
         "web/src/routes/(user)/+layout.ts",
         "web/src/routes/+layout.ts"
@@ -75231,12 +75243,12 @@
         "source": {
           "status": "committed-source",
           "paths": [
-            "web/src/routes/(user)/workflows/[workflowId]/+page.svelte",
+            "web/src/lib/components/frameleaf/WorkflowsPanel.svelte",
             "web/src/routes/(user)/workflows/[workflowId]/+page.ts"
           ],
           "access": "authenticated",
           "evidence": [
-            "web/src/routes/(user)/workflows/[workflowId]/+page.svelte",
+            "web/src/lib/components/frameleaf/WorkflowsPanel.svelte",
             "web/src/routes/(user)/workflows/[workflowId]/+page.ts"
           ]
         },
@@ -76903,66 +76915,43 @@
       "route:/user-settings"
     ],
     "web/src/routes/(user)/user-settings/+page.ts": ["route:/user-settings"],
-    "web/src/routes/(user)/utilities/+page.svelte": [
-      "native:web/src/routes/(user)/utilities/+page.svelte",
-      "route:/utilities"
-    ],
+    "web/src/lib/components/frameleaf/settings/UtilitiesArea.svelte": ["route:/utilities"],
     "web/src/routes/(user)/utilities/+page.ts": ["route:/utilities"],
-    "web/src/routes/(user)/utilities/corrupt-media/+page.svelte": [
-      "native:web/src/routes/(user)/utilities/corrupt-media/+page.svelte",
-      "route:/utilities/corrupt-media"
+    "web/src/lib/components/frameleaf/LibraryCareHealth.svelte": [
+      "route:/utilities/corrupt-media",
+      "route:/utilities/missing-media"
     ],
     "web/src/routes/(user)/utilities/corrupt-media/+page.ts": ["route:/utilities/corrupt-media"],
-    "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.svelte": [
-      "native:web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+    "web/src/lib/components/frameleaf/DuplicateUtility.svelte": [
       "route:/utilities/duplicates/[[photos=photos]]/[[assetId=id]]"
     ],
     "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.ts": [
       "route:/utilities/duplicates/[[photos=photos]]/[[assetId=id]]"
     ],
-    "web/src/routes/(user)/utilities/downloads/+page.svelte": ["route:/utilities/downloads"],
-    "web/src/routes/(user)/utilities/downloads/+page.ts": ["route:/utilities/downloads"],
-    "web/src/routes/(user)/utilities/geolocation/+page.svelte": [
-      "native:web/src/routes/(user)/utilities/geolocation/+page.svelte",
-      "route:/utilities/geolocation"
+    "web/src/lib/components/frameleaf/ApplicationSetup.svelte": [
+      "route:/utilities/downloads",
+      "route:/utilities/obtainium"
     ],
+    "web/src/routes/(user)/utilities/downloads/+page.ts": ["route:/utilities/downloads"],
+    "web/src/lib/components/frameleaf/GeolocationUtility.svelte": ["route:/utilities/geolocation"],
     "web/src/routes/(user)/utilities/geolocation/+page.ts": ["route:/utilities/geolocation"],
     "web/src/routes/(user)/utilities/geolocation/photos/[photoId]/+page.ts": [
       "route:/utilities/geolocation/photos/[photoId]"
     ],
-    "web/src/routes/(user)/utilities/icloud-sync/+page.svelte": [
-      "native:web/src/routes/(user)/utilities/icloud-sync/+page.svelte",
-      "route:/utilities/icloud-sync"
-    ],
+    "web/src/lib/components/frameleaf/ICloudSyncPanel.svelte": ["route:/utilities/icloud-sync"],
     "web/src/routes/(user)/utilities/icloud-sync/+page.ts": ["route:/utilities/icloud-sync"],
-    "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.svelte": [
-      "native:web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.svelte",
+    "web/src/lib/components/frameleaf/LargeFilesUtility.svelte": [
       "route:/utilities/large-files/[[photos=photos]]/[[assetId=id]]"
     ],
     "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.ts": [
       "route:/utilities/large-files/[[photos=photos]]/[[assetId=id]]"
     ],
-    "web/src/routes/(user)/utilities/live-photos/+page.svelte": [
-      "native:web/src/routes/(user)/utilities/live-photos/+page.svelte",
-      "route:/utilities/live-photos"
-    ],
+    "web/src/lib/components/frameleaf/LivePhotosUtility.svelte": ["route:/utilities/live-photos"],
     "web/src/routes/(user)/utilities/live-photos/+page.ts": ["route:/utilities/live-photos"],
-    "web/src/routes/(user)/utilities/missing-media/+page.svelte": [
-      "native:web/src/routes/(user)/utilities/missing-media/+page.svelte",
-      "route:/utilities/missing-media"
-    ],
     "web/src/routes/(user)/utilities/missing-media/+page.ts": ["route:/utilities/missing-media"],
-    "web/src/routes/(user)/utilities/obtainium/+page.svelte": ["route:/utilities/obtainium"],
     "web/src/routes/(user)/utilities/obtainium/+page.ts": ["route:/utilities/obtainium"],
-    "web/src/routes/(user)/workflows/+page.svelte": [
-      "native:web/src/routes/(user)/workflows/+page.svelte",
-      "route:/workflows"
-    ],
+    "web/src/lib/components/frameleaf/WorkflowsPanel.svelte": ["route:/workflows", "route:/workflows/[workflowId]"],
     "web/src/routes/(user)/workflows/+page.ts": ["route:/workflows"],
-    "web/src/routes/(user)/workflows/[workflowId]/+page.svelte": [
-      "native:web/src/routes/(user)/workflows/[workflowId]/+page.svelte",
-      "route:/workflows/[workflowId]"
-    ],
     "web/src/routes/(user)/workflows/[workflowId]/+page.ts": ["route:/workflows/[workflowId]"],
     "web/src/routes/admin/+layout.ts": [
       "route:/admin",
@@ -82077,6 +82066,32 @@
     ],
     "mobile/lib/widgets/settings/ssl_client_cert_settings.dart": [
       "native:mobile/lib/widgets/settings/ssl_client_cert_settings.dart"
+    ],
+    "web/src/routes/(user)/utilities/+page.svelte": ["native:web/src/routes/(user)/utilities/+page.svelte"],
+    "web/src/routes/(user)/utilities/corrupt-media/+page.svelte": [
+      "native:web/src/routes/(user)/utilities/corrupt-media/+page.svelte"
+    ],
+    "web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.svelte": [
+      "native:web/src/routes/(user)/utilities/duplicates/[[photos=photos]]/[[assetId=id]]/+page.svelte"
+    ],
+    "web/src/routes/(user)/utilities/geolocation/+page.svelte": [
+      "native:web/src/routes/(user)/utilities/geolocation/+page.svelte"
+    ],
+    "web/src/routes/(user)/utilities/icloud-sync/+page.svelte": [
+      "native:web/src/routes/(user)/utilities/icloud-sync/+page.svelte"
+    ],
+    "web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.svelte": [
+      "native:web/src/routes/(user)/utilities/large-files/[[photos=photos]]/[[assetId=id]]/+page.svelte"
+    ],
+    "web/src/routes/(user)/utilities/live-photos/+page.svelte": [
+      "native:web/src/routes/(user)/utilities/live-photos/+page.svelte"
+    ],
+    "web/src/routes/(user)/utilities/missing-media/+page.svelte": [
+      "native:web/src/routes/(user)/utilities/missing-media/+page.svelte"
+    ],
+    "web/src/routes/(user)/workflows/+page.svelte": ["native:web/src/routes/(user)/workflows/+page.svelte"],
+    "web/src/routes/(user)/workflows/[workflowId]/+page.svelte": [
+      "native:web/src/routes/(user)/workflows/[workflowId]/+page.svelte"
     ],
     "web/src/lib/components/admin-page/settings/machine-learning/RunPodPanel.svelte": [
       "native:web/src/lib/components/admin-page/settings/machine-learning/RunPodPanel.svelte"
