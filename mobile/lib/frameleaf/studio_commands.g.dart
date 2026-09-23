@@ -1023,7 +1023,7 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
   FrameleafStudioCommand(
     id: 'review.add',
     scope: FrameleafStudioScope.review,
-    mutatesGraph: true,
+    mutatesGraph: false,
     undoable: false,
     capability: null,
     owner: 'FL-94',
@@ -1035,7 +1035,7 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
   FrameleafStudioCommand(
     id: 'review.remove',
     scope: FrameleafStudioScope.review,
-    mutatesGraph: true,
+    mutatesGraph: false,
     undoable: false,
     capability: null,
     owner: 'FL-94',
@@ -1046,7 +1046,7 @@ const List<FrameleafStudioCommand> frameleafStudioCommands = <FrameleafStudioCom
   FrameleafStudioCommand(
     id: 'review.update',
     scope: FrameleafStudioScope.review,
-    mutatesGraph: true,
+    mutatesGraph: false,
     undoable: false,
     capability: null,
     owner: 'FL-94',

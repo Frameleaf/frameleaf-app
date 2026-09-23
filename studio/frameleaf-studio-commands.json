@@ -1419,7 +1419,7 @@
       "description": "Add a timestamped review comment.",
       "id": "review.add",
       "manifestIds": [],
-      "mutatesGraph": true,
+      "mutatesGraph": false,
       "owner": "FL-94",
       "payload": {
         "text": "string",
@@ -1436,7 +1436,7 @@
       "description": "Remove a review comment.",
       "id": "review.remove",
       "manifestIds": [],
-      "mutatesGraph": true,
+      "mutatesGraph": false,
       "owner": "FL-94",
       "payload": {
         "commentId": "string"
@@ -1452,7 +1452,7 @@
       "description": "Edit or resolve a review comment.",
       "id": "review.update",
       "manifestIds": [],
-      "mutatesGraph": true,
+      "mutatesGraph": false,
       "owner": "FL-94",
       "payload": {
         "commentId": "string",

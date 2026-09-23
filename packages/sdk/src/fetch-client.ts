@@ -2893,7 +2893,9 @@ export type StudioPreviewDto = {
     quality: StudioPreviewQuality;
     readyAt: string | null;
     requestedAt: string;
-    /** The exact revision this frame is bound to */
+    /** The stored project revision this frame was rendered for */
+    revision: number;
+    /** Digest of the authorized resolution the frame is bound to; changes with the revision and whenever access is re-resolved */
     revisionDigest: string;
     /** The seek this frame answers */
     seekGeneration: string;
@@ -2906,8 +2908,8 @@ export type StudioPreviewDto = {
     viewportWidth: number;
 };
 export type StudioPreviewResponseDto = {
-    /** The revision the project is on now */
-    currentRevisionDigest: string;
+    /** The stored revision the project is on now */
+    currentRevision: number;
     preview: StudioPreviewDto;
     /** Previews cancelled because the revision advanced */
     supersededPreviewIds: string[];
@@ -2916,8 +2918,8 @@ export type StudioPreviewRequestDto = {
     /** Studio project the frame belongs to */
     projectId: string;
     quality: StudioPreviewQuality;
-    /** Exact graph revision digest the frame is bound to; a superseded revision is refused */
-    revisionDigest: string;
+    /** Stored project revision the frame is bound to; a superseded revision is refused */
+    revision: number;
     /** The client's monotonic seek counter, echoed back on the result */
     seekGeneration?: number;
     time: StudioPreviewTimeDto;
