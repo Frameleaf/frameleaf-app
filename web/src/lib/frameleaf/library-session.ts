@@ -5,6 +5,7 @@ import {
   type DiscoveryQuery,
 } from '$lib/components/discovery/query';
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
+import { ImageEnrichmentFilter } from '@immich/sdk';
 
 /**
  * The one library session every Frameleaf view shares.
@@ -681,6 +682,14 @@ export const readLibraryView = (url: URL): LibraryViewState | null => {
     if (q.petIds !== undefined && (!Array.isArray(q.petIds) || q.petIds.some((id) => typeof id !== 'string'))) {
       return null;
     }
+    // FL-49: the enrichment facet is a closed server enum, so an unknown value is rejected here
+    // rather than forwarded to the API.
+    if (
+      q.imageEnrichment !== undefined &&
+      !Object.values(ImageEnrichmentFilter).includes(q.imageEnrichment as ImageEnrichmentFilter)
+    ) {
+      return null;
+    }
     return {
       version: 1,
       scope: { kind: value.scope.kind, ...(value.scope.kind !== 'library' && { id: value.scope.id }) },
@@ -693,6 +702,7 @@ export const readLibraryView = (url: URL): LibraryViewState | null => {
         view: q.view,
         ...(q.spaceId && { spaceId: q.spaceId }),
         ...(q.petIds && { petIds: q.petIds }),
+        ...(q.imageEnrichment && { imageEnrichment: q.imageEnrichment }),
       },
       sort: value.sort,
       grouping: value.grouping,
