@@ -4,7 +4,7 @@
    *
    * Ported from `DescriptionEditor` in `design/frameleaf/template/src/MediaViewer.jsx`: a
    * heading with the provenance badge, and a growing text area that commits on blur or
-   * Ctrl+Enter and reverts on Escape. The write is the production `updateAsset` change
+   * Enter and reverts to the stored description on Escape. The write is the production `updateAsset` change
    * endpoint — the same one the enrichment card's Accept uses — so a description never
    * exists only in the panel.
    *
@@ -12,7 +12,7 @@
    * retry replays the same value, a stale asset is reloaded rather than overwritten, and a
    * rejected or forbidden value gets no false promise of a retry.
    */
-  import { shortcut } from '$lib/actions/shortcut';
+  import { shortcuts } from '$lib/actions/shortcut';
   import ViewerInlineEditError from '$lib/components/frameleaf/ViewerInlineEditError.svelte';
   import { classifyInlineEditError, inlineEditRecovery, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
   import { handlePromiseError } from '$lib/utils';
@@ -91,10 +91,17 @@
       onfocusout={handleFocusOut}
       placeholder={$t('add_a_description')}
       data-testid="autogrow-textarea"
-      {@attach fromAction(shortcut, () => ({
-        shortcut: { key: 'Enter', ctrl: true },
-        onShortcut: (e) => e.currentTarget.blur(),
-      }))}
+      {@attach fromAction(shortcuts, () => [
+        { shortcut: { key: 'Enter', ctrl: true }, onShortcut: (e) => e.currentTarget.blur() },
+        { shortcut: { key: 'Enter' }, onShortcut: (e) => e.currentTarget.blur() },
+        {
+          shortcut: { key: 'Escape' },
+          onShortcut: (e) => {
+            description = asset.exifInfo?.description ?? '';
+            e.currentTarget.blur();
+          },
+        },
+      ])}
     />
     {#if failure}
       <ViewerInlineEditError
@@ -105,8 +112,10 @@
       />
     {/if}
   </section>
-{:else if description}
+{:else}
   <section class="mt-6 px-4">
-    <p class="w-full text-base wrap-break-word whitespace-pre-line text-black dark:text-white">{description}</p>
+    <p class="w-full text-base wrap-break-word whitespace-pre-line text-black dark:text-white">
+      {description || $t('frameleaf_viewer_no_description')}
+    </p>
   </section>
 {/if}

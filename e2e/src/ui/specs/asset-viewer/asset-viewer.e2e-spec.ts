@@ -29,11 +29,17 @@ test.describe('asset-viewer', () => {
     assetFavorites: [],
   };
 
+  const trashedAssets = () => assets.filter((asset) => changes.assetDeletions.includes(asset.id));
+
   test.beforeAll(async () => {
     utils.initSdk();
     adminUserId = faker.string.uuid();
     testContext.adminId = adminUserId;
     timelineRestData = generateTimelineData({ ...createDefaultTimelineConfig(), ownerId: adminUserId });
+    // beforeAll can run more than once in a worker (parallel mode); start from empty lists so the
+    // assets are not listed twice
+    assets.length = 0;
+    yearMonths.length = 0;
     for (const timeBucket of timelineRestData.buckets.values()) {
       assets.push(...timeBucket);
     }
@@ -209,6 +215,26 @@ test.describe('asset-viewer', () => {
     });
   });
   test.describe('/trash/photos/:id', () => {
+    // The trash page lists its items from the trash API and the viewer's next/previous item is the
+    // page's neighbour of the open one. The trash holds the assets each test moved there, in
+    // timeline order.
+    test.beforeEach(async ({ context }) => {
+      await context.route('**/api/trash/items*', async (route) => {
+        const items = trashedAssets().map((asset) => ({
+          id: asset.id,
+          originalFileName: `${asset.id}.${asset.isVideo ? 'mp4' : 'jpg'}`,
+          type: asset.isVideo ? 'VIDEO' : 'IMAGE',
+          fileSizeInByte: null,
+          isLocked: false,
+          isOffline: false,
+          trashedAt: new Date().toISOString(),
+        }));
+        await route.fulfill({ json: { items, nextPage: null, total: items.length } });
+      });
+      await context.route('**/api/trash/summary', async (route) => {
+        await route.fulfill({ json: { bytes: 0, count: trashedAssets().length, offline: 0, pendingDeletion: 0 } });
+      });
+    });
     test('Delete trashed photo advances to next', async ({ page }) => {
       const asset = selectRandom(assets, rng);
       const index = assets.indexOf(asset);
@@ -216,9 +242,9 @@ test.describe('asset-viewer', () => {
       changes.assetDeletions.push(...deletedAssets);
       await page.goto(`/trash/photos/${asset.id}`);
       await assetViewerUtils.waitForViewerLoad(page, asset);
-      await page.getByLabel('Delete').click();
-      // confirm dialog
-      await page.getByRole('button').getByText('Delete').click();
+      await page.getByRole('button', { name: 'Permanently delete', exact: true }).click();
+      // the viewer always confirms a permanent delete
+      await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently' }).click();
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 1]);
     });
     test('Delete trashed photo advances to next 2x', async ({ page }) => {
@@ -228,13 +254,13 @@ test.describe('asset-viewer', () => {
       changes.assetDeletions.push(...deletedAssets);
       await page.goto(`/trash/photos/${asset.id}`);
       await assetViewerUtils.waitForViewerLoad(page, asset);
-      await page.getByLabel('Delete').click();
-      // confirm dialog
-      await page.getByRole('button').getByText('Delete').click();
+      await page.getByRole('button', { name: 'Permanently delete', exact: true }).click();
+      // the viewer always confirms a permanent delete
+      await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently' }).click();
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 1]);
-      await page.getByLabel('Delete').click();
-      // confirm dialog
-      await page.getByRole('button').getByText('Delete').click();
+      await page.getByRole('button', { name: 'Permanently delete', exact: true }).click();
+      // the viewer always confirms a permanent delete
+      await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently' }).click();
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 2]);
     });
     test('Delete trashed photo advances to prev', async ({ page }) => {
@@ -244,9 +270,9 @@ test.describe('asset-viewer', () => {
       changes.assetDeletions.push(...deletedAssets);
       await page.goto(`/trash/photos/${assets[index + 9].id}`);
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 9]);
-      await page.getByLabel('Delete').click();
-      // confirm dialog
-      await page.getByRole('button').getByText('Delete').click();
+      await page.getByRole('button', { name: 'Permanently delete', exact: true }).click();
+      // the viewer always confirms a permanent delete
+      await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently' }).click();
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 8]);
     });
     test('Delete trashed photo advances to prev 2x', async ({ page }) => {
@@ -256,13 +282,13 @@ test.describe('asset-viewer', () => {
       changes.assetDeletions.push(...deletedAssets);
       await page.goto(`/trash/photos/${assets[index + 9].id}`);
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 9]);
-      await page.getByLabel('Delete').click();
-      // confirm dialog
-      await page.getByRole('button').getByText('Delete').click();
+      await page.getByRole('button', { name: 'Permanently delete', exact: true }).click();
+      // the viewer always confirms a permanent delete
+      await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently' }).click();
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 8]);
-      await page.getByLabel('Delete').click();
-      // confirm dialog
-      await page.getByRole('button').getByText('Delete').click();
+      await page.getByRole('button', { name: 'Permanently delete', exact: true }).click();
+      // the viewer always confirms a permanent delete
+      await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently' }).click();
       await assetViewerUtils.waitForViewerLoad(page, assets[index + 7]);
     });
   });
