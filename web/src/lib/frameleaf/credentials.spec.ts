@@ -37,7 +37,8 @@ const config = (): AdminConfigDto =>
 
 describe('write-only credentials (FL-67)', () => {
   it('names every credential the server accepts', () => {
-    expect(Object.keys(CREDENTIALS).sort()).toEqual([...Object.values(ConfigCredential)].sort());
+    const byName = (a: string, b: string) => a.localeCompare(b);
+    expect(Object.keys(CREDENTIALS).sort(byName)).toEqual([...Object.values(ConfigCredential)].sort(byName));
   });
 
   it('empties every credential value and keeps everything else, without touching the original', () => {
