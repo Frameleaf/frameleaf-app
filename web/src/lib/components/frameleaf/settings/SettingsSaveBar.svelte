@@ -134,8 +134,8 @@
     if (count === 0) {
       return;
     }
-    globalThis.addEventListener('beforeunload', warnBeforeUnload);
-    return () => globalThis.removeEventListener('beforeunload', warnBeforeUnload);
+    addEventListener('beforeunload', warnBeforeUnload);
+    return () => removeEventListener('beforeunload', warnBeforeUnload);
   });
 </script>
 
