@@ -2836,16 +2836,16 @@ export type MediaHealthCandidateDto = {
     /** Candidate file path */
     candidatePath: string;
     checkedAt: string;
-    evidence: {
-        [key: string]: any;
-    };
-    /** Media health finding ID */
     /** The candidate has exactly the checksum recorded for the original */
     checksumMatch: boolean;
     /** The reviewer chose this candidate for the finding */
     chosen: boolean;
     /** The candidate decoded successfully; null when not checked */
     decodeValid: boolean | null;
+    evidence: {
+        [key: string]: any;
+    };
+    /** Media health finding ID */
     healthId: string;
     /** Candidate ID */
     id: string;

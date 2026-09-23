@@ -232,6 +232,28 @@ describe('scanState', () => {
     expect(scanState({ operation: null, runs }, MediaHealthCategory.Corrupt)).toEqual({ kind: 'never' });
   });
 
+  it('reports a run left open with no job to finish it as interrupted, never as completed', () => {
+    const open = (status: string) =>
+      ({
+        id: 'run-1',
+        category: 'missing',
+        status,
+        startedAt: '2026-09-23T00:00:00.000Z',
+        finishedAt: null,
+        totalAssets: 0,
+        checkedAssets: 0,
+        foundAssets: 0,
+        error: null,
+      }) as unknown as MediaHealthSummaryResponseDto['runs']['missing'];
+    for (const status of ['running', 'paused', 'retrying', 'something-new']) {
+      expect(scanState({ operation: null, runs: { missing: open(status), corrupt: null } }, MediaHealthCategory.Missing))
+        .toMatchObject({ kind: 'interrupted' });
+    }
+    expect(
+      scanState({ operation: null, runs: { missing: open('completed'), corrupt: null } }, MediaHealthCategory.Missing),
+    ).toMatchObject({ kind: 'completed' });
+  });
+
   it('holds Scan again back while a job is queued, running or paused', () => {
     expect(isActiveOperation(operation({ status: MediaOperationStatus.Paused }))).toBe(true);
     expect(isActiveOperation(operation({ status: MediaOperationStatus.Failed }))).toBe(false);

@@ -23,6 +23,7 @@
     type SettingsHostSection,
   } from '$lib/frameleaf/settings-areas';
   import { QueryParameter } from '$lib/constants';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { Icon } from '@immich/ui';
   import {
@@ -209,8 +210,10 @@
         {#if area === 'care'}
           <!-- The prototype's health and duplicate sections open the Library Care tools (FL-69). -->
           <div class="area-actions">
-            <a href={Route.missingMediaUtility()}>{$t('library_care_review_missing')}</a>
-            <a href={Route.corruptMediaUtility()}>{$t('library_care_review_damaged')}</a>
+            {#if authManager.user.isAdmin}
+              <a href={Route.missingMediaUtility()}>{$t('library_care_review_missing')}</a>
+              <a href={Route.corruptMediaUtility()}>{$t('library_care_review_damaged')}</a>
+            {/if}
             <a href={Route.duplicatesUtility()}>{$t('library_care_open_duplicates')}</a>
           </div>
         {/if}

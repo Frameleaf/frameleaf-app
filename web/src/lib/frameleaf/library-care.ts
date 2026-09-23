@@ -235,6 +235,8 @@ export type ScanState =
   | { kind: 'retrying'; operation: MediaHealthOperationDto; error: string | null }
   | { kind: 'failed'; at: string | null; error: string | null }
   | { kind: 'cancelled'; at: string | null }
+  /** A run left open with no job working on it: stopped before it finished. */
+  | { kind: 'interrupted'; at: string | null }
   | { kind: 'completed'; at: string | null };
 
 const WORKING: readonly MediaOperationStatus[] = [
@@ -286,15 +288,20 @@ export const scanState = (
   if (!run) {
     return { kind: 'never' };
   }
+  const at = run.finishedAt ?? run.startedAt;
   switch (run.status) {
+    case 'completed': {
+      return { kind: 'completed', at };
+    }
     case 'failed': {
-      return { kind: 'failed', at: run.finishedAt ?? run.startedAt, error: run.error };
+      return { kind: 'failed', at, error: run.error };
     }
     case 'cancelled': {
-      return { kind: 'cancelled', at: run.finishedAt ?? run.startedAt };
+      return { kind: 'cancelled', at };
     }
     default: {
-      return { kind: 'completed', at: run.finishedAt ?? run.startedAt };
+      // running, paused or retrying with no job left to finish it, or a state this page does not know
+      return { kind: 'interrupted', at };
     }
   }
 };
