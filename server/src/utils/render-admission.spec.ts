@@ -194,6 +194,26 @@ describe(evaluateClaimAdmission.name, () => {
     ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.ScopeExceeded });
   });
 
+  it('never admits a job that runs on the server, even one the scopes list (FL-73)', () => {
+    for (const kind of [
+      MediaOperationKind.Bulk,
+      MediaOperationKind.MediaHealth,
+      MediaOperationKind.ICloudSync,
+      MediaOperationKind.TakeoutImport,
+      MediaOperationKind.PhysicalDeduplication,
+    ]) {
+      expect(
+        evaluateClaimAdmission(
+          claimInput({
+            worker: { kinds: [kind], destination: MediaOperationDestination.Local },
+            session: { scopes: [kind] },
+            operation: { kind, destination: MediaOperationDestination.Local },
+          }),
+        ),
+      ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.ScopeExceeded });
+    }
+  });
+
   it('refuses a kind the worker row no longer allows even if the session was scoped to it', () => {
     expect(evaluateClaimAdmission(claimInput({ worker: { kinds: [MediaOperationKind.Restoration] } }))).toEqual({
       admitted: false,
