@@ -280,6 +280,39 @@ export class NotificationService extends BaseService {
     }
   }
 
+  /**
+   * Somebody answered a member's comment in a shared space (FL-55, threaded
+   * replies). One in-app notification to the author of the comment that was
+   * answered, and no email, as for mentions. Like the mention handler this
+   * reads only the space's name, never an asset, so it needs no elevated
+   * session; the service has already checked the recipient is still a member.
+   */
+  @OnEvent({ name: 'SharedSpaceReply' })
+  async onSharedSpaceReply({
+    id,
+    assetId,
+    activityId,
+    parentActivityId,
+    userId,
+    senderName,
+  }: ArgOf<'SharedSpaceReply'>) {
+    const album = await this.albumRepository.getById(id, { withAssets: false });
+    if (!album) {
+      return;
+    }
+
+    const item = await this.notificationRepository.create({
+      userId,
+      type: NotificationType.SharedSpaceReply,
+      level: NotificationLevel.Info,
+      title: 'Reply in a shared space',
+      description: `${senderName} replied to your comment in ${album.albumName}`,
+      data: JSON.stringify({ albumId: id, assetId, activityId, parentActivityId }),
+    });
+
+    this.websocketRepository.clientSend('on_notification', userId, mapNotification(item));
+  }
+
   @OnEvent({ name: 'SessionDelete' })
   onSessionDelete({ sessionId }: ArgOf<'SessionDelete'>) {
     // after the response is sent
