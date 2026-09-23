@@ -9,9 +9,8 @@
     toPreview,
     type RuleDraft,
   } from '$lib/frameleaf/classification-rules';
-  import { getAssetMediaUrl, getPeopleThumbnailUrl } from '$lib/utils';
+  import { getPeopleThumbnailUrl } from '$lib/utils';
   import {
-    AssetMediaSize,
     ClassificationMediaType,
     ClassificationRuleAction,
     previewClassificationRule,
@@ -238,15 +237,6 @@
     </div>
   {/if}
 
-  <p class="preview" role="status" aria-live="polite" aria-busy={loading}>{status}</p>
-  {#if preview && preview.items.length > 0}
-    <div class="thumbs" aria-label={$t('frameleaf_rules_matches')}>
-      {#each preview.items.slice(0, 8) as item (item.assetId)}
-        <img src={getAssetMediaUrl({ id: item.assetId, size: AssetMediaSize.Thumbnail })} alt="" loading="lazy" />
-      {/each}
-    </div>
-  {/if}
-
   <div class="row actions">
     <label class="field">
       <span>{$t('frameleaf_rules_action')}</span>
@@ -291,6 +281,8 @@
       <span>{$t('frameleaf_rules_archive_consent')}</span>
     </label>
   {/if}
+
+  <p class="preview" role="status" aria-live="polite" aria-busy={loading}>{status}</p>
 </div>
 
 <style>
@@ -318,8 +310,7 @@
     font-weight: 600;
     color: var(--fl-muted);
   }
-  .checks,
-  .thumbs {
+  .checks {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
@@ -396,12 +387,6 @@
     margin: 0;
     font-size: var(--fl-font-small);
     color: var(--fl-muted);
-  }
-  .thumbs img {
-    width: 64px;
-    height: 64px;
-    object-fit: cover;
-    border-radius: var(--fl-radius-control);
   }
   .switch,
   .consent {

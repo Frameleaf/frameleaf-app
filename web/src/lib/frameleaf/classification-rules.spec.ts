@@ -8,6 +8,7 @@ import {
   ruleChips,
   ruleIsEmpty,
   ruleProblem,
+  timeAgo,
   toCreate,
   toPreview,
   toUpdate,
@@ -112,5 +113,11 @@ describe('classification rules', () => {
     expect(chips[0].values).toEqual({ list: 'Emma' });
     expect(chips[2]).toMatchObject({ key: 'frameleaf_rules_chip_from', values: { date: '2026-08-01' } });
     expect(chips[4].values).toEqual({ list: 'lake', confidence: 30 });
+  });
+
+  it('reads the last check as relative time, like the prototype', () => {
+    const now = Date.parse('2026-09-23T12:00:00Z');
+    expect(timeAgo('2026-09-20T12:00:00Z', now, 'en')).toBe('3 days ago');
+    expect(timeAgo('2026-09-23T11:59:50Z', now, 'en')).toBe('now');
   });
 });

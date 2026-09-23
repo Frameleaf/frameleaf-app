@@ -148,6 +148,13 @@
       <span>{$t('description')}</span>
       <textarea bind:value={description} rows="2" maxlength="2000"></textarea>
     </label>
+    <div class="field">
+      <span class="field-label">
+        {$t('icon')}
+        <span class="preview" aria-hidden="true"><AlbumIcon name={icon} size="20" /></span>
+      </span>
+      <IconChooser value={icon} onChange={(name) => (icon = name)} inline label={$t('frameleaf_icons_choose')} />
+    </div>
     {#if kind === AlbumKind.Album && collections.length > 0}
       <label class="field">
         <span>{$t('frameleaf_albums_in_collection')}</span>
@@ -175,13 +182,6 @@
         />
       {/if}
     {/if}
-    <div class="field">
-      <span class="field-label">
-        {$t('icon')}
-        <span class="preview" aria-hidden="true"><AlbumIcon name={icon} size="20" /></span>
-      </span>
-      <IconChooser value={icon} onChange={(name) => (icon = name)} inline label={$t('frameleaf_icons_choose')} />
-    </div>
     {#if error}
       <Status message={error} />
     {/if}
