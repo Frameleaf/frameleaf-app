@@ -1,6 +1,6 @@
 <script lang="ts">
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingTextarea from './SettingTextarea.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingTextarea from '$lib/components/frameleaf/settings/SettingTextarea.svelte';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import EmailTemplatePreviewModal from '$lib/modals/EmailTemplatePreviewModal.svelte';
@@ -63,7 +63,7 @@
 <div in:fade={{ duration: 500 }}>
   <form autocomplete="off" {onsubmit} class="mt-4">
     <div class="flex flex-col gap-4">
-      <SettingAccordion
+      <SettingGroup
         key="templates"
         title={$t('admin.template_email_settings')}
         subtitle={$t('admin.template_settings_description')}
@@ -100,7 +100,7 @@
             </div>
           {/each}
         </div>
-      </SettingAccordion>
+      </SettingGroup>
     </div>
   </form>
 </div>

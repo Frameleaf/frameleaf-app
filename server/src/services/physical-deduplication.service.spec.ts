@@ -322,7 +322,10 @@ describe(PhysicalDeduplicationService.name, () => {
       );
       mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(master() as never);
       mocks.physicalFile.countOriginalReferences.mockResolvedValue(1);
-      mocks.physicalFile.ensureOriginalPhysicalFile.mockResolvedValue({ id: 'pf-1', path: master().originalPath } as never);
+      mocks.physicalFile.ensureOriginalPhysicalFile.mockResolvedValue({
+        id: 'pf-1',
+        path: master().originalPath,
+      } as never);
       mocks.storage.checkFileExists.mockResolvedValue(true);
       mocks.physicalFile.getGeneratedFiles.mockResolvedValue([]);
 

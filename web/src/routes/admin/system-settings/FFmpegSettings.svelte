@@ -1,10 +1,10 @@
 <script lang="ts">
-  import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
-  import SettingCheckboxes from './SettingCheckboxes.svelte';
-  import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
-  import SettingSelect from './SettingSelect.svelte';
-  import SettingSwitch from '$lib/components/shared-components/settings/SettingSwitch.svelte';
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
+  import SettingGroup from '$lib/components/frameleaf/settings/SettingGroup.svelte';
+  import SettingCheckboxes from '$lib/components/frameleaf/settings/SettingCheckboxes.svelte';
+  import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
+  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -49,7 +49,7 @@
           </FormatMessage>
         </p>
 
-        <SettingAccordion
+        <SettingGroup
           key="transcoding-policy"
           title={$t('admin.transcoding_policy')}
           subtitle={$t('admin.transcoding_policy_description')}
@@ -138,9 +138,9 @@
               )}
             />
           </div>
-        </SettingAccordion>
+        </SettingGroup>
 
-        <SettingAccordion
+        <SettingGroup
           key="encoding-options"
           title={$t('admin.transcoding_encoding_options')}
           subtitle={$t('admin.transcoding_encoding_options_description')}
@@ -198,7 +198,7 @@
               isEdited={configToEdit.ffmpeg.targetResolution !== config.ffmpeg.targetResolution}
             />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.NUMBER}
               {disabled}
               label={$t('admin.transcoding_constant_rate_factor')}
@@ -228,7 +228,7 @@
               isEdited={configToEdit.ffmpeg.preset !== config.ffmpeg.preset}
             />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.TEXT}
               {disabled}
               label={$t('admin.transcoding_max_bitrate')}
@@ -237,7 +237,7 @@
               isEdited={configToEdit.ffmpeg.maxBitrate !== config.ffmpeg.maxBitrate}
             />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.NUMBER}
               {disabled}
               label={$t('admin.transcoding_threads')}
@@ -273,7 +273,7 @@
               isEdited={configToEdit.ffmpeg.tonemap !== config.ffmpeg.tonemap}
             />
 
-            <SettingSwitch
+            <SettingToggle
               title={$t('admin.transcoding_two_pass_encoding')}
               {disabled}
               subtitle={$t('admin.transcoding_two_pass_encoding_setting_description')}
@@ -281,9 +281,9 @@
               isEdited={configToEdit.ffmpeg.twoPass !== config.ffmpeg.twoPass}
             />
           </div>
-        </SettingAccordion>
+        </SettingGroup>
 
-        <SettingAccordion
+        <SettingGroup
           key="hardware-acceleration"
           title={$t('admin.transcoding_hardware_acceleration')}
           subtitle={$t('admin.transcoding_hardware_acceleration_description')}
@@ -317,7 +317,7 @@
               isEdited={configToEdit.ffmpeg.accel !== config.ffmpeg.accel}
             />
 
-            <SettingSwitch
+            <SettingToggle
               title={$t('admin.transcoding_hardware_decoding')}
               {disabled}
               subtitle={$t('admin.transcoding_hardware_decoding_setting_description')}
@@ -338,7 +338,7 @@
               {disabled}
             />
 
-            <SettingSwitch
+            <SettingToggle
               title={$t('admin.transcoding_temporal_aq')}
               {disabled}
               subtitle={$t('admin.transcoding_temporal_aq_description')}
@@ -346,7 +346,7 @@
               isEdited={configToEdit.ffmpeg.temporalAQ !== config.ffmpeg.temporalAQ}
             />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.TEXT}
               label={$t('admin.transcoding_preferred_hardware_device')}
               description={$t('admin.transcoding_preferred_hardware_device_description')}
@@ -355,15 +355,15 @@
               {disabled}
             />
           </div>
-        </SettingAccordion>
+        </SettingGroup>
 
-        <SettingAccordion
+        <SettingGroup
           key="advanced-options"
           title={$t('advanced')}
           subtitle={$t('admin.transcoding_advanced_options_description')}
         >
           <div class="ms-4 mt-4 flex flex-col gap-4">
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.NUMBER}
               label={$t('admin.transcoding_max_b_frames')}
               description={$t('admin.transcoding_max_b_frames_description')}
@@ -372,7 +372,7 @@
               {disabled}
             />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.NUMBER}
               label={$t('admin.transcoding_reference_frames')}
               description={$t('admin.transcoding_reference_frames_description')}
@@ -381,7 +381,7 @@
               {disabled}
             />
 
-            <SettingInputField
+            <SettingField
               inputType={SettingInputFieldType.NUMBER}
               label={$t('admin.transcoding_max_keyframe_interval')}
               description={$t('admin.transcoding_max_keyframe_interval_description')}
@@ -390,15 +390,15 @@
               {disabled}
             />
           </div>
-        </SettingAccordion>
+        </SettingGroup>
 
-        <SettingAccordion
+        <SettingGroup
           key="realtime-transcoding"
           title={$t('admin.transcoding_realtime')}
           subtitle={$t('admin.transcoding_realtime_description')}
         >
           <div class="ms-4 mt-4 flex flex-col gap-4">
-            <SettingSwitch
+            <SettingToggle
               title={$t('admin.transcoding_realtime_enabled')}
               subtitle={$t('admin.transcoding_realtime_enabled_description')}
               bind:checked={configToEdit.ffmpeg.realtime.enabled}
@@ -442,11 +442,11 @@
               )}
             />
           </div>
-        </SettingAccordion>
+        </SettingGroup>
       </div>
 
       <div class="ms-4">
-        <SettingButtonsRow bind:configToEdit keys={['ffmpeg']} {disabled} />
+        <SettingActions bind:configToEdit keys={['ffmpeg']} {disabled} />
       </div>
     </form>
   </div>

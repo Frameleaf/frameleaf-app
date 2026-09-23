@@ -1,6 +1,6 @@
 <script lang="ts">
-  import SettingButtonsRow from '$lib/components/shared-components/settings/SystemConfigButtonRow.svelte';
-  import SettingTextarea from './SettingTextarea.svelte';
+  import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
+  import SettingTextarea from '$lib/components/frameleaf/settings/SettingTextarea.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { t } from 'svelte-i18n';
@@ -23,7 +23,7 @@
           isEdited={configToEdit.theme.customCss !== config.theme.customCss}
         />
 
-        <SettingButtonsRow bind:configToEdit keys={['theme']} {disabled} />
+        <SettingActions bind:configToEdit keys={['theme']} {disabled} />
       </div>
     </form>
   </div>
