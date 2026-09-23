@@ -35,6 +35,7 @@ import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { MapService } from 'src/services/map.service.js';
 import { MediaHealthService } from 'src/services/media-health.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
+import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
 import { MediaService } from 'src/services/media.service.js';
@@ -117,6 +118,7 @@ export const services = [
   MapService,
   MediaHealthService,
   MediaOperationService,
+  RenderWorkerService,
   MediaService,
   MemoryService,
   MlDestinationService,

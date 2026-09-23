@@ -26,6 +26,10 @@ import { MaintenanceController } from 'src/controllers/maintenance.controller.js
 import { MapController } from 'src/controllers/map.controller.js';
 import { MediaHealthController } from 'src/controllers/media-health.controller.js';
 import { MediaOperationController } from 'src/controllers/media-operation.controller.js';
+import {
+  RenderWorkerAdminController,
+  RenderWorkerController,
+} from 'src/controllers/render-worker.controller.js';
 import { MemoryController } from 'src/controllers/memory.controller.js';
 import { MlDestinationController } from 'src/controllers/ml-destination.controller.js';
 import { NotificationAdminController } from 'src/controllers/notification-admin.controller.js';
@@ -86,6 +90,8 @@ export const controllers = [
   MapController,
   MediaHealthController,
   MediaOperationController,
+  RenderWorkerAdminController,
+  RenderWorkerController,
   MemoryController,
   MlDestinationController,
   NotificationController,
