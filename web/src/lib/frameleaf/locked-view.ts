@@ -1,5 +1,4 @@
 import { AssetLockReason, AssetVisibility } from '@immich/sdk';
-import { mdiFolderLockOutline, mdiShieldAlertOutline, mdiShieldLockOutline } from '@mdi/js';
 
 /**
  * The Locked view (FL-34): every item its owner locked, whatever locked it, in one place.
@@ -41,20 +40,11 @@ export const lockedTimelineOptions = (filter: LockedFilter) =>
     ? { visibility: AssetVisibility.Locked }
     : { visibility: AssetVisibility.Locked, lockReason: filter };
 
-/** How a locked tile says why it is locked: an icon and the i18n key of its label. */
-export const lockReasonBadge = (reason: AssetLockReason | null | undefined): { icon: string; labelKey: string } => {
-  switch (reason) {
-    case AssetLockReason.ImmichLockedFolder: {
-      return { icon: mdiFolderLockOutline, labelKey: 'frameleaf_lock_reason_folder' };
-    }
-    case AssetLockReason.Detected: {
-      return { icon: mdiShieldAlertOutline, labelKey: 'frameleaf_lock_reason_detected' };
-    }
-    case AssetLockReason.Marked: {
-      return { icon: mdiShieldLockOutline, labelKey: 'frameleaf_lock_reason_marked' };
-    }
-    default: {
-      return { icon: mdiShieldLockOutline, labelKey: 'frameleaf_library_badge_locked' };
-    }
-  }
-};
+/**
+ * The label of a locked tile's badge, as the prototype draws it: `Locked` for an item that came from
+ * the old Locked folder (or whose reason the read did not carry), `Sensitive` for a mark or a detection.
+ */
+export const lockBadgeLabelKey = (reason: AssetLockReason | null | undefined): string =>
+  reason === AssetLockReason.Marked || reason === AssetLockReason.Detected
+    ? 'frameleaf_library_badge_sensitive'
+    : 'frameleaf_library_badge_locked';

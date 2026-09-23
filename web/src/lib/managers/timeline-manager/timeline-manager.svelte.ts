@@ -1,4 +1,5 @@
 import {
+  AssetLockReason,
   AssetOrder,
   AssetVisibility,
   getAssetInfo,
@@ -661,10 +662,23 @@ export class TimelineManager extends VirtualScrollManager {
     return retrieveRangeUtil(this, start, end);
   }
 
+  /**
+   * FL-34: an unlocked session reveals the owner's own sensitive marks and detections in the timeline
+   * ("Revealed for this session"); the server sends them with visibility `locked` and their reason.
+   * Anything else locked never belongs to a timeline view.
+   */
+  #isVisibilityMismatch(asset: TimelineAsset) {
+    const revealed =
+      this.#options.visibility === AssetVisibility.Timeline &&
+      asset.visibility === AssetVisibility.Locked &&
+      (asset.lockReason === AssetLockReason.Marked || asset.lockReason === AssetLockReason.Detected);
+    return !revealed && isMismatched(this.#options.visibility, asset.visibility);
+  }
+
   isExcluded(asset: TimelineAsset) {
     return (
       this.#nsfwHiddenAssetIds.has(asset.id) ||
-      isMismatched(this.#options.visibility, asset.visibility) ||
+      this.#isVisibilityMismatch(asset) ||
       isMismatched(this.#options.isFavorite, asset.isFavorite) ||
       isMismatched(this.#options.isTrashed, asset.isTrashed) ||
       (this.#options.tagId && asset.tags && !asset.tags.includes(this.#options.tagId)) ||

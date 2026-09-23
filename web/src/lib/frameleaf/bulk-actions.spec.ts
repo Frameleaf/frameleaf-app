@@ -38,7 +38,7 @@ describe('bulk action descriptors', () => {
       'change-description',
       'change-location',
       'archive',
-      'move-to-locked',
+      'mark-sensitive',
       'refresh-thumbnails',
       'refresh-metadata',
       'refresh-faces',
@@ -46,8 +46,7 @@ describe('bulk action descriptors', () => {
     ]) {
       expect(ids).toContain(id);
     }
-    // One lock (FL-34): Mark Sensitive is the same lock, so it is no longer offered separately.
-    expect(ids).not.toContain('mark-sensitive');
+    // Nothing in this selection is marked, so there is nothing to unmark (FL-34).
     expect(ids).not.toContain('unmark-sensitive');
     // Trash-only actions stay out of a live selection.
     expect(ids).not.toContain('restore');
@@ -67,9 +66,9 @@ describe('bulk action descriptors', () => {
     // back out, the download, date and location, and the permanent delete — nothing else.
     const ids = available({ assets: [photo('a')], locked: true });
     expect(ids).toEqual(
-      expect.arrayContaining(['remove-from-locked', 'download', 'change-date', 'change-location', 'delete-permanently']),
+      expect.arrayContaining(['unmark-sensitive', 'download', 'change-date', 'change-location', 'delete-permanently']),
     );
-    for (const id of ['favorite', 'create-shared-link', 'delete', 'archive', 'move-to-locked', 'tag']) {
+    for (const id of ['favorite', 'create-shared-link', 'delete', 'archive', 'mark-sensitive', 'tag']) {
       expect(ids).not.toContain(id);
     }
   });
@@ -82,10 +81,12 @@ describe('bulk action descriptors', () => {
     expect(primaryBulkActions(actions, false, true).map((action) => action.id)).toContain('add-to-album');
   });
 
-  it('offers the move into the Locked folder from the ordinary destinations only', () => {
-    expect(available({ assets: [photo('a')] })).toContain('move-to-locked');
-    expect(available({ assets: [photo('a')], trash: true })).not.toContain('move-to-locked');
-    expect(available({ assets: [photo('a')], locked: true })).not.toContain('move-to-locked');
+  it('offers Mark Sensitive from the ordinary destinations only (FL-34)', () => {
+    expect(available({ assets: [photo('a')] })).toContain('mark-sensitive');
+    expect(available({ assets: [photo('a')], trash: true })).not.toContain('mark-sensitive');
+    expect(available({ assets: [photo('a')], locked: true })).not.toContain('mark-sensitive');
+    // an unlocked session shows a marked item in the library, where it can be unmarked
+    expect(available({ assets: [photo('a', { isLocked: true })] })).toContain('unmark-sensitive');
   });
 
   it('leaves a read-only shared link with the download alone', () => {
@@ -112,7 +113,7 @@ describe('bulk action descriptors', () => {
 
   it('withholds the actions that need the individual items from a snapshot selection', () => {
     const ids = available({ count: 4000, snapshot: true });
-    expect(ids).toEqual(expect.arrayContaining(['favorite', 'archive', 'tag', 'delete', 'move-to-locked']));
+    expect(ids).toEqual(expect.arrayContaining(['favorite', 'archive', 'tag', 'delete', 'mark-sensitive']));
     for (const id of ['stack', 'unstack', 'link-live-photo', 'unlink-live-photo', 'set-album-cover']) {
       expect(ids).not.toContain(id);
     }
