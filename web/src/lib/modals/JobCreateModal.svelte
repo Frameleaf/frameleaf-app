@@ -17,6 +17,7 @@
     { title: $t('admin.memory_generate_job'), value: ManualJobName.MemoryCreate },
     { title: $t('admin.backup_database'), value: ManualJobName.BackupDatabase },
     { title: $t('admin.best_photos_backfill_job'), value: ManualJobName.BestPhotosBackfill },
+    { title: $t('admin.analytics_collect_job'), value: ManualJobName.AnalyticsCollect },
     {
       title: $t('admin.maintenance_integrity_missing_file_job'),
       value: ManualJobName.IntegrityMissingFiles,

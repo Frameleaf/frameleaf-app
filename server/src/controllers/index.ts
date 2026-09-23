@@ -1,5 +1,6 @@
 import { ActivityController } from 'src/controllers/activity.controller.js';
 import { AlbumController } from 'src/controllers/album.controller.js';
+import { AnalyticsController } from 'src/controllers/analytics.controller.js';
 import { ApiKeyController } from 'src/controllers/api-key.controller.js';
 import { AppController } from 'src/controllers/app.controller.js';
 import { AssetDevelopController } from 'src/controllers/asset-develop.controller.js';
@@ -82,6 +83,7 @@ export const controllers = [
   AssetRestorationController,
   AuthController,
   AuthAdminController,
+  AnalyticsController,
   BestPhotosController,
   ClusterGroupController,
   ConfigUserController,
