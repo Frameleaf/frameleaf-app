@@ -11,7 +11,7 @@
   import { languageManager } from '$lib/managers/language-manager.svelte';
   import { getGlobalActions } from '$lib/services/app.service';
   import { getAssetActions } from '$lib/services/asset.service';
-  import { getSharedLink, withoutIcons } from '$lib/utils';
+  import { getSharedLink } from '$lib/utils';
   import type { OnUndoDelete } from '$lib/utils/actions';
   import {
     AssetTypeEnum,
@@ -20,7 +20,7 @@
     type PersonResponseDto,
     type StackResponseDto,
   } from '@immich/sdk';
-  import { ActionButton, CommandPaletteDefaultProvider, Tooltip, type ActionItem } from '@immich/ui';
+  import { ActionButton, Tooltip, type ActionItem } from '@immich/ui';
   import { mdiArrowLeft, mdiArrowRight, mdiDotsVertical, mdiVideoOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
@@ -78,11 +78,6 @@
   const Actions = $derived(getAssetActions($t, { ...asset, stackPrimaryAssetId: stack?.primaryAssetId }, album));
   const sharedLink = getSharedLink();
 </script>
-
-<CommandPaletteDefaultProvider
-  name={$t('assets')}
-  actions={withoutIcons([Close, Cast, PlayOriginalVideo, ...Object.values(Actions)])}
-/>
 
 <div
   class="flex h-16 place-items-center justify-between gap-3 bg-linear-to-b from-black/40 px-3 drop-shadow-[0_0_1px_rgba(0,0,0,0.4)] transition-transform duration-200"

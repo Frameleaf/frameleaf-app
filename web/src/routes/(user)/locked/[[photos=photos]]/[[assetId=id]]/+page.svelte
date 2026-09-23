@@ -68,12 +68,7 @@
 
 <OnEvents {onSessionLocked} />
 
-<UserPageLayout
-  title={data.meta.title}
-  actions={[LockSession]}
- 
-  scrollbar={false}
->
+<UserPageLayout title={data.meta.title} actions={[LockSession]} scrollbar={false}>
   {#snippet buttons()}
     <LockedReasonFilter value={filter} onChange={(next) => void setFilter(next)} />
   {/snippet}

@@ -19,7 +19,6 @@
   import {
     Alert,
     Badge,
-    CommandPaletteDefaultProvider,
     Container,
     Heading,
     MenuItemType,
@@ -82,8 +81,6 @@
   onUserAdminRestore={onUpdate}
   {onUserAdminDeleted}
 />
-
-<CommandPaletteDefaultProvider name={$t('user')} actions={[ResetPassword, ResetPinCode, Update, Delete, Restore]} />
 
 <AdminPageLayout
   breadcrumbs={[{ title: $t('admin.user_management'), href: Route.users() }, { title: user.name }]}

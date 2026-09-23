@@ -9,7 +9,6 @@
   import { passwordStrength } from '$lib/frameleaf/password-strength';
   import { Alert, Button, Field, Input, PasswordInput } from '@immich/ui';
   import { t } from 'svelte-i18n';
-  import type { PageData } from './$types';
 
   let email = $state('');
   let password = $state('');
@@ -22,12 +21,6 @@
   const valid = $derived(
     passwordStrength(password).acceptable && password === confirmPassword && confirmPassword.length > 0,
   );
-
-  interface Props {
-    data: PageData;
-  }
-
-  let { data }: Props = $props();
 
   const onSubmit = async (event: Event) => {
     event.preventDefault();
