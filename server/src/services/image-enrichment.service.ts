@@ -28,6 +28,7 @@ import {
   Permission,
   QueueName,
   StorageFolder,
+  SystemMetadataKey,
 } from 'src/enum.js';
 import { ArgOf } from 'src/repositories/event.repository.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
@@ -373,10 +374,43 @@ export class ImageEnrichmentService extends BaseService {
    */
   @OnEvent({ name: 'ConfigUpdate', workers: [ImmichWorker.Microservices], server: true })
   async onConfigUpdate({ oldConfig, newConfig }: ArgOf<'ConfigUpdate'>) {
-    if (!isNsfwHidingEnabled(newConfig.machineLearning) || isNsfwHidingEnabled(oldConfig.machineLearning)) {
+    const hideDetections = isNsfwHidingEnabled(newConfig.machineLearning);
+    if (hideDetections === isNsfwHidingEnabled(oldConfig.machineLearning)) {
       return;
     }
 
+    if (hideDetections) {
+      await this.lockUnreviewedDetections();
+    }
+    await this.systemMetadataRepository.set(SystemMetadataKey.LockedDetectionsState, {
+      hideFromLibrary: hideDetections,
+    });
+  }
+
+  /**
+   * FL-34: the upgrade (migration 2100000000320) locks earlier detections only when the saved
+   * configuration hides them, and a configuration file can switch hiding on without saving it. On
+   * start, when hiding is on now and was not on the last time the server looked, lock them exactly as
+   * switching it on does. The setting seen is remembered, so this happens once per switch-on.
+   */
+  @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
+  async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
+    const hideDetections = isNsfwHidingEnabled(newConfig.machineLearning);
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.LockedDetectionsState);
+    if (state?.hideFromLibrary === hideDetections) {
+      return;
+    }
+
+    if (hideDetections) {
+      await this.lockUnreviewedDetections();
+    }
+    await this.systemMetadataRepository.set(SystemMetadataKey.LockedDetectionsState, {
+      hideFromLibrary: hideDetections,
+    });
+  }
+
+  /** Locks what detection flagged and no owner reviewed (FL-34), a page at a time. */
+  private async lockUnreviewedDetections() {
     const ids = await this.assetRepository.getUnlockedDetectionIds();
     for (let index = 0; index < ids.length; index += JOBS_ASSET_PAGINATION_SIZE) {
       await this.lockSensitive(ids.slice(index, index + JOBS_ASSET_PAGINATION_SIZE), AssetLockReason.Detected, null);

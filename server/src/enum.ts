@@ -464,6 +464,12 @@ export enum SystemMetadataKey {
    */
   RunPodOrphans = 'runpod-orphans',
   IntegrityChecksumCheckpoint = 'integrity-checksum-checkpoint',
+  /**
+   * FL-34: whether "hide sensitive detections from the library" was on the last time the server
+   * started or the setting changed, so detections are locked once when hiding comes on, including
+   * through a configuration file the upgrade migration cannot read.
+   */
+  LockedDetectionsState = 'locked-detections-state',
 }
 
 export enum UserMetadataKey {
