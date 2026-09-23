@@ -86,6 +86,34 @@ describe(ActivityService.name, () => {
     });
   });
 
+  describe('Locked reactions', () => {
+    it('counts a Locked item only for its elevated owner', async () => {
+      const [albumId, userId] = newUuids();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
+      mocks.activity.getStatistics.mockResolvedValue({ comments: 0, likes: 0 });
+
+      const elevated = AuthFactory.from({ id: userId }).session({ hasElevatedPermission: true }).build();
+      await sut.getStatistics(elevated, { albumId });
+
+      expect(mocks.activity.getStatistics).toHaveBeenCalledWith({ albumId, assetId: undefined, lockedOwnerId: userId });
+    });
+
+    it("keeps Locked items in view for the duplicate-like check of the caller's own reactions", async () => {
+      const [albumId, assetId, userId] = newUuids();
+      mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([albumId]));
+      mocks.activity.search.mockResolvedValue([]);
+      mocks.activity.create.mockResolvedValue(
+        getForActivity(ActivityFactory.create({ userId, albumId, assetId, isLiked: true })),
+      );
+
+      await sut.create(AuthFactory.create({ id: userId }), { albumId, assetId, type: ReactionType.LIKE });
+
+      expect(mocks.activity.search).toHaveBeenCalledWith(
+        expect.objectContaining({ userId, assetId, albumId, isLiked: true, includeLocked: true }),
+      );
+    });
+  });
+
   describe('getStatistics', () => {
     it('should get the comment and like count', async () => {
       const [albumId, assetId] = newUuids();
