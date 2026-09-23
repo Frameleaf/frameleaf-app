@@ -119,7 +119,7 @@ export class AssetDevelopRepository {
           ${input.ownerId}::uuid,
           (SELECT COALESCE(MAX(revision), 0) + 1 FROM ${TABLE} WHERE "assetId" = ${input.assetId}::uuid),
           ${input.recipeVersion},
-          ${JSON.stringify(input.recipe)}::jsonb,
+          ${JSON.stringify(input.recipe)}::text::jsonb,
           ${input.label},
           ${input.status},
           ${input.kind ?? AssetDevelopRevisionKind.Recipe},

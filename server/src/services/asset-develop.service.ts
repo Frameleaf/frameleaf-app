@@ -399,7 +399,7 @@ export class AssetDevelopService {
       if (!DEVELOP_IMPORT_EXTENSIONS.has(extension)) {
         throw new BadRequestException('Bring back a JPEG, TIFF, PNG, WebP or HEIF file');
       }
-      if (file.size <= 0) {
+      if (file.size === 0) {
         throw new BadRequestException('The file is empty');
       }
       if (file.size > DEVELOP_IMPORT_MAX_BYTES) {

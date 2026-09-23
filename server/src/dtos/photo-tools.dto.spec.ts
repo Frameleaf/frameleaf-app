@@ -19,9 +19,9 @@ describe('photo tools DTOs (FL-64)', () => {
 
   it('requires the original a returned file was developed from, as an export or a SHA-256', () => {
     expect(AssetDevelopImportDto.schema.safeParse({}).success).toBe(false);
-    expect(
-      AssetDevelopImportDto.schema.safeParse({ exportId: '0d9f8b4e-2f7c-4a51-9d1e-6c1e4a2b3c4d' }).success,
-    ).toBe(true);
+    expect(AssetDevelopImportDto.schema.safeParse({ exportId: '0d9f8b4e-2f7c-4a51-9d1e-6c1e4a2b3c4d' }).success).toBe(
+      true,
+    );
     const upper = 'AB'.repeat(32);
     expect(AssetDevelopImportDto.schema.safeParse({ sourceChecksum: upper }).data?.sourceChecksum).toBe(
       upper.toLowerCase(),

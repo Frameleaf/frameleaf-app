@@ -7,7 +7,7 @@ import { DevelopExportTable, DevelopPresetTable } from 'src/schema/tables/photo-
 export type DevelopPreset = Selectable<DevelopPresetTable>;
 export type DevelopExport = Selectable<DevelopExportTable>;
 
-const json = (value: unknown) => sql<Record<string, unknown>>`${JSON.stringify(value)}::jsonb`;
+const json = (value: unknown) => sql<Record<string, unknown>>`${JSON.stringify(value)}::text::jsonb`;
 
 /**
  * Storage for reusable develop presets and exported originals (FL-64). Every read and write is
@@ -69,8 +69,8 @@ export class PhotoToolsRepository {
     return this.db
       .updateTable('develop_preset')
       .set({
-        ...(patch.name === undefined ? {} : { name: patch.name }),
-        ...(patch.settings === undefined ? {} : { settings: json(patch.settings) }),
+        ...(patch.name !== undefined && { name: patch.name }),
+        ...(patch.settings !== undefined && { settings: json(patch.settings) }),
         updatedAt: new Date(),
       })
       .where('id', '=', id)

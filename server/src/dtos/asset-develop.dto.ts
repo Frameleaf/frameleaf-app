@@ -160,12 +160,7 @@ export const AssetDevelopMaskSchema = z
       .describe('Vertical radius of a radial mask as a fraction of the frame height'),
     endX: unit('Where a linear mask has faded out, across the frame').default(0.5),
     endY: unit('Where a linear mask has faded out, down the frame').default(1),
-    feather: z
-      .int()
-      .min(0)
-      .max(100)
-      .default(50)
-      .describe('Softness of a radial edge as a percentage of the radius'),
+    feather: z.int().min(0).max(100).default(50).describe('Softness of a radial edge as a percentage of the radius'),
     amount: z.int().min(0).max(100).default(100).describe('How much of the adjustment is applied, as a percentage'),
     adjustments: AssetDevelopMaskAdjustmentsSchema.default({
       exposure: 0,
@@ -309,10 +304,7 @@ const AssetDevelopRevisionResponseSchema = z
       .nullable()
       .describe('SHA-256 (hex) of the original this version was rendered or developed from'),
     renditionChecksum: z.string().nullable().describe('SHA-256 (hex) of the edited master file, once it exists'),
-    exportId: z
-      .uuidv4()
-      .nullable()
-      .describe('The export of the original an imported version was developed from'),
+    exportId: z.uuidv4().nullable().describe('The export of the original an imported version was developed from'),
     fileName: z.string().nullable().describe('Name of the imported file, for a version developed elsewhere'),
     software: z.string().nullable().describe('Application an imported version was developed with, when known'),
     attempts: z.int().min(0).describe('Render attempts so far; one automatic retry follows a first failure'),
