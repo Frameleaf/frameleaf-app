@@ -145,9 +145,42 @@ export const MachineLearningHardwareAccelerationSchema = z
 export enum MemoryType {
   /** pictures taken on this day X years ago */
   OnThisDay = 'on_this_day',
+  /** a multi-day trip or occasion, grouped by the owner's local capture time and place */
+  EventStory = 'event_story',
+  /** a recap of one calendar year of the owner's library */
+  YearInReview = 'year_in_review',
 }
 
 export const MemoryTypeSchema = z.enum(MemoryType).describe('Memory type').meta({ id: 'MemoryType' });
+
+/**
+ * Lifecycle of a private highlight export (FL-62). `Cancelling` is a request recorded by
+ * the owner that the running worker observes between assets; the worker is what moves the
+ * run to `Cancelled`, so a cancel is durable across a worker restart.
+ */
+export enum MemoryExportStatus {
+  Pending = 'pending',
+  Running = 'running',
+  Ready = 'ready',
+  Failed = 'failed',
+  Cancelling = 'cancelling',
+  Cancelled = 'cancelled',
+}
+
+export const MemoryExportStatusSchema = z
+  .enum(MemoryExportStatus)
+  .describe('Memory export status')
+  .meta({ id: 'MemoryExportStatus' });
+
+export enum MemoryExportFormat {
+  /** a zip of the memory's original files */
+  Archive = 'archive',
+}
+
+export const MemoryExportFormatSchema = z
+  .enum(MemoryExportFormat)
+  .describe('Memory export format')
+  .meta({ id: 'MemoryExportFormat' });
 
 export enum AssetOrderWithRandom {
   // Include existing values
@@ -403,6 +436,8 @@ export enum StorageFolder {
   Profile = 'profile',
   Thumbnails = 'thumbs',
   Backups = 'backups',
+  /** owner-private, expiring artefacts produced by a user-requested export job (FL-62) */
+  Exports = 'exports',
 }
 
 export const StorageFolderSchema = z.enum(StorageFolder).describe('Storage folder').meta({ id: 'StorageFolder' });
@@ -1022,6 +1057,7 @@ export enum JobName {
 
   MemoryCleanup = 'MemoryCleanup',
   MemoryGenerate = 'MemoryGenerate',
+  MemoryExport = 'MemoryExport',
 
   NotificationsCleanup = 'NotificationsCleanup',
 
