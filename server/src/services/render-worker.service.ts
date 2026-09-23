@@ -29,6 +29,7 @@ import {
   RenderWorkerLimitUpdateDto,
   RenderWorkerLimitsResponseDto,
   RenderWorkerProgressDto,
+  RenderWorkerRemoteReferenceDto,
   RenderWorkerSessionDto,
   RenderWorkerUpdateDto,
   RenderWorkerWriteResultDto,
@@ -42,6 +43,7 @@ import {
   RenderWorkerAuditEvent,
   RenderWorkerRefusalReason,
   RenderWorkerStatus,
+  StudioExportRemoteReason,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -58,6 +60,7 @@ import {
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { RENDER_WORKER_LIMIT_INSTANCE_SUBJECT } from 'src/schema/tables/render-worker.table.js';
+import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { RENDER_WORKER_MEDIA_OPERATION_KINDS, isRenderWorkerMediaOperationKind } from 'src/utils/media-operation.js';
@@ -218,6 +221,9 @@ const requireRenderKinds = (kinds: readonly MediaOperationKind[]) => {
   }
 };
 
+/** A worker named a result asset that is not a live asset of the job's owner (FL-43). */
+export const RENDER_RESULT_NOT_OWNED = 'result_not_owned';
+
 /**
  * Authenticated renderer admission and resource limits (FL-95 `STU-401`).
  *
@@ -234,6 +240,7 @@ const requireRenderKinds = (kinds: readonly MediaOperationKind[]) => {
  * The decisions themselves are the pure functions in `src/utils/render-admission.ts`; this
  * service gathers their inputs, applies the answer and records it.
  */
+
 @Injectable()
 export class RenderWorkerService {
   private destinationHealth: DestinationHealthProvider;
@@ -248,6 +255,7 @@ export class RenderWorkerService {
     private userRepository: UserRepository,
     private studioResources: StudioResourceService,
     private studioProjects: StudioProjectRepository,
+    private studioExports: StudioExportService,
     @Optional() @Inject(DESTINATION_HEALTH_PROVIDER) destinationHealth?: DestinationHealthProvider,
   ) {
     this.logger.setContext(RenderWorkerService.name);
@@ -678,6 +686,15 @@ export class RenderWorkerService {
         }
 
         const operation = claimed.operation as unknown as MediaOperation;
+        if (operation.kind === MediaOperationKind.StudioExport && resolved.studio) {
+          // FL-106: what this claim may read is the provenance publication checks against, and a
+          // remote render is an obligation to stop it until the worker confirms, from now on.
+          await this.studioExports.onRenderClaimed(operation, {
+            workerId: worker.id,
+            engineDigest: session.engineDigest,
+            entries: resolved.studio.entries,
+          });
+        }
         const checkpoints = await this.operations.getCheckpoints(operation.id);
         const manifest = resolved.studio
           ? this.studioInputs(operation, resolved.studio, worker.id, now)
@@ -874,8 +891,17 @@ export class RenderWorkerService {
   }
 
   /**
-   * Publish a validated result. Owner access to the result is not decided here: adoption of an
-   * output as an asset belongs to the publish path; this only records that the claim finished.
+   * Finish a validated render.
+   *
+   * A worker never names the asset a Studio export becomes (FL-106): it reports the file it wrote,
+   * inside the directory its claim named, and the server stages it and queues its publication, which
+   * re-checks access and installs the sources' privacy before anything becomes visible. Only then is
+   * the render job itself completed, without a result asset. For other kinds, adoption of an output
+   * belongs to their own publish paths; this only records that the claim finished.
+   *
+   * Any other kind may name a result, which must be a live asset of the job's owner (FL-43): a
+   * worker naming anything else — another account's media, a deleted asset — is refused, and the
+   * job fails with a stable code instead of publishing it as lineage.
    */
   async complete(
     sessionToken: string | undefined,
@@ -884,6 +910,44 @@ export class RenderWorkerService {
   ): Promise<RenderWorkerWriteResultDto> {
     const { worker } = await this.authenticate(sessionToken);
     const operation = await this.requireClaimed(worker.id, operationId, dto.claimToken);
+
+    if (operation.kind === MediaOperationKind.StudioExport) {
+      if (dto.resultAssetId !== null) {
+        throw new BadRequestException('A Studio export is published by the server; a worker cannot name its result');
+      }
+      if (!dto.output) {
+        throw new BadRequestException('A Studio export must report the file it produced');
+      }
+      if (operation.status !== MediaOperationStatus.Validating) {
+        return { accepted: false, refusal: null };
+      }
+      const staged = await this.studioExports.onRenderCompleted(operation, worker.id, {
+        path: dto.output.path,
+        checksum: dto.output.checksum,
+        sizeInBytes: dto.output.sizeInBytes,
+        contentType: dto.output.contentType,
+        remoteRef: dto.output.remoteRef ?? null,
+      });
+      if (!staged.accepted) {
+        return { accepted: false, refusal: null };
+      }
+      const accepted = await this.operations.complete(operation.id, dto.claimToken, { resultAssetId: null });
+      if (accepted) {
+        this.logger.log(`Render worker ${worker.id} completed Studio export render ${operation.id}`);
+      }
+      return { accepted, refusal: null };
+    }
+
+    if (dto.resultAssetId && !(await this.operations.isPublishableResult(operation.ownerId, dto.resultAssetId))) {
+      this.logger.warn(
+        `Render worker ${worker.id} named a result for media operation ${operation.id} that is not the owner's`,
+      );
+      await this.operations.fail(operation.id, dto.claimToken, {
+        error: 'The worker reported a result that does not belong to this account',
+        errorCode: RENDER_RESULT_NOT_OWNED,
+      });
+      return { accepted: false, refusal: null };
+    }
 
     const accepted = await this.operations.complete(operation.id, dto.claimToken, { resultAssetId: dto.resultAssetId });
     if (accepted) {
@@ -908,6 +972,9 @@ export class RenderWorkerService {
       errorCode: dto.errorCode,
     });
     const accepted = outcome !== false;
+    if (outcome === 'failed' && operation.kind === MediaOperationKind.StudioExport) {
+      await this.studioExports.onRenderFailed(operation, { errorCode: dto.errorCode, error: dto.error });
+    }
     if (accepted) {
       this.logger.warn(
         `Render worker ${worker.id} failed media operation ${operation.id}: ${dto.errorCode} (${outcome === 'retrying' ? 'retrying once' : 'reported'})`,
@@ -934,7 +1001,37 @@ export class RenderWorkerService {
       return { accepted: false, refusal: null };
     }
 
-    const accepted = await this.operations.acknowledgeCancel(operation.id, { released: dto.released });
+    const accepted = await this.operations.acknowledgeCancel(operation.id, dto.claimToken, { released: dto.released });
+    if (accepted && operation.kind === MediaOperationKind.StudioExport) {
+      await this.studioExports.onRenderCancelAcknowledged(operation, worker.id, dto.released);
+    }
+    return { accepted, refusal: null };
+  }
+
+  /**
+   * What this worker still holds for Studio exports that it must stop or delete (FL-106): renders
+   * that were cancelled or abandoned, and copies of outputs it kept. Each stays listed until the
+   * worker acknowledges it, whatever happened to the owner, the project or the job meanwhile.
+   */
+  async listRemoteReferences(sessionToken: string | undefined): Promise<RenderWorkerRemoteReferenceDto[]> {
+    const { worker } = await this.authenticate(sessionToken);
+    const references = await this.studioExports.listRemoteReferences(worker.id);
+    return references.map((reference) => ({
+      id: reference.id,
+      operationId: reference.operationId,
+      reason: reference.reason as StudioExportRemoteReason,
+      remoteRef: reference.remoteRef,
+      requestedAt: asRequiredIso(reference.requestedAt),
+    }));
+  }
+
+  /** The worker confirms a reference is gone. Another worker's reference is not found. */
+  async acknowledgeRemoteReference(sessionToken: string | undefined, id: string): Promise<RenderWorkerWriteResultDto> {
+    const { worker } = await this.authenticate(sessionToken);
+    const accepted = await this.studioExports.acknowledgeRemoteReference(id, worker.id);
+    if (!accepted) {
+      throw new NotFoundException('Remote reference not found');
+    }
     return { accepted, refusal: null };
   }
 
@@ -1237,6 +1334,10 @@ export class RenderWorkerService {
     const project = await this.studioProjects.getById(operation.projectId!);
     if (!project) {
       return { ok: false, refused: { key: 'project', reason: 'project-missing' } };
+    }
+    if (project.deletedAt) {
+      // Nothing is rendered from a project its owner has thrown away (FL-91, FL-106).
+      return { ok: false, refused: { key: 'project', reason: 'project-trashed' } };
     }
 
     if (project.ownerId !== operation.ownerId && !(await this.isSpaceMember(operation.ownerId, project.spaceId))) {

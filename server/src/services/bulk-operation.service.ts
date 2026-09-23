@@ -293,7 +293,7 @@ export class BulkOperationService {
     });
     if (!running) {
       // Cancelled in the moment between the two writes, or the claim is gone.
-      await this.operations.acknowledgeCancel(id, { released: false });
+      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
       return;
     }
 
@@ -352,13 +352,18 @@ export class BulkOperationService {
         return;
       }
 
-      if (await this.operations.requeue(id, claimToken, { delayMs: MEDIA_OPERATION_AUTO_RETRY_DELAY_MS })) {
+      if (
+        await this.operations.requeue(id, claimToken, {
+          delayMs: MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
+          returnAttempt: true,
+        })
+      ) {
         this.logger.log(`Bulk operation ${id}: retrying ${planned.retry?.total ?? 0} failed items once`);
         return;
       }
 
       // Cancelled between the two writes, or the claim is gone.
-      await this.operations.acknowledgeCancel(id, { released: false });
+      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
       return;
     }
 
@@ -391,15 +396,19 @@ export class BulkOperationService {
       }
     }
 
-    if (await this.operations.beginValidation(id, claimToken)) {
-      await this.operations.complete(id, claimToken, { resultAssetId: null });
+    // A cancel that lands between the two writes wins, and is acknowledged below rather than left
+    // for the lease to lapse (FL-43).
+    if (
+      (await this.operations.beginValidation(id, claimToken)) &&
+      (await this.operations.complete(id, claimToken, { resultAssetId: null }))
+    ) {
       this.logger.log(
         `Bulk operation ${id} finished: ${result.succeeded} changed, ${result.skipped} skipped, ${result.failed} failed`,
       );
       return;
     }
 
-    await this.operations.acknowledgeCancel(id, { released: false });
+    await this.operations.acknowledgeCancel(id, claimToken, { released: false });
   }
 
   /**
@@ -499,7 +508,7 @@ export class BulkOperationService {
     }
 
     if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
-      await this.operations.acknowledgeCancel(id, { released: false });
+      await this.operations.acknowledgeCancel(id, claimToken, { released: false });
       this.logger.log(`Bulk operation ${id} cancelled by its owner`);
       return false;
     }

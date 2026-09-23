@@ -49,7 +49,7 @@
   const formatCorrectedAt = (value: string) => DateTime.fromISO(value).toLocaleString(DateTime.DATETIME_MED);
 </script>
 
-<section class="fl-correction-history" role="dialog" aria-modal="true" aria-labelledby="fl-correction-history-title">
+<div class="fl-correction-history" role="dialog" aria-modal="true" aria-labelledby="fl-correction-history-title">
   <header class="fl-correction-history-header">
     <h2 id="fl-correction-history-title">
       {$t('frameleaf_people_correction_history_title', { values: { name: person.name || $t('add_a_name') } })}
@@ -85,7 +85,7 @@
   <footer class="fl-correction-history-footer">
     <FrameleafButton onclick={close}>{$t('close')}</FrameleafButton>
   </footer>
-</section>
+</div>
 
 <style>
   .fl-correction-history {

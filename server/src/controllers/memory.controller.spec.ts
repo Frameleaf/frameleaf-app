@@ -37,11 +37,25 @@ describe(MemoryController.name, () => {
         });
 
       expect(status).toBe(400);
-      expect(body).toEqual(
-        errorDto.validationError([
-          { path: ['data', 'year'], message: 'Invalid input: expected number, received undefined' },
-        ]),
-      );
+      // Memory data is a union of event story, year in review and on this day (FL-62), so zod
+      // reports the miss on `data` and nests each branch; the on-this-day branch still needs a year.
+      expect(body).toEqual({
+        message: 'Validation failed',
+        errors: [
+          expect.objectContaining({
+            path: ['data'],
+            message: 'Invalid input',
+            errors: expect.arrayContaining([
+              [
+                expect.objectContaining({
+                  path: ['year'],
+                  message: 'Invalid input: expected number, received undefined',
+                }),
+              ],
+            ]),
+          }),
+        ],
+      });
     });
 
     it('should accept showAt and hideAt', async () => {

@@ -30,7 +30,8 @@
   type Target = { id: string; name: string };
 
   let targets: Target[] = $state([]);
-  let target = $state(defaultAlbumId ?? '');
+  // Follows the page's album; a pick in the menu overrides it until the page's album changes.
+  let target = $derived(defaultAlbumId ?? '');
   let open = $state(false);
 
   onMount(async () => {
@@ -44,10 +45,6 @@
     } catch (error) {
       handleError(error, $t('errors.frameleaf_unable_to_load_albums'));
     }
-  });
-
-  $effect(() => {
-    target = defaultAlbumId ?? '';
   });
 
   const targetLabel = $derived(targets.find((entry) => entry.id === target)?.name);
@@ -69,20 +66,20 @@
 <div class="upload-menu">
   <Menu label={$t('upload')} bind:open>
     {#snippet trigger()}
-      <Icon icon={mdiTrayArrowUp} size={20} aria-hidden="true" />
+      <Icon icon={mdiTrayArrowUp} size="20" aria-hidden="true" />
       <!-- The prototype labels the button on wide screens; the trigger's name is `label` either way. -->
       <span class="upload-label" aria-hidden="true">{$t('upload')}</span>
     {/snippet}
 
     <MenuItem onSelect={() => pick(false)}>
-      <Icon icon={mdiImageMultipleOutline} size={18} aria-hidden="true" />
+      <Icon icon={mdiImageMultipleOutline} size="18" aria-hidden="true" />
       <span class="item-text">
         <strong>{$t('frameleaf_transfer_upload_files')}</strong>
         <small>{$t('frameleaf_transfer_upload_files_hint')}</small>
       </span>
     </MenuItem>
     <MenuItem onSelect={() => pick(true)}>
-      <Icon icon={mdiFolderOutline} size={18} aria-hidden="true" />
+      <Icon icon={mdiFolderOutline} size="18" aria-hidden="true" />
       <span class="item-text">
         <strong>{$t('frameleaf_transfer_upload_folder')}</strong>
         <small>{$t('frameleaf_transfer_upload_folder_hint')}</small>

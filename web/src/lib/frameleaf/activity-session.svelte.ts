@@ -45,6 +45,7 @@ export class ActivitySession {
   #timer: ReturnType<typeof setTimeout> | null = null;
   #subscribers = 0;
   #inFlight: Promise<void> | null = null;
+  #unlisten: (() => void) | null = null;
 
   /**
    * Ask the server for the current state.
@@ -81,6 +82,9 @@ export class ActivitySession {
    */
   watch(): () => void {
     this.#subscribers++;
+    if (this.#subscribers === 1) {
+      this.#listen();
+    }
     void this.refresh().then(() => this.#schedule());
 
     return () => {
@@ -88,7 +92,33 @@ export class ActivitySession {
       if (this.#subscribers <= 0) {
         this.#subscribers = 0;
         this.#stop();
+        this.#unlisten?.();
+        this.#unlisten = null;
       }
+    };
+  }
+
+  /**
+   * Reconnect recovers the exact jobs (FL-43): the moment the browser is back online, or the tab is
+   * shown again, the list is asked for afresh instead of waiting out the idle interval. The rows are
+   * the server's, so what comes back is exactly where every job got to while this tab was away.
+   */
+  #listen() {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const again = () => void this.refresh().then(() => this.#schedule());
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        again();
+      }
+    };
+    addEventListener('online', again);
+    document.addEventListener('visibilitychange', onVisibility);
+    this.#unlisten = () => {
+      removeEventListener('online', again);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }
 

@@ -80,6 +80,8 @@ export enum OpenQueryParam {
   TRASH = 'trash',
   /** The image description / enrichment settings, from the Jobs manager's Enrichment tasks entry (FL-59). */
   IMAGE_DESCRIPTION = 'machine-learning',
+  /** Originals & preservation, from Library Care's preservation verification (FL-74). */
+  PRESERVATION = 'preservation',
 }
 
 export const maximumLengthSearchPeople = 100;

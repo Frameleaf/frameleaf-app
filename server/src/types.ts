@@ -1,6 +1,7 @@
 import { ShallowDehydrateObject } from 'kysely';
 import { Mocked } from 'vitest';
 import type { BackfillKind } from 'src/repositories/fork-schema.repository.js';
+import type { ConfigHistory } from 'src/utils/config-history.js';
 import type { SuppressionPreferences } from 'src/utils/hidden-content.js';
 import type { Rational } from 'src/utils/rational-time.js';
 import { VECTOR_EXTENSIONS } from 'src/constants.js';
@@ -565,7 +566,7 @@ export type JobItem =
 
   // Editor
   | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob }
-  | { name: JobName.AssetDevelopRender; data: IEntityJob };
+  | { name: JobName.AssetDevelopRender; data: IEntityJob & IDelayedJob };
 
 export type VectorExtension = (typeof VECTOR_EXTENSIONS)[number];
 
@@ -772,6 +773,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.RunPodState]: RunPodPersistedState;
   [SystemMetadataKey.RunPodOrphans]: { orphanTemplateIds: string[] };
   [SystemMetadataKey.IntegrityChecksumCheckpoint]: { date?: string };
+  [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
 }
 
 export type UserPreferences = {

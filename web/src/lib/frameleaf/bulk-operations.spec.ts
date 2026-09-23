@@ -505,7 +505,7 @@ describe('a matching set is bound to the scope it was taken from', () => {
 
     const outcome = await runBulkOperation(
       { requestId: 'request-1', action: 'archive', scope: frozen, submittedTotal: 2 },
-      { gateway: api, onProgress: (value) => progress.push(`${value.phase}:${value.processed}`) },
+      { gateway: api, onProgress: (value) => void progress.push(`${value.phase}:${value.processed}`) },
     );
 
     // The filter the request carried is the one the search used.
@@ -720,6 +720,7 @@ describe('durable jobs on the page', () => {
       bulk: { retried: 0, itemsTruncated: true },
     });
 
-    expect([...durableItemStates(ids, truncated).values()].every((state) => state.state === 'unchanged')).toBe(true);
+    const states = [...durableItemStates(ids, truncated).values()].map((state) => state.state);
+    expect(states).toEqual(ids.map(() => 'unchanged'));
   });
 });

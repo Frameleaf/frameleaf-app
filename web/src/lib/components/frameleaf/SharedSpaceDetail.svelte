@@ -449,8 +449,7 @@
     font-weight: 600;
     text-decoration: none;
   }
-  .button.primary,
-  button.primary {
+  .button.primary {
     border-color: var(--fl-accent);
     background: var(--fl-accent);
     color: var(--fl-accent-text);

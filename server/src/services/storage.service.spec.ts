@@ -36,6 +36,7 @@ describe(StorageService.name, () => {
         mountChecks: {
           backups: true,
           'encoded-video': true,
+          exports: true,
           library: true,
           profile: true,
           thumbs: true,
@@ -48,6 +49,12 @@ describe(StorageService.name, () => {
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/data/thumbs'));
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/data/upload'));
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/data/backups'));
+      // exports (memory highlights, Studio bundles) live under the media location too
+      expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/data/exports'));
+      expect(mocks.storage.createFile).toHaveBeenCalledWith(
+        expect.stringContaining('/data/exports/.immich'),
+        expect.any(Buffer),
+      );
       expect(mocks.storage.createFile).toHaveBeenCalledWith(
         expect.stringContaining('/data/encoded-video/.immich'),
         expect.any(Buffer),
@@ -79,6 +86,7 @@ describe(StorageService.name, () => {
         mountChecks: {
           backups: false,
           'encoded-video': true,
+          exports: true,
           library: false,
           profile: true,
           thumbs: true,
@@ -102,6 +110,7 @@ describe(StorageService.name, () => {
         mountChecks: {
           backups: true,
           'encoded-video': true,
+          exports: true,
           library: true,
           profile: true,
           thumbs: true,

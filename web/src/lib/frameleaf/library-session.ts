@@ -1,3 +1,4 @@
+import type { Translations } from 'svelte-i18n';
 import {
   DISCOVERY_FILTER_SECTIONS,
   emptyDiscoveryQuery,
@@ -94,13 +95,13 @@ export type BulkOperationRecord = {
   failed: number;
   skipped: number;
   /** Per-item failures, bounded so a large operation cannot grow the session without limit. */
-  failures: { id: string; reasonKey?: string; message?: string }[];
+  failures: { id: string; reasonKey?: Translations; message?: string }[];
   /** True when the matching set was larger than the client's bound and was cut short. */
   truncated: boolean;
   startedAt: number;
   finishedAt?: number;
   /** i18n key when the operation could not start at all. */
-  errorKey?: string;
+  errorKey?: Translations;
 };
 
 /** Failures kept per operation; the count above stays exact. */
@@ -183,7 +184,7 @@ export type LibrarySessionAction =
       failures?: BulkOperationRecord['failures'];
       cancelled?: boolean;
       truncated?: boolean;
-      errorKey?: string;
+      errorKey?: Translations;
     }
   | { type: 'operation-dismiss'; requestId: string };
 
@@ -328,6 +329,9 @@ const patchOperation = (
  * `layout` action touches `layout` alone, and a `view` patch that only changes grouping or the
  * view mode leaves the page count and the selection where they were.
  */
+/** An operation in one of these states has settled; a late progress report must not revive it. */
+const FINISHED_OPERATION_STATUSES: ReadonlySet<BulkOperationStatus> = new Set(['completed', 'cancelled', 'failed']);
+
 export const reduceLibrarySession = (session: LibrarySession, action: LibrarySessionAction): LibrarySession => {
   switch (action.type) {
     case 'layout': {
@@ -470,7 +474,7 @@ export const reduceLibrarySession = (session: LibrarySession, action: LibrarySes
     }
     case 'operation-progress': {
       return patchOperation(session, action.requestId, (operation) =>
-        operation.status === 'completed' || operation.status === 'cancelled' || operation.status === 'failed'
+        FINISHED_OPERATION_STATUSES.has(operation.status)
           ? operation
           : {
               ...operation,
@@ -634,7 +638,9 @@ export const readLibraryView = (url: URL): LibraryViewState | null => {
 export const readLibraryViewValue = (value: unknown): LibraryViewState | null => {
   try {
     // The same JSON round trip a URL makes, so an in-memory value reads exactly as its link would.
-    const result = parseLibraryViewValue(JSON.parse(JSON.stringify(value)));
+    // Not structuredClone: the JSON round trip is the point (undefined dropped, dates as strings).
+    const json = JSON.stringify(value);
+    const result = parseLibraryViewValue(JSON.parse(json));
     return result.ok ? result.state : null;
   } catch {
     return null;

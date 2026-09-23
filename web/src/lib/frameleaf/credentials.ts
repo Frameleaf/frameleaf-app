@@ -10,12 +10,13 @@
  */
 import { ConfigCredential, type AdminConfigDto } from '@immich/sdk';
 import { cloneDeep } from 'lodash-es';
+import type { Translations } from 'svelte-i18n';
 
 export type CredentialDefinition = {
   name: ConfigCredential;
   /** i18n keys for the row and dialog. */
-  labelKey: string;
-  helpKey: string;
+  labelKey: Translations;
+  helpKey: Translations;
 };
 
 /** Labels and help follow the design template's `credentials` entries in its settings catalog. */

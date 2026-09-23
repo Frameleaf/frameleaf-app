@@ -78,10 +78,21 @@
         : $t('frameleaf_sharing.save_sharing'),
   );
 
+  /** Members of `set` that `other` lacks (Set#difference is newer than the supported browsers). */
+  const onlyIn = (set: Set<string>, other: Set<string>) => {
+    const result: string[] = [];
+    for (const id of set) {
+      if (!other.has(id)) {
+        result.push(id);
+      }
+    }
+    return result;
+  };
+
   const saveSharing = async () => {
     saving = true;
-    const toAdd = [...recipients].filter((id) => !initialRecipients.has(id));
-    const toRemove = [...initialRecipients].filter((id) => !recipients.has(id));
+    const toAdd = onlyIn(recipients, initialRecipients);
+    const toRemove = onlyIn(initialRecipients, recipients);
     try {
       await Promise.all(toAdd.map((sharedWithId) => createPartner({ partnerCreateDto: { sharedWithId } })));
     } catch (error) {
@@ -119,7 +130,7 @@
 </script>
 
 <Dialog title={$t('frameleaf_sharing.share_subject', { values: { subject } })} closeLabel={$t('close')} bind:open>
-  <div class="ss-options" role="radiogroup" aria-label={$t('share')} onkeydown={modeKeys}>
+  <div class="ss-options" role="radiogroup" tabindex="-1" aria-label={$t('share')} onkeydown={modeKeys}>
     <button
       type="button"
       role="radio"
