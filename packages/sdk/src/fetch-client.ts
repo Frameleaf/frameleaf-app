@@ -2848,13 +2848,12 @@ export type MediaOperationDetailDto = (MediaOperationDto) & {
     };
 };
 export type StudioPreviewTimeDto = {
-    /** Time denominator; must not be zero */
+    /** Time denominator; must be positive */
     denominator: string;
     /** Time numerator, in seconds over the denominator */
     numerator: string;
 };
 export type StudioPreviewDto = {
-    /** Content type of the rendered frame */
     contentType: string | null;
     /** Stable code the client turns into a message */
     errorCode: string | null;
@@ -7673,9 +7672,6 @@ export function dismissMediaOperation({ id }: {
     }));
 }
 /**
- * Cancel a media operation
- */
-/**
  * Request a Studio preview frame
  */
 export function requestStudioPreview({ studioPreviewRequestDto }: {
@@ -7730,6 +7726,9 @@ export function cancelStudioPreview({ id }: {
         method: "DELETE"
     }));
 }
+/**
+ * Cancel a media operation
+ */
 export function cancelMediaOperation({ id }: {
     id: string;
 }, opts?: Oazapfts.RequestOpts) {

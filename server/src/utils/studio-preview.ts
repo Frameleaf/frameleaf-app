@@ -51,9 +51,15 @@ export const previewTimeKey = (time: PreviewTime): string => formatRational(time
  * The viewport is part of the identity, not a rendering hint: a 480-wide frame is not a
  * 1920-wide frame scaled down, and serving one for the other would make scopes and pixel
  * inspection lie. The store is described as keyed by project, revision, time and quality; the
- * viewport is the fifth component of that same key.
+ * viewport is the next component of that same key, and the owner scopes all of it.
  */
 export type PreviewBinding = {
+  /**
+   * The account the frame is rendered for. Part of the identity so two accounts can never share
+   * a row: a project id and revision digest are strings the client supplies, and a key without
+   * the owner would let one account address another's frame by guessing them.
+   */
+  ownerId: string;
   projectId: string;
   /** The exact graph revision digest. Opaque to this module; never parsed, never ordered. */
   revisionDigest: string;
@@ -73,6 +79,7 @@ export const previewCacheKey = (binding: PreviewBinding): string =>
     .update(
       [
         'fl96',
+        binding.ownerId,
         binding.projectId,
         binding.revisionDigest,
         previewTimeKey(binding.time),

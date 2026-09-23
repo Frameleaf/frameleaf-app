@@ -21,6 +21,7 @@ import { rational } from 'src/utils/rational-time.js';
 import {
   PREVIEW_FRAMES_PER_REVISION,
   PREVIEW_REVISIONS_PER_PROJECT,
+  PreviewBinding,
   PreviewStatusValue,
   PreviewTime,
   decidePreviewDelivery,
@@ -33,21 +34,29 @@ import {
 } from 'src/utils/studio-preview.js';
 
 /**
- * Where "the project is on revision X" comes from.
+ * TODO(FL-89): the manifest-less seam. Delete it when Studio project storage lands.
  *
- * Studio project storage is owned by a story still in flight, so this story defines the seam
- * rather than importing a service that does not exist yet. When the project service lands it
- * implements this interface and is provided under {@link STUDIO_PROJECT_REVISION_AUTHORITY};
- * nothing in this file changes. Until then the fallback below treats the newest revision the
- * owner has asked to preview as the current one, which is enough to make supersession,
- * cancellation and the stale-revision refusal real and testable.
+ * Everything in this file that exists only because FL-89 (Studio project storage, autosave and
+ * history) has not landed is named `interim…` or refers to this interface, and nothing else
+ * depends on it. Removing it is:
+ *
+ * 1. Delete {@link StudioProjectRevisionAuthority}, `setRevisionAuthority`,
+ *    `requestWithoutManifest` and the private `interim…` methods below.
+ * 2. Point `POST /studio/previews` at a project-scoped entry point that resolves the manifest
+ *    server-side (FL-90's `resolveProjectResources`) and calls {@link StudioPreviewService.requestForManifest}.
+ * 3. Have FL-89's revision commit call {@link StudioPreviewService.supersede}.
+ *
+ * Until then, a request that carries no manifest names its own graph revision digest. That is
+ * safe only because nothing may *render* without a manifest: a manifest-less row records the
+ * request and its durable operation, the operation's snapshot says `manifestDigest: null`, and
+ * a worker with no manifest has nothing it is allowed to read, so FL-95's admission must refuse
+ * it. Frame delivery does not depend on that: a manifest-less row carries no grant, and the
+ * owner-scoped read plus the revision check still apply to anything published into it.
  */
 export interface StudioProjectRevisionAuthority {
   /** The current revision digest, or null when the project is not readable by this account. */
   getCurrentRevisionDigest(projectId: string, ownerId: string): Promise<string | null>;
 }
-
-export const STUDIO_PROJECT_REVISION_AUTHORITY = Symbol('StudioProjectRevisionAuthority');
 
 /** How many rows one project's eviction pass considers. Well above the per-revision cap. */
 const PROJECT_SCAN_LIMIT = 500;
@@ -91,11 +100,11 @@ const toPreviewTime = (frame: StudioPreviewFrame): PreviewTime =>
 @Injectable()
 export class StudioPreviewService {
   /**
-   * Set by the module when the project service exists. Left unset here on purpose: an unset
-   * authority falls back to the preview store's own newest revision rather than failing closed
-   * on a project nobody can read yet.
+   * TODO(FL-89): part of the manifest-less seam. Left unset on purpose: without it the preview
+   * store's own newest revision stands in, which is enough to make supersession, cancellation
+   * and the stale-revision refusal real and testable.
    */
-  private revisionAuthority: StudioProjectRevisionAuthority | null = null;
+  private interimRevisionAuthority: StudioProjectRevisionAuthority | null = null;
 
   constructor(
     private logger: LoggingRepository,
@@ -106,170 +115,84 @@ export class StudioPreviewService {
     this.logger.setContext(StudioPreviewService.name);
   }
 
-  /** Supplied by the owning module once FL-91's project service exists. */
+  /** TODO(FL-89): part of the manifest-less seam; see {@link StudioProjectRevisionAuthority}. */
   setRevisionAuthority(authority: StudioProjectRevisionAuthority): void {
-    this.revisionAuthority = authority;
+    this.interimRevisionAuthority = authority;
   }
 
   /**
-   * Ask for one frame.
+   * Ask for one frame against FL-90's authorized manifest. The lasting entry point.
    *
-   * Order matters:
-   *
-   * 1. Resolve the current revision. A request naming a revision the project has moved past is
-   *    refused with the current digest attached, so the editor reconciles in one round trip.
-   * 2. Supersede and cancel everything on older revisions *before* recording the new request.
-   *    A GPU rendering a frame nobody can be shown is worse than an idle one, and the person is
-   *    waiting for the frame they are looking at now.
-   * 3. Record the request, sharing an existing row for the same key rather than starting a
-   *    second render of an identical frame.
-   * 4. Create the durable operation, if this request is the one that created the row.
-   * 5. Evict, last, so a fresh request is never the thing that gets evicted.
+   * The manifest digest is the binding, so a frame stops being deliverable not only when the
+   * graph changes but when the resolution does — when a source is trashed, unshared, relocked
+   * or replaced — which a graph digest on its own cannot express. A preview grant is issued to
+   * this viewer session and re-verified on every frame read.
    */
-  async request(
-    auth: AuthDto,
-    dto: StudioPreviewRequestDto,
-    /**
-     * FL-90's authorized manifest, when the caller has one.
-     *
-     * When it is present it is the authority for everything: it is asserted, its digest becomes
-     * the binding this frame is delivered against, and a preview read grant is issued for this
-     * viewer session. See {@link requestForManifest}, which is the entry point the project
-     * service uses and the one that will become the only entry point.
-     */
-    manifest?: StudioAuthorizedManifest,
-  ): Promise<StudioPreviewResponseDto> {
-    const time = this.parseTime(dto);
-
-    if (!isValidPreviewViewport(dto.viewportWidth, dto.viewportHeight)) {
-      throw new ConflictException({ message: 'Unsupported preview viewport', code: 'studio_preview_bad_viewport' });
-    }
-
-    const now = new Date();
-    const known = await this.repository.getLatestRevisionDigest(dto.projectId, auth.user.id);
-
-    if (manifest) {
-      // Throws when the manifest was not issued by this process, has expired, is incomplete or
-      // was resolved for another project. A preview never renders from a partial manifest: an
-      // incomplete resolution means a source was refused, and a picture assembled without it
-      // would be a quietly wrong frame rather than a missing one.
-      this.resources.assertAuthorizedManifest(manifest, { now });
-      if (manifest.projectId !== dto.projectId || manifest.userId !== auth.user.id) {
-        throw new NotFoundException('Studio project not found');
-      }
-    }
-
-    const authorityDigest = manifest
-      ? manifest.digest
-      : await this.revisionAuthority?.getCurrentRevisionDigest(dto.projectId, auth.user.id);
-
-    if (authorityDigest === null) {
-      // The authority says this account cannot read the project. Same answer as "no project".
-      throw new NotFoundException('Studio project not found');
-    }
-
-    // Without the authority, the newest revision anybody asked about is the newest we know of,
-    // and a request naming a *newer* one advances it.
-    const currentRevisionDigest = authorityDigest ?? dto.revisionDigest;
-
-    if (authorityDigest && authorityDigest !== dto.revisionDigest) {
-      throw new ConflictException({
-        message: 'The project has moved to a newer revision',
-        code: 'studio_preview_stale_revision',
-        currentRevisionDigest: authorityDigest,
-      });
-    }
-
-    const superseded =
-      known && known !== currentRevisionDigest
-        ? await this.supersede(dto.projectId, auth.user.id, currentRevisionDigest)
-        : [];
-
-    const binding = {
-      projectId: dto.projectId,
-      revisionDigest: currentRevisionDigest,
-      time,
-      quality: dto.quality,
-      viewportWidth: dto.viewportWidth,
-      viewportHeight: dto.viewportHeight,
-    };
-    const cacheKey = previewCacheKey(binding);
-
-    /**
-     * The preview grant is a viewer-session grant (FL-90), not a graph reference: it names the
-     * manifest, the revision and this session, and it is verified again on every frame request.
-     * A session id rather than a worker id, because the thing redeeming it is the browser that
-     * asked for the picture.
-     */
-    const grantSessionId = auth.session?.id ?? auth.user.id;
-    const grantToken = manifest
-      ? this.resources.issuePreviewGrant(manifest, {
-          workerId: grantSessionId,
-          ttlSeconds: STUDIO_GRANT_TTL_SECONDS,
-          now,
-        })
-      : null;
-
-    const frame = await this.repository.upsert({
-      ownerId: auth.user.id,
-      projectId: dto.projectId,
-      revisionDigest: currentRevisionDigest,
-      projectRevision: manifest?.revision ?? null,
-      grantToken,
-      grantSessionId: manifest ? grantSessionId : null,
-      cacheKey,
-      timeNumerator: String(time.num) as never,
-      timeDenominator: String(time.den) as never,
-      quality: dto.quality,
-      viewportWidth: dto.viewportWidth,
-      viewportHeight: dto.viewportHeight,
-      operationId: null,
-      seekGeneration: String(dto.seekGeneration ?? 0) as never,
-      framePath: null,
-      contentType: null,
-      sizeInBytes: null,
-      frameChecksum: null,
-      framePts: null,
-      framePtsTimebase: null,
-      toneMapped: false,
-      errorCode: null,
-      readyAt: null,
-      expiresAt: previewExpiry(now),
-    });
-
-    const withOperation = frame.operationId ? frame : await this.enqueue(auth, frame, binding, manifest);
-
-    await this.evict(dto.projectId, auth.user.id, currentRevisionDigest, now);
-
-    return {
-      preview: this.map(withOperation),
-      currentRevisionDigest,
-      supersededPreviewIds: superseded.map((row) => row.id),
-    };
-  }
-
-  /**
-   * Ask for one frame against FL-90's authorized manifest.
-   *
-   * This is the entry point the project service uses once it can hand over a resolved manifest,
-   * and it is the one that will become the *only* one. The manifest digest is the binding, so a
-   * frame stops being deliverable not only when the graph changes but when the resolution does
-   * — when a source is trashed, unshared, relocked or replaced — which a graph digest on its
-   * own cannot express.
-   *
-   * See the note on {@link request} about the manifest-less path that exists until Studio
-   * project storage lands.
-   */
-  requestForManifest(
+  async requestForManifest(
     auth: AuthDto,
     manifest: StudioAuthorizedManifest,
     dto: Omit<StudioPreviewRequestDto, 'projectId' | 'revisionDigest'>,
   ): Promise<StudioPreviewResponseDto> {
-    return this.request(
-      auth,
-      { ...dto, projectId: manifest.projectId, revisionDigest: manifest.digest } as StudioPreviewRequestDto,
+    const now = new Date();
+    const time = this.parseTime(dto);
+    this.assertViewport(dto);
+
+    // Throws when the manifest was not issued by this process, has expired, is incomplete or
+    // was altered. A preview never renders from a partial manifest: an incomplete resolution
+    // means a source was refused, and a picture assembled without it would be a quietly wrong
+    // frame rather than a missing one.
+    this.resources.assertAuthorizedManifest(manifest, { now });
+    if (manifest.userId !== auth.user.id) {
+      // Somebody else's resolution answers exactly like a project that does not exist.
+      throw new NotFoundException('Studio project not found');
+    }
+
+    /**
+     * The grant names the manifest, the revision and this session. A session id rather than a
+     * worker id, because the thing redeeming it is the browser that asked for the picture.
+     */
+    const grantSessionId = auth.session?.id ?? auth.user.id;
+    const grantToken = this.resources.issuePreviewGrant(manifest, {
+      workerId: grantSessionId,
+      ttlSeconds: STUDIO_GRANT_TTL_SECONDS,
+      now,
+    });
+
+    return this.record(auth, {
+      projectId: manifest.projectId,
+      revisionDigest: manifest.digest,
+      time,
+      dto,
+      now,
       manifest,
-    );
+      grant: { token: grantToken, sessionId: grantSessionId },
+    });
+  }
+
+  /**
+   * TODO(FL-89): part of the manifest-less seam; see {@link StudioProjectRevisionAuthority}.
+   *
+   * Ask for one frame naming a graph revision digest the client supplies. A request naming a
+   * revision the authority has moved past is refused with the current digest attached, so the
+   * editor reconciles in one round trip. The row it records can never be rendered, because its
+   * operation carries no manifest.
+   */
+  async requestWithoutManifest(auth: AuthDto, dto: StudioPreviewRequestDto): Promise<StudioPreviewResponseDto> {
+    const now = new Date();
+    const time = this.parseTime(dto);
+    this.assertViewport(dto);
+
+    const revisionDigest = await this.interimResolveRequestedRevision(auth, dto);
+
+    return this.record(auth, {
+      projectId: dto.projectId,
+      revisionDigest,
+      time,
+      dto,
+      now,
+      manifest: null,
+      grant: null,
+    });
   }
 
   /** Status of one preview. Owner-scoped; a frame that is not yours is not found. */
@@ -318,7 +241,8 @@ export class StudioPreviewService {
     }
 
     const currentRevisionDigest = await this.currentRevision(frame);
-    const binding = {
+    const binding: PreviewBinding = {
+      ownerId: frame.ownerId,
       projectId: frame.projectId,
       revisionDigest: frame.revisionDigest,
       time: toPreviewTime(frame),
@@ -377,9 +301,9 @@ export class StudioPreviewService {
   /**
    * Cancel a preview the client no longer wants.
    *
-   * Marked superseded rather than deleted: the client may still hold the id, and "the revision
-   * moved on" is a truer answer than "not found". The durable operation is cancelled so the
-   * worker actually stops.
+   * Marked evicted rather than deleted: the client may still hold the id, and "gone" is a truer
+   * answer than "not found". The durable operation is cancelled so the worker actually stops.
+   * Asking for the same frame again revives the row and renders it afresh.
    */
   async cancel(auth: AuthDto, id: string): Promise<StudioPreviewDto> {
     const frame = await this.findOwned(auth, id);
@@ -417,14 +341,92 @@ export class StudioPreviewService {
 
   /* ---------------------------------------------------------------- */
 
-  private async enqueue(
+  /**
+   * Record one request, shared by both entry points. Order matters:
+   *
+   * 1. Supersede and cancel everything on older revisions *before* recording the new request.
+   *    A GPU rendering a frame nobody can be shown is worse than an idle one, and the person is
+   *    waiting for the frame they are looking at now.
+   * 2. Record the request, sharing an existing live row for the same key rather than starting a
+   *    second render of an identical frame.
+   * 3. Create the durable operation, only if this request is the one that created or revived
+   *    the row, so two concurrent requests cannot start two renders.
+   * 4. Evict, last, so a fresh request is never the thing that gets evicted.
+   */
+  private async record(
     auth: AuthDto,
+    request: {
+      projectId: string;
+      revisionDigest: string;
+      time: PreviewTime;
+      dto: Omit<StudioPreviewRequestDto, 'projectId' | 'revisionDigest'>;
+      now: Date;
+      manifest: StudioAuthorizedManifest | null;
+      grant: { token: string; sessionId: string } | null;
+    },
+  ): Promise<StudioPreviewResponseDto> {
+    const { projectId, revisionDigest, time, dto, now, manifest, grant } = request;
+    const ownerId = auth.user.id;
+
+    const known = await this.repository.getLatestRevisionDigest(projectId, ownerId);
+    const superseded =
+      known && known !== revisionDigest ? await this.supersede(projectId, ownerId, revisionDigest) : [];
+
+    const binding: PreviewBinding = {
+      ownerId,
+      projectId,
+      revisionDigest,
+      time,
+      quality: dto.quality,
+      viewportWidth: dto.viewportWidth,
+      viewportHeight: dto.viewportHeight,
+    };
+
+    const { frame, created } = await this.repository.upsert({
+      ownerId,
+      projectId,
+      revisionDigest,
+      projectRevision: manifest?.revision ?? null,
+      grantToken: grant?.token ?? null,
+      grantSessionId: grant?.sessionId ?? null,
+      cacheKey: previewCacheKey(binding),
+      timeNumerator: String(time.num) as never,
+      timeDenominator: String(time.den) as never,
+      quality: dto.quality,
+      viewportWidth: dto.viewportWidth,
+      viewportHeight: dto.viewportHeight,
+      operationId: null,
+      seekGeneration: String(dto.seekGeneration ?? 0) as never,
+      framePath: null,
+      contentType: null,
+      sizeInBytes: null,
+      frameChecksum: null,
+      framePts: null,
+      framePtsTimebase: null,
+      toneMapped: false,
+      errorCode: null,
+      readyAt: null,
+      expiresAt: previewExpiry(now),
+    });
+
+    const recorded = created ? await this.enqueue(frame, binding, manifest) : frame;
+
+    await this.evict(projectId, ownerId, revisionDigest, now);
+
+    return {
+      preview: this.map(recorded),
+      currentRevisionDigest: revisionDigest,
+      supersededPreviewIds: superseded.map((row) => row.id),
+    };
+  }
+
+  private async enqueue(
     frame: StudioPreviewFrame,
-    binding: { projectId: string; revisionDigest: string; time: PreviewTime; quality: string },
-    manifest?: StudioAuthorizedManifest,
+    binding: PreviewBinding,
+    manifest: StudioAuthorizedManifest | null,
   ): Promise<StudioPreviewFrame> {
     const operation = await this.operations.create({
-      ownerId: auth.user.id,
+      ownerId: binding.ownerId,
       kind: MediaOperationKind.StudioPreview,
       // Preview runs where the project's worker runs. The destination is immutable for the life
       // of the job and is never promoted to the cloud by a local GPU going away.
@@ -464,7 +466,14 @@ export class StudioPreviewService {
       maxAttempts: 1,
     });
 
-    await this.repository.markRendering(frame.id, operation.id);
+    const marked = await this.repository.markRendering(frame.id, operation.id);
+    if (!marked) {
+      // The row left `pending` between the write and now — superseded by a newer revision or
+      // cancelled. The operation must not run for a frame nobody can be shown.
+      await this.cancelOperation({ ...frame, operationId: operation.id }, binding.ownerId);
+      return frame;
+    }
+
     return { ...frame, operationId: operation.id, status: StudioPreviewStatus.Rendering };
   }
 
@@ -521,18 +530,63 @@ export class StudioPreviewService {
     }
   }
 
+  /**
+   * The revision a stored frame must still be on to be delivered.
+   *
+   * For a manifest-bound frame, the newest manifest digest this owner has previewed the project
+   * with: every newer request supersedes the older binding, and the grant check in
+   * {@link getFrame} covers access changes between requests. A frame recorded without a
+   * manifest answers to the interim authority.
+   */
   private async currentRevision(frame: StudioPreviewFrame): Promise<string> {
-    const authority = await this.revisionAuthority?.getCurrentRevisionDigest(frame.projectId, frame.ownerId);
+    if (!frame.grantToken) {
+      return this.interimCurrentRevision(frame);
+    }
+    return (await this.repository.getLatestRevisionDigest(frame.projectId, frame.ownerId)) ?? frame.revisionDigest;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* TODO(FL-89): manifest-less seam. Everything below this line up to  */
+  /* the matching end marker goes when Studio project storage lands.    */
+  /* ---------------------------------------------------------------- */
+
+  private async interimResolveRequestedRevision(auth: AuthDto, dto: StudioPreviewRequestDto): Promise<string> {
+    const authorityDigest = await this.interimRevisionAuthority?.getCurrentRevisionDigest(dto.projectId, auth.user.id);
+
+    if (authorityDigest === null) {
+      // The authority says this account cannot read the project. Same answer as "no project".
+      throw new NotFoundException('Studio project not found');
+    }
+
+    if (authorityDigest && authorityDigest !== dto.revisionDigest) {
+      throw new ConflictException({
+        message: 'The project has moved to a newer revision',
+        code: 'studio_preview_stale_revision',
+        currentRevisionDigest: authorityDigest,
+      });
+    }
+
+    // Without an authority, the revision the owner names is the newest one we know of, and
+    // naming a different one than last time supersedes the previous one.
+    return authorityDigest ?? dto.revisionDigest;
+  }
+
+  private async interimCurrentRevision(frame: StudioPreviewFrame): Promise<string> {
+    const authority = await this.interimRevisionAuthority?.getCurrentRevisionDigest(frame.projectId, frame.ownerId);
     if (authority) {
       return authority;
     }
 
-    // Fallback authority: the newest revision this owner has asked to preview. A frame whose
-    // own revision is older than that is stale, which is exactly what the refusal needs.
+    // The newest revision this owner has asked to preview. A frame whose own revision is older
+    // than that is stale, which is exactly what the refusal needs.
     return (await this.repository.getLatestRevisionDigest(frame.projectId, frame.ownerId)) ?? frame.revisionDigest;
   }
 
-  private parseTime(dto: StudioPreviewRequestDto): PreviewTime {
+  /* ---------------------------------------------------------------- */
+  /* End of the TODO(FL-89) manifest-less seam.                         */
+  /* ---------------------------------------------------------------- */
+
+  private parseTime(dto: Pick<StudioPreviewRequestDto, 'time'>): PreviewTime {
     try {
       // `rational` reduces and enforces the safe-integer invariants, so two spellings of the
       // same instant become one cache entry and a value that cannot be exact is refused here
@@ -540,6 +594,12 @@ export class StudioPreviewService {
       return rational(Number(dto.time.numerator), Number(dto.time.denominator));
     } catch {
       throw new ConflictException({ message: 'Preview time is not an exact rational', code: 'studio_preview_bad_time' });
+    }
+  }
+
+  private assertViewport(dto: { viewportWidth: number; viewportHeight: number }): void {
+    if (!isValidPreviewViewport(dto.viewportWidth, dto.viewportHeight)) {
+      throw new ConflictException({ message: 'Unsupported preview viewport', code: 'studio_preview_bad_viewport' });
     }
   }
 
@@ -566,6 +626,7 @@ export class StudioPreviewService {
       operationId: frame.operationId,
       seekGeneration: String(frame.seekGeneration ?? 0),
       etag: previewETag({
+        ownerId: frame.ownerId,
         projectId: frame.projectId,
         revisionDigest: frame.revisionDigest,
         time,

@@ -1,9 +1,7 @@
+import { RationalError, rational } from 'src/utils/rational-time.js';
 import {
-  comparePreviewTime,
   decidePreviewDelivery,
   isValidPreviewViewport,
-  normalizePreviewTime,
-  parsePreviewTime,
   planPreviewEviction,
   previewCacheKey,
   previewETag,
@@ -15,60 +13,55 @@ import {
 import { describe, expect, it } from 'vitest';
 
 const binding = (overrides: Partial<PreviewBinding> = {}): PreviewBinding => ({
+  ownerId: 'owner-1',
   projectId: 'project-1',
   revisionDigest: 'rev-a',
-  time: { numerator: 1001n, denominator: 30_000n },
+  time: rational(1001, 30_000),
   quality: 'standard',
   viewportWidth: 1920,
   viewportHeight: 1080,
   ...overrides,
 });
 
+/**
+ * Preview time is FL-93's `Rational`. These cases pin the properties the preview key relies
+ * on; the arithmetic itself is covered by `rational-time.spec.ts`.
+ */
 describe('rational preview time', () => {
   it('reduces to lowest terms so equal instants share a key', () => {
-    expect(normalizePreviewTime({ numerator: 2n, denominator: 4n })).toEqual({ numerator: 1n, denominator: 2n });
-    expect(previewTimeKey({ numerator: 2n, denominator: 4n })).toBe(previewTimeKey({ numerator: 1n, denominator: 2n }));
+    expect(previewTimeKey(rational(2, 4))).toBe('1/2');
+    expect(previewTimeKey(rational(2, 4))).toBe(previewTimeKey(rational(1, 2)));
   });
 
   it('moves a negative denominator onto the numerator', () => {
-    expect(normalizePreviewTime({ numerator: 1n, denominator: -2n })).toEqual({ numerator: -1n, denominator: 2n });
+    expect(previewTimeKey(rational(1, -2))).toBe('-1/2');
   });
 
   it('refuses a zero denominator rather than guessing', () => {
-    expect(() => normalizePreviewTime({ numerator: 1n, denominator: 0n })).toThrow(TypeError);
+    expect(() => rational(1, 0)).toThrow(RationalError);
   });
 
-  it('compares exactly across different timebases', () => {
-    // 1001/30000 is just under 1/29.97; a float comparison of these is not dependable.
-    expect(comparePreviewTime({ numerator: 1001n, denominator: 30_000n }, { numerator: 1n, denominator: 30n })).toBe(1);
-    expect(comparePreviewTime({ numerator: 1n, denominator: 30n }, { numerator: 1001n, denominator: 30_000n })).toBe(-1);
-    expect(comparePreviewTime({ numerator: 2n, denominator: 60n }, { numerator: 1n, denominator: 30n })).toBe(0);
+  it('refuses a value a double cannot hold exactly instead of rounding it', () => {
+    expect(() => rational(Number.MAX_SAFE_INTEGER + 2, 90_000)).toThrow(RationalError);
   });
 
-  it('survives values a double cannot hold exactly', () => {
-    const ticks = 9_007_199_254_740_993n; // 2^53 + 1
-    expect(previewTimeKey({ numerator: ticks, denominator: 90_000n })).toBe(`${ticks}/90000`);
-  });
-
-  it('parses the stored form and rejects anything else', () => {
-    expect(parsePreviewTime('1001/30000')).toEqual({ numerator: 1001n, denominator: 30_000n });
-    expect(parsePreviewTime('1/0')).toBeNull();
-    expect(parsePreviewTime('0.5')).toBeNull();
-    expect(parsePreviewTime('1/2/3')).toBeNull();
+  it('keeps an NTSC frame boundary exact in the key', () => {
+    expect(previewTimeKey(rational(1001, 30_000))).toBe('1001/30000');
   });
 });
 
 describe('preview identity', () => {
   it('gives the same key to the same frame expressed differently', () => {
-    expect(previewCacheKey(binding({ time: { numerator: 2002n, denominator: 60_000n } }))).toBe(
+    expect(previewCacheKey(binding({ time: rational(2002, 60_000) }))).toBe(
       previewCacheKey(binding()),
     );
   });
 
   it.each([
+    ['owner', binding({ ownerId: 'owner-2' })],
     ['project', binding({ projectId: 'project-2' })],
     ['revision', binding({ revisionDigest: 'rev-b' })],
-    ['time', binding({ time: { numerator: 1002n, denominator: 30_000n } })],
+    ['time', binding({ time: rational(1002, 30_000) })],
     ['quality', binding({ quality: 'full' })],
     ['viewport width', binding({ viewportWidth: 1280 })],
     ['viewport height', binding({ viewportHeight: 720 })],

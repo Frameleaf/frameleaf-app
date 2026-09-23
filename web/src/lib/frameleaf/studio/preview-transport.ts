@@ -58,14 +58,27 @@ export const classifyPreviewError = (error: unknown): StudioPreviewTransportFail
   const body = bodyOf(error);
 
   if (status === 409) {
-    if (body.code === 'studio_preview_stale_revision') {
-      return {
-        kind: 'stale-revision',
-        currentRevisionDigest:
-          typeof body.currentRevisionDigest === 'string' ? body.currentRevisionDigest : null,
-      };
+    switch (body.code) {
+      case 'studio_preview_stale_revision': {
+        return {
+          kind: 'stale-revision',
+          currentRevisionDigest:
+            typeof body.currentRevisionDigest === 'string' ? body.currentRevisionDigest : null,
+        };
+      }
+      case 'studio_preview_grant_revoked': {
+        // The server dropped the frame because its grant no longer verifies. The client must
+        // drop everything it cached, not keep polling a frame it may no longer see.
+        return { kind: 'forbidden' };
+      }
+      case 'studio_preview_not_ready': {
+        return { kind: 'not-ready' };
+      }
+      default: {
+        // A failed render, a refused time or viewport: waiting will not change the answer.
+        return { kind: 'failed' };
+      }
     }
-    return { kind: 'not-ready' };
   }
 
   if (status === 410) {

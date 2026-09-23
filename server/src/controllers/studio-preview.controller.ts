@@ -42,7 +42,9 @@ export class StudioPreviewController {
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
   requestStudioPreview(@Auth() auth: AuthDto, @Body() dto: StudioPreviewRequestDto): Promise<StudioPreviewResponseDto> {
-    return this.service.request(auth, dto);
+    // TODO(FL-89): resolve the project's manifest here and call `requestForManifest` once Studio
+    // project storage exists; see `StudioProjectRevisionAuthority` in the service.
+    return this.service.requestWithoutManifest(auth, dto);
   }
 
   @Get(':id')
