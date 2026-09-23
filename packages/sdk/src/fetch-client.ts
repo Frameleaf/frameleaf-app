@@ -815,7 +815,7 @@ export type MediaOperationDto = {
     /** Media operation ID */
     id: string;
     kind: MediaOperationKind;
-    /** What the person sees in Activity */
+    /** What the person sees in Activity; empty when withheld */
     label: string;
     maxAttempts: number;
     /** Whether this kind of job can pause and carry on later; one-shot kinds cannot */
@@ -841,6 +841,8 @@ export type MediaOperationDto = {
     status: MediaOperationStatus;
     totalUnits: string | null;
     updatedAt: string;
+    /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */
+    withheld: boolean;
 };
 export type PhysicalDeduplicationReviewRequestDto = {
     /** Retained originals whose group the administrator decided to leave as they are */
@@ -3945,7 +3947,7 @@ export type MediaOperationDetailDto = {
     /** Media operation ID */
     id: string;
     kind: MediaOperationKind;
-    /** What the person sees in Activity */
+    /** What the person sees in Activity; empty when withheld */
     label: string;
     maxAttempts: number;
     /** Whether this kind of job can pause and carry on later; one-shot kinds cannot */
@@ -3974,6 +3976,8 @@ export type MediaOperationDetailDto = {
     status: MediaOperationStatus;
     totalUnits: string | null;
     updatedAt: string;
+    /** The job is about a Locked item this session has not unlocked; its label and snapshot are withheld */
+    withheld: boolean;
 };
 export type MemoryStoryPlaceDto = {
     /** City */

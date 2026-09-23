@@ -174,6 +174,7 @@ describe(RestorationWorkerService.name, () => {
     };
     operations = {
       create: vi.fn(),
+      createRetry: vi.fn(),
       getForOwner: vi.fn().mockResolvedValue(operation()),
       list: vi.fn(),
       getCheckpoints: vi.fn().mockResolvedValue([]),
