@@ -72,7 +72,12 @@ import {
   checkStudioEnvelope,
   studioEnvelopeDigest,
 } from 'src/utils/studio-project.js';
-import { StudioDestination, StudioResourceKind, studioReferenceKey } from 'src/utils/studio-resources.js';
+import {
+  StudioDestination,
+  StudioResourceKind,
+  isStudioUuid,
+  studioReferenceKey,
+} from 'src/utils/studio-resources.js';
 
 /** How often the worker looks for queued bundle jobs. */
 export const STUDIO_BUNDLE_TICK_MS = 5000;
@@ -617,7 +622,8 @@ export class StudioBundleService {
     const entries = new Map(resolution.manifest.entries.map((entry) => [entry.key, entry]));
 
     const keys = studioBundleSourceKeys(envelope.graph);
-    const ids = [...new Set(keys.map((key) => key.id))];
+    // Only UUIDs can name a library row; any other identifier simply resolves to nothing.
+    const ids = [...new Set(keys.map((key) => key.id).filter((id) => isStudioUuid(id)))];
     const rows = ids.length > 0 ? await this.assets.getByIds(ids) : [];
     const assets = new Map(rows.map((row) => [row.id, row]));
     const allowedEmbeds = new Set(snapshot.includeMedia ? snapshot.embed.map((item) => item.key) : []);
@@ -631,12 +637,16 @@ export class StudioBundleService {
       const entry = entries.get(key.key);
       const asset = assets.get(key.id);
       // Locked media never leaves in a download, not even by name: it travels as a bare reference.
-      const describable = !!entry && !!asset && asset.visibility !== AssetVisibility.Locked;
-      const fileName = describable ? asset.originalFileName : null;
+      const known = entry && asset && asset.visibility !== AssetVisibility.Locked ? { entry, asset } : null;
+      const fileName = known ? known.asset.originalFileName : null;
       const contentType = fileName ? mimeTypes.lookup(fileName) || null : null;
+      const embedPath =
+        known && known.entry.path && allowedEmbeds.has(key.key) && known.asset.ownerId === operation.ownerId
+          ? known.entry.path
+          : null;
 
-      if (describable && entry.path && allowedEmbeds.has(key.key) && asset.ownerId === operation.ownerId) {
-        const { size } = await this.storage.stat(entry.path);
+      if (embedPath) {
+        const { size } = await this.storage.stat(embedPath);
         totalBytes += size;
         if (totalBytes > STUDIO_BUNDLE_MAX_BYTES - 64 * 1024 * 1024) {
           throw new BundleJobError(
@@ -644,17 +654,28 @@ export class StudioBundleService {
             'The media in this project is too large for one bundle; export it without media',
           );
         }
-        const sha256 = (await this.crypto.hashFile(entry.path, 'sha256')).toString('hex');
-        const entryName = bundleMediaEntryName({ kind: key.kind, id: key.id, fileName });
+        const sha256 = (await this.crypto.hashFile(embedPath, 'sha256')).toString('hex');
+        // The entry is named after the file actually copied: an edited master is not in its
+        // original's format, so its extension and type come from the copy, not the original name.
+        const entryName = bundleMediaEntryName({ kind: key.kind, id: key.id, fileName: basename(embedPath) });
+        const copiedType = mimeTypes.lookup(embedPath) || contentType;
         media[entryName] = { sha256, bytes: size };
-        embeds.push({ path: entry.path, entryName });
-        sources.push({ ...key, mode: 'embedded', path: entryName, sha256, bytes: size, fileName, contentType });
+        embeds.push({ path: embedPath, entryName });
+        sources.push({
+          ...key,
+          mode: 'embedded',
+          path: entryName,
+          sha256,
+          bytes: size,
+          fileName,
+          contentType: copiedType,
+        });
       } else {
         sources.push({
           ...key,
           mode: 'reference',
           path: null,
-          sha256: describable ? studioChecksumSha256(asset.checksum) : null,
+          sha256: known ? studioChecksumSha256(known.asset.checksum) : null,
           bytes: null,
           fileName,
           contentType,
