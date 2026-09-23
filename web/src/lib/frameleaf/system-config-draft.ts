@@ -100,7 +100,7 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
 
 /** The settings section a changed path belongs to, if any section edits it. */
 export const sectionForConfigPath = (path: string): string | undefined => {
-  const top = path.split('.')[0];
+  const [top] = path.split('.', 1);
   return Object.entries(SECTION_CONFIG_KEYS).find(([, keys]) => (keys as readonly string[]).includes(top))?.[0];
 };
 
@@ -151,7 +151,7 @@ export const diffConfig = (baseline: unknown, draft: unknown): ConfigChange[] =>
 
 /** The top-level groups a list of changes touches. */
 export const changedConfigKeys = (changes: readonly ConfigChange[]) =>
-  new Set(changes.map(({ path }) => path.split('.')[0]));
+  new Set(changes.map(({ path }) => path.split('.', 1)[0]));
 
 const applyChanges = <T extends object>(target: T, changes: readonly ConfigChange[]): T => {
   const next = cloneConfig(target);
@@ -194,7 +194,7 @@ export const rebaseDraft = <T extends object>(
 export const resetConfigKeys = <T extends object>(draft: T, defaults: T, keys: readonly (keyof T)[]): T => {
   const next = cloneConfig(draft);
   for (const key of keys) {
-    if (key in (defaults as object)) {
+    if (Object.hasOwn(defaults as object, key)) {
       next[key] = cloneConfig(defaults[key]);
     }
   }
@@ -212,11 +212,22 @@ export const configKeysDiffer = <T extends object>(a: T, b: T, keys: readonly (k
 export const pickConfigKeys = <T extends object>(baseline: T, draft: T, keys: readonly (keyof T)[]): T => {
   const next = cloneConfig(baseline);
   for (const key of keys) {
-    if (key in (draft as object)) {
+    if (Object.hasOwn(draft as object, key)) {
       next[key] = cloneConfig(draft[key]);
     }
   }
   return next;
+};
+
+/** The names of key-like query parameters. Collected up front so they can be deleted safely. */
+const sensitiveParameters = (url: URL) => {
+  const names: string[] = [];
+  url.searchParams.forEach((_value, name) => {
+    if (SENSITIVE_QUERY_PARAMETER.test(name)) {
+      names.push(name);
+    }
+  });
+  return names;
 };
 
 const parseUrl = (value: string) => {
@@ -236,11 +247,7 @@ export const urlHasCredentials = (value: string) => {
   if (!url) {
     return false;
   }
-  return (
-    !!url.username ||
-    !!url.password ||
-    [...url.searchParams.keys()].some((name) => SENSITIVE_QUERY_PARAMETER.test(name))
-  );
+  return !!url.username || !!url.password || sensitiveParameters(url).length > 0;
 };
 
 /** The URL without user name, password or key-like query parameters; other text is unchanged. */
@@ -251,14 +258,12 @@ export const stripUrlCredentials = (value: string) => {
   }
   url.username = '';
   url.password = '';
-  for (const name of [...url.searchParams.keys()]) {
-    if (SENSITIVE_QUERY_PARAMETER.test(name)) {
-      url.searchParams.delete(name);
-    }
+  for (const name of sensitiveParameters(url)) {
+    url.searchParams.delete(name);
   }
   const text = url.toString();
   // `new URL` adds a trailing slash to a bare origin; keep what the administrator typed.
-  return value.trim().endsWith('/') || url.pathname !== '/' || url.search ? text : text.replace(/\/$/, '');
+  return value.trimEnd().endsWith('/') || url.pathname !== '/' || url.search ? text : text.replace(/\/$/, '');
 };
 
 const containsCredentials = (value: unknown): boolean => {
