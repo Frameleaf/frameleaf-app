@@ -11,6 +11,7 @@
   import SkipLink from '$lib/elements/SkipLink.svelte';
   import { buildPrimaryDestinations, currentPrimaryDestination, isSettingsRoute } from '$lib/frameleaf/navigation';
   import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
+  import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
   import '$lib/frameleaf/tokens.css';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -77,6 +78,10 @@
   };
   let isElevated = $state(false);
   let isSessionLoading = $state(true);
+  // FL-34: views that reveal the owner's marks to an unlocked session read it from here
+  $effect(() => {
+    sessionAccess.isElevated = isElevated;
+  });
 
   const unreadCount = $derived(notificationManager.notifications.length);
   // FL-104: background jobs the viewer may see (queues too, for administrators) are in the panel.

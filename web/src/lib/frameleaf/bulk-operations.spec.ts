@@ -491,6 +491,19 @@ describe('durable jobs on the page', () => {
     expect(removesFromView('favorite')).toBe(false);
   });
 
+  it('removes a marked or unmarked item only from a view it no longer belongs to (FL-34)', () => {
+    const timeline = { isLocked: false, revealsLocks: false };
+    const revealing = { isLocked: false, revealsLocks: true };
+    const locked = { isLocked: true, revealsLocks: false };
+
+    expect(removesFromView('mark-sensitive', timeline)).toBe(true);
+    expect(removesFromView('mark-sensitive', revealing)).toBe(false);
+    expect(removesFromView('mark-sensitive', locked)).toBe(false);
+    expect(removesFromView('unmark-sensitive', timeline)).toBe(false);
+    expect(removesFromView('unmark-sensitive', revealing)).toBe(false);
+    expect(removesFromView('unmark-sensitive', locked)).toBe(true);
+  });
+
   it('reads answered items as done and the rest as pending while the job runs', () => {
     const states = durableItemStates(ids, detail({ processedUnits: '2' }));
 

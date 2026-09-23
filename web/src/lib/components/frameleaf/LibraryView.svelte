@@ -31,6 +31,7 @@
   import type { LibraryGrouping, LibrarySessionAction } from '$lib/frameleaf/library-session';
   import { describeFilterFields, filterFieldEntityIds, type FilterChipDescription } from '$lib/frameleaf/library-filters';
   import { matchLibraryShortcut, type LibraryShortcut } from '$lib/frameleaf/library-shortcuts';
+  import { revealsLocks } from '$lib/frameleaf/session-access.svelte';
   import {
     assetMultiSelectManager,
     type AssetMultiSelectManager,
@@ -245,6 +246,10 @@
   const bulk = new BulkController({
     dispatch,
     context: () => ({
+      view: {
+        isLocked: options?.visibility === AssetVisibility.Locked,
+        revealsLocks: !!options && revealsLocks(options),
+      },
       currentUserId: authManager.authenticated ? authManager.user.id : undefined,
       ownerById: Object.fromEntries(
         session.selection.map((id) => [id, findAsset(id)?.ownerId]).filter(([, owner]) => !!owner) as [
