@@ -652,6 +652,158 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/config/history": {
+      "get": {
+        "description": "The newest saved settings changes, each with its time, the administrator who saved it and the changed settings before and after. Credentials are listed only as replaced or cleared.",
+        "operationId": "getAdminConfigHistory",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemConfigHistoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the settings change history",
+        "tags": [
+          "Config (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminConfig.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/config/revision": {
+      "get": {
+        "description": "Retrieve the admin configuration together with a revision that changes whenever a saved setting changes. Send the revision back when saving so a save made against older settings is refused.",
+        "operationId": "getAdminConfigWithRevision",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminConfigRevisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the admin configuration with its revision",
+        "tags": [
+          "Config (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminConfig.read",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Save a complete system configuration only when the saved settings still match the revision it was made against. Returns the saved configuration and its new revision.",
+        "operationId": "updateAdminConfigWithRevision",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminConfigRevisionUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminConfigRevisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "description": "The saved settings changed since the given revision; nothing was saved."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update the system configuration if it is unchanged",
+        "tags": [
+          "Config (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/database-backups": {
       "delete": {
         "description": "Delete a backup by its filename",
@@ -33231,6 +33383,39 @@
         ],
         "type": "object"
       },
+      "AdminConfigRevisionResponseDto": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/AdminConfigDto"
+          },
+          "revision": {
+            "description": "Changes whenever a saved setting changes; send it back as expectedRevision so a save made against older settings is refused",
+            "type": "string"
+          }
+        },
+        "required": [
+          "config",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "AdminConfigRevisionUpdateDto": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/AdminConfigDto"
+          },
+          "expectedRevision": {
+            "description": "The revision the changes were made against. When the saved settings no longer match it the update is refused with 409 and nothing is changed",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "config",
+          "expectedRevision"
+        ],
+        "type": "object"
+      },
       "AdminConfigRunPodDto": {
         "properties": {
           "apiKey": {
@@ -43653,7 +43838,7 @@
             "$ref": "#/components/schemas/MediaOperationKind"
           },
           "label": {
-            "description": "What the person sees in Activity",
+            "description": "What the person sees in Activity; empty when withheld",
             "type": "string"
           },
           "maxAttempts": {
@@ -43731,6 +43916,10 @@
           "updatedAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "withheld": {
+            "description": "The job is about a Locked item this session has not unlocked; its label and snapshot are withheld",
+            "type": "boolean"
           }
         },
         "required": [
@@ -43768,7 +43957,8 @@
           "startedAt",
           "status",
           "totalUnits",
-          "updatedAt"
+          "updatedAt",
+          "withheld"
         ],
         "type": "object"
       },
@@ -43855,7 +44045,7 @@
             "$ref": "#/components/schemas/MediaOperationKind"
           },
           "label": {
-            "description": "What the person sees in Activity",
+            "description": "What the person sees in Activity; empty when withheld",
             "type": "string"
           },
           "maxAttempts": {
@@ -43929,6 +44119,10 @@
           "updatedAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "withheld": {
+            "description": "The job is about a Locked item this session has not unlocked; its label and snapshot are withheld",
+            "type": "boolean"
           }
         },
         "required": [
@@ -43962,7 +44156,8 @@
           "startedAt",
           "status",
           "totalUnits",
-          "updatedAt"
+          "updatedAt",
+          "withheld"
         ],
         "type": "object"
       },
@@ -58667,6 +58862,100 @@
           "id",
           "name",
           "profileChangedAt"
+        ],
+        "type": "object"
+      },
+      "SystemConfigHistoryChangeDto": {
+        "properties": {
+          "after": {
+            "description": "The value after the change, JSON encoded; null for a credential",
+            "nullable": true,
+            "type": "string"
+          },
+          "before": {
+            "description": "The value before the change, JSON encoded; null for a credential",
+            "nullable": true,
+            "type": "string"
+          },
+          "credential": {
+            "$ref": "#/components/schemas/SystemConfigHistoryCredentialChange"
+          },
+          "path": {
+            "description": "The changed setting, as a dotted path such as trash.days",
+            "type": "string"
+          }
+        },
+        "required": [
+          "after",
+          "before",
+          "path"
+        ],
+        "type": "object"
+      },
+      "SystemConfigHistoryCredentialChange": {
+        "description": "Set for a write-only credential: whether it was replaced or cleared. Its value is never recorded",
+        "enum": [
+          "replaced",
+          "cleared"
+        ],
+        "type": "string"
+      },
+      "SystemConfigHistoryEntryDto": {
+        "properties": {
+          "actorId": {
+            "description": "The administrator who saved the change",
+            "nullable": true,
+            "type": "string"
+          },
+          "actorName": {
+            "description": "The administrator's name when the change was saved",
+            "nullable": true,
+            "type": "string"
+          },
+          "changes": {
+            "description": "Every changed setting",
+            "items": {
+              "$ref": "#/components/schemas/SystemConfigHistoryChangeDto"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "description": "When the change was saved (ISO 8601)",
+            "type": "string"
+          },
+          "id": {
+            "description": "Entry ID",
+            "type": "string"
+          },
+          "omittedChanges": {
+            "description": "Changed settings left out because the entry reached its limit",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "actorId",
+          "actorName",
+          "changes",
+          "createdAt",
+          "id",
+          "omittedChanges"
+        ],
+        "type": "object"
+      },
+      "SystemConfigHistoryResponseDto": {
+        "properties": {
+          "entries": {
+            "description": "The newest settings changes first",
+            "items": {
+              "$ref": "#/components/schemas/SystemConfigHistoryEntryDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
         ],
         "type": "object"
       },

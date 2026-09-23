@@ -706,8 +706,10 @@ export class ICloudSyncService {
         }
 
         await this.repository.completeRun(current);
-        if (await this.operations.beginValidation(id, claimToken)) {
-          await this.operations.complete(id, claimToken, { resultAssetId: null });
+        if (
+          (await this.operations.beginValidation(id, claimToken)) &&
+          (await this.operations.complete(id, claimToken, { resultAssetId: null }))
+        ) {
           this.logger.log(`iCloud sync run ${id} finished`);
           return;
         }
@@ -785,7 +787,7 @@ export class ICloudSyncService {
   }
 
   private async acknowledgeCancel(claim: Claim, connectionId: string): Promise<void> {
-    if (await this.operations.acknowledgeCancel(claim.operation.id, { released: false })) {
+    if (await this.operations.acknowledgeCancel(claim.operation.id, claim.claimToken, { released: false })) {
       await this.repository.endRun(connectionId, 'cancelled');
     }
   }

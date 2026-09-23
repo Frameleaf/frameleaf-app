@@ -55,6 +55,23 @@
 
   onMount(() => activitySession.watch());
 
+  /** The row's name: a translated one where the server withheld or never had the words (FL-43). */
+  const nameOf = (item: ActivityItem) => (item.titleKey ? $t(item.titleKey) : item.title);
+
+  let retrying = $state(false);
+  /** Ask the server again now, rather than waiting for the next poll (FL-43). */
+  const tryAgain = async () => {
+    retrying = true;
+    try {
+      await activitySession.refresh();
+      if (!activitySession.unreachable) {
+        announcement = $t('frameleaf_activity_reconnected');
+      }
+    } finally {
+      retrying = false;
+    }
+  };
+
   const setFilter = (next: ActivityFilter) => {
     filter = next;
     // Keep the URL honest so the view can be linked to and reloaded onto the same filter.
@@ -69,7 +86,7 @@
     busyId = item.id;
     try {
       await action();
-      announcement = $t(announceKey, { values: { name: item.title } });
+      announcement = $t(announceKey, { values: { name: nameOf(item) } });
     } catch (error) {
       handleError(error, $t('errors.something_went_wrong'));
     } finally {
@@ -211,7 +228,10 @@
   </header>
 
   {#if activitySession.unreachable}
-    <p class="offline" role="status">{$t('frameleaf_activity_offline')}</p>
+    <div class="offline" role="status">
+      <p>{$t('frameleaf_activity_offline')}</p>
+      <Button disabled={retrying} onclick={() => void tryAgain()}>{$t('frameleaf_activity_reconnect')}</Button>
+    </div>
   {/if}
 
   {#if activitySession.loading && items.length === 0}
@@ -233,7 +253,7 @@
       <li class="job">
         <div class="body">
           <div class="row">
-            <h3>{item.titleKey ? $t(item.titleKey) : item.title}</h3>
+            <h3>{nameOf(item)}</h3>
             <span class="chip chip-{item.tone}">{$t(item.statusKey)}</span>
           </div>
 
@@ -261,7 +281,7 @@
               class="progress"
               max="100"
               value={item.progress ?? undefined}
-              aria-label={$t('frameleaf_activity_progress_for', { values: { name: item.title } })}
+              aria-label={$t('frameleaf_activity_progress_for', { values: { name: nameOf(item) } })}
             ></progress>
           {/if}
 
@@ -274,7 +294,7 @@
           {#if item.canPause && item.source === 'job'}
             <Button
               disabled={busyId === item.id}
-              label={$t('frameleaf_running_pause', { values: { name: item.title } })}
+              label={$t('frameleaf_running_pause', { values: { name: nameOf(item) } })}
               onclick={() => pause(item)}
             >
               {$t('pause')}
@@ -282,7 +302,7 @@
           {:else if item.canResume && item.source === 'job'}
             <Button
               disabled={busyId === item.id}
-              label={$t('frameleaf_running_resume', { values: { name: item.title } })}
+              label={$t('frameleaf_running_resume', { values: { name: nameOf(item) } })}
               onclick={() => resume(item)}
             >
               {$t('resume')}
@@ -312,7 +332,7 @@
             <Button
               variant="quiet"
               disabled={busyId === item.id}
-              label={$t('frameleaf_activity_clear_one', { values: { name: item.title } })}
+              label={$t('frameleaf_activity_clear_one', { values: { name: nameOf(item) } })}
               onclick={() => dismiss(item)}
             >
               {$t('dismiss')}
@@ -363,6 +383,11 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
+
+  .offline p {
+    flex: 1 1 16rem;
+    margin: 0;
+  }
   .head-actions {
     display: flex;
     flex-wrap: wrap;
@@ -374,6 +399,10 @@
     gap: 0.25rem;
   }
   .offline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
     margin: 0;
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--fl-border);

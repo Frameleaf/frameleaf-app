@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
+import type { PostgresError } from 'postgres';
 import { DatabaseLock, MediaOperationCheckpointState, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
@@ -10,11 +11,16 @@ import {
   CLAIMED_MEDIA_OPERATION_STATUSES,
   MEDIA_OPERATION_AUTO_RETRIES,
   MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
+  MEDIA_OPERATION_LOST_CLAIM_RESUMES,
   PAUSABLE_MEDIA_OPERATION_STATUSES,
+  RESUMABLE_MEDIA_OPERATION_KINDS,
   TERMINAL_MEDIA_OPERATION_STATUSES,
 } from 'src/utils/media-operation.js';
 
 export type MediaOperation = Selectable<MediaOperationTable>;
+
+/** One unfinished retry per job (migration 2100000000590, FL-43). */
+export const MEDIA_OPERATION_ACTIVE_RETRY_CONSTRAINT = 'media_operation_retryOfId_active_uq';
 export type MediaOperationCheckpoint = Selectable<MediaOperationCheckpointTable>;
 
 export type MediaOperationCreate = Omit<
@@ -54,6 +60,20 @@ const WORKING_STATUSES = [
   MediaOperationStatus.Validating,
 ];
 
+/**
+ * The stages a progress report may come from, by the stage it reports (FL-43). A report may stay
+ * in its stage or move forward, never back; anything else is not a progress report.
+ */
+const PROGRESS_FROM: Readonly<Partial<Record<MediaOperationStatus, readonly MediaOperationStatus[]>>> = {
+  [MediaOperationStatus.Preparing]: [MediaOperationStatus.Preparing],
+  [MediaOperationStatus.Rendering]: [MediaOperationStatus.Preparing, MediaOperationStatus.Rendering],
+  [MediaOperationStatus.Validating]: [
+    MediaOperationStatus.Preparing,
+    MediaOperationStatus.Rendering,
+    MediaOperationStatus.Validating,
+  ],
+};
+
 /** `now() + ms`, for leases and retry delays. */
 const nowPlus = (ms: number) => sql<Date>`now() + ${sql.lit(ms)} * interval '1 millisecond'`;
 
@@ -63,6 +83,14 @@ const nowPlus = (ms: number) => sql<Date>`now() + ${sql.lit(ms)} * interval '1 m
  */
 const pausedIfRequested = () =>
   sql<MediaOperationStatus>`case when "pauseRequestedAt" is not null then ${sql.lit(MediaOperationStatus.Paused)} else ${sql.lit(MediaOperationStatus.Queued)} end`;
+
+/**
+ * A lapsed claim this job may resume from (FL-43): a resumable kind that has not used up its
+ * resumes. The SQL twin of `canResumeLostClaim`; recovery requeues exactly these and treats every
+ * other lapse as a failure.
+ */
+const resumesLostClaim = () =>
+  sql<boolean>`("kind" = any(${[...RESUMABLE_MEDIA_OPERATION_KINDS]}::text[]) and "attempt" < least("maxAttempts", ${sql.lit(1 + MEDIA_OPERATION_LOST_CLAIM_RESUMES)}))`;
 
 /** Statuses with no worker attached: a cancel settles them at once. */
 const UNCLAIMED_STATUSES = [MediaOperationStatus.Queued, MediaOperationStatus.Paused];
@@ -452,6 +480,32 @@ export class MediaOperationRepository {
       .executeTakeFirst()) as unknown as MediaOperation | undefined;
   }
 
+  /**
+   * Queue a retry of a job, or answer with the one already unfinished (FL-43).
+   *
+   * The caller looks for an unfinished retry first; this closes the window between that look and
+   * the insert. `media_operation_retryOfId_active_uq` admits one unfinished row per `retryOfId`, so
+   * of two requests racing, one inserts and the other finds the winner here.
+   */
+  async createRetry(operation: MediaOperationCreate & { retryOfId: string }): Promise<{
+    operation: MediaOperation;
+    created: boolean;
+  }> {
+    try {
+      return { operation: await this.create(operation), created: true };
+    } catch (error) {
+      if ((error as PostgresError | null)?.constraint_name !== MEDIA_OPERATION_ACTIVE_RETRY_CONSTRAINT) {
+        throw error;
+      }
+      const existing = await this.getActiveRetry(operation.retryOfId, operation.ownerId);
+      if (!existing) {
+        // The winner finished between its insert and this read; let the caller ask again.
+        throw error;
+      }
+      return { operation: existing, created: false };
+    }
+  }
+
   getCheckpoints(operationId: string): Promise<MediaOperationCheckpoint[]> {
     return this.db
       .selectFrom('media_operation_checkpoint')
@@ -575,6 +629,11 @@ export class MediaOperationRepository {
     claimToken: string,
     patch: { status: MediaOperationStatus; processedUnits: number; totalUnits: number | null; progress: number },
   ): Promise<boolean> {
+    const from = PROGRESS_FROM[patch.status];
+    if (!from) {
+      return false;
+    }
+
     const result = await this.db
       .updateTable('media_operation')
       .set({
@@ -586,11 +645,9 @@ export class MediaOperationRepository {
       })
       .where('id', '=', id)
       .where('claimToken', '=', claimToken)
-      .where('status', 'in', [
-        MediaOperationStatus.Preparing,
-        MediaOperationStatus.Rendering,
-        MediaOperationStatus.Validating,
-      ])
+      // Stages only move forward (FL-43): a job checking its output is never reported as rendering
+      // again, and nothing reaches validating except through the stages before it.
+      .where('status', 'in', [...from])
       .executeTakeFirst();
 
     return Number(result.numUpdatedRows) === 1;
@@ -650,13 +707,18 @@ export class MediaOperationRepository {
    * Guarded by the claim and by `status = validating`: an output may only be adopted by the claim
    * that produced it, and only after validation. A previous valid result stays where it is until
    * this succeeds, so a failed attempt never destroys the last good version.
+   *
+   * A result asset is part of the same guarded write (FL-43): it must be a live asset of the job's
+   * owner. A worker — a remote one especially — names the asset it produced, and lineage pointing
+   * at somebody else's media, or at nothing, would publish what the owner was never allowed to see.
    */
   async complete(
     id: string,
     claimToken: string,
     result: { resultAssetId: string | null; progress?: number },
+    executor: Kysely<DB> = this.db,
   ): Promise<boolean> {
-    const updated = await this.db
+    const updated = await executor
       .updateTable('media_operation')
       .set({
         status: MediaOperationStatus.Completed,
@@ -673,9 +735,81 @@ export class MediaOperationRepository {
       .where('id', '=', id)
       .where('claimToken', '=', claimToken)
       .where('status', '=', MediaOperationStatus.Validating)
+      .$if(result.resultAssetId !== null, (qb) =>
+        qb.where((eb) =>
+          eb.exists(
+            eb
+              .selectFrom('asset')
+              .select('asset.id')
+              .where('asset.id', '=', result.resultAssetId!)
+              .whereRef('asset.ownerId', '=', 'media_operation.ownerId')
+              .where('asset.deletedAt', 'is', null),
+          ),
+        ),
+      )
       .executeTakeFirst();
 
     return Number(updated.numUpdatedRows) === 1;
+  }
+
+  /** Whether an asset may be adopted as this owner's result: theirs, and not deleted (FL-43). */
+  async isPublishableResult(ownerId: string, assetId: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('asset')
+      .select('id')
+      .where('id', '=', assetId)
+      .where('ownerId', '=', ownerId)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  /**
+   * Adopt a validated output and complete the job as one unit (FL-43).
+   *
+   * The job's row is locked under its claim first, so for as long as `publish` runs nothing can
+   * take the job away: not the owner's cancel, not recovery of a lapsed lease, not a pause. Then:
+   *
+   * - `lost`: the claim is gone or the job is no longer validating — cancelled while it was being
+   *   checked, or requeued after a lapse and perhaps already running elsewhere. `publish` is never
+   *   called, so a stale or cancelled worker cannot put its output where a replacement's, or the
+   *   previous valid output, lives.
+   * - `rejected`: `publish` declined (for example the owner discarded the work meanwhile). The job
+   *   stays validating under this claim; the caller fails it.
+   * - `completed`: `publish` succeeded and the job completed in the same transaction, so an adopted
+   *   output and a completed job are never seen apart.
+   *
+   * `publish` receives the transaction and must do its database writes through it.
+   */
+  async publishValidated(
+    id: string,
+    claimToken: string,
+    publish: (trx: Kysely<DB>) => Promise<boolean>,
+  ): Promise<'completed' | 'rejected' | 'lost'> {
+    return this.db.transaction().execute(async (trx) => {
+      const held = await trx
+        .selectFrom('media_operation')
+        .select('id')
+        .where('id', '=', id)
+        .where('claimToken', '=', claimToken)
+        .where('status', '=', MediaOperationStatus.Validating)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!held) {
+        return 'lost';
+      }
+
+      if (!(await publish(trx))) {
+        return 'rejected';
+      }
+
+      if (!(await this.complete(id, claimToken, { resultAssetId: null }, trx))) {
+        // Unreachable while the row is held above under the same predicates; throwing rolls the
+        // publication back, so an adopted output and an unfinished job are never committed apart.
+        throw new Error(`Media operation ${id} could not complete under the claim that published it`);
+      }
+      return 'completed';
+    });
   }
 
   /** Move a claimed job to `validating`. The last gate before anything is published. */
@@ -852,13 +986,18 @@ export class MediaOperationRepository {
   }
 
   /**
-   * The remote confirmed the work stopped.
+   * The worker holding the claim confirms the work stopped.
    *
    * Only then does the job become `cancelled`. `remoteReleasedAt` is recorded separately so an
    * acknowledged cancel whose resources are still being torn down stays visible to the cleanup
    * pass instead of looking finished.
+   *
+   * Guarded by the claim like every other worker write (FL-43). A cancel keeps the claim it was
+   * requested under, so only the worker actually running the job can say it stopped: a worker whose
+   * lease lapsed, and whose job was requeued and claimed by another since, must not settle the new
+   * claim's cancel while that worker — possibly a remote one still billing — carries on.
    */
-  async acknowledgeCancel(id: string, options: { released: boolean }): Promise<boolean> {
+  async acknowledgeCancel(id: string, claimToken: string, options: { released: boolean }): Promise<boolean> {
     const result = await this.db
       .updateTable('media_operation')
       .set({
@@ -867,9 +1006,11 @@ export class MediaOperationRepository {
         ...(options.released && { remoteReleasedAt: sql<Date>`now()` }),
         finishedAt: sql<Date>`coalesce("finishedAt", now())`,
         claimToken: null,
+        claimedBy: null,
         claimExpiresAt: null,
       })
       .where('id', '=', id)
+      .where('claimToken', '=', claimToken)
       .where('status', '=', MediaOperationStatus.Cancelling)
       .executeTakeFirst();
 
@@ -1016,8 +1157,10 @@ export class MediaOperationRepository {
    *
    * Four outcomes, in order of how the row should honestly read afterwards:
    *
-   * - A job with attempts left returns to the queue and resumes from its checkpoints.
-   * - One that has exhausted them has failed, and a failure gets its one automatic retry first
+   * - A resumable job with lost-claim resumes left returns to the queue and resumes from its
+   *   checkpoints (FL-43: at most `MEDIA_OPERATION_LOST_CLAIM_RESUMES`, and never a kind that would
+   *   start again from nothing — for those a lost claim is a failure straight away).
+   * - One that has none left has failed, and a failure gets its one automatic retry first
    *   (FL-104): it returns to the queue after the retry delay with the error recorded.
    * - One that has also used its automatic retry fails with a stable code rather than looping.
    * - One the owner had already asked to cancel becomes `cancelled`, because it plainly stopped —
@@ -1059,7 +1202,7 @@ export class MediaOperationRepository {
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)
-      .where(sql<boolean>`"attempt" < "maxAttempts"`)
+      .where(resumesLostClaim())
       // A cancel already requested must not be resurrected as a queued job.
       .where('cancelRequestedAt', 'is', null)
       .executeTakeFirst();
@@ -1080,7 +1223,7 @@ export class MediaOperationRepository {
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)
-      .where(sql<boolean>`"attempt" >= "maxAttempts"`)
+      .where(sql<boolean>`not ${resumesLostClaim()}`)
       .where('autoRetries', '<', MEDIA_OPERATION_AUTO_RETRIES)
       .where('cancelRequestedAt', 'is', null)
       .executeTakeFirst();
@@ -1099,7 +1242,7 @@ export class MediaOperationRepository {
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .where('claimExpiresAt', 'is not', null)
       .where('claimExpiresAt', '<', sql<Date>`now()`)
-      .where(sql<boolean>`"attempt" >= "maxAttempts"`)
+      .where(sql<boolean>`not ${resumesLostClaim()}`)
       .where('autoRetries', '>=', MEDIA_OPERATION_AUTO_RETRIES)
       .where('cancelRequestedAt', 'is', null)
       .executeTakeFirst();
@@ -1138,38 +1281,42 @@ export class MediaOperationRepository {
     claimToken: string,
     chunk: Insertable<MediaOperationCheckpointTable>,
   ): Promise<boolean> {
-    const claimed = await this.hasClaim(operationId, claimToken);
-    if (!claimed) {
-      return false;
-    }
+    return this.db.transaction().execute(async (trx) => {
+      // The claim check and the write are one unit (FL-43): the share lock holds off recovery's
+      // requeue of this row until the chunk is recorded, so a lease that lapses between the two
+      // cannot let a presumed-dead worker re-plan a chunk its replacement already owns.
+      if (!(await this.lockClaim(trx, operationId, claimToken))) {
+        return false;
+      }
 
-    await this.db
-      .insertInto('media_operation_checkpoint')
-      .values({ ...chunk, operationId, claimToken })
-      .onConflict((oc) =>
-        oc.columns(['operationId', 'sequence']).doUpdateSet({
-          state: MediaOperationCheckpointState.Pending,
-          chunkKey: chunk.chunkKey,
-          inputDigest: chunk.inputDigest,
-          historyDigest: chunk.historyDigest,
-          configDigest: chunk.configDigest,
-          seed: chunk.seed ?? null,
-          timebase: chunk.timebase,
-          startTicks: chunk.startTicks,
-          endTicks: chunk.endTicks,
-          prerollTicks: chunk.prerollTicks ?? '0',
-          requiresSequentialContext: chunk.requiresSequentialContext ?? false,
-          outputPath: null,
-          outputChecksum: null,
-          sizeInBytes: null,
-          completedAt: null,
-          claimToken,
-          attempt: sql<number>`"media_operation_checkpoint"."attempt" + 1`,
-        }),
-      )
-      .execute();
+      await trx
+        .insertInto('media_operation_checkpoint')
+        .values({ ...chunk, operationId, claimToken })
+        .onConflict((oc) =>
+          oc.columns(['operationId', 'sequence']).doUpdateSet({
+            state: MediaOperationCheckpointState.Pending,
+            chunkKey: chunk.chunkKey,
+            inputDigest: chunk.inputDigest,
+            historyDigest: chunk.historyDigest,
+            configDigest: chunk.configDigest,
+            seed: chunk.seed ?? null,
+            timebase: chunk.timebase,
+            startTicks: chunk.startTicks,
+            endTicks: chunk.endTicks,
+            prerollTicks: chunk.prerollTicks ?? '0',
+            requiresSequentialContext: chunk.requiresSequentialContext ?? false,
+            outputPath: null,
+            outputChecksum: null,
+            sizeInBytes: null,
+            completedAt: null,
+            claimToken,
+            attempt: sql<number>`"media_operation_checkpoint"."attempt" + 1`,
+          }),
+        )
+        .execute();
 
-    return true;
+      return true;
+    });
   }
 
   /**
@@ -1184,27 +1331,28 @@ export class MediaOperationRepository {
     claimToken: string,
     chunk: { sequence: number; chunkKey: string; outputPath: string; outputChecksum: Buffer; sizeInBytes: number },
   ): Promise<boolean> {
-    const claimed = await this.hasClaim(operationId, claimToken);
-    if (!claimed) {
-      return false;
-    }
+    return this.db.transaction().execute(async (trx) => {
+      if (!(await this.lockClaim(trx, operationId, claimToken))) {
+        return false;
+      }
 
-    const result = await this.db
-      .updateTable('media_operation_checkpoint')
-      .set({
-        state: MediaOperationCheckpointState.Complete,
-        outputPath: chunk.outputPath,
-        outputChecksum: chunk.outputChecksum,
-        sizeInBytes: String(chunk.sizeInBytes),
-        completedAt: sql<Date>`now()`,
-      })
-      .where('operationId', '=', operationId)
-      .where('sequence', '=', chunk.sequence)
-      .where('chunkKey', '=', chunk.chunkKey)
-      .where('claimToken', '=', claimToken)
-      .executeTakeFirst();
+      const result = await trx
+        .updateTable('media_operation_checkpoint')
+        .set({
+          state: MediaOperationCheckpointState.Complete,
+          outputPath: chunk.outputPath,
+          outputChecksum: chunk.outputChecksum,
+          sizeInBytes: String(chunk.sizeInBytes),
+          completedAt: sql<Date>`now()`,
+        })
+        .where('operationId', '=', operationId)
+        .where('sequence', '=', chunk.sequence)
+        .where('chunkKey', '=', chunk.chunkKey)
+        .where('claimToken', '=', claimToken)
+        .executeTakeFirst();
 
-    return Number(result.numUpdatedRows) === 1;
+      return Number(result.numUpdatedRows) === 1;
+    });
   }
 
   /** Retire chunks that can no longer describe the work. Invalid chunks are never reused. */
@@ -1217,13 +1365,20 @@ export class MediaOperationRepository {
       .execute();
   }
 
-  private async hasClaim(operationId: string, claimToken: string): Promise<boolean> {
-    const row = await this.db
+  /**
+   * Whether this claim still holds the job, taking a share lock on the row for the rest of the
+   * transaction. Every claim transfer — recovery, cancel, pause, completion — is an UPDATE of this
+   * row and waits for the lock, so what the caller writes next is written under a claim that cannot
+   * change underneath it.
+   */
+  private async lockClaim(trx: Kysely<DB>, operationId: string, claimToken: string): Promise<boolean> {
+    const row = await trx
       .selectFrom('media_operation')
       .select('id')
       .where('id', '=', operationId)
       .where('claimToken', '=', claimToken)
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+      .forShare()
       .executeTakeFirst();
 
     return !!row;
