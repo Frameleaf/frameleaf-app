@@ -157,8 +157,12 @@ export const endpointTags: Record<ApiTag, string> = {
   [ApiTag.ConfigPublic]: 'The system configuration properties that are visible to everyone.',
   [ApiTag.DatabaseBackups]: 'Manage backups of the Immich database.',
   [ApiTag.Deprecated]: 'Deprecated endpoints that are planned for removal in the next major release.',
+  [ApiTag.Documents]:
+    'A document is a photo with recognized text. Its lines, and the values suggested from them, can be corrected or dismissed by the owner; corrections are kept apart from the recognized text and survive reading the photo again.',
   [ApiTag.Download]: 'Endpoints for downloading assets or collections of assets.',
   [ApiTag.Duplicates]: 'Endpoints for managing and identifying duplicate assets.',
+  [ApiTag.Enrichment]:
+    'Enrichment previews, durable enrichment plans and timestamped video moments. A preview runs a draft prompt or model on chosen samples without writing anything; a plan runs chosen stages on a frozen set of assets through the destinations pinned when it was queued.',
   [ApiTag.Faces]:
     'A face is a detected human face within an asset, which can be associated with a person. Faces are normally detected via machine learning, but can also be created manually.',
   [ApiTag.Integrity]: 'Endpoints for viewing and managing integrity reports.',

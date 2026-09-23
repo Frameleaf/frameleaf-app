@@ -415,6 +415,7 @@ export enum Permission {
   AdminUserDelete = 'adminUser.delete',
 
   AdminSessionRead = 'adminSession.read',
+  AdminSessionDelete = 'adminSession.delete',
 
   AdminAuthUnlinkAll = 'adminAuth.unlinkAll',
 }
@@ -867,6 +868,73 @@ export const PetObservationSourceSchema = z
   .meta({ id: 'PetObservationSource' });
 
 /**
+ * Documents: text read from photos, and the owner's corrections to it (FL-63).
+ *
+ * Recognized text (`asset_ocr`) is replaceable model output: reading a photo again deletes and
+ * rewrites it. What the owner decides about that text is durable (`asset_document_edit`) and is
+ * never written into the recognized rows, so the raw recognition stays inspectable as provenance.
+ */
+export enum DocumentEditAction {
+  /** Accept a suggested field value as it was read. */
+  Confirm = 'confirm',
+  /** Replace the recognized text, or a field value, with the owner's own. */
+  Correct = 'correct',
+  /** Set a line or a field suggestion aside. */
+  Dismiss = 'dismiss',
+}
+
+export const DocumentEditActionSchema = z
+  .enum(DocumentEditAction)
+  .describe('What the owner decided about recognized text')
+  .meta({ id: 'DocumentEditAction' });
+
+/** Values suggested from recognized text. A suggestion is never a verified record. */
+export enum DocumentField {
+  Date = 'date',
+  Total = 'total',
+  Reference = 'reference',
+  Email = 'email',
+  Phone = 'phone',
+}
+
+export const DocumentFieldSchema = z
+  .enum(DocumentField)
+  .describe('A value suggested from recognized text')
+  .meta({ id: 'DocumentField' });
+
+export enum DocumentLineStatus {
+  /** As the text recognition read it. */
+  Recognized = 'recognized',
+  /** The owner's correction replaces the recognized text. */
+  Corrected = 'corrected',
+  /** The owner set the line aside. */
+  Dismissed = 'dismissed',
+  /**
+   * The owner's correction whose recognized line is gone because the photo was read again. It is
+   * kept, with its region, and only its owner sees it.
+   */
+  Kept = 'kept',
+}
+
+export const DocumentLineStatusSchema = z
+  .enum(DocumentLineStatus)
+  .describe('Where the text of a document line comes from')
+  .meta({ id: 'DocumentLineStatus' });
+
+export enum DocumentFieldStatus {
+  /** Read from the text; not checked by anyone. */
+  Suggested = 'suggested',
+  Confirmed = 'confirmed',
+  Corrected = 'corrected',
+  Dismissed = 'dismissed',
+}
+
+export const DocumentFieldStatusSchema = z
+  .enum(DocumentFieldStatus)
+  .describe('Whether a document field is a suggestion or the owner decided it')
+  .meta({ id: 'DocumentFieldStatus' });
+
+/**
  * Durable, user-visible media operations (FL-43, FL-104).
  *
  * One persistent job contract covers every long-running workload a person can see in Activity.
@@ -896,6 +964,12 @@ export enum MediaOperationKind {
   StudioBundleExport = 'studio_bundle_export',
   /** A portable Studio project bundle read back into a new project of the importer's (FL-91). */
   StudioBundleImport = 'studio_bundle_import',
+  /**
+   * An enrichment plan over a frozen set of assets (FL-59): the chosen stages (descriptions, the
+   * Locked-content check, reusable video frames, the moment index, optional moment captions) run
+   * asset by asset on the destinations pinned at submit, with a per-asset state for every stage.
+   */
+  EnrichmentPlan = 'enrichment_plan',
   /**
    * Library Care (FL-69): an owner's media health scan, or a search of chosen locations for the
    * originals of missing or damaged media. It records a resume cursor after every batch, so it can
@@ -942,6 +1016,10 @@ export enum MediaOperationBulkAction {
   RefreshFaces = 'refresh-faces',
   /** Reassemble a separated Live Photo still + motion video pair (FL-70). */
   RelinkLivePhoto = 'relink-live-photo',
+  /** Apply the owner's duplicate review decisions, one complete group at a time (FL-61). */
+  ResolveDuplicates = 'resolve-duplicates',
+  /** Reverse earlier duplicate review decisions that nothing has changed since (FL-61). */
+  UndoDuplicates = 'undo-duplicates',
   /** Library Care (FL-69): point missing originals at a verified exact copy. */
   RelinkMissingMedia = 'relink-missing-media',
   /** Library Care (FL-69): replace confirmed damage with a verified copy, keeping the damaged file. */
@@ -954,6 +1032,66 @@ export const MediaOperationBulkActionSchema = z
   .enum(MediaOperationBulkAction)
   .describe('Bulk action a durable media operation applies')
   .meta({ id: 'MediaOperationBulkAction' });
+
+/**
+ * What the owner decided for one duplicate group (FL-61).
+ *
+ * - `keepers`: keep the chosen photos and move every other photo of the group to the trash.
+ * - `keep-all`: every photo stays; the group is dismissed.
+ * - `stack`: every photo stays, stacked together with the first keeper (or the first photo) on top.
+ */
+export enum DuplicateDecisionKind {
+  Keepers = 'keepers',
+  KeepAll = 'keep-all',
+  Stack = 'stack',
+}
+
+export const DuplicateDecisionKindSchema = z
+  .enum(DuplicateDecisionKind)
+  .describe('What the owner decided for a duplicate group')
+  .meta({ id: 'DuplicateDecisionKind' });
+
+/**
+ * How a duplicate group reads (FL-61). A `burst` is several moments captured in quick succession, not
+ * copies of one photo, so its frames are never suggested for the trash.
+ */
+export enum DuplicateGroupKind {
+  Duplicates = 'duplicates',
+  Burst = 'burst',
+}
+
+export const DuplicateGroupKindSchema = z
+  .enum(DuplicateGroupKind)
+  .describe('Whether a duplicate group holds copies of one photo or frames of a burst')
+  .meta({ id: 'DuplicateGroupKind' });
+
+/** Why a duplicate group cannot be decided from this session (FL-61). */
+export enum DuplicateGroupBlock {
+  /** Some photos of the group are not shown to this session (suppressed while not unlocked). */
+  HiddenMembers = 'hidden-members',
+  /** The group holds photos another account owns: only the owner of every photo may decide. */
+  OtherOwner = 'other-owner',
+}
+
+export const DuplicateGroupBlockSchema = z
+  .enum(DuplicateGroupBlock)
+  .describe('Why a duplicate group cannot be decided from this session')
+  .meta({ id: 'DuplicateGroupBlock' });
+
+/** The evidence behind a keeper suggestion, per photo (FL-61). Translated by the client. */
+export enum DuplicateQualityReason {
+  OriginalFormat = 'original-format',
+  LargestFile = 'largest-file',
+  HighestResolution = 'highest-resolution',
+  MostMetadata = 'most-metadata',
+  CompressedCopy = 'compressed-copy',
+  LowerResolution = 'lower-resolution',
+}
+
+export const DuplicateQualityReasonSchema = z
+  .enum(DuplicateQualityReason)
+  .describe('Evidence behind a duplicate keeper suggestion')
+  .meta({ id: 'DuplicateQualityReason' });
 
 /** The outcome recorded for one item of a bulk operation. */
 export enum MediaOperationItemStatus {
@@ -969,6 +1107,103 @@ export const MediaOperationItemStatusSchema = z
   .enum(MediaOperationItemStatus)
   .describe('Per-item outcome of a bulk media operation')
   .meta({ id: 'MediaOperationItemStatus' });
+
+/**
+ * One stage of an enrichment plan (FL-59). Stages that depend on others pull them in: the moment
+ * index and moment captions both need the reusable video frames. They run in this order per asset.
+ */
+export enum EnrichmentStage {
+  /** Six evenly spaced, ranked video frames cached for reuse. Never tied to duplicate detection. */
+  Frames = 'frames',
+  /** The Locked-content (sensitive) check on photos. */
+  LockedCheck = 'locked-check',
+  /** Generated description and tags. Videos are described from their reusable frames. */
+  Description = 'description',
+  /** A timestamped search embedding for every reusable frame. */
+  MomentIndex = 'moment-index',
+  /** Optional generated caption per moment: one extra model request per frame. Off by default. */
+  MomentCaptions = 'moment-captions',
+}
+
+export const EnrichmentStageSchema = z
+  .enum(EnrichmentStage)
+  .describe('Enrichment plan stage')
+  .meta({ id: 'EnrichmentStage' });
+
+/** Where one asset, or one stage of one asset, stands in an enrichment plan (FL-59). */
+export enum EnrichmentItemState {
+  Queued = 'queued',
+  Running = 'running',
+  Skipped = 'skipped',
+  Failed = 'failed',
+  Completed = 'completed',
+  /** The plan was cancelled before this asset was reached. */
+  Cancelled = 'cancelled',
+}
+
+export const EnrichmentItemStateSchema = z
+  .enum(EnrichmentItemState)
+  .describe('Enrichment plan item state')
+  .meta({ id: 'EnrichmentItemState' });
+
+/** Who made a video moment (FL-59). Refreshing generated results never touches a manual moment. */
+export enum VideoMomentSource {
+  Generated = 'generated',
+  Manual = 'manual',
+}
+
+export const VideoMomentSourceSchema = z
+  .enum(VideoMomentSource)
+  .describe('Video moment source')
+  .meta({ id: 'VideoMomentSource' });
+
+/** Why a generated enrichment result no longer describes what it claims to (FL-59). */
+export enum EnrichmentStaleReason {
+  SourceChanged = 'source-changed',
+  IdentityChanged = 'identity-changed',
+  ConfigChanged = 'config-changed',
+}
+
+export const EnrichmentStaleReasonSchema = z
+  .enum(EnrichmentStaleReason)
+  .describe('Why a generated result is out of date')
+  .meta({ id: 'EnrichmentStaleReason' });
+
+/** How one preview sample went (FL-59). */
+export enum EnrichmentPreviewStatus {
+  Success = 'success',
+  Failed = 'failed',
+  Skipped = 'skipped',
+}
+
+export const EnrichmentPreviewStatusSchema = z
+  .enum(EnrichmentPreviewStatus)
+  .describe('Enrichment preview sample status')
+  .meta({ id: 'EnrichmentPreviewStatus' });
+
+/** Whether a video has current reusable frames (FL-59). */
+export enum VideoMomentIndexState {
+  None = 'none',
+  Ready = 'ready',
+  Stale = 'stale',
+}
+
+export const VideoMomentIndexStateSchema = z
+  .enum(VideoMomentIndexState)
+  .describe('Whether the video has current reusable frames')
+  .meta({ id: 'VideoMomentIndexState' });
+
+/** What a moment search hit matched on (FL-59). */
+export enum VideoMomentMatch {
+  Visual = 'visual',
+  Caption = 'caption',
+  Transcript = 'transcript',
+}
+
+export const VideoMomentMatchSchema = z
+  .enum(VideoMomentMatch)
+  .describe('What a moment search hit matched on')
+  .meta({ id: 'VideoMomentMatch' });
 
 /**
  * The durable state machine. `cancelling` is a real persisted state: the request is recorded
@@ -1838,6 +2073,45 @@ export const SharedSpaceEventTypeSchema = z
   .describe('Shared space event type')
   .meta({ id: 'SharedSpaceEventType' });
 
+/**
+ * What an administrator did to an account or to one of its libraries (FL-76). Recorded in
+ * `admin_audit_event` by the service that made the change and listed in the account's Activity tab.
+ */
+export enum AdminAuditAction {
+  AccountCreated = 'account-created',
+  /** Name, email, avatar colour or the require-password-change flag. */
+  AccountUpdated = 'account-updated',
+  AdminGranted = 'admin-granted',
+  AdminRevoked = 'admin-revoked',
+  /** `detail` is the new quota in bytes, or null for unlimited. */
+  QuotaChanged = 'quota-changed',
+  /** `detail` is the new storage label, or null for automatic. */
+  StorageLabelChanged = 'storage-label-changed',
+  /** `detail` is `change-required` when the account must choose a new password at sign-in. */
+  PasswordReset = 'password-reset',
+  PinSet = 'pin-set',
+  PinReset = 'pin-reset',
+  /** `detail` is the signed-out device, as the session list names it. */
+  SessionRevoked = 'session-revoked',
+  /** `detail` is the changed preference sections, comma separated. */
+  PreferencesUpdated = 'preferences-updated',
+  CastingDisabled = 'casting-disabled',
+  CastingAllowed = 'casting-allowed',
+  /** `detail` is the recovery period in days. */
+  AccountDeleted = 'account-deleted',
+  AccountRemovalScheduled = 'account-removal-scheduled',
+  AccountRestored = 'account-restored',
+  LibraryCreated = 'library-created',
+  LibraryUpdated = 'library-updated',
+  LibraryScanQueued = 'library-scan-queued',
+  LibraryDeleted = 'library-deleted',
+}
+
+export const AdminAuditActionSchema = z
+  .enum(AdminAuditAction)
+  .describe('What an administrator did to an account or one of its libraries')
+  .meta({ id: 'AdminAuditAction' });
+
 export enum OAuthTokenEndpointAuthMethod {
   ClientSecretPost = 'client_secret_post',
   ClientSecretBasic = 'client_secret_basic',
@@ -1918,8 +2192,10 @@ export enum ApiTag {
   ConfigPublic = 'Config (public)',
   DatabaseBackups = 'Database Backups (admin)',
   Deprecated = 'Deprecated',
+  Documents = 'Documents',
   Download = 'Download',
   Duplicates = 'Duplicates',
+  Enrichment = 'Enrichment',
   Faces = 'Faces',
   Integrity = 'Integrity (admin)',
   Jobs = 'Jobs',

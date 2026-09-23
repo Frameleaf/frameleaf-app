@@ -98,17 +98,17 @@
       "version": 2
     },
     {
-      "bytes": 8273,
+      "bytes": 8756,
       "category": "reference",
       "id": "61407369",
       "source": "docs/docs/developer/frameleaf-library-action-parity.md",
-      "sourceSha256": "5d007780e048330da577a052aa8cb844cf168721d3ec38dd9b422d2025677d0f",
+      "sourceSha256": "f73966cdedd51ef644d8219ba95dbe0dcb9d601ed34878e70d6607e084a81a7c",
       "title": "Frameleaf library action parity audit",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61407369/Frameleaf+library+action+parity+audit",
-      "verification": "source hash marker, reviewed baseline and terminal content read back after update",
+      "verification": "Version 4 records FL-44 commit 80899dd02c49ed0cbf63bb02eec2fb5c092f16ee on branch codex/FL-44-inventory-ledger-sync (not merged, no PR): the two retired citations now name QuickEditor.svelte and SearchDialog.svelte, the committed-routes note is added, the source hash marker is updated and all other content is unchanged; full page read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-20T09:17:48.000Z",
-      "version": 3
+      "verifiedAt": "2026-09-23T10:32:28.347Z",
+      "version": 4
     },
     {
       "bytes": 9805,
@@ -384,14 +384,14 @@
       "version": 2
     },
     {
-      "bytes": 14761,
+      "bytes": 14878,
       "category": "features",
       "id": "61440280",
       "source": "docs/docs/features/fork-privacy-suite.md",
-      "sourceSha256": "dd9f4a8bae7d1b24cfaea4d80e4c931c16680ccdf1f52e89b10cec40ec390f52",
+      "sourceSha256": "094cf6dc74a09bce4e20a33bce6e02f8c8b2307657559296547ad9f47c4b3873",
       "title": "Feature Reference — Fork Privacy Suite",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440280/Feature+Reference+Fork+Privacy+Suite",
-      "version": 2
+      "version": 3
     },
     {
       "bytes": 2889,
@@ -404,14 +404,14 @@
       "version": 2
     },
     {
-      "bytes": 14648,
+      "bytes": 14847,
       "category": "features",
       "id": "61374970",
       "source": "docs/docs/features/image-enrichment.md",
-      "sourceSha256": "18f9267fcd625956c8e8ae532221552530d099e5cd7cb50e7a1511c5cf398042",
+      "sourceSha256": "8343daa64ed0bc280349aed29410a8efc7047d5e652fd89d9eef4a5021653d3e",
       "title": "Feature Reference — Image Enrichment",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61374970/Feature+Reference+Image+Enrichment",
-      "version": 2
+      "version": 3
     },
     {
       "bytes": 3873,
@@ -537,17 +537,17 @@
       "version": 7
     },
     {
-      "bytes": 6137,
+      "bytes": 6223,
       "category": "plan",
       "id": "61375040",
       "source": "docs/docs/developer/frameleaf-plan/02-library-and-administration.md",
-      "sourceSha256": "f011e579f8a32baac94e85af675fcf9f646644fe958e4c0662ffd0e0c772fabb",
+      "sourceSha256": "01b658e8ff820e0bc15d37bc577a8a3de481afb070f92a60eadd5fbf34dabde3",
       "title": "Library and Administration Implementation",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61375040/Library+and+Administration+Implementation",
-      "verification": "source hash marker, reviewed baseline and terminal content read back after update",
+      "verification": "Version 4 records FL-44 commit c7b109192f065423fa7ce77db4b4c84092e98084 on branch codex/FL-44-inventory-ledger-sync (not merged, no PR): the route inventory sentence now states 80 committed routes (70 reviewed plus 10 added by FL stories, implemented in code and not qualified) and 12 dirty-only routes; source hash marker updated, all other content unchanged; full page read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-20T09:17:48.000Z",
-      "version": 3
+      "verifiedAt": "2026-09-23T10:33:11.586Z",
+      "version": 4
     },
     {
       "bytes": 83723,
@@ -603,13 +603,13 @@
       "category": "plan",
       "id": "61538800",
       "source": "docs/docs/developer/frameleaf-plan/07-feature-ownership.md",
-      "sourceSha256": "2f83175407bd4d08bc1d1af811f8dea87df4ef6afa5beafab0b46f474cd59a9f",
+      "sourceSha256": "2b8b9d497e0e3676167b4f7f2ee7908cbbe02697bd55513aa44cf005897d574b",
       "title": "Complete Feature Ownership and Jira Coverage",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61538800/Complete+Feature+Ownership+and+Jira+Coverage",
-      "verification": "Source path, FL-27 candidate SHA-256 and unmerged-branch status; 1209 source rows and 1189 canonical requirements unchanged; bounded design/test evidence links added without qualification inflation; terminal content read back after update",
+      "verification": "Version 7 records FL-44 commit c7b109192f065423fa7ce77db4b4c84092e98084 on branch codex/FL-44-inventory-ledger-sync (not merged, no PR): coverage follows the regenerated ledger with 92 route rows (80 committed plus 12 dirty-only), 1217 source rows and 1197 canonical requirements; the FL-27 candidate banner and all other content are preserved; full page read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-20T16:04:46.650Z",
-      "version": 6
+      "verifiedAt": "2026-09-23T10:33:31.652Z",
+      "version": 7
     },
     {
       "bytes": 11211,
@@ -677,17 +677,17 @@
       "version": 10
     },
     {
-      "bytes": 2045,
+      "bytes": 7458,
       "category": "plan",
       "id": "61408007",
       "source": "studio/README.md",
-      "sourceSha256": "04642a8139e9784074c2c60ae1c73322f7c178e995d23e618204084c984e27d0",
+      "sourceSha256": "b3c72dcd99eb939b4c6e60274e31e3e0f91fc9e02a7196a9381265fa70ece2fe",
       "title": "Studio and Freecut Source Inventory",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61408007/Studio+and+Freecut+Source+Inventory",
-      "verification": "source hash marker, fetched baseline and terminal content read back after creation",
+      "verification": "Version 5 adds, above the retained FL-84/FL-86 engine-workspace candidate mirror, the integration-branch studio/README.md (FL-88 host boundary, FL-90 resource inventory, FL-92 command catalogue) with its SHA-256 and byte count, mirrored by FL-44 from branch codex/FL-44-inventory-ledger-sync (not merged, no PR); the two candidate lines are labelled as not yet reconciled, every earlier section and receipt is preserved unchanged; full page read back after update.",
       "verified": true,
-      "verifiedAt": "2026-09-20T09:33:30.000Z",
-      "version": 1
+      "verifiedAt": "2026-09-23T10:36:50.135Z",
+      "version": 5
     },
     {
       "bytes": 9292,
@@ -703,17 +703,17 @@
       "version": 5
     },
     {
-      "bytes": 8167,
+      "bytes": 9079,
       "category": "development",
       "id": "61440673",
       "source": "AGENTS.md",
-      "sourceSha256": "c55dcca5ffa612fd0fbc2eca870054bacee97ba33416e65a0b3e10eaabbfdd11",
+      "sourceSha256": "68f40f4a1de2791641ab09e386f8d5922b9d6f44498b187fd10ab0bf3e43cf42",
       "title": "Frameleaf Repository Agent Instructions",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61440673",
-      "verification": "Version 6 records the hosted-only builds and test suites rule committed as caefcdd0cf4267347f769f77e96a483a615adc2f on branch claude/frameleaf-ui-review-157143 (fork/main 0116d4778); banner states not merged, no PR and keeps the PR #112 merge history; links resolve to committed files at that fork/main commit; full page read back after update.",
+      "verification": "Version 7 (published from branch claude/frameleaf-design-rules-sep23, commit 7e982c2a93ddbbefc12d06d5892fda87bce42903) carries the September 23, 2026 rules now on the integration branch: do not touch the iOS or Android apps, the September 22 prototype is authoritative, and design adaptation names production Svelte only. FL-44 read back the full page on the integration head and its body and source hash marker match the current AGENTS.md; no write was needed.",
       "verified": true,
-      "verifiedAt": "2026-09-22T22:08:44.734Z",
-      "version": 6
+      "verifiedAt": "2026-09-23T10:35:01.000Z",
+      "version": 7
     },
     {
       "bytes": 11072,
@@ -763,10 +763,10 @@
       "sourceSha256": "1d64dcbf499b84a94a20744c50fdbbc5227a25e997a1030a38fe3fa4707be69d",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 7: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble; banners now record the September 22, 2026 revision committed as caefcdd0cf4267347f769f77e96a483a615adc2f on branch claude/frameleaf-ui-review-157143, not merged, no PR; design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md carry the Albums page, vocabulary, icon catalogue and deduplication preview decisions with per-section SHA-256 and byte counts, the other three sections are unchanged PR #112 content; full page read back after update.",
+      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
       "verified": true,
-      "verifiedAt": "2026-09-22T22:08:44.734Z",
-      "version": 7
+      "verifiedAt": "2026-09-23T10:35:01.000Z",
+      "version": 8
     },
     {
       "bytes": 1449,
@@ -776,10 +776,10 @@
       "sourceSha256": "1aee3224386aed5ce97f80493d41d6fb6492c792e7d49ca54e08a35674051ecb",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 7: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble; banners now record the September 22, 2026 revision committed as caefcdd0cf4267347f769f77e96a483a615adc2f on branch claude/frameleaf-ui-review-157143, not merged, no PR; design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md carry the Albums page, vocabulary, icon catalogue and deduplication preview decisions with per-section SHA-256 and byte counts, the other three sections are unchanged PR #112 content; full page read back after update.",
+      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
       "verified": true,
-      "verifiedAt": "2026-09-22T22:08:44.734Z",
-      "version": 7
+      "verifiedAt": "2026-09-23T10:35:01.000Z",
+      "version": 8
     },
     {
       "bytes": 5242,
@@ -789,23 +789,23 @@
       "sourceSha256": "936f26b7c0b50e95f7c8ecca35664c8ab4d753283f942a76a3bf918427d59401",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 7: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble; banners now record the September 22, 2026 revision committed as caefcdd0cf4267347f769f77e96a483a615adc2f on branch claude/frameleaf-ui-review-157143, not merged, no PR; design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md carry the Albums page, vocabulary, icon catalogue and deduplication preview decisions with per-section SHA-256 and byte counts, the other three sections are unchanged PR #112 content; full page read back after update.",
+      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
       "verified": true,
-      "verifiedAt": "2026-09-22T22:08:44.734Z",
-      "version": 7
+      "verifiedAt": "2026-09-23T10:35:01.000Z",
+      "version": 8
     },
     {
-      "bytes": 13439,
+      "bytes": 13640,
       "category": "design-template",
       "id": "61539021",
       "source": "design/frameleaf/INTERACTION-REQUIREMENTS.md",
-      "sourceSha256": "cbd184ac0c5ef1a6ec9c519306370e82e901227c5c17f3e2c6b2d8af62d66f6c",
+      "sourceSha256": "5c0e1385563ae9286aeba5a7b5e2f02acfb77012f4edc60639eeadf4f98924a5",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 7: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble; banners now record the September 22, 2026 revision committed as caefcdd0cf4267347f769f77e96a483a615adc2f on branch claude/frameleaf-ui-review-157143, not merged, no PR; design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md carry the Albums page, vocabulary, icon catalogue and deduplication preview decisions with per-section SHA-256 and byte counts, the other three sections are unchanged PR #112 content; full page read back after update.",
+      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
       "verified": true,
-      "verifiedAt": "2026-09-22T22:08:44.734Z",
-      "version": 7
+      "verifiedAt": "2026-09-23T10:35:01.000Z",
+      "version": 8
     },
     {
       "bytes": 5051,
@@ -815,10 +815,10 @@
       "sourceSha256": "5e9bde384f4c89f98e86977e25117394736e392dc7cd6691d62c5bff7fe840de",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 7: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble; banners now record the September 22, 2026 revision committed as caefcdd0cf4267347f769f77e96a483a615adc2f on branch claude/frameleaf-ui-review-157143, not merged, no PR; design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md carry the Albums page, vocabulary, icon catalogue and deduplication preview decisions with per-section SHA-256 and byte counts, the other three sections are unchanged PR #112 content; full page read back after update.",
+      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
       "verified": true,
-      "verifiedAt": "2026-09-22T22:08:44.734Z",
-      "version": 7
+      "verifiedAt": "2026-09-23T10:35:01.000Z",
+      "version": 8
     },
     {
       "bytes": 1547,
@@ -828,10 +828,10 @@
       "sourceSha256": "d8fb86f6284408e6a843f41a7ba8047e1c68f55e8cc8eb0006c198b2ed988744",
       "title": "Frameleaf Reusable Design Template",
       "url": "https://heroit.atlassian.net/wiki/spaces/FR/pages/61539021/Frameleaf+Reusable+Design+Template",
-      "verification": "Shared six-source page version 7: preserved the independent PR #112, FL-25/FL-118 and hosted-run preamble; banners now record the September 22, 2026 revision committed as caefcdd0cf4267347f769f77e96a483a615adc2f on branch claude/frameleaf-ui-review-157143, not merged, no PR; design/frameleaf/README.md, INTERACTION-REQUIREMENTS.md and template/README.md carry the Albums page, vocabulary, icon catalogue and deduplication preview decisions with per-section SHA-256 and byte counts, the other three sections are unchanged PR #112 content; full page read back after update.",
+      "verification": "Shared six-source page version 8 (published from branch claude/frameleaf-design-rules-sep23): the September 23, 2026 Locked update to design/frameleaf/INTERACTION-REQUIREMENTS.md is mirrored with its SHA-256 and byte count, and the other five sections carry their unchanged sources. FL-44 read back the full page on the integration head; every section hash marker matches the current source and no write was needed.",
       "verified": true,
-      "verifiedAt": "2026-09-22T22:08:44.734Z",
-      "version": 7
+      "verifiedAt": "2026-09-23T10:35:01.000Z",
+      "version": 8
     },
     {
       "bytes": 9820,

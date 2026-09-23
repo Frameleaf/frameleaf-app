@@ -1,29 +1,24 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import empty3Url from '$lib/assets/empty-3.svg';
-  import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
+  import type { Action } from '$lib/components/asset-viewer/actions/action';
+  import Theme from '$lib/components/frameleaf/Theme.svelte';
+  import TrashManager from '$lib/components/frameleaf/TrashManager.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import EmptyPlaceholder from '$lib/components/shared-components/EmptyPlaceholder.svelte';
-  import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
+  import { AssetAction } from '$lib/constants';
   import Portal from '$lib/elements/Portal.svelte';
-  import { brandedArchiveName } from '$lib/frameleaf/archive-name';
-  import { librarySession } from '$lib/frameleaf/library-session.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
-  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
-  import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
-  import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
-  import { Route } from '$lib/route';
-  import { getTrashActions } from '$lib/services/trash.service';
   import { handlePromiseError } from '$lib/utils';
+  import { navigateToAsset } from '$lib/utils/asset-utils';
   import { navigate } from '$lib/utils/navigation';
-  import { t } from 'svelte-i18n';
+  import { getAssetInfo, type AssetResponseDto, type TrashItemResponseDto } from '@immich/sdk';
+  import { Container, Theme as AppTheme, themeManager } from '@immich/ui';
   import type { PageData } from './$types';
 
   /**
-   * Trash (FL-33 cleanup): the Frameleaf library over the trashed items.
+   * Trash (FL-47): the Frameleaf trash browser, as in the design template's Trash area.
    *
-   * `trash` in the bulk context is what replaces the legacy select bar's own action list: the live
-   * actions give way to restore and permanent delete, which is exactly what that bar offered.
+   * `/trash/photos/:id` keeps its URL contract: it opens the full viewer over the trash, where an
+   * item can be restored or permanently deleted, and the viewer then moves to the next item in the
+   * order the trash page shows them.
    */
   type Props = {
     data: PageData;
@@ -31,53 +26,79 @@
 
   let { data }: Props = $props();
 
-  let timelineManager = $state<TimelineManager>() as TimelineManager;
-  let viewerInvisible = $state(false);
-  const options = { isTrashed: true };
+  let items = $state<TrashItemResponseDto[]>([]);
+  let neighbours = $state<{ nextAsset?: AssetResponseDto; previousAsset?: AssetResponseDto }>({});
 
-  if (!featureFlagsManager.value.trash) {
-    handlePromiseError(goto(Route.photos()));
-  }
+  const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 
-  const { Empty, RestoreAll } = $derived(getTrashActions($t));
-  const selecting = $derived(librarySession.selection.length > 0);
+  // The viewer's next and previous items are the trash page's own neighbours of the open item.
+  $effect(() => {
+    const current = assetViewerManager.isViewing ? assetViewerManager.asset : undefined;
+    const index = current ? items.findIndex((item) => item.id === current.id) : -1;
+    const nextId = index === -1 ? undefined : items[index + 1]?.id;
+    const previousId = index > 0 ? items[index - 1]?.id : undefined;
+    neighbours = {};
+
+    let cancelled = false;
+    const load = (id?: string) => (id ? getAssetInfo({ id }).catch(() => undefined) : Promise.resolve(undefined));
+    void Promise.all([load(nextId), load(previousId)]).then(([nextAsset, previousAsset]) => {
+      if (!cancelled) {
+        neighbours = { nextAsset, previousAsset };
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  const cursor = $derived({ current: assetViewerManager.asset!, ...neighbours });
+
+  const closeViewer = () => {
+    assetViewerManager.showAssetViewer(false);
+    handlePromiseError(navigate({ targetRoute: 'current', assetId: null }));
+  };
+
+  /** A restored or permanently deleted item leaves the trash: show the next one, as the timeline does. */
+  const moveOn = async (assetId: string) => {
+    const { nextAsset, previousAsset } = neighbours;
+    items = items.filter((item) => item.id !== assetId);
+    if (!(await navigateToAsset(nextAsset)) && !(await navigateToAsset(previousAsset))) {
+      closeViewer();
+    }
+  };
+
+  const preAction = async (action: Action) => {
+    if (action.type === AssetAction.DELETE) {
+      await moveOn(action.asset.id);
+    }
+  };
+
+  const onAction = async (action: Action) => {
+    if (action.type === AssetAction.RESTORE) {
+      await moveOn(action.asset.id);
+    }
+  };
 </script>
 
-{#if featureFlagsManager.value.trash}
-  <UserPageLayout
-    hideNavbar={selecting}
-    actions={selecting ? [] : [Empty, RestoreAll]}
-    title={data.meta.title}
-    scrollbar={false}
-  >
-    <LibraryView
-      bind:timelineManager
-      {options}
-      destination={{ kind: 'trash' }}
-      bulkContext={{ trash: true }}
-      downloadFileName={brandedArchiveName($t('frameleaf_archive_name_trash'))}
-      enableRouting
-      syncUrl={false}
-      selectAll="loaded"
-      onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
-    >
-      <p class="p-4 font-medium text-gray-500/60 dark:text-gray-300/60">
-        {$t('trashed_items_will_be_permanently_deleted_after', {
-          values: { days: serverConfigManager.value.trashDays },
-        })}
-      </p>
+<UserPageLayout title={data.meta.title}>
+  <Container size="large" center class="my-4">
+    <Theme theme={appTheme}>
+      <TrashManager bind:items />
+    </Theme>
+  </Container>
+</UserPageLayout>
 
-      {#snippet empty()}
-        <EmptyPlaceholder text={$t('trash_no_results_message')} src={empty3Url} class="mx-auto mt-10" />
-      {/snippet}
-
-      {#snippet viewer()}
-        <Portal target="body">
-          {#if assetViewerManager.isViewing}
-            <TimelineAssetViewer bind:invisible={viewerInvisible} {timelineManager} />
-          {/if}
-        </Portal>
-      {/snippet}
-    </LibraryView>
-  </UserPageLayout>
+{#if assetViewerManager.isViewing && assetViewerManager.asset}
+  {#await import('$lib/components/asset-viewer/AssetViewer.svelte') then { default: AssetViewer }}
+    <Portal target="body">
+      <AssetViewer
+        {cursor}
+        showNavigation={items.length > 1}
+        {preAction}
+        {onAction}
+        onClose={closeViewer}
+        onAssetUpdate={(updatedAsset) => assetViewerManager.setAsset(updatedAsset)}
+      />
+    </Portal>
+  {/await}
 {/if}
