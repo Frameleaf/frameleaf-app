@@ -1,10 +1,11 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { describe } from 'vitest';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { mapUserAdmin } from 'src/dtos/user.dto.js';
 import { AssetVisibility, JobName, UserMetadataKey, UserStatus } from 'src/enum.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
 import { UserMetadataItem } from 'src/types.js';
+import { getPreferences, getPreferencesRevision } from 'src/utils/preferences.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -347,6 +348,69 @@ describe(UserAdminService.name, () => {
 
       await expect(sut.getPreferences(authStub.admin, userStub.user1.id)).resolves.toMatchObject({
         cast: { gCastEnabled: false, adminDisabled: true },
+      });
+    });
+  });
+
+  describe('updatePreferences (FL-77 account preferences editor)', () => {
+    const storedPreferences = (value: Record<string, unknown>) =>
+      [{ key: UserMetadataKey.Preferences, value }] as unknown as UserMetadataItem[];
+    const personId = 'c5f9f5a1-3b8d-4f6e-9a2b-0d1e2f3a4b5c';
+
+    beforeEach(() => {
+      mocks.user.upsertMetadata.mockResolvedValue();
+    });
+
+    it('should report a revision that a following save can send back', async () => {
+      const metadata = storedPreferences({ memories: { duration: 9 } });
+      mocks.user.getMetadata.mockResolvedValue(metadata);
+
+      const loaded = await sut.getPreferences(authStub.admin, userStub.user1.id);
+      expect(loaded.revision).toBe(getPreferencesRevision(getPreferences(metadata)));
+
+      const saved = await sut.updatePreferences(authStub.admin, userStub.user1.id, {
+        expectedRevision: loaded.revision,
+        download: { archiveSize: 1_234_567 },
+        people: { minimumFaces: 4 },
+      });
+      expect(saved).toMatchObject({ download: { archiveSize: 1_234_567 }, people: { minimumFaces: 4 } });
+      expect(saved.revision).not.toBe(loaded.revision);
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(userStub.user1.id, {
+        key: UserMetadataKey.Preferences,
+        value: { memories: { duration: 9 }, people: { minimumFaces: 4 }, download: { archiveSize: 1_234_567 } },
+      });
+    });
+
+    it('should reject a save made against preferences that changed since they were loaded', async () => {
+      const loaded = getPreferencesRevision(getPreferences([]));
+      mocks.user.getMetadata.mockResolvedValue(storedPreferences({ emailNotifications: { enabled: false } }));
+
+      await expect(
+        sut.updatePreferences(authStub.admin, userStub.user1.id, {
+          expectedRevision: loaded,
+          emailNotifications: { enabled: true },
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.user.upsertMetadata).not.toHaveBeenCalled();
+    });
+
+    it("should never show or rewrite the account's Locked choices", async () => {
+      mocks.user.getMetadata.mockResolvedValue(
+        storedPreferences({ privacy: { suppression: { personIds: [personId] } } }),
+      );
+
+      await expect(sut.getPreferences(authStub.admin, userStub.user1.id)).resolves.toMatchObject({
+        privacy: { suppression: { personIds: [], tagIds: [], petIds: [] } },
+      });
+
+      const saved = await sut.updatePreferences(authStub.admin, userStub.user1.id, {
+        privacy: { suppression: { personIds: [] } },
+        tags: { enabled: true },
+      });
+      expect(saved.privacy.suppression.personIds).toEqual([]);
+      expect(mocks.user.upsertMetadata).toHaveBeenCalledWith(userStub.user1.id, {
+        key: UserMetadataKey.Preferences,
+        value: { tags: { enabled: true }, privacy: { suppression: { personIds: [personId] } } },
       });
     });
   });

@@ -163,7 +163,7 @@ export class UserAdminService extends BaseService {
   async getPreferences(auth: AuthDto, id: string): Promise<UserPreferencesResponseDto> {
     await this.findOrFail(id, { withDeleted: true });
     const metadata = await this.userRepository.getMetadata(id);
-    return mapPreferences(getPreferences(metadata));
+    return mapPreferences(getPreferences(metadata), 'admin');
   }
 
   async updatePreferences(auth: AuthDto, id: string, dto: UserPreferencesUpdateDto) {
@@ -176,7 +176,7 @@ export class UserAdminService extends BaseService {
       value: getPreferencesPartial(newPreferences),
     });
 
-    return mapPreferences(newPreferences);
+    return mapPreferences(newPreferences, 'admin');
   }
 
   private findOrFail(id: string, options: UserFindOptions) {
