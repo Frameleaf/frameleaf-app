@@ -947,7 +947,9 @@ export class MediaOperationService {
       await this.preservation.resetFailedItems(found.id);
     }
 
-    const retried = await this.repository.create({
+    // Two requests racing past the check above meet at the one-active-retry index (FL-43): one
+    // inserts, the other is answered with the winner instead of a unique violation.
+    const { operation: retried, created } = await this.repository.createRetry({
       ownerId: operation.ownerId,
       kind: operation.kind,
       destination: operation.destination,
@@ -963,7 +965,9 @@ export class MediaOperationService {
       estimate: null,
       maxAttempts: operation.maxAttempts,
     });
-    this.logger.log(`Preservation job ${operation.id} retried as ${retried.id}`);
+    if (created) {
+      this.logger.log(`Preservation job ${operation.id} retried as ${retried.id}`);
+    }
     return this.present(auth, retried);
   }
 
