@@ -54,6 +54,7 @@ describe(classifyMigration, () => {
     expect(classifyMigration('2100000000500-AddVideoMomentFrameVectorIndex')).toBe('legacy-fork');
     expect(classifyMigration('2100000000510-AddPreservationPackages')).toBe('legacy-fork');
     expect(classifyMigration('2100000000530-ReconcileFrameleafSchemaSnapshots')).toBe('legacy-fork');
+    expect(classifyMigration('2100000000590-HardenMediaOperationRetryAndCheckpoints')).toBe('legacy-fork');
   });
 
   it('classifies migrations from a certified upstream tag', () => {
