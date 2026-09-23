@@ -20,6 +20,7 @@
    * re-request a render. Save version stores the recipe as a new revision and renders an
    * edited master on the server; the original file is never changed.
    */
+  import { goto } from '$app/navigation';
   import '$lib/frameleaf/tokens.css';
   import './editor.css';
   import { focusTrap } from '$lib/actions/focus-trap';
@@ -82,6 +83,7 @@
     type EditorRecipe,
   } from '$lib/frameleaf/editor-draft';
   import { isVideoAsset } from '$lib/frameleaf/viewer-media';
+  import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -98,7 +100,7 @@
     type AssetDevelopRevisionResponseDto,
     type AssetResponseDto,
   } from '@immich/sdk';
-  import { Icon, Theme as AppTheme, modalManager, themeManager, toastManager } from '@immich/ui';
+  import { Icon, Theme as AppTheme, themeManager, toastManager } from '@immich/ui';
   import {
     mdiAutoFix,
     mdiCheck,
@@ -114,6 +116,7 @@
     mdiHistory,
     mdiImageFilterVintage,
     mdiImageOutline,
+    mdiOpenInApp,
     mdiPlay,
     mdiRedo,
     mdiRestore,
@@ -462,18 +465,17 @@
   };
 
   /* Top bar actions ------------------------------------------------------- */
-  const cancel = async () => {
+  /** Cancel drops unsaved edits at once and says so, the way the prototype does; nothing was written. */
+  const discardAndClose = () => {
     if (dirty) {
-      const confirmed = await modalManager.showDialog({
-        title: $t('editor_discard_edits_title'),
-        prompt: $t('editor_discard_edits_prompt'),
-        confirmText: $t('editor_discard_edits_confirm'),
-      });
-      if (!confirmed) {
-        return;
-      }
+      toastManager.primary($t('frameleaf_editor_edits_discarded'));
     }
     onClose(saveChangedCurrent);
+  };
+  const cancel = () => discardAndClose();
+  const openStudio = () => {
+    discardAndClose();
+    void goto(Route.studio({ assetIds: [asset.id] }));
   };
   const revertDraft = () => change(initialRecipe());
   const copySettings = () => {
@@ -505,12 +507,44 @@
       opened = normalizeRecipe(recipe);
       announce = $t('frameleaf_editor_version_queued', { values: { revision: revision.revision } });
       toastManager.primary(announce);
-      follow();
+      followAfterClose(revision.id);
+      onClose(saveChangedCurrent);
     } catch (error) {
       handleError(error, $t('frameleaf_editor_save_error'));
     } finally {
       saving = false;
     }
+  };
+  /**
+   * Save version closes the editor (App.jsx `saveVersion`), so the render it queued is followed
+   * outside the component: this poller is not stopped on destroy, and it only announces the
+   * outcome of that one revision. The formatter is captured while still mounted.
+   */
+  const followAfterClose = (revisionId: string) => {
+    const translate = $t;
+    let stop = () => {};
+    stop = followDevelop(
+      asset.id,
+      (next) => {
+        const after = next.revisions.find((revision) => revision.id === revisionId);
+        if (!after || isRevisionBusy(after.status)) {
+          return;
+        }
+        stop();
+        if (after.status === AssetDevelopRevisionStatus.Rendered) {
+          toastManager.primary(
+            translate('frameleaf_editor_version_rendered', { values: { revision: after.revision } }),
+          );
+        } else if (after.status === AssetDevelopRevisionStatus.Failed) {
+          toastManager.danger(
+            translate('frameleaf_editor_version_failed', {
+              values: { revision: after.revision, error: after.error ?? '' },
+            }),
+          );
+        }
+      },
+      { onError: (error) => handleError(error, translate('frameleaf_editor_versions_error')) },
+    );
   };
   const cancelRender = async (revision: AssetDevelopRevisionResponseDto) => {
     try {
@@ -794,6 +828,15 @@
         >
           <Icon icon={mdiHistory} size="20" />
           <span>{$t('frameleaf_editor_tool_versions')}</span>
+        </button>
+        <button
+          type="button"
+          class="ed-tool labelled"
+          onclick={openStudio}
+          title={$t('frameleaf_editor_open_in_studio')}
+        >
+          <Icon icon={mdiOpenInApp} size="20" />
+          <span>{$t('frameleaf_editor_open_in_studio')}</span>
         </button>
         {#if busyRevision}
           <span class="ed-progress" role="status">

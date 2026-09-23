@@ -123,7 +123,7 @@
 
   let { asset = $bindable(), onClose }: Props = $props();
 
-  let selectedTool = $state<Tool>('auto');
+  let selectedTool = $state<Tool>('trim');
   let isSaving = $state(false);
   let isRendering = $state(false);
   let isLoading = $state(true);

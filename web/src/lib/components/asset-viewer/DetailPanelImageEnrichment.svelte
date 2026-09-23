@@ -47,7 +47,6 @@
   interface Props {
     asset: AssetResponseDto;
     isOwner: boolean;
-    isAdmin: boolean;
     onAssetRefresh?: (asset: AssetResponseDto) => void;
     onAssetSuppressed?: (asset: AssetResponseDto) => void | Promise<void>;
     /**
@@ -57,7 +56,7 @@
     onDescriptionReview?: (review: DescriptionReview | null) => void;
   }
 
-  let { asset, isOwner, isAdmin, onAssetRefresh, onAssetSuppressed, onDescriptionReview }: Props = $props();
+  let { asset, isOwner, onAssetRefresh, onAssetSuppressed, onDescriptionReview }: Props = $props();
 
   let enrichment = $state<AssetImageEnrichmentResponseDto>();
   let isLoading = $state(false);
@@ -65,7 +64,7 @@
   let activeAction = $state<AssetImageEnrichmentAction | 'accept-description' | null>(null);
   /** The last failure and the work that produced it, so the right recovery can be offered. */
   let failure = $state<{ kind: InlineEditFailure; run: () => Promise<void> } | null>(null);
-  let canReview = $derived(isOwner && isAdmin && asset.type === AssetTypeEnum.Image);
+  let canReview = $derived(isOwner && asset.type === AssetTypeEnum.Image);
   // Track the in-flight enrichment fetch so we can abort it when the user
   // swipes to a new asset before the previous request resolved.
   let enrichmentController: AbortController | undefined;

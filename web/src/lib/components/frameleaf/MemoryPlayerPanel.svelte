@@ -72,7 +72,6 @@
     Theme as AppTheme,
   } from '@immich/ui';
   import {
-    mdiCardsOutline,
     mdiChevronDown,
     mdiChevronLeft,
     mdiChevronRight,
@@ -602,24 +601,26 @@
 
             <div class="fmp-overlay" class:hidden={galleryInView}>
               <div class="fmp-overlay-top">
+                <!-- FL-83 (MPY-3): the heart favorites the item being shown; the memory's own
+                     saved flag is set from the index card. -->
                 <IconButton
-                  label={current.memory.isSaved ? $t('unfavorite') : $t('favorite')}
-                  pressed={current.memory.isSaved}
-                  onclick={() => memoryManager.toggleCurrentMemorySaved()}
+                  label={current.asset.isFavorite
+                    ? $t('frameleaf_memories_unfavorite_item')
+                    : $t('frameleaf_memories_favorite_item')}
+                  pressed={current.asset.isFavorite}
+                  onclick={() => memoryManager.toggleCurrentAssetFavorite()}
                 >
-                  <Icon icon={current.memory.isSaved ? mdiHeart : mdiHeartOutline} size={20} />
+                  <Icon icon={current.asset.isFavorite ? mdiHeart : mdiHeartOutline} size="20" />
                 </IconButton>
                 <IconButton label={$t('share')} onclick={openShare}>
                   <Icon icon={mdiShareVariantOutline} size={20} />
                 </IconButton>
-                <!-- Two direct actions rather than a dropdown: .fmp-main-inner clips overflow
-                     to contain the Ken Burns zoom, which would also clip an open popup menu
-                     positioned near this corner. -->
-                <IconButton label={$t('remove_photo_from_memory')} onclick={() => memoryManager.deleteCurrentAsset()}>
+                <!-- A direct action rather than a dropdown: .fmp-main-inner clips overflow to
+                     contain the Ken Burns zoom, which would also clip an open popup menu
+                     positioned near this corner. Removal is undoable from its toast (FL-83
+                     MPY-1); removing the whole memory belongs to the index (MPY-2). -->
+                <IconButton label={$t('remove_photo_from_memory')} onclick={() => memoryManager.removeCurrentAsset()}>
                   <Icon icon={mdiImageMinusOutline} size={20} />
-                </IconButton>
-                <IconButton label={$t('remove_memory')} onclick={() => memoryManager.deleteCurrentMemory()}>
-                  <Icon icon={mdiCardsOutline} size={20} />
                 </IconButton>
               </div>
 

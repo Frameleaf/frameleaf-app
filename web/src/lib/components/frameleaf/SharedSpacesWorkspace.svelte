@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
   import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
   import SharedSpaceInvitations from '$lib/components/frameleaf/SharedSpaceInvitations.svelte';
@@ -17,7 +18,7 @@
     handleCreateAlbumEntry,
     handleDeleteAlbum,
     handleDownloadAlbum,
-    handleRemoveUserFromAlbum,
+    handleLeaveAlbum,
   } from '$lib/services/album.service';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
   import {
@@ -70,6 +71,7 @@
 
   const currentUserId = $derived(authManager.user.id);
   let createOpen = $state(false);
+  let leaveDialog = $state<{ open: boolean; space?: AlbumResponseDto }>({ open: false });
   let busy = $state(false);
   let status = $state('');
 
@@ -110,9 +112,16 @@
     await refresh();
   };
 
-  const leave = async (space: AlbumResponseDto) => {
-    await handleRemoveUserFromAlbum(space, authManager.user);
-    status = $t('frameleaf_albums_moved_out', { values: { name: nameOf(space) } });
+  /** Leave confirms in the Frameleaf dialog with the leave copy, as the space's own header does. */
+  const confirmLeave = async () => {
+    const space = leaveDialog.space;
+    if (!space) {
+      return;
+    }
+    const left = await handleLeaveAlbum(space);
+    if (left) {
+      status = $t('frameleaf_albums_left', { values: { name: nameOf(space) } });
+    }
     await refresh();
   };
 
@@ -168,7 +177,7 @@
     {#if owner}
       <MenuOption icon={mdiDeleteOutline} text={$t('delete')} onClick={() => remove(space)} />
     {:else}
-      <MenuOption icon={mdiLogoutVariant} text={$t('leave')} onClick={() => leave(space)} />
+      <MenuOption icon={mdiLogoutVariant} text={$t('leave')} onClick={() => (leaveDialog = { open: true, space })} />
     {/if}
   </ButtonContextMenu>
 {/snippet}
@@ -231,6 +240,16 @@
 </section>
 
 <AlbumCreateDialog bind:open={createOpen} kind={AlbumKind.Space} collections={[]} onCreate={create} />
+
+{#if leaveDialog.space}
+  <AlbumConfirmDialog
+    title={$t('frameleaf_album_leave_title', { values: { name: nameOf(leaveDialog.space) } })}
+    body={$t('frameleaf_album_leave_body')}
+    confirmLabel={$t('frameleaf_album_leave', { values: { kind: $t('frameleaf_album_kind_space') } })}
+    bind:open={leaveDialog.open}
+    onConfirm={confirmLeave}
+  />
+{/if}
 
 <style>
   .spaces {

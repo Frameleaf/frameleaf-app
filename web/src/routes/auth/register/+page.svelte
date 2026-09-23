@@ -5,7 +5,9 @@
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
   import { signUpAdmin } from '@immich/sdk';
-  import { Alert, Button, Field, Input, PasswordInput, Text } from '@immich/ui';
+  import PasswordStrength from '$lib/components/frameleaf/PasswordStrength.svelte';
+  import { passwordStrength } from '$lib/frameleaf/password-strength';
+  import { Alert, Button, Field, Input, PasswordInput } from '@immich/ui';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
@@ -17,7 +19,9 @@
   let errorMessage = $derived(
     password === confirmPassword || confirmPassword.length === 0 ? '' : $t('password_does_not_match'),
   );
-  const valid = $derived(password === confirmPassword && confirmPassword.length > 0);
+  const valid = $derived(
+    passwordStrength(password).acceptable && password === confirmPassword && confirmPassword.length > 0,
+  );
 
   interface Props {
     data: PageData;
@@ -48,26 +52,24 @@
   };
 </script>
 
-<AuthPageLayout title={data.meta.title}>
+<AuthPageLayout title={$t('frameleaf_auth_register_title')} subtitle={$t('frameleaf_auth_register_subtitle')}>
   <form onsubmit={onSubmit} method="post" class="flex flex-col gap-4">
-    <Alert color="primary" class="mb-2">
-      <Text>{$t('admin.registration_description')}</Text>
-    </Alert>
-
-    <Field label={$t('admin_email')} required>
-      <Input bind:value={email} type="email" autocomplete="email" />
+    <Field label={$t('name')} required>
+      <Input bind:value={name} type="text" autocomplete="name" />
     </Field>
 
-    <Field label={$t('admin_password')} required>
+    <Field label={$t('email')} required>
+      <Input bind:value={email} type="email" autocomplete="username" />
+    </Field>
+
+    <Field label={$t('password')} required>
       <PasswordInput bind:value={password} autocomplete="new-password" />
     </Field>
 
-    <Field label={$t('confirm_admin_password')} required>
-      <PasswordInput bind:value={confirmPassword} autocomplete="new-password" />
-    </Field>
+    <PasswordStrength {password} />
 
-    <Field label={$t('name')} required>
-      <Input bind:value={name} type="text" autocomplete="name" />
+    <Field label={$t('confirm_password')} required>
+      <PasswordInput bind:value={confirmPassword} autocomplete="new-password" />
     </Field>
 
     {#if errorMessage}
@@ -75,7 +77,7 @@
     {/if}
 
     <Button class="mt-4" type="submit" size="giant" shape="round" fullWidth disabled={!valid || loading} {loading}
-      >{$t('sign_up')}</Button
+      >{$t('frameleaf_auth_create_account')}</Button
     >
   </form>
 </AuthPageLayout>
