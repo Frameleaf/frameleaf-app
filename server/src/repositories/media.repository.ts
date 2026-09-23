@@ -618,6 +618,12 @@ export class MediaRepository {
     return { width, height, isTransparent: hasAlpha };
   }
 
+  /** Width and height as the image is displayed, after its EXIF orientation (FL-64 imported versions). */
+  async getOrientedSize(input: string): Promise<ImageDimensions> {
+    const { width = 0, height = 0, orientation } = await sharp(input, { unlimited: true }).metadata();
+    return orientation && orientation >= 5 ? { width: height, height: width } : { width, height };
+  }
+
   async scoreThumbnailCandidate(input: string): Promise<number> {
     const stats = await sharp(input).stats();
     const channels = stats.channels.slice(0, 3);
