@@ -8,6 +8,7 @@
  * save made against preferences that changed since they were loaded and nothing is overwritten.
  */
 
+import { isHttpError, type UserPreferencesResponseDto, type UserPreferencesUpdateDto } from '@immich/sdk';
 import {
   ALL_PREFERENCE_KEYS,
   createDefaultDraft,
@@ -27,7 +28,6 @@ import {
   type AccountPreferencesValidationError,
 } from '$lib/frameleaf/account-preferences';
 import { getServerErrorMessage } from '$lib/utils/handle-error';
-import { isHttpError, type UserPreferencesResponseDto, type UserPreferencesUpdateDto } from '@immich/sdk';
 
 export type AccountPreferencesError =
   | { code: AccountPreferencesValidationError }
