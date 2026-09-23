@@ -27,7 +27,9 @@ export class StackService extends BaseService {
 
     const stack = await this.stackRepository.create({ ownerId: auth.user.id }, dto.assetIds);
     // a stack that holds a Locked photo became Locked as a whole (FL-53)
-    await this.afterAssetsLocked(dto.assetIds);
+    if (stack.lockedAssetIds.length > 0) {
+      await this.afterAssetsLocked(stack.lockedAssetIds);
+    }
 
     await this.eventRepository.emit('StackCreate', { stackId: stack.id, userId: auth.user.id });
 
