@@ -391,9 +391,22 @@ describe(RestorationWorkerService.name, () => {
       expect(restorations.transition).not.toHaveBeenCalled();
     });
 
+    it('requeues at once when the owner resumed before the pause landed (FL-104)', async () => {
+      operations.reportProgress.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+      operations.getForOwner.mockResolvedValue(operation({ status: MediaOperationStatus.Rendering }));
+
+      await sut.run(operation(), CLAIM);
+
+      expect(operations.settlePause).not.toHaveBeenCalled();
+      expect(operations.requeue).toHaveBeenCalledWith(OPERATION_ID, CLAIM, { delayMs: 0 });
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
+
     it('leaves a lost lease to recovery: no failure, no cancel, the row stays running', async () => {
       operations.reportProgress.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
       operations.getForOwner.mockResolvedValue(operation({ status: MediaOperationStatus.Queued, claimToken: null }));
+      // The claim is gone, so handing it back matches nothing.
+      operations.requeue.mockResolvedValueOnce(false);
 
       await sut.run(operation(), CLAIM);
 
