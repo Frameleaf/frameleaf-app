@@ -109,8 +109,10 @@ export type BulkActionContext = {
   trash?: boolean;
   /**
    * True on the Locked destination. Locked browsing is its own, elevated context: the items are
-   * deliberately out of the library, so the sharing and organizing actions are not offered and the
-   * only removal is the permanent one, exactly as the legacy locked select bar behaved.
+   * deliberately out of the library, so the sharing actions are not offered and the only removal is
+   * the permanent one, exactly as the legacy locked select bar behaved. Adding to an album is
+   * offered (owner decision, September 22, 2026): the items keep their Locked visibility and the
+   * album hides them outside the owner's unlocked session.
    */
   locked?: boolean;
   /**
@@ -215,7 +217,10 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       group: 'primary',
       undoable: true,
       dialog: true,
-      available: live && has,
+      // The Locked folder is only open in an unlocked session, and an unlocked person may put Locked
+      // items in an album (owner decision, September 22, 2026). The items stay Locked; the album
+      // hides them from anyone who is not the owner in an unlocked session.
+      available: !readOnly && (live || locked) && has,
     },
     {
       id: 'create-shared-link',
@@ -454,6 +459,7 @@ export const PRIMARY_BULK_ACTIONS: readonly BulkActionId[] = [
 export const TRASH_PRIMARY_BULK_ACTIONS: readonly BulkActionId[] = ['restore', 'download', 'delete-permanently'];
 export const LOCKED_PRIMARY_BULK_ACTIONS: readonly BulkActionId[] = [
   'remove-from-locked',
+  'add-to-album',
   'download',
   'delete-permanently',
 ];
