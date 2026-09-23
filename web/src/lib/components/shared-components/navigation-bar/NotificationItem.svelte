@@ -2,6 +2,7 @@
   import { NotificationLevel, NotificationType, type NotificationDto } from '@immich/sdk';
   import { IconButton, Stack, Text } from '@immich/ui';
   import {
+    mdiAt,
     mdiBackupRestore,
     mdiImageAlbum,
     mdiImagePlus,
@@ -76,6 +77,10 @@
 
       case NotificationType.AlbumUpdate: {
         return mdiImagePlus;
+      }
+
+      case NotificationType.SharedSpaceMention: {
+        return mdiAt;
       }
 
       default: {

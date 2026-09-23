@@ -1,9 +1,10 @@
-import { AlbumKind, AlbumUserRole, type SharedSpaceMemberResponseDto } from '@immich/sdk';
+import { AlbumKind, AlbumUserRole, SharedSpaceEventType, type SharedSpaceMemberResponseDto } from '@immich/sdk';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { personFactory } from '@test-data/factories/person-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import { describe, expect, it } from 'vitest';
 import {
+  activityUnreadHint,
   addSourceOptions,
   alreadyInvolvedIds,
   canContribute,
@@ -12,11 +13,16 @@ import {
   defaultSpacePersonName,
   filterToNew,
   hasNewSinceVisit,
+  insertMention,
+  isNewSpaceEvent,
   isSpace,
   isSpaceOwner,
   isSpacePanel,
   linkableAlbums,
   linkedAlbumIsEmpty,
+  mentionCandidates,
+  mentionQueryAt,
+  mentionToken,
   newSinceFilter,
   newSinceIsPartial,
   newSinceMessageKey,
@@ -25,9 +31,11 @@ import {
   shouldPageForNew,
   sortMembers,
   spaceAddScope,
+  spaceEventMessageKey,
   spaceOwner,
   spacePersonCandidates,
   spaceRole,
+  splitMentions,
   SPACE_PANELS,
   SPACE_ROLE_OPTIONS,
 } from '$lib/frameleaf/shared-space';
@@ -231,5 +239,90 @@ describe('people in a shared space', () => {
     const shown = personFactory.build({ id: 'shown', isHidden: false });
     const hidden = personFactory.build({ id: 'hidden', isHidden: true });
     expect(spacePersonCandidates([shown, hidden]).map(({ id }) => id)).toEqual(['shown']);
+  });
+});
+
+describe('comments, mentions and the activity feed', () => {
+  const adaId = '11111111-1111-4111-8111-111111111111';
+  const boId = '22222222-2222-4222-8222-222222222222';
+  const goneId = '33333333-3333-4333-8333-333333333333';
+  const ada = userAdminFactory.build({ id: adaId, name: 'Ada', email: 'ada@example.com' });
+  const bo = userAdminFactory.build({ id: boId, name: 'Bo', email: 'bo@example.com' });
+  const invited = userAdminFactory.build({ id: goneId, name: 'Cy', email: 'cy@example.com' });
+  const roster: SharedSpaceMemberResponseDto[] = [
+    { user: ada, role: AlbumUserRole.Owner, pending: false },
+    { user: bo, role: AlbumUserRole.Editor, pending: false },
+    { user: invited, role: AlbumUserRole.Viewer, pending: true },
+  ];
+
+  it('renders mention tokens as names, and a token nobody matches as a mention with no user', () => {
+    const segments = splitMentions(`Look ${mentionToken(adaId)}! And ${mentionToken(goneId.toUpperCase())}`, [ada, bo]);
+
+    expect(segments).toEqual([
+      { kind: 'text', text: 'Look ' },
+      { kind: 'mention', userId: adaId, user: ada },
+      { kind: 'text', text: '! And ' },
+      { kind: 'mention', userId: goneId, user: null },
+    ]);
+  });
+
+  it('sees an @name being typed only at the start or after whitespace, and never inside a word', () => {
+    expect(mentionQueryAt('hello @b', 8)).toEqual({ start: 6, query: 'b' });
+    expect(mentionQueryAt('@', 1)).toEqual({ start: 0, query: '' });
+    expect(mentionQueryAt('mail me at ada@example', 22)).toBeNull();
+    expect(mentionQueryAt('hello @ bo', 10)).toBeNull();
+    // Only what is before the caret counts.
+    expect(mentionQueryAt('hello @bo later', 9)).toEqual({ start: 6, query: 'bo' });
+  });
+
+  it('replaces the typed @name with the member’s token and puts the caret after it', () => {
+    const text = 'hello @b there';
+    const at = mentionQueryAt(text, 8)!;
+
+    expect(insertMention(text, at, 8, boId)).toEqual({
+      text: `hello ${mentionToken(boId)}  there`,
+      caret: 6 + mentionToken(boId).length + 1,
+    });
+  });
+
+  it('offers only members who have joined, other than the author, matched on name or email', () => {
+    expect(mentionCandidates(roster, '', adaId).map(({ user }) => user.id)).toEqual([boId]);
+    expect(mentionCandidates(roster, 'AD').map(({ user }) => user.id)).toEqual([adaId]);
+    expect(mentionCandidates(roster, 'bo@').map(({ user }) => user.id)).toEqual([boId]);
+    // An invitee is not a member yet, so they are not offered even by name.
+    expect(mentionCandidates(roster, 'cy')).toEqual([]);
+  });
+
+  it('calls an event news when somebody else did it after the marker', () => {
+    const later = { actor: bo, createdAt: '2026-09-21T00:00:00.000Z' };
+    const earlier = { actor: bo, createdAt: '2026-09-19T00:00:00.000Z' };
+    const marker = '2026-09-20T00:00:00.000Z';
+
+    expect(isNewSpaceEvent(later, adaId, marker)).toBe(true);
+    expect(isNewSpaceEvent(earlier, adaId, marker)).toBe(false);
+    expect(isNewSpaceEvent(later, boId, marker)).toBe(false);
+    expect(isNewSpaceEvent(earlier, adaId, null)).toBe(true);
+    expect(isNewSpaceEvent({ actor: null, createdAt: later.createdAt }, adaId, marker)).toBe(true);
+  });
+
+  it('tells a comment or like on an item apart from one on the space', () => {
+    expect(spaceEventMessageKey({ type: SharedSpaceEventType.Comment, assetCount: 1 })).toBe(
+      'frameleaf_spaces_activity_comment_item',
+    );
+    expect(spaceEventMessageKey({ type: SharedSpaceEventType.Comment, assetCount: 0 })).toBe(
+      'frameleaf_spaces_activity_comment_space',
+    );
+    expect(spaceEventMessageKey({ type: SharedSpaceEventType.Like, assetCount: 0 })).toBe(
+      'frameleaf_spaces_activity_like_space',
+    );
+    expect(spaceEventMessageKey({ type: SharedSpaceEventType.MemberRoleChanged, assetCount: 0 })).toBe(
+      'frameleaf_spaces_activity_member_role',
+    );
+  });
+
+  it('shows a count beside Activity only when something is new', () => {
+    expect(activityUnreadHint({ unreadCount: 3 })).toBe('3');
+    expect(activityUnreadHint({ unreadCount: 0 })).toBeUndefined();
+    expect(activityUnreadHint(null)).toBeUndefined();
   });
 });
