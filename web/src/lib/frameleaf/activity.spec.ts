@@ -146,6 +146,25 @@ describe('fromMediaOperation', () => {
     expect(item.error).toBe('The worker stopped responding');
   });
 
+  it.each(Object.values(MediaOperationKind))(
+    'reads a %s job waiting for its automatic retry as retrying, like every other kind (FL-104)',
+    (kind) => {
+      const item = fromMediaOperation(
+        operation({
+          kind,
+          status: MediaOperationStatus.Queued,
+          autoRetries: 1,
+          retryAt: '2026-09-22T10:00:30.000Z',
+          error: 'Could not finish',
+          errorCode: 'failed_once',
+        }),
+      );
+
+      expect(item.statusKey).toBe('frameleaf_activity_status_retrying');
+      expect(item.tone).toBe('warning');
+    },
+  );
+
   it('reads a fresh queued job as queued', () => {
     expect(fromMediaOperation(operation({ status: MediaOperationStatus.Queued })).statusKey).toBe(
       'frameleaf_activity_status_queued',
