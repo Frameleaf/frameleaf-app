@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { ExpressionBuilder, Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { SyncAck } from 'src/types.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -74,6 +74,14 @@ const syncChecksum = () =>
     (select checksum.sha1 from immich_fork.asset_checksum checksum where checksum."assetId" = asset.id),
     asset.checksum
   )`.as('checksum');
+
+/**
+ * An album stream never carries another member's Locked media (owner decision, September 22, 2026):
+ * the album keeps the item, but only its owner's own devices learn of it — not its id, file name,
+ * thumbhash, checksum or exif. Applied to every album-asset and album-to-asset stream.
+ */
+const albumAssetVisibleTo = (userId: string) => (eb: ExpressionBuilder<DB, 'asset'>) =>
+  eb.or([eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)), eb('asset.ownerId', '=', userId)]);
 
 const syncAssetColumns = columns.syncAsset.filter(
   (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId',
@@ -274,6 +282,7 @@ class AlbumAssetSync extends BaseSync {
       .select('album_asset.updateId')
       .where('album_asset.albumId', '=', albumId)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .where(albumAssetVisibleTo(userId))
       .stream();
   }
 
@@ -297,6 +306,7 @@ class AlbumAssetSync extends BaseSync {
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .where(albumAssetVisibleTo(userId))
       .stream();
   }
 
@@ -319,13 +329,14 @@ class AlbumAssetSync extends BaseSync {
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .where(albumAssetVisibleTo(userId))
       .stream();
   }
 }
 
 class AlbumAssetExifSync extends BaseSync {
-  @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID], stream: true })
-  getBackfill(options: SyncBackfillOptions, albumId: string) {
+  @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID, DummyValue.UUID], stream: true })
+  getBackfill(options: SyncBackfillOptions, albumId: string, userId: string) {
     return this.backfillQuery('album_asset', options)
       .innerJoin('asset_exif', 'asset_exif.assetId', 'album_asset.assetId')
       .innerJoin('asset', 'asset.id', 'album_asset.assetId')
@@ -333,6 +344,7 @@ class AlbumAssetExifSync extends BaseSync {
       .select('album_asset.updateId')
       .where('album_asset.albumId', '=', albumId)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .where(albumAssetVisibleTo(userId))
       .stream();
   }
 
@@ -348,6 +360,7 @@ class AlbumAssetExifSync extends BaseSync {
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .where(albumAssetVisibleTo(options.userId))
       .stream();
   }
 
@@ -363,18 +376,20 @@ class AlbumAssetExifSync extends BaseSync {
       .leftJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .where(albumAssetVisibleTo(options.userId))
       .stream();
   }
 }
 
 class AlbumToAssetSync extends BaseSync {
-  @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID], stream: true })
-  getBackfill(options: SyncBackfillOptions, albumId: string) {
+  @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID, DummyValue.UUID], stream: true })
+  getBackfill(options: SyncBackfillOptions, albumId: string, userId: string) {
     return this.backfillQuery('album_asset', options)
       .innerJoin('asset', 'asset.id', 'album_asset.assetId')
       .select(['album_asset.assetId as assetId', 'album_asset.albumId as albumId', 'album_asset.updateId'])
       .where('album_asset.albumId', '=', albumId)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .where(albumAssetVisibleTo(userId))
       .stream();
   }
 
@@ -408,6 +423,7 @@ class AlbumToAssetSync extends BaseSync {
       .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
       .where('album_user.userId', '=', userId)
       .$call((qb) => withHiddenContentFilter(qb, options))
+      .where(albumAssetVisibleTo(userId))
       .stream();
   }
 }
