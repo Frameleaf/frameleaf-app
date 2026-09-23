@@ -10970,7 +10970,7 @@ export function createMemoryExport({ id, memoryExportCreateDto }: {
 /**
  * List machine-learning destinations
  */
-export function list2(opts?: Oazapfts.RequestOpts) {
+export function listMlDestinations(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: MlDestinationResponseDto[];
@@ -10981,7 +10981,7 @@ export function list2(opts?: Oazapfts.RequestOpts) {
 /**
  * Create a machine-learning destination
  */
-export function create({ mlDestinationCreateDto }: {
+export function createMlDestination({ mlDestinationCreateDto }: {
     mlDestinationCreateDto: MlDestinationCreateDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -10996,7 +10996,7 @@ export function create({ mlDestinationCreateDto }: {
 /**
  * Get machine-learning capabilities
  */
-export function getCapabilities(opts?: Oazapfts.RequestOpts) {
+export function getMlCapabilities(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: MlCapabilitiesResponseDto;
@@ -11007,7 +11007,7 @@ export function getCapabilities(opts?: Oazapfts.RequestOpts) {
 /**
  * List workload routes
  */
-export function getRoutes(opts?: Oazapfts.RequestOpts) {
+export function getMlWorkloadRoutes(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: MlWorkloadRoutesResponseDto;
@@ -11018,7 +11018,7 @@ export function getRoutes(opts?: Oazapfts.RequestOpts) {
 /**
  * Route a workload
  */
-export function setRoute({ workload, mlWorkloadRouteUpdateDto }: {
+export function setMlWorkloadRoute({ workload, mlWorkloadRouteUpdateDto }: {
     workload: MlWorkload;
     mlWorkloadRouteUpdateDto: MlWorkloadRouteUpdateDto;
 }, opts?: Oazapfts.RequestOpts) {
@@ -11034,7 +11034,7 @@ export function setRoute({ workload, mlWorkloadRouteUpdateDto }: {
 /**
  * Delete a machine-learning destination
  */
-export function deleteMlDestinationsById({ id }: {
+export function deleteMlDestination({ id }: {
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchText(`/ml-destinations/${encodeURIComponent(id)}`, {
@@ -11045,7 +11045,7 @@ export function deleteMlDestinationsById({ id }: {
 /**
  * Get a machine-learning destination
  */
-export function getMlDestinationsById({ id }: {
+export function getMlDestination({ id }: {
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -11058,7 +11058,7 @@ export function getMlDestinationsById({ id }: {
 /**
  * Update a machine-learning destination
  */
-export function update({ id, mlDestinationUpdateDto }: {
+export function updateMlDestination({ id, mlDestinationUpdateDto }: {
     id: string;
     mlDestinationUpdateDto: MlDestinationUpdateDto;
 }, opts?: Oazapfts.RequestOpts) {
@@ -11074,7 +11074,7 @@ export function update({ id, mlDestinationUpdateDto }: {
 /**
  * Admit a workload on a destination
  */
-export function admit({ id, mlAdmissionRequestDto }: {
+export function admitMlDestination({ id, mlAdmissionRequestDto }: {
     id: string;
     mlAdmissionRequestDto: MlAdmissionRequestDto;
 }, opts?: Oazapfts.RequestOpts) {
@@ -11090,7 +11090,7 @@ export function admit({ id, mlAdmissionRequestDto }: {
 /**
  * Revoke consent for a cloud destination
  */
-export function revokeConsent({ id }: {
+export function revokeMlDestinationConsent({ id }: {
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -11104,7 +11104,7 @@ export function revokeConsent({ id }: {
 /**
  * Record consent for a cloud destination
  */
-export function grantConsent({ id, mlDestinationConsentRequestDto }: {
+export function grantMlDestinationConsent({ id, mlDestinationConsentRequestDto }: {
     id: string;
     mlDestinationConsentRequestDto: MlDestinationConsentRequestDto;
 }, opts?: Oazapfts.RequestOpts) {
@@ -11120,7 +11120,7 @@ export function grantConsent({ id, mlDestinationConsentRequestDto }: {
 /**
  * Probe a machine-learning destination
  */
-export function probe({ id }: {
+export function probeMlDestination({ id }: {
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
