@@ -156,7 +156,10 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
     {
       id: 'spaces',
       labelKey: 'frameleaf_shared_spaces',
-      destinations: [destination('sharing', 'sharing', mdiAccountMultipleOutline, Route.sharing())],
+      // The workspace at Route.sharing() (FL-55) lists every shared space and the
+      // account's partners; each space also gets its own entry below, rendered from
+      // `tree.spaces` the same way collections and albums are.
+      destinations: [destination('sharing', 'frameleaf_spaces_all', mdiAccountMultipleOutline, Route.sharing())],
     },
     {
       id: 'explore',
