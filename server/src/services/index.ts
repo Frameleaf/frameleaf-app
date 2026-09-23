@@ -1,5 +1,6 @@
 import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumService } from 'src/services/album.service.js';
+import { AnalyticsService } from 'src/services/analytics.service.js';
 import { ApiKeyService } from 'src/services/api-key.service.js';
 import { ApiService } from 'src/services/api.service.js';
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
@@ -9,7 +10,6 @@ import { AssetRestorationService } from 'src/services/asset-restoration.service.
 import { AssetService } from 'src/services/asset.service.js';
 import { AuthAdminService } from 'src/services/auth-admin.service.js';
 import { AuthService } from 'src/services/auth.service.js';
-import { AnalyticsService } from 'src/services/analytics.service.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
 import { BulkOperationService } from 'src/services/bulk-operation.service.js';
 import { CliService } from 'src/services/cli.service.js';
