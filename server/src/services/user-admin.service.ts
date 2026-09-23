@@ -188,6 +188,10 @@ export class UserAdminService extends BaseService {
     const status = force ? UserStatus.Removing : UserStatus.Deleted;
     const user = await this.userRepository.update(id, { status, deletedAt: new Date() });
 
+    // FL-76: deleting an account signs out its devices, as the delete dialog says, so a restored
+    // account signs in again rather than resuming the sessions it had before
+    await this.sessionRepository.invalidateAll({ userId: id });
+
     await this.eventRepository.emit('UserTrash', user);
 
     if (force) {
