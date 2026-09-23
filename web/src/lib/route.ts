@@ -216,13 +216,12 @@ export const Route = {
   missingMediaUtility: (params?: { status?: MediaHealthStatus }) => utilitiesUrl('missing-media', params),
   corruptMediaUtility: (params?: { status?: MediaHealthStatus }) => utilitiesUrl('corrupt-media', params),
 
-
   downloadsUtility: () => utilitiesUrl('downloads'),
   obtainiumUtility: () => utilitiesUrl('obtainium'),
 
   // workflows
-  workflows: () => '/workflows',
-  viewWorkflow: ({ id }: { id: string }) => `/workflows/${id}`,
+  workflows: () => utilitiesUrl('workflows'),
+  viewWorkflow: ({ id }: { id: string }) => utilitiesUrl('workflows', { workflowId: id }),
 
   // render workers
   renderWorkers: () => '/admin/render-workers',

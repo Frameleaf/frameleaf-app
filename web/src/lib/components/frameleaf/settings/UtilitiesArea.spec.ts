@@ -4,10 +4,29 @@ import { addMessages } from 'svelte-i18n';
 import { SvelteURL } from 'svelte/reactivity';
 import UtilitiesArea from '$lib/components/frameleaf/settings/UtilitiesArea.svelte';
 import en from '../../../../../../i18n/en.json';
-const state = vi.hoisted(() => ({ url: new URL('http://localhost/user-settings?area=utilities'), user: { id: 'me', isAdmin: false }, load: vi.fn(), goto: vi.fn() }));
-vi.mock('$app/state', () => ({ page: { get url() { return state.url; } } }));
+
+const state = vi.hoisted(() => ({
+  url: new URL('http://localhost/user-settings?area=utilities'),
+  user: { id: 'me', isAdmin: false },
+  load: vi.fn(),
+  goto: vi.fn(),
+}));
+vi.mock('$app/state', () => ({
+  page: {
+    get url() {
+      return state.url;
+    },
+  },
+}));
 vi.mock('$app/navigation', () => ({ goto: state.goto }));
-vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { get user() { return state.user; }, params: {} } }));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({
+  authManager: {
+    get user() {
+      return state.user;
+    },
+    params: {},
+  },
+}));
 vi.mock('$lib/frameleaf/utilities-load', () => ({ loadUtility: state.load }));
 
 describe('Utilities area', () => {
@@ -21,7 +40,9 @@ describe('Utilities area', () => {
   it('renders prototype grouped cards without loading a tool', async () => {
     render(UtilitiesArea);
     expect(screen.getByRole('heading', { name: 'Utilities' })).toBeInTheDocument();
-    for (const name of ['Organize', 'Repair', 'Import', 'Automate', 'Connect']) expect(screen.getByRole('heading', { name })).toBeInTheDocument();
+    for (const name of ['Organize', 'Repair', 'Import', 'Automate', 'Connect']) {
+      expect(screen.getByRole('heading', { name })).toBeInTheDocument();
+    }
     expect(screen.queryByRole('button', { name: /Missing media/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Mobile applications/ })).toBeInTheDocument();
     expect(state.load).not.toHaveBeenCalled();
@@ -33,7 +54,10 @@ describe('Utilities area', () => {
     state.url = new SvelteURL('http://localhost/admin/system-settings?area=utilities');
     render(UtilitiesArea);
     await userEvent.click(screen.getByRole('button', { name: /Missing media/ }));
-    expect(state.goto).toHaveBeenCalledWith('/admin/system-settings?area=utilities&section=missing-media', expect.any(Object));
+    expect(state.goto).toHaveBeenCalledWith(
+      '/admin/system-settings?area=utilities&section=missing-media',
+      expect.any(Object),
+    );
   });
   it('rejects a direct non-admin health tool selection without loading it', () => {
     state.url.searchParams.set('section', 'corrupt-media');
@@ -45,7 +69,7 @@ describe('Utilities area', () => {
     state.url.searchParams.set('section', 'duplicates');
     state.load.mockRejectedValue(new Error('offline'));
     render(UtilitiesArea);
-    expect(screen.getByRole('button', { name: 'Utilities', exact: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Utilities' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not load this tool'));
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(state.load).toHaveBeenCalledTimes(2));

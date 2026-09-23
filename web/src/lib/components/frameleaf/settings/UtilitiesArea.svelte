@@ -1,6 +1,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import ApplicationSetup from '$lib/components/frameleaf/ApplicationSetup.svelte';
+  import WorkflowsPanel from '$lib/components/frameleaf/WorkflowsPanel.svelte';
   import DuplicateUtility from '$lib/components/frameleaf/DuplicateUtility.svelte';
   import LargeFilesUtility from '$lib/components/frameleaf/LargeFilesUtility.svelte';
   import LivePhotosUtility from '$lib/components/frameleaf/LivePhotosUtility.svelte';
@@ -36,16 +38,24 @@
     void retry;
     data = null;
     failed = false;
-    if (!tool || (tool.adminOnly && !isAdmin) || query.trim()) return;
+    if (!tool || (tool.adminOnly && !isAdmin) || query.trim()) {
+      return;
+    }
     let active = true;
     const url = untrack(() => new URL(page.url));
-    if (status) url.searchParams.set('status', status);
+    if (status) {
+      url.searchParams.set('status', status);
+    }
     void loadUtility(tool.id, url, isAdmin)
       .then((result) => {
-        if (active) data = result;
+        if (active) {
+          data = result;
+        }
       })
       .catch(() => {
-        if (active) failed = true;
+        if (active) {
+          failed = true;
+        }
       });
     return () => {
       active = false;
@@ -55,8 +65,12 @@
   const select = (section?: UtilityId) => {
     onNavigate?.();
     const url = new URL(page.url);
-    for (const key of ['section', 'assetId', 'status', 'at', 'index']) url.searchParams.delete(key);
-    if (section) url.searchParams.set('section', section);
+    for (const key of ['section', 'assetId', 'status', 'at', 'index', 'workflowId']) {
+      url.searchParams.delete(key);
+    }
+    if (section) {
+      url.searchParams.set('section', section);
+    }
     return goto(`${url.pathname}${url.search}`, { noScroll: true, keepFocus: true });
   };
 </script>
@@ -114,6 +128,19 @@
       {:else if data.tool === 'large-files'}<LargeFilesUtility {data} />
       {:else if data.tool === 'live-photos'}<LivePhotosUtility {data} />
       {:else if data.tool === 'geolocation'}<GeolocationUtility />
+      {:else if data.tool === 'workflows'}
+        {#key page.url.searchParams.get('workflowId')}
+          <WorkflowsPanel
+            openId={page.url.searchParams.get('workflowId') ?? undefined}
+            onOpenClosed={() => {
+              const url = new URL(page.url);
+              url.searchParams.delete('workflowId');
+              void goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true });
+            }}
+          />
+        {/key}
+      {:else if data.tool === 'downloads' || data.tool === 'obtainium'}
+        <ApplicationSetup tool={data.tool} />
       {:else if data.tool === 'icloud'}<ICloudSyncPanel initial={data.initial} />
       {:else if data.tool === 'missing-media' || data.tool === 'corrupt-media'}
         <LibraryCareHealth

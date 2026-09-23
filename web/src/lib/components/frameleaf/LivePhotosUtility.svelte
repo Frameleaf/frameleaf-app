@@ -15,12 +15,13 @@
   import BulkFormDialog from '$lib/components/frameleaf/BulkFormDialog.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import TileJobState from '$lib/components/frameleaf/TileJobState.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { AssetMediaSize, LivePhotoMatchConfidence, type LivePhotoCandidateDto } from '@immich/sdk';
-  import { Icon, Text } from '@immich/ui';
+  import { Icon } from '@immich/ui';
   import { mdiPlayCircleOutline } from '@mdi/js';
   import { t, type Translations } from 'svelte-i18n';
   import type { UtilityData } from '$lib/frameleaf/utilities-load';
@@ -45,10 +46,26 @@
 
   const bulk = new BulkController({ dispatch: () => {} });
 
-  const pairKey = (candidate: LivePhotoCandidateDto) => `${candidate.photo.id}:${candidate.video.id}`;
-  const highConfidence = $derived(
-    candidates.filter((candidate) => candidate.confidence === LivePhotoMatchConfidence.High),
+  let query = $state('');
+  let account = $state('all');
+  let show = $state('open');
+  const ownerName = (candidate: LivePhotoCandidateDto) =>
+    candidate.photo.ownerId === authManager.user.id
+      ? authManager.user.name
+      : (candidate.photo.owner?.name ?? $t('frameleaf_large_files_other_account'));
+  const owners = $derived([...new Map(candidates.map((candidate) => [candidate.photo.ownerId, ownerName(candidate)]))]);
+  const rows = $derived(
+    candidates.filter(
+      (candidate) =>
+        (account === 'all' || candidate.photo.ownerId === account) &&
+        (show === 'all' || !candidate.photo.isTrashed) &&
+        `${candidate.photo.originalFileName} ${candidate.video.originalFileName} ${ownerName(candidate)}`
+          .toLowerCase()
+          .includes(query.trim().toLowerCase()),
+    ),
   );
+  const pairKey = (candidate: LivePhotoCandidateDto) => `${candidate.photo.id}:${candidate.video.id}`;
+  const highConfidence = $derived(rows.filter((candidate) => candidate.confidence === LivePhotoMatchConfidence.High));
 
   // Reconcile a durable job's answers into the page's own state: a pair that settled successfully
   // leaves the list, a refusal is reported and kept, and a pending pair keeps its tile loader. This
@@ -128,8 +145,29 @@
 </script>
 
 <div class="live-photos-tool">
+  <div class="scope-controls">
+    <label
+      >{$t('account')}<select bind:value={account}>
+        <option value="all">{$t('frameleaf_large_files_all_accounts')}</option>
+        {#each owners as [id, name] (id)}<option value={id}>{name}</option>{/each}
+      </select></label
+    >
+    <label
+      >{$t('frameleaf_utilities_find_items')}<input
+        type="search"
+        bind:value={query}
+        placeholder={$t('filename')}
+      /></label
+    >
+    <label
+      >{$t('frameleaf_large_files_show')}<select bind:value={show}>
+        <option value="open">{$t('frameleaf_large_files_show_open')}</option>
+        <option value="all">{$t('frameleaf_large_files_show_all')}</option>
+      </select></label
+    >
+  </div>
   <div class="toolbar">
-    <span>{$t('frameleaf_utilities_candidate_pairs', { values: { count: candidates.length } })}</span>
+    <span>{$t('frameleaf_utilities_candidate_pairs', { values: { count: rows.length } })}</span>
     <ToolButton
       variant="primary"
       disabled={bulk.busy || highConfidence.length === 0}
@@ -137,7 +175,7 @@
     >
   </div>
   <div class="pairs">
-    {#each candidates as candidate (pairKey(candidate))}
+    {#each rows as candidate (pairKey(candidate))}
       {@const pending = pendingPhotoIds.has(candidate.photo.id)}
       {@const failure = failureReasons.get(candidate.photo.id)}
       <article>
@@ -156,7 +194,7 @@
         </div>
         <div class="evidence">
           <strong>{candidate.photo.originalFileName}</strong>
-          <small>{candidate.video.originalFileName}</small>
+          <small>{candidate.video.originalFileName} · {ownerName(candidate)}</small>
           <p>{candidate.matchReason}</p>
           <span class="badge" class:warning={candidate.confidence === LivePhotoMatchConfidence.Low}
             >{$t(
@@ -182,7 +220,7 @@
       </article>
     {/each}
   </div>
-  {#if candidates.length === 0}<p class="empty">{$t('live_photos_no_candidates')}</p>{/if}
+  {#if rows.length === 0}<p class="empty">{$t('live_photos_no_candidates')}</p>{/if}
 </div>
 
 {#if inspect}
@@ -249,6 +287,33 @@
 {/if}
 
 <style>
+  .scope-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  .scope-controls label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4375rem;
+    color: var(--fl-muted);
+    font-size: 0.6875rem;
+  }
+  .scope-controls input,
+  .scope-controls select {
+    min-height: 2.125rem;
+    padding: 0.5rem 0.625rem;
+    border: 1px solid var(--fl-border);
+    border-radius: 0.1875rem;
+    background: var(--fl-canvas);
+    color: var(--fl-text);
+  }
+  .scope-controls input:focus-visible,
+  .scope-controls select:focus-visible {
+    outline: 2px solid var(--fl-accent);
+  }
+
   .toolbar {
     display: flex;
     align-items: center;

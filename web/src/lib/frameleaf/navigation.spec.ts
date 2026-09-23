@@ -128,6 +128,17 @@ describe('Frameleaf rail destinations', () => {
     expect(isDestinationCurrent(Route.favorites(), library)).toBe(false);
   });
 
+  it('distinguishes utilities, workflows, Care and personal settings on their shared pathname', () => {
+    const destinations = (['settings', 'libraryCare', 'workflows'] as const).map((id) => find(allCapabilities(), id)!);
+    const active = (url: string) =>
+      destinations.filter((item) => isDestinationCurrent(url, item)).map((item) => item.id);
+    expect(active(Route.utilities())).toEqual(['libraryCare']);
+    expect(active(Route.duplicatesUtility())).toEqual(['libraryCare']);
+    expect(active(Route.libraryCare())).toEqual(['libraryCare']);
+    expect(active(Route.workflows())).toEqual(['workflows']);
+    expect(active(Route.userSettings())).toEqual(['settings']);
+  });
+
   it('leaves an album page to its tree item instead of All albums', () => {
     const allAlbums = find(allCapabilities(), 'allAlbums')!;
 
