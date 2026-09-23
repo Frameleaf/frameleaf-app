@@ -365,10 +365,15 @@ test("share sheet switches between people and public link modes", async () => {
     }),
   );
   assert.match(dialog().textContent, /Share Hiking with Jamie.jpg/);
-  const choices = [...dialog().querySelectorAll(".ss-person")];
-  assert.equal(choices.length, 2, "owner is excluded from recipients");
-  assert.equal(choices[0].getAttribute("aria-pressed"), "true");
-  await act(async () => choices[1].click());
+  const tiles = [...dialog().querySelectorAll(".ss-people button.ss-person")];
+  assert.deepEqual(
+    tiles.map((tile) => tile.querySelector(".ss-person-name").textContent),
+    ["Jamie", "Emma"],
+    "owner is excluded from recipients",
+  );
+  assert.equal(tiles[0].getAttribute("aria-pressed"), "true");
+  assert.equal(tiles[1].getAttribute("aria-pressed"), "false");
+  await act(async () => tiles[1].click());
   assert.deepEqual(calls.at(-1), ["recipients", ["Jamie", "Emma"]]);
   await click("Share with Jamie");
   assert.deepEqual(calls.at(-1), ["save", ["Jamie"]]);
