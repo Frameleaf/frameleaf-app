@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  analyticsAreaUrl,
   areaForSection,
+  isScreenArea,
   DEFAULT_SETTINGS_AREA,
   resolveSettingsArea,
   searchSettingsSections,
@@ -30,6 +32,17 @@ describe('Frameleaf settings areas', () => {
     // Google Photos imports sit with the other imports (FL-65).
     expect(areaForSection('takeout')).toBe('backup');
     expect(areaForSection('unknown')).toBeUndefined();
+  });
+
+  it('opens Library analytics as a command center screen, as the template does (FL-79)', () => {
+    expect(SETTINGS_AREAS[0]).toEqual({ id: 'analytics', group: 'command', sections: [] });
+    expect(isScreenArea('analytics')).toBe(true);
+    expect(isScreenArea('storage')).toBe(false);
+    expect(resolveSettingsArea({ area: 'analytics' })).toBe('analytics');
+    expect(analyticsAreaUrl()).toBe('/admin/system-settings?area=analytics');
+    expect(analyticsAreaUrl({ scope: 'library:abc', range: '90days' })).toBe(
+      '/admin/system-settings?area=analytics&scope=library%3Aabc&range=90days',
+    );
   });
 
   describe(resolveSettingsArea.name, () => {

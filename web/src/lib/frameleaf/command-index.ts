@@ -157,7 +157,7 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
         id: 'admin:status',
         title: $t('frameleaf_analytics_title'),
         icon: mdiServerOutline,
-        href: Route.systemStatistics(),
+        href: Route.libraryAnalytics(),
       },
       {
         id: 'admin:maintenance',
