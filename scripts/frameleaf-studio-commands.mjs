@@ -4,11 +4,10 @@
  * The canonical Studio command catalogue and its generated contracts (FL-92, `STU-205`).
  *
  * One table in this file is the source of truth for the Studio command vocabulary. From it
- * this script writes three checked-in artifacts, so web, server and native cannot drift:
+ * this script writes two checked-in artifacts, so web and server cannot drift:
  *
  *   studio/frameleaf-studio-commands.json          the published catalogue
  *   server/src/utils/studio-commands.generated.ts  the server envelope mirror
- *   mobile/lib/frameleaf/studio_commands.g.dart    the native contract
  *
  * `--check` (the default, and what CI runs) regenerates everything in memory and fails when
  * a checked-in file differs, when the TypeScript vocabulary in
@@ -2148,7 +2147,6 @@ export async function generate(root) {
     files: {
       [CATALOGUE_PATH]: canonicalJson(document),
       [SERVER_MIRROR_PATH]: buildServerMirror(document),
-      [NATIVE_CONTRACT_PATH]: buildNativeContract(document),
     },
   };
 }
