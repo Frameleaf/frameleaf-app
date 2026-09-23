@@ -57,6 +57,24 @@
         break;
       }
 
+      // FL-55: a mention opens the space's own viewer on the item, or the space's activity panel
+      // for a comment on the space itself.
+      case NotificationType.SharedSpaceMention: {
+        if (typeof notification.data !== 'string') {
+          return;
+        }
+        const data = JSON.parse(notification.data);
+        if (!data?.albumId) {
+          return;
+        }
+        await goto(
+          data.assetId
+            ? Route.viewSharedSpaceAsset({ spaceId: data.albumId, assetId: data.assetId })
+            : `${Route.viewSharedSpace({ id: data.albumId })}?panel=activity`,
+        );
+        break;
+      }
+
       default: {
         break;
       }

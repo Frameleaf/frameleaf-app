@@ -1,12 +1,16 @@
 import {
   AlbumKind,
   AlbumUserRole,
+  SharedSpaceEventType,
   type AlbumResponseDto,
   type PersonResponseDto,
+  type SharedSpaceActivityResponseDto,
   type SharedSpaceAlbumResponseDto,
+  type SharedSpaceEventResponseDto,
   type SharedSpaceMemberResponseDto,
   type SharedSpaceNewResponseDto,
   type SharedSpacePreviewResponseDto,
+  type UserResponseDto,
 } from '@immich/sdk';
 import { createLibrarySession, type LibraryViewState } from '$lib/frameleaf/library-session';
 
@@ -245,3 +249,162 @@ export const newSinceMessageKey = (
   info: Pick<SharedSpaceNewResponseDto, 'lastVisitedAt'>,
 ): 'frameleaf_spaces_new_since' | 'frameleaf_spaces_new_first' =>
   info.lastVisitedAt ? 'frameleaf_spaces_new_since' : 'frameleaf_spaces_new_first';
+
+/* -------------------------------------------------------------------------- */
+/* Comments, mentions and the activity feed (FL-55)                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A mention as the server stores it: `@{<user id>}`.
+ *
+ * Ids, never names: a typed name is only text, and a renamed account keeps its
+ * mentions. The composer writes this token when a member is picked from the
+ * list, and the server checks every token against the space's current members
+ * before it stores the comment — so nothing the client does can mention
+ * somebody who is not in the space.
+ */
+export const MENTION_TOKEN = /@\{([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\}/gi;
+
+export const mentionToken = (userId: string): string => `@{${userId}}`;
+
+export type MentionUser = Pick<UserResponseDto, 'id' | 'name'>;
+
+export type CommentSegment =
+  | { kind: 'text'; text: string }
+  | { kind: 'mention'; userId: string; user: MentionUser | null };
+
+/**
+ * Split a comment into plain text and mentions, naming each mention from the
+ * users given (the space's members plus the comment's own resolved mentions).
+ * A token nobody matches — a member who has since left — is kept as a mention
+ * with no user, so the text still reads as a mention rather than as an id.
+ */
+export const splitMentions = (comment: string, users: MentionUser[]): CommentSegment[] => {
+  const segments: CommentSegment[] = [];
+  let last = 0;
+  for (const match of comment.matchAll(MENTION_TOKEN)) {
+    const index = match.index ?? 0;
+    if (index > last) {
+      segments.push({ kind: 'text', text: comment.slice(last, index) });
+    }
+    const userId = match[1].toLowerCase();
+    segments.push({ kind: 'mention', userId, user: users.find((user) => user.id === userId) ?? null });
+    last = index + match[0].length;
+  }
+  if (last < comment.length) {
+    segments.push({ kind: 'text', text: comment.slice(last) });
+  }
+  return segments;
+};
+
+export type MentionQuery = { start: number; query: string };
+
+/**
+ * The "@name" being typed right before the caret, if any: an @ at the start
+ * of the text or after whitespace, followed by the letters typed so far.
+ * Anything with whitespace after the @ is not a mention in progress, and an
+ * @ inside a word (an email address) is left alone.
+ */
+export const mentionQueryAt = (text: string, caret: number): MentionQuery | null => {
+  const before = text.slice(0, Math.max(0, caret));
+  const match = /(?:^|\s)@([^\s@{}]*)$/.exec(before);
+  if (!match) {
+    return null;
+  }
+  return { start: before.length - match[1].length - 1, query: match[1] };
+};
+
+/** Replace the "@name" being typed with the chosen member's token and a space. */
+export const insertMention = (
+  text: string,
+  at: MentionQuery,
+  caret: number,
+  userId: string,
+): { text: string; caret: number } => {
+  const token = `${mentionToken(userId)} `;
+  return { text: text.slice(0, at.start) + token + text.slice(caret), caret: at.start + token.length };
+};
+
+/**
+ * Who the composer offers for a mention: members who have joined (an
+ * invitation is not a membership, and the server would refuse the mention),
+ * other than the author, matched on name or email.
+ */
+export const mentionCandidates = (
+  members: SharedSpaceMemberResponseDto[],
+  query: string,
+  excludeId?: string,
+  limit = 8,
+): SharedSpaceMemberResponseDto[] => {
+  const needle = query.trim().toLowerCase();
+  return members
+    .filter(
+      ({ user, pending }) =>
+        !pending &&
+        user.id !== excludeId &&
+        (!needle || user.name.toLowerCase().includes(needle) || user.email.toLowerCase().startsWith(needle)),
+    )
+    .slice(0, limit);
+};
+
+/** Whether a feed event is news to this member: somebody else did it, after this member's marker. */
+export const isNewSpaceEvent = (
+  event: Pick<SharedSpaceEventResponseDto, 'actor' | 'createdAt'>,
+  viewerId: string | undefined,
+  lastVisitedAt: string | null,
+): boolean =>
+  event.actor?.id !== viewerId &&
+  (!lastVisitedAt || new Date(event.createdAt).getTime() > new Date(lastVisitedAt).getTime());
+
+/** The sentence an event is told with. A comment or like on an item reads differently from one on the space. */
+export const spaceEventMessageKey = (event: Pick<SharedSpaceEventResponseDto, 'type' | 'assetCount'>): string => {
+  switch (event.type) {
+    case SharedSpaceEventType.AssetsAdded: {
+      return 'frameleaf_spaces_activity_assets_added';
+    }
+    case SharedSpaceEventType.AssetsRemoved: {
+      return 'frameleaf_spaces_activity_assets_removed';
+    }
+    case SharedSpaceEventType.AlbumLinked: {
+      return 'frameleaf_spaces_activity_album_linked';
+    }
+    case SharedSpaceEventType.AlbumUnlinked: {
+      return 'frameleaf_spaces_activity_album_unlinked';
+    }
+    case SharedSpaceEventType.PersonLinked: {
+      return 'frameleaf_spaces_activity_person_linked';
+    }
+    case SharedSpaceEventType.PersonUnlinked: {
+      return 'frameleaf_spaces_activity_person_unlinked';
+    }
+    case SharedSpaceEventType.MemberJoined: {
+      return 'frameleaf_spaces_activity_member_joined';
+    }
+    case SharedSpaceEventType.MemberLeft: {
+      return 'frameleaf_spaces_activity_member_left';
+    }
+    case SharedSpaceEventType.MemberRemoved: {
+      return 'frameleaf_spaces_activity_member_removed';
+    }
+    case SharedSpaceEventType.MemberRoleChanged: {
+      return 'frameleaf_spaces_activity_member_role';
+    }
+    case SharedSpaceEventType.Comment: {
+      return event.assetCount > 0 ? 'frameleaf_spaces_activity_comment_item' : 'frameleaf_spaces_activity_comment_space';
+    }
+    case SharedSpaceEventType.Like: {
+      return event.assetCount > 0 ? 'frameleaf_spaces_activity_like_item' : 'frameleaf_spaces_activity_like_space';
+    }
+    default: {
+      return 'frameleaf_spaces_activity_unknown';
+    }
+  }
+};
+
+/** How many thumbnails an event shows before folding the rest into "+N more". */
+export const EVENT_THUMBNAILS = 4;
+
+/** The count shown beside the Activity panel's name, or nothing when there is nothing new. */
+export const activityUnreadHint = (
+  feed: Pick<SharedSpaceActivityResponseDto, 'unreadCount'> | null | undefined,
+): string | undefined => (feed && feed.unreadCount > 0 ? String(feed.unreadCount) : undefined);

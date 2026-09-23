@@ -5,6 +5,7 @@ import { AppController } from 'src/controllers/app.controller.js';
 import { AssetDevelopController } from 'src/controllers/asset-develop.controller.js';
 import { AssetFilesController } from 'src/controllers/asset-file.controller.js';
 import { AssetMediaController } from 'src/controllers/asset-media.controller.js';
+import { AssetRestorationController } from 'src/controllers/asset-restoration.controller.js';
 import { AssetController } from 'src/controllers/asset.controller.js';
 import { AuthAdminController } from 'src/controllers/auth-admin.controller.js';
 import { AuthController } from 'src/controllers/auth.controller.js';
@@ -72,6 +73,7 @@ export const controllers = [
   AssetDevelopController,
   AssetFilesController,
   AssetMediaController,
+  AssetRestorationController,
   AuthController,
   AuthAdminController,
   BestPhotosController,

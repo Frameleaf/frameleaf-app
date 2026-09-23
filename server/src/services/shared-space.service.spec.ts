@@ -1,6 +1,8 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { AlbumKind, AlbumUserRole } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
+import type { SharedSpaceEvent } from 'src/repositories/album-user.repository.js';
 import { SharedSpaceService } from 'src/services/shared-space.service.js';
+import { ActivityFactory } from 'test/factories/activity.factory.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
@@ -612,6 +614,241 @@ describe(SharedSpaceService.name, () => {
         { albumId: space.id, userId: editor.id },
         expect.any(Date),
       );
+    });
+  });
+
+  describe('getActivity', () => {
+    const event = (overrides: Partial<SharedSpaceEvent>): SharedSpaceEvent => ({
+      id: newUuid(),
+      albumId: newUuid(),
+      actorId: null,
+      type: SharedSpaceEventType.AssetsAdded,
+      targetUserId: null,
+      activityId: null,
+      assetIds: [],
+      subject: null,
+      createdAt: newDate(),
+      activityAssetId: null,
+      activityComment: null,
+      ...overrides,
+    });
+
+    it('names only the items the member may see, and drops an event with none left', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      asEditor(space);
+      const visibleId = newUuid();
+      const lockedId = newUuid();
+      mocks.albumUser.getSpaceVisit.mockResolvedValue(void 0);
+      mocks.albumUser.getSpaceEvents
+        .mockResolvedValueOnce([
+          event({ albumId: space.id, actorId: owner.id, assetIds: [visibleId, lockedId] }),
+          event({ albumId: space.id, actorId: owner.id, assetIds: [lockedId] }),
+          event({
+            albumId: space.id,
+            actorId: owner.id,
+            type: SharedSpaceEventType.Comment,
+            activityId: newUuid(),
+            activityAssetId: lockedId,
+            activityComment: 'about the locked one',
+          }),
+        ])
+        .mockResolvedValueOnce([]);
+      // Only the visible item survives the viewer's filter, whichever set is asked for.
+      mocks.albumUser.filterVisibleSpaceAssetIds.mockResolvedValue(new Set([visibleId]));
+      mocks.albumUser.getMentions.mockResolvedValue([]);
+      mocks.user.get.mockResolvedValue(owner);
+
+      const result = await sut.getActivity(AuthFactory.create(editor), space.id, {});
+
+      expect(result.events).toHaveLength(1);
+      expect(result.events[0]).toEqual(expect.objectContaining({ assetIds: [visibleId], assetCount: 1 }));
+      // Nothing about the Locked item leaks: not its id, not the comment about it, not a count.
+      expect(JSON.stringify(result)).not.toContain(lockedId);
+      expect(JSON.stringify(result)).not.toContain('about the locked one');
+      // Additions are checked against what is still in the space, with the space's own exclusions.
+      expect(mocks.albumUser.filterVisibleSpaceAssetIds).toHaveBeenCalledWith(
+        space.id,
+        expect.arrayContaining([visibleId, lockedId]),
+        { excludeNsfw: true },
+        { inSpace: true },
+      );
+    });
+
+    it('counts as unread only what others did after the member’s marker, among what they may see', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      asEditor(space);
+      const lastSeenAt = new Date('2026-09-20T00:00:00Z');
+      const after = new Date('2026-09-21T00:00:00Z');
+      mocks.albumUser.getSpaceVisit.mockResolvedValue({ albumId: space.id, userId: editor.id, lastSeenAt });
+      mocks.albumUser.getSpaceEvents.mockResolvedValueOnce([]).mockResolvedValueOnce([
+        event({
+          albumId: space.id,
+          actorId: owner.id,
+          type: SharedSpaceEventType.MemberJoined,
+          targetUserId: owner.id,
+          createdAt: after,
+        }),
+        // The member's own doing is not news to them.
+        event({ albumId: space.id, actorId: editor.id, type: SharedSpaceEventType.AlbumLinked, createdAt: after }),
+        // Somebody else added something the member cannot see: not counted either.
+        event({ albumId: space.id, actorId: owner.id, assetIds: [newUuid()], createdAt: after }),
+      ]);
+      mocks.albumUser.filterVisibleSpaceAssetIds.mockResolvedValue(new Set());
+      mocks.albumUser.getMentions.mockResolvedValue([]);
+
+      const result = await sut.getActivity(AuthFactory.create(editor), space.id, {});
+
+      expect(result.unreadCount).toBe(1);
+      expect(result.lastVisitedAt).not.toBeNull();
+      expect(mocks.albumUser.getSpaceEvents).toHaveBeenCalledWith(space.id, { since: lastSeenAt, take: 500 });
+    });
+
+    it('is for members only, even for somebody who can read the album row', async () => {
+      const { space } = spaceWithEditor();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([space.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(space));
+
+      await expect(sut.getActivity(AuthFactory.create(), space.id, {})).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.albumUser.getSpaceEvents).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('createComment', () => {
+    it('refuses a mention of somebody who is not a member, before writing anything', async () => {
+      const { space, editor } = spaceWithEditor();
+      asEditor(space);
+      mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
+
+      await expect(
+        sut.createComment(AuthFactory.create(editor), space.id, { comment: `look @{${newUuid()}}` }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.activity.create).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+
+    it('stores mentions by id, records the feed event and notifies the mentioned member, never the author', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      asEditor(space);
+      mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
+      const activity = ActivityFactory.from({ albumId: space.id, userId: editor.id, comment: 'x' })
+        .user({ id: editor.id, name: editor.name })
+        .build();
+      mocks.activity.create.mockResolvedValue(activity);
+      mocks.user.get.mockResolvedValue(owner);
+      const comment = `Look @{${owner.id}}, and me @{${editor.id}}`;
+
+      const result = await sut.createComment(AuthFactory.create(editor), space.id, { comment });
+
+      expect(mocks.activity.create).toHaveBeenCalledWith({
+        userId: editor.id,
+        albumId: space.id,
+        assetId: null,
+        isLiked: false,
+        comment,
+      });
+      expect(mocks.albumUser.createMentions).toHaveBeenCalledWith(activity.id, [owner.id, editor.id]);
+      expect(mocks.albumUser.createSpaceEvent).toHaveBeenCalledWith({
+        albumId: space.id,
+        actorId: editor.id,
+        type: SharedSpaceEventType.Comment,
+        activityId: activity.id,
+      });
+      expect(mocks.event.emit).toHaveBeenCalledWith('SharedSpaceMention', {
+        id: space.id,
+        assetId: null,
+        activityId: activity.id,
+        userIds: [owner.id],
+        senderName: editor.name,
+      });
+      expect(result).toEqual(expect.objectContaining({ canEdit: true, canDelete: true }));
+    });
+
+    it('will not comment on an item the member cannot see or that is not in the space', async () => {
+      const { space, editor } = spaceWithEditor();
+      asEditor(space);
+      mocks.access.activity.checkCreateAccess.mockResolvedValue(new Set([space.id]));
+      mocks.albumUser.filterVisibleSpaceAssetIds.mockResolvedValue(new Set());
+
+      await expect(
+        sut.createComment(AuthFactory.create(editor), space.id, { assetId: newUuid(), comment: 'nice' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.activity.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateComment', () => {
+    it('lets only the author change the text', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      asOwner(space);
+      const editorsComment = ActivityFactory.from({ albumId: space.id, userId: editor.id, comment: 'x' })
+        .user({ id: editor.id, name: editor.name })
+        .build();
+      mocks.activity.getById.mockResolvedValue(editorsComment);
+
+      await expect(
+        sut.updateComment(AuthFactory.create(owner), space.id, editorsComment.id, { comment: 'y' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.activity.update).not.toHaveBeenCalled();
+    });
+
+    it('re-reads mentions and tells only the newly mentioned', async () => {
+      const { space, owner, editor } = spaceWithEditor();
+      asEditor(space);
+      const existing = ActivityFactory.from({ albumId: space.id, userId: editor.id, comment: `@{${owner.id}}` })
+        .user({ id: editor.id, name: editor.name })
+        .build();
+      mocks.activity.getById.mockResolvedValue(existing);
+      mocks.albumUser.getMentions.mockResolvedValue([{ activityId: existing.id, userId: owner.id }]);
+      mocks.activity.update.mockResolvedValue({ ...existing, comment: `@{${owner.id}} still` });
+      mocks.user.get.mockResolvedValue(owner);
+
+      await sut.updateComment(AuthFactory.create(editor), space.id, existing.id, { comment: `@{${owner.id}} still` });
+
+      expect(mocks.albumUser.deleteMentions).toHaveBeenCalledWith(existing.id);
+      expect(mocks.albumUser.createMentions).toHaveBeenCalledWith(existing.id, [owner.id]);
+      // The owner was already mentioned, so they are not told twice.
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteComment', () => {
+    it('lets an editor remove somebody else’s comment, and a viewer only their own', async () => {
+      const viewerId = newUuid();
+      const space = AlbumFactory.from({ kind: AlbumKind.Space })
+        .albumUser({ userId: viewerId, role: AlbumUserRole.Viewer })
+        .build();
+      const owner = space.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!.user;
+      const viewer = space.albumUsers.find(({ user }) => user.id === viewerId)!.user;
+      asEditor(space);
+
+      const ownersComment = ActivityFactory.from({ albumId: space.id, userId: owner.id, comment: 'mine' }).build();
+      mocks.activity.getById.mockResolvedValue(ownersComment);
+      await expect(sut.deleteComment(AuthFactory.create(viewer), space.id, ownersComment.id)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(mocks.activity.delete).not.toHaveBeenCalled();
+
+      const viewersComment = ActivityFactory.from({ albumId: space.id, userId: viewerId, comment: 'x' }).build();
+      mocks.activity.getById.mockResolvedValue(viewersComment);
+      await sut.deleteComment(AuthFactory.create(owner), space.id, viewersComment.id);
+      expect(mocks.activity.delete).toHaveBeenCalledWith(viewersComment.id);
+    });
+
+    it('does not treat another album’s comment, or a like, as one of this space’s', async () => {
+      const { space, owner } = spaceWithEditor();
+      asOwner(space);
+
+      mocks.activity.getById.mockResolvedValue(ActivityFactory.from({ albumId: newUuid(), comment: 'x' }).build());
+      await expect(sut.deleteComment(AuthFactory.create(owner), space.id, newUuid())).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+
+      mocks.activity.getById.mockResolvedValue(ActivityFactory.from({ albumId: space.id, isLiked: true }).build());
+      await expect(sut.deleteComment(AuthFactory.create(owner), space.id, newUuid())).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(mocks.activity.delete).not.toHaveBeenCalled();
     });
   });
 });

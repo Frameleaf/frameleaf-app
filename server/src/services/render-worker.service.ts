@@ -33,6 +33,7 @@ import {
   RenderWorkerWriteResultDto,
 } from 'src/dtos/render-worker.dto.js';
 import {
+  AlbumUserRole,
   CacheControl,
   MediaOperationDestination,
   MediaOperationKind,
@@ -53,6 +54,7 @@ import {
   RenderWorkerLimit,
   RenderWorkerRepository,
 } from 'src/repositories/render-worker.repository.js';
+import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { RENDER_WORKER_LIMIT_INSTANCE_SUBJECT } from 'src/schema/tables/render-worker.table.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
@@ -161,13 +163,21 @@ const mapAudit = (row: RenderWorkerAudit): RenderWorkerAuditDto => ({
 
 /**
  * What a Studio operation's immutable snapshot carries for FL-90 to re-resolve at claim time: the
- * graph, the declared imports and generated files and the recorded cloud consent. A manifest is
- * never stored on the row — it is signed with a per-process secret and expires in minutes — so it
- * is resolved again, against the owner's current access, every time it is needed.
+ * graph (or, for a stored-revision job, only the revision to read it from), the declared imports
+ * and generated files and the recorded cloud consent. A manifest is never stored on the row — it
+ * is signed with a per-process secret and expires in minutes — so it is resolved again, against
+ * the owner's current access, every time it is needed.
  */
 type StudioSnapshotContext = {
-  graph: unknown;
+  /** The graph, for a job that carries one. A stored-revision job carries none. */
+  graph?: unknown;
   revision: number;
+  /**
+   * `true` for a job bound to a stored project revision (FL-89), such as a preview (FL-96): the
+   * graph is read from project storage at `revision`, which is immutable once written, rather
+   * than copied into every job.
+   */
+  stored?: unknown;
   imports?: unknown;
   generated?: unknown;
   catalog?: unknown;
@@ -177,11 +187,18 @@ type StudioSnapshotContext = {
 const studioContextOf = (operation: MediaOperation): StudioSnapshotContext | null => {
   const snapshot = asObject(operation.snapshot);
   const studio = asObject(snapshot.studio);
-  if (!operation.projectId || studio.graph === undefined || typeof studio.revision !== 'number') {
+  if (!operation.projectId || typeof studio.revision !== 'number') {
+    return null;
+  }
+  if (studio.graph === undefined && studio.stored !== true) {
     return null;
   }
   return studio as StudioSnapshotContext;
 };
+
+type StudioGraphSource =
+  | { ok: true; graph: unknown; projectOwnerId: string }
+  | { ok: false; refused: { key: string; reason: string } };
 
 type ResolvedManifest =
   | { complete: true; manifest: AuthorizedManifest; studio: StudioAuthorizedManifest | null }
@@ -216,6 +233,7 @@ export class RenderWorkerService {
     private assetRepository: AssetRepository,
     private userRepository: UserRepository,
     private studioResources: StudioResourceService,
+    private studioProjects: StudioProjectRepository,
     @Optional() @Inject(DESTINATION_HEALTH_PROVIDER) destinationHealth?: DestinationHealthProvider,
   ) {
     this.logger.setContext(RenderWorkerService.name);
@@ -942,13 +960,18 @@ export class RenderWorkerService {
         return { complete: false, refused: [{ key: 'owner', reason: 'owner-unavailable' }] };
       }
 
+      const source = await this.studioGraphOf(operation, studio);
+      if (!source.ok) {
+        return { complete: false, refused: [source.refused] };
+      }
+
       let resolution;
       try {
         resolution = await this.studioResources.resolveProjectResources(auth, {
           projectId: operation.projectId!,
-          ownerId: operation.ownerId,
+          ownerId: source.projectOwnerId,
           revision: studio.revision,
-          graph: studio.graph,
+          graph: source.graph,
           imports: Array.isArray(studio.imports) ? (studio.imports as never) : undefined,
           generated: Array.isArray(studio.generated) ? (studio.generated as never) : undefined,
           catalog: studio.catalog ? (studio.catalog as never) : undefined,
@@ -1141,6 +1164,52 @@ export class RenderWorkerService {
       },
       session: { id: workerSessionId, hasElevatedPermission: true },
     };
+  }
+
+  /**
+   * The graph a Studio operation renders.
+   *
+   * A job that carries its graph renders that graph. A stored-revision job (FL-89) reads it from
+   * project storage at the snapshot's revision, which is immutable once written, and only while
+   * the operation's account may still read the project: its owner, or a member of the shared
+   * space it is reviewed in (the live `album_user` row, re-read every time). A deleted project,
+   * a missing revision or lost project access refuses the job rather than rendering something
+   * nobody may be shown. Project-scoped resources belong to the project owner as stored, never to
+   * a value the job claims.
+   */
+  private async studioGraphOf(operation: MediaOperation, studio: StudioSnapshotContext): Promise<StudioGraphSource> {
+    if (studio.stored !== true) {
+      return { ok: true, graph: studio.graph, projectOwnerId: operation.ownerId };
+    }
+
+    const project = await this.studioProjects.getById(operation.projectId!);
+    if (!project) {
+      return { ok: false, refused: { key: 'project', reason: 'project-missing' } };
+    }
+
+    if (project.ownerId !== operation.ownerId && !(await this.isSpaceMember(operation.ownerId, project.spaceId))) {
+      return { ok: false, refused: { key: 'project', reason: 'no-access' } };
+    }
+
+    const revision = await this.studioProjects.getRevision(project.id, studio.revision);
+    const graph = revision ? asObject(revision.envelope).graph : undefined;
+    if (graph === undefined) {
+      return { ok: false, refused: { key: 'revision', reason: 'revision-missing' } };
+    }
+
+    return { ok: true, graph, projectOwnerId: project.ownerId };
+  }
+
+  private async isSpaceMember(userId: string, spaceId: string | null): Promise<boolean> {
+    if (!spaceId) {
+      return false;
+    }
+    const ids = new Set([spaceId]);
+    const [owned, shared] = await Promise.all([
+      this.accessRepository.album.checkOwnerAccess(userId, ids),
+      this.accessRepository.album.checkSharedAlbumAccess(userId, ids, AlbumUserRole.Viewer),
+    ]);
+    return owned.has(spaceId) || shared.has(spaceId);
   }
 
   private grantInputs(

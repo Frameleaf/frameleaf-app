@@ -13,6 +13,7 @@ import {
   RenderWorkerRepository,
   RenderWorkerSession,
 } from 'src/repositories/render-worker.repository.js';
+import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { StudioAuthorizedManifest, StudioResourceService } from 'src/services/studio-resource.service.js';
 import { signInputGrant } from 'src/utils/render-admission.js';
@@ -193,6 +194,10 @@ describe(RenderWorkerService.name, () => {
     issueReadGrants: ReturnType<typeof vi.fn>;
     verifyReadGrant: ReturnType<typeof vi.fn>;
   };
+  let studioProjects: {
+    getById: ReturnType<typeof vi.fn>;
+    getRevision: ReturnType<typeof vi.fn>;
+  };
 
   const workerA = workerStub();
   const workerB = workerStub({
@@ -258,6 +263,10 @@ describe(RenderWorkerService.name, () => {
       issueReadGrants: vi.fn().mockReturnValue([]),
       verifyReadGrant: vi.fn(),
     };
+    studioProjects = {
+      getById: vi.fn().mockResolvedValue(undefined),
+      getRevision: vi.fn().mockResolvedValue(undefined),
+    };
     mocks.user.get.mockImplementation((id: string) =>
       Promise.resolve(id === OWNER_A ? { ...userStub.user1, id: OWNER_A } : undefined),
     );
@@ -271,6 +280,7 @@ describe(RenderWorkerService.name, () => {
       mocks.asset as never,
       mocks.user as never,
       studioResources as unknown as StudioResourceService,
+      studioProjects as unknown as StudioProjectRepository,
     );
 
     installSessions({ worker: workerA, session: sessionA }, { worker: workerB, session: sessionB });
@@ -593,6 +603,86 @@ describe(RenderWorkerService.name, () => {
         expect(claim).toBeUndefined();
         expect(studioResources.resolveProjectResources).not.toHaveBeenCalled();
         expect(workers.claimQueued).not.toHaveBeenCalled();
+      });
+
+      describe('bound to a stored project revision (FL-89)', () => {
+        const storedGraph = { sequence: [{ assetId: 'clip-1' }] };
+        const storedOp = studioOperationStub({
+          snapshot: { engineDigest: 'engine-1', studio: { stored: true, revision: 7, cloudConsent: false } },
+        });
+        const projectRow = (overrides: Record<string, unknown> = {}) => ({
+          id: 'project-1',
+          ownerId: OWNER_A,
+          spaceId: null,
+          currentRevision: 8,
+          ...overrides,
+        });
+
+        beforeEach(() => {
+          vi.mocked(workers.peekQueued).mockReset();
+          vi.mocked(workers.peekQueued).mockResolvedValueOnce([storedOp] as never).mockResolvedValue([]);
+          studioProjects.getById.mockResolvedValue(projectRow());
+          studioProjects.getRevision.mockResolvedValue({
+            projectId: 'project-1',
+            revision: 7,
+            envelope: { schemaVersion: 1, engine: 'freecut', engineRevision: 'rev-1', graph: storedGraph },
+          });
+        });
+
+        it('reads the graph from storage at the named revision and resolves it as a background runner', async () => {
+          await sut.claim(SESSION_A, {} as never);
+
+          // The named revision, not the head: a job renders exactly what it was submitted for.
+          expect(studioProjects.getRevision).toHaveBeenCalledWith('project-1', 7);
+          expect(studioResources.resolveProjectResources).toHaveBeenCalledWith(
+            expect.objectContaining({ session: { id: sessionA.id, hasElevatedPermission: true } }),
+            expect.objectContaining({
+              projectId: 'project-1',
+              ownerId: OWNER_A,
+              revision: 7,
+              graph: storedGraph,
+              backgroundRunner: true,
+            }),
+          );
+        });
+
+        it("resolves a reviewer's job as the reviewer, with project resources owned by the owner", async () => {
+          const spaceId = 'space-1';
+          studioProjects.getById.mockResolvedValue(projectRow({ ownerId: OWNER_B, spaceId }));
+          mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+          mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([spaceId]));
+
+          await sut.claim(SESSION_A, {} as never);
+
+          const [auth, context] = studioResources.resolveProjectResources.mock.calls[0];
+          expect(auth.user.id).toBe(OWNER_A);
+          expect(context).toEqual(expect.objectContaining({ ownerId: OWNER_B, backgroundRunner: true }));
+        });
+
+        it('refuses, without reading the graph, once the account can no longer read the project', async () => {
+          studioProjects.getById.mockResolvedValue(projectRow({ ownerId: OWNER_B, spaceId: 'space-1' }));
+          mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+          mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set());
+
+          const claim = await sut.claim(SESSION_A, {} as never);
+
+          expect(claim).toBeUndefined();
+          expect(studioProjects.getRevision).not.toHaveBeenCalled();
+          expect(studioResources.resolveProjectResources).not.toHaveBeenCalled();
+          expect(workers.recordRefusal).toHaveBeenCalledWith(storedOp.id, RenderWorkerRefusalReason.ManifestIncomplete);
+        });
+
+        it('refuses a job whose project or revision is gone', async () => {
+          studioProjects.getRevision.mockResolvedValue(undefined);
+
+          const claim = await sut.claim(SESSION_A, {} as never);
+
+          expect(claim).toBeUndefined();
+          expect(studioResources.resolveProjectResources).not.toHaveBeenCalled();
+          expect(workers.recordAudit).toHaveBeenCalledWith(
+            expect.objectContaining({ detail: { refused: [{ key: 'revision', reason: 'revision-missing' }] } }),
+          );
+        });
       });
     });
 

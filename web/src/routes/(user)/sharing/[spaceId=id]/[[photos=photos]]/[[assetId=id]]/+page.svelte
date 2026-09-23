@@ -93,6 +93,7 @@
       linkedAlbums={data.linkedAlbums}
       people={data.people}
       newSince={data.newSince}
+      activity={data.activity}
       onRefresh={refresh}
     />
   </Theme>

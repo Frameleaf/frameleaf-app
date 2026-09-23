@@ -44,6 +44,9 @@ type EventMap = {
   // cluster group events
   ClusterGroupRequest: [{ clusterGroupId: string; userId: string; senderName: string }];
 
+  // shared space events (FL-55): members named in a comment
+  SharedSpaceMention: [{ id: string; assetId: string | null; activityId: string; userIds: string[]; senderName: string }];
+
   // asset events
   AssetCreate: [{ asset: Pick<Asset, 'id' | 'ownerId'>; file?: UploadFile }];
   AssetTag: [{ assetId: string; userId: string }];
