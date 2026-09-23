@@ -1,17 +1,25 @@
+import mdiIconNames from 'src/constants/mdi-icon-names.json' with { type: 'json' };
+
 /**
- * Server-side allow-list of valid album icon keys.
+ * Album and collection icons.
  *
- * IMPORTANT: this list MUST stay in sync with the catalog in
- * `web/src/lib/utils/album-icons.ts` (`ALBUM_ICONS`). The web package owns the
- * key → MDI-path mapping; the server only needs the set of valid keys so it can
- * reject unknown values at the API boundary. The two packages are intentionally
- * decoupled (server must not import web code), so the key list is duplicated
- * here. When you add/remove an icon in the web catalog, mirror the change here.
+ * Any Material Design Icons name (`mdiCameraOutline`, ...) is a valid icon. The
+ * server owns the catalogue as data (`mdi-icon-names.json`, generated from
+ * `@mdi/js` {@link MDI_ICON_CATALOGUE_VERSION}) so it can validate writes and
+ * serve the names plus the categorised suggested set to every client; clients
+ * never bundle the catalogue to know what is valid.
  *
- * The stored value on the album row is the kebab-case key. `null` means "use the
- * default folder icon".
+ * The 31 kebab-case keys in {@link LEGACY_ALBUM_ICON_KEYS} were the only values
+ * accepted before the catalogue existed and are still stored on older albums.
+ * They stay valid on read and write so existing data is never rejected.
+ *
+ * The suggested groups mirror `collectionIconGroups` in the approved design
+ * template (design/frameleaf/template/src/collections-data.mjs). Every name in
+ * them is present in the catalogue; a unit test enforces that.
  */
-export const ALBUM_ICON_KEYS = [
+export const MDI_ICON_CATALOGUE_VERSION = '7.4.47';
+
+export const LEGACY_ALBUM_ICON_KEYS = [
   'folder',
   'folder-image',
   'folder-heart',
@@ -45,4 +53,298 @@ export const ALBUM_ICON_KEYS = [
   'book',
 ] as const;
 
-export type AlbumIconKey = (typeof ALBUM_ICON_KEYS)[number];
+/** @deprecated kept for callers written against the fixed catalog; prefer {@link isValidAlbumIcon}. */
+export const ALBUM_ICON_KEYS = LEGACY_ALBUM_ICON_KEYS;
+
+export type AlbumIconKey = (typeof LEGACY_ALBUM_ICON_KEYS)[number];
+
+export type AlbumIconSuggestion = { name: string; label: string };
+export type AlbumIconGroup = { label: string; icons: AlbumIconSuggestion[] };
+
+/** Every Material Design Icons export name, sorted, from the pinned catalogue version. */
+export const MDI_ICON_NAMES: readonly string[] = mdiIconNames;
+
+const MDI_ICON_NAME_SET: ReadonlySet<string> = new Set(MDI_ICON_NAMES);
+const LEGACY_ALBUM_ICON_KEY_SET: ReadonlySet<string> = new Set(LEGACY_ALBUM_ICON_KEYS);
+
+/** Categorised suggested set offered before the whole catalogue in every icon chooser. */
+export const ALBUM_ICON_GROUPS: readonly AlbumIconGroup[] = [
+  {
+    label: 'Albums and photos',
+    icons: [
+      { name: 'mdiImageAlbum', label: 'Album' },
+      { name: 'mdiImageMultipleOutline', label: 'Photos' },
+      { name: 'mdiFolderOutline', label: 'Folder' },
+      { name: 'mdiFolderMultipleOutline', label: 'Folders' },
+      { name: 'mdiCameraOutline', label: 'Camera' },
+      { name: 'mdiVideoOutline', label: 'Video' },
+      { name: 'mdiFilmstrip', label: 'Film' },
+      { name: 'mdiMovieOpenOutline', label: 'Movie' },
+      { name: 'mdiPanoramaOutline', label: 'Panorama' },
+      { name: 'mdiCameraBurst', label: 'Burst' },
+      { name: 'mdiDrone', label: 'Drone' },
+      { name: 'mdiBookOpenPageVariantOutline', label: 'Scrapbook' },
+      { name: 'mdiStarOutline', label: 'Star' },
+      { name: 'mdiHeartOutline', label: 'Heart' },
+      { name: 'mdiBookmarkOutline', label: 'Bookmark' },
+      { name: 'mdiHistory', label: 'Memories' },
+      { name: 'mdiClockOutline', label: 'Time' },
+      { name: 'mdiCalendarRange', label: 'Dates' },
+    ],
+  },
+  {
+    label: 'People and pets',
+    icons: [
+      { name: 'mdiAccountOutline', label: 'Person' },
+      { name: 'mdiAccountMultipleOutline', label: 'People' },
+      { name: 'mdiAccountGroupOutline', label: 'Group' },
+      { name: 'mdiHumanMaleFemaleChild', label: 'Family' },
+      { name: 'mdiBabyFaceOutline', label: 'Baby' },
+      { name: 'mdiHumanMaleChild', label: 'Parent and child' },
+      { name: 'mdiBabyCarriage', label: 'Stroller' },
+      { name: 'mdiPawOutline', label: 'Pets' },
+      { name: 'mdiDog', label: 'Dog' },
+      { name: 'mdiCat', label: 'Cat' },
+      { name: 'mdiHorse', label: 'Horse' },
+      { name: 'mdiBird', label: 'Bird' },
+      { name: 'mdiFish', label: 'Fish' },
+      { name: 'mdiRabbit', label: 'Rabbit' },
+      { name: 'mdiCow', label: 'Cow' },
+      { name: 'mdiSheep', label: 'Sheep' },
+      { name: 'mdiPig', label: 'Pig' },
+      { name: 'mdiDuck', label: 'Duck' },
+      { name: 'mdiPenguin', label: 'Penguin' },
+      { name: 'mdiOwl', label: 'Owl' },
+      { name: 'mdiButterfly', label: 'Butterfly' },
+      { name: 'mdiBee', label: 'Bee' },
+      { name: 'mdiLadybug', label: 'Ladybug' },
+      { name: 'mdiTurtle', label: 'Turtle' },
+      { name: 'mdiEmoticonHappyOutline', label: 'Smile' },
+    ],
+  },
+  {
+    label: 'Nature and seasons',
+    icons: [
+      { name: 'mdiWhiteBalanceSunny', label: 'Sun' },
+      { name: 'mdiWeatherSunset', label: 'Sunset' },
+      { name: 'mdiWeatherNight', label: 'Night' },
+      { name: 'mdiMoonWaningCrescent', label: 'Moon' },
+      { name: 'mdiWeatherPartlyCloudy', label: 'Clouds' },
+      { name: 'mdiWeatherRainy', label: 'Rain' },
+      { name: 'mdiWeatherLightning', label: 'Storm' },
+      { name: 'mdiWeatherWindy', label: 'Wind' },
+      { name: 'mdiSnowflake', label: 'Snow' },
+      { name: 'mdiLeaf', label: 'Leaf' },
+      { name: 'mdiTree', label: 'Tree' },
+      { name: 'mdiPineTree', label: 'Pine' },
+      { name: 'mdiForest', label: 'Forest' },
+      { name: 'mdiPalmTree', label: 'Palm' },
+      { name: 'mdiFlower', label: 'Flower' },
+      { name: 'mdiFlowerTulip', label: 'Tulip' },
+      { name: 'mdiCactus', label: 'Cactus' },
+      { name: 'mdiMushroom', label: 'Mushroom' },
+      { name: 'mdiSprout', label: 'Sprout' },
+      { name: 'mdiGrass', label: 'Grass' },
+      { name: 'mdiImageFilterHdr', label: 'Mountains' },
+      { name: 'mdiTerrain', label: 'Terrain' },
+      { name: 'mdiVolcano', label: 'Volcano' },
+      { name: 'mdiWaves', label: 'Waves' },
+      { name: 'mdiBeach', label: 'Beach' },
+      { name: 'mdiIsland', label: 'Island' },
+      { name: 'mdiWater', label: 'Water' },
+      { name: 'mdiFire', label: 'Fire' },
+      { name: 'mdiCampfire', label: 'Campfire' },
+      { name: 'mdiTent', label: 'Tent' },
+      { name: 'mdiStarFourPoints', label: 'Sparkle' },
+    ],
+  },
+  {
+    label: 'Travel and places',
+    icons: [
+      { name: 'mdiEarth', label: 'Travel' },
+      { name: 'mdiCompassOutline', label: 'Adventure' },
+      { name: 'mdiMapOutline', label: 'Map' },
+      { name: 'mdiMapMarkerOutline', label: 'Place' },
+      { name: 'mdiFlagOutline', label: 'Flag' },
+      { name: 'mdiRoutes', label: 'Route' },
+      { name: 'mdiRoadVariant', label: 'Road' },
+      { name: 'mdiAirplane', label: 'Flight' },
+      { name: 'mdiAirplaneTakeoff', label: 'Departure' },
+      { name: 'mdiTrain', label: 'Train' },
+      { name: 'mdiSubwayVariant', label: 'Metro' },
+      { name: 'mdiBus', label: 'Bus' },
+      { name: 'mdiCar', label: 'Car' },
+      { name: 'mdiMotorbike', label: 'Motorbike' },
+      { name: 'mdiBike', label: 'Bike' },
+      { name: 'mdiSailBoat', label: 'Sailing' },
+      { name: 'mdiFerry', label: 'Ferry' },
+      { name: 'mdiRocketLaunchOutline', label: 'Rocket' },
+      { name: 'mdiHiking', label: 'Hiking' },
+      { name: 'mdiWalk', label: 'Walk' },
+      { name: 'mdiBagSuitcase', label: 'Suitcase' },
+      { name: 'mdiBagPersonal', label: 'Backpack' },
+      { name: 'mdiPassport', label: 'Passport' },
+      { name: 'mdiBinoculars', label: 'Binoculars' },
+      { name: 'mdiBedOutline', label: 'Stay' },
+      { name: 'mdiCityVariantOutline', label: 'City' },
+      { name: 'mdiCastle', label: 'Castle' },
+      { name: 'mdiBridge', label: 'Bridge' },
+      { name: 'mdiLighthouse', label: 'Lighthouse' },
+      { name: 'mdiChurchOutline', label: 'Church' },
+      { name: 'mdiMosque', label: 'Mosque' },
+      { name: 'mdiEiffelTower', label: 'Landmark' },
+      { name: 'mdiPyramid', label: 'Pyramid' },
+      { name: 'mdiBankOutline', label: 'Museum' },
+    ],
+  },
+  {
+    label: 'Events and celebrations',
+    icons: [
+      { name: 'mdiCakeVariantOutline', label: 'Birthday' },
+      { name: 'mdiPartyPopper', label: 'Party' },
+      { name: 'mdiGiftOutline', label: 'Gift' },
+      { name: 'mdiBalloon', label: 'Balloon' },
+      { name: 'mdiRing', label: 'Wedding' },
+      { name: 'mdiCalendarHeart', label: 'Anniversary' },
+      { name: 'mdiCalendarStar', label: 'Occasion' },
+      { name: 'mdiPineTreeVariant', label: 'Christmas' },
+      { name: 'mdiHalloween', label: 'Halloween' },
+      { name: 'mdiFirework', label: 'Fireworks' },
+      { name: 'mdiSchoolOutline', label: 'Graduation' },
+      { name: 'mdiTrophyOutline', label: 'Trophy' },
+      { name: 'mdiMedalOutline', label: 'Medal' },
+      { name: 'mdiTicketOutline', label: 'Tickets' },
+      { name: 'mdiTheater', label: 'Theatre' },
+      { name: 'mdiMusicNote', label: 'Music' },
+      { name: 'mdiMicrophoneOutline', label: 'Microphone' },
+      { name: 'mdiGuitarAcoustic', label: 'Guitar' },
+      { name: 'mdiPiano', label: 'Piano' },
+      { name: 'mdiHeadphones', label: 'Headphones' },
+      { name: 'mdiGlassCocktail', label: 'Cocktail' },
+      { name: 'mdiGlassWine', label: 'Wine' },
+      { name: 'mdiBeer', label: 'Beer' },
+      { name: 'mdiCandle', label: 'Candle' },
+    ],
+  },
+  {
+    label: 'Hobbies and sports',
+    icons: [
+      { name: 'mdiSoccer', label: 'Soccer' },
+      { name: 'mdiBasketball', label: 'Basketball' },
+      { name: 'mdiFootball', label: 'Football' },
+      { name: 'mdiBaseball', label: 'Baseball' },
+      { name: 'mdiTennis', label: 'Tennis' },
+      { name: 'mdiGolf', label: 'Golf' },
+      { name: 'mdiHockeySticks', label: 'Hockey' },
+      { name: 'mdiVolleyball', label: 'Volleyball' },
+      { name: 'mdiSki', label: 'Ski' },
+      { name: 'mdiSnowboard', label: 'Snowboard' },
+      { name: 'mdiSkateboard', label: 'Skateboard' },
+      { name: 'mdiSurfing', label: 'Surfing' },
+      { name: 'mdiSwim', label: 'Swim' },
+      { name: 'mdiKayaking', label: 'Kayak' },
+      { name: 'mdiDivingScuba', label: 'Diving' },
+      { name: 'mdiParachute', label: 'Skydiving' },
+      { name: 'mdiRun', label: 'Run' },
+      { name: 'mdiDumbbell', label: 'Gym' },
+      { name: 'mdiYoga', label: 'Yoga' },
+      { name: 'mdiKarate', label: 'Martial arts' },
+      { name: 'mdiBowling', label: 'Bowling' },
+      { name: 'mdiBilliards', label: 'Billiards' },
+      { name: 'mdiTarget', label: 'Archery' },
+      { name: 'mdiChessKnight', label: 'Chess' },
+      { name: 'mdiCardsOutline', label: 'Cards' },
+      { name: 'mdiDiceMultipleOutline', label: 'Dice' },
+      { name: 'mdiGamepadVariantOutline', label: 'Games' },
+      { name: 'mdiPuzzleOutline', label: 'Puzzle' },
+      { name: 'mdiPaletteOutline', label: 'Art' },
+      { name: 'mdiBrush', label: 'Painting' },
+      { name: 'mdiPencilOutline', label: 'Drawing' },
+      { name: 'mdiBookOpenVariant', label: 'Reading' },
+      { name: 'mdiChefHat', label: 'Cooking' },
+      { name: 'mdiHammerWrench', label: 'Workshop' },
+      { name: 'mdiWateringCan', label: 'Garden' },
+      { name: 'mdiTelescope', label: 'Astronomy' },
+      { name: 'mdiRobotOutline', label: 'Robotics' },
+      { name: 'mdiCubeOutline', label: 'Models' },
+    ],
+  },
+  {
+    label: 'Food and drink',
+    icons: [
+      { name: 'mdiFoodOutline', label: 'Food' },
+      { name: 'mdiSilverwareForkKnife', label: 'Dining' },
+      { name: 'mdiPizza', label: 'Pizza' },
+      { name: 'mdiHamburger', label: 'Burger' },
+      { name: 'mdiNoodles', label: 'Noodles' },
+      { name: 'mdiFoodCroissant', label: 'Bakery' },
+      { name: 'mdiCupcake', label: 'Cupcake' },
+      { name: 'mdiIceCream', label: 'Ice cream' },
+      { name: 'mdiFruitCherries', label: 'Fruit' },
+      { name: 'mdiCarrot', label: 'Vegetables' },
+      { name: 'mdiCoffeeOutline', label: 'Coffee' },
+      { name: 'mdiTeaOutline', label: 'Tea' },
+      { name: 'mdiBottleWineOutline', label: 'Bottle' },
+      { name: 'mdiGrill', label: 'Barbecue' },
+    ],
+  },
+  {
+    label: 'Home and work',
+    icons: [
+      { name: 'mdiHomeOutline', label: 'Home' },
+      { name: 'mdiHomeVariantOutline', label: 'House' },
+      { name: 'mdiSofa', label: 'Indoors' },
+      { name: 'mdiOfficeBuildingOutline', label: 'Office' },
+      { name: 'mdiBriefcaseOutline', label: 'Work' },
+      { name: 'mdiLaptop', label: 'Laptop' },
+      { name: 'mdiMonitor', label: 'Screen' },
+      { name: 'mdiCellphone', label: 'Phone' },
+      { name: 'mdiTools', label: 'Tools' },
+      { name: 'mdiHammer', label: 'Build' },
+      { name: 'mdiWrenchOutline', label: 'Repair' },
+      { name: 'mdiFormatPaint', label: 'Renovation' },
+      { name: 'mdiBookshelf', label: 'Bookshelf' },
+      { name: 'mdiStoreOutline', label: 'Shop' },
+      { name: 'mdiShoppingOutline', label: 'Shopping' },
+      { name: 'mdiCartOutline', label: 'Cart' },
+      { name: 'mdiHospitalBoxOutline', label: 'Health' },
+      { name: 'mdiMedicalBag', label: 'Medical' },
+      { name: 'mdiTruckOutline', label: 'Moving' },
+      { name: 'mdiPackageVariantClosed', label: 'Box' },
+      { name: 'mdiKeyOutline', label: 'Keys' },
+      { name: 'mdiFileDocumentOutline', label: 'Files' },
+      { name: 'mdiTextBoxOutline', label: 'Documents' },
+      { name: 'mdiReceiptTextOutline', label: 'Receipts' },
+      { name: 'mdiArchiveOutline', label: 'Archive' },
+    ],
+  },
+  {
+    label: 'Symbols',
+    icons: [
+      { name: 'mdiTagOutline', label: 'Tag' },
+      { name: 'mdiLabelOutline', label: 'Label' },
+      { name: 'mdiCircleOutline', label: 'Circle' },
+      { name: 'mdiSquareOutline', label: 'Square' },
+      { name: 'mdiTriangleOutline', label: 'Triangle' },
+      { name: 'mdiHexagonOutline', label: 'Hexagon' },
+      { name: 'mdiDiamondStone', label: 'Gem' },
+      { name: 'mdiCrownOutline', label: 'Crown' },
+      { name: 'mdiShieldOutline', label: 'Shield' },
+      { name: 'mdiLightbulbOutline', label: 'Idea' },
+      { name: 'mdiInfinity', label: 'Infinity' },
+      { name: 'mdiPeace', label: 'Peace' },
+      { name: 'mdiHandHeartOutline', label: 'Care' },
+      { name: 'mdiLockOutline', label: 'Private' },
+      { name: 'mdiEyeOffOutline', label: 'Hidden' },
+      { name: 'mdiFlash', label: 'Flash' },
+      { name: 'mdiAutoFix', label: 'Magic' },
+      { name: 'mdiCheckDecagramOutline', label: 'Verified' },
+    ],
+  },
+];
+
+export const isMdiIconName = (value: string): boolean => MDI_ICON_NAME_SET.has(value);
+
+/** A stored or submitted icon is valid when it is a catalogue name or a legacy key. */
+export const isValidAlbumIcon = (value: string): boolean =>
+  MDI_ICON_NAME_SET.has(value) || LEGACY_ALBUM_ICON_KEY_SET.has(value);

@@ -49,4 +49,25 @@ describe('Executor Queue test', function () {
     vi.runAllTimers();
     vi.useRealTimers();
   });
+
+  it('rejects queued-but-not-started tasks on clear() without touching running ones', async () => {
+    const eq = new ExecutorQueue({ concurrency: 1 });
+
+    let releaseFirst: (() => void) | undefined;
+    const first = eq.addTask(
+      () =>
+        new Promise((resolve) => {
+          releaseFirst = () => resolve('first');
+        }),
+    );
+    const second = eq.addTask(() => Promise.resolve('second'));
+
+    // `second` is still waiting for a slot behind `first`; clearing must drop only that one.
+    eq.clear();
+
+    await expect(second).rejects.toThrow();
+
+    releaseFirst?.();
+    await expect(first).resolves.toBe('first');
+  });
 });

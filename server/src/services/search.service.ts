@@ -31,9 +31,15 @@ import { isGranted, requireElevatedPermission } from 'src/utils/access.js';
 import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
+import { applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
 import { fromChecksum } from 'src/utils/request.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
-import { applyLockedVisibilityPolicy, collectFilterIds } from 'src/utils/search-filter.js';
+import {
+  applyLockedVisibilityPolicy,
+  collectFilterIds,
+  filterUsesLocation,
+  usesLocationFilter,
+} from 'src/utils/search-filter.js';
 
 @Injectable()
 export class SearchService extends BaseService {
@@ -131,7 +137,7 @@ export class SearchService extends BaseService {
     } else if (auth.sharedLink) {
       throw new BadRequestException('Shared link access is only allowed in combination with an albumIds filter');
     } else {
-      userIds = await this.getUserIdsToSearch(auth, dto.visibility);
+      userIds = await this.getUserIdsToSearch(auth, dto.visibility, usesLocationFilter(dto));
     }
 
     const page = dto.page ?? 1;
@@ -158,7 +164,7 @@ export class SearchService extends BaseService {
     }
 
     const { suppressedOnly, ...searchDto } = dto;
-    const userIds = await this.getUserIdsToSearch(auth, dto.visibility);
+    const userIds = await this.getUserIdsToSearch(auth, dto.visibility, usesLocationFilter(dto));
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
     }
@@ -183,7 +189,7 @@ export class SearchService extends BaseService {
       requireElevatedPermission(auth);
     }
 
-    const userIds = await this.getUserIdsToSearch(auth, dto.visibility);
+    const userIds = await this.getUserIdsToSearch(auth, dto.visibility, usesLocationFilter(dto));
     const items = await this.searchRepository.searchRandom(dto.size || 250, {
       ...searchDto,
       ...getPrivacyQueryOptions(auth, suppressedOnly),
@@ -191,7 +197,10 @@ export class SearchService extends BaseService {
       userIds,
       viewingUserId: auth.user.id,
     });
-    return items.map((item) => mapAsset(item, { auth }));
+    return this.withLocationPolicy(
+      auth,
+      items.map((item) => mapAsset(item, { auth })),
+    );
   }
 
   async searchLargeAssets(auth: AuthDto, dto: LargeAssetSearchDto): Promise<AssetResponseDto[]> {
@@ -209,7 +218,10 @@ export class SearchService extends BaseService {
       userIds,
       viewingUserId: auth.user.id,
     });
-    return items.map((item) => mapAsset(item, { auth }));
+    return this.withLocationPolicy(
+      auth,
+      items.map((item) => mapAsset(item, { auth })),
+    );
   }
 
   async searchSmart(auth: AuthDto, dto: SmartSearchDto): Promise<SearchResponseDto> {
@@ -228,7 +240,7 @@ export class SearchService extends BaseService {
       throw new BadRequestException('Smart search is not enabled');
     }
 
-    const userIds = this.getUserIdsToSearch(auth, dto.visibility);
+    const userIds = this.getUserIdsToSearch(auth, dto.visibility, usesLocationFilter(dto));
     const embedding = await this.resolveEmbedding(auth, dto, machineLearning);
     const page = dto.page ?? 1;
     const size = dto.size || 100;
@@ -249,13 +261,19 @@ export class SearchService extends BaseService {
   }
 
   async getAssetsByCity(auth: AuthDto): Promise<AssetResponseDto[]> {
-    const userIds = await this.getUserIdsToSearch(auth);
+    // grouped by place, so partners who hide their locations contribute nothing here
+    const userIds = await this.getUserIdsToSearch(auth, undefined, true);
     const assets = await this.searchRepository.getAssetsByCity(userIds, getHiddenContentQueryOptions(auth));
     return assets.map((asset) => mapAsset(asset));
   }
 
   async getSearchSuggestions(auth: AuthDto, dto: SearchSuggestionRequestDto) {
-    const userIds = await this.getUserIdsToSearch(auth);
+    const isLocationSuggestion = [
+      SearchSuggestionType.COUNTRY,
+      SearchSuggestionType.STATE,
+      SearchSuggestionType.CITY,
+    ].includes(dto.type);
+    const userIds = await this.getUserIdsToSearch(auth, undefined, isLocationSuggestion);
     const suggestions = await this.getSuggestions(userIds, dto, auth);
     if (dto.includeNull) {
       suggestions.push(null);
@@ -347,7 +365,10 @@ export class SearchService extends BaseService {
       },
       scope,
     );
-    return items.map((item) => mapAsset(item, { auth }));
+    return this.withLocationPolicy(
+      auth,
+      items.map((item) => mapAsset(item, { auth })),
+    );
   }
 
   private async searchSmartV3(auth: AuthDto, dto: SmartSearchDto): Promise<SearchResponseDto> {
@@ -394,7 +415,7 @@ export class SearchService extends BaseService {
     const albumIds = collectFilterIds(filter, 'albumIds');
     const [userIds] = await Promise.all([
       // a fully confined filter searches albums only, so the unused universe can skip the partner lookup
-      fullyConfined ? [auth.user.id] : this.getUserIdsToSearch(auth),
+      fullyConfined ? [auth.user.id] : this.getUserIdsToSearch(auth, undefined, filterUsesLocation(filter)),
       albumIds.length > 0 ? this.requireAccess({ auth, ids: albumIds, permission: Permission.AlbumRead }) : undefined,
     ]);
 
@@ -432,7 +453,16 @@ export class SearchService extends BaseService {
     throw new BadRequestException('Either `query` or `queryAssetId` must be set');
   }
 
-  private async getUserIdsToSearch(auth: AuthDto, visibility?: AssetVisibility): Promise<string[]> {
+  /**
+   * The owners whose assets a search may return. `locationSharedOnly` leaves out partners who hide their
+   * locations from this user whenever the request itself is about places (FL-54): matching, counting or
+   * suggesting by place would reveal what the sharer chose to hide.
+   */
+  private async getUserIdsToSearch(
+    auth: AuthDto,
+    visibility?: AssetVisibility,
+    locationSharedOnly = false,
+  ): Promise<string[]> {
     // Locked assets are personal. Never include partner IDs, regardless of A's elevated session.
     if (visibility === AssetVisibility.Locked) {
       return [auth.user.id];
@@ -441,21 +471,33 @@ export class SearchService extends BaseService {
       userId: auth.user.id,
       repository: this.partnerRepository,
       timelineEnabled: true,
+      locationSharedOnly,
     });
     return [auth.user.id, ...partnerIds];
   }
 
-  private mapResponse(
+  /** Strips location EXIF from assets owned by partners who hide it from the viewer (FL-54). */
+  private withLocationPolicy(auth: AuthDto | undefined, assets: AssetResponseDto[]): Promise<AssetResponseDto[]> {
+    return auth
+      ? applyPartnerLocationPolicy(assets, { userId: auth.user.id, repository: this.partnerRepository })
+      : Promise.resolve(assets);
+  }
+
+  private async mapResponse(
     assets: MapAsset[],
     options: AssetMapOptions,
     page: { nextPage?: string | null; nextCursor?: string | null } = {},
-  ): SearchResponseDto {
+  ): Promise<SearchResponseDto> {
+    const items = await this.withLocationPolicy(
+      options.auth,
+      assets.map((asset) => mapAsset(asset, options)),
+    );
     return {
       albums: { total: 0, count: 0, items: [], facets: [] },
       assets: {
         total: assets.length,
         count: assets.length,
-        items: assets.map((asset) => mapAsset(asset, options)),
+        items,
         facets: [],
         nextPage: page.nextPage ?? null,
         nextCursor: page.nextCursor ?? null,

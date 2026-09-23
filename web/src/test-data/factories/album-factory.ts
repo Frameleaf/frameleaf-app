@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { AssetOrder, type AlbumResponseDto } from '@immich/sdk';
+import { AlbumKind, AssetOrder, type AlbumResponseDto } from '@immich/sdk';
 import { Sync } from 'factory.ts';
 
 export const albumFactory = Sync.makeFactory<AlbumResponseDto>({
@@ -13,6 +13,7 @@ export const albumFactory = Sync.makeFactory<AlbumResponseDto>({
   parentId: null,
   icon: null,
   sortOrder: null,
+  kind: AlbumKind.Album,
   shared: false,
   albumUsers: [],
   hasSharedLink: false,
