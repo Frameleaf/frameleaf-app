@@ -81,7 +81,7 @@ describe('Frameleaf settings areas', () => {
   });
 
   it('opens Library analytics as a command center screen, as the template does (FL-79)', () => {
-    expect(SETTINGS_AREAS[0]).toMatchObject({ id: 'analytics', group: 'command', sections: [] });
+    expect(SETTINGS_AREAS[1]).toMatchObject({ id: 'analytics', group: 'command', sections: [] });
     expect(isScreenArea('analytics')).toBe(true);
     expect(isScreenArea('storage')).toBe(false);
     expect(resolveSettingsArea({ area: 'analytics' })).toBe('analytics');
@@ -93,19 +93,24 @@ describe('Frameleaf settings areas', () => {
 
   it('lists the areas in the template catalogue order', () => {
     expect(SETTINGS_AREAS.map((item) => item.id)).toEqual([
+      'overview',
       'analytics',
       'storage',
       'backup',
       'intelligence',
       'editing',
+      'sharing',
       'care',
       'processing',
       'security',
       'notifications',
       'server',
+      'maintenance',
       'preferences',
+      'users',
       'libraries',
       'utilities',
+      'trash',
       'history',
     ]);
   });
@@ -113,7 +118,16 @@ describe('Frameleaf settings areas', () => {
   describe(isAreaAvailable.name, () => {
     it('offers an account without administration only areas it has something in', () => {
       const offered = SETTINGS_AREAS.filter((item) => isAreaAvailable(item, false)).map((item) => item.id);
-      expect(offered).toEqual(['backup', 'security', 'notifications', 'preferences', 'utilities']);
+      expect(offered).toEqual([
+        'backup',
+        'sharing',
+        'care',
+        'security',
+        'notifications',
+        'preferences',
+        'utilities',
+        'trash',
+      ]);
       expect(SETTINGS_AREAS.every((item) => isAreaAvailable(item, true))).toBe(true);
     });
   });
@@ -134,7 +148,8 @@ describe('Frameleaf settings areas', () => {
       expect(resolveSettingsArea({ area: 'nope', isOpen: 'job' })).toBe('processing');
       expect(resolveSettingsArea({ isOpen: 'nope storage-template' })).toBe('storage');
       expect(resolveSettingsArea({ isOpen: 'nope' })).toBe(defaultSettingsArea(true));
-      expect(resolveSettingsArea({})).toBe('storage');
+      // The template's rail Settings opens the Overview (App.jsx onSettings).
+      expect(resolveSettingsArea({})).toBe('overview');
       expect(resolveSettingsArea({ isAdmin: false })).toBe('preferences');
     });
 

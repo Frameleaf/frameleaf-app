@@ -3,8 +3,8 @@ import { Route } from '$lib/route';
 import { authenticate } from '$lib/utils/auth';
 import type { PageLoad } from './$types';
 
-/** FL-71: this page is a Command Center section now; its old address only redirects there. */
+/** FL-71: accounts are managed in Users → People with server access; this address only redirects. */
 export const load = (async ({ url }) => {
   await authenticate(url, { admin: true });
-  redirect(307, Route.physicalDeduplication());
+  redirect(307, Route.users());
 }) satisfies PageLoad;
