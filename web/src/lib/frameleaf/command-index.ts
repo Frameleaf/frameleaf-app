@@ -30,6 +30,7 @@ import {
   mdiImageMultipleOutline,
   mdiImageOutline,
   mdiImageSizeSelectLarge,
+  mdiImport,
   mdiKeyOutline,
   mdiLockOutline,
   mdiLockSmart,
@@ -127,6 +128,7 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
       href: Route.livePhotosUtility(),
     },
     { id: 'geolocation', title: $t('manage_geolocation'), icon: mdiMapMarkerOutline, href: Route.geolocationUtility() },
+    { id: 'takeout', title: $t('frameleaf_takeout_title'), icon: mdiImport, href: Route.takeout() },
   ];
   for (const extra of extras) {
     pages.push({ ...extra, subtitle: $t('frameleaf_search_subtitle_page') });
@@ -142,6 +144,12 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
         title: $t('admin.render_workers'),
         icon: mdiMemory,
         href: Route.renderWorkers(),
+      },
+      {
+        id: 'admin:workers',
+        title: $t('admin.frameleaf_workers_title'),
+        icon: mdiRobotOutline,
+        href: Route.systemWorkers(),
       },
       { id: 'admin:libraries', title: $t('external_libraries'), icon: mdiBookshelf, href: Route.libraries() },
       { id: 'admin:status', title: $t('server_stats'), icon: mdiServerOutline, href: Route.systemStatistics() },
@@ -172,15 +180,30 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
  */
 export const USER_SETTINGS_AREAS: readonly { key: string; titleKey: string; descriptionKey: string; icon: string }[] = [
   { key: 'app-settings', titleKey: 'app_settings', descriptionKey: 'manage_the_app_settings', icon: mdiCogOutline },
-  { key: 'account', titleKey: 'account', descriptionKey: 'manage_your_account', icon: mdiAccountOutline },
+  {
+    key: 'account',
+    titleKey: 'frameleaf_access_profile_title',
+    descriptionKey: 'frameleaf_access_profile_description',
+    icon: mdiAccountOutline,
+  },
   {
     key: 'user-usage-info',
     titleKey: 'user_usage_stats',
     descriptionKey: 'user_usage_stats_description',
     icon: mdiServerOutline,
   },
-  { key: 'api-keys', titleKey: 'api_keys', descriptionKey: 'manage_your_api_keys', icon: mdiApi },
-  { key: 'authorized-devices', titleKey: 'authorized_devices', descriptionKey: 'manage_your_devices', icon: mdiDevices },
+  {
+    key: 'api-keys',
+    titleKey: 'frameleaf_access_keys_title',
+    descriptionKey: 'frameleaf_access_keys_description',
+    icon: mdiApi,
+  },
+  {
+    key: 'authorized-devices',
+    titleKey: 'frameleaf_access_devices_title',
+    descriptionKey: 'frameleaf_access_devices_description',
+    icon: mdiDevices,
+  },
   {
     key: 'download-settings',
     titleKey: 'download_settings',
@@ -194,23 +217,28 @@ export const USER_SETTINGS_AREAS: readonly { key: string; titleKey: string; desc
     descriptionKey: 'notifications_setting_description',
     icon: mdiBellOutline,
   },
-  { key: 'password', titleKey: 'password', descriptionKey: 'change_your_password', icon: mdiFormTextboxPassword },
+  {
+    key: 'password',
+    titleKey: 'frameleaf_access_password_title',
+    descriptionKey: 'frameleaf_access_password_group_description',
+    icon: mdiFormTextboxPassword,
+  },
   {
     key: 'user-pin-code-settings',
-    titleKey: 'user_pin_code_settings',
-    descriptionKey: 'user_pin_code_settings_description',
+    titleKey: 'frameleaf_access_pin_title',
+    descriptionKey: 'frameleaf_access_pin_group_description',
     icon: mdiLockSmart,
   },
   {
     key: 'suppressed-content',
-    titleKey: 'suppressed_content',
-    descriptionKey: 'suppressed_content_settings_description',
+    titleKey: 'frameleaf_locked_rules_section_title',
+    descriptionKey: 'frameleaf_locked_rules_section_description',
     icon: mdiShieldLockOutline,
   },
   {
     key: 'user-purchase-settings',
-    titleKey: 'user_purchase_settings',
-    descriptionKey: 'user_purchase_settings_description',
+    titleKey: 'frameleaf_access_supporter_title',
+    descriptionKey: 'frameleaf_access_supporter_group_description',
     icon: mdiKeyOutline,
   },
   { key: 'sharing', titleKey: 'sharing', descriptionKey: 'manage_sharing_with_other_users', icon: mdiAccountGroupOutline },

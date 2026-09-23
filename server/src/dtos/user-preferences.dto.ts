@@ -286,10 +286,12 @@ export class UserPreferencesUpdateDto extends createZodDto(UserPreferencesUpdate
 export class UserPreferencesResponseDto extends createZodDto(UserPreferencesResponseSchema) {}
 
 /**
- * Who a preferences response is for: the account itself, or an administrator editing it.
- * An administrator never sees the account's private Locked choices (FL-77).
+ * Who a preferences response is for: the account itself in an unlocked session (`self`), the
+ * account in a session that is not unlocked (`locked`, FL-67), or an administrator editing it
+ * (`admin`). Only `self` sees the account's Locked people, pets and tags; the others see where the
+ * rules apply but not what they name (FL-77, FL-67). The revision always covers the stored rules.
  */
-export type PreferencesAudience = 'self' | 'admin';
+export type PreferencesAudience = 'self' | 'locked' | 'admin';
 
 export const mapPreferences = (
   preferences: FrameleafUserPreferences,
@@ -303,9 +305,9 @@ export const mapPreferences = (
     ...preferences,
     cast: { gCastEnabled: gCastEnabled && !adminDisabled, adminDisabled },
     privacy:
-      audience === 'admin'
-        ? { suppression: { tagIds: [], personIds: [], petIds: [], scope: suppression.scope } }
-        : preferences.privacy,
+      audience === 'self'
+        ? preferences.privacy
+        : { suppression: { tagIds: [], personIds: [], petIds: [], scope: suppression.scope } },
     revision: getPreferencesRevision(preferences),
   };
 };

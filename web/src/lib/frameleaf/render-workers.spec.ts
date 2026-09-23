@@ -135,6 +135,8 @@ describe('vocabulary', () => {
       MediaOperationKind.StudioBundleImport,
       MediaOperationKind.EnrichmentPlan,
       MediaOperationKind.MediaHealth,
+      MediaOperationKind.IcloudSync,
+      MediaOperationKind.TakeoutImport,
       MediaOperationKind.PhysicalDeduplication,
     ]) {
       expect(isRenderWorkerKind(kind)).toBe(false);

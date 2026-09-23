@@ -9,6 +9,7 @@ import {
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
+import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
 import { isSharedLinkRoute } from '$lib/utils/navigation';
@@ -62,7 +63,7 @@ class AuthManager {
   async refresh() {
     try {
       const [user, preferences] = await Promise.all([getMyUser(), getMyPreferences()]);
-      this.#preferences = preferences;
+      this.#preferences = withoutLockedRuleIds(preferences);
       this.#user = user;
 
       if (user.license?.activatedAt) {
@@ -85,8 +86,13 @@ class AuthManager {
     this.#user = user;
   }
 
+  /**
+   * FL-67: the session-wide preferences never hold the account's Locked people, pets and tags,
+   * even when a response from an unlocked session includes them. Only the Locked rules editor reads
+   * them, straight from the server while the session is unlocked.
+   */
   setPreferences(preferences: UserPreferencesResponseDto) {
-    this.#preferences = preferences;
+    this.#preferences = withoutLockedRuleIds(preferences);
   }
 
   async logout() {

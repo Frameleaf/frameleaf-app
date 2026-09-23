@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Updateable } from 'kysely';
 import { DateTime } from 'luxon';
 import z from 'zod';
@@ -11,7 +11,12 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import { CalendarHeatmapDto, CalendarHeatmapResponseDto } from 'src/dtos/calendar-heatmap.dto.js';
 import { LicenseKeyDto, LicenseResponseDto } from 'src/dtos/license.dto.js';
 import { OnboardingDto, OnboardingResponseDto } from 'src/dtos/onboarding.dto.js';
-import { UserPreferencesResponseDto, UserPreferencesUpdateDto, mapPreferences } from 'src/dtos/user-preferences.dto.js';
+import {
+  type PreferencesAudience,
+  UserPreferencesResponseDto,
+  UserPreferencesUpdateDto,
+  mapPreferences,
+} from 'src/dtos/user-preferences.dto.js';
 import { CreateProfileImageDto, CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
 import { UserAdminResponseDto, UserResponseDto, UserUpdateMeDto, mapUser, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { CacheControl, JobName, JobStatus, Permission, QueueName, StorageFolder, UserMetadataKey } from 'src/enum.js';
@@ -24,8 +29,18 @@ import { isLockedAsset } from 'src/utils/locked-state.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { findOrFail } from 'src/utils/misc.js';
-import { getPreferences, getPreferencesPartial, mergePreferences } from 'src/utils/preferences.js';
+import {
+  LOCKED_RULES_REQUIRE_UNLOCK_MESSAGE,
+  changesLockedRules,
+  getPreferences,
+  getPreferencesPartial,
+  mergePreferences,
+} from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
+
+/** FL-67: an account sees its own Locked people, pets and tags only while its session is unlocked. */
+const preferencesAudience = (auth: AuthDto): PreferencesAudience =>
+  auth.session?.hasElevatedPermission ? 'self' : 'locked';
 
 @Injectable()
 export class UserService extends BaseService {
@@ -85,20 +100,32 @@ export class UserService extends BaseService {
 
   async getMyPreferences(auth: AuthDto): Promise<UserPreferencesResponseDto> {
     const metadata = await this.userRepository.getMetadata(auth.user.id);
-    return mapPreferences(getPreferences(metadata));
+    return mapPreferences(getPreferences(metadata), preferencesAudience(auth));
   }
 
+  /**
+   * FL-67: Locked rules change only from an unlocked session, and the whole read, revision check
+   * and write happen under the account's preferences lock, so a save made against a revision that
+   * another tab or device has since replaced is refused (409) rather than written over it.
+   */
   async updateMyPreferences(auth: AuthDto, dto: UserPreferencesUpdateDto) {
-    const metadata = await this.userRepository.getMetadata(auth.user.id);
-    const updated = mergePreferences(getPreferences(metadata), dto, 'user');
+    if (changesLockedRules(dto) && !auth.session?.hasElevatedPermission) {
+      throw new ForbiddenException(LOCKED_RULES_REQUIRE_UNLOCK_MESSAGE);
+    }
 
-    await this.userRepository.upsertMetadata(auth.user.id, {
-      key: UserMetadataKey.Preferences,
-      value: getPreferencesPartial(updated),
+    const updated = await this.databaseRepository.withUserPreferencesLock(auth.user.id, async (trx) => {
+      const metadata = await this.userRepository.getMetadata(auth.user.id, trx);
+      const merged = mergePreferences(getPreferences(metadata), dto, 'user');
+      await this.userRepository.upsertMetadata(
+        auth.user.id,
+        { key: UserMetadataKey.Preferences, value: getPreferencesPartial(merged) },
+        trx,
+      );
+      return merged;
     });
     await this.sessionRepository.requestSyncResetForUser(auth.user.id);
 
-    return mapPreferences(updated);
+    return mapPreferences(updated, preferencesAudience(auth));
   }
 
   async get(id: string): Promise<UserResponseDto> {

@@ -14,8 +14,19 @@ import { MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js'
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 /**
- * One place machine-learning work may run (FL-110). Mirrors migration
- * 2100000000140-CreateMlDestinations.
+ * The hardware facts a health check keeps (FL-72). `gpus` is filled only by a restoration
+ * worker, which reports each GPU's memory; the `/predict` container reports providers only.
+ */
+export type MlProbeHardware = {
+  preferredAcceleration: string | null;
+  providers: string[];
+  cudaDeviceCount: number;
+  gpus: Array<{ name: string; memoryTotalBytes: number }>;
+};
+
+/**
+ * One place machine-learning work may run (FL-110). Mirrors migrations
+ * 2100000000140-CreateMlDestinations and 2100000000490-SeparateRestorationWorkers (FL-72).
  *
  * `authToken` is a bearer credential for LAN workers and is never returned by the API;
  * RunPod destinations carry no URL or token here because both come from the RunPod state
@@ -23,10 +34,10 @@ import { UserTable } from 'src/schema/tables/user.table.js';
  * is what the worker itself reported, and admission requires both.
  */
 @Table('ml_destination')
-// Mirrors the CHECK created in migration 2100000000140; the comparer strips parens.
+// Mirrors the CHECK widened in migration 2100000000490; the comparer strips parens.
 @Check({
   name: 'ml_destination_kind_check',
-  expression: `kind = ANY (ARRAY['local'::text, 'lan'::text, 'runpod'::text])`,
+  expression: `kind = ANY (ARRAY['local'::text, 'lan'::text, 'runpod'::text, 'runpod-video'::text])`,
 })
 export class MlDestinationTable {
   @PrimaryGeneratedColumn()
@@ -78,6 +89,20 @@ export class MlDestinationTable {
   /** Workloads the worker reported on its last probe, or null when it never answered. */
   @Column({ type: 'jsonb', nullable: true })
   lastProbeWorkloads!: MlWorkload[] | null;
+
+  /** What the last check learned about acceleration (`MlProbeHardware`), or null when it never answered. */
+  @Column({ type: 'jsonb', nullable: true })
+  lastProbeHardware!: MlProbeHardware | null;
+
+  @Column({ type: 'integer', nullable: true })
+  lastProbeLatencyMs!: number | null;
+
+  /**
+   * A restoration worker on the same GPU as library analysis (FL-72). Full restorations bound
+   * to it are not started while library analysis has work waiting.
+   */
+  @Column({ type: 'boolean', default: false })
+  sharesLibraryHardware!: Generated<boolean>;
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;

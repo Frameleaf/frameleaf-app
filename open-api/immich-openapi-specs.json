@@ -1651,8 +1651,12 @@
             "type": "string"
           },
           "clientSecret": {
-            "description": "Client secret",
+            "description": "Client secret (write-only; empty preserves the existing secret)",
             "type": "string"
+          },
+          "clientSecretConfigured": {
+            "description": "Read-only indicator that a client secret is stored. Set by the server; ignored on write.",
+            "type": "boolean"
           },
           "defaultStorageQuota": {
             "description": "Default storage quota",
@@ -2161,8 +2165,12 @@
             "type": "boolean"
           },
           "password": {
-            "description": "SMTP password",
+            "description": "SMTP password (write-only; empty preserves the existing password)",
             "type": "string"
+          },
+          "passwordConfigured": {
+            "description": "Read-only indicator that an SMTP password is stored. Set by the server; ignored on write.",
+            "type": "boolean"
           },
           "port": {
             "description": "SMTP server port",
@@ -7012,6 +7020,46 @@
         ],
         "type": "string"
       },
+      "ConfigCredential": {
+        "description": "A server secret that can be replaced or cleared but never read back",
+        "enum": [
+          "smtp-password",
+          "oauth-client-secret",
+          "runpod-api-key",
+          "huggingface-token"
+        ],
+        "type": "string"
+      },
+      "ConfigCredentialResponseDto": {
+        "properties": {
+          "configured": {
+            "description": "Whether a value is stored. The value itself is never returned",
+            "type": "boolean"
+          },
+          "name": {
+            "$ref": "#/components/schemas/ConfigCredential"
+          }
+        },
+        "required": [
+          "configured",
+          "name"
+        ],
+        "type": "object"
+      },
+      "ConfigCredentialUpdateDto": {
+        "properties": {
+          "value": {
+            "description": "The new secret. Stored as sent and never returned",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
       "ContributorCountResponseDto": {
         "properties": {
           "assetCount": {
@@ -8239,6 +8287,884 @@
           "failed",
           "completed",
           "cancelled"
+        ],
+        "type": "string"
+      },
+      "TakeoutAction": {
+        "description": "The step a job carries out",
+        "enum": [
+          "scan",
+          "import"
+        ],
+        "type": "string"
+      },
+      "TakeoutAlbumDto": {
+        "properties": {
+          "count": {
+            "description": "Items in the folder",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "folder": {
+            "description": "The export folder",
+            "type": "string"
+          },
+          "name": {
+            "description": "The album name it becomes",
+            "type": "string"
+          },
+          "selected": {
+            "description": "Recreated by the next import",
+            "type": "boolean"
+          },
+          "year": {
+            "description": "One of Google’s automatic year folders",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "count",
+          "folder",
+          "name",
+          "selected",
+          "year"
+        ],
+        "type": "object"
+      },
+      "TakeoutArchiveCreateDto": {
+        "properties": {
+          "name": {
+            "description": "The archive’s file name",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "size": {
+            "description": "The archive’s size in bytes",
+            "maximum": 1099511627776,
+            "minimum": 22,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "size"
+        ],
+        "type": "object"
+      },
+      "TakeoutControlAction": {
+        "description": "What to do with the running job",
+        "enum": [
+          "pause",
+          "resume",
+          "cancel"
+        ],
+        "type": "string"
+      },
+      "TakeoutControlDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/TakeoutControlAction"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "TakeoutCountsDto": {
+        "properties": {
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "files": {
+            "description": "Files found in the sources",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "hiddenLocked": {
+            "description": "Items going into Locked, not listed until Locked is unlocked",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "imported": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "importing": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "items": {
+            "description": "Photos and videos",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "matched": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "matchedOriginals": {
+            "description": "Items already in the library, whose album memberships are restored",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "newAssets": {
+            "description": "Items still to import that are not in the library yet",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "ready": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "rejected": {
+            "description": "Archive entries refused",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "review": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "suggestedPairs": {
+            "description": "Possible Live Photo pairs awaiting a decision",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "unresolvedPairs": {
+            "description": "Live Photo pairs that could not be linked",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "failed",
+          "files",
+          "hiddenLocked",
+          "imported",
+          "importing",
+          "items",
+          "matched",
+          "matchedOriginals",
+          "newAssets",
+          "ready",
+          "rejected",
+          "review",
+          "skipped",
+          "suggestedPairs",
+          "unresolvedPairs"
+        ],
+        "type": "object"
+      },
+      "TakeoutCreateDto": {
+        "properties": {
+          "directory": {
+            "description": "Administrators only: the directory inside the root, relative to it; empty for the root itself",
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "name": {
+            "description": "A name for this import",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "rootId": {
+            "description": "Administrators only: the permitted import root to read a server directory from",
+            "maxLength": 32,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "TakeoutItemKind": {
+        "description": "Photo or video",
+        "enum": [
+          "image",
+          "video"
+        ],
+        "type": "string"
+      },
+      "TakeoutItemResponseDto": {
+        "properties": {
+          "albums": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "assetId": {
+            "description": "The library item it became or matched, when this session may open it",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/TakeoutSidecarCandidateDto"
+            },
+            "type": "array"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "folder": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TakeoutItemKind"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/TakeoutMetadataDto"
+          },
+          "path": {
+            "description": "Path inside the export",
+            "type": "string"
+          },
+          "sidecarId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "size": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "source": {
+            "description": "The archive or directory the file came from",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/TakeoutItemState"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/TakeoutWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "albums",
+          "assetId",
+          "candidates",
+          "error",
+          "folder",
+          "id",
+          "kind",
+          "locked",
+          "metadata",
+          "path",
+          "sidecarId",
+          "size",
+          "source",
+          "state",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "TakeoutItemState": {
+        "description": "What happened to one photo or video",
+        "enum": [
+          "ready",
+          "review",
+          "importing",
+          "imported",
+          "matched",
+          "skipped",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "TakeoutItemsResponseDto": {
+        "properties": {
+          "hiddenLocked": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TakeoutItemResponseDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hiddenLocked",
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "TakeoutMetadataDto": {
+        "properties": {
+          "archived": {
+            "description": "Archived in Google Photos",
+            "type": "boolean"
+          },
+          "createdAt": {
+            "description": "When Google Photos received the photo (ISO 8601)",
+            "type": "string"
+          },
+          "description": {
+            "description": "Description",
+            "type": "string"
+          },
+          "favorite": {
+            "description": "Favorite in Google Photos",
+            "type": "boolean"
+          },
+          "latitude": {
+            "description": "Latitude",
+            "format": "double",
+            "type": "number"
+          },
+          "locked": {
+            "description": "In the Google Photos Locked Folder; imported into Locked",
+            "type": "boolean"
+          },
+          "longitude": {
+            "description": "Longitude",
+            "format": "double",
+            "type": "number"
+          },
+          "takenAt": {
+            "description": "When the photo was taken (ISO 8601)",
+            "type": "string"
+          },
+          "title": {
+            "description": "File name Google Photos recorded",
+            "type": "string"
+          },
+          "trashed": {
+            "description": "In the Google Photos trash; not imported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      },
+      "TakeoutOptionsDto": {
+        "properties": {
+          "albums": {
+            "default": true,
+            "description": "Recreate album memberships, including for photos already in the library",
+            "type": "boolean"
+          },
+          "archive": {
+            "default": true,
+            "description": "Bring over archived photos as archived",
+            "type": "boolean"
+          },
+          "dates": {
+            "default": true,
+            "description": "Bring over the dates photos were taken",
+            "type": "boolean"
+          },
+          "descriptions": {
+            "default": true,
+            "description": "Bring over descriptions",
+            "type": "boolean"
+          },
+          "favorites": {
+            "default": true,
+            "description": "Bring over favorites",
+            "type": "boolean"
+          },
+          "locations": {
+            "default": true,
+            "description": "Bring over locations",
+            "type": "boolean"
+          },
+          "selectedAlbums": {
+            "description": "Album folders to recreate; omitted means every folder that is not a year folder",
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 20000,
+            "type": "array"
+          },
+          "sidecarReview": {
+            "default": true,
+            "description": "Hold items whose metadata sidecars disagree for a decision; off imports them without a sidecar",
+            "type": "boolean"
+          },
+          "updateMatchedMetadata": {
+            "default": false,
+            "description": "Fill metadata missing from photos already in the library; values already there are never replaced",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "TakeoutOptionsResponseDto": {
+        "properties": {
+          "albums": {
+            "type": "boolean"
+          },
+          "archive": {
+            "type": "boolean"
+          },
+          "dates": {
+            "type": "boolean"
+          },
+          "descriptions": {
+            "type": "boolean"
+          },
+          "favorites": {
+            "type": "boolean"
+          },
+          "locations": {
+            "type": "boolean"
+          },
+          "selectedAlbums": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sidecarReview": {
+            "type": "boolean"
+          },
+          "updateMatchedMetadata": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "albums",
+          "archive",
+          "dates",
+          "descriptions",
+          "favorites",
+          "locations",
+          "sidecarReview",
+          "updateMatchedMetadata"
+        ],
+        "type": "object"
+      },
+      "TakeoutPairDecisionDto": {
+        "properties": {
+          "approve": {
+            "description": "True links them as one Live Photo; false keeps them separate",
+            "type": "boolean"
+          },
+          "photoItemId": {
+            "description": "The still photo",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "videoItemId": {
+            "description": "The motion video",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "approve",
+          "photoItemId",
+          "videoItemId"
+        ],
+        "type": "object"
+      },
+      "TakeoutPairResponseDto": {
+        "properties": {
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "photoItemId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "photoPath": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/TakeoutPairState"
+          },
+          "videoItemId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "videoPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "photoItemId",
+          "photoPath",
+          "state",
+          "videoItemId",
+          "videoPath"
+        ],
+        "type": "object"
+      },
+      "TakeoutPairState": {
+        "description": "A possible Live Photo pair and the owner’s decision",
+        "enum": [
+          "suggested",
+          "approved",
+          "skipped",
+          "linked",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "TakeoutPairsResponseDto": {
+        "properties": {
+          "pairs": {
+            "items": {
+              "$ref": "#/components/schemas/TakeoutPairResponseDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pairs",
+          "total"
+        ],
+        "type": "object"
+      },
+      "TakeoutPhase": {
+        "description": "The step the import has reached",
+        "enum": [
+          "sources",
+          "scanning",
+          "review",
+          "importing",
+          "completed"
+        ],
+        "type": "string"
+      },
+      "TakeoutResolveDto": {
+        "properties": {
+          "sidecarId": {
+            "description": "The sidecar to use; null imports without one",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "skip": {
+            "description": "True leaves the item out of the import; false brings it back",
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "TakeoutResponseDto": {
+        "properties": {
+          "action": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TakeoutAction"
+              }
+            ],
+            "description": "What the latest job did or is doing",
+            "nullable": true
+          },
+          "albums": {
+            "items": {
+              "$ref": "#/components/schemas/TakeoutAlbumDto"
+            },
+            "type": "array"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/TakeoutCountsDto"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "errorCode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "operationId": {
+            "description": "The latest job, as Activity lists it",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "options": {
+            "$ref": "#/components/schemas/TakeoutOptionsResponseDto"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/TakeoutPhase"
+          },
+          "processed": {
+            "description": "Units the latest job has finished",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/TakeoutSourceResponseDto"
+            },
+            "type": "array"
+          },
+          "state": {
+            "$ref": "#/components/schemas/TakeoutState"
+          },
+          "total": {
+            "description": "Units the latest job knows of so far; grows while a scan reads its sources",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "albums",
+          "counts",
+          "createdAt",
+          "error",
+          "errorCode",
+          "id",
+          "name",
+          "operationId",
+          "options",
+          "phase",
+          "processed",
+          "sources",
+          "state",
+          "total",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "TakeoutRootDto": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "description": "The directory the administrator permitted",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "path"
+        ],
+        "type": "object"
+      },
+      "TakeoutRootsResponseDto": {
+        "properties": {
+          "roots": {
+            "items": {
+              "$ref": "#/components/schemas/TakeoutRootDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "roots"
+        ],
+        "type": "object"
+      },
+      "TakeoutSidecarCandidateDto": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/TakeoutMetadataDto"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "metadata",
+          "path"
+        ],
+        "type": "object"
+      },
+      "TakeoutSourceKind": {
+        "description": "An uploaded archive or a server directory",
+        "enum": [
+          "zip",
+          "directory"
+        ],
+        "type": "string"
+      },
+      "TakeoutSourceResponseDto": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TakeoutSourceKind"
+          },
+          "name": {
+            "description": "The archive’s file name, or the directory’s name",
+            "type": "string"
+          },
+          "received": {
+            "description": "Bytes staged so far; an upload resumes here",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "rejected": {
+            "description": "Entries refused: unsafe names, links or encryption",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "scanned": {
+            "description": "Every entry has been read",
+            "type": "boolean"
+          },
+          "size": {
+            "description": "Declared archive size in bytes; zero for a directory",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "received",
+          "rejected",
+          "scanned",
+          "size"
+        ],
+        "type": "object"
+      },
+      "TakeoutState": {
+        "description": "Where the import is: staging sources, a scan or import job at work, awaiting review, or done",
+        "enum": [
+          "sources",
+          "queued",
+          "scanning",
+          "review",
+          "importing",
+          "paused",
+          "cancelling",
+          "cancelled",
+          "failed",
+          "completed"
+        ],
+        "type": "string"
+      },
+      "TakeoutVerifyChunkDto": {
+        "properties": {
+          "offset": {
+            "description": "Byte offset of the range",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sha256": {
+            "description": "SHA-256 of the range, hex",
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "size": {
+            "description": "Length of the range",
+            "maximum": 8388608,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "offset",
+          "sha256",
+          "size"
+        ],
+        "type": "object"
+      },
+      "TakeoutWarning": {
+        "description": "Why an item needs attention",
+        "enum": [
+          "ambiguous_sidecar",
+          "no_sidecar",
+          "invalid_sidecar",
+          "trashed",
+          "locked"
         ],
         "type": "string"
       },
@@ -9764,6 +10690,10 @@
       },
       "ICloudConnectionResponseDto": {
         "properties": {
+          "authenticated": {
+            "description": "Whether an encrypted Apple session is stored; the session is never returned",
+            "type": "boolean"
+          },
           "config": {
             "additionalProperties": false,
             "properties": {
@@ -9844,17 +10774,28 @@
             "nullable": true,
             "type": "string"
           },
+          "run": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ICloudSyncRunDto"
+              }
+            ],
+            "description": "The current or most recent sync run",
+            "nullable": true
+          },
           "state": {
             "type": "string"
           }
         },
         "required": [
+          "authenticated",
           "config",
           "counts",
           "id",
           "label",
           "lastError",
           "nextRunAt",
+          "run",
           "state"
         ],
         "type": "object"
@@ -9994,6 +10935,9 @@
           "libraries": {
             "items": {
               "properties": {
+                "area": {
+                  "$ref": "#/components/schemas/ICloudLibraryArea"
+                },
                 "id": {
                   "type": "string"
                 },
@@ -10007,6 +10951,7 @@
               "required": [
                 "id",
                 "name",
+                "area",
                 "supported"
               ],
               "type": "object"
@@ -10021,6 +10966,9 @@
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                   "type": "string"
                 },
+                "fileName": {
+                  "type": "string"
+                },
                 "outcome": {
                   "type": "string"
                 },
@@ -10033,7 +10981,50 @@
               "required": [
                 "assetId",
                 "resourceId",
-                "outcome"
+                "outcome",
+                "fileName"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "review": {
+            "description": "Reconciliation findings; private items only for an unlocked session",
+            "items": {
+              "properties": {
+                "assetId": {
+                  "format": "uuid",
+                  "nullable": true,
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "fileName": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "kind": {
+                  "$ref": "#/components/schemas/ICloudReviewKind"
+                },
+                "reason": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "resourceId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "resourceId",
+                "kind",
+                "reason",
+                "fileName",
+                "role",
+                "assetId"
               ],
               "type": "object"
             },
@@ -10043,7 +11034,8 @@
         "required": [
           "albums",
           "complete",
-          "libraries"
+          "libraries",
+          "review"
         ],
         "type": "object"
       },
@@ -12420,6 +13412,8 @@
           "studio_bundle_import",
           "enrichment_plan",
           "media_health",
+          "icloud_sync",
+          "takeout_import",
           "physical_deduplication"
         ],
         "type": "string"
@@ -13934,7 +14928,8 @@
           "consent-missing",
           "budget-exceeded",
           "endpoint-unresolved",
-          "destination-unhealthy"
+          "destination-unhealthy",
+          "role-conflict"
         ],
         "type": "string"
       },
@@ -14147,7 +15142,7 @@
       "MlDestinationCreateDto": {
         "properties": {
           "authToken": {
-            "description": "Bearer token for a LAN worker (write-only)",
+            "description": "Bearer token for a LAN or RunPod video worker (write-only)",
             "maxLength": 4096,
             "type": "string"
           },
@@ -14181,8 +15176,12 @@
             "minLength": 1,
             "type": "string"
           },
+          "sharesLibraryHardware": {
+            "description": "Restoration workers only: full restorations wait while library analysis has work",
+            "type": "boolean"
+          },
           "url": {
-            "description": "Required for a LAN destination, optional for a local one, forbidden for RunPod",
+            "description": "Required for a LAN or RunPod video destination, optional for a local one, forbidden for RunPod",
             "format": "uri",
             "type": "string"
           },
@@ -14247,7 +15246,8 @@
         "enum": [
           "local",
           "lan",
-          "runpod"
+          "runpod",
+          "runpod-video"
         ],
         "type": "string"
       },
@@ -14283,6 +15283,13 @@
           "name": {
             "type": "string"
           },
+          "role": {
+            "$ref": "#/components/schemas/MlWorkerRole"
+          },
+          "sharesLibraryHardware": {
+            "description": "A restoration worker on the GPU library analysis uses; its full restorations wait for library work",
+            "type": "boolean"
+          },
           "updatedAt": {
             "type": "string"
           },
@@ -14309,6 +15316,8 @@
           "id",
           "kind",
           "name",
+          "role",
+          "sharesLibraryHardware",
           "updatedAt",
           "url",
           "workloads"
@@ -14348,6 +15357,10 @@
             "maxLength": 80,
             "minLength": 1,
             "type": "string"
+          },
+          "sharesLibraryHardware": {
+            "description": "Restoration workers only: full restorations wait while library analysis has work",
+            "type": "boolean"
           },
           "url": {
             "format": "uri",
@@ -14447,6 +15460,38 @@
           "windowDays"
         ],
         "type": "object"
+      },
+      "MlWorkerAcceleration": {
+        "description": "Acceleration a worker reported on its last check",
+        "enum": [
+          "unknown",
+          "cpu",
+          "gpu"
+        ],
+        "type": "string"
+      },
+      "MlWorkerReadiness": {
+        "description": "State of one worker in the inventory",
+        "enum": [
+          "unknown",
+          "disabled",
+          "unreachable",
+          "not-serving",
+          "cpu",
+          "model-ready"
+        ],
+        "type": "string"
+      },
+      "MlWorkerRole": {
+        "description": "What a worker is for",
+        "enum": [
+          "library-analysis",
+          "restoration",
+          "studio",
+          "mixed",
+          "unassigned"
+        ],
+        "type": "string"
       },
       "MlWorkload": {
         "description": "Machine-learning workload",
@@ -27661,6 +28706,390 @@
         ],
         "type": "string"
       },
+      "WorkerCredentialState": {
+        "description": "How a worker credential is held",
+        "enum": [
+          "none",
+          "stored",
+          "managed",
+          "enrolled"
+        ],
+        "type": "string"
+      },
+      "WorkerGpuDto": {
+        "properties": {
+          "memoryTotalBytes": {
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "memoryTotalBytes",
+          "name"
+        ],
+        "type": "object"
+      },
+      "WorkerInventoryEntryDto": {
+        "properties": {
+          "acceleration": {
+            "$ref": "#/components/schemas/MlWorkerAcceleration"
+          },
+          "activeOperations": {
+            "description": "Jobs running here now",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "admission": {
+            "description": "Per allowed workload, from the last check",
+            "items": {
+              "$ref": "#/components/schemas/WorkerWorkloadAdmissionDto"
+            },
+            "type": "array"
+          },
+          "allowedWorkloads": {
+            "items": {
+              "$ref": "#/components/schemas/MlWorkload"
+            },
+            "type": "array"
+          },
+          "checkedAt": {
+            "description": "Last check or check-in",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "configured": {
+            "description": "For a local destination: its URL is still in the machine-learning URL list. Always true otherwise",
+            "type": "boolean"
+          },
+          "consentGranted": {
+            "description": "True when no consent is needed or it is recorded",
+            "type": "boolean"
+          },
+          "credential": {
+            "$ref": "#/components/schemas/WorkerCredentialState"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "gpuMemoryBytes": {
+            "description": "Largest GPU memory reported or qualified, or null when unknown",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "gpus": {
+            "description": "GPUs the worker reported, with memory; empty when not reported",
+            "items": {
+              "$ref": "#/components/schemas/WorkerGpuDto"
+            },
+            "type": "array"
+          },
+          "id": {
+            "description": "ML destination ID or render worker ID",
+            "type": "string"
+          },
+          "kind": {
+            "description": "ML destination kind, or the render worker destination",
+            "type": "string"
+          },
+          "latencyMs": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "leavesNetwork": {
+            "description": "Work sent here leaves the network",
+            "type": "boolean"
+          },
+          "maxConcurrentOperations": {
+            "description": "Render workers: the most they may hold at once",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "queuedOperations": {
+            "description": "Jobs waiting for this worker",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/MlWorkerReadiness"
+          },
+          "renderKinds": {
+            "description": "Operation kinds a render worker may claim",
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            },
+            "type": "array"
+          },
+          "role": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlWorkerRole"
+              }
+            ],
+            "description": "What an ML destination is for; null for a render worker",
+            "nullable": true
+          },
+          "routedWorkloads": {
+            "description": "Workloads whose route names this destination",
+            "items": {
+              "$ref": "#/components/schemas/MlWorkload"
+            },
+            "type": "array"
+          },
+          "servedWorkloads": {
+            "description": "Workloads the worker reported on its last check, or null when it never answered",
+            "items": {
+              "$ref": "#/components/schemas/MlWorkload"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "sharesLibraryHardware": {
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/components/schemas/WorkerInventorySource"
+          },
+          "summary": {
+            "nullable": true,
+            "type": "string"
+          },
+          "url": {
+            "description": "Endpoint URL, or null when there is none to show",
+            "nullable": true,
+            "type": "string"
+          },
+          "waitingForLibraryAnalysis": {
+            "description": "Full restorations bound here are waiting because library analysis has work",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "acceleration",
+          "activeOperations",
+          "admission",
+          "allowedWorkloads",
+          "checkedAt",
+          "configured",
+          "consentGranted",
+          "credential",
+          "enabled",
+          "gpuMemoryBytes",
+          "gpus",
+          "id",
+          "kind",
+          "latencyMs",
+          "leavesNetwork",
+          "maxConcurrentOperations",
+          "name",
+          "queuedOperations",
+          "readiness",
+          "renderKinds",
+          "role",
+          "routedWorkloads",
+          "servedWorkloads",
+          "sharesLibraryHardware",
+          "source",
+          "summary",
+          "url",
+          "waitingForLibraryAnalysis"
+        ],
+        "type": "object"
+      },
+      "WorkerInventoryResponseDto": {
+        "properties": {
+          "checkedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "configuredUrls": {
+            "description": "The machine-learning URL list, in order",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/WorkerInventoryEntryDto"
+            },
+            "type": "array"
+          },
+          "libraryBacklog": {
+            "description": "Library-analysis jobs active or waiting, not counting paused queues",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "libraryQueues": {
+            "items": {
+              "$ref": "#/components/schemas/WorkerQueueBacklogDto"
+            },
+            "type": "array"
+          },
+          "libraryRoutes": {
+            "items": {
+              "$ref": "#/components/schemas/WorkerLibraryRouteDto"
+            },
+            "type": "array"
+          },
+          "machineLearningEnabled": {
+            "type": "boolean"
+          },
+          "runners": {
+            "description": "Server processes running restorations now",
+            "items": {
+              "$ref": "#/components/schemas/WorkerRunnerDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "checkedAt",
+          "configuredUrls",
+          "entries",
+          "libraryBacklog",
+          "libraryQueues",
+          "libraryRoutes",
+          "machineLearningEnabled",
+          "runners"
+        ],
+        "type": "object"
+      },
+      "WorkerInventorySource": {
+        "description": "Where an inventory entry comes from",
+        "enum": [
+          "ml-destination",
+          "render-worker"
+        ],
+        "type": "string"
+      },
+      "WorkerLibraryRouteDto": {
+        "properties": {
+          "destinationId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "queues": {
+            "description": "Queues whose jobs run this workload",
+            "items": {
+              "$ref": "#/components/schemas/QueueName"
+            },
+            "type": "array"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "destinationId",
+          "queues",
+          "workload"
+        ],
+        "type": "object"
+      },
+      "WorkerQueueBacklogDto": {
+        "properties": {
+          "active": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "queue": {
+            "$ref": "#/components/schemas/QueueName"
+          },
+          "waiting": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active",
+          "paused",
+          "queue",
+          "waiting"
+        ],
+        "type": "object"
+      },
+      "WorkerRunnerDto": {
+        "properties": {
+          "activeOperations": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "kinds": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOperationKind"
+            },
+            "type": "array"
+          },
+          "lastHeartbeatAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "workerId": {
+            "description": "The server process holding the claims",
+            "type": "string"
+          }
+        },
+        "required": [
+          "activeOperations",
+          "kinds",
+          "lastHeartbeatAt",
+          "workerId"
+        ],
+        "type": "object"
+      },
+      "WorkerWorkloadAdmissionDto": {
+        "properties": {
+          "admitted": {
+            "description": "Whether the last check would admit this workload here",
+            "type": "boolean"
+          },
+          "detail": {
+            "description": "Why it would be refused, or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "refusal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlAdmissionRefusal"
+              }
+            ],
+            "nullable": true
+          },
+          "workload": {
+            "$ref": "#/components/schemas/MlWorkload"
+          }
+        },
+        "required": [
+          "admitted",
+          "detail",
+          "refusal",
+          "workload"
+        ],
+        "type": "object"
+      },
       "WorkflowCreateDto": {
         "properties": {
           "description": {
@@ -29839,6 +31268,92 @@
           "findingId"
         ],
         "type": "object"
+      },
+      "ICloudLibraryArea": {
+        "enum": [
+          "private",
+          "shared"
+        ],
+        "type": "string"
+      },
+      "ICloudReviewKind": {
+        "enum": [
+          "review",
+          "failed",
+          "unsupported",
+          "kept-trashed",
+          "source-removed"
+        ],
+        "type": "string"
+      },
+      "ICloudSyncRunDto": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "errorCode": {
+            "description": "Stable failure code, translated by the client",
+            "nullable": true,
+            "type": "string"
+          },
+          "finishedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Media operation ID of the run",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "pauseRequested": {
+            "description": "A pause was asked for and the worker has not reached it yet",
+            "type": "boolean"
+          },
+          "processedUnits": {
+            "description": "Resources settled so far",
+            "type": "integer"
+          },
+          "progress": {
+            "description": "0 to 100, from resources settled out of those known so far",
+            "type": "number"
+          },
+          "retrying": {
+            "description": "Back in the queue for its automatic retry after a failure",
+            "type": "boolean"
+          },
+          "startedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "totalUnits": {
+            "description": "Resources known so far; null until the inventory is counted",
+            "nullable": true,
+            "type": "integer"
+          },
+          "waiting": {
+            "description": "Handed back to wait for the provider or a backed-off item",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "createdAt",
+          "errorCode",
+          "finishedAt",
+          "id",
+          "pauseRequested",
+          "processedUnits",
+          "progress",
+          "retrying",
+          "startedAt",
+          "status",
+          "totalUnits",
+          "waiting"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -30295,6 +31810,176 @@
           },
           {
             "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/config/credentials": {
+      "get": {
+        "description": "Whether each write-only server credential is stored. Credential values are never returned.",
+        "operationId": "getConfigCredentials",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConfigCredentialResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the server credentials",
+        "tags": [
+          "Config (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminConfig.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/config/credentials/{name}": {
+      "delete": {
+        "description": "Remove the stored value of one write-only server credential.",
+        "operationId": "deleteConfigCredential",
+        "parameters": [
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/ConfigCredential"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigCredentialResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Clear a server credential",
+        "tags": [
+          "Config (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminConfig.update",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Store a new value for one write-only server credential. The value is validated like a configuration save and is never returned.",
+        "operationId": "updateConfigCredential",
+        "parameters": [
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/ConfigCredential"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigCredentialUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigCredentialResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Replace a server credential",
+        "tags": [
+          "Config (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
             "state": "Alpha"
           }
         ],
@@ -32849,6 +34534,53 @@
         ],
         "x-immich-permission": "adminUser.read",
         "x-immich-state": "Stable"
+      }
+    },
+    "/admin/workers": {
+      "get": {
+        "description": "Every machine-learning, restoration and render endpoint with its last known state, acceleration, allowed and served workloads, library routes, per-workload admission and load, plus the server processes running restorations. Read-only; nothing is contacted.",
+        "operationId": "getWorkerInventory",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerInventoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the worker inventory",
+        "tags": [
+          "ML destinations"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/albums": {
@@ -55775,6 +57507,1047 @@
         "x-immich-state": "Stable"
       }
     },
+    "/takeout": {
+      "get": {
+        "operationId": "listTakeoutImports",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TakeoutResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List Google Photos imports",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Creates an import to stage Takeout archives into. Administrators may instead name a folder inside one of the permitted import locations.",
+        "operationId": "createTakeoutImport",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakeoutCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start a Google Photos import",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/takeout/roots": {
+      "get": {
+        "operationId": "getTakeoutRoots",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutRootsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the permitted import locations",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/takeout/{id}": {
+      "delete": {
+        "description": "Removes the import and its staged copies. Everything it brought into the library stays there.",
+        "operationId": "deleteTakeoutImport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a Google Photos import",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "operationId": "getTakeoutImport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a Google Photos import",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/takeout/{id}/archives": {
+      "post": {
+        "operationId": "createTakeoutArchive",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakeoutArchiveCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutSourceResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Stage a Takeout archive",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/takeout/{id}/archives/{archiveId}": {
+      "delete": {
+        "operationId": "deleteTakeoutArchive",
+        "parameters": [
+          {
+            "name": "archiveId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a staged Takeout archive",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/takeout/{id}/archives/{archiveId}/chunks": {
+      "put": {
+        "description": "Appends up to 8 MiB at the given byte offset. Repeating a part already staged is harmless.",
+        "operationId": "uploadTakeoutArchiveChunk",
+        "parameters": [
+          {
+            "name": "archiveId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "description": "Byte offset of this chunk",
+            "schema": {
+              "maximum": 1099511627776,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutSourceResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Upload part of a Takeout archive",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/takeout/{id}/archives/{archiveId}/verify": {
+      "post": {
+        "description": "Compares a range already uploaded with the file the browser is about to resume from.",
+        "operationId": "verifyTakeoutArchiveChunk",
+        "parameters": [
+          {
+            "name": "archiveId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakeoutVerifyChunkDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check a staged part of a Takeout archive",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/takeout/{id}/control": {
+      "post": {
+        "operationId": "controlTakeoutImport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakeoutControlDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Pause, resume or cancel a Google Photos import",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/takeout/{id}/import": {
+      "post": {
+        "description": "Queues the import as a background job with these choices. Items already in the library are matched, not copied again, and keep their album memberships.",
+        "operationId": "startTakeoutImport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakeoutOptionsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Import the reviewed items",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/takeout/{id}/items": {
+      "get": {
+        "operationId": "getTakeoutItems",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items to return",
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "description": "Items to skip",
+            "schema": {
+              "default": 0,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "state",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/TakeoutItemState"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutItemsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the items of a Google Photos import",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/takeout/{id}/items/{itemId}": {
+      "put": {
+        "operationId": "resolveTakeoutItem",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "itemId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakeoutResolveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Choose metadata for an item, or leave it out",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/takeout/{id}/live-photos": {
+      "get": {
+        "operationId": "getTakeoutPairs",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Pairs to return",
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "description": "Pairs to skip",
+            "schema": {
+              "default": 0,
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "state",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/TakeoutPairState"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutPairsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List possible Live Photos in a Google Photos import",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "operationId": "decideTakeoutPair",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakeoutPairDecisionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutPairsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Link or separate a possible Live Photo",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/takeout/{id}/scan": {
+      "post": {
+        "description": "Queues the scan of the staged sources as a background job that continues after the browser closes.",
+        "operationId": "scanTakeoutImport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Scan a Google Photos import",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/timeline/bucket": {
       "get": {
         "description": "Retrieve a string of all asset ids in a given time bucket.",
@@ -59678,6 +62451,53 @@
           },
           {
             "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/icloud-sync/connections/{id}/remove": {
+      "post": {
+        "operationId": "removeICloudConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
             "state": "Alpha"
           }
         ],
