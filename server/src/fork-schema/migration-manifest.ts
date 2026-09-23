@@ -63,6 +63,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000200-AddSharedSpacePanels',
   '2100000000210-AddMediaOperationBulkResult',
   '2100000000220-AddStudioProjectTables',
+  '2100000000240-AddAssetRestorationTable',
   '2100000000260-AddSharedSpaceCollaboration',
 ]);
 
