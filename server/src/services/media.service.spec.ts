@@ -11,17 +11,20 @@ import {
   AssetVisibility,
   AudioCodec,
   Colorspace,
+  DvProfile,
   ExifOrientation,
   ImageFormat,
   JobName,
   JobStatus,
   RawExtractedFormat,
+  ToneMapping,
   TranscodeHardwareAcceleration,
   TranscodePolicy,
   VideoCodec,
 } from 'src/enum.js';
 import { MediaService } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
+import { FRAMELEAF_RENDERER } from 'src/utils/media-policy.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -2673,6 +2676,240 @@ describe(MediaService.name, () => {
           isEdited: true,
         }),
       );
+    });
+
+    describe('edited-master policy (FL-39, FL-16)', () => {
+      const editedAsset = (overrides: Record<string, unknown> = {}) => ({
+        ...AssetFactory.create({ id: 'video-id', type: AssetType.Video, originalPath: '/original/path.ext' }),
+        checksum: Buffer.from('checksum'),
+        videoStream: probeStub.videoStreamH264.videoStream,
+        audioStream: probeStub.audioStreamAac.audioStream,
+        format: { ...probeStub.videoStreamH264.format, duration: 5 },
+        files: [],
+        ...overrides,
+      });
+
+      const stubThumbnails = () => {
+        (sut as any).generateVideoThumbnails = () =>
+          Promise.resolve({
+            files: [],
+            thumbhash: Buffer.from('thumbhash'),
+            fullsizeDimensions: { width: 300, height: 200 },
+          });
+      };
+
+      const lastTranscodeOptions = () => {
+        const calls = mocks.media.transcode.mock.calls;
+        return calls.at(-1)![2].outputOptions as string[];
+      };
+
+      beforeEach(() => {
+        sut.videoInterfaces = { dri: ['renderD128'], mali: true };
+        stubThumbnails();
+        mocks.assetEdit.getAll.mockResolvedValue([
+          { id: 'edit-id', action: AssetEditAction.Crop, parameters: { x: 2, y: 4, width: 300, height: 200 } },
+        ]);
+      });
+
+      it('does not let the playback resolution, CRF or bitrate ceiling cap the edited master', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: {
+            accel: TranscodeHardwareAcceleration.Disabled,
+            crf: 30,
+            targetResolution: '720',
+            maxBitrate: '3000k',
+          },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const outputOptions = lastTranscodeOptions();
+        // The master quality target is clamped to at least CRF 18, never the playback CRF.
+        expect(outputOptions[outputOptions.indexOf('-crf') + 1]).toBe('18');
+        // The playback bitrate ceiling must not truncate the master.
+        expect(outputOptions).not.toContain('-maxrate');
+        expect(outputOptions).not.toContain('-bufsize');
+        // 1920x1080 source, cropped to 300x200 by the recipe alone — no playback downscale.
+        expect(getFilterOption(outputOptions)).not.toContain('scale=');
+      });
+
+      it('preserves rational timing and any variable-frame-rate mapping', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const outputOptions = lastTranscodeOptions();
+        expect(outputOptions[outputOptions.indexOf('-fps_mode') + 1]).toBe('passthrough');
+        expect(outputOptions[outputOptions.indexOf('-video_track_timescale') + 1]).toBe('600');
+      });
+
+      it('does not downmix the master to stereo, and stream-copies an untouched track', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const outputOptions = lastTranscodeOptions();
+        expect(outputOptions).not.toContain('-ac');
+        expect(outputOptions[outputOptions.indexOf('-c:a') + 1]).toBe('copy');
+      });
+
+      it('re-encodes audio without forcing stereo when the recipe changes the audio', async () => {
+        mocks.assetEdit.getAll.mockResolvedValue([
+          { id: 'edit-id', action: AssetEditAction.Audio, parameters: { volume: 0.5 } },
+        ]);
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const outputOptions = lastTranscodeOptions();
+        expect(outputOptions).not.toContain('-ac');
+        expect(outputOptions[outputOptions.indexOf('-c:a') + 1]).not.toBe('copy');
+      });
+
+      it('tags the master with the source colour volume and keeps its bit depth', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(
+          editedAsset({ videoStream: probeStub.videoStreamHDR.videoStream }),
+        );
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled, tonemap: ToneMapping.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const outputOptions = lastTranscodeOptions();
+        expect(outputOptions[outputOptions.indexOf('-color_trc') + 1]).toBe('smpte2084');
+        expect(outputOptions[outputOptions.indexOf('-color_primaries') + 1]).toBe('bt2020');
+        // A 10-bit source keeps 10 bits: the H.264 playback codec is promoted rather than flattening it.
+        expect(outputOptions[outputOptions.indexOf('-c:v') + 1]).toBe(VideoCodec.Hevc);
+        expect(getFilterOption(outputOptions)).toContain('format=yuv420p10le');
+      });
+
+      it('tags a tone-mapped master as Rec. 709 rather than copying the source HDR tags', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(
+          editedAsset({ videoStream: probeStub.videoStreamHDR.videoStream }),
+        );
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled, tonemap: ToneMapping.Hable },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const outputOptions = lastTranscodeOptions();
+        expect(outputOptions[outputOptions.indexOf('-color_trc') + 1]).toBe('bt709');
+      });
+
+      it('fails before touching an existing master when the source cannot be preserved', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(
+          editedAsset({
+            videoStream: { ...probeStub.videoStreamDolbyVision.videoStream, dvProfile: DvProfile.Dvhe05 },
+          }),
+        );
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Failed);
+
+        expect(mocks.media.transcode).not.toHaveBeenCalled();
+        expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
+      });
+
+      it('never renders over the original', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const [input, output] = mocks.media.transcode.mock.calls.at(-1)!;
+        expect(input).toBe('/original/path.ext');
+        expect(output).not.toBe('/original/path.ext');
+        expect(output).toMatch(/_edited\.mp4$/);
+      });
+
+      it('preserves every packet for a lone right-angle rotation instead of re-encoding', async () => {
+        mocks.assetEdit.getAll.mockResolvedValue([
+          { id: 'edit-id', action: AssetEditAction.Rotate, parameters: { angle: 90 } },
+        ]);
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const command = mocks.media.transcode.mock.calls.at(-1)![2];
+        expect(command.inputOptions).toEqual(['-display_rotation', '-90']);
+        expect(command.outputOptions).toEqual(expect.arrayContaining(['-c', 'copy']));
+        expect(command.outputOptions).not.toContain('-vf');
+        expect(command.outputOptions).not.toContain('-crf');
+      });
+
+      it('re-encodes a rotation that is combined with another edit', async () => {
+        mocks.assetEdit.getAll.mockResolvedValue([
+          { id: 'edit-1', action: AssetEditAction.Rotate, parameters: { angle: 90 } },
+          { id: 'edit-2', action: AssetEditAction.Crop, parameters: { x: 2, y: 4, width: 300, height: 200 } },
+        ]);
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const command = mocks.media.transcode.mock.calls.at(-1)![2];
+        expect(command.inputOptions).not.toContain('-display_rotation');
+        expect(getFilterOption(command.outputOptions)).toContain('transpose=1');
+      });
+
+      it('records the edited master lineage beside the master', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        const [lineagePath, buffer] = mocks.storage.createOrOverwriteFile.mock.calls.at(-1)!;
+        expect(lineagePath).toMatch(/_edited\.mp4\.lineage\.json$/);
+
+        const lineage = JSON.parse((buffer as Buffer).toString('utf8'));
+        expect(lineage).toEqual(
+          expect.objectContaining({
+            sourceAssetId: 'video-id',
+            sourceOriginalPath: '/original/path.ext',
+            sourceChecksum: Buffer.from('checksum').toString('base64'),
+            renderer: FRAMELEAF_RENDERER,
+            recipeActions: [AssetEditAction.Crop],
+          }),
+        );
+        expect(lineage.recipeRevision).toEqual(expect.any(String));
+        expect(lineage.rendererVersion).toEqual(expect.any(String));
+      });
+
+      it('writes the lineage before the edited master is published as an asset file', async () => {
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(editedAsset());
+        mocks.systemMetadata.get.mockResolvedValue({
+          ffmpeg: { accel: TranscodeHardwareAcceleration.Disabled },
+        } as never as SystemConfig);
+
+        await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.storage.createOrOverwriteFile.mock.invocationCallOrder[0]).toBeLessThan(
+          mocks.asset.upsertFile.mock.invocationCallOrder[0],
+        );
+      });
     });
   });
 
