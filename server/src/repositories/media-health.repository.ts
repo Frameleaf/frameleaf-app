@@ -115,6 +115,18 @@ export type RelinkManagedAsset = {
   sha256: Buffer;
   sizeInBytes: number;
   fileModifiedAt: Date;
+  /**
+   * FL-69: the finding's category. Missing (the default) relinks a `found` finding; Corrupt replaces
+   * a `corrupt_confirmed` one and keeps the damaged file where it is, recorded as `retainedPath`.
+   */
+  category?: MediaHealthCategory;
+  /**
+   * FL-69: where the chosen candidate was found, when the asset is linked to a copy published from it
+   * (`originalPath`) rather than to the candidate itself. A recovery location is only ever read.
+   */
+  candidatePath?: string;
+  /** FL-69: who recovered it and from which search location, kept on the finding. */
+  provenance?: Record<string, unknown>;
 };
 export type RelinkExternalAsset = RelinkManagedAsset & { expectedLibraryId: string };
 type HealthBackfillTables = {
@@ -230,7 +242,10 @@ export class MediaHealthRepository {
     ownerId?: string;
     privacy?: MediaHealthPrivacy;
     status?: MediaHealthStatus;
+    /** Library Care's "needs attention" (FL-69): any of these statuses. */
+    statuses?: readonly MediaHealthStatus[];
     size: number;
+    offset?: number;
   }): Promise<MediaHealthFinding[]> {
     const phase = await getForkSchemaPhase(this.db);
     const schema = readsForkSidecar(phase) ? 'immich_fork' : 'public';
@@ -243,8 +258,11 @@ export class MediaHealthRepository {
       .$call((qb) => withHiddenContentFilter(qb, options.privacy))
       .$if(!!options.category, (qb) => qb.where('asset_health.category', '=', options.category!))
       .$if(!!options.status, (qb) => qb.where('asset_health.status', '=', options.status!))
+      .$if(!!options.statuses, (qb) => qb.where('asset_health.status', 'in', [...options.statuses!]))
       .orderBy('asset_health.checkedAt', 'desc')
+      .orderBy('asset_health.id', 'desc')
       .limit(options.size)
+      .$if(!!options.offset, (qb) => qb.offset(options.offset!))
       .execute() as Promise<MediaHealthFinding[]>;
   }
 
@@ -253,6 +271,7 @@ export class MediaHealthRepository {
     ownerId?: string;
     privacy?: MediaHealthPrivacy;
     status?: MediaHealthStatus;
+    statuses?: readonly MediaHealthStatus[];
   }): Promise<number> {
     const phase = await getForkSchemaPhase(this.db);
     const schema = readsForkSidecar(phase) ? 'immich_fork' : 'public';
@@ -265,8 +284,92 @@ export class MediaHealthRepository {
       .$call((qb) => withHiddenContentFilter(qb, options.privacy))
       .$if(!!options.category, (qb) => qb.where('asset_health.category', '=', options.category!))
       .$if(!!options.status, (qb) => qb.where('asset_health.status', '=', options.status!))
+      .$if(!!options.statuses, (qb) => qb.where('asset_health.status', 'in', [...options.statuses!]))
       .executeTakeFirstOrThrow();
     return Number(row.count);
+  }
+
+  /**
+   * Library Care's queue sizes (FL-69): open findings by category and status, read with the same
+   * owner scope and privacy as the list, so a count never reveals an item the list would hide.
+   */
+  async countByStatus(options: {
+    ownerId?: string;
+    privacy: MediaHealthPrivacy;
+  }): Promise<Array<{ category: MediaHealthCategory; status: MediaHealthStatus; count: number }>> {
+    const phase = await getForkSchemaPhase(this.db);
+    const schema = readsForkSidecar(phase) ? 'immich_fork' : 'public';
+    const rows = await (this.db as Kysely<any>)
+      .selectFrom(`${schema}.asset_health as asset_health`)
+      .innerJoin('public.asset as asset', 'asset.id', 'asset_health.assetId')
+      .select(['asset_health.category', 'asset_health.status'])
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('asset.deletedAt', 'is', null)
+      .$if(!!options.ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(options.ownerId!)))
+      .where((eb) => lockedOwnerScope(eb, options.privacy.lockedOwnerId))
+      .$call((qb) => withHiddenContentFilter(qb, options.privacy))
+      .groupBy(['asset_health.category', 'asset_health.status'])
+      .execute();
+    return rows.map((row: { category: MediaHealthCategory; status: MediaHealthStatus; count: number | string }) => ({
+      category: row.category,
+      status: row.status,
+      count: Number(row.count),
+    }));
+  }
+
+  /** Duplicate groups with at least two visible members, with the list's privacy (FL-69). */
+  async countDuplicateGroups(options: { ownerId?: string; privacy: MediaHealthPrivacy }): Promise<number> {
+    const groups = this.db
+      .withSchema('public')
+      .selectFrom('asset')
+      .select('asset.duplicateId')
+      .where('asset.duplicateId', 'is not', null)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.status', '=', AssetStatus.Active)
+      .$if(!!options.ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(options.ownerId!)))
+      .where((eb) => lockedOwnerScope(eb, options.privacy.lockedOwnerId))
+      .$call((qb) => withHiddenContentFilter(qb, options.privacy))
+      .groupBy('asset.duplicateId')
+      .having((eb) => eb(eb.fn.countAll(), '>', 1))
+      .as('groups');
+    const row = await this.db
+      .selectFrom(groups)
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .executeTakeFirst();
+    return Number(row?.count ?? 0);
+  }
+
+  /** Items whose metadata has not been read yet: the enrichment backlog Library Care shows (FL-69). */
+  async countPendingMetadata(options: { ownerId?: string; privacy: MediaHealthPrivacy }): Promise<number> {
+    const row = await this.db
+      .withSchema('public')
+      .selectFrom('asset')
+      .leftJoin('asset_job_status', 'asset_job_status.assetId', 'asset.id')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.status', '=', AssetStatus.Active)
+      .where('asset_job_status.metadataExtractedAt', 'is', null)
+      .$if(!!options.ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(options.ownerId!)))
+      .where((eb) => lockedOwnerScope(eb, options.privacy.lockedOwnerId))
+      .$call((qb) => withHiddenContentFilter(qb, options.privacy))
+      .executeTakeFirst();
+    return Number(row?.count ?? 0);
+  }
+
+  /**
+   * Imported iCloud items that need a person's review (FL-69), or null when the import tables are
+   * not there to read. Counts only; the review itself stays on the iCloud Photos tool.
+   */
+  async countImportReview(ownerId?: string): Promise<number | null> {
+    try {
+      const result = await sql<{ count: number }>`
+        SELECT count(*)::int AS count FROM immich_fork.icloud_resource
+        WHERE status IN ('needs-review', 'failed')
+        ${ownerId ? sql`AND "ownerId" = ${ownerId}::uuid` : sql``}`.execute(this.db);
+      return Number(result.rows[0]?.count ?? 0);
+    } catch {
+      return null;
+    }
   }
 
   async getByIds(ids: string[], ownerId?: string, privacy?: MediaHealthPrivacy): Promise<MediaHealthFinding[]> {
@@ -337,7 +440,20 @@ export class MediaHealthRepository {
       .select('originalPath')
       .where('originalPath', 'in', paths)
       .execute();
-    return new Set(rows.map(({ originalPath }) => originalPath));
+    const tracked = new Set(rows.map(({ originalPath }) => originalPath));
+    // FL-69: a damaged original replaced from a verified copy is kept where it was, for recovery.
+    // It is no longer any asset's original, but it is not untracked media either: importing it
+    // again would bring the damage back as a new item.
+    const phase = await getForkSchemaPhase(this.db);
+    const retained = await (this.db as Kysely<any>)
+      .selectFrom(`${readsForkSidecar(phase) ? 'immich_fork' : 'public'}.asset_health as asset_health`)
+      .select(sql<string>`asset_health.evidence->>'retainedPath'`.as('retainedPath'))
+      .where(sql<string>`asset_health.evidence->>'retainedPath'`, 'in', paths)
+      .execute();
+    for (const { retainedPath } of retained as Array<{ retainedPath: string }>) {
+      tracked.add(retainedPath);
+    }
+    return tracked;
   }
 
   async replaceCandidates(healthId: string, candidates: UpsertMediaHealthCandidate[]): Promise<void> {
@@ -662,6 +778,38 @@ export class MediaHealthRepository {
     });
   }
 
+  /**
+   * Record which candidate the reviewer chose for a finding (FL-69). A missing original found in
+   * several places relinks to this one; the choice is metadata only and is re-verified at relink.
+   * Returns false when the candidate no longer belongs to the finding.
+   */
+  async setChosenCandidate(healthId: string, candidateId: string): Promise<boolean> {
+    const phase = await getForkSchemaPhase(this.db);
+    return this.db.transaction().execute(async (trx) => {
+      const candidate = await trx
+        .withSchema(readsForkSidecar(phase) ? 'immich_fork' : 'public')
+        .selectFrom('asset_health_candidate')
+        .select('id')
+        .where('id', '=', asUuid(candidateId))
+        .where('healthId', '=', asUuid(healthId))
+        .executeTakeFirst();
+      if (!candidate) {
+        return false;
+      }
+      for (const schema of this.writeSchemas(phase)) {
+        await trx
+          .withSchema(schema)
+          .updateTable('asset_health')
+          .set({
+            resolution: sql`coalesce(resolution, '{}'::jsonb) || jsonb_build_object('chosenCandidateId', ${candidateId}::text)`,
+          })
+          .where('id', '=', asUuid(healthId))
+          .execute();
+      }
+      return true;
+    });
+  }
+
   async markStatus(ids: string[], status: MediaHealthStatus): Promise<void> {
     if (ids.length === 0) {
       return;
@@ -685,7 +833,39 @@ export class MediaHealthRepository {
       return;
     }
 
-    const query = this.db
+    for await (const asset of this.scanAssetQuery(options).stream()) {
+      yield asset;
+    }
+  }
+
+  /**
+   * One page of an owner's scan (FL-69), in id order after `afterId`. The durable Library Care scan
+   * records the last id it finished as its cursor, so a paused, restarted or retried scan carries on
+   * from there instead of starting again.
+   */
+  getAssetPage(options: { ownerId: string; afterId?: string | null; limit: number }): Promise<MediaHealthAsset[]> {
+    return this.scanAssetQuery({ ownerId: options.ownerId })
+      .$if(!!options.afterId, (qb) => qb.where('asset.id', '>', asUuid(options.afterId!)))
+      .orderBy('asset.id', 'asc')
+      .limit(options.limit)
+      .execute();
+  }
+
+  /** How many assets an owner's scan covers, for its progress. */
+  async countScanAssets(ownerId: string): Promise<number> {
+    const row = await this.db
+      .withSchema('public')
+      .selectFrom('asset')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.status', '!=', sql.lit(AssetStatus.Deleted))
+      .where('asset.ownerId', '=', asUuid(ownerId))
+      .executeTakeFirst();
+    return Number(row?.count ?? 0);
+  }
+
+  private scanAssetQuery(options: { assetIds?: string[]; ownerId?: string }) {
+    return this.db
       .withSchema('public')
       .selectFrom('asset')
       .select([
@@ -740,10 +920,6 @@ export class MediaHealthRepository {
       .where('asset.status', '!=', sql.lit(AssetStatus.Deleted))
       .$if(!!options.ownerId, (qb) => qb.where('asset.ownerId', '=', asUuid(options.ownerId!)))
       .$if(!!options.assetIds, (qb) => qb.where('asset.id', '=', anyUuid(options.assetIds!)));
-
-    for await (const asset of query.stream()) {
-      yield asset;
-    }
   }
 
   getAssets(assetIds: string[], ownerId?: string, privacy?: MediaHealthPrivacy): Promise<MediaHealthAsset[]> {
@@ -875,15 +1051,19 @@ export class MediaHealthRepository {
         .where('id', '=', input.healthId)
         .forUpdate()
         .executeTakeFirst();
+      // FL-69: a missing original relinks from `found`; confirmed damage is replaced from `corrupt_confirmed`.
+      const category = input.category ?? MediaHealthCategory.Missing;
+      const chosen = health?.resolution?.chosenCandidateId === input.candidateId;
       if (
         !health ||
         health.assetId !== asset.id ||
-        health.category !== MediaHealthCategory.Missing ||
-        health.status !== MediaHealthStatus.Found ||
+        health.category !== category ||
+        health.status !==
+          (category === MediaHealthCategory.Missing ? MediaHealthStatus.Found : MediaHealthStatus.CorruptConfirmed) ||
         health.resolvedAt ||
         health.dismissedAt ||
         health.originalPath !== asset.originalPath ||
-        health.resolution?.autoRelinkable !== true
+        (category === MediaHealthCategory.Missing && health.resolution?.autoRelinkable !== true && !chosen)
       ) {
         return false;
       }
@@ -895,11 +1075,12 @@ export class MediaHealthRepository {
         .where('status', '=', MediaHealthStatus.Found)
         .forUpdate()
         .execute();
-      const candidate = candidates[0];
+      // One verified candidate relinks by itself; among several, only the one the reviewer chose.
+      const candidate = candidates.find(({ id }) => id === input.candidateId);
       if (
-        candidates.length !== 1 ||
-        candidate.id !== input.candidateId ||
-        path.normalize(candidate.candidatePath) !== recoveredPath ||
+        !candidate ||
+        (candidates.length !== 1 && !chosen) ||
+        path.normalize(candidate.candidatePath) !== path.normalize(input.candidatePath ?? input.originalPath) ||
         candidate.resolution?.autoRelinkable !== true
       ) {
         return false;
@@ -1065,12 +1246,19 @@ export class MediaHealthRepository {
           .updateTable('asset_health')
           .set({
             runId: null,
-            status: MediaHealthStatus.Relinked,
+            // A replaced damaged original is resolved; its file stays where it was (`retainedPath`).
+            status: category === MediaHealthCategory.Missing ? MediaHealthStatus.Relinked : MediaHealthStatus.Resolved,
             severity: MediaHealthSeverity.Info,
             originalPath: recoveredPath,
             originalFileName: input.originalFileName,
-            evidence: { reason: 'candidate_relinked', previousPath: asset.originalPath },
-            resolution: { healthId: input.healthId },
+            evidence: {
+              reason: category === MediaHealthCategory.Missing ? 'candidate_relinked' : 'recovered_from_verified_copy',
+              previousPath: asset.originalPath,
+              ...(category === MediaHealthCategory.Corrupt && { retainedPath: asset.originalPath }),
+              ...(input.candidatePath && { candidatePath: path.normalize(input.candidatePath) }),
+              ...(input.provenance && { provenance: input.provenance }),
+            },
+            resolution: { healthId: input.healthId, candidateId: input.candidateId },
             checkedAt,
             resolvedAt: checkedAt,
           })
