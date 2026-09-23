@@ -11,6 +11,7 @@ import {
   getHiddenContentFilter,
   hiddenContentAssetIdExists,
   tagHasVisibleAssetOrNoAssets,
+  tagIsSuppressed,
   withDefaultVisibility,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
@@ -739,11 +740,17 @@ class TagAccess {
       return new Set<string>();
     }
 
+    const suppressedIds = suppressedEntityIds(hideNsfwAssets, 'tagIds');
     return this.db
       .selectFrom('tag')
       .select('tag.id')
       .where('tag.id', 'in', [...tagIds])
       .where('tag.userId', '=', userId)
+      // FL-46: while the session is not unlocked a suppressed tag, and every tag nested under one,
+      // is not there at all, even an empty one; the service answers it exactly like a missing id
+      .$if(suppressedIds.length > 0, (qb) =>
+        qb.where(sql<boolean>`not ${tagIsSuppressed(sql.ref('tag.id'), suppressedIds)}`),
+      )
       .$if(!!getHiddenContentFilter(privacyOptions(hideNsfwAssets)), (qb) =>
         qb.where(
           tagHasVisibleAssetOrNoAssets(sql.ref('tag.id'), getHiddenContentFilter(privacyOptions(hideNsfwAssets))),
