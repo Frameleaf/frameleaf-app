@@ -8,6 +8,7 @@ import {
 } from '@immich/sdk';
 import { omitBy } from 'lodash-es';
 import { OpenQueryParam, type SharedLinkTab } from '$lib/constants';
+import { studioHandoffQuery } from '$lib/frameleaf/studio/handoff';
 
 const asQueueSlug = (name: QueueName) => {
   return name.replaceAll(/[A-Z]/g, (m) => '-' + m.toLowerCase());
@@ -138,6 +139,14 @@ export const Route = {
   systemMaintenance: (params?: { continue?: string }) => '/admin/maintenance' + asQueryString(params),
   systemMaintenanceIntegrityReport: ({ reportType }: { reportType: IntegrityReport }) =>
     `/admin/maintenance/integrity-report/${reportType}`,
+
+  // studio
+  /**
+   * Opening Studio, optionally with a project and the "make a movie" selection. The query
+   * is built by `studioHandoffQuery` so the link and the route's parser stay one contract.
+   */
+  studio: (params?: { projectId?: string | null; assetIds?: readonly string[] }) =>
+    '/studio' + studioHandoffQuery(params ?? {}),
 
   // tags
   tags: (params?: { path?: string }) => '/tags' + asQueryString(params),
