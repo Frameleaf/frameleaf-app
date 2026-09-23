@@ -49,11 +49,13 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   { id: 'backup', group: 'library', sections: ['takeout', 'backup', 'preservation'] },
   { id: 'intelligence', group: 'library', sections: ['machine-learning', 'smart-albums', 'metadata'] },
   { id: 'editing', group: 'library', sections: ['image', 'video-transcoding'] },
-  { id: 'utilities', group: 'library', sections: [] },
   { id: 'care', group: 'library', sections: ['integrity-checks'] },
   // FL-78: the template moves external library settings out of "Import & protection" into their own
   // area, where the Libraries manager sits above them (`moveSection("backup", "libraries", "sources")`).
   { id: 'libraries', group: 'library', sections: ['external-library'] },
+  // FL-69: the utilities area has one address for every account (`utilitiesUrl`), so the
+  // administrator's command center links there instead of hosting the tools a second time.
+  { id: 'utilities', group: 'library', sections: [] },
   { id: 'processing', group: 'server', sections: ['job', 'nightly-tasks'] },
   { id: 'security', group: 'server', sections: ['authentication'] },
   { id: 'notifications', group: 'server', sections: ['notifications'] },
