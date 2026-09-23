@@ -335,10 +335,10 @@ export class ImageEnrichmentService extends BaseService {
   }
 
   /**
-   * FL-34: after its owner unlocked `assetIds`, records "safe" as their own review on every one the
-   * sensitive-content check still counts as sensitive, so the owner's choice wins over the model:
-   * running detection again never locks it again. The lock itself is already gone; nothing else is
-   * touched. Assets the check does not count as sensitive are left as they are.
+   * FL-34: after its owner unlocked `assetIds`, records "safe" as their own review on every one of
+   * them, whatever the sensitive-content check says now, so the owner's choice wins over the model:
+   * no later detection ever locks it again. The lock itself is already gone; nothing else is touched.
+   * An asset already reviewed as safe is left as it is.
    */
   async recordOwnerUnlock(auth: AuthDto, assetIds: string[]): Promise<void> {
     for (const id of assetIds) {
@@ -350,7 +350,7 @@ export class ImageEnrichmentService extends BaseService {
 
       const metadata = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
         const m = await this.getEnrichmentMetadata(id, trx);
-        if (this.getEffectiveNsfw(m) !== true) {
+        if (m.nsfwDetection?.review?.isNsfw === false) {
           return;
         }
 

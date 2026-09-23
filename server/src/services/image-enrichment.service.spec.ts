@@ -762,14 +762,26 @@ describe(ImageEnrichmentService.name, () => {
       );
     });
 
-    it('writes no review when unlocking an item the check never counted as sensitive', async () => {
-      mocks.asset.unlock.mockResolvedValue([{ assetId, reason: AssetLockReason.ImmichLockedFolder }]);
+    it('records the owner review even when the check never counted the item as sensitive', async () => {
+      mocks.asset.unlock.mockResolvedValue([{ assetId, reason: AssetLockReason.Marked }]);
       mocks.asset.getMetadataByKey.mockResolvedValue(undefined);
 
       await sut.unlockAssets(authStub.adminWithElevatedPermission, { ids: [assetId] });
 
       expect(mocks.asset.unlock).toHaveBeenCalledWith([assetId]);
-      expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertMetadata).toHaveBeenCalledWith(
+        assetId,
+        expect.arrayContaining([
+          expect.objectContaining({
+            value: expect.objectContaining({
+              nsfwDetection: expect.objectContaining({
+                review: expect.objectContaining({ action: 'marked-safe', isNsfw: false }),
+              }),
+            }),
+          }),
+        ]),
+        undefined,
+      );
     });
 
     it('locks earlier unreviewed detections when hiding sensitive detections is switched on', async () => {
